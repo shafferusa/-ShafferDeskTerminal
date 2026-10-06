@@ -62,12 +62,14 @@ function PortPanel({ port, state, demo, reload }) {
     <//>
     <${Panel} title="Dataset readiness" note=${port === 'market' ? 'Market data' : 'Models'} flush>
       <${Table} cls="fit" columns=${[
-        { label: 'Dataset', render: (d) => html`<div>${d.label || d.id}</div>${d.note ? html`<div class="sub">${d.note}</div>` : null}` },
+        { label: 'Dataset', render: (d) => html`<div>${d.label || d.id}</div>${d.note ? html`<div class="sub">${d.note}</div>` : null}
+          ${port === 'market' && d.id === 'calendars' ? html`<div class="sub">Until Shaffer MarketData supplies them, settlement dates use the built-in calendars under <a href="#/settings">Settings</a>.</div>` : null}` },
         { label: 'State', render: (d) => html`<${Pill} tone=${(DATASET[d.state] || [''])[0]}>${(DATASET[d.state] || ['', d.state])[1]}<//>` },
         { label: 'Coverage', render: (d) => d.coverage || notReported(d.state) },
         { label: 'Last refresh', render: (d) => (d.lastRefresh ? fmtTime(d.lastRefresh) : notReported(d.state)) },
         { label: 'Schedule', title: 'Refresh schedule reported by the service', render: (d) => d.refreshSchedule || notReported(d.state) },
       ]} rows=${sets} rowKey=${(d) => d.id} />
+      <p class="note" style="margin:0;padding:8px 12px;border-top:1px solid var(--rule)">Dataset readiness is pricing and data coverage (whether ${PORTS[port].title} supplies it); lifecycle support (what the paper engine simulates once an instrument is registered and priced) is a separate matter, shown on <a href="#/instruments/coverage">Instruments, Coverage</a>.</p>
     <//>
   </div>`;
 }

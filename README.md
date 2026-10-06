@@ -47,19 +47,25 @@ mode touches your real paper books, and no demo price is ever shown as a market 
 
 | Screen | What it is for |
 |---|---|
-| **Markets** (US Based, US Derivatives, Foreign Based, Foreign Derivatives) | Filters over the instrument registry, with watchlists, search, Current market price, Fair price and Gap %, what the Book already holds, and a product-appropriate trade ticket. A listed product is placed by its listing venue; issuer domicile and underlying geography are stored separately. |
-| **Strategy** | 28 execution templates (long, short, covered and protective structures, spreads, straddles, condors, butterflies, calendars, synthetics, pairs, futures hedges, custom multi-leg). Requests the hedge package from Shaffer Hedge automatically. |
-| **Preview** | Every package goes through one editable preview and one confirmation: each leg with its estimated fill and the fill model used, cash, margin, collateral and funding needs, borrow availability, break-even, maximum gain and loss, and every check. |
-| **Accounting** | P&L, open positions, pending trades, failed and cancelled trades, and full history, for the whole Book, Treasury only, or one Account. Local currency and reporting currency, performance separate from capital flows. |
-| **Books and Treasury** | Treasury cash by currency, Accounts, deposits, transfers (never a currency conversion), loans, repos, securities lending, collateral inventory, and a one-step "borrow and convert". |
-| **Instruments** | The instrument registry and the coverage list: what each of the 205 products supports. |
+| **Book selector** and **Manage Books** | Each Book is a separate workspace with its own Treasury, Accounts, positions, liabilities, strategies and accounting history. One Book is selected at a time and every screen shows that Book only. There is no combined view, total or transfer across Books. |
+| **Accounting** | P&L, balance sheet, open positions, pending trades, failed and cancelled trades, and full history, at four scopes inside the selected Book: the whole Book (consolidated), Treasury, one Account, or several Accounts together. Every row names the Treasury or Account that owns it. |
+| **Treasury** | Treasury's own cash, borrowings, lending and collateral, kept visibly apart from the Accounts it funds. Account-originated borrowings are listed for oversight as the same records, with the same IDs, that sit on the Accounts. |
+| **Accounts** (under Treasury in the sidebar) | One page per Account: its cash, balance sheet, its own borrowings, funding from Treasury, and transfers. Choosing an Account makes it the Account in use on trade tickets and the Strategies page. |
+| **Strategies** | 28 execution templates (long, short, covered and protective structures, spreads, straddles, condors, butterflies, calendars, synthetics, pairs, futures hedges, custom multi-leg). Requests the hedge package from Shaffer Hedge automatically, and holds the hedge review queue. |
+| **Marketplaces** (US Based, US Derivatives, Foreign Based, Foreign Derivatives) | Filters over the instrument registry, with watchlists, search, Current market price, Fair price and Gap %, what the Book already holds (gross: `Long 200 \| Short 100 \| Net +100`), and a product-appropriate trade ticket. A listed product is placed by its listing venue; issuer domicile and underlying geography are stored separately. |
+| **Preview** | Every package goes through one editable preview and one confirmation: each leg with its estimated fill and the fill model used, cash, margin, collateral and funding needs, borrow availability, break-even, maximum gain and loss, and every check. All figures come from one price snapshot, and a confirmation is refused if prices have moved the cash by more than the Book's tolerance. |
+| **Instruments** | The instrument registry and the coverage list. Lifecycle support (what the paper engine simulates) and pricing coverage (whether there is a price source, and a price now) are shown as two separate things. |
 | **Data connection** | The state of the two Shaffer service ports, dataset readiness, service addresses, refresh settings and manual entries. |
-| **Settings** | Light or dark mode, and the Book's paper-desk assumptions (fees, fill model, settlement lags, short collateral, margin). |
+| **Settings** | Light or dark mode, market calendars and hand-entered holidays, and the Book's paper-desk assumptions (fees, fill model, settlement lags, short collateral, margin). |
 
 Rules the engine holds to:
 
 - A short sale needs a securities borrow. If the borrow fails, the short sale is rejected with it. Short-sale proceeds are restricted collateral, not buying power.
 - Borrowed cash is a liability. It is settled cash at once, so a borrowed currency can be converted at spot immediately; the conversion still settles T+2.
+- Treasury or any Account can borrow. A borrowing is one record with one ID, owned by the unit that borrowed. It appears on that unit's balance sheet, in Treasury's oversight view (labelled Account-originated, outside Treasury's own liabilities) and once in the consolidated Book. Funding between Treasury and Accounts is recorded as internal transfers and eliminated in consolidation.
+- Holdings are shown gross. A long and a short in the same instrument are separate positions; the net is shown beside them, never in their place.
+- A net asset value that rests on a missing or stale mark, or on a missing or stale conversion rate, is labelled provisional and names the items affected.
+- A hedge recommendation is never executed by itself. Protection already in the template or the Account is recognised; adding more has to be acknowledged and is sized against the unprotected remainder. "Execute now" submits only the package that is displayed and checked.
 - Legs of one package are separate orders with their own status. A leg that depends on another is scaled to what actually filled. A package is never called complete while a required leg is unfilled.
 - An order is never filled silently at the last price: each fill names the fill model and keeps the price and FX observations it used. Data refreshes never rewrite fills, balances or history.
 - A value that is not available is shown as missing, never as zero.
@@ -109,6 +115,7 @@ More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - Positions use average cost.
 - Capital enters and leaves a Book through its Treasury.
 - Margin and holds are rule-based paper-desk assumptions that you can edit per Book. They are not a risk model.
-- Holiday calendars are built in for US equities and bonds; other markets use weekends only until Shaffer MarketData supplies calendars.
+- Settlement and payment dates use rule-based holiday calendars for US equities, US bonds, US dollar payments, the UK, the euro payment system (TARGET), Japan and Canada; FX value dates use both currencies' calendars. One-off closures can be entered by hand in Settings. Any other market falls back to weekends only, and the preview and the instrument say so. Euro-area exchanges use TARGET days, which is an approximation. Shaffer MarketData calendars replace all of this when connected.
+- The demo clock can be moved forward; it stays where it was left when the demo is restarted.
 - If the Terminal was not running when something fell due, it catches up in date order when it next starts, and books the events on the day it processes them.
 - The demo environment includes a canned hedge fixture so the Hedge workflow can be exercised. It is labelled "demo fixture" everywhere, it is not Shaffer Hedge output, and it can be switched off on the Data connection page.

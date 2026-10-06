@@ -159,7 +159,8 @@ const F = {
     { path: 'terms.spread', label: 'Spread (decimal)', type: 'number', show: (d) => d.terms.rateType === 'floating' },
     { path: 'terms.dayCount', label: 'Day count', type: 'select', options: opt(['ACT/360', 'ACT/365']), default: 'ACT/360' },
     { path: 'terms.maturity', label: 'Maturity', type: 'date', hint: 'Leave empty for open-ended' },
-    { path: 'terms.interestPayment', label: 'Interest paid', type: 'select', default: 'maturity', options: opt([['maturity', 'At maturity'], ['monthly', 'Monthly']]) },
+    { path: 'terms.interestPayment', label: 'Interest paid', type: 'select', default: 'maturity', options: opt([['maturity', 'At maturity'], ['monthly', 'Monthly']]), show: (d) => Boolean(d.terms.maturity), },
+    { path: 'terms._openEnded', label: 'Interest paid', type: 'note', text: 'Monthly, because an open-ended arrangement has no maturity to pay at.', show: (d) => !d.terms.maturity },
     { path: 'terms.counterparty', label: 'Counterparty', type: 'text' },
   ],
   repo: [
@@ -285,6 +286,7 @@ export function ContractFields({ draft, onChange, skip = [] }) {
     const set = (x) => onChange(setPath(draft, f.path, x));
     const label = typeof f.label === 'function' ? f.label(draft) : f.label;
     if (f.type === 'legs') return html`<${LegsEditor} legs=${v || []} ccy=${draft.tradingCcy} onChange=${set} />`;
+    if (f.type === 'note') return html`<${Field} label=${label}><div class="note" style="padding-top:6px">${f.text}</div><//>`;
     const req = f.required ? html`${label} <span class="muted">(required)</span>` : label;
     if (f.type === 'instrument') return html`<${Field} label=${req} hint=${f.hint} span=${f.span}><${InstrumentPicker} value=${v} onChange=${set} families=${f.families} /><//>`;
     if (f.type === 'select') return html`<${Field} label=${req} hint=${f.hint} span=${f.span}><${Select} value=${v ?? f.default ?? ''} onChange=${(x) => set(f.options.some((o) => typeof o.value === 'number') ? Number(x) : x)} options=${f.options} placeholder=${f.default === undefined ? 'Choose…' : undefined} /><//>`;

@@ -11,7 +11,7 @@ import { TEMPLATES } from './core/templates.js';
 import { AppError, isZero, need, num } from './core/util.js';
 import { STATUS_LABEL } from './data/observation.js';
 import { createRouter } from './http/router.js';
-import { CALENDARS, CURRENCY_CALENDAR, getExtraHolidays, holidaysOf, setExtraHolidays } from './quant/calendar.js';
+import { CALENDARS, COUNTRY_CALENDAR, CURRENCY_CALENDAR, getExtraHolidays, holidaysOf, setExtraHolidays } from './quant/calendar.js';
 
 export function createApi(app) {
   const r = createRouter();
@@ -67,7 +67,7 @@ export function createApi(app) {
     const y = Number(app.clock.today().slice(0, 4));
     const extra = getExtraHolidays();
     return {
-      year: y, currencyCalendars: CURRENCY_CALENDAR,
+      year: y, currencyCalendars: CURRENCY_CALENDAR, countryCalendars: COUNTRY_CALENDAR,
       calendars: Object.values(CALENDARS).map((c) => ({ ...c, holidays: ['WEEKEND', 'ALLDAYS'].includes(c.id) ? [] : [...holidaysOf(c.id, y), ...holidaysOf(c.id, y + 1)], extra: extra[c.id] || [] })),
       note: 'Rule-based calendars. One-off closures are not known to them: add those as extra holidays. Shaffer MarketData replaces these when it supplies market calendars.',
     };
@@ -76,7 +76,8 @@ export function createApi(app) {
   r.put('/api/calendars/:id/holidays', ({ params, body }) => {
     need(CALENDARS[params.id] && params.id !== 'ALLDAYS', 'Unknown calendar.', { status: 404 });
     const dates = [...new Set((body.dates || []).map((d) => String(d).trim()).filter(Boolean))].sort();
-    for (const d of dates) need(/^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d)), `"${d}" is not a date in the form YYYY-MM-DD.`);
+    // A real calendar date: 2026-02-31 parses, but does not survive a round trip.
+    for (const d of dates) need(/^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d)) && new Date(`${d}T00:00:00Z`).toISOString().slice(0, 10) === d, `"${d}" is not a date in the form YYYY-MM-DD.`);
     const all = { ...getExtraHolidays(), [params.id]: dates };
     if (!dates.length) delete all[params.id];
     app.data.setSetting('calendars.extraHolidays', all);
@@ -384,6 +385,7 @@ export function createApi(app) {
       need(ms > 0 && ms <= 400 * 86400e3, 'Advance by a positive amount of time (at most 400 days).');
       app.clock.advance(ms);
     }
+    app.data.setSetting('demo.clockOffsetMs', Math.max(0, Math.round(app.clock.ms() - Date.now())));
     lastQuoteRefresh.clear();
     const summary = await app.engine.tick();
     return { now: app.clock.now().toISOString(), today: app.clock.today(), summary };

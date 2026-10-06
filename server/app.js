@@ -47,5 +47,11 @@ export function createApp({ config, clock, db } = {}) {
   app.engine = createEngine(app);
   // Market holidays entered by hand (one-off closures the rule-based calendars cannot know).
   setExtraHolidays(app.data.getSetting('calendars.extraHolidays', {}));
+  // Demo only: the demo clock can be moved forward, and the demo books then hold entries dated on that clock.
+  // Keep the clock where it was left so a restart does not put the books ahead of the time shown.
+  if (config.demo && !clock) {
+    const ahead = Number(app.data.getSetting('demo.clockOffsetMs', 0)) || 0;
+    if (ahead > 0 && app.clock.ms() - Date.now() < ahead) app.clock.advance(ahead - (app.clock.ms() - Date.now()));
+  }
   return app;
 }

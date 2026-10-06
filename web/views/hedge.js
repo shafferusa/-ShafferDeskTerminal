@@ -29,7 +29,7 @@ export function RequestSummary({ r }) {
   const proposed = (q.proposedLegs || []).filter((l) => l.isProtection).length;
   return html`<${KV} rows=${[
     ['Instrument', p?.instrument ? `${p.instrument.symbol || p.instrument.name}${p.instrument.symbol ? `, ${p.instrument.name}` : ''}` : html`<${Missing} reason="No single instrument for this scope" />`],
-    p ? ['Direction and amount', `${p.direction === 'short' ? 'Short' : 'Long'} ${isNum(p.quantity) ? fmtQty(p.quantity) : ''}${isNum(p.notional) ? ` (${fmtMoney(p.notional, p.currency)} notional)` : ''}${p.status === 'filled' ? `, filled at ${fmtPrice(p.averagePrice)}` : ', proposed'}`] : null,
+    p ? ['Direction and amount', `${p.direction === 'short' ? 'Short' : 'Long'} ${isNum(p.quantity) ? fmtQty(p.quantity) : ''}${isNum(p.notional) ? ` (${fmtMoney(p.notional, p.currency)} notional at the current mark${p.priceObservation && isNum(p.priceObservation.value) ? ` of ${fmtPrice(p.priceObservation.value)}` : ''})` : ''}${p.status === 'filled' ? `, filled at ${fmtPrice(p.averagePrice)}` : ', proposed'}`] : null,
     ['Book and Account', `${q.book.name} / ${q.account ? (q.account.kind === 'treasury' ? 'Treasury' : q.account.name) : 'whole Book'}`],
     ['Hedge scope', SCOPE_LABEL[q.scope.type] || q.scope.type],
     ['Investment Strategy', q.investmentStrategy?.name || html`<${Missing} reason="Not set" />`],

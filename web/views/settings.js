@@ -1,12 +1,16 @@
 // Settings.
 //
-// Appearance (system, light or dark), the current Book's paper-desk assumptions, and what this
-// Terminal is. The assumptions are the parameters the simulation engine reads for fees, fills,
+// Appearance (system, light or dark), the market calendars settlement dates are worked out on,
+// the current Book's paper-desk assumptions, and what this Terminal is. The calendars are the
+// Terminal's own rule-based ones, with holidays added by hand, until Shaffer MarketData supplies
+// market calendars; a market with none falls back to weekends only and is flagged wherever a date
+// is shown. The assumptions are the parameters the simulation engine reads for fees, fills,
 // settlement, short selling, short options and dividends. They are editable assumptions of the
 // paper desk, not market data and not a risk model. Only values the engine uses are shown.
 import { html, useEffect, useState } from '../vendor/preact-htm.js';
 import { bump, fmtNum, fmtTime, get, isNum, put, refreshStatus, setTheme, toast, useLive, useStore } from '../lib/core.js';
-import { Button, Check, ErrorNote, KV, Notice, Num, Panel, Pill, Seg } from '../lib/ui.js';
+import { Button, Check, ErrorNote, KV, Notice, Num, Panel, Pill, Seg, Select, Text } from '../lib/ui.js';
+import { COUNTRY_CALENDAR } from './registry.js';
 
 const FAMILY_LABEL = { equity: 'Equities', fund: 'Funds', spot: 'Spot assets', crypto: 'Digital assets', manual: 'Manually valued holdings', option: 'Listed options', future: 'Futures', fx: 'Spot FX', bond: 'Debt securities', forward: 'Forwards and FRAs', otcoption: 'OTC options', swap: 'Swaps', cds: 'Credit default swaps', foreignCash: 'Foreign-listed cash securities' };
 const getPath = (obj, path) => path.split('.').reduce((o, k) => (o === null || o === undefined ? undefined : o[k]), obj);
@@ -139,6 +143,103 @@ function Assumptions({ book }) {
   </div>`;
 }
 
+// ---- market calendars ---------------------------------------------------------------------------------------------
+const DAY_NAME = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MONTH_NAME = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const utc = (iso) => new Date(`${iso}T00:00:00Z`);
+/** A real calendar date written YYYY-MM-DD (2026-02-31 is not one). */
+const isDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(utc(s).getTime()) && utc(s).toISOString().slice(0, 10) === s;
+const longDate = (iso) => `${DAY_NAME[utc(iso).getUTCDay()]} ${utc(iso).getUTCDate()} ${MONTH_NAME[utc(iso).getUTCMonth()]} ${iso.slice(0, 4)}`;
+/** Which venues and currencies a built-in calendar serves. */
+function usedFor(id, byCcy) {
+  const countries = Object.keys(COUNTRY_CALENDAR).filter((c) => COUNTRY_CALENDAR[c] === id && c !== 'UK');
+  const ccys = Object.keys(byCcy).filter((c) => byCcy[c] === id);
+  if (id === 'US') return 'Venues in US and instruments in a US market view, except debt securities.';
+  if (id === 'USBOND') return 'Debt securities on a US venue or in a US market view.';
+  if (id === 'USD') return 'US dollar payments. Every spot FX value date must also be a US dollar banking day.';
+  if (id === 'WEEKEND') return 'Any venue country or currency with no calendar here. Holidays entered for it apply to all of those markets together.';
+  if (id === 'ALLDAYS') return 'Digital assets. No day is a holiday.';
+  return [countries.length ? `Venues in ${countries.join(', ')}` : '', ccys.length ? `${ccys.join(', ')} payments` : ''].filter(Boolean).join('; ') + '.';
+}
+
+function Calendars({ today }) {
+  const live = useLive(() => get('/api/calendars'), [], { interval: false });
+  const [data, setData] = useState(null); // the payload returned by the last save
+  const [cal, setCal] = useState('');
+  const [date, setDate] = useState('');
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState(null);
+  useEffect(() => { setData(null); }, [live.data]);
+  const d = data || live.data;
+  if (!d) return live.error ? html`<${ErrorNote} error=${live.error} />` : html`<div class="note">Loading the calendars…</div>`;
+  const editable = d.calendars.filter((c) => c.id !== 'ALLDAYS');
+  const save = async (id, dates, done) => {
+    setBusy(id); setError(null);
+    try { setData(await put(`/api/calendars/${id}/holidays`, { dates })); bump(); toast(done); return true; } catch (err) { setError(err); return false; } finally { setBusy(''); }
+  };
+  const add = async () => {
+    const c = d.calendars.find((x) => x.id === cal);
+    const day = date.trim();
+    if (!c) return setError(new Error('Choose the calendar the holiday belongs to.'));
+    if (!isDate(day)) return setError(new Error(!day ? 'Enter the date of the holiday as YYYY-MM-DD.' : /^\d{4}-\d{2}-\d{2}$/.test(day) ? `${day} is not a date on the calendar. Check the month and the day.` : `"${day}" is not a date in the form YYYY-MM-DD, for example ${today}.`));
+    if ([0, 6].includes(utc(day).getUTCDay())) return setError(new Error(`${day} is a ${DAY_NAME[utc(day).getUTCDay()]}. Weekends are never business days, so there is nothing to add.`));
+    if (c.extra.includes(day)) return setError(new Error(`${day} is already an extra holiday of ${c.id}.`));
+    if (c.holidays.includes(day)) return setError(new Error(`${day} is already a holiday of ${c.id} by its rules.`));
+    if (await save(c.id, [...c.extra, day].sort(), `Holiday added to ${c.id}.`)) setDate('');
+    return undefined;
+  };
+  const upcoming = (c) => [...new Set([...c.holidays, ...c.extra])].filter((x) => x >= today).sort();
+  const columns = (c) => {
+    const next = upcoming(c), shown = next.slice(0, 4), rest = next.slice(4);
+    return html`<tr>
+      <td><span class="sym">${c.id}</span></td>
+      <td style="min-width:260px"><div>${c.label}</div><div class="sub">${usedFor(c.id, d.currencyCalendars)}</div></td>
+      <td>${c.id === 'ALLDAYS' ? html`<span class="muted">None: every day is a business day</span>`
+        : shown.length ? html`<div class="nowrap">${shown.map((x, n) => html`${n ? ', ' : ''}<span class="nowrap" title=${`${longDate(x)}${c.extra.includes(x) ? ', entered by hand' : ''}`} style=${c.extra.includes(x) ? 'font-weight:600' : ''}>${x}</span>`)}</div>
+          ${rest.length ? html`<div class="sub" title=${rest.join(', ')}>and ${rest.length} more to the end of ${d.year + 1}</div>` : null}`
+          : html`<span class="muted">${c.id === 'WEEKEND' ? 'None beyond Saturdays and Sundays' : `None left to the end of ${d.year + 1}`}</span>`}</td>
+      <td style="min-width:200px">${c.id === 'ALLDAYS' ? html`<span class="muted">Not applicable</span>` : c.extra.length
+        ? c.extra.map((x) => html`<div class="nowrap"><span title=${longDate(x)} class=${x < today ? 'muted' : ''}>${x}</span> <button class="btn link small" disabled=${Boolean(busy)} title=${`Remove ${x} from the extra holidays of ${c.id}`} onClick=${() => save(c.id, c.extra.filter((y) => y !== x), `Holiday removed from ${c.id}.`)}>Remove</button></div>`)
+        : html`<span class="muted">None entered</span>`}</td>
+    </tr>`;
+  };
+  return html`<div class="stack">
+    <p class="small" style="margin:0;max-width:110ch">Settlement dates and payment dates are worked out on these rule-based calendars until Shaffer MarketData supplies market calendars. Rules cannot know one-off closures, such as a state funeral, a weather closure or a newly declared holiday: enter those below as extra holidays. A market with no calendar here uses weekends only, and says so in the trade preview and on the instrument. The calendars apply to every Book.</p>
+    <${Panel} title="Built-in calendars" note=${`Holidays shown from ${today} to the end of ${d.year + 1}`} flush>
+      <div class="tablewrap"><table class="ledger fit"><thead><tr><th>Calendar</th><th>What it covers</th><th>Upcoming holidays</th><th>Extra holidays entered by hand</th></tr></thead>
+        <tbody>${d.calendars.map(columns)}</tbody></table></div>
+      <div style="padding:10px 12px;border-top:1px solid var(--rule)">
+        <div class="row">
+          <span class="strong small">Add an extra holiday</span>
+          <div style="width:330px"><${Select} value=${cal} onChange=${(v) => { setCal(v); setError(null); }} placeholder="Choose the calendar…" options=${editable.map((c) => ({ value: c.id, label: `${c.id}: ${c.label}` }))} /></div>
+          <div style="width:130px"><${Text} value=${date} onInput=${(v) => { setDate(v); setError(null); }} placeholder="YYYY-MM-DD" /></div>
+          <${Button} busy=${Boolean(busy)} onClick=${add}>Add holiday<//>
+          <span class="note">A change applies to dates worked out from then on. Dates entered by hand are shown in bold among the upcoming holidays.</span>
+        </div>
+        ${error ? html`<div style="margin-top:8px"><${ErrorNote} error=${error} /></div>` : null}
+      </div>
+    <//>
+    <div class="cols-2" style="align-items:start">
+      <${Panel} title="Payment calendar by currency" note="Used for FX value dates" flush>
+        <div class="tablewrap"><table class="ledger fit"><thead><tr><th>Currency</th><th>Payment calendar</th></tr></thead><tbody>
+          ${Object.entries(d.currencyCalendars).map(([ccy, id]) => html`<tr><td><span class="sym">${ccy}</span></td><td><b>${id}</b> <span class="muted">${d.calendars.find((c) => c.id === id)?.label || ''}</span></td></tr>`)}
+          <tr><td class="nowrap">Any other currency</td><td><${Pill} tone="warn">weekends only<//> No payment calendar is built in. FX value dates in it use weekends only, and the preview flags them.</td></tr>
+        </tbody></table></div>
+        <p class="note" style="margin:0;padding:8px 12px">A spot FX value date counts business days of both currencies, and must itself be a business day for both and a US dollar banking day. The same table gives the calendar of an instrument with no venue country.</p>
+      <//>
+      <${Panel} title="How an instrument gets its calendar" note="First rule that applies" flush>
+        <div class="tablewrap"><table class="ledger fit"><tbody>
+          <tr><td class="nowrap">1. Set on the instrument</td><td>A calendar named in the instrument's own terms is used as it is. Digital assets always settle on every calendar day.</td></tr>
+          <tr><td class="nowrap">2. Venue country</td><td>The country of the listing venue selects the market calendar. An instrument in a US market view with no country recorded uses the US calendars.</td></tr>
+          <tr><td class="nowrap">3. Trading currency</td><td>With no venue country, the payment calendar of the settlement or trading currency is used, and the instrument says it was inferred.</td></tr>
+          <tr><td class="nowrap">4. Weekends only</td><td>With no calendar for the country or the currency, dates use weekends only. This is never silent: the instrument and every trade preview say so.</td></tr>
+        </tbody></table></div>
+        <p class="note" style="margin:0;padding:8px 12px">Each instrument states its calendar and how it was chosen under <a href="#/instruments">Instruments</a>. Set the venue country there to change it.</p>
+      <//>
+    </div>
+  </div>`;
+}
+
 const THEMES = [{ value: '', label: 'System' }, { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }];
 
 function Appearance() {
@@ -178,7 +279,7 @@ function About({ status }) {
 
 export default function Settings({ book, status }) {
   return html`<div>
-    <div class="page-head"><div><h1>Settings</h1><div class="sub">Appearance, the paper-desk assumptions of the current Book, and what this Terminal is.</div></div></div>
+    <div class="page-head"><div><h1>Settings</h1><div class="sub">Appearance, the market calendars used for settlement dates, the paper-desk assumptions of the current Book, and what this Terminal is.</div></div></div>
     <div class="stack">
       <div class="cols-2" style="align-items:start">
         <div class="stack"><${Appearance} />
@@ -188,6 +289,8 @@ export default function Settings({ book, status }) {
         </div>
         <${About} status=${status} />
       </div>
+      <h2 id="market-calendars" style="margin-top:6px">Market calendars</h2>
+      <${Calendars} today=${status.today} />
       <h2 style="margin-top:6px">Paper-desk assumptions</h2>
       <${Assumptions} book=${book} />
     </div>

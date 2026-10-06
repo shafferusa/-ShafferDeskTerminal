@@ -104,8 +104,12 @@ view and may carry cross-market tags. Views are filters, not accounting Books.
 ## Books, Treasury, Accounts and the ledger
 
 `Book -> Treasury + Accounts`. Each is a *unit*; every transaction belongs to a Book and exactly
-one unit. Nothing is pooled across Books. Capital enters and leaves through Treasury. A transfer
+one unit. A Book is a separate workspace: nothing is pooled, totalled or transferred across Books,
+and no API or screen spans more than one. Capital enters and leaves through Treasury. A transfer
 between units never converts currency.
+
+An accounting scope (`books.scopeUnits`) is `book`, `treasury`, `accounts`, one unit id, or several
+unit ids joined by commas. A scope that names a unit outside the Book is refused.
 
 The ledger is double-entry. An event (`events`, the immutable audit trail) has balanced `entries`
 per unit and currency. Each entry also stores its reporting-currency amount, the FX rate and the
@@ -133,6 +137,38 @@ Reserved cash is not a ledger movement. It is a row in `holds` that reduces what
 reserved, available to trade (settled plus what is owed to the unit, less what it owes and what is
 reserved) and available to withdraw (settled only).
 
+### Borrowing, balance sheets and consolidation (`core/accounting.js`)
+
+Treasury or any Account can borrow. The authoritative record of a borrowing is the position that
+carries the liability, in the unit that borrowed. `accounting.borrowings(bookId, scope)` reads the
+register from those positions: ID, owner, whether it is Account-originated, lender, currency,
+principal, rate, maturity, collateral, next payment, accrued interest, interest and fees to date.
+Nothing is copied into Treasury to make an Account's borrowing visible there: Treasury's page and
+the Treasury-only balance sheet show it under oversight, outside Treasury's own liabilities.
+
+`accounting.balanceSheet(bookId, scope)` is a consolidation worksheet: one column per unit in the
+scope, an eliminations column and a total. Assets and liabilities come from the ledger accounts
+below. Funding between Treasury and Accounts sits in `internal`; across the whole Book it nets to
+zero and is shown as eliminated (any residual is reported, not hidden). External principal,
+interest and fees therefore count once at Book level. Net assets are reconciled to capital,
+internal funding and results to date.
+
+`accounting.navStatus` marks a net asset value provisional when a position has no price, a mark is
+stale, or a currency conversion is missing or stale, and lists each affected item with its owner.
+
+`accounting.holdingsOf` reports holdings gross per instrument: long, short and net, with each
+owning unit. No screen shows a net quantity as a long holding.
+
+## Calendars (`quant/calendar.js`)
+
+Holiday rules are built in for `US` (NYSE), `USBOND` (SIFMA), `USD` (Federal Reserve), `UK`,
+`TARGET`, `JP` and `CA`; `A+B` is a joint calendar. `calendarInfo(inst)` picks a calendar from an
+explicit term, the venue country or the currency, and reports the basis; a market with none falls
+back to `WEEKEND` and is flagged in the instrument view and as a warning in the preview.
+`fxValueDate` uses both currencies' calendars (and US dollar days for crosses). Holidays entered
+by hand are stored as a setting and applied on start. These are stand-ins until Shaffer MarketData
+supplies calendars.
+
 ## Packages, orders and fills
 
 1. **Build.** An execution template (`core/templates.js`) or a custom list turns into legs.
@@ -141,8 +177,13 @@ reserved) and available to withdraw (settled only).
    checked: borrow availability, cash by currency, margin, collateral, reservations, existing
    positions, settlement timing. The result carries blocking errors, warnings, a payoff view and a
    one-time confirmation token. The preview is editable; edited legs are re-checked from scratch.
+   Every subtotal and total is derived from the legs of one price snapshot. The preview also
+   reports protection already present in the template or the Account (`analyzeProtection`);
+   adding more is an error unless the request says it is deliberate.
 3. **Confirm** (`packages.submit`). One confirmation creates one strategy instance; each leg
-   becomes its own order. A token can be used once.
+   becomes its own order. A token can be used once. The browser sends back the cash total it
+   displayed; if re-pricing moves it by more than `fill.maxPreviewDriftPct`, the confirmation is
+   refused with `preview_changed` and the new preview is returned for review.
 4. **Match** (`core/orders.js`). Legs are not assumed to execute together. A leg waits for its
    dependencies, is rejected if a dependency fails, and is scaled down if a dependency only partly
    fills. Fills use quoted bid/ask where there is one, otherwise a named fill model; a stated price
@@ -165,6 +206,13 @@ per-leg checks as any other package, and stay linked to the primary position. Wh
 exposure changes, the strategy is flagged for review; nothing is traded without confirmation.
 No hedge selection or sizing logic exists in the Terminal.
 
+A request made while Analytics Lab is unavailable is stored as waiting. It stays on the position
+(Accounting, open positions) and in the review queue (`hedge.queue`). Each engine cycle calls
+`hedge.refreshWaiting`, which re-asks for the same request, in place, against the exposure as it
+is then; it never creates a second request and never trades. The popup's cost table is built only
+from the Terminal's own priced legs; the service's estimate is shown beside it for comparison.
+"Execute now" submits the displayed preview with its expected cash, under the same drift guard.
+
 ## Engine (`core/engine.js`)
 
 One cycle: refresh what working orders need, match orders, settle what is due, run due lifecycle
@@ -178,7 +226,7 @@ observation it is waiting for.
 
 | File | Role |
 |---|---|
-| `app.js` | Shell, routing, Book selector, connection state, demo clock |
+| `app.js` | Shell, routing, Book selector, sidebar (Accounting, Treasury and its Accounts, Strategies, Marketplaces, Reference), Account in use, connection state, demo clock |
 | `lib/core.js` | API helpers, shared state, live reload, number formatting |
 | `lib/ui.js` | The UI kit: prices with provenance, missing values, waiting states, tables, dialogs, charts |
 | `lib/contracts.js` | Instrument picker (with the Book's holdings) and schema-driven contract forms per family |
@@ -193,3 +241,10 @@ reload their data; a slow poll covers a dropped stream.
 equities and shorts, partial fills, options and expiry, futures, FX and multi-currency P&L, fixed
 income, financing, swaps and other OTC products, lifecycle events and recovery actions, the
 awaiting state with manual prices, the hedge workflows, and catalog coverage.
+
+`test/core/reconciliation.test.js` checks the books rather than the screens: calendars and value
+dates, an Account-originated borrowing as one record counted once, two-currency consolidation,
+internal transfers and their elimination, hedge preview totals against the entries posted on
+execution, a refused confirmation after a price move, duplicate protection, gross holdings, a
+failed then completed settlement, provisional NAV, a waiting hedge request refreshed in place, and
+a total-return swap with collateral, resets, financing and close-out.

@@ -176,7 +176,13 @@ export function createAccounting(app) {
       categories, unrealized, fx,
       investmentPnl: total, complete,
       capital: { ...flows, net: netFlows, note: 'Capital contributions, withdrawals and internal transfers are not investment performance.' },
-      nav: { start: navStart, end: m.navRc, endComplete: m.navComplete, provisional: m.nav.provisional, affected: navStatus(bookId, m).affected, explained: periodKnown && total !== null ? money(navStart + netFlows + total, rc) : null },
+      nav: (() => {
+        const explained = periodKnown && total !== null ? money(navStart + netFlows + total, rc) : null;
+        // Start + flows + P&L is built from entries converted when they were posted; the NAV from balances
+        // converted now. With every price and rate present they agree to within rounding of the lines.
+        const difference = explained !== null && m.navComplete && complete ? money(m.navRc - explained, rc) : null;
+        return { start: navStart, end: m.navRc, endComplete: m.navComplete, provisional: m.nav.provisional, affected: navStatus(bookId, m).affected, explained, difference, differenceIsRounding: difference !== null ? Math.abs(difference) <= 0.05 : null };
+      })(),
       missing: { unpriced: m.nav.unpriced, fxMissing: m.nav.fxMissing, stale: m.nav.stale, fxStale: m.nav.fxStale },
       awaitingMessage: app.data.describe().awaitingMessage, marketConnected: app.data.marketConnected(),
     };
@@ -283,7 +289,7 @@ export function createAccounting(app) {
       const interest = sum(['pnl.funding', 'pnl.borrow']), fees = sum(['pnl.fee', 'pnl.commission']);
       const strat = p.strategy_id ? app.packages.getStrategyRow(p.strategy_id) : null;
       let collateral;
-      if (inst.family === 'repo') collateral = { kind: 'securities', description: `${coll ? coll.symbol || coll.name : 'Securities'}: ${t.collateralQty} pledged, haircut ${((t.haircut || 0) * 100).toFixed(2)}%`, instrument: coll ? { id: coll.id, symbol: coll.symbol, name: coll.name } : null, qty: t.collateralQty };
+      if (inst.family === 'repo') collateral = { kind: 'securities', description: `${coll ? coll.symbol || coll.name : 'Securities'}: ${Number(t.collateralQty).toLocaleString('en-US')} pledged, haircut ${((t.haircut || 0) * 100).toFixed(2)}%`, instrument: coll ? { id: coll.id, symbol: coll.symbol, name: coll.name } : null, qty: t.collateralQty };
       else if (inst.family === 'secloan') { const held = ledger.positionBalance(p.id, 'cash.restricted', ccy); collateral = { kind: 'cash', description: `Cash collateral ${((t.collateralPct || 1) * 100).toFixed(0)}% of market value, held as restricted cash`, cash: held || null }; }
       else if (Array.isArray(t.collateral) && t.collateral.length) collateral = { kind: 'securities', description: t.collateral.map((c) => { const cp = positions.get(c.positionId); const ci = cp ? instruments.get(cp.instrument_id) : null; return `${c.qty} ${ci ? ci.symbol || ci.name : 'securities'}`; }).join(', ') };
       else collateral = { kind: 'none', description: t.loanType === 'margin' ? 'Secured on the Account\'s holdings (margin loan); no specific pledge recorded' : 'None (unsecured)' };
@@ -396,6 +402,8 @@ export function createAccounting(app) {
       // In the whole Book the internal balances must cancel; anything left would be an error, so it is reported.
       elimination: whole ? { rc: money(-internalSum.rc, rc), byCurrency: internalSum.byCurrency.map((x) => ({ ccy: x.ccy, amount: -x.amount })) } : null,
       total: whole ? cell(new Map()) : internalSum, residual: whole ? internalSum.byCurrency.filter((x) => Math.abs(x.amount) > 0.004) : [],
+      // Gross sides of the elimination, in the reporting currency: funding received by units, and advanced by units.
+      gross: { received: money(Object.values(internalCells).reduce((a, c) => a + Math.max(0, c.rc), 0), rc), advanced: money(Object.values(internalCells).reduce((a, c) => a + Math.max(0, -c.rc), 0), rc) },
     };
     const resultCells = Object.fromEntries(units.map((u) => [u.id, { rc: money(netCells[u.id].rc - capitalCells[u.id].rc - internalCells[u.id].rc, rc), complete: netCells[u.id].complete && capitalCells[u.id].complete && internalCells[u.id].complete, byCurrency: [] }]));
     const results = { key: 'results', label: 'Results to date', note: 'Realized and unrealized profit and loss, income, expenses and FX effects, in the reporting currency.', cells: resultCells, elimination: null,
