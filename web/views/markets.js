@@ -13,15 +13,6 @@ const DESCRIPTION = {
   FOREIGN_DERIV: 'Foreign-listed derivatives and OTC contracts assigned to foreign market exposure.',
 };
 
-function Fair({ a, field }) {
-  if (!a || !isNum(a[field])) return html`<${Missing} reason="Supplied by Analytics Lab when connected" />`;
-  return fmtPrice(a[field]);
-}
-function Gap({ a, field }) {
-  if (!a || !isNum(a[field])) return html`<${Missing} reason="Supplied by Analytics Lab when connected" />`;
-  return html`<${Signed} value=${a[field]} suffix="%" />`;
-}
-
 export default function Markets({ args, book, status }) {
   const view = VIEW_LABEL[args[0]] ? args[0] : 'US_CASH';
   const [list, setList] = useState('all');
@@ -56,20 +47,23 @@ export default function Markets({ args, book, status }) {
   const newWatchlist = () => openOverlay((close) => html`<${NameDialog} title="New watchlist" label="Watchlist name" onClose=${close} onSave=${async (name) => { const r = await post('/api/watchlists', { name, marketView: view }); await base.reload(); setList(r.id); }} />`);
   const create = async () => { const m = await import('./registry.js'); m.openCreateInstrument({ view, onDone: () => base.reload() }); };
 
+  // Fair price and Gap % sit beside the current market price. Analytics Lab supplies two fair values
+  // (fundamental and realistic), so each cell carries both, one above the other.
+  const two = (i, f1, f2, draw) => {
+    const a = qt[i.id]?.analytics;
+    if (!a || (!isNum(a[f1]) && !isNum(a[f2]))) return html`<${Missing} reason="Supplied by Analytics Lab when connected" />`;
+    return html`<div title="Fundamental">${isNum(a[f1]) ? draw(a[f1]) : html`<${Missing} reason="Not supplied" />`}</div><div class="sub" title="Realistic">${isNum(a[f2]) ? draw(a[f2]) : html`<${Missing} reason="Not supplied" />`}</div>`;
+  };
   const columns = [
-    { label: 'Instrument', render: (i) => html`<div class="sym">${i.symbol || i.name}</div><div class="sub clip" title=${i.name}>${i.symbol ? i.name : i.id}</div>` },
-    { label: 'Product', render: (i) => html`<div>${i.support.productName.replace(/ \(.*\)$/, '')}</div><div class="sub">${i.venue || (i.venueType === 'otc' ? 'OTC' : '')}${i.domicile ? `, issuer ${i.domicile}` : ''}</div>` },
+    { label: 'Instrument', render: (i) => html`<div class="sym">${i.symbol || i.name}</div><div class="sub clip" style="max-width:200px" title=${i.name}>${i.symbol ? i.name : i.id}</div>` },
+    { label: 'Product', render: (i) => html`<div class="clip" style="max-width:150px" title=${i.support.productName}>${i.support.productName.replace(/ \(.*\)$/, '')}</div><div class="sub">${[i.venue || (i.venueType === 'otc' ? 'OTC' : ''), i.tradingCcy].filter(Boolean).join(', ')}</div>` },
+    { label: 'Held in this Book', align: 'r', title: 'What this Book already holds, long or short. Hover for the Accounts.', render: (i) => html`<${Holdings} h=${i.holdings} />` },
     { label: 'Current market price', align: 'r', render: (i) => html`<${Price} obs=${qt[i.id]?.observation} reason=${marketAwaiting ? status.data.awaitingMessage : 'No price available'} />` },
     { label: 'Bid / ask', align: 'r', render: (i) => (isNum(qt[i.id]?.observation?.bid) ? `${fmtPrice(qt[i.id].observation.bid)} / ${fmtPrice(qt[i.id].observation.ask)}` : html`<${Missing} />`) },
     { label: 'Change', align: 'r', render: (i) => { const o = qt[i.id]?.observation; return o && isNum(o.value) && isNum(o.prevClose) && o.prevClose ? html`<${Signed} value=${(o.value / o.prevClose - 1) * 100} suffix="%" />` : html`<${Missing} />`; } },
-    { label: 'Fundamental fair price', align: 'r', title: 'Fundamental Fair Value from Analytics Lab. An analytical value, never an executable quote.', render: (i) => html`<${Fair} a=${qt[i.id]?.analytics} field="fundamentalFairValue" />` },
-    { label: 'Gap %', align: 'r', title: 'Fundamental Gap', render: (i) => html`<${Gap} a=${qt[i.id]?.analytics} field="fundamentalGap" />` },
-    { label: 'Realistic fair price', align: 'r', title: 'Realistic Fair Value from Analytics Lab. An analytical value, never an executable quote.', render: (i) => html`<${Fair} a=${qt[i.id]?.analytics} field="realisticFairValue" />` },
-    { label: 'Gap %', align: 'r', title: 'Realistic Gap', render: (i) => html`<${Gap} a=${qt[i.id]?.analytics} field="realisticGap" />` },
-    { label: 'Held in this Book', align: 'r', title: 'What this Book already holds, long or short. Hover for the Accounts.', render: (i) => html`<${Holdings} h=${i.holdings} />` },
-    { label: 'Ccy', render: (i) => i.tradingCcy },
+    { label: 'Fair price', align: 'r', title: 'Fair value from Analytics Lab: fundamental above, realistic below. An analytical value, never an executable quote.', render: (i) => two(i, 'fundamentalFairValue', 'realisticFairValue', fmtPrice) },
+    { label: 'Gap %', align: 'r', title: 'Gap between the current market price and each fair value: fundamental above, realistic below.', render: (i) => two(i, 'fundamentalGap', 'realisticGap', (v) => html`<${Signed} value=${v} suffix="%" />`) },
     { label: 'Paper support', render: (i) => html`<${Support} level=${i.support.level} note=${i.support.note} />` },
-    { label: '', align: 'r', render: (i) => html`<${Button} small onClick=${(e) => { e.stopPropagation(); openInstrument(i.id, { tab: 'trade' }); }}>Trade<//>` },
   ];
 
   return html`<div>
@@ -93,7 +87,7 @@ export default function Markets({ args, book, status }) {
       ${base.loading && !base.data ? html`<${Empty}>Loading instruments…<//>` : html`<${Table} margin columns=${columns} rows=${shown} rowKey=${(i) => i.id} onRowClick=${(i) => openInstrument(i.id)}
         empty=${{ title: instruments.length ? 'Nothing matches' : `No instruments in ${VIEW_LABEL[view]} yet`, children: instruments.length ? 'Clear the filter or choose another list.' : marketAwaiting ? 'Reference data arrives with the Shaffer MarketData connection. You can also register an instrument by hand with New instrument.' : 'Register one with New instrument.' }} />`}
     </div></div>
-    <p class="note" style="margin-top:8px">Market views are filters. A listed product is placed by its listing venue; issuer domicile and underlying geography are stored separately. Fair prices are analytical values and are never used to fill an order.</p>
+    <p class="note" style="margin-top:8px">Choose a row to open its trade ticket. Fair price and Gap % show the fundamental value above the realistic one. Market views are filters. A listed product is placed by its listing venue; issuer domicile and underlying geography are stored separately. Fair prices are analytical values and are never used to fill an order.</p>
   </div>`;
 }
 

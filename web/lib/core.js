@@ -125,6 +125,7 @@ export const isNum = (x) => typeof x === 'number' && Number.isFinite(x);
 export function fmtNum(x, dp = 2, { sign = false } = {}) {
   if (!isNum(x)) return DASH;
   const s = Math.abs(x).toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp });
+  if (Number(Math.abs(x).toFixed(dp)) === 0) return s; // a value that rounds to zero carries no sign
   if (x < 0) return `−${s}`;
   return sign && x > 0 ? `+${s}` : s;
 }
@@ -139,11 +140,13 @@ export function fmtQty(x) {
   const s = a.toLocaleString('en-US', { maximumFractionDigits: a >= 1000 ? 2 : 6 });
   return x < 0 ? `−${s}` : s;
 }
+/** A price: at least two decimals, and as many more as it carries (up to 3 above 10, 4 above 1, 6 below), so an FX rate keeps its pips. */
 export function fmtPrice(x) {
   if (!isNum(x)) return DASH;
   const a = Math.abs(x);
-  const dp = a >= 1000 ? 2 : a >= 10 ? 2 : a >= 1 ? 3 : 5;
-  return fmtNum(x, dp);
+  const max = a >= 1000 ? 2 : a >= 10 ? 3 : a >= 1 ? 4 : 6;
+  const s = a.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: max });
+  return x < 0 ? `−${s}` : s;
 }
 export const fmtPct = (x, dp = 2, opts) => (isNum(x) ? `${fmtNum(x, dp, opts)}%` : DASH);
 export function fmtAge(sec) {
