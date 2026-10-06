@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Shaffer Desk Terminal</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2314233b'/%3E%3Cpath d='M7 22h18M7 16h18M7 10h18' stroke='%23e6ece4' stroke-width='1.6'/%3E%3Cpath d='M12 6v20' stroke='%23d0443a' stroke-width='1.6'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/app.css">
+<link rel="modulepreload" href="/vendor/preact-htm.js">
+<link rel="modulepreload" href="/lib/ui.js">
+<link rel="modulepreload" href="/lib/core.js">
+<script>
+  // Apply the saved theme before first paint.
+  try { var t = localStorage.getItem('sdt.theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+</head>
+<body>
+<div id="app"><div class="boot">Shaffer Desk Terminal</div></div>
+<script type="module" src="/app.js"></script>
+</body>
+</html>

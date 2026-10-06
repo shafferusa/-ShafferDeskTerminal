@@ -1,0 +1,17 @@
+{
+  "name": "shaffer-desk-terminal",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shaffer Desk Terminal: persistent paper-trading front end for the Shaffer System. All execution, borrowing, lending, funding, collateral and settlement is simulated.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server/index.js",
+    "dev": "node --disable-warning=ExperimentalWarning --watch server/index.js",
+    "demo": "node --disable-warning=ExperimentalWarning server/index.js --demo",
+    "test": "node --disable-warning=ExperimentalWarning --test",
+    "coverage": "node scripts/coverage-report.js"
+  }
+}
