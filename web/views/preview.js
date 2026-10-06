@@ -6,8 +6,9 @@
 // every check. Legs are editable; an edited package must be re-checked before it can be confirmed.
 // One explicit confirmation submits the package. The confirmation token can be used only once.
 import { html, useState } from '../vendor/preact-htm.js';
-import { bump, fmtMoney, fmtNum, fmtPrice, fmtQty, isNum, post, toast } from '../lib/core.js';
-import { Button, Check, Checks, ErrorNote, Modal, Money, Notice, Num, PayoffChart, Pill, Price, Prov, PURPOSE_LABEL, Select, Table } from '../lib/ui.js';
+import { bump, fmtMoney, fmtNum, fmtPrice, fmtQty, fmtTime, isNum, openOverlay, post, toast } from '../lib/core.js';
+import { Button, Check, Checks, ErrorNote, Field, Modal, Money, Notice, Num, PayoffChart, Pill, Price, Prov, PURPOSE_LABEL, Select, Table, Text } from '../lib/ui.js';
+import { ContractFields, draftToContract } from '../lib/contracts.js';
 
 const ORDER_TYPES = [{ value: 'market', label: 'Market' }, { value: 'limit', label: 'Limit' }, { value: 'stop', label: 'Stop' }, { value: 'stop_limit', label: 'Stop limit' }];
 const TIFS = [{ value: 'day', label: 'Day' }, { value: 'gtc', label: 'Until cancelled' }];
@@ -15,6 +16,25 @@ const TIFS = [{ value: 'day', label: 'Day' }, { value: 'gtc', label: 'Until canc
 function TermsList({ details }) {
   if (!details?.length) return null;
   return html`<dl class="terms">${details.map(([k, v]) => html`<dt>${k}</dt><dd>${String(v)}</dd>`)}</dl>`;
+}
+
+/** The cash requirement on screen, sent with a confirmation so the server can refuse it if prices have moved. */
+export const expectedOf = (pv) => ({ cash: Object.fromEntries(Object.values(pv.totals.cash || {}).map((r) => [r.ccy, r.required])) });
+
+/**
+ * Full contract ticket for a leg that carries a new contract (a swap, forward, CDS, OTC option or
+ * loan): every term can be read and changed here before the package is re-checked. A swap shows
+ * its legs, benchmark and spread, schedules, currencies, counterparty and collateral.
+ */
+function ContractDialog({ leg, contract, onSave, onClose }) {
+  const [d, setD] = useState({ ...contract, family: leg.instrument.family, terms: JSON.parse(JSON.stringify(contract.terms || {})) });
+  return html`<${Modal} size="mid" title=${`Contract terms: ${contract.name}`} sub="Changes apply to this package only. Re-check the package afterwards; the contract is registered when the trade is confirmed." onClose=${onClose}
+    footer=${html`<span class="grow"></span><${Button} onClick=${onClose}>Cancel<//><${Button} kind="primary" onClick=${() => { onSave(draftToContract(d)); onClose(); }}>Use these terms<//>`}>
+    <div class="grid-form">
+      <${Field} label="Contract name" span=${2}><${Text} value=${d.name} onInput=${(v) => setD({ ...d, name: v })} /><//>
+      <${Field} label="Currency"><${Text} value=${d.tradingCcy} onInput=${(v) => setD({ ...d, tradingCcy: v.toUpperCase() })} /><//>
+      <${ContractFields} draft=${d} onChange=${setD} />
+    </div><//>`;
 }
 
 function LegRow({ leg, edit, onEdit, onRemove, canRemove }) {
@@ -32,6 +52,8 @@ function LegRow({ leg, edit, onEdit, onRemove, canRemove }) {
       ${leg.note ? html`<div class="sub">${leg.note}</div>` : null}
       ${(leg.econNotes || []).slice(0, open ? 9 : 1).map((n) => html`<div class="sub">${n}</div>`)}
       ${hasTerms ? html`<button class="btn link small" onClick=${() => setOpen(!open)}>${open ? 'Hide contract terms' : 'Show contract terms'}</button>` : null}
+      ${leg.contract ? html` <button class="btn link small" onClick=${() => openOverlay((close) => html`<${ContractDialog} leg=${leg} contract=${e.contract || leg.contract} onClose=${close} onSave=${(c) => set({ contract: c })} />`)}>Edit contract terms</button>` : null}
+      ${edit?.contract ? html`<div class="sub" style="color:var(--amber)">Contract terms changed. Re-check to see them applied.</div>` : null}
       ${open && hasTerms ? html`<${TermsList} details=${leg.instrument.details} />` : null}
       ${leg.terms && open && !hasTerms ? html`<${TermsList} details=${leg.terms} />` : null}
     </td>
@@ -138,18 +160,20 @@ export function PreviewModal({ preview, onClose, onDone, extra = {}, confirmLabe
   const [error, setError] = useState(null);
   const [done, setDone] = useState(false);
   const dirty = Object.keys(edits).length > 0 || removed.length > 0;
+  const prot = pv.protection;
+  const needsAck = Boolean(prot?.needsAcknowledgement && !prot.acknowledged);
 
   const editedLegs = () => {
     const keep = pv.legs.filter((l) => !removed.includes(l.n));
     const renum = new Map(keep.map((l, i) => [l.n, i + 1]));
     return keep.map((l) => ({ ...l, ...(edits[l.n] || {}), n: renum.get(l.n), dependsOn: (l.dependsOn || []).filter((d) => renum.has(d)).map((d) => renum.get(d)) }));
   };
-  const recheck = async () => {
+  const recheck = async (more = {}) => {
     setBusy(true); setError(null);
     try {
       // The legs now on screen are the package: financing sized automatically for the first preview
       // is already among them (or was removed on purpose), so it is not sized and added again.
-      const next = await post('/api/strategies/preview', { ...pv.input, ...extra, financing: null, legs: editedLegs(), clientToken: pv.token });
+      const next = await post('/api/strategies/preview', { ...pv.input, ...extra, ...more, financing: null, legs: editedLegs(), clientToken: pv.token });
       setPv(next); setEdits({}); setRemoved([]);
     } catch (err) { setError(err); }
     setBusy(false);
@@ -158,7 +182,9 @@ export function PreviewModal({ preview, onClose, onDone, extra = {}, confirmLabe
     if (busy || done) return; // one confirmation, one submission
     setBusy(true); setError(null);
     try {
-      const out = await post('/api/strategies', { ...pv.input, ...extra, legs: pv.legs, clientToken: pv.token, confirm: true });
+      // Exactly the legs displayed, with the cash requirement displayed: the server prices them again
+      // and refuses the confirmation if the figure has moved away from what is on screen.
+      const out = await post('/api/strategies', { ...pv.input, ...extra, legs: pv.legs, clientToken: pv.token, confirm: true, expected: expectedOf(pv) });
       setDone(true);
       bump();
       const s = out.strategy;
@@ -182,13 +208,16 @@ export function PreviewModal({ preview, onClose, onDone, extra = {}, confirmLabe
     footer=${html`
       <span class="note">Simulated execution. Nothing is sent to a real market.</span><span class="grow"></span>
       <${Button} onClick=${onClose}>Cancel<//>
-      ${dirty ? html`<${Button} kind="primary" busy=${busy} onClick=${recheck}>Re-check edited package<//>`
+      ${dirty ? html`<${Button} kind="primary" busy=${busy} onClick=${() => recheck()}>Re-check edited package<//>`
         : html`<${Button} kind="primary" busy=${busy} disabled=${pv.blocking > 0 || !legs.length || done} onClick=${confirm} title=${pv.blocking ? 'Resolve the blocking checks first' : ''}>${confirmLabel}<//>`}`}>
     <div class="stack">
       ${banner}
       <${ErrorNote} error=${error} />
       ${dirty ? html`<${Notice} tone="warn">You changed the package. Re-check it before confirming; the figures below are from before your changes.<//>` : null}
-      <${Checks} checks=${pv.checks} />
+      ${needsAck ? html`<${Notice} tone="warn"><b>Protection is already in place.</b> ${prot.prior.map((x) => x.label).join('; ')}. The hedge package adds ${prot.added.map((x) => x.label).join('; ')}. ${prot.explain}
+        <div class="row" style="margin-top:6px"><${Button} small busy=${busy} onClick=${() => recheck({ extraProtection: true })}>Add this protection deliberately<//><span class="note">or remove the added hedge legs below and re-check.</span></div><//>` : null}
+      <${Checks} checks=${pv.checks.filter((k) => !(needsAck && k.code === 'extra-protection'))} />
+      <div class="note">One snapshot: every figure below was priced together at ${fmtTime(pv.generatedAt, { date: false, seconds: true })}. Cash required is the sum of the legs' purchases, fees, margin, collateral and reservations.</div>
       <div class="tablewrap"><table class="ledger legs margin">
         <thead><tr>${columns.map((c, i) => html`<th class=${i === 2 || i >= 6 ? 'r' : ''}>${c}</th>`)}</tr></thead>
         <tbody>${groups.map(([key, label]) => {

@@ -131,19 +131,39 @@ export function Signed({ value, dp = 2, suffix = '' }) {
 }
 
 /**
- * What the current Book already holds in an instrument, long or short, by Account. Shown wherever a
- * ticker is typed or picked, so there is no need to look elsewhere before selling.
- * h: { net, long, short, units: [{ name, qty }] } | null (not held) | undefined (unknown: draws nothing)
+ * What the current Book already holds in an instrument. Long and short are separate positions and
+ * are always shown gross, with the net beside them: "Long 200 | Short 100 | Net +100". The net is
+ * never presented as the holding. With `detail`, each owning Account or Treasury is listed.
+ * h: { net, long, short, units: [{ name, long, short, qty }] } | null (not held) | undefined (unknown: draws nothing)
  */
 export function Holdings({ h, detail = false, label = 'Held' }) {
   if (h === undefined) return null;
   if (!h || !h.units?.length) return html`<span class="held none">${detail ? 'Not held in this Book' : 'not held'}</span>`;
-  const side = (q) => html`<span class=${q > 0 ? 'long' : 'short'}>${q > 0 ? 'long' : 'short'} ${fmtQty(Math.abs(q))}</span>`;
-  // A long and a short of the same instrument are separate positions: show both, never a netted figure.
-  const both = (u) => html`${u.long > 0 ? side(u.long) : null}${u.long > 0 && u.short > 0 ? ', ' : ''}${u.short > 0 ? side(-u.short) : null}`;
-  const words = (u) => [u.long > 0 ? `long ${fmtQty(u.long)}` : '', u.short > 0 ? `short ${fmtQty(u.short)}` : ''].filter(Boolean).join(', ');
-  if (!detail) return html`<span class="held" title=${h.units.map((u) => `${u.name}: ${words(u)}`).join('\n')}>${both(h)}</span>`;
-  return html`<span class="held">${label}: ${h.units.map((u, i) => html`${i ? '; ' : ''}${u.name} ${both(u)}`)}</span>`;
+  const signed = (q) => `${q > 0 ? '+' : q < 0 ? '−' : ''}${fmtQty(Math.abs(q))}`;
+  const gross = (x) => {
+    const net = x.net ?? x.qty ?? x.long - x.short;
+    if (x.long > 0 && x.short > 0) return html`<span class="long">Long ${fmtQty(x.long)}</span> | <span class="short">Short ${fmtQty(x.short)}</span> | <span class="net">Net ${signed(net)}</span>`;
+    return x.long > 0 ? html`<span class="long">Long ${fmtQty(x.long)}</span>` : html`<span class="short">Short ${fmtQty(x.short)}</span>`;
+  };
+  const words = (x) => (x.long > 0 && x.short > 0 ? `Long ${fmtQty(x.long)} | Short ${fmtQty(x.short)} | Net ${signed(x.net ?? x.qty ?? x.long - x.short)}` : x.long > 0 ? `Long ${fmtQty(x.long)}` : `Short ${fmtQty(x.short)}`);
+  if (!detail) return html`<span class="held" title=${h.units.map((u) => `${u.name}: ${words(u)}`).join('\n')}>${gross(h)}</span>`;
+  return html`<span class="held">${label}: ${h.units.map((u, i) => html`${i ? '; ' : ''}<b>${u.name}</b> ${gross(u)}`)}</span>`;
+}
+/**
+ * A net asset value with its standing. When a price or a conversion rate behind it is missing or
+ * not current the figure is marked provisional, and the affected items are named.
+ * nav: { value, complete, provisional, affected: [{ detail }] }
+ */
+export function NavValue({ nav, ccy, cls = '' }) {
+  if (!nav) return html`<${Missing} />`;
+  const why = (nav.affected || []).map((a) => a.detail).join('\n');
+  return html`<span class=${cls}>${fmtMoney(nav.value, ccy)}${nav.provisional ? html` <span class="pill warn" title=${why || 'A price or conversion rate behind this figure is missing or not current.'}>provisional</span>` : null}</span>`;
+}
+/** The items that make a NAV provisional, as a list. Draws nothing when the figure is final. */
+export function NavAffected({ nav }) {
+  if (!nav?.provisional || !nav.affected?.length) return null;
+  return html`<div class="notice warn"><b>Provisional.</b> This figure rests on ${nav.affected.length} item${nav.affected.length > 1 ? 's' : ''} without a current mark:
+    <ul style="margin:4px 0 0;padding-left:18px">${nav.affected.map((a) => html`<li>${a.detail}</li>`)}</ul></div>`;
 }
 /** Holdings summary from a list of positions ({ owner, unitId, qty }), as the instrument detail returns them. */
 export function holdingsFromPositions(positions) {

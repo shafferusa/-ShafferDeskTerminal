@@ -57,13 +57,13 @@ export default function Markets({ args, book, status }) {
   const columns = [
     { label: 'Instrument', render: (i) => html`<div class="sym">${i.symbol || i.name}</div><div class="sub clip" style="max-width:200px" title=${i.name}>${i.symbol ? i.name : i.id}</div>` },
     { label: 'Product', render: (i) => html`<div class="clip" style="max-width:150px" title=${i.support.productName}>${i.support.productName.replace(/ \(.*\)$/, '')}</div><div class="sub">${[i.venue || (i.venueType === 'otc' ? 'OTC' : ''), i.tradingCcy].filter(Boolean).join(', ')}</div>` },
-    { label: 'Held in this Book', align: 'r', title: 'What this Book already holds, long or short. Hover for the Accounts.', render: (i) => html`<${Holdings} h=${i.holdings} />` },
+    { label: 'Held in this Book', align: 'r', title: 'Gross long and short holdings in this Book, with the net. Hover for the owning Accounts.', render: (i) => html`<${Holdings} h=${i.holdings} />` },
     { label: 'Current market price', align: 'r', render: (i) => html`<${Price} obs=${qt[i.id]?.observation} reason=${marketAwaiting ? status.data.awaitingMessage : 'No price available'} />` },
     { label: 'Bid / ask', align: 'r', render: (i) => (isNum(qt[i.id]?.observation?.bid) ? `${fmtPrice(qt[i.id].observation.bid)} / ${fmtPrice(qt[i.id].observation.ask)}` : html`<${Missing} />`) },
     { label: 'Change', align: 'r', render: (i) => { const o = qt[i.id]?.observation; return o && isNum(o.value) && isNum(o.prevClose) && o.prevClose ? html`<${Signed} value=${(o.value / o.prevClose - 1) * 100} suffix="%" />` : html`<${Missing} />`; } },
     { label: 'Fair price', align: 'r', title: 'Fair value from Analytics Lab: fundamental above, realistic below. An analytical value, never an executable quote.', render: (i) => two(i, 'fundamentalFairValue', 'realisticFairValue', fmtPrice) },
     { label: 'Gap %', align: 'r', title: 'Gap between the current market price and each fair value: fundamental above, realistic below.', render: (i) => two(i, 'fundamentalGap', 'realisticGap', (v) => html`<${Signed} value=${v} suffix="%" />`) },
-    { label: 'Paper support', render: (i) => html`<${Support} level=${i.support.level} note=${i.support.note} />` },
+    { label: 'Lifecycle', title: 'How much of the instrument\'s lifecycle the paper engine simulates. Separate from whether a price is available, which the price column shows.', render: (i) => html`<${Support} level=${i.support.level} note=${i.support.note} />` },
   ];
 
   return html`<div>

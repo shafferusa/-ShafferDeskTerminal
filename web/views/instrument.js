@@ -2,7 +2,7 @@
 // Analytics Lab (or its waiting state), contract terms, option chain / contract months,
 // positions held, corporate actions and price history.
 import { html, useEffect, useState } from '../vendor/preact-htm.js';
-import { bump, currentBook, fmtMoney, fmtNum, fmtPrice, fmtQty, fmtTime, get, isNum, openOverlay, post, toast, toastError, useLive, VIEW_LABEL } from '../lib/core.js';
+import { bump, currentBook, fmtMoney, fmtNum, fmtPrice, fmtQty, fmtTime, get, getState, isNum, openOverlay, post, setUnit, toast, toastError, useLive, VIEW_LABEL } from '../lib/core.js';
 import { Awaiting, Button, Check, Drawer, Empty, Field, Holdings, holdingsFromPositions, KV, LineChart, Missing, Modal, Money, Notice, Num, Panel, Pill, Price, Prov, Seg, Select, Signed, Support, Table, Tabs, Text } from '../lib/ui.js';
 import { openPreview } from './preview.js';
 
@@ -12,22 +12,24 @@ const OBJECTIVES = [
   { value: 'market_sector_reduction', label: 'Market / sector exposure reduction' }, { value: 'currency_protection', label: 'Currency protection' }, { value: 'rate_protection', label: 'Rate protection' },
   { value: 'credit_protection', label: 'Credit protection' }, { value: 'volatility_protection', label: 'Volatility protection' }, { value: 'server_defined', label: 'Other (defined by the Strategy on the server)' },
 ];
-const lastUnit = () => { try { return localStorage.getItem('sdt.unit') || ''; } catch { return ''; } };
-const saveUnit = (id) => { try { localStorage.setItem('sdt.unit', id); } catch { /* ignore */ } };
-
 export function openInstrument(id, opts = {}) {
   openOverlay((close) => html`<${InstrumentDrawer} id=${id} initialTab=${opts.tab} onClose=${close} />`);
 }
 
-/** Account / Treasury picker used by every ticket. */
+/**
+ * Account / Treasury picker used by every ticket. Choosing here also makes that Account the one
+ * in use, the same as choosing it in the sidebar, so it carries to the next ticket and the
+ * Strategy page.
+ */
 export function UnitSelect({ value, onChange, book }) {
   const b = book || currentBook();
-  return html`<${Select} value=${value} onChange=${(v) => { saveUnit(v); onChange(v); }} options=${(b?.units || []).map((u) => ({ value: u.id, label: u.kind === 'treasury' ? 'Treasury' : u.name }))} />`;
+  return html`<${Select} value=${value} onChange=${(v) => { setUnit(v); onChange(v); }} options=${(b?.units || []).map((u) => ({ value: u.id, label: u.kind === 'treasury' ? 'Treasury' : u.name }))} />`;
 }
+/** The Account in use (sidebar or last ticket), if it belongs to this Book; otherwise its first Account. */
 export function defaultUnit(book) {
   const b = book || currentBook();
-  const saved = lastUnit();
-  return b?.units.find((u) => u.id === saved)?.id || b?.units.find((u) => u.kind === 'account')?.id || b?.units[0]?.id || '';
+  const inUse = getState().unitId;
+  return b?.units.find((u) => u.id === inUse)?.id || b?.units.find((u) => u.kind === 'account')?.id || b?.units[0]?.id || '';
 }
 
 /** Order instructions shared by tickets. */
@@ -111,7 +113,7 @@ function Ticket({ inst, detail, book, onDone }) {
     return pv;
   };
 
-  if (inst.arrangement) return html`<${Notice}>This is a financing arrangement. Open, repay or terminate it from Books and Treasury.<//>`;
+  if (inst.arrangement) return html`<${Notice}>This is a financing arrangement. Open, repay or terminate it from Treasury or the Account.<//>`;
   return html`<div class="stack">
     <div class="row">
       <div><div class="note">Current market price</div><div style="font-size:20px"><${Price} obs=${obs} reason=${detail.marketState.connection === 'awaiting' ? detail.marketState.message : 'No price available'} /></div></div>
@@ -122,7 +124,7 @@ function Ticket({ inst, detail, book, onDone }) {
     ${!obs ? html`<${Awaiting} compact what="There is no price for this instrument. A paper order would wait as a working order. Enter a price on the Overview tab, or state a fill price below." />` : null}
     <div class="row" style="padding:6px 10px;border:1px solid var(--rule);border-radius:4px;background:var(--paper)"><${Holdings} h=${holdingsFromPositions(detail.positions)} detail label=${`${book.name} holds`} /></div>
     <div class="grid-form">
-      <${Field} label="Account" hint=${mine.length ? `This Account: ${mine.map((p) => `${p.qty > 0 ? 'long' : 'short'} ${fmtQty(Math.abs(p.qty))}`).join(', ')}` : 'No position in this Account'}><${UnitSelect} value=${unitId} onChange=${setUnitId} book=${book} /><//>
+      <${Field} label="Account" hint=${mine.length ? html`In this Account: <${Holdings} h=${holdingsFromPositions(mine)} />` : 'No position in this Account'}><${UnitSelect} value=${unitId} onChange=${setUnitId} book=${book} /><//>
       <${Field} label="Action" span=${2}><${Seg} value=${action} onChange=${setAction} options=${actions.map((a) => ({ value: a, label: labelOf(a), disabled: security && a === 'sell' && !longs.length, title: security && a === 'sell' && !longs.length ? 'This Account holds none to sell. To go short, choose Sell short.' : undefined }))} /><//>
       ${reducing && pool.length > 1 ? html`<${Field} label=${action === 'sell' ? 'Sell from' : 'Cover'} span=${2}><${Select} value=${from?.positionId} onChange=${setFromId} options=${pool.map((p) => ({ value: p.positionId, label: `${p.strategy?.name || 'Position'}: ${fmtQty(Math.abs(p.qty))}` }))} /><//>` : null}
       <${Field} label=${inst.qtyLabel} hint=${inst.multiplier !== 1 && inst.family !== 'bond' && inst.family !== 'swap' && inst.family !== 'cds' ? `Contract multiplier ${inst.multiplier}` : inst.family === 'bond' ? 'Face amount' : ''}><${Num} value=${qty} onInput=${setQty} /><//>
@@ -224,8 +226,11 @@ function Overview({ inst, detail, reload }) {
     <${Panel} title="Fair price and analytics" note="From Shaffer Analytics Lab"><${Analytics} a=${detail.analytics} state=${detail.analyticsState} /><//>
     <${Panel} title="Contract">
       <${KV} rows=${[
-        ['Product', html`${inst.support.productName} <${Support} level=${inst.support.level} note=${inst.support.note} />`],
-        inst.support.note ? ['Paper lifecycle', inst.support.note] : null,
+        ['Product', inst.support.productName],
+        ['Lifecycle support', html`<${Support} level=${inst.support.level} note=${inst.support.note} /> ${inst.support.note || 'Orders, settlement, accounting and scheduled events are simulated from the contract terms.'}`],
+        ['Pricing coverage', html`${inst.pricing.state === 'priced' ? html`<${Pill} tone="ok">priced now<//>` : inst.pricing.state === 'unpriced' ? html`<${Pill} tone="warn">no price yet<//>` : html`<${Pill}>not needed<//>`} ${inst.pricing.basisLabel}${inst.pricing.current ? `. Current source: ${inst.pricing.current.source} (${inst.pricing.current.status}).` : '.'} This is separate from lifecycle support.`],
+        ['Settlement calendar', html`${inst.calendar.label}${inst.calendar.fallback ? html` <${Pill} tone="warn">weekends only<//>` : ''}${inst.calendar.note ? html`<div class="sub">${inst.calendar.note}</div>` : null}`],
+        ['Listing venue country', inst.venueCountry || html`<${Missing} reason="Not recorded. It selects the settlement calendar." />`],
         ['Market view', `${VIEW_LABEL[inst.marketView]}${inst.tags.length ? ` (also tagged ${inst.tags.map((t) => VIEW_LABEL[t] || t).join(', ')})` : ''}`],
         ['Venue', inst.venue ? `${inst.venue} (${inst.venueType === 'otc' ? 'OTC' : 'exchange'})` : inst.venueType === 'otc' ? 'OTC' : null],
         ['Issuer', inst.issuer], ['Issuer domicile', inst.domicile], ['Underlying geography', inst.underlyingGeo],

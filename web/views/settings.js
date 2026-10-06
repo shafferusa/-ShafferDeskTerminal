@@ -184,7 +184,7 @@ export default function Settings({ book, status }) {
         <div class="stack"><${Appearance} />
           <${Panel} title=${`Book: ${book.name}`}>
             <div class="set-kv"><${KV} rows=${[['Reporting currency', html`<b>${book.reportingCcy}</b>`], ['Structure', `One Treasury, ${book.units.length - 1} Account${book.units.length === 2 ? '' : 's'}`]]} /></div>
-            <p class="note" style="margin-top:8px">The reporting currency is set when a Book is created and cannot be changed afterwards: every ledger entry keeps its ${book.reportingCcy} amount at the FX rate of the day it was posted. To report in another currency, create a new Book. Rename the Book or add Accounts under <a href="#/books">Books and Treasury</a>.</p><//>
+            <p class="note" style="margin-top:8px">The reporting currency is set when a Book is created and cannot be changed afterwards: every ledger entry keeps its ${book.reportingCcy} amount at the FX rate of the day it was posted. To report in another currency, create a new Book. Rename the Book under <a href="#/books">Manage Books</a>; add Accounts under <a href="#/treasury">Treasury</a>.</p><//>
         </div>
         <${About} status=${status} />
       </div>

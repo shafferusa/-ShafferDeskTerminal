@@ -34,7 +34,7 @@ export const put = (path, body) => api(path, { method: 'PUT', body: body ?? {} }
 export const del = (path) => api(path, { method: 'DELETE' });
 
 // ---- shared state -----------------------------------------------------------------------------------
-const state = { status: null, books: [], bookId: load('sdt.book'), tick: 0, toasts: [], overlay: [], theme: load('sdt.theme') || '' };
+const state = { status: null, books: [], bookId: load('sdt.book'), unitId: load('sdt.unit'), tick: 0, toasts: [], overlay: [], theme: load('sdt.theme') || '' };
 const subs = new Set();
 function load(k) { try { return localStorage.getItem(k) || ''; } catch { return ''; } }
 function save(k, v) { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch { /* private mode */ } }
@@ -58,7 +58,20 @@ export function useStore(selector = (s) => s) {
   return last.current;
 }
 export const bump = () => setState((s) => ({ tick: s.tick + 1 }));
-export function setBook(id) { save('sdt.book', id); setState({ bookId: id }); bump(); }
+/** Switch to another Book. Each Book is its own workspace, so the Account in use is reset to one of its own. */
+export function setBook(id) {
+  save('sdt.book', id);
+  const b = state.books.find((x) => x.id === id);
+  const unitId = pickUnit(b, '');
+  save('sdt.unit', unitId);
+  setState({ bookId: id, unitId });
+  bump();
+}
+const pickUnit = (book, wanted) => book?.units.find((u) => u.id === wanted)?.id || book?.units.find((u) => u.kind === 'account')?.id || book?.units[0]?.id || '';
+/** The Account (or Treasury) in use: chosen in the sidebar or on a ticket, and carried into every trading screen. */
+export function setUnit(id) { save('sdt.unit', id); if (id !== state.unitId) setState({ unitId: id }); }
+export function currentUnit() { const b = currentBook(); return b?.units.find((u) => u.id === state.unitId) || null; }
+export const unitLabel = (u) => (u ? (u.kind === 'treasury' ? 'Treasury' : u.name) : '');
 export function setTheme(t) {
   save('sdt.theme', t);
   if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
@@ -85,7 +98,9 @@ export function openOverlay(render) {
 export async function refreshStatus() {
   const [status, books] = await Promise.all([get('/api/status'), get('/api/books')]);
   const bookId = books.items.some((b) => b.id === state.bookId) ? state.bookId : books.items[0]?.id || '';
-  setState({ status, books: books.items, bookId });
+  const unitId = pickUnit(books.items.find((b) => b.id === bookId), state.unitId);
+  if (unitId !== state.unitId) save('sdt.unit', unitId);
+  setState({ status, books: books.items, bookId, unitId });
   return status;
 }
 

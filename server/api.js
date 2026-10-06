@@ -367,7 +367,7 @@ export function createApi(app) {
   r.post('/api/hedge/requests', ({ body }) => app.hedge.request(body));
   r.get('/api/hedge/requests', ({ query }) => ({ items: app.hedge.list(query.bookId) }));
   r.get('/api/hedge/requests/:id', ({ params }) => app.hedge.get(params.id));
-  r.post('/api/hedge/requests/:id/preview', ({ params, body }) => app.hedge.previewPackage(params.id, body.packageId, { legs: body.legs }));
+  r.post('/api/hedge/requests/:id/preview', ({ params, body }) => app.hedge.previewPackage(params.id, body.packageId, { legs: body.legs, extraProtection: body.extraProtection }));
   r.post('/api/hedge/requests/:id/dismiss', ({ params }) => app.hedge.dismiss(params.id));
   r.post('/api/hedge/requests/:id/seen', ({ params }) => { app.hedge.markSeen(params.id); return { ok: true }; });
   r.get('/api/hedge/prompts', ({ query }) => ({ items: query.bookId ? app.hedge.prompts(query.bookId) : [] }));

@@ -65,7 +65,7 @@ function ScopeStrip({ book, scope, d }) {
     </div>
     <div style="flex:1;min-width:430px">${cash.length ? html`<table class="ledger"><thead><tr><th>Cash</th><th class="r">Settled</th><th class="r" title="Receivable for unsettled sales less payable for unsettled purchases">Unsettled</th><th class="r" title="Held against working orders, short options and short positions">Reserved</th><th class="r" title="Short-sale proceeds and borrow collateral. Not buying power.">Restricted</th><th class="r" title="Margin and collateral posted">Margin</th></tr></thead>
       <tbody>${cash.map((r) => html`<tr><td class="strong">${r.ccy}</td><td class="r">${fmtMoney(r.settled, r.ccy, { bare: true })}</td><td class="r">${cell(r, 'unsettled')}</td><td class="r">${cell(r, 'reserved')}</td><td class="r">${cell(r, 'restricted')}</td><td class="r">${cell(r, 'margin')}</td></tr>`)}</tbody></table>`
-      : html`<p class="note" style="margin:8px 0">No cash is held here yet. Capital is deposited into Treasury and Accounts are funded from it, under Books and Treasury.</p>`}</div>
+      : html`<p class="note" style="margin:8px 0">No cash is held here yet. Capital is deposited into Treasury and Accounts are funded from it, under Treasury.</p>`}</div>
   </div></section>`;
 }
 
@@ -233,7 +233,7 @@ function PositionsTab({ book, d, consolidated, owner, setOwner }) {
         { label: 'Cash borrowed', align: 'r', render: (c) => (c.borrowed ? html`<span class="loss">${fmtMoney(c.borrowed, c.ccy, { bare: true })}</span>` : z(0)) }, { label: 'Cash lent', align: 'r', render: (c) => z(c.lent, c.ccy) },
         { label: 'Accrued, net', align: 'r', title: 'Accrued income receivable less accrued expense payable', render: (c) => (c.accruedReceivable || c.accruedPayable ? fmtMoney(c.accruedReceivable - c.accruedPayable, c.ccy, { bare: true, sign: true }) : z(0)) },
         { label: `Settled, ${rc}`, align: 'r', render: (c) => html`<${Money} value=${c.settledRc} bare reason=${`No FX rate from ${c.ccy} to ${rc}`} />` },
-      ].filter(Boolean)} empty=${{ title: 'No cash balances', children: 'Deposit capital into Treasury and fund the Accounts under Books and Treasury.' }} />
+      ].filter(Boolean)} empty=${{ title: 'No cash balances', children: 'Deposit capital into Treasury and fund the Accounts under Treasury.' }} />
     <//>
     ${!owner && d.nav.byCurrency.length ? html`<${Section} title="Net assets by currency" note=${`Local amounts and their ${rc} equivalents at the current FX rate. Each balance is counted once.`}>
       <div class="tablewrap"><table class="ledger"><thead><tr><th>Currency</th><th class="r">Cash, all kinds</th><th class="r">Unsettled</th><th class="r">Positions at cost</th><th class="r">Unrealized</th><th class="r">Loans</th><th class="r">Accrued</th><th class="r">Net assets</th><th class="r">FX rate to ${rc}</th><th class="r">Net assets, ${rc}</th></tr></thead>

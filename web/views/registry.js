@@ -23,7 +23,7 @@ const shafferMissing = html`<${Missing} reason="Not linked. The Shaffer MarketDa
 function notRegistered(p) {
   if (p.support === 'planned') return `${short(p.name)} is not implemented yet and cannot be registered.`;
   if (p.family === 'cash') return 'Currency balances are held as ledger cash in Treasury and each Account, not as registry instruments. Register a currency pair to convert between currencies.';
-  if (ARRANGEMENTS.includes(p.family)) return `${short(p.name)} is opened from Books and Treasury, where its cash and collateral legs are previewed. The arrangement registers itself when the ticket is confirmed.`;
+  if (ARRANGEMENTS.includes(p.family)) return `${short(p.name)} is opened from Treasury or the Account, where its cash and collateral legs are previewed. The arrangement registers itself when the ticket is confirmed.`;
   if (p.id === 'short_sale') return 'A short sale is placed from the trade ticket of the security itself (Sell short), always with its securities borrow leg. Register the security, not the sale.';
   return null;
 }
@@ -136,7 +136,7 @@ function RegistryTab({ book, status, create }) {
         ${res.error && !res.data ? html`<div style="padding:12px"><${ErrorNote} error=${res.error} /></div>` : !res.data ? html`<${Empty}>Loading the registry…<//>` : html`<${Table} margin cls="tight" columns=${columns} rows=${rows} rowKey=${(i) => i.id} onRowClick=${(i) => openInstrument(i.id, { tab: 'overview' })}
           empty=${{ title: filtered ? 'Nothing matches these filters' : 'No instruments registered yet', children: filtered ? 'Clear a filter, or register the instrument with New instrument.' : marketAwaiting ? 'Reference data arrives with the Shaffer MarketData connection. Until then, register instruments by hand with New instrument.' : 'Register one with New instrument.' }} />`}
       </div></div>
-      <p class="note" style="margin-top:8px">A row opens the instrument. Financing arrangements are left out unless included above or chosen as a family: each loan, repo or securities loan registers itself when its ticket is confirmed in Books and Treasury.</p>
+      <p class="note" style="margin-top:8px">A row opens the instrument. Financing arrangements are left out unless included above or chosen as a family: each loan, repo or securities loan registers itself when its ticket is confirmed in Treasury or on the Account.</p>
     </div>
   </div>`;
 }
@@ -167,7 +167,7 @@ function CoverageTab({ create }) {
     { label: 'Class', cls: 'nowrap', render: (p) => (p.cls === 'deriv' ? 'Derivative' : 'Cash market') },
     { label: 'Paper support', render: (p) => html`<${Support} level=${p.support} />` },
     { label: 'What is simulated, and what is entered by hand', render: (p) => p.note || html`<span class="muted">${p.support === 'full' ? 'No manual steps are noted for this product.' : 'No note recorded.'}</span>` },
-    { label: '', align: 'r', cls: 'nowrap', render: (p) => { const why = notRegistered(p); return why ? html`<span class="missing" title=${why}>${p.family === 'cash' ? 'ledger cash' : p.id === 'short_sale' ? 'from the trade ticket' : p.support === 'planned' ? 'not yet' : 'opened in Books and Treasury'}</span>` : html`<${Button} small onClick=${() => create({ preset: { productId: p.id } })}>Register<//>`; } },
+    { label: '', align: 'r', cls: 'nowrap', render: (p) => { const why = notRegistered(p); return why ? html`<span class="missing" title=${why}>${p.family === 'cash' ? 'ledger cash' : p.id === 'short_sale' ? 'from the trade ticket' : p.support === 'planned' ? 'not yet' : 'opened in Treasury'}</span>` : html`<${Button} small onClick=${() => create({ preset: { productId: p.id } })}>Register<//>`; } },
   ];
   return html`<div class="stack">
     <${Panel} title="Paper lifecycle coverage" note=${`${c.total} products in the catalog`}>

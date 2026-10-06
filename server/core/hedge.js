@@ -231,7 +231,7 @@ export function createHedge(app) {
   }
 
   /** Preview a proposed package through the normal package engine (quotes, funding, collateral, per-leg checks). */
-  async function previewPackage(requestId, packageId, { legs } = {}) {
+  async function previewPackage(requestId, packageId, { legs, extraProtection } = {}) {
     const row = get(requestId);
     need(row, 'Hedge request not found.', { status: 404 });
     const req = row.request;
@@ -243,6 +243,7 @@ export function createHedge(app) {
       bookId: req.scope.bookId, unitId, template: 'custom', attachTo: attach, intent: 'hedge', legs: useLegs, hedgeLinkId: requestId, hedgePackageId: packageId || null,
       name: attach ? undefined : `Hedge: ${pkg?.label || 'package'} (${req.account?.name || req.book.name})`,
       underlyingId: req.primary?.instrument?.terminalId || null, investmentStrategy: req.investmentStrategy, holdingPeriod: req.holdingPeriod,
+      extraProtection: extraProtection === true ? true : undefined,
     });
     return { ...pv, hedge: { requestId, packageId, package: pkg || null } };
   }

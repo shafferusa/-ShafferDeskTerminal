@@ -6,9 +6,9 @@
 // available for each leg, and to run confirmed paper execution through the normal package
 // engine. Nothing in this file chooses or sizes a hedge.
 import { html, useEffect, useState } from '../vendor/preact-htm.js';
-import { bump, fmtMoney, fmtNum, fmtPrice, fmtQty, fmtTime, get, isNum, openOverlay, post, toast, toastError } from '../lib/core.js';
+import { bump, fmtMoney, fmtNum, fmtPrice, fmtQty, fmtTime, get, isNum, openOverlay, post, toast, toastError, useLive } from '../lib/core.js';
 import { Awaiting, Button, Checks, Empty, ErrorNote, Field, KV, Missing, Modal, Money, Notice, Num, Pill, Prov, Select, Text } from '../lib/ui.js';
-import { PreviewModal } from './preview.js';
+import { expectedOf, PreviewModal } from './preview.js';
 
 export const OBJECTIVES = [
   { value: 'downside_protection', label: 'Downside protection' }, { value: 'upside_protection_short', label: 'Upside protection for shorts' },
@@ -68,77 +68,107 @@ export function PackageList({ response, selected, onSelect, allowNone }) {
 
 function LegLine({ leg }) {
   const p = leg.price;
+  const fee = leg.feeTotal || 0;
   return html`<tr>
     <td><span class="leg-n">${leg.n}</span>${leg.dependsOn?.length ? html`<div class="dep">after ${leg.dependsOn.join(', ')}</div>` : null}</td>
     <td class="wrap"><div class="strong">${leg.label}</div>
       <div class="sub">${leg.purpose === 'financing' ? 'Financing' : leg.hedgeFamily || leg.kindLabel}${leg.riskAddressed ? `, addresses ${String(leg.riskAddressed).toLowerCase()}` : ''}</div>
       ${leg.sizingBasis || isNum(leg.hedgeRatio) ? html`<div class="sub">Sized by ${leg.sizingBasis || 'the ratio supplied'}${isNum(leg.hedgeRatio) ? `, ratio ${leg.hedgeRatio}` : ''}</div>` : null}
-      ${leg.instrument?.details?.length ? html`<details><summary class="note">Contract terms</summary><dl class="terms">${leg.instrument.details.map(([k, v]) => html`<dt>${k}</dt><dd>${String(v)}</dd>`)}</dl></details>` : null}
-      ${(leg.econNotes || []).map((n) => html`<div class="sub">${n}</div>`)}</td>
+      ${leg.instrument?.details?.length ? html`<details open=${Boolean(leg.instrument.draft) && leg.instrument.family !== 'option'}><summary class="note">Contract terms</summary><dl class="terms">${leg.instrument.details.map(([k, v]) => html`<dt>${k}</dt><dd>${String(v)}</dd>`)}</dl></details>` : null}</td>
     <td class="r">${fmtQty(leg.qty)}<div class="sub">${leg.qtyLabel}</div></td>
-    <td class="wrap" style="min-width:200px">
+    <td class="wrap" style="min-width:190px">
       ${leg.kind === 'trade' ? html`<div>${isNum(p?.estimate) ? html`<span class="price"><span class="v">${fmtPrice(p.estimate)}</span></span>` : html`<span class="missing" title=${p?.reason || ''}>no executable quote</span>`}${p?.observation ? html` <${Prov} obs=${p.observation} />` : null}</div>
         <div class="sub">${p?.label || ''}</div>
         ${leg.indicative ? html`<div class="sub">Indicative terms ${fmtPrice(leg.indicative.value)} (${leg.indicative.status}, ${leg.indicative.source}). Not an executable quote.</div>` : null}` : html`<span class="muted">${leg.kindLabel}</span>`}</td>
-    <td class="r nowrap">${isNum(leg.cash) ? html`<${Money} value=${leg.cash} ccy=${leg.currency} signed />` : leg.kind === 'trade' ? html`<${Missing} reason="Needs a price" />` : ''}${leg.feeTotal ? html`<div class="sub">fees ${fmtMoney(leg.feeTotal, leg.currency)}</div>` : null}</td>
-    <td class="r nowrap">${isNum(leg.notional) ? fmtMoney(leg.notional, leg.currency) : ''}${leg.initialMargin ? html`<div class="sub">margin ${fmtMoney(leg.initialMargin, leg.currency)}</div>` : null}</td>
+    <td class="r nowrap">${isNum(leg.cash) ? html`<${Money} value=${leg.cash} ccy=${leg.currency} signed />` : leg.kind === 'trade' && !leg.initialMargin ? html`<${Missing} reason="Needs a price" />` : ''}</td>
+    <td class="r nowrap">${fee ? fmtMoney(-fee, leg.currency, { sign: true }) : ''}</td>
+    <td class="r nowrap">${leg.initialMargin ? fmtMoney(leg.initialMargin, leg.currency) : ''}</td>
+    <td class="r nowrap">${isNum(leg.notional) ? fmtMoney(leg.notional, leg.currency) : ''}</td>
   </tr>`;
 }
 
+/**
+ * Cost and cash requirement of the package. Every figure is taken from the legs as the Terminal
+ * priced them in ONE snapshot, so the lines add up to the total and match what would be confirmed.
+ */
+function CostTable({ pv }) {
+  const rows = Object.values(pv.totals.cash || {});
+  if (!rows.length) return html`<p class="note">No cash moves at trade for this package.</p>`;
+  const optionLegs = pv.legs.filter((l) => l.kind === 'trade' && ['option', 'otcoption'].includes(l.instrument?.family) && isNum(l.cash));
+  const premPaid = (ccy) => optionLegs.filter((l) => l.currency === ccy && l.cash < 0).reduce((a, l) => a - l.cash, 0);
+  const premRecv = (ccy) => optionLegs.filter((l) => l.currency === ccy && l.cash > 0).reduce((a, l) => a + l.cash, 0);
+  const line = (label, f, opts = {}) => (rows.some((r) => Math.abs(f(r)) > 0.004) || opts.always ? html`<tr class=${opts.strong ? 'strong' : ''}><td>${label}</td>${rows.map((r) => html`<td class="r">${Math.abs(f(r)) > 0.004 || opts.always ? fmtMoney(f(r), r.ccy) : ''}</td>`)}</tr>` : null);
+  return html`<table class="ledger"><thead><tr><th>From the legs below, one snapshot</th>${rows.map((r) => html`<th class="r">${r.ccy}</th>`)}</tr></thead><tbody>
+    ${line('Option premiums paid', (r) => premPaid(r.ccy))}
+    ${line('Other purchases', (r) => r.purchases - premPaid(r.ccy))}
+    ${line('Fees and commissions', (r) => r.fees)}
+    ${line('Margin and collateral to post', (r) => r.margin + r.collateral)}
+    ${line('Cash reserved against written options', (r) => r.reserved)}
+    ${line('Cash required', (r) => r.required, { always: true, strong: true })}
+    ${line('Option premiums received', (r) => premRecv(r.ccy))}
+    ${line('Other sale proceeds', (r) => r.proceeds - premRecv(r.ccy))}
+    ${line('Available to trade now', (r) => r.available, { always: true })}
+    <tr><td>Shortfall</td>${rows.map((r) => html`<td class=${`r ${r.shortfall > 0 ? 'loss strong' : ''}`}>${r.shortfall > 0 ? fmtMoney(r.shortfall, r.ccy) : 'none'}</td>`)}</tr>
+  </tbody></table>`;
+}
+
 /** One package: what Shaffer Hedge said about it, and what the Terminal found when it priced and validated the legs. */
-export function PackageDetail({ pkg, pv, loading, error }) {
+export function PackageDetail({ pkg, pv, loading, error, onRefresh, onAcknowledge }) {
   const c = pkg.costs;
-  const cash = pv ? Object.values(pv.totals.cash || {}) : [];
+  // The estimate that came with the recommendation is kept apart from the Terminal's own figures.
+  const est = c ? [['premiums', c.premiums], ['upfront cash', c.upfrontCash], ['expected ongoing cost', c.expectedOngoing], ['margin', c.margin], ['collateral', c.collateral], ['borrowing', c.borrowing], ['funding', c.funding]].filter(([, v]) => isNum(v) && v !== 0) : [];
+  const prot = pv?.protection;
   return html`<div class="stack">
-    <div class="cols-2">
-      <${KV} rows=${[
-        ['Risk addressed', pkg.riskAddressed?.length ? pkg.riskAddressed.join(', ') : notSupplied],
-        ['Intended protection', pkg.intendedProtection || notSupplied],
-        ['Horizon', pkg.horizon?.until ? `Until ${pkg.horizon.until}` : pkg.horizon?.days ? `${pkg.horizon.days} days` : notSupplied],
-        ['Upside surrendered', pkg.upsideSurrendered || notSupplied],
-        ['Valuation', pkg.valuation ? `${pkg.valuation.source}${pkg.valuation.status ? ` (${pkg.valuation.status})` : ''}${pkg.valuation.asOf ? `, ${fmtTime(pkg.valuation.asOf)}` : ''}` : notSupplied],
-        ['Availability', pkg.valuation?.availability || notSupplied],
-      ]} />
-      <${KV} rows=${[
-        ['Upfront cash', c ? val(c.upfrontCash, c.currency) : notSupplied], ['Premiums', c ? val(c.premiums, c.currency) : notSupplied],
-        ['Expected ongoing cost', c ? val(c.expectedOngoing, c.currency) : notSupplied], ['Margin', c ? val(c.margin, c.currency) : notSupplied],
-        ['Collateral', c ? val(c.collateral, c.currency) : notSupplied], ['Borrowing and funding', c ? html`${val(c.borrowing, c.currency)} / ${val(c.funding, c.currency)}` : notSupplied],
-      ]} />
-    </div>
+    <${KV} rows=${[
+      ['Risk addressed', pkg.riskAddressed?.length ? pkg.riskAddressed.join(', ') : notSupplied],
+      ['Intended protection', pkg.intendedProtection || notSupplied],
+      ['Horizon', pkg.horizon?.until ? `Until ${pkg.horizon.until}` : pkg.horizon?.days ? `${pkg.horizon.days} days` : notSupplied],
+      ['Upside surrendered', pkg.upsideSurrendered || notSupplied],
+      ['Valuation and availability', pkg.valuation ? `${pkg.valuation.source}${pkg.valuation.status ? ` (${pkg.valuation.status})` : ''}${pkg.valuation.asOf ? `, ${fmtTime(pkg.valuation.asOf)}` : ''}${pkg.valuation.availability ? `. ${pkg.valuation.availability}` : ''}` : notSupplied],
+    ]} />
     ${pkg.exposure?.length ? html`<div class="tablewrap"><table class="ledger"><thead><tr><th>Exposure measure</th><th class="r">Before</th><th class="r">After</th><th class="r">Residual</th><th>Basis risk</th></tr></thead><tbody>
       ${pkg.exposure.map((e) => html`<tr><td>${e.measure}</td><td class="r">${val(e.before, e.unit)}</td><td class="r">${val(e.after, e.unit)}</td><td class="r">${val(e.residual, e.unit)}</td><td class="wrap">${e.basisRisk || notSupplied}</td></tr>`)}
     </tbody></table></div>` : null}
     ${pkg.scenarios?.length ? html`<div class="tablewrap"><table class="ledger"><thead><tr><th>Scenario</th><th class="r">Unhedged</th><th class="r">Hedged</th></tr></thead><tbody>
       ${pkg.scenarios.map((s) => html`<tr><td>${s.label}</td><td class="r">${val(s.unhedged, s.unit)}</td><td class="r">${val(s.hedged, s.unit)}</td></tr>`)}</tbody></table></div>` : null}
     ${(pkg.notes || []).map((n) => html`<div class="note">${n}</div>`)}
-    <h4>Legs, priced and checked by the Terminal</h4>
+    <div class="row"><h4>Legs, priced and checked by the Terminal</h4><span class="grow"></span>
+      ${pv ? html`<span class="note">One snapshot, priced at ${fmtTime(pv.generatedAt, { date: false, seconds: true })}</span>` : null}
+      ${onRefresh ? html`<${Button} small busy=${loading} onClick=${onRefresh}>Refresh prices<//>` : null}</div>
     <${ErrorNote} error=${error} />
     ${!pv ? (error ? null : html`<${Empty}>${loading ? 'Pricing the legs…' : ''}<//>`) : html`
-      <div class="tablewrap"><table class="ledger legs margin"><thead><tr><th></th><th>Leg</th><th class="r">Quantity</th><th>Quote or indicative terms</th><th class="r">Cash</th><th class="r">Notional</th></tr></thead>
+      <div class="tablewrap"><table class="ledger legs margin"><thead><tr><th></th><th>Leg</th><th class="r">Quantity</th><th>Quote or indicative terms</th><th class="r">Premium or price paid</th><th class="r">Fees</th><th class="r">Collateral</th><th class="r">Notional</th></tr></thead>
         <tbody>${pv.legs.map((l) => html`<${LegLine} key=${l.n} leg=${l} />`)}</tbody></table></div>
-      ${cash.length ? html`<div class="row small">${cash.map((r) => html`<span>Cash required <b>${fmtMoney(r.required, r.ccy)}</b>${r.margin ? `, of which margin ${fmtMoney(r.margin, r.ccy)}` : ''}${r.reserved ? `, reserved ${fmtMoney(r.reserved, r.ccy)}` : ''}; available ${fmtMoney(r.available, r.ccy)}${r.shortfall > 0 ? html`; <span class="loss strong">short ${fmtMoney(r.shortfall, r.ccy)}</span>` : ''}.</span>`)}</div>` : null}
-      <${Checks} checks=${pv.checks} />`}
+      <${CostTable} pv=${pv} />
+      ${est.length ? html`<div class="note">Estimate that came with the recommendation${c.basis ? ` (${c.basis})` : ''}: ${est.map(([k, v]) => `${k} ${fmtMoney(v, c.currency)}`).join(', ')}. It was made when the package was proposed and is for comparison only: the figures above are the ones a confirmation would use.</div>` : null}
+      ${prot?.needsAcknowledgement && !prot.acknowledged && onAcknowledge ? html`<${Notice} tone="warn"><b>Protection is already in place.</b> ${prot.prior.map((x) => x.label).join('; ')}. ${prot.explain}
+        <div style="margin-top:6px"><${Button} small onClick=${onAcknowledge}>Add this protection deliberately<//></div><//>` : null}
+      <${Checks} checks=${pv.checks.filter((k) => !(k.code === 'extra-protection' && k.level === 'error' && onAcknowledge))} />`}
   </div>`;
 }
 
-/** Load the Terminal's priced, validated view of one proposed package. */
+/** Load the Terminal's priced, validated view of one proposed package. `reload` prices it again; `set` replaces it. */
 export function usePackagePreview(requestId, packageId) {
   const [box, setBox] = useState({ pv: null, error: null, loading: false });
+  const [extra, setExtra] = useState(false);
+  const [n, setN] = useState(0);
+  useEffect(() => { setExtra(false); }, [requestId, packageId]);
   useEffect(() => {
     if (!requestId || !packageId) { setBox({ pv: null, error: null, loading: false }); return undefined; }
     let live = true;
-    setBox({ pv: null, error: null, loading: true });
-    post(`/api/hedge/requests/${requestId}/preview`, { packageId }).then(
+    setBox((b) => ({ pv: n ? b.pv : null, error: null, loading: true }));
+    post(`/api/hedge/requests/${requestId}/preview`, { packageId, extraProtection: extra || undefined }).then(
       (pv) => { if (live) setBox({ pv, error: null, loading: false }); },
       (error) => { if (live) setBox({ pv: null, error, loading: false }); });
     return () => { live = false; };
-  }, [requestId, packageId]);
-  return box;
+  }, [requestId, packageId, extra, n]);
+  return { ...box, reload: () => setN((x) => x + 1), acknowledge: () => setExtra(true), set: (pv) => setBox({ pv, error: null, loading: false }) };
 }
 
 /**
  * The Hedge popup. Opens after a direct Marketplace fill (Workflow 2), and from a strategy when a
- * hedge is requested or needs review. Dismissing it leaves the primary position unchanged.
+ * hedge is requested or needs review. While Analytics Lab is away it shows the waiting state and
+ * the request stays in the review queue. Dismissing it leaves the primary position unchanged.
  */
 export function HedgePopup({ request, onClose, onDone }) {
   const [r, setR] = useState(request);
@@ -164,6 +194,7 @@ export function HedgePopup({ request, onClose, onDone }) {
       if (next.trigger === 'post_trade') await post(`/api/hedge/requests/${next.id}/seen`);
       setR(next);
       setSel(next.response?.recommendedId || next.response?.packages?.[0]?.id || '');
+      bump();
     } catch (err) { setError(err); }
     setBusy('');
   };
@@ -172,49 +203,45 @@ export function HedgePopup({ request, onClose, onDone }) {
     try { if (!acted) await post(`/api/hedge/requests/${r.id}/dismiss`); bump(); onClose(); } catch (err) { setError(err); setBusy(''); }
   };
   const done = (s) => { bump(); onDone?.(s); onClose(); };
-  const inspect = (pv, banner) => openOverlay((close) => html`<${PreviewModal} preview=${pv} onClose=${close} onDone=${done} extra=${{ hedgePackageId: pkg.id }} confirmLabel="Confirm hedge" banner=${banner} />`);
-  const openInspect = async () => {
-    setBusy('inspect'); setError(null);
-    try { inspect(await post(`/api/hedge/requests/${r.id}/preview`, { packageId: pkg.id })); } catch (err) { setError(err); }
-    setBusy('');
-  };
-  // Execute now: validate quotes, exposure, funding and collateral first. A clean package is
-  // submitted on this one click; anything to review opens the full preview instead.
+  const inspect = (pv, banner) => openOverlay((close) => html`<${PreviewModal} preview=${pv} onClose=${close} onDone=${done} confirmLabel="Confirm hedge" banner=${banner} />`);
+  // Execute now submits the package exactly as it is displayed: the same legs, under the same
+  // confirmation token, together with the cash requirement on screen. The server validates quotes,
+  // exposure, funding and collateral again; if anything blocks, or prices have moved away from what
+  // is displayed, nothing is submitted and the updated figures are shown instead.
   const execute = async () => {
-    if (busy) return;
+    const pv = box.pv;
+    if (busy || !pv) return;
+    const review = pv.checks.filter((k) => k.level !== 'info');
+    if (review.length) { inspect(pv, html`<${Notice} tone="warn">${review.length} item${review.length > 1 ? 's need' : ' needs'} a decision before this hedge can be submitted. Deal with ${review.length > 1 ? 'them' : 'it'} here, then confirm.<//>`); return; }
     setBusy('execute'); setError(null);
     try {
-      const pv = await post(`/api/hedge/requests/${r.id}/preview`, { packageId: pkg.id });
-      const review = pv.checks.filter((c) => c.level !== 'info');
-      if (review.length) {
-        inspect(pv, html`<${Notice} tone="warn">Validation found ${review.length} item${review.length > 1 ? 's' : ''} to review, so the hedge was not submitted. Resolve or accept them here, then confirm.<//>`);
-      } else {
-        const out = await post('/api/strategies', { ...pv.input, hedgePackageId: pkg.id, legs: pv.legs, clientToken: pv.token, confirm: true });
-        const working = out.strategy.orders.filter((o) => ['pending', 'working', 'partial'].includes(o.status) && o.submission === pv.token).length;
-        toast(working ? `Hedge submitted. ${working} leg${working > 1 ? 's are' : ' is'} working.` : 'Hedge executed and linked to the position.', working ? 'warn' : 'ok', 6000);
-        done(out.strategy);
-        return;
-      }
+      const out = await post('/api/strategies', { ...pv.input, legs: pv.legs, clientToken: pv.token, confirm: true, expected: expectedOf(pv) });
+      const working = out.strategy.orders.filter((o) => ['pending', 'working', 'partial'].includes(o.status) && o.submission === pv.token).length;
+      toast(working ? `Hedge submitted. ${working} leg${working > 1 ? 's are' : ' is'} working.` : 'Hedge executed and linked to the position.', working ? 'warn' : 'ok', 6000);
+      done(out.strategy);
+      return;
     } catch (err) {
-      if (err.details?.preview) inspect(err.details.preview, html`<${Notice} tone="err">${err.message}<//>`);
-      else setError(err);
+      if (err.details?.preview) box.set(err.details.preview);
+      setError(err);
     }
     setBusy('');
   };
 
   const title = q.primary?.instrument ? `Hedge for ${q.primary.direction === 'short' ? 'short' : 'long'} ${q.primary.instrument.symbol || q.primary.instrument.name}` : `Hedge for ${q.account?.name || q.book.name}`;
   return html`<${Modal} size="wide" title=${title} sub=${`${TRIGGER[r.trigger] || ''}${r.response ? `, ${r.response.source}${r.response.asOf ? `, ${fmtTime(r.response.asOf)}` : ''}` : ''}`} onClose=${onClose}
-    footer=${html`<span class="note">Closing this leaves the primary position exactly as it is.</span><span class="grow"></span>
-      ${acted ? html`<${Button} onClick=${onClose}>Close<//>` : html`<${Button} busy=${busy === 'dismiss'} onClick=${dismiss}>${packages.length ? 'Dismiss, no hedge' : 'Close'}<//>`}
-      ${pkg && !acted ? html`<${Button} busy=${busy === 'inspect'} onClick=${openInspect}>Inspect or edit<//>
-        <${Button} kind="primary" busy=${busy === 'execute'} disabled=${Boolean(busy) || box.loading} onClick=${execute}>Execute now<//>` : null}`}>
+    footer=${html`<span class="note">${packages.length ? 'Closing this leaves the primary position exactly as it is.' : 'The request stays on the position and in the hedge review queue.'}</span><span class="grow"></span>
+      ${acted || !packages.length ? html`<${Button} onClick=${onClose}>Close<//>` : html`<${Button} busy=${busy === 'dismiss'} onClick=${dismiss}>Dismiss, no hedge<//>`}
+      ${!acted && !packages.length ? html`<${Button} busy=${busy === 'dismiss'} onClick=${dismiss} title="Remove this request from the review queue">Withdraw the request<//>` : null}
+      ${pkg && !acted ? html`<${Button} disabled=${!box.pv} onClick=${() => inspect(box.pv)}>Inspect or edit<//>
+        <${Button} kind="primary" busy=${busy === 'execute'} disabled=${Boolean(busy) || box.loading || !box.pv} onClick=${execute}>Execute now<//>` : null}`}>
     <div class="stack">
       <${ErrorNote} error=${error} />
       ${r.status === 'executed' ? html`<${Notice} tone="ok">This hedge was executed and is linked to the position.<//>` : null}
       ${r.status === 'dismissed' ? html`<${Notice}>This hedge request was dismissed. Request again to see current instructions.<//>` : null}
+      ${q.existingHedges?.length && packages.length ? html`<${Notice}>Protection already held on this position: ${q.existingHedges.map((h) => `${fmtQty(Math.abs(h.quantity))} ${h.instrument.symbol || h.instrument.name}`).join(', ')}. It was sent with the request, so anything proposed here is for what remains.<//>` : null}
       <div class="split" style="grid-template-columns:minmax(0,1fr) 320px">
         <div class="stack">
-          ${packages.length ? html`<${PackageDetail} pkg=${pkg} pv=${box.pv} loading=${box.loading} error=${box.error} />` : html`<${RequestState} r=${r} />`}
+          ${packages.length ? html`<${PackageDetail} pkg=${pkg} pv=${box.pv} loading=${box.loading} error=${box.error} onRefresh=${acted ? null : box.reload} onAcknowledge=${acted ? null : box.acknowledge} />` : html`<${RequestState} r=${r} />`}
           ${!packages.length ? html`<p class="note">You can still add protection by hand: open the position's strategy and choose Add legs, or build a package on the Strategy page with "hedge an existing position".</p>` : null}
         </div>
         <div class="stack">
@@ -234,6 +261,35 @@ export function HedgePopup({ request, onClose, onDone }) {
       </div>
     </div>
   <//>`;
+}
+
+/**
+ * Hedge review queue of the selected Book: requests still waiting for Shaffer Hedge, requests
+ * answered and not yet acted on, and hedged positions whose exposure has changed.
+ */
+export function HedgeQueue({ book, compact }) {
+  const res = useLive(() => get('/api/hedge/queue', { bookId: book.id }), [book.id]);
+  const [busy, setBusy] = useState(false);
+  const d = res.data;
+  if (!d || (!d.items.length && !d.reviews.length)) return compact ? null : html`<p class="note">Nothing is waiting for a hedge decision in this Book.</p>`;
+  const refresh = async () => { setBusy(true); try { const out = await post('/api/hedge/refresh'); toast(out.refreshed.length ? `${out.refreshed.length} request${out.refreshed.length > 1 ? 's' : ''} refreshed against current exposure.` : d.canAnswer ? 'Nothing new came back.' : `${d.awaitingMessage}. The requests stay in the queue.`, out.refreshed.length ? 'ok' : 'warn'); bump(); } catch (err) { toastError(err); } setBusy(false); };
+  const openStrategy = async (id) => { const m = await import('./strategy-detail.js'); m.openStrategy(id); };
+  const STATE = { awaiting: ['', 'awaiting Shaffer Hedge'], received: ['ok', 'recommendation ready'], error: ['bad', 'request failed'] };
+  return html`<section class="panel"><header><h3>Hedge review queue</h3><span class="note">Nothing here is traded until you confirm it</span><span class="grow"></span>
+      ${d.items.some((x) => x.status !== 'received') ? html`<${Button} small busy=${busy} onClick=${refresh}>Ask again now<//>` : null}</header>
+    <div class="body flush"><div class="tablewrap"><table class="ledger margin"><thead><tr><th>Position</th><th>Held in</th><th>State</th><th>Asked</th><th></th></tr></thead><tbody>
+      ${d.items.map((x) => html`<tr key=${x.id}>
+        <td class="wrap"><div class="strong">${x.primary ? `${x.primary.direction === 'short' ? 'Short' : 'Long'} ${fmtQty(x.primary.quantity)} ${x.primary.symbol || x.primary.name}` : `Scope: ${SCOPE_LABEL[x.scope.type] || x.scope.type}`}</div>
+          ${x.strategy ? html`<div class="sub"><a href="javascript:void 0" onClick=${() => openStrategy(x.strategy.id)}>${x.strategy.name}</a></div>` : null}</td>
+        <td>${x.owner || book.name}</td>
+        <td><${Pill} tone=${STATE[x.status][0]}>${STATE[x.status][1]}<//>${x.status === 'received' ? html` <span class="sub">${x.packages} package${x.packages === 1 ? '' : 's'}${x.refreshedAt ? ', refreshed on current exposure' : ''}</span>` : x.status === 'error' ? html` <span class="sub">${x.message}</span>` : ''}</td>
+        <td class="nowrap">${fmtTime(x.createdAt)}</td>
+        <td class="r"><${Button} small onClick=${() => openHedgeRequest(x.id)}>${x.status === 'received' ? 'Review' : 'Open'}<//></td></tr>`)}
+      ${d.reviews.map((x) => html`<tr key=${`rv-${x.strategy.id}`}>
+        <td class="wrap"><div class="strong"><a href="javascript:void 0" onClick=${() => openStrategy(x.strategy.id)}>${x.strategy.name}</a></div><div class="sub">${x.reason}</div></td>
+        <td>${x.owner}</td><td><${Pill} tone="warn">exposure changed<//></td><td class="nowrap">${fmtTime(x.since)}</td>
+        <td class="r"><${Button} small onClick=${() => openStrategy(x.strategy.id)}>Open the strategy<//></td></tr>`)}
+    </tbody></table></div></div></section>`;
 }
 
 /** Request hedge instructions for an existing strategy's position and open the popup. */

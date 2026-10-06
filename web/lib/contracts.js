@@ -190,7 +190,8 @@ const F = {
     { path: 'terms.effective', label: 'Effective date', type: 'date', required: true },
     { path: 'terms.maturity', label: 'Maturity', type: 'date', required: true },
     { path: 'terms.counterparty', label: 'Counterparty', type: 'text' },
-    { path: 'terms.collateral', label: 'Collateral terms', type: 'text', span: 2 },
+    { path: 'terms.initialMarginPct', label: 'Independent amount (share of notional)', type: 'number', hint: '0.10 = 10%, posted in cash at trade and returned when the swap ends. Leave empty for none.' },
+    { path: 'terms.collateral', label: 'Other collateral terms', type: 'text', span: 2 },
     { path: 'terms.legs', type: 'legs' },
   ],
   cds: [

@@ -1,22 +1,29 @@
 // Application shell: top bar, navigation, routing. Each screen is loaded on demand so the first
 // paint only needs the shell.
 import { html, render, useEffect, useState } from './vendor/preact-htm.js';
-import { bump, currentBook, fmtTime, get, getState, openOverlay, post, refreshStatus, setBook, setTheme, toast, toastError, useStore, VIEW_LABEL } from './lib/core.js';
+import { bump, currentBook, fmtTime, get, getState, openOverlay, post, refreshStatus, setBook, setTheme, setUnit, toast, toastError, useStore, VIEW_LABEL } from './lib/core.js';
 import { Awaiting, Button, Field, Modal, Num, Overlays, Select, Text, Toasts } from './lib/ui.js';
 
+// Every screen below the top bar belongs to the one Book that is selected. Book selection and
+// management (#/books) is a separate layer: it is not part of Treasury and never combines Books.
 const ROUTES = {
-  markets: () => import('./views/markets.js'),
-  strategy: () => import('./views/strategy.js'),
   accounting: () => import('./views/accounting.js'),
-  books: () => import('./views/books.js'),
+  treasury: () => import('./views/treasury.js'),
+  account: () => import('./views/account.js'),
+  strategy: () => import('./views/strategy.js'),
+  markets: () => import('./views/markets.js'),
   instruments: () => import('./views/registry.js'),
   data: () => import('./views/data.js'),
   settings: () => import('./views/settings.js'),
+  books: () => import('./views/books.js'),
 };
+const HOME = '#/accounting';
 const parseHash = () => {
-  const parts = (location.hash || '#/markets/US_CASH').replace(/^#\/?/, '').split('/').filter(Boolean);
-  return { page: ROUTES[parts[0]] ? parts[0] : 'markets', args: parts.slice(1) };
+  const parts = (location.hash || HOME).replace(/^#\/?/, '').split('/').filter(Boolean);
+  return { page: ROUTES[parts[0]] ? parts[0] : 'accounting', args: ROUTES[parts[0]] ? parts.slice(1) : [] };
 };
+const flag = (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : v === '1'; } catch { return d; } };
+const setFlag = (k, v) => { try { localStorage.setItem(k, v ? '1' : '0'); } catch { /* ignore */ } };
 
 function Conn({ label, state }) {
   if (!state) return null;
@@ -52,6 +59,26 @@ function NewBook({ onClose, first }) {
   return html`<${Modal} title="New Book" onClose=${onClose} footer=${html`<span class="grow"></span><${Button} onClick=${onClose}>Cancel<//><${Button} kind="primary" busy=${busy} disabled=${!name.trim()} onClick=${save}>Create Book<//>`}>${form}<//>`;
 }
 
+function NewAccount({ book, onClose }) {
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    setBusy(true);
+    try {
+      const a = await post(`/api/books/${book.id}/accounts`, { name });
+      await refreshStatus();
+      setUnit(a.id);
+      bump();
+      toast(`Account "${a.name}" created. Fund it from Treasury to start trading in it.`);
+      location.hash = `#/account/${a.id}`;
+      onClose();
+    } catch (err) { toastError(err); setBusy(false); }
+  };
+  return html`<${Modal} title="New Account" sub=${`In ${book.name}. An Account is funded from this Book's Treasury and holds its own positions and borrowings.`} onClose=${onClose}
+    footer=${html`<span class="grow"></span><${Button} onClick=${onClose}>Cancel<//><${Button} kind="primary" busy=${busy} disabled=${!name.trim()} onClick=${save}>Create Account<//>`}>
+    <${Field} label="Account name"><${Text} value=${name} onInput=${setName} autofocus /><//><//>`;
+}
+
 function DemoBand({ status }) {
   const [busy, setBusy] = useState(false);
   const adv = async (body) => {
@@ -73,6 +100,8 @@ function Shell() {
   const [route, setRoute] = useState(parseHash());
   const [View, setView] = useState(null);
   const [alerts, setAlerts] = useState([]);
+  const [acctOpen, setAcctOpen] = useState(flag('sdt.accts', true));
+  const unitId = useStore((s) => s.unitId);
   const tick = useStore((s) => s.tick);
   const overlayCount = useStore((s) => s.overlay.length);
 
@@ -90,21 +119,15 @@ function Shell() {
   useEffect(() => {
     if (!bookId) return;
     get(`/api/books/${bookId}/alerts`).then((r) => setAlerts(r.items), () => {});
-    // Workflow 2: a hedge request made automatically after a direct Marketplace fill. The popup opens
-    // when Shaffer Hedge returned packages to choose from. While Analytics Lab is not connected there
-    // is nothing to choose, so the request is announced without interrupting; it stays on the
-    // position's strategy. A prompt never opens on top of a dialog that is already in use.
+    // Workflow 2: after a direct Marketplace fill the hedge request is made automatically and its popup
+    // opens, with the recommended package or, while Analytics Lab is away, the waiting state. It never
+    // opens on top of a dialog that is in use; it waits for that dialog to close.
     if (document.querySelector('.modal')) return;
     get('/api/hedge/prompts', { bookId }).then(async (r) => {
       for (const h of r.items) {
         await post(`/api/hedge/requests/${h.id}/seen`);
-        const p = h.request.primary;
-        const what = p?.instrument ? `${p.direction === 'short' ? 'short' : 'long'} ${p.instrument.symbol || p.instrument.name}` : 'the filled position';
-        if (h.response?.packages?.length) {
-          const { HedgePopup } = await import('./views/hedge.js');
-          openOverlay((close) => html`<${HedgePopup} request=${h} onClose=${close} />`);
-        } else if (h.status === 'error') toast(`Hedge request for ${what} failed: ${h.message}`, 'err', 9000);
-        else toast(`Hedge requested for ${what}. ${h.status === 'awaiting' ? `${h.awaitingMessage}.` : h.message || ''} The request is kept on the position's strategy.`, 'warn', 9000);
+        const { HedgePopup } = await import('./views/hedge.js');
+        openOverlay((close) => html`<${HedgePopup} request=${h} onClose=${close} />`);
       }
     }, () => {});
   }, [bookId, tick, overlayCount]);
@@ -114,15 +137,19 @@ function Shell() {
   // With no saved choice the Terminal follows the system setting.
   const dark = theme ? theme === 'dark' : Boolean(window.matchMedia?.('(prefers-color-scheme: dark)').matches);
   const errors = alerts.filter((a) => a.level === 'error').length;
-  const nav = (href, label, extra) => html`<a href=${href} class=${`${location.hash.startsWith(href) || (href === '#/markets/US_CASH' && !location.hash) ? 'on' : ''} ${extra?.sub ? 'sub' : ''}`}>${label}${extra?.count ? html`<span class="count">${extra.count}</span>` : null}</a>`;
+  const here = location.hash || HOME;
+  const nav = (href, label, extra) => html`<a href=${href} class=${`${here.startsWith(href) ? 'on' : ''} ${extra?.sub ? 'sub' : ''}`}>${label}${extra?.count ? html`<span class="count">${extra.count}</span>` : null}</a>`;
+  const accounts = book ? book.units.filter((u) => u.kind === 'account') : [];
+  const toggleAccounts = () => { setFlag('sdt.accts', !acctOpen); setAcctOpen(!acctOpen); };
   const showAlerts = () => openOverlay((close) => html`<${Modal} title="Items needing attention" size="mid" onClose=${close}>
     <div class="stack">${alerts.length ? alerts.map((a) => html`<div class=${`notice ${a.level === 'error' ? 'err' : 'warn'}`}>${a.message}<div class="sub muted">${fmtTime(a.ts)}</div></div>`) : html`<p class="note">Nothing needs attention.</p>`}</div><//>`);
 
   return html`<div class="shell">
     <div class="topbar">
       <div class="brand">Shaffer Desk Terminal<small>paper trading</small></div>
-      ${books.length ? html`<${Select} value=${bookId} onChange=${(v) => (v === '__new' ? openOverlay((close) => html`<${NewBook} onClose=${close} />`) : setBook(v))}
-        options=${[...books.map((b) => ({ value: b.id, label: b.name })), { value: '__new', label: '+ New Book…' }]} />` : null}
+      ${books.length ? html`<span class="small muted">Book</span><${Select} value=${bookId} onChange=${(v) => (v === '__new' ? openOverlay((close) => html`<${NewBook} onClose=${close} />`) : setBook(v))}
+        options=${[...books.map((b) => ({ value: b.id, label: b.name })), { value: '__new', label: '+ New Book…' }]} />
+        <a class="btn small" href="#/books" title="Books are separate workspaces. Open, rename or create one.">Manage Books</a>` : null}
       ${alerts.length ? html`<button class=${`conn ${errors ? 'st-error' : 'st-awaiting'}`} onClick=${showAlerts}><i></i>${alerts.length} to review</button>` : null}
       <span class="grow"></span>
       <${Conn} label="MarketData" state=${status.data.market} />
@@ -132,12 +159,18 @@ function Shell() {
     </div>
     ${status.demo ? html`<${DemoBand} status=${status} />` : html`<div class="band-none"></div>`}
     <nav class="rail">
-      <div class="group">Markets</div>
-      ${Object.entries(VIEW_LABEL).map(([id, label]) => nav(`#/markets/${id}`, label, { sub: true }))}
-      <div class="group">Desk</div>
-      ${nav('#/strategy', 'Strategy')}
-      ${nav('#/accounting', 'Accounting')}
-      ${nav('#/books', 'Books and Treasury')}
+      ${book ? html`
+        <div class="group" title="Everything below belongs to this Book only">${book.name}</div>
+        ${nav('#/accounting', 'Accounting')}
+        ${nav('#/treasury', 'Treasury')}
+        <button class="rail-toggle sub" aria-expanded=${acctOpen} onClick=${toggleAccounts} title="Accounts funded from this Treasury"><span class=${`caret ${acctOpen ? 'open' : ''}`} aria-hidden="true"></span>Accounts<span class="n">${accounts.length}</span></button>
+        ${acctOpen ? html`
+          ${accounts.map((a) => html`<a key=${a.id} href=${`#/account/${a.id}`} onClick=${() => setUnit(a.id)} class=${`sub acct ${here.startsWith(`#/account/${a.id}`) ? 'on' : ''}`}
+            title=${a.id === unitId ? 'This Account is in use on trade tickets and the Strategy page' : 'Open this Account and use it on trade tickets and the Strategy page'}><span class="nm">${a.name}</span>${a.id === unitId ? html`<span class="inuse">in use</span>` : null}</a>`)}
+          <button class="rail-toggle sub acct add" onClick=${() => openOverlay((close) => html`<${NewAccount} book=${book} onClose=${close} />`)}>New Account</button>` : null}
+        ${nav('#/strategy', 'Strategies')}
+        <div class="group">Marketplaces</div>
+        ${Object.entries(VIEW_LABEL).map(([id, label]) => nav(`#/markets/${id}`, label, { sub: true }))}` : null}
       <div class="group">Reference</div>
       ${nav('#/instruments', 'Instruments')}
       ${nav('#/data', 'Data connection')}
@@ -146,7 +179,7 @@ function Shell() {
     </nav>
     <main class="main">
       ${!books.length ? html`<${NewBook} first />`
-        : View ? html`<${View} args=${route.args} book=${book} status=${status} key=${`${route.page}:${book?.id}`} />` : html`<div class="note">Loading…</div>`}
+        : View ? html`<${View} args=${route.args} book=${book} status=${status} key=${`${route.page}:${book?.id}${route.page === 'account' ? `:${route.args[0]}` : ''}`} />` : html`<div class="note">Loading…</div>`}
     </main>
     <${Overlays} /><${Toasts} />
   </div>`;

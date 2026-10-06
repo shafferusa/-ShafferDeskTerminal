@@ -8,12 +8,12 @@
 // Shaffer Analytics Lab: a signal may fill in this form, but the package still passes every
 // borrow, funding, collateral and per-leg check before it can be confirmed.
 import { html, useEffect, useMemo, useRef, useState } from '../vendor/preact-htm.js';
-import { fmtMoney, fmtNum, fmtPrice, fmtQty, fmtTime, get, isNum, openOverlay, post, useLive } from '../lib/core.js';
+import { fmtMoney, fmtNum, fmtPrice, fmtQty, fmtTime, get, isNum, openOverlay, post, useLive, useStore } from '../lib/core.js';
 import { Awaiting, Button, Check, Empty, ErrorNote, Field, Missing, Modal, Notice, Num, Panel, Pill, Price, Prov, Seg, Select, Signed, StrategyStatus, Table, Text } from '../lib/ui.js';
 import { ContractFields, draftToContract, InstrumentPicker, newDraft, PositionPicker } from '../lib/contracts.js';
 import { defaultUnit, HedgeContext, hedgeContextInput, OrderFields, UnitSelect } from './instrument.js';
 import { PreviewModal } from './preview.js';
-import { PackageDetail, PackageList, RequestState, RequestSummary, SCOPES, usePackagePreview } from './hedge.js';
+import { HedgeQueue, PackageDetail, PackageList, RequestState, RequestSummary, SCOPES, usePackagePreview } from './hedge.js';
 
 const STOCK = 'stock', OPT = 'options', FUT = 'futures';
 const SECURITIES = ['equity', 'fund', 'spot', 'crypto', 'bond', 'manual'];
@@ -192,7 +192,7 @@ function LegDialog({ book, unitId, und, catalog, defaultPurpose, onAdd, onClose 
         <p class="note">A securities borrow leg is added ahead of the short sale. If the borrow fails, the short sale is rejected with it.</p>` : null}
       ${['instrument', 'option', 'contract'].includes(type) ? html`<div class="grid-form"><${OrderFields} o=${o} set=${(p) => setO({ ...o, ...p })} />
         <${Field} label="State a fill price" hint="Optional. Recorded as a manual input, not a market quote."><${Num} value=${stated} onInput=${setStated} placeholder="none" /><//></div>` : null}
-      ${type === 'contract' ? html`<p class="note">Listed options, futures, bonds and other securities are registered once under Instruments and then traded as a registered instrument. Repo and securities-lending tickets are in Books and Treasury.</p>` : null}
+      ${type === 'contract' ? html`<p class="note">Listed options, futures, bonds and other securities are registered once under Instruments and then traded as a registered instrument. Repo and securities-lending tickets are in Treasury or on the Account.</p>` : null}
     </div>
   <//>`;
 }
@@ -243,18 +243,32 @@ function PackageModal({ r, packageId, onClose }) {
     footer=${html`<span class="grow"></span><${Button} onClick=${onClose}>Close<//>`}><${PackageDetail} pkg=${pkg} pv=${box.pv} loading=${box.loading} error=${box.error} /><//>`;
 }
 
+/** Protection the request already told Shaffer Hedge about: legs of the template, and hedges already held. */
+export function knownProtection(r) {
+  if (!r) return [];
+  const q = r.request;
+  const name = (i) => (i?.underlying ? `${i.underlying.symbol || i.underlying.name} ${i.terms?.expiration || ''} ${i.terms?.strike ?? ''} ${i.terms?.right === 'P' ? 'put' : i.terms?.right === 'C' ? 'call' : ''}`.trim() : i?.symbol || i?.name || 'a hedge leg');
+  return [
+    ...(q.proposedLegs || []).filter((l) => l.isProtection).map((l) => `${l.action === 'buy' ? 'buys' : 'sells'} ${fmtQty(l.quantity)} ${name(l.instrument)} (in the template)`),
+    ...(q.existingHedges || []).map((h) => `${fmtQty(Math.abs(h.quantity))} ${h.instrument.symbol || h.instrument.name} (already held)`),
+  ];
+}
+
 function HedgePanel({ hedge, ready, waitingFor, sel, setSel }) {
   const [sent, setSent] = useState(false);
   const r = hedge.r;
   const packages = r?.response?.packages || [];
+  const prot = knownProtection(r);
   return html`<${Panel} title="Hedge" note="From Shaffer Hedge in Analytics Lab">
     <div class="stack">
       ${!ready ? html`<p class="note">A hedge request is sent automatically once the ${waitingFor.join(' and ')} ${waitingFor.length > 1 ? 'are' : 'is'} set. It carries the Book, Account, investment Strategy, holding period, objective, existing position, hedges already held and the Account's exposures.</p>` : null}
       ${ready && hedge.loading && !r ? html`<p class="note">Requesting the hedge package…</p>` : null}
       <${ErrorNote} error=${hedge.error} />
+      ${r && prot.length ? html`<${Notice}><b>This package already has protection.</b> ${prot.join('; ')}. It was sent with the request as existing protection, so no further hedge is added unless you choose one below on purpose.<//>` : null}
       ${r ? html`
         ${packages.length ? html`
           <${PackageList} response=${r.response} selected=${sel} onSelect=${setSel} allowNone />
+          ${sel && prot.length ? html`<${Notice} tone="warn">You are adding a hedge on top of protection already in place. The preview measures it against the exposure that is still unprotected and asks you to confirm it is deliberate.<//>` : null}
           ${sel ? html`<div class="row"><${Button} small onClick=${() => openOverlay((close) => html`<${PackageModal} r=${r} packageId=${sel} onClose=${close} />`)}>Legs, quotes and costs<//>
             <span class="note">Its legs are added to the preview, after the primary and financing legs.</span></div>` : null}
           <p class="note">Hedge legs depend on the primary trade: if it fills only in part, the protection is scaled to what filled.</p>` : html`<${RequestState} r=${r} />`}
@@ -308,6 +322,9 @@ export default function Strategy({ args, book, status }) {
   const templates = meta.data?.templates || [];
 
   const [unitId, setUnitId] = useState(defaultUnit(book));
+  // The Account in use (chosen in the sidebar or on a ticket) carries into this page.
+  const inUse = useStore((st) => st.unitId);
+  useEffect(() => { if (!attachId && inUse && book.units.some((u) => u.id === inUse)) setUnitId(inUse); }, [inUse]);
   const [tplId, setTplId] = useState(attachId ? 'custom' : 'long');
   const [undId, setUndId] = useState(args[0] === 'for' ? args[1] || '' : '');
   const [mode, setMode] = useState('new');
@@ -379,7 +396,9 @@ export default function Strategy({ args, book, status }) {
   } : null;
   const hedgeKey = hedgeBody ? JSON.stringify([hedgeBody, submitted]) : '';
   const hedge = useHedgeRequest(hedgeKey, hedgeBody);
-  useEffect(() => { setHedgeSel(hedge.r?.response?.recommendedId || ''); }, [hedge.r?.id]);
+  // The recommended package is added by default, unless the template or the position already carries
+  // protection: then nothing more is added unless it is chosen on purpose.
+  useEffect(() => { setHedgeSel(knownProtection(hedge.r).length ? '' : hedge.r?.response?.recommendedId || ''); }, [hedge.r?.id]);
 
   const preview = async () => {
     setBusy(true); setError(null);
@@ -404,7 +423,7 @@ export default function Strategy({ args, book, status }) {
   const canPreview = Boolean(unitId) && (custom ? legs.length > 0 : haveInstrument);
 
   return html`<div>
-    <div class="page-head"><div><h1>${attachId ? 'Add legs to a strategy' : 'Strategy'}</h1>
+    <div class="page-head"><div><h1>${attachId ? 'Add legs to a strategy' : 'Strategies'}</h1>
       <div class="sub">${attachId ? 'New legs join the existing strategy instance and are linked to its positions. Nothing is submitted until you confirm the preview.'
         : 'Build a package from an execution template, review every leg, then confirm once. Templates only assemble legs; investment Strategies and Models stay in Analytics Lab.'}</div></div></div>
     ${attachId && attach.data ? html`<div style="margin-bottom:10px"><${Notice}>Adding to <b>${attach.data.name}</b> (${attach.data.templateName}) in ${attach.data.unit.kind === 'treasury' ? 'Treasury' : attach.data.unit.name}. <a href="#/strategy">Start a new package instead</a><//></div>` : null}
@@ -495,6 +514,6 @@ export default function Strategy({ args, book, status }) {
           <${Table} rows=${attach.data.positions} rowKey=${(p) => p.positionId} columns=${[{ label: 'Position', render: (p) => p.instrument.symbol || p.instrument.name }, { label: 'Quantity', align: 'r', render: (p) => fmtQty(p.qty) }, { label: 'Role', render: (p) => ({ primary: 'Primary', hedge: 'Hedge', financing: 'Financing' }[p.purpose] || p.purpose) }]} empty="No open positions" /><//>` : null}
       </div>
     </div>
-    <div style="margin-top:16px"><${Instances} book=${book} reloadKey=${submitted} /></div>
+    <div class="stack" style="margin-top:16px"><${HedgeQueue} book=${book} compact /><${Instances} book=${book} reloadKey=${submitted} /></div>
   </div>`;
 }
