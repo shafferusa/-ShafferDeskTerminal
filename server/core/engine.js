@@ -200,7 +200,7 @@ export function createEngine(app) {
   async function tick() {
     if (running) return { skipped: true };
     running = true;
-    const summary = { matched: 0, settled: 0, tasks: 0, corporateActions: 0, eod: null, hedgeRequests: 0 };
+    const summary = { matched: 0, settled: 0, tasks: 0, corporateActions: 0, eod: null, hedgeRequests: 0, hedgeRefreshed: 0 };
     try {
       const today = clock.today();
       summary.matched = await app.packages.runMatching();
@@ -223,8 +223,10 @@ export function createEngine(app) {
       }
       if (summary.tasks || summary.corporateActions) summary.matched += await app.packages.runMatching();
       summary.hedgeRequests = (await app.hedge.processQueue()).length;
+      // Requests that were waiting for Shaffer Hedge are refreshed once it can answer. Never executed here.
+      summary.hedgeRefreshed = (await app.hedge.refreshWaiting()).length;
       lastTick = clock.now().toISOString();
-      if (summary.matched || summary.settled || summary.tasks || summary.corporateActions || summary.eod || summary.hedgeRequests) emit({ type: 'changed', summary });
+      if (summary.matched || summary.settled || summary.tasks || summary.corporateActions || summary.eod || summary.hedgeRequests || summary.hedgeRefreshed) emit({ type: 'changed', summary });
       return summary;
     } catch (err) {
       lastError = String(err.stack || err.message || err);

@@ -5,13 +5,16 @@ import { thirdFriday } from '../quant/calendar.js';
 import { ymd } from '../quant/dates.js';
 import { DEMO_BONDS, DEMO_FUTURES, DEMO_UNIVERSE } from './demo.js';
 
+// Listing-venue country of the fictional demo venues. It selects the settlement calendar.
+const VENUE_COUNTRY = { 'SIM-US': 'US', 'SIM-JP': 'JP', 'SIM-UK': 'GB', 'SIM-EU': 'DE', 'SIM-FUT-US': 'US', 'SIM-FUT-JP': 'JP' };
+
 export function seedDemoInstruments(app) {
   const have = new Set(app.instruments.list({ limit: 2000 }).map((i) => i.symbol));
   const out = {};
   for (const u of DEMO_UNIVERSE) {
     if (have.has(u.symbol)) { out[u.symbol] = app.instruments.list({ q: u.symbol }).find((i) => i.symbol === u.symbol); continue; }
     out[u.symbol] = app.instruments.create({
-      productId: u.product, name: u.name, symbol: u.symbol, marketView: u.view, venue: u.venue, venueType: 'exchange', domicile: u.domicile || null, underlyingGeo: u.underlyingGeo || u.domicile || null,
+      productId: u.product, name: u.name, symbol: u.symbol, marketView: u.view, venue: u.venue, venueType: 'exchange', venueCountry: VENUE_COUNTRY[u.venue] || null, domicile: u.domicile || null, underlyingGeo: u.underlyingGeo || u.domicile || null,
       issuer: u.name.replace(' (demo)', ''), tradingCcy: u.ccy, terms: u.lot ? { lotSize: u.lot } : {}, refSource: 'demo',
     }, { actor: 'demo' });
   }
@@ -34,7 +37,7 @@ export function seedDemoInstruments(app) {
       if (have.has(symbol)) { out[symbol] = app.instruments.list({ family: 'future' }).find((i) => i.symbol === symbol); continue; }
       const und = out[spec.underlying];
       out[symbol] = app.instruments.create({
-        productId: 'equity_index_future', name: `${spec.name} ${exp.slice(0, 7)}`, symbol, marketView: spec.view, venue: spec.venue, venueType: 'exchange', underlyingId: und?.id || null,
+        productId: 'equity_index_future', name: `${spec.name} ${exp.slice(0, 7)}`, symbol, marketView: spec.view, venue: spec.venue, venueType: 'exchange', venueCountry: VENUE_COUNTRY[spec.venue] || null, underlyingId: und?.id || null,
         tradingCcy: spec.ccy, multiplier: spec.multiplier, terms: { root, expiration: exp, tickSize: spec.tickSize, initialMargin: spec.initialMargin, settlement: spec.settlement, priceUnits: 'index points' }, refSource: 'demo',
       }, { actor: 'demo' });
     }

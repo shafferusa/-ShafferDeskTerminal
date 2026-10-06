@@ -235,8 +235,8 @@ export function createOrders(app) {
       const payAmt = buy ? qty * price + feeTotal : qty;
       const have = ledger.cash(unit.id, payCcy).availableToTrade;
       if (have < payAmt - 0.004) return reject(o, `Insufficient ${payCcy}: ${fmt(payAmt, payCcy)} needed for the conversion, ${fmt(have, payCcy)} available.`);
-    } else if (econ.cash < 0 || (buy && feeTotal > 0)) {
-      const need = Math.max(0, -econ.cash) + feeTotal;
+    } else if (econ.cash < 0 || (buy && feeTotal > 0) || econ.initialMargin > 0) {
+      const need = Math.max(0, -econ.cash) + feeTotal + Math.max(0, econ.initialMargin || 0);
       let have = settleDate <= today ? cashNow.availableToWithdraw : cashNow.availableToTrade;
       if (o.action === 'buy_to_cover' && pos) have += ledger.positionBalance(pos.id, 'cash.restricted', ccy) + pendingRestricted(pos.id, ccy);
       if (have < need - 0.004) return reject(o, `Insufficient ${ccy} cash: ${fmt(need, ccy)} needed, ${fmt(have, ccy)} available. Add Treasury funding or a financing leg, or reduce the size.`);

@@ -6,12 +6,13 @@
 // so nothing here has to be re-keyed later.
 
 import { j, pj } from '../db/db.js';
-import { FAMILIES, MARKET_VIEWS, getProduct } from './catalog.js';
+import { FAMILIES, MARKET_VIEWS, PRICING_BASIS, PRICING_LABEL, getProduct } from './catalog.js';
 import { AppError, CCY_RE, need, newId } from './util.js';
+import { calendarInfo } from '../products/security.js';
 
 const PREFIX = { equity: 'EQ', fund: 'FD', spot: 'SP', crypto: 'CR', manual: 'MN', option: 'OP', otcoption: 'OO', future: 'FU', fx: 'FX', forward: 'FW', bond: 'BD', loan: 'LN', repo: 'RP', secloan: 'SL', swap: 'SW', cds: 'CD' };
 const ARRANGEMENT_FAMILIES = new Set(['loan', 'repo', 'secloan']);
-const DESCRIPTIVE_FIELDS = new Set(['name', 'symbol', 'tags', 'issuer', 'domicile', 'venue', 'underlyingGeo', 'externalIds', 'marketView']);
+const DESCRIPTIVE_FIELDS = new Set(['name', 'symbol', 'tags', 'issuer', 'domicile', 'venue', 'venueCountry', 'underlyingGeo', 'externalIds', 'marketView']);
 
 export function createInstruments(app) {
   const { db, clock } = app;
@@ -66,7 +67,9 @@ export function createInstruments(app) {
     if (!CCY_RE.test(settleCcy)) errors.push('Settlement currency must be a three-letter code.');
     if (draft.underlyingId && !get(draft.underlyingId)) errors.push('The chosen underlying is not in the registry.');
     if (errors.length) throw new AppError(errors[0], { details: { errors } });
-    return { product, plugin, name, view, venueType, terms: norm.terms, multiplier: norm.multiplier ?? 1, tradingCcy, settleCcy };
+    const venueCountry = draft.venueCountry ? String(draft.venueCountry).trim().toUpperCase() : null;
+    if (venueCountry && !/^[A-Z]{2}$/.test(venueCountry)) throw new AppError('Venue country is a two-letter country code, for example US, GB or JP.');
+    return { product, plugin, name, view, venueType, venueCountry, terms: norm.terms, multiplier: norm.multiplier ?? 1, tradingCcy, settleCcy };
   }
 
   function create(draft, { actor = 'user' } = {}) {
@@ -75,10 +78,10 @@ export function createInstruments(app) {
     const id = draft.id || newId(PREFIX[v.product.family] || 'INS');
     need(!get(id), 'An instrument with that ID already exists.', { status: 409 });
     db.run(
-      `INSERT INTO instruments (id, product_id, family, name, symbol, market_view, tags, issuer, domicile, venue, venue_type, underlying_id, underlying_geo, trading_ccy, settle_ccy, multiplier, terms, external_ids, ref_source, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+      `INSERT INTO instruments (id, product_id, family, name, symbol, market_view, tags, issuer, domicile, venue, venue_type, venue_country, underlying_id, underlying_geo, trading_ccy, settle_ccy, multiplier, terms, external_ids, ref_source, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
       id, v.product.id, v.product.family, v.name, draft.symbol ? String(draft.symbol).trim() : null, v.view.id, j(draft.tags || []), draft.issuer || null, draft.domicile || null,
-      draft.venue || null, v.venueType, draft.underlyingId || null, draft.underlyingGeo || null, v.tradingCcy, v.settleCcy, v.multiplier, j(v.terms), j(draft.externalIds || {}),
+      draft.venue || null, v.venueType, v.venueCountry, draft.underlyingId || null, draft.underlyingGeo || null, v.tradingCcy, v.settleCcy, v.multiplier, j(v.terms), j(draft.externalIds || {}),
       draft.refSource || (actor === 'user' ? 'manual' : actor), now, now,
     );
     return get(id);
@@ -89,7 +92,7 @@ export function createInstruments(app) {
     const v = validate(d);
     return {
       id, draft: true, product_id: v.product.id, family: v.product.family, name: v.name, symbol: d.symbol || null, market_view: v.view.id, tags: d.tags || [],
-      issuer: d.issuer || null, domicile: d.domicile || null, venue: d.venue || null, venue_type: v.venueType, underlying_id: d.underlyingId || null,
+      issuer: d.issuer || null, domicile: d.domicile || null, venue: d.venue || null, venue_type: v.venueType, venue_country: v.venueCountry, underlying_id: d.underlyingId || null,
       underlying_geo: d.underlyingGeo || null, trading_ccy: v.tradingCcy, settle_ccy: v.settleCcy, multiplier: v.multiplier, terms: v.terms, external_ids: d.externalIds || {}, ref_source: 'draft',
     };
   }
@@ -111,14 +114,14 @@ export function createInstruments(app) {
     }
     const draft = {
       productId: cur.product_id, name: patch.name ?? cur.name, symbol: patch.symbol ?? cur.symbol, marketView: patch.marketView ?? cur.market_view, tags: patch.tags ?? cur.tags,
-      issuer: patch.issuer ?? cur.issuer, domicile: patch.domicile ?? cur.domicile, venue: patch.venue ?? cur.venue, venueType: patch.venueType ?? cur.venue_type, venueCountry: patch.venueCountry,
+      issuer: patch.issuer ?? cur.issuer, domicile: patch.domicile ?? cur.domicile, venue: patch.venue ?? cur.venue, venueType: patch.venueType ?? cur.venue_type, venueCountry: patch.venueCountry !== undefined ? patch.venueCountry : cur.venue_country,
       underlyingId: patch.underlyingId ?? cur.underlying_id, underlyingGeo: patch.underlyingGeo ?? cur.underlying_geo, tradingCcy: patch.tradingCcy ?? cur.trading_ccy,
       settleCcy: patch.settleCcy ?? cur.settle_ccy, multiplier: patch.multiplier ?? cur.multiplier, terms: patch.terms ?? cur.terms, externalIds: { ...cur.external_ids, ...(patch.externalIds || {}) },
     };
     const v = validate(draft, { existing: cur });
     db.run(
-      `UPDATE instruments SET name = ?, symbol = ?, market_view = ?, tags = ?, issuer = ?, domicile = ?, venue = ?, venue_type = ?, underlying_id = ?, underlying_geo = ?, trading_ccy = ?, settle_ccy = ?, multiplier = ?, terms = ?, external_ids = ?, updated_at = ? WHERE id = ?`,
-      v.name, draft.symbol || null, v.view.id, j(draft.tags || []), draft.issuer || null, draft.domicile || null, draft.venue || null, v.venueType, draft.underlyingId || null,
+      `UPDATE instruments SET name = ?, symbol = ?, market_view = ?, tags = ?, issuer = ?, domicile = ?, venue = ?, venue_type = ?, venue_country = ?, underlying_id = ?, underlying_geo = ?, trading_ccy = ?, settle_ccy = ?, multiplier = ?, terms = ?, external_ids = ?, updated_at = ? WHERE id = ?`,
+      v.name, draft.symbol || null, v.view.id, j(draft.tags || []), draft.issuer || null, draft.domicile || null, draft.venue || null, v.venueType, v.venueCountry, draft.underlyingId || null,
       draft.underlyingGeo || null, v.tradingCcy, v.settleCcy, v.multiplier, j(locked ? cur.terms : v.terms), j(draft.externalIds), clock.now().toISOString(), id,
     );
     cache.delete(id);
@@ -172,6 +175,20 @@ export function createInstruments(app) {
     return { level: product?.support || 'manual', note: product?.note || '', productName: product?.name || inst.product_id, group: product?.group || '' };
   }
 
+  /**
+   * Pricing coverage: where this instrument's value comes from and whether one is on hand now.
+   * This is separate from lifecycle support (what the paper engine does once it is priced).
+   */
+  function pricingOf(inst) {
+    const basis = PRICING_BASIS[inst.family] || 'quoted';
+    const obs = basis === 'contractual' ? null : app.data.price(inst.id);
+    return {
+      basis, basisLabel: PRICING_LABEL[basis],
+      state: basis === 'contractual' ? 'not-needed' : obs && (obs.value !== null || obs.bid !== null) ? 'priced' : 'unpriced',
+      current: obs ? { status: obs.status, source: obs.source, asOf: obs.asOf } : null,
+    };
+  }
+
   /** API shape: registry row plus catalog and family information. */
   function toView(inst) {
     if (!inst) return null;
@@ -180,7 +197,8 @@ export function createInstruments(app) {
     const und = inst.underlying_id ? get(inst.underlying_id) : null;
     return {
       id: inst.id, productId: inst.product_id, family: inst.family, familyLabel: fam.label || inst.family, name: inst.name, symbol: inst.symbol,
-      marketView: inst.market_view, tags: inst.tags, issuer: inst.issuer, domicile: inst.domicile, venue: inst.venue, venueType: inst.venue_type,
+      marketView: inst.market_view, tags: inst.tags, issuer: inst.issuer, domicile: inst.domicile, venue: inst.venue, venueType: inst.venue_type, venueCountry: inst.venue_country || null,
+      calendar: plugin.calendarInfo ? plugin.calendarInfo(inst) : calendarInfo(inst), pricing: pricingOf(inst),
       underlyingId: inst.underlying_id, underlying: und ? { id: und.id, symbol: und.symbol, name: und.name, family: und.family } : null, underlyingGeo: inst.underlying_geo,
       tradingCcy: inst.trading_ccy, settleCcy: inst.settle_ccy, multiplier: inst.multiplier, terms: inst.terms, externalIds: inst.external_ids, refSource: inst.ref_source,
       support: support(inst), qtyLabel: plugin.qtyLabel || fam.qty, priceUnits: plugin.priceUnits ? plugin.priceUnits(inst) : fam.price,

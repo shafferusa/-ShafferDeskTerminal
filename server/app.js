@@ -22,6 +22,7 @@ import { createValuation } from './core/valuation.js';
 import { createDataAdapter } from './data/index.js';
 import { openDatabase } from './db/db.js';
 import { createProducts } from './products/index.js';
+import { setExtraHolidays } from './quant/calendar.js';
 
 export function createApp({ config, clock, db } = {}) {
   const app = { config };
@@ -44,5 +45,7 @@ export function createApp({ config, clock, db } = {}) {
   app.corpactions = createCorporateActions(app);
   app.accounting = createAccounting(app);
   app.engine = createEngine(app);
+  // Market holidays entered by hand (one-off closures the rule-based calendars cannot know).
+  setExtraHolidays(app.data.getSetting('calendars.extraHolidays', {}));
   return app;
 }

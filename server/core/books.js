@@ -152,14 +152,21 @@ export function createBooks(app) {
     return { eventId };
   }
 
-  /** Unit ids for a scope: 'book' (Treasury + all Accounts) or one unit id. */
+  /**
+   * Units of an accounting scope inside ONE Book: 'book' (Treasury and every Account), 'treasury',
+   * 'accounts' (every Account), one unit id, or several unit ids separated by commas.
+   * A scope never reaches outside its Book.
+   */
   function scopeUnits(bookId, scope = 'book') {
     const units = unitsOf(bookId);
     if (!scope || scope === 'book') return units;
     if (scope === 'treasury') return units.filter((u) => u.kind === 'treasury');
-    const u = units.find((x) => x.id === scope);
-    if (!u) throw new AppError('Unknown accounting scope.', { status: 404 });
-    return [u];
+    if (scope === 'accounts') return units.filter((u) => u.kind === 'account');
+    const ids = [...new Set(String(scope).split(',').map((x) => x.trim()).filter(Boolean))];
+    const picked = ids.map((id) => units.find((x) => x.id === id));
+    if (!picked.length || picked.some((u) => !u)) throw new AppError('Unknown accounting scope: it must name Treasury or Accounts of this Book.', { status: 404 });
+    // Keep the Book's own order: Treasury first, then Accounts as created.
+    return units.filter((u) => picked.includes(u));
   }
 
   return { createBook, createAccount, listBooks, getBook, requireBook, getUnit, requireUnit, treasuryOf, unitsOf, settingsOf, updateSettings, renameBook, capital, transfer, scopeUnits };

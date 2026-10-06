@@ -247,6 +247,74 @@ export function createHedge(app) {
     return { ...pv, hedge: { requestId, packageId, package: pkg || null } };
   }
 
+  // ---- waiting requests: refreshed when the service can answer -----------------------------------------
+  const canAnswer = () => (app.config.demo && app.data.getSetting('demo.hedgeFixture', true)) || app.data.analytics.state().connection === 'connected';
+  let couldAnswer = false, lastRefresh = 0;
+
+  /**
+   * Requests still waiting for Shaffer Hedge are sent again once it can answer: when the
+   * connection comes up, and then at the analytics refresh interval. Each one is rebuilt against
+   * the exposure as it stands now and written back to the SAME request, so nothing is duplicated.
+   * Nothing is ever executed from here; the result waits in the review queue.
+   */
+  async function refreshWaiting({ force = false } = {}) {
+    const can = canAnswer();
+    const cameUp = can && !couldAnswer;
+    couldAnswer = can;
+    if (!can) return [];
+    const nowMs = clock.ms();
+    if (!force && !cameUp && nowMs - lastRefresh < app.data.getRefresh().analyticsMs) return [];
+    lastRefresh = nowMs;
+    const rows = db.all(`SELECT * FROM hedge_requests WHERE status IN ('awaiting','error') AND (strategy_id IS NOT NULL OR scope_type IN ('account','book')) ORDER BY created_at`).map(parse);
+    const out = [];
+    for (const row of rows) {
+      const now = clock.now().toISOString();
+      if (row.strategy_id) {
+        const s = app.packages.getStrategyRow(row.strategy_id);
+        const open = s ? positions.list({ unitIds: [s.unit_id], strategyId: s.id }).some((p) => !isZero(p.qty)) : false;
+        if (!open) { db.run(`UPDATE hedge_requests SET status = 'superseded', message = ?, updated_at = ? WHERE id = ?`, 'The position was closed before a recommendation arrived.', now, row.id); continue; }
+      }
+      const q = row.request;
+      let req;
+      try {
+        req = buildRequest({ bookId: row.book_id, unitId: row.unit_id, strategyId: row.strategy_id, scope: { type: row.scope_type }, trigger: row.trigger, investmentStrategy: q.investmentStrategy, holdingPeriod: q.holdingPeriod, objective: { type: q.objective?.type, serverDefined: q.objective?.serverDefined, settings: q.objective?.settings } });
+      } catch { continue; }
+      req.requestId = row.id;
+      req.createdAt = q.createdAt;
+      req.refreshedAt = now;
+      const r = app.config.demo && app.data.getSetting('demo.hedgeFixture', true) ? { available: true, response: await demoHedgeResponse(app, req) } : await app.data.analytics.hedge(req);
+      if (r?.available) {
+        const response = normalizeResponse(r.response);
+        db.run(`UPDATE hedge_requests SET request = ?, response = ?, status = 'received', message = ?, updated_at = ? WHERE id = ?`, j(req), j(response), response.packages.length ? null : response.note || 'Shaffer Hedge returned no packages for this request.', now, row.id);
+        if (response.packages.length) {
+          const what = req.primary?.instrument ? `${req.primary.direction} ${req.primary.instrument.symbol || req.primary.instrument.name}` : req.account?.name || req.book.name;
+          app.alerts.raise({ bookId: row.book_id, unitId: row.unit_id, level: 'warning', code: 'hedge.ready', refType: 'hedge', refId: row.id, message: `Hedge recommendations arrived for ${what}. They are in the hedge review queue; nothing is traded until you confirm.` });
+        }
+        out.push(row.id);
+      } else if (r?.reason === 'error') db.run(`UPDATE hedge_requests SET status = 'error', message = ?, updated_at = ? WHERE id = ?`, r.message, now, row.id);
+    }
+    return out;
+  }
+
+  /** The request currently open for a strategy's position (waiting, or answered and not yet acted on). */
+  function openForStrategy(strategyId) {
+    const r = parse(db.get(`SELECT * FROM hedge_requests WHERE strategy_id = ? AND status IN ('awaiting','received','error') ORDER BY created_at DESC LIMIT 1`, strategyId));
+    return r ? { id: r.id, status: r.status, packages: r.response?.packages?.length ?? 0, message: r.message, updatedAt: r.updated_at } : null;
+  }
+
+  /** Review queue of one Book: hedge requests that still need a decision, and hedges whose exposure changed. */
+  function queue(bookId) {
+    const open = db.all(`SELECT * FROM hedge_requests WHERE book_id = ? AND status IN ('awaiting','received','error') AND (strategy_id IS NOT NULL OR scope_type IN ('account','book')) ORDER BY created_at DESC`, bookId).map(parse).map((r) => view(r));
+    const unitName = new Map(books.unitsOf(bookId).map((u) => [u.id, u.kind === 'treasury' ? 'Treasury' : u.name]));
+    const items = open.map((r) => {
+      const s = r.strategyId ? app.packages.getStrategyRow(r.strategyId) : null;
+      return { ...r, owner: unitName.get(r.unitId) || null, strategy: s ? { id: s.id, name: s.name, status: s.status } : null, packages: r.response?.packages?.length ?? 0, request: undefined, response: undefined, primary: r.request.primary ? { symbol: r.request.primary.instrument?.symbol, name: r.request.primary.instrument?.name, direction: r.request.primary.direction, quantity: r.request.primary.quantity } : null, refreshedAt: r.request.refreshedAt || null };
+    });
+    const reviews = db.all(`SELECT id, name, unit_id, params FROM strategies WHERE book_id = ? AND status IN ('open','attention','partial') AND json_extract(params, '$.hedgeReview.needed') = 1`, bookId)
+      .map((s) => ({ strategy: { id: s.id, name: s.name }, owner: unitName.get(s.unit_id), ...pj(s.params, {}).hedgeReview }));
+    return { items, reviews, canAnswer: canAnswer(), awaitingMessage: app.data.describe().awaitingMessage };
+  }
+
   function markExecuted(requestId, { packageId, submission, strategyId }) {
     const row = get(requestId);
     if (!row) return;
@@ -254,12 +322,14 @@ export function createHedge(app) {
     db.run(`UPDATE hedge_requests SET status = 'executed', selected_package = ?, executed_submission = ?, strategy_id = COALESCE(strategy_id, ?), prompt_seen = 1, updated_at = ? WHERE id = ?`, packageId || null, submission, strategyId || null, now, requestId);
     const sid = row.strategy_id || strategyId;
     if (sid) clearReview(sid);
+    app.alerts.resolve({ refType: 'hedge', refId: requestId, code: 'hedge.ready' });
   }
 
   function dismiss(requestId) {
     const row = get(requestId);
     need(row, 'Hedge request not found.', { status: 404 });
     if (row.status !== 'executed') db.run(`UPDATE hedge_requests SET status = CASE WHEN status = 'executed' THEN status ELSE 'dismissed' END, prompt_seen = 1, updated_at = ? WHERE id = ?`, clock.now().toISOString(), requestId);
+    app.alerts.resolve({ refType: 'hedge', refId: requestId, code: 'hedge.ready' });
     return view(get(requestId));
   }
 
@@ -323,5 +393,6 @@ export function createHedge(app) {
   return {
     objectives: () => HEDGE_OBJECTIVES, scopes: () => HEDGE_SCOPES, families: () => HEDGE_FAMILIES,
     buildRequest, request, get: (id) => view(get(id)), packageLegs, previewPackage, markExecuted, dismiss, forStrategy, flagReview, clearReview, onStrategyChange, processQueue, prompts, markSeen, list, queueSize: () => postTradeQueue.size,
+    refreshWaiting, openForStrategy, queue, canAnswer,
   };
 }

@@ -222,6 +222,9 @@ export const swap = {
       return l;
     });
     const ccy = t.legs[0]?.ccy || draft.trading_ccy;
+    // Independent amount: cash collateral posted at trade as a share of notional, returned when the swap ends.
+    t.initialMarginPct = num(t.initialMarginPct);
+    if (t.initialMarginPct !== null && !(t.initialMarginPct >= 0 && t.initialMarginPct < 1)) errors.push('The independent amount is a share of notional between 0 and 1 (0.10 = 10%).');
     return { terms: t, multiplier: 0.01, errors, tradingCcy: ccy, settleCcy: ccy };
   },
   describe(inst, app) {
@@ -231,19 +234,27 @@ export const swap = {
     const ccys = [...new Set(t.legs.map((l) => l.ccy))];
     rows.push(['Currencies', ccys.join(', ')]);
     if (t.legs.some((l) => l.exchangeNotional)) rows.push(['Notional exchange', 'At start and maturity']);
-    rows.push(['Counterparty', t.counterparty || 'Simulated counterparty'], ['Collateral terms', t.collateral || 'None stated']);
+    rows.push(['Counterparty', t.counterparty || 'Simulated counterparty']);
+    rows.push(['Collateral terms', t.initialMarginPct ? `Independent amount of ${(t.initialMarginPct * 100).toFixed(2)}% of notional, posted in cash at trade and returned when the swap ends${t.collateral ? `. ${t.collateral}` : ''}` : t.collateral || 'None stated: no collateral is posted']);
     return rows;
   },
   qtyStep: () => 1,
   settleDate(app, inst, tradeDate, book) {
     return addBusinessDays(tradeDate, inst.terms?.settleDays ?? book.settings.settlement.swap ?? 2, calendarFor(inst));
   },
-  economics(app, { inst, action, qty, price }) {
+  economics(app, { inst, action, qty, price, unit, strategyId }) {
     const upfront = (qty * price) / 100;
     const buy = action === 'buy';
     const notes = ['Notional is not paid. Only the upfront amount (if any) settles at trade; each leg then pays on its schedule.'];
     for (const l of inst.terms.legs) notes.push(`Leg ${l.id}: ${buy ? describeLeg(l, app) : describeLeg({ ...l, side: l.side === 'pay' ? 'receive' : 'pay' }, app)}`);
-    return { ccy: inst.trading_ccy, principal: upfront, cash: buy ? -upfront : upfront, accrued: 0, notional: qty, exposure: null, initialMargin: 0, notes };
+    // Collateral to post (or get back) for the position this trade leaves.
+    const pct = inst.terms.initialMarginPct || 0;
+    const pos = unit && !inst.draft ? app.positions.find(unit.id, inst.id, strategyId || '') : null;
+    const after = Math.abs((pos?.qty || 0) + (buy ? qty : -qty));
+    const held = pos ? app.ledger.positionBalance(pos.id, 'cash.margin', inst.trading_ccy) : 0;
+    const initialMargin = money(after * pct - held, inst.trading_ccy);
+    if (pct) notes.push(`Independent amount: ${(pct * 100).toFixed(2)}% of notional is posted as cash collateral and returned when the swap ends.`);
+    return { ccy: inst.trading_ccy, principal: upfront, cash: buy ? -upfront : upfront, accrued: 0, notional: qty, exposure: null, initialMargin, notes };
   },
   fill(app, c) {
     const r = bookSecurityFill(app, c, { unitCost: c.price / 100 });
@@ -258,6 +269,7 @@ export const swap = {
   },
   onPositionChange(app, { book, unit, inst, pos }) {
     trueUpNotionalExchange(app, { book, unit, inst, pos, date: app.clock.today() });
+    trueUpCollateral(app, { book, unit, inst, pos: app.positions.get(pos.id) });
     if (isZero(pos.qty)) return app.tasks.cancelFor(pos.id);
     scheduleLegTasks(app, { book, unit, inst, pos: app.positions.get(pos.id) });
   },
@@ -340,6 +352,7 @@ export const swap = {
         eventType: 'swap.matured', actor: 'engine', summary: `Swap matured: ${inst.name} (notional ${fmtQty(Math.abs(fresh.qty))})`,
       }, { unitCost: 0 });
       trueUpNotionalExchange(app, { book, unit, inst, pos: app.positions.get(pos.id), date: app.clock.today() });
+      trueUpCollateral(app, { book, unit, inst, pos: app.positions.get(pos.id) });
       return { done: true, eventId: r.eventId };
     }
     return { failed: `Unknown task ${task.type}` };
@@ -366,6 +379,26 @@ export const swap = {
     return eventId;
   },
 };
+
+/**
+ * Keep the cash collateral posted on a swap equal to its independent amount: post when the
+ * position opens or grows, release when it shrinks or ends. Collateral stays the unit's own asset
+ * (margin posted); it is not an expense.
+ */
+function trueUpCollateral(app, { book, unit, inst, pos }) {
+  if (!pos) return null;
+  const ccy = inst.trading_ccy;
+  const target = money(Math.abs(pos.qty) * (inst.terms.initialMarginPct || 0), ccy);
+  const held = app.ledger.positionBalance(pos.id, 'cash.margin', ccy);
+  const delta = money(target - held, ccy);
+  if (delta === 0) return null;
+  return app.ledger.post({
+    bookId: book.id, unitId: unit.id, type: 'swap.collateral', instrumentId: inst.id, strategyId: pos.strategy_id, positionId: pos.id, actor: 'engine',
+    summary: `Collateral ${delta > 0 ? 'posted' : 'returned'} on ${inst.name}: ${fmt(Math.abs(delta), ccy)} (independent amount ${((inst.terms.initialMarginPct || 0) * 100).toFixed(2)}% of ${fmtQty(Math.abs(pos.qty))} notional)`,
+    data: { target, held, delta },
+    entries: [{ account: 'cash.margin', ccy, amount: delta, positionId: pos.id }, { account: 'cash', ccy, amount: -delta, positionId: pos.id }],
+  });
+}
 
 // ---------------------------------------------------------------------------------------------
 // Credit default swaps

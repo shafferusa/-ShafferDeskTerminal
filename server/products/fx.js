@@ -9,7 +9,7 @@
 // the settlement visibly; it is never guessed.
 
 import { fmt } from '../core/books.js';
-import { addBusinessDays } from '../quant/calendar.js';
+import { addBusinessDays, fxValueDate } from '../quant/calendar.js';
 import { yearFraction } from '../quant/daycount.js';
 import { CCY_RE, ISO_DATE_RE, isZero, money, num, qty8, sign } from '../core/util.js';
 import { dqOf, fmtPx, fmtQty } from './common.js';
@@ -29,7 +29,7 @@ export const fx = {
   qtyLabel: 'Base-currency amount',
   actions: () => ['buy', 'sell'],
   priceUnits: (inst) => `${inst.terms.quote} per ${inst.terms.base}`,
-  calendar: () => 'WEEKEND',
+  calendar: (inst) => fxValueDate('2000-01-03', inst.terms.base, inst.terms.quote, 0).calendar,
   normalize(app, draft) {
     const errors = [];
     const t = { ...(draft.terms || {}) };
@@ -42,7 +42,13 @@ export const fx = {
   },
   describe: (inst) => [['Base currency', inst.terms.base], ['Quote currency', inst.terms.quote], ['Spot settlement', `T+${inst.terms.settleDays}`]],
   qtyStep: () => 0.01,
-  settleDate: (app, inst, tradeDate) => addBusinessDays(tradeDate, inst.terms.settleDays ?? 2, 'WEEKEND'),
+  // Spot value date: good days for both currencies; the value date is also a US dollar banking day.
+  settleDate: (app, inst, tradeDate) => fxValueDate(tradeDate, inst.terms.base, inst.terms.quote, inst.terms.settleDays ?? 2).date,
+  calendarInfo: (inst) => {
+    const v = fxValueDate('2000-01-03', inst.terms.base, inst.terms.quote, 0);
+    return { id: v.calendar, label: `Payment calendars of ${inst.terms.base} and ${inst.terms.quote}`, basis: 'currency', fallback: v.missing.length > 0, approximate: v.missing.length > 0,
+      note: v.missing.length ? `No payment calendar is built in for ${v.missing.join(' and ')}: weekends only are used for ${v.missing.length > 1 ? 'them' : 'it'}, so local holidays are not recognised.` : null };
+  },
   economics(app, { inst, action, qty, price }) {
     const quoteAmt = qty * price;
     const buy = action === 'buy';

@@ -92,24 +92,30 @@ export function createValuation(app) {
       add(b.ccy, MAP[b.account], b.amount);
     }
     const valued = positionsOf(unitIds);
-    const unpriced = [];
+    const unpriced = [], stale = [];
     for (const p of valued) {
       if (p.ledgerCarried) continue;
-      if (p.missing) { unpriced.push({ positionId: p.positionId, instrument: p.instrument, qty: p.qty, cost: p.cost, ccy: p.ccy }); continue; }
+      if (p.missing) { unpriced.push({ positionId: p.positionId, unitId: p.unitId, instrument: p.instrument, qty: p.qty, cost: p.cost, ccy: p.ccy }); continue; }
+      // Valued, but on a mark that is past its freshness limit: the value stands, flagged as not current.
+      if (p.priceObs?.freshness === 'stale') stale.push({ positionId: p.positionId, unitId: p.unitId, instrument: p.instrument, qty: p.qty, ccy: p.ccy, asOf: p.priceObs.asOf, status: p.priceObs.status, source: p.priceObs.source });
       add(p.ccy, 'unrealized', p.unrealized || 0);
     }
     let navRc = 0, complete = true;
-    const fxMissing = [];
+    const fxMissing = [], fxStale = [];
     const rows = [];
     for (const r of byCcy.values()) {
       const local = money(r.ledger + r.unrealized, r.ccy);
       const fx = app.data.fx(r.ccy, rc);
       const rcValue = fx ? money(local * fx.rate, rc) : null;
+      const fxObs = fx?.obs ? app.data.present(fx.obs) : null;
       if (!fx && Math.abs(local) > 0.004) { complete = false; fxMissing.push(r.ccy); } else if (fx) navRc += rcValue;
-      rows.push({ ...roundAll(r), nav: local, navRc: rcValue, fxRate: fx ? fx.rate : null, fxObs: fx?.obs ? app.data.present(fx.obs) : null });
+      if (fxObs?.freshness === 'stale' && Math.abs(local) > 0.004) fxStale.push({ ccy: r.ccy, asOf: fxObs.asOf, status: fxObs.status, source: fxObs.source });
+      rows.push({ ...roundAll(r), nav: local, navRc: rcValue, fxRate: fx ? fx.rate : null, fxObs });
     }
     if (unpriced.length) complete = false;
-    return { reportingCcy: rc, nav: money(navRc, rc), complete, byCurrency: rows.sort((a, b) => (a.ccy === rc ? -1 : b.ccy === rc ? 1 : a.ccy < b.ccy ? -1 : 1)), unpriced, fxMissing, positions: valued };
+    // Provisional: the figure exists but rests on something that is missing or not current.
+    const provisional = !complete || stale.length > 0 || fxStale.length > 0;
+    return { reportingCcy: rc, nav: money(navRc, rc), complete, provisional, byCurrency: rows.sort((a, b) => (a.ccy === rc ? -1 : b.ccy === rc ? 1 : a.ccy < b.ccy ? -1 : 1)), unpriced, stale, fxMissing, fxStale, positions: valued };
   }
 
   function roundAll(r) {

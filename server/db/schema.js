@@ -396,4 +396,13 @@ CREATE INDEX idx_hedge_strategy ON hedge_requests(strategy_id, created_at);
 CREATE INDEX idx_hedge_book ON hedge_requests(book_id, status);
 `,
   },
+  {
+    id: 3,
+    name: 'listing venue country',
+    sql: `
+-- ISO country of the listing venue. It selects the settlement calendar; the market view, issuer
+-- domicile and underlying geography remain separate fields.
+ALTER TABLE instruments ADD COLUMN venue_country TEXT;
+`,
+  },
 ];

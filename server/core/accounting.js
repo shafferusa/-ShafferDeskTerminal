@@ -80,6 +80,19 @@ export function createAccounting(app) {
     return { rc, nav, navRc: nav.nav, navComplete: nav.complete, unrealizedRc: money(unrealizedRc, rc), unrealizedComplete, unrealizedByCcy: [...unrealizedByCcy].map(([ccy, amount]) => ({ ccy, amount: money(amount, ccy) })), fx };
   }
 
+  /** NAV with its standing: final, or provisional together with every item that makes it so. */
+  function navStatus(bookId, m) {
+    const names = new Map(books.unitsOf(bookId).map((u) => [u.id, u.kind === 'treasury' ? 'Treasury' : u.name]));
+    const label = (i) => i.symbol || i.name;
+    const affected = [
+      ...m.nav.unpriced.map((x) => ({ kind: 'unpriced', owner: names.get(x.unitId), instrument: x.instrument, qty: x.qty, ccy: x.ccy, detail: `${label(x.instrument)} (${names.get(x.unitId)}): no price, so it is carried at cost and left out of unrealized P&L` })),
+      ...m.nav.stale.map((x) => ({ kind: 'stale-price', owner: names.get(x.unitId), instrument: x.instrument, qty: x.qty, ccy: x.ccy, asOf: x.asOf, detail: `${label(x.instrument)} (${names.get(x.unitId)}): valued on a mark that is not current (${x.status}, ${x.source}, as of ${x.asOf})` })),
+      ...m.nav.fxMissing.map((ccy) => ({ kind: 'fx-missing', ccy, detail: `${ccy}: no conversion rate to ${m.rc}, so ${ccy} balances are left out of the total` })),
+      ...m.nav.fxStale.map((x) => ({ kind: 'fx-stale', ccy: x.ccy, asOf: x.asOf, detail: `${x.ccy}: converted at a rate that is not current (${x.status}, ${x.source}, as of ${x.asOf})` })),
+    ];
+    return { value: m.navRc, complete: m.navComplete, provisional: m.nav.provisional, affected };
+  }
+
   function snapshotBefore(unitIds, date) {
     // Latest snapshot strictly before `date` for each unit; null if any unit has none.
     let navRc = 0, unrealizedRc = 0, fxRc = 0, complete = true, asOf = null;
@@ -163,8 +176,8 @@ export function createAccounting(app) {
       categories, unrealized, fx,
       investmentPnl: total, complete,
       capital: { ...flows, net: netFlows, note: 'Capital contributions, withdrawals and internal transfers are not investment performance.' },
-      nav: { start: navStart, end: m.navRc, endComplete: m.navComplete, explained: periodKnown && total !== null ? money(navStart + netFlows + total, rc) : null },
-      missing: { unpriced: m.nav.unpriced, fxMissing: m.nav.fxMissing },
+      nav: { start: navStart, end: m.navRc, endComplete: m.navComplete, provisional: m.nav.provisional, affected: navStatus(bookId, m).affected, explained: periodKnown && total !== null ? money(navStart + netFlows + total, rc) : null },
+      missing: { unpriced: m.nav.unpriced, fxMissing: m.nav.fxMissing, stale: m.nav.stale, fxStale: m.nav.fxStale },
       awaitingMessage: app.data.describe().awaitingMessage, marketConnected: app.data.marketConnected(),
     };
   }
@@ -195,6 +208,8 @@ export function createAccounting(app) {
         ...p, owner: { id: p.unitId, name: unitName.get(p.unitId)?.name, kind: unitName.get(p.unitId)?.kind },
         strategy: s ? { id: s.id, name: s.name, template: s.template, status: s.status, investmentStrategy: s.params.investmentStrategy || null } : null,
         borrowing,
+        // The hedge request still open for this position's strategy, so it stays visible on the position.
+        hedgeRequest: p.strategyId && app.hedge ? app.hedge.openForStrategy(p.strategyId) : null,
         collateral: { pledgedQty: p.pledgedQty, onLoanQty: p.onLoanQty, restrictedCash: p.restrictedCash, marginPosted: p.marginPosted, received: p.collateral, held: p.data.collateralHeld || null },
         support: instruments.support(inst),
       };
@@ -210,7 +225,209 @@ export function createAccounting(app) {
       }
     }
     const m = metrics(bookId, ids);
-    return { scope: scopeInfo(bookId, scope, units), reportingCcy: book.reporting_ccy, positions: rows, cash, nav: { value: m.navRc, complete: m.navComplete, byCurrency: m.nav.byCurrency, unpriced: m.nav.unpriced, fxMissing: m.nav.fxMissing }, awaitingMessage: app.data.describe().awaitingMessage, marketConnected: app.data.marketConnected() };
+    return { scope: scopeInfo(bookId, scope, units), reportingCcy: book.reporting_ccy, positions: rows, holdings: holdingsOf(rows), cash, nav: { ...navStatus(bookId, m), byCurrency: m.nav.byCurrency, unpriced: m.nav.unpriced, fxMissing: m.nav.fxMissing }, awaitingMessage: app.data.describe().awaitingMessage, marketConnected: app.data.marketConnected() };
+  }
+
+  /**
+   * Gross holdings by instrument: long, short and net kept apart, with the owning Treasury or
+   * Account. A net figure is never presented as the long holding.
+   */
+  function holdingsOf(rows) {
+    const by = new Map();
+    for (const p of rows) {
+      if (['loan', 'repo', 'secloan'].includes(p.family)) continue;
+      if (!by.has(p.instrument.id)) by.set(p.instrument.id, { instrument: p.instrument, long: 0, short: 0, net: 0, owners: [] });
+      const h = by.get(p.instrument.id);
+      let o = h.owners.find((x) => x.id === p.owner.id);
+      if (!o) { o = { id: p.owner.id, name: p.owner.kind === 'treasury' ? 'Treasury' : p.owner.name, kind: p.owner.kind, long: 0, short: 0, net: 0 }; h.owners.push(o); }
+      for (const t of [h, o]) { if (p.qty > 0) t.long += p.qty; else t.short += -p.qty; t.net += p.qty; }
+    }
+    return [...by.values()].sort((a, b) => ((a.instrument.symbol || a.instrument.name) < (b.instrument.symbol || b.instrument.name) ? -1 : 1));
+  }
+
+  // ---- borrowing register ---------------------------------------------------------------------------------
+  const BORROW_TYPE = { loan: 'Cash loan', repo: 'Repo (cash borrowed against securities)', secloan: 'Securities borrowed' };
+  const LOAN_TYPE = { margin: 'Margin loan', secured: 'Secured loan', unsecured: 'Unsecured loan', facility: 'Credit facility drawing' };
+  const rateText = (t) => (t.rateType === 'floating' ? `${t.referenceRate} + ${((t.spread || 0) * 100).toFixed(2)}%` : t.rate !== null && t.rate !== undefined ? `${(t.rate * 100).toFixed(3)}% fixed` : null);
+
+  /**
+   * Every external borrowing of a scope, one record each. The record IS the position that carries
+   * the liability in the owner's ledger: Treasury's funding view and the Book's consolidated view
+   * read these same records, so a borrowing is never counted or created twice.
+   */
+  function borrowings(bookId, scope = 'book') {
+    const book = books.requireBook(bookId);
+    const units = books.scopeUnits(bookId, scope);
+    const unit = new Map(units.map((u) => [u.id, u]));
+    const ids = units.map((u) => u.id);
+    const rc = book.reporting_ccy;
+    const tasks = app.tasks.open(ids);
+    const out = [];
+    for (const p of positions.list({ unitIds: ids })) {
+      if (isZero(p.qty)) continue;
+      const inst = instruments.get(p.instrument_id);
+      const borrowed = (inst.family === 'loan' && p.qty < 0) || (inst.family === 'repo' && p.qty < 0) || (inst.family === 'secloan' && p.qty > 0);
+      if (!borrowed) continue;
+      const t = inst.terms;
+      const u = unit.get(p.unit_id);
+      const ccy = inst.trading_ccy;
+      const fx = app.data.fx(ccy, rc);
+      const cash = inst.family !== 'secloan';
+      const und = inst.underlying_id ? instruments.get(inst.underlying_id) : null;
+      const coll = t.collateralInstrumentId ? instruments.get(t.collateralInstrumentId) : null;
+      const undPx = und ? app.data.price(und.id)?.value ?? null : null;
+      const principal = cash ? Math.abs(p.qty) : null;
+      const securitiesValue = !cash && undPx !== null ? money(p.qty * undPx * und.multiplier, ccy) : null;
+      const next = tasks.filter((x) => x.position_id === p.id && x.status !== 'failed').sort((a, b) => (a.due_date < b.due_date ? -1 : 1))[0] || null;
+      const sum = (accounts) => db.get(`SELECT COALESCE(SUM(amount), 0) AS a, COALESCE(SUM(amount_rc), 0) AS r FROM entries WHERE position_id = ? AND account IN (${inList(accounts)})`, p.id, ...accounts);
+      const interest = sum(['pnl.funding', 'pnl.borrow']), fees = sum(['pnl.fee', 'pnl.commission']);
+      const strat = p.strategy_id ? app.packages.getStrategyRow(p.strategy_id) : null;
+      let collateral;
+      if (inst.family === 'repo') collateral = { kind: 'securities', description: `${coll ? coll.symbol || coll.name : 'Securities'}: ${t.collateralQty} pledged, haircut ${((t.haircut || 0) * 100).toFixed(2)}%`, instrument: coll ? { id: coll.id, symbol: coll.symbol, name: coll.name } : null, qty: t.collateralQty };
+      else if (inst.family === 'secloan') { const held = ledger.positionBalance(p.id, 'cash.restricted', ccy); collateral = { kind: 'cash', description: `Cash collateral ${((t.collateralPct || 1) * 100).toFixed(0)}% of market value, held as restricted cash`, cash: held || null }; }
+      else if (Array.isArray(t.collateral) && t.collateral.length) collateral = { kind: 'securities', description: t.collateral.map((c) => { const cp = positions.get(c.positionId); const ci = cp ? instruments.get(cp.instrument_id) : null; return `${c.qty} ${ci ? ci.symbol || ci.name : 'securities'}`; }).join(', ') };
+      else collateral = { kind: 'none', description: t.loanType === 'margin' ? 'Secured on the Account\'s holdings (margin loan); no specific pledge recorded' : 'None (unsecured)' };
+      out.push({
+        id: p.id, contractId: inst.id, name: inst.name,
+        owner: { id: u.id, name: u.kind === 'treasury' ? 'Treasury' : u.name, kind: u.kind },
+        originatedBy: u.kind === 'account' ? 'account' : 'treasury', accountOriginated: u.kind === 'account',
+        type: inst.family === 'loan' ? LOAN_TYPE[t.loanType] || BORROW_TYPE.loan : BORROW_TYPE[inst.family], family: inst.family,
+        lender: t.counterparty || (t.triparty ? t.agent : null) || null,
+        ccy, principal, principalRc: principal !== null && fx ? money(principal * fx.rate, rc) : null,
+        securities: cash ? null : { instrument: und ? { id: und.id, symbol: und.symbol, name: und.name } : null, qty: p.qty, value: securitiesValue },
+        rate: cash ? { type: t.rateType || 'fixed', rate: t.rate ?? null, referenceRate: t.referenceRate || null, spread: t.spread ?? null, text: rateText(t), dayCount: t.dayCount || null } : { type: 'fee', rate: t.feeRate ?? null, text: t.feeRate !== null && t.feeRate !== undefined ? `${(t.feeRate * 100).toFixed(3)}% a year on market value` : null },
+        startDate: t.startDate || (p.opened_at || '').slice(0, 10) || null,
+        maturity: inst.family === 'loan' ? t.maturity || null : inst.family === 'repo' ? t.endDate || null : null,
+        term: inst.family === 'repo' ? t.term : inst.family === 'secloan' ? 'open, recallable' : t.maturity ? 'term' : 'open-ended',
+        collateral,
+        schedule: { interest: inst.family === 'loan' ? (t.interestPayment === 'monthly' ? 'Interest paid monthly' : 'Interest paid at maturity') : inst.family === 'repo' ? 'Interest paid at repurchase' : 'Fee paid monthly', next: next ? { date: next.due_date, type: next.type, blocked: next.status === 'blocked' ? next.blocked_reason : null } : null },
+        accrued: money(-ledger.positionBalance(p.id, 'accrued.liab', ccy), ccy),
+        interestToDate: money(interest.a, ccy), interestToDateRc: money(interest.r, rc), feesToDate: money(fees.a, ccy),
+        strategy: strat ? { id: strat.id, name: strat.name } : null, terms: app.products.get(inst.family).describe(inst, app),
+      });
+    }
+    return out;
+  }
+
+  // ---- balance sheet -----------------------------------------------------------------------------------------
+  const BS_LINES = [
+    { key: 'cash', section: 'assets', label: 'Settled cash', accounts: ['cash'] },
+    { key: 'restricted', section: 'assets', label: 'Restricted cash', accounts: ['cash.restricted'], note: 'Short-sale proceeds and collateral held against borrowed securities. Not buying power.' },
+    { key: 'margin', section: 'assets', label: 'Margin and collateral posted', accounts: ['cash.margin'] },
+    { key: 'receivable', section: 'assets', label: 'Receivable for unsettled trades', accounts: ['recv.settle'] },
+    { key: 'accruedIncome', section: 'assets', label: 'Accrued income', accounts: ['accrued.asset'] },
+    { key: 'positions', section: 'assets', label: 'Positions at market value', accounts: ['pos'], unrealized: true, note: 'Long positions less short positions. A position with no price is carried at cost.' },
+    { key: 'lent', section: 'assets', label: 'Cash lent', accounts: ['loan.asset'] },
+    { key: 'payable', section: 'liabilities', label: 'Payable for unsettled trades', accounts: ['pay.settle'] },
+    { key: 'accruedExpense', section: 'liabilities', label: 'Accrued interest and fees payable', accounts: ['accrued.liab'] },
+    { key: 'borrowed', section: 'liabilities', label: 'Cash borrowed', accounts: ['loan.liab'], note: 'External borrowing, on the balance sheet of the Treasury or Account that owes it.' },
+    { key: 'collateralReceived', section: 'liabilities', label: 'Cash collateral received', accounts: ['coll.received'] },
+  ];
+
+  /**
+   * Balance sheet of a scope as a consolidation worksheet: one column per Treasury or Account in
+   * the scope, then eliminations, then the total. Internal funding between Treasury and Accounts
+   * is shown in each column and eliminated in the whole-Book total; external borrowing is a
+   * liability of the unit that owes it and enters the total exactly once.
+   */
+  function balanceSheet(bookId, scope = 'book') {
+    const book = books.requireBook(bookId);
+    const units = books.scopeUnits(bookId, scope);
+    const all = books.unitsOf(bookId);
+    const rc = book.reporting_ccy;
+    const whole = units.length === all.length;
+    const rate = new Map();
+    const fxOf = (ccy) => { if (!rate.has(ccy)) rate.set(ccy, app.data.fx(ccy, rc)?.rate ?? null); return rate.get(ccy); };
+    const cell = (byCcy) => {
+      let total = 0, complete = true;
+      const list = [];
+      for (const [ccy, amount] of byCcy) {
+        const a = money(amount, ccy);
+        if (a === 0) continue;
+        list.push({ ccy, amount: a });
+        const r = fxOf(ccy);
+        if (r === null) complete = false; else total += a * r;
+      }
+      return { rc: money(total, rc), complete, byCurrency: list.sort((a, b) => (a.ccy === rc ? -1 : b.ccy === rc ? 1 : a.ccy < b.ccy ? -1 : 1)) };
+    };
+    const addCells = (cells) => {
+      const m = new Map();
+      for (const c of cells) for (const x of c.byCurrency) m.set(x.ccy, (m.get(x.ccy) || 0) + x.amount);
+      return cell(m);
+    };
+    // Per unit: ledger balances by account and currency, and unrealized P&L by currency.
+    const per = new Map();
+    for (const u of units) {
+      const bal = new Map();
+      for (const b of ledger.balances([u.id])) { if (!bal.has(b.account)) bal.set(b.account, new Map()); bal.get(b.account).set(b.ccy, b.amount); }
+      const unreal = new Map();
+      for (const r of app.valuation.nav(bookId, [u.id]).byCurrency) if (r.unrealized) unreal.set(r.ccy, r.unrealized);
+      per.set(u.id, { bal, unreal });
+    }
+    const lineCell = (u, line, sign) => {
+      const m = new Map();
+      const { bal, unreal } = per.get(u.id);
+      for (const a of line.accounts) for (const [ccy, amt] of bal.get(a) || []) m.set(ccy, (m.get(ccy) || 0) + sign * amt);
+      if (line.unrealized) for (const [ccy, amt] of unreal) m.set(ccy, (m.get(ccy) || 0) + amt);
+      return cell(m);
+    };
+    const lines = BS_LINES.map((line) => {
+      const sign = line.section === 'liabilities' ? -1 : 1; // liabilities are shown as positive amounts owed
+      const cells = Object.fromEntries(units.map((u) => [u.id, lineCell(u, line, sign)]));
+      return { key: line.key, section: line.section, label: line.label, note: line.note || null, cells, elimination: null, total: addCells(Object.values(cells)) };
+    }).filter((l) => l.total.byCurrency.length || Object.values(l.cells).some((c) => c.byCurrency.length));
+    const sumSection = (section) => {
+      const cells = Object.fromEntries(units.map((u) => [u.id, addCells(lines.filter((l) => l.section === section).map((l) => l.cells[u.id]))]));
+      return { cells, total: addCells(Object.values(cells)) };
+    };
+    const assets = sumSection('assets'), liabilities = sumSection('liabilities');
+    const minus = (a, b) => { const m = new Map(); for (const x of a.byCurrency) m.set(x.ccy, x.amount); for (const x of b.byCurrency) m.set(x.ccy, (m.get(x.ccy) || 0) - x.amount); return cell(m); };
+    const netCells = Object.fromEntries(units.map((u) => [u.id, minus(assets.cells[u.id], liabilities.cells[u.id])]));
+    const netAssets = { cells: netCells, total: addCells(Object.values(netCells)) };
+
+    // Equity side. Internal funding: positive = funding this unit has received, negative = funding it has advanced.
+    const equity = (account) => Object.fromEntries(units.map((u) => { const m = new Map(); for (const [ccy, amt] of per.get(u.id).bal.get(account) || []) m.set(ccy, -amt); return [u.id, cell(m)]; }));
+    const capitalCells = equity('capital'), internalCells = equity('internal');
+    const capital = { key: 'capital', label: 'External capital contributed', cells: capitalCells, elimination: null, total: addCells(Object.values(capitalCells)) };
+    const internalSum = addCells(Object.values(internalCells));
+    const internal = {
+      key: 'internal', label: 'Funding between Treasury and Accounts', cells: internalCells,
+      note: whole ? 'Internal to the Book: what Treasury advanced equals what the Accounts received, so it is eliminated from the Book total.' : 'Net funding these units have received from the rest of the Book (negative: advanced to it).',
+      // In the whole Book the internal balances must cancel; anything left would be an error, so it is reported.
+      elimination: whole ? { rc: money(-internalSum.rc, rc), byCurrency: internalSum.byCurrency.map((x) => ({ ccy: x.ccy, amount: -x.amount })) } : null,
+      total: whole ? cell(new Map()) : internalSum, residual: whole ? internalSum.byCurrency.filter((x) => Math.abs(x.amount) > 0.004) : [],
+    };
+    const resultCells = Object.fromEntries(units.map((u) => [u.id, { rc: money(netCells[u.id].rc - capitalCells[u.id].rc - internalCells[u.id].rc, rc), complete: netCells[u.id].complete && capitalCells[u.id].complete && internalCells[u.id].complete, byCurrency: [] }]));
+    const results = { key: 'results', label: 'Results to date', note: 'Realized and unrealized profit and loss, income, expenses and FX effects, in the reporting currency.', cells: resultCells, elimination: null,
+      total: { rc: money(netAssets.total.rc - capital.total.rc - internal.total.rc, rc), complete: netAssets.total.complete, byCurrency: [] } };
+
+    const m = metrics(bookId, units.map((u) => u.id));
+    const own = borrowings(bookId, units.map((u) => u.id).join(','));
+    const out = {
+      scope: scopeInfo(bookId, scope, units), reportingCcy: rc, asOf: app.clock.now().toISOString(), consolidated: whole && units.length > 1,
+      columns: units.map((u) => ({ id: u.id, name: u.kind === 'treasury' ? 'Treasury' : u.name, kind: u.kind })),
+      lines, assets, liabilities, netAssets, representedBy: [capital, internal, results],
+      nav: navStatus(bookId, m), borrowings: own,
+      fxRates: [...rate].filter(([ccy]) => ccy !== rc).map(([ccy, r]) => ({ ccy, rate: r })),
+      oversight: null,
+    };
+    // Treasury alone: its direct balances are the columns above. What it oversees but does not owe
+    // or own is listed apart, so an Account's borrowing is visible here without becoming a second loan.
+    if (units.length === 1 && units[0].kind === 'treasury') {
+      const accounts = all.filter((u) => u.kind === 'account');
+      const acctBorrow = accounts.length ? borrowings(bookId, accounts.map((u) => u.id).join(',')) : [];
+      out.oversight = {
+        note: 'These balances belong to the Accounts. They are shown for oversight and are not part of Treasury\'s own assets or liabilities. Each borrowing below is the Account\'s own record, not a second loan.',
+        accountBorrowings: acctBorrow,
+        accounts: accounts.map((u) => {
+          const am = metrics(bookId, [u.id]);
+          const funded = new Map(); for (const [ccy, amt] of ledger.balances([u.id]).filter((b) => b.account === 'internal').map((b) => [b.ccy, -b.amount])) funded.set(ccy, amt);
+          const borrowed = new Map(); for (const b of ledger.balances([u.id]).filter((x) => x.account === 'loan.liab')) borrowed.set(b.ccy, -b.amount);
+          return { id: u.id, name: u.name, nav: navStatus(bookId, am), fundingReceived: cell(funded), cashBorrowed: cell(borrowed) };
+        }),
+      };
+    }
+    return out;
   }
 
   // ---- 3. Pending trades ---------------------------------------------------------------------------------
@@ -425,7 +642,13 @@ export function createAccounting(app) {
     const received = arrangements.filter((a) => a.data?.collateralHeld).map((a) => { const i = instruments.get(a.data.collateralHeld.instrumentId); return { arrangement: a.name, owner: a.owner, instrument: i ? { id: i.id, symbol: i.symbol, name: i.name } : null, qty: a.data.collateralHeld.qty }; });
     const m = metrics(bookId, ids);
     const tm = metrics(bookId, [tr.id]);
-    return { book: { id: book.id, name: book.name, reportingCcy: rc }, treasury: { id: tr.id, name: tr.name }, cash, accountFunding: funding, arrangements, collateralInventory: inventory, collateralReceived: received, bookNav: { value: m.navRc, complete: m.navComplete }, treasuryNav: { value: tm.navRc, complete: tm.navComplete }, holds: ledger.listHolds(ids) };
+    const allBorrow = borrowings(bookId, 'book');
+    return {
+      book: { id: book.id, name: book.name, reportingCcy: rc }, treasury: { id: tr.id, name: tr.name }, cash, accountFunding: funding, arrangements, collateralInventory: inventory, collateralReceived: received,
+      bookNav: navStatus(bookId, m), treasuryNav: navStatus(bookId, tm), holds: ledger.listHolds(ids),
+      // One register: Treasury's own borrowings, and Account-originated borrowings it oversees but does not owe.
+      borrowings: { direct: allBorrow.filter((b) => !b.accountOriginated), accountOriginated: allBorrow.filter((b) => b.accountOriginated) },
+    };
   }
 
   /** Header figures for a Book. */
@@ -436,10 +659,10 @@ export function createAccounting(app) {
     const rows = units.map((u) => {
       const m = metrics(bookId, [u.id]);
       const open = positions.list({ unitIds: [u.id] }).filter((p) => !isZero(p.qty)).length;
-      return { id: u.id, name: u.name, kind: u.kind, nav: m.navRc, navComplete: m.navComplete, unrealized: m.unrealizedRc, unrealizedComplete: m.unrealizedComplete, openPositions: open, cash: ledger.currencies([u.id]).map((ccy) => ({ ccy, ...ledger.cash(u.id, ccy) })).filter((c) => c.settled !== 0 || c.reserved !== 0 || c.unsettled !== 0 || c.restricted !== 0 || c.margin !== 0) };
+      return { id: u.id, name: u.name, kind: u.kind, nav: m.navRc, navComplete: m.navComplete, navProvisional: m.nav.provisional, unrealized: m.unrealizedRc, unrealizedComplete: m.unrealizedComplete, openPositions: open, cash: ledger.currencies([u.id]).map((ccy) => ({ ccy, ...ledger.cash(u.id, ccy) })).filter((c) => c.settled !== 0 || c.reserved !== 0 || c.unsettled !== 0 || c.restricted !== 0 || c.margin !== 0) };
     });
     const m = metrics(bookId, units.map((u) => u.id));
-    return { book: { id: book.id, name: book.name, reportingCcy: rc }, nav: m.navRc, navComplete: m.navComplete, unrealized: m.unrealizedRc, unrealizedComplete: m.unrealizedComplete, units: rows, unpriced: m.nav.unpriced.length, fxMissing: m.nav.fxMissing, alerts: app.alerts.open(bookId) };
+    return { book: { id: book.id, name: book.name, reportingCcy: rc }, nav: m.navRc, navComplete: m.navComplete, navProvisional: m.nav.provisional, navAffected: navStatus(bookId, m).affected, unrealized: m.unrealizedRc, unrealizedComplete: m.unrealizedComplete, units: rows, unpriced: m.nav.unpriced.length, fxMissing: m.nav.fxMissing, alerts: app.alerts.open(bookId) };
   }
 
   /** End-of-day valuation snapshot per unit, keeping the observations used. */
@@ -469,7 +692,7 @@ export function createAccounting(app) {
     return rows.map((r) => ({ date: r.date, nav: r.nav, complete: Boolean(r.complete) }));
   }
 
-  return { pnl, openPositions, pending, failed, history, treasury, overview, metrics, snapshot, navHistory, reverseEvent, manualAdjustment, manualCashflow, eventView };
+  return { pnl, openPositions, pending, failed, history, treasury, overview, metrics, snapshot, navHistory, reverseEvent, manualAdjustment, manualCashflow, eventView, balanceSheet, borrowings, navStatus };
 }
 
 export { BALANCE_SHEET_ACCOUNTS, AppError };

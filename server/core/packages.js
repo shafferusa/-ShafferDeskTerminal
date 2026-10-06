@@ -15,6 +15,7 @@ import { analyzePackage, optionRequirement } from './payoff.js';
 import { TEMPLATES, buildLegs, getTemplate } from './templates.js';
 import { AppError, isZero, money, need, newId, num, round, uuid } from './util.js';
 import { fmtQty } from '../products/common.js';
+import { calendarInfo } from '../products/security.js';
 
 const BUY = new Set(['buy', 'buy_to_cover']);
 const ARR_OPEN = new Set(['loan', 'repo_open', 'lend_sec']);
@@ -215,6 +216,7 @@ export function createPackages(app) {
       checks: est.checks,
       blocking: est.checks.filter((c) => c.level === 'error').length,
       payoff: est.payoff,
+      protection: est.protection,
       netLimit: num(input.netLimit),
       generatedAt: clock.now().toISOString(),
       data: { market: app.data.market.state().connection, message: app.data.market.state().message },
@@ -227,7 +229,7 @@ export function createPackages(app) {
   function sanitizeInput(input) {
     // appendHedge is a one-time instruction: once the hedge legs are in the package they travel
     // with the legs, so a re-check or the confirmation must not add them again.
-    const { legs, clientToken, confirm, appendHedge, ...rest } = input;
+    const { legs, clientToken, confirm, appendHedge, expected, ...rest } = input;
     return rest;
   }
 
@@ -288,12 +290,18 @@ export function createPackages(app) {
         const settleDate = plugin.settleDate(app, inst, today, book);
         row.settleDate = settleDate;
         row.currency = inst.trading_ccy;
+        const cal = plugin.calendarInfo ? plugin.calendarInfo(inst) : calendarInfo(inst);
+        row.calendar = cal;
+        if (cal.fallback) check('warning', 'calendar-fallback', `Leg ${l.n}: the settlement date ${settleDate} for ${inst.symbol || inst.name} was worked out on weekends only. ${cal.note || 'No holiday calendar exists for its market.'}`, l.n);
+        else if (cal.note) check('info', 'calendar-approximate', `Leg ${l.n}: settlement calendar for ${inst.symbol || inst.name}: ${cal.label}. ${cal.note}`, l.n);
         if (refPrice === null) {
           // Notional of a swap, CDS or forward does not depend on a price, so it can still be shown.
           if (['swap', 'cds', 'forward'].includes(inst.family)) {
             const e0 = plugin.economics(app, { inst, action: l.action, qty: l.qty, price: 0, unit, strategyId: attach?.id || '', tradeDate: today, settleDate, book });
             row.notional = inst.family === 'forward' && inst.terms.forwardType !== 'fra' ? l.qty : e0.notional;
             row.econNotes = e0.notes || [];
+            // Collateral is a share of notional, so it is known without a price.
+            if (e0.initialMargin > 0) { row.initialMargin = e0.initialMargin; bump(inst.trading_ccy, 'margin', e0.initialMargin); }
           }
           anyUnknownCash = true;
           check('warning', 'no-price', `Leg ${l.n}: no price for ${inst.symbol || inst.name}. ${connected ? 'No observation is available.' : `${awaiting}.`} The leg would wait as a working order; enter a manual price or state a fill price to execute it.`, l.n);
@@ -306,6 +314,7 @@ export function createPackages(app) {
           const ccy = econ.ccy;
           bump(ccy, 'fees', feeTotal);
           if (inst.family === 'future') bump(ccy, 'margin', Math.max(econ.initialMargin || 0, 0));
+          else if (econ.initialMargin > 0) { bump(ccy, 'margin', econ.initialMargin); if (econ.cash < 0) bump(ccy, 'purchases', -econ.cash); else if (econ.cash > 0) bump(ccy, 'proceeds', econ.cash); }
           else if (l.action === 'sell_short') {
             bump(ccy, 'restrictedProceeds', econ.cash);
             const s = book.settings.short;
@@ -486,6 +495,17 @@ export function createPackages(app) {
       }
     }
 
+    // ---- protection already in place ------------------------------------------------------------------------
+    // A hedge package from Shaffer Hedge must not silently double protection that the template or
+    // the position already carries. Extra protection has to be asked for on purpose.
+    const protection = analyzeProtection({ legs, attach, unit });
+    protection.acknowledged = input.extraProtection === true;
+    if (protection.needsAcknowledgement) {
+      const what = `Protection is already in place: ${protection.prior.map((x) => x.label).join('; ')}. The hedge package adds ${protection.added.map((x) => x.label).join('; ')}. ${protection.explain}`;
+      if (protection.acknowledged) check('warning', 'extra-protection', `Additional protection, added deliberately. ${what}`);
+      else check('error', 'extra-protection', `${what} Remove the hedge package, or confirm that the additional protection is deliberate.`);
+    } else if (protection.oversized) check('warning', 'over-protection', protection.oversized);
+
     // ---- net premium and payoff ---------------------------------------------------------------------------
     let netPremium = null, premiumCcy = null, premiumKnown = true;
     for (const r of out) {
@@ -521,7 +541,65 @@ export function createPackages(app) {
       financing: out.filter((r) => r.purpose === 'financing').map((r) => ({ n: r.n, kind: r.kind, label: r.label, dailyCost: r.dailyCost ?? r.borrowInfo?.dailyCost ?? null, ccy: r.currency })),
       feeModel: 'Fees come from the Book\'s fee schedule. Fill prices use the fill model named on each leg.',
     };
-    return { legs: out, totals, checks, payoff };
+    return { legs: out, totals, checks, payoff, protection };
+  }
+
+  /**
+   * What protects what in a package. Exposure is the underlying held or bought (in underlying
+   * units); protection is bought puts (for a long) or bought calls (for a short), plus any other
+   * leg or position marked as a hedge. `added` are the legs that came from a hedge package.
+   * This measures overlap only. It does not choose or size a hedge.
+   */
+  function analyzeProtection({ legs, attach, unit }) {
+    const SEC = new Set(['equity', 'fund', 'spot', 'crypto', 'bond', 'manual']);
+    const exposure = new Map();
+    const items = [];
+    const expose = (inst, units) => exposure.set(inst.id, (exposure.get(inst.id) || 0) + units);
+    const name = (inst) => inst.symbol || inst.name;
+    const protect = (inst, signedQty, label, added) => {
+      if (inst.family === 'option' || inst.family === 'otcoption') {
+        if (signedQty <= 0) return; // a written option is not protection
+        const per = inst.terms.deliverable?.units ?? inst.multiplier ?? 1;
+        items.push({ underlyingId: inst.underlying_id || null, kind: inst.terms.right === 'P' ? 'put' : 'call', units: signedQty * per, label, added });
+      } else items.push({ underlyingId: inst.underlying_id || null, kind: 'other', units: null, label, added });
+    };
+    if (attach) {
+      for (const p of positions.list({ unitIds: [unit.id], strategyId: attach.id })) {
+        if (isZero(p.qty)) continue;
+        const inst = instruments.get(p.instrument_id);
+        if (SEC.has(inst.family)) expose(inst, p.qty * inst.multiplier);
+        else if ((p.data.purpose || 'primary') === 'hedge') protect(inst, p.qty, `${fmtQty(Math.abs(p.qty))} ${name(inst)} already held as a hedge`, false);
+      }
+    }
+    for (const l of legs) {
+      const inst = l.inst;
+      if (!inst) continue;
+      if (l.kind === 'link') { const src = positions.get(l.sourcePositionId); if (src && SEC.has(inst.family)) expose(inst, Math.sign(src.qty) * l.qty * inst.multiplier); continue; }
+      if (l.kind !== 'trade') continue;
+      const signed = (BUY.has(l.action) ? 1 : -1) * l.qty;
+      if (SEC.has(inst.family) && l.purpose !== 'hedge') expose(inst, signed * inst.multiplier);
+      else if (l.purpose === 'hedge') protect(inst, signed, legLabel(l), Boolean(l.hedgeLinkId));
+    }
+    const prior = items.filter((x) => !x.added), added = items.filter((x) => x.added);
+    const parts = [];
+    let oversized = null;
+    for (const kind of ['put', 'call']) {
+      for (const und of new Set(added.filter((x) => x.kind === kind).map((x) => x.underlyingId))) {
+        const u = und ? instruments.get(und) : null;
+        const exp = exposure.get(und) || 0;
+        const side = kind === 'put' ? Math.max(0, exp) : Math.max(0, -exp);
+        const covered = prior.filter((x) => x.kind === kind && x.underlyingId === und).reduce((a, x) => a + x.units, 0);
+        const adding = added.filter((x) => x.kind === kind && x.underlyingId === und).reduce((a, x) => a + x.units, 0);
+        const remaining = Math.max(0, side - covered);
+        parts.push(`The ${kind === 'put' ? 'long' : 'short'} exposure in ${u ? name(u) : 'the underlying'} is ${fmtQty(side)} units, of which ${fmtQty(Math.min(covered, side))} ${covered ? 'are' : 'is'} already protected, leaving ${fmtQty(remaining)}; the package adds ${kind}s on ${fmtQty(adding)}.`);
+        if (!prior.length && adding > side + 1e-9) oversized = `The hedge package buys ${kind}s on ${fmtQty(adding)} units of ${u ? name(u) : 'the underlying'}, more than the ${fmtQty(side)} units of exposure. Hedge legs are scaled to what the primary leg fills, but not below that.`;
+      }
+    }
+    if (added.some((x) => x.kind === 'other') && prior.length) parts.push('The added hedge is of a different kind, so the overlap cannot be measured in units here.');
+    return {
+      exposure: [...exposure].map(([id, units]) => ({ instrumentId: id, symbol: name(instruments.get(id) || { name: id }), units })),
+      prior, added, explain: parts.join(' '), needsAcknowledgement: prior.length > 0 && added.length > 0, oversized,
+    };
   }
 
   function baseLegView(l) {
@@ -577,6 +655,18 @@ export function createPackages(app) {
 
     const pv = await preview(input);
     if (pv.blocking) throw new AppError(pv.checks.find((c) => c.level === 'error').message, { status: 422, code: 'preview_failed', details: { preview: pv } });
+    // Preview-to-execution reconciliation: the confirmation carries the cash requirement that was
+    // on screen. If re-pricing the same legs now gives a materially different figure, nothing is
+    // submitted and the fresh preview goes back for another look.
+    if (input.expected?.cash) {
+      const tolPct = books.requireBook(input.bookId).settings.fill.maxPreviewDriftPct ?? 0.5;
+      for (const ccy of new Set([...Object.keys(input.expected.cash), ...Object.keys(pv.totals.cash)])) {
+        const shown = num(input.expected.cash[ccy]) ?? 0, now = pv.totals.cash[ccy]?.required ?? 0;
+        if (Math.abs(now - shown) > Math.max((Math.abs(shown) * tolPct) / 100, 0.01)) {
+          throw new AppError(`Prices have moved since this package was shown: it now needs ${fmt(now, ccy)} against ${fmt(shown, ccy)} displayed. Nothing was submitted. Check the updated figures and confirm again.`, { status: 409, code: 'preview_changed', details: { preview: pv } });
+        }
+      }
+    }
 
     const book = books.requireBook(input.bookId);
     const unit = books.requireUnit(input.unitId, book.id);

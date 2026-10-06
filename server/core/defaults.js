@@ -30,6 +30,7 @@ export const BOOK_DEFAULTS = {
     participation: 1, // share of the displayed bid/ask size that one matching cycle may take
     allowEndOfDayFills: false, // fill against end-of-day observations (off: orders wait for a fresh price)
     maxQuoteAgeSec: 120, // an executable quote older than this cannot fill an order
+    maxPreviewDriftPct: 0.5, // a confirmation is refused if the cash required moved more than this since the preview shown
   },
   // Settlement lag in business days after trade date.
   settlement: { equity: 1, fund: 1, option: 1, bond: 1, crypto: 0, spot: 2, fx: 2, manual: 2, otcoption: 2, swap: 2, cds: 1, forward: 0, future: 0, foreignCash: 2 },

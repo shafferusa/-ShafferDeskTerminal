@@ -276,11 +276,30 @@ const BY_ID = new Map(PRODUCTS.map((p) => [p.id, p]));
 
 export const getProduct = (id) => BY_ID.get(id) || null;
 
-/** Catalog grouped for display, with counts by support level. */
+/**
+ * Pricing coverage, by engine family: where a value for the instrument comes from. This is a
+ * separate question from lifecycle support. A product can have a fully simulated lifecycle and no
+ * price source yet, or a price and a lifecycle that is partly recorded by hand.
+ */
+export const PRICING_BASIS = {
+  equity: 'quoted', fund: 'quoted', spot: 'quoted', crypto: 'quoted', fx: 'quoted', option: 'quoted', future: 'quoted', bond: 'quoted',
+  forward: 'model', otcoption: 'model', swap: 'model', cds: 'model',
+  loan: 'contractual', repo: 'contractual', secloan: 'contractual', manual: 'manual', cash: 'contractual',
+};
+export const PRICING_LABEL = {
+  quoted: 'Market quote from Shaffer MarketData; a manual price meanwhile',
+  model: 'Dealer or model mark from Shaffer Analytics Lab; a manual mark meanwhile',
+  contractual: 'No price needed: carried at principal plus accrued',
+  manual: 'Valued by hand',
+};
+
+/** Catalog grouped for display, with counts by lifecycle support level. */
 export function catalogSummary() {
   const counts = { full: 0, partial: 0, manual: 0, planned: 0 };
   for (const p of PRODUCTS) counts[p.support]++;
-  return { families: FAMILIES, products: PRODUCTS, counts, total: PRODUCTS.length };
+  const pricing = { quoted: 0, model: 0, contractual: 0, manual: 0 };
+  const products = PRODUCTS.map((p) => { const basis = PRICING_BASIS[p.family] || 'quoted'; pricing[basis]++; return { ...p, pricing: basis }; });
+  return { families: FAMILIES, products, counts, pricing, pricingLabels: PRICING_LABEL, total: PRODUCTS.length };
 }
 
 export const MARKET_VIEWS = {

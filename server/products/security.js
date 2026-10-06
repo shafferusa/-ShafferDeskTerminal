@@ -2,16 +2,36 @@
 // Average-cost positions, cash settles on the settlement date, income arrives through recorded
 // corporate actions or manual cash-flow entries.
 
-import { addBusinessDays } from '../quant/calendar.js';
+import { addBusinessDays, CALENDARS, COUNTRY_CALENDAR, CURRENCY_CALENDAR, isEuroAreaVenue } from '../quant/calendar.js';
 import { num } from '../core/util.js';
 import { bookSecurityFill, valueSecurity } from './common.js';
 
-export function calendarFor(inst) {
-  if (inst.family === 'crypto') return 'ALLDAYS';
-  if (inst.terms?.calendar) return inst.terms.calendar;
-  if (inst.market_view === 'US_CASH' || inst.market_view === 'US_DERIV') return inst.family === 'bond' ? 'USBOND' : 'US';
-  return 'WEEKEND';
+/**
+ * The business-day calendar an instrument settles on, and how it was chosen. Nothing falls back to
+ * weekends silently: when no holiday calendar exists for the market, `fallback` is true and `note`
+ * says so, and the preview and the instrument page repeat it.
+ *   basis: explicit (set on the instrument) | venue (listing-venue country) | currency (inferred
+ *          from the trading currency because no venue country is recorded) | fallback
+ */
+export function calendarInfo(inst) {
+  const done = (id, basis, note = null) => ({ id, label: CALENDARS[id]?.label || id, basis, fallback: id === 'WEEKEND', approximate: Boolean(note) || id === 'WEEKEND', note });
+  if (inst.family === 'crypto') return done('ALLDAYS', 'explicit');
+  if (inst.terms?.calendar && (CALENDARS[inst.terms.calendar] || String(inst.terms.calendar).includes('+'))) return done(inst.terms.calendar, 'explicit');
+  const us = inst.market_view === 'US_CASH' || inst.market_view === 'US_DERIV';
+  const country = String(inst.venue_country || '').toUpperCase() || (us && inst.venue_type !== 'otc' ? 'US' : '');
+  if (country) {
+    const cal = COUNTRY_CALENDAR[country];
+    if (cal === 'US') return done(inst.family === 'bond' ? 'USBOND' : 'US', 'venue');
+    if (cal) return done(cal, 'venue', isEuroAreaVenue(country) ? 'TARGET closing days are used for this euro-area venue. Any further closing days of its exchange are not included; add them as extra holidays.' : null);
+    return done('WEEKEND', 'fallback', `No holiday calendar is built in for venues in ${country}. Dates use weekends only until Shaffer MarketData supplies the calendar; local holidays can be added by hand in Settings.`);
+  }
+  // No venue country: US market views use US calendars; otherwise the trading currency's payment calendar.
+  if (us) return done(inst.family === 'bond' ? 'USBOND' : 'US', 'venue');
+  const byCcy = CURRENCY_CALENDAR[inst.settle_ccy] || CURRENCY_CALENDAR[inst.trading_ccy];
+  if (byCcy) return done(byCcy, 'currency', `No listing-venue country is recorded, so the ${inst.settle_ccy || inst.trading_ccy} payment calendar is used. Set the venue country on the instrument to use its market calendar.`);
+  return done('WEEKEND', 'fallback', `No venue country is recorded and no payment calendar is built in for ${inst.trading_ccy}. Dates use weekends only; local holidays are not recognised.`);
 }
+export const calendarFor = (inst) => calendarInfo(inst).id;
 
 function makeSecurityPlugin(family, { label, qtyLabel, priceUnits, shortable = true }) {
   return {

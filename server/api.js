@@ -11,7 +11,7 @@ import { TEMPLATES } from './core/templates.js';
 import { AppError, isZero, need, num } from './core/util.js';
 import { STATUS_LABEL } from './data/observation.js';
 import { createRouter } from './http/router.js';
-import { CALENDARS } from './quant/calendar.js';
+import { CALENDARS, CURRENCY_CALENDAR, getExtraHolidays, holidaysOf, setExtraHolidays } from './quant/calendar.js';
 
 export function createApi(app) {
   const r = createRouter();
@@ -61,6 +61,28 @@ export function createApi(app) {
   });
 
   r.get('/api/catalog', () => catalogSummary());
+
+  // ---- settlement calendars ----------------------------------------------------------------------------
+  const calendarsView = () => {
+    const y = Number(app.clock.today().slice(0, 4));
+    const extra = getExtraHolidays();
+    return {
+      year: y, currencyCalendars: CURRENCY_CALENDAR,
+      calendars: Object.values(CALENDARS).map((c) => ({ ...c, holidays: ['WEEKEND', 'ALLDAYS'].includes(c.id) ? [] : [...holidaysOf(c.id, y), ...holidaysOf(c.id, y + 1)], extra: extra[c.id] || [] })),
+      note: 'Rule-based calendars. One-off closures are not known to them: add those as extra holidays. Shaffer MarketData replaces these when it supplies market calendars.',
+    };
+  };
+  r.get('/api/calendars', () => calendarsView());
+  r.put('/api/calendars/:id/holidays', ({ params, body }) => {
+    need(CALENDARS[params.id] && params.id !== 'ALLDAYS', 'Unknown calendar.', { status: 404 });
+    const dates = [...new Set((body.dates || []).map((d) => String(d).trim()).filter(Boolean))].sort();
+    for (const d of dates) need(/^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d)), `"${d}" is not a date in the form YYYY-MM-DD.`);
+    const all = { ...getExtraHolidays(), [params.id]: dates };
+    if (!dates.length) delete all[params.id];
+    app.data.setSetting('calendars.extraHolidays', all);
+    setExtraHolidays(all);
+    return calendarsView();
+  });
   // Read-only: the default paper-desk assumptions, so Settings can show which values a Book has changed.
   r.get('/api/defaults', () => ({ book: BOOK_DEFAULTS }));
   r.get('/api/templates', () => ({ templates: TEMPLATES, hedge: { objectives: app.hedge.objectives(), scopes: app.hedge.scopes(), families: app.hedge.families() } }));
@@ -221,6 +243,8 @@ export function createApi(app) {
     switch (params.tab) {
       case 'pnl': return app.accounting.pnl(params.id, scope, { from: query.from, to: query.to });
       case 'positions': return app.accounting.openPositions(params.id, scope);
+      case 'balance': return app.accounting.balanceSheet(params.id, scope);
+      case 'borrowings': return { scope, items: app.accounting.borrowings(params.id, scope) };
       case 'pending': return app.accounting.pending(params.id, scope);
       case 'failed': return app.accounting.failed(params.id, scope);
       case 'history': return app.accounting.history(params.id, scope, { type: query.type, q: query.q, from: query.from, to: query.to, before: query.before, limit: query.limit, includeAccruals: query.accruals === '1', strategyId: query.strategyId, instrumentId: query.instrumentId });
@@ -347,6 +371,8 @@ export function createApi(app) {
   r.post('/api/hedge/requests/:id/dismiss', ({ params }) => app.hedge.dismiss(params.id));
   r.post('/api/hedge/requests/:id/seen', ({ params }) => { app.hedge.markSeen(params.id); return { ok: true }; });
   r.get('/api/hedge/prompts', ({ query }) => ({ items: query.bookId ? app.hedge.prompts(query.bookId) : [] }));
+  r.get('/api/hedge/queue', ({ query }) => { need(query.bookId, 'bookId is required.'); return app.hedge.queue(query.bookId); });
+  r.post('/api/hedge/refresh', async () => ({ refreshed: await app.hedge.refreshWaiting({ force: true }) }));
 
   // ---- engine ---------------------------------------------------------------------------------------------------------------
   r.post('/api/engine/tick', async () => app.engine.tick());
@@ -362,10 +388,13 @@ export function createApi(app) {
     const summary = await app.engine.tick();
     return { now: app.clock.now().toISOString(), today: app.clock.today(), summary };
   });
-  r.post('/api/demo/hedge-fixture', ({ body }) => {
+  r.post('/api/demo/hedge-fixture', async ({ body }) => {
     need(app.config.demo, 'Demo only.', { status: 403 });
     app.data.setSetting('demo.hedgeFixture', Boolean(body.enabled));
-    return { enabled: Boolean(body.enabled) };
+    // Turning the fixture on plays the part of the service reconnecting: waiting requests are refreshed.
+    const refreshed = body.enabled ? await app.hedge.refreshWaiting() : [];
+    if (refreshed.length) app.engine.emit({ type: 'changed', summary: { hedgeRefreshed: refreshed.length } });
+    return { enabled: Boolean(body.enabled), refreshed };
   });
 
   return r;
