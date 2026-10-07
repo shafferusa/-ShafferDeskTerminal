@@ -580,6 +580,55 @@ const overnightIndexSwap = {
       },
     },
     {
+      // 40,000,000 to 50,000,000 on the same terms: 1,250 GBP more is received up front (10,000,000 x 0.0125 / 100).
+      // Independent amount: 0.50% x 50,000,000 = 250,000 GBP of value = 318,877.55 USD; 63,775.51 more is posted.
+      id: 'increase', covers: ['increase', 'collateral'], action: 'resize', lot: 'ois', factor: 1.25, order: { statedPrice: 0.0125 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 10_000_000, estimate: 0.0125, model: 'stated-price', settleDate: '2026-03-05', cash: 1_250, fees: 0 }],
+          cash: { GBP: { proceeds: 1_250, shortfall: 0 }, USD: { margin: 63_775.51, required: 63_775.51, available: 744_897.96, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 10_000_000, avgPrice: 0.0125 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Increased on the opposite side: 10,000,000 notional of OIS-SONIA-0426 at 0.0125 per 100 notional' },
+          { type: 'swap.collateral', summary: `Collateral posted on ${OIS_NAME} under "CSA Dealer B" (Dealer B): 63,775.51 USD (independent amount, 0.50% of 50,000,000.00 GBP notional)`, cash: { USD: -63_775.51 } },
+        ],
+        cash: { account: { USD: { settled: 681_122.45, margin: 318_877.55, availableToTrade: 681_122.45 }, GBP: { settled: 500_000, unsettled: 6_250, availableToTrade: 506_250 } } },
+        positions: [{ instrument: 'main', lot: 'ois', qty: -50_000_000, avgCost: 0.0125, cost: -6_250, notional: 50_000_000 }],
+        holdings: { main: { long: 0, short: 50_000_000, net: -50_000_000 } },
+        pending: [{ instrument: 'main', dueDate: '2026-03-05', amount: 1_250, ccy: 'GBP', into: 'cash' }, { instrument: 'main', dueDate: '2026-03-05', amount: 5_000, ccy: 'GBP', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: -50_000_000, iaRequired: 318_877.55, iaPosted: 318_877.55 }],
+        balance: { account: { cash: 1_306_122.45, margin: 318_877.55, receivable: 7_812.50, positions: -7_812.50, assets: 1_625_000, netAssets: 1_625_000 } }, // 681,122.45 + 625,000; 6,250 GBP at 1.25
+      },
+    },
+    {
+      // A fifth of the 50,000,000 is terminated at the same 0.0125: 1,250 GBP is paid back, nothing is realized,
+      // and the independent amount returns to 255,102.04 USD.
+      id: 'reduce', covers: ['reduce', 'partial termination', 'collateral'], action: 'close', lot: 'ois', scope: 'strategy', percent: 20, order: { statedPrice: 0.0125 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 10_000_000, estimate: 0.0125, model: 'stated-price', settleDate: '2026-03-05', cash: -1_250, fees: 0 }] },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 10_000_000, avgPrice: 0.0125 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Terminated in part: 10,000,000 of 50,000,000 notional of OIS-SONIA-0426 at 0.0125 per 100 notional (realized 0.00 GBP)' },
+          { type: 'swap.collateral', summary: `Collateral returned on ${OIS_NAME} under "CSA Dealer B" (Dealer B): 63,775.51 USD (independent amount, 0.50% of 40,000,000.00 GBP notional)`, cash: { USD: 63_775.51 } },
+        ],
+        cash: { account: { USD: { settled: 744_897.96, margin: 255_102.04, availableToTrade: 744_897.96 }, GBP: { settled: 500_000, unsettled: 5_000, availableToTrade: 505_000 } } },
+        positions: [{ instrument: 'main', lot: 'ois', qty: -40_000_000, avgCost: 0.0125, cost: -5_000, notional: 40_000_000 }],
+        holdings: { main: { long: 0, short: 40_000_000, net: -40_000_000 } },
+        pending: [
+          { instrument: 'main', dueDate: '2026-03-05', amount: -1_250, ccy: 'GBP', into: 'cash' },
+          { instrument: 'main', dueDate: '2026-03-05', amount: 1_250, ccy: 'GBP', into: 'cash' },
+          { instrument: 'main', dueDate: '2026-03-05', amount: 5_000, ccy: 'GBP', into: 'cash' },
+        ],
+        otc: [{ instrument: 'main', qty: -40_000_000, iaRequired: 255_102.04, iaPosted: 255_102.04 }],
+        pnl: { account: { realized: 0, total: 0 } },
+        balance: { account: { cash: 1_369_897.96, margin: 255_102.04, receivable: 7_812.50, payable: 1_562.50, positions: -6_250, assets: 1_626_562.50, liabilities: 1_562.50, netAssets: 1_625_000 } },
+      },
+    },
+    {
       id: 'no-mark-no-call', covers: 'variation margin', action: 'clock', to: at('2026-03-04'),
       expect: { otc: [{ instrument: 'main', vmStatus: 'cannot_value', vmPosted: 0 }], alerts: ['collateral.unvalued'] },
     },
@@ -593,7 +642,7 @@ const overnightIndexSwap = {
         pnl: { account: { unrealized: -43_750, total: -43_750 } },
         nav: { account: 1_581_250, book: 5_456_250 },
         provisional: { account: false, book: false },
-        balance: { account: { positions: -50_000, assets: 1_581_250, netAssets: 1_581_250 } }, // (-5,000 - 35,000) x 1.25
+        balance: { account: { positions: -50_000, assets: 1_582_812.50, liabilities: 1_562.50, netAssets: 1_581_250 } }, // (-5,000 - 35,000) x 1.25
       },
     },
     {
@@ -610,10 +659,15 @@ const overnightIndexSwap = {
     {
       id: 'settle-upfront', covers: 'settlement', action: 'clock', to: at('2026-03-05'),
       expect: {
-        events: [{ type: 'settlement.receive', summary: 'received 5,000.00 GBP into settled cash', cash: { GBP: 5_000 }, date: '2026-03-05' }],
+        // The three upfront amounts settle: 5,000 and 1,250 received, 1,250 paid.
+        events: [
+          { type: 'settlement.receive', summary: 'received 5,000.00 GBP into settled cash', cash: { GBP: 5_000 }, date: '2026-03-05' },
+          { type: 'settlement.receive', summary: 'received 1,250.00 GBP into settled cash', cash: { GBP: 1_250 } },
+          { type: 'settlement.pay', summary: 'paid 1,250.00 GBP from settled cash', cash: { GBP: -1_250 } },
+        ],
         cash: { account: { GBP: { settled: 505_000, unsettled: 0, availableToTrade: 505_000 } } },
         pending: [],
-        balance: { account: { cash: 1_325_127.55, receivable: null } }, // 693,877.55 + 505,000 x 1.25
+        balance: { account: { cash: 1_325_127.55, receivable: null, payable: null, assets: 1_581_250, liabilities: 0 } }, // 693,877.55 + 505,000 x 1.25
       },
     },
     {
@@ -698,4 +752,257 @@ const overnightIndexSwap = {
   ],
 };
 
-export default [interestRateSwap, overnightIndexSwap];
+// ---------------------------------------------------------------------------------------------
+// basis_swap
+// ---------------------------------------------------------------------------------------------
+// A euro "3s6s" basis swap in a Book that reports in EUR: pay 6-month EURIBOR flat semi-annually,
+// receive 3-month EURIBOR plus 9.5 basis points quarterly, both ACT/360 on TARGET business days.
+// Explicitly uncollateralized. 20,000,000, increased to 25,000,000 before the effective date, cut to
+// 20,000,000 after the first half-year, then held to maturity.
+//
+// Schedule, rolled back from the maturity date Monday 1 February 2027 (effective Monday 2 February 2026):
+//   3-month leg  2026-02-02 to 2026-05-01 (88 days), paid Monday 4 May: 1 May is a TARGET holiday.  Fixing of 2 February: 2.40%
+//                2026-05-01 to 2026-08-01 (92 days), paid Monday 3 August (the 1st is a Saturday).  Fixing of Thursday 30 April: 2.35%
+//                2026-08-01 to 2026-11-01 (92 days), paid Monday 2 November.                        Fixing of Friday 31 July: 2.30%
+//                2026-11-01 to 2027-02-01 (92 days), paid 1 February 2027.                          Fixing of Friday 30 October: 2.20%
+//   6-month leg  2026-02-02 to 2026-08-01 (180 days), paid Monday 3 August.                         Fixing of 2 February: 2.60%
+//                2026-08-01 to 2027-02-01 (184 days), paid 1 February 2027.                         Fixing of Friday 31 July: 2.45%
+const BASIS_NAME = 'EUR basis swap 3M EURIBOR + 9.5bp v 6M EURIBOR 1 Feb 2027';
+const basisSwap = {
+  productId: 'basis_swap',
+  title: 'EUR 1-year 3s6s basis swap in a EUR Book, pay 6-month EURIBOR, receive 3-month EURIBOR + 9.5 bp, uncollateralized',
+  matrix: {
+    ...OTC_TICKET,
+    automaticInputs: ['payment schedule of each floating leg from the contract terms and the TARGET calendar', 'EURIBOR3M and EURIBOR6M fixings (rate fixtures standing in for Shaffer MarketData)', 'settlement date, T+2 on TARGET', 'commission from the Book fee schedule'],
+    manualInputs: ['upfront amount of a new position (stated fill price)', 'mark of the contract, entered by hand', 'settlement amount of a partial termination (stated fill price in the preview)', 'cash moved from Treasury when a payment cannot be made'],
+    settlement: 'Commission and termination amount settle T+2 on TARGET; leg payments are cash on their payment date',
+    lifecycle: 'Two floating legs, each on its own index, spread and frequency; a payment the Account cannot fund fails visibly and is made once the cash is there; partial termination; final payments and maturity',
+    accounting: 'EUR reporting currency; leg payments and the termination result are realized P&L; commission expensed; carried at the mark once one is entered, provisional before',
+    collateral: 'Uncollateralized (paper assumption): nothing is posted or received, whatever the mark',
+  },
+  start: at('2026-01-29'),
+  settlementCheck: { lag: 2, holidays: [] }, // TARGET: no holiday in the settlement windows used (29 January to 3 February, 5 to 7 August 2026)
+  book: {
+    name: 'Matrix basis swap', reportingCcy: 'EUR',
+    capital: [{ ccy: 'EUR', amount: 1_000_000 }],
+    account: { name: 'Euro rates', funding: [{ ccy: 'EUR', amount: 10_000 }] }, // deliberately thin: the first 6-month payment cannot be funded
+    settings: { fees: { swap: { perUnit: 0.00001, minimum: 0, bps: 0 } }, fill: FILL, settlement: { swap: 2 } }, // 0.1 basis point of notional: 10.00 per million
+  },
+  instruments: {
+    main: {
+      productId: 'basis_swap', name: BASIS_NAME, symbol: 'BASIS-EUR-3S6S', marketView: 'FOREIGN_DERIV', venueType: 'otc', venueCountry: 'DE', tradingCcy: 'EUR', multiplier: 0.01,
+      conventions: { tradingCalendar: 'TARGET', settlementCalendar: 'TARGET', paymentCalendar: 'TARGET' },
+      terms: {
+        effective: '2026-02-02', maturity: '2027-02-01', counterparty: 'Dealer C', collateralBasis: { type: 'uncollateralized' }, collateral: 'No credit support annex',
+        legs: [
+          { side: 'pay', type: 'float', ccy: 'EUR', index: 'EURIBOR6M', spread: 0, months: 6, dayCount: 'ACT/360' },
+          { side: 'receive', type: 'float', ccy: 'EUR', index: 'EURIBOR3M', spread: 0.00095, months: 3, dayCount: 'ACT/360' },
+        ],
+      },
+    },
+  },
+  rates: {
+    EURIBOR3M: { currency: 'EUR', byDate: { '2026-02-02': 2.40, '2026-04-30': 2.35, '2026-07-31': 2.30, '2026-10-30': 2.20 } },
+    EURIBOR6M: { currency: 'EUR', byDate: { '2026-02-02': 2.60, '2026-07-31': 2.45 } },
+  },
+  expectAtStart: {
+    cash: { account: { EUR: { settled: 10_000, unsettled: 0, margin: 0, restricted: 0, availableToTrade: 10_000 } }, treasury: { EUR: { settled: 990_000 } } },
+    positions: [], pending: [], openOrders: [], lifecycle: [], lifecycleFailures: [], borrowings: [], otc: [], alerts: [],
+    nav: { account: 10_000, treasury: 990_000, book: 1_000_000 },
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+  },
+  steps: [
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 20_000_000, as: 'basis', order: { statedPrice: 0 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 20_000_000, estimate: 0, model: 'stated-price', settleDate: '2026-02-02', calendar: 'TARGET', cash: 0, fees: 200 }], // 20,000,000 x 0.00001
+          cash: { EUR: { purchases: 0, fees: 200, margin: 0, required: 200, available: 10_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 20_000_000, avgPrice: 0 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Entered as written: 20,000,000 notional of BASIS-EUR-3S6S at 0.00 per 100 notional', owner: 'account', date: '2026-01-29' }], // no collateral event
+        cash: { account: { EUR: { settled: 10_000, unsettled: -200, margin: 0, restricted: 0, availableToTrade: 9_800, availableToWithdraw: 9_800 } } },
+        positions: [{ instrument: 'main', lot: 'basis', owner: 'account', direction: 'as written', qty: 20_000_000, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, notional: 20_000_000, margin: 0 }],
+        holdings: { main: { long: 20_000_000, short: 0, net: 20_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-02-02', amount: -200, ccy: 'EUR', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-05-04', status: 'pending' }, // 3-month leg
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-08-03', status: 'pending' }, // 6-month leg
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-02-01', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', lot: 'basis', owner: 'account', basis: 'uncollateralized', agreement: null, iaPosted: 0, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: -200, unrealized: 0, fx: 0, total: -200 } },
+        nav: { account: 9_800, book: 999_800 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 10_000, payable: 200, margin: null, positions: null, assets: 10_000, liabilities: 200, netAssets: 9_800 } },
+      },
+    },
+    { id: 'next-day', action: 'clock', to: at('2026-01-30'), expect: {} },
+    {
+      // Before the effective date: the added 5,000,000 takes every period, like the first 20,000,000.
+      id: 'increase', covers: 'increase', action: 'resize', lot: 'basis', factor: 1.25, order: { statedPrice: 0 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 5_000_000, estimate: 0, model: 'stated-price', settleDate: '2026-02-03', cash: 0, fees: 50 }], cash: { EUR: { fees: 50, required: 50, available: 9_800, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 5_000_000, avgPrice: 0 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Increased as written: 5,000,000 notional of BASIS-EUR-3S6S at 0.00 per 100 notional' }],
+        cash: { account: { EUR: { unsettled: -250, availableToTrade: 9_750, availableToWithdraw: 9_750 } } },
+        positions: [{ instrument: 'main', lot: 'basis', qty: 25_000_000, cost: 0, notional: 25_000_000 }],
+        holdings: { main: { long: 25_000_000, short: 0, net: 25_000_000 } },
+        pending: [{ instrument: 'main', dueDate: '2026-02-02', amount: -200, ccy: 'EUR', into: 'cash' }, { instrument: 'main', dueDate: '2026-02-03', amount: -50, ccy: 'EUR', into: 'cash' }],
+        pnl: { account: { commissions: -250, total: -250 } },
+        nav: { account: 9_750, book: 999_750 },
+        balance: { account: { payable: 250, liabilities: 250, netAssets: 9_750 } },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: at('2026-02-02'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 200.00 EUR from settled cash', cash: { EUR: -200 } }],
+        cash: { account: { EUR: { settled: 9_800, unsettled: -50 } } },
+        pending: [{ instrument: 'main', dueDate: '2026-02-03', amount: -50, ccy: 'EUR', into: 'cash' }],
+        balance: { account: { cash: 9_800, payable: 50, assets: 9_800, liabilities: 50 } },
+      },
+    },
+    {
+      id: 'settle-increase', covers: 'settlement', action: 'clock', to: at('2026-02-03'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 50.00 EUR from settled cash', cash: { EUR: -50 } }],
+        cash: { account: { EUR: { settled: 9_750, unsettled: 0, availableToTrade: 9_750, availableToWithdraw: 9_750 } } },
+        pending: [],
+        balance: { account: { cash: 9_750, payable: null, assets: 9_750, liabilities: 0 } },
+      },
+    },
+    {
+      // Monday 4 May (1 May is a TARGET holiday). 3-month leg, received: 25,000,000 x (2.40% + 0.095%) x 88/360 = 152,472.22.
+      id: 'first-quarter', covers: ['floating payment', 'payment across a holiday'], action: 'clock', to: at('2026-05-04'),
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Swap receipt on ${BASIS_NAME}, leg B (float), period 2026-02-02 to 2026-05-01: 152,472.22 EUR`, cash: { EUR: 152_472.22 }, owner: 'account', date: '2026-05-04' }],
+        cash: { account: { EUR: { settled: 162_222.22, availableToTrade: 162_222.22, availableToWithdraw: 162_222.22 } } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-08-03', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-08-03', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-02-01', status: 'pending' },
+        ],
+        pnl: { account: { realized: 152_472.22, total: 152_222.22 } },
+        nav: { account: 162_222.22, book: 1_152_222.22 },
+        balance: { account: { cash: 162_222.22, assets: 162_222.22, netAssets: 162_222.22 } },
+      },
+    },
+    {
+      id: 'mark', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 0.05, note: 'Dealer mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'basis', qty: 25_000_000, price: 0.05, value: 12_500, unrealized: 12_500, provisional: false, priceSource: 'Manual entry' }], // 25,000,000 x 0.05 / 100
+        pnl: { account: { unrealized: 12_500, total: 164_722.22 } },
+        nav: { account: 174_722.22, book: 1_164_722.22 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 12_500, assets: 174_722.22, netAssets: 174_722.22 } },
+      },
+    },
+    {
+      // Monday 3 August, two payments. 6-month leg, to pay: 25,000,000 x 2.60% x 180/360 = 325,000.00. The Account has 162,222.22: it fails.
+      // 3-month leg, received: 25,000,000 x (2.35% + 0.095%) x 92/360 = 156,208.33. With it the Account has 318,430.55: still short.
+      id: 'payment-cannot-be-funded', covers: ['floating payment', 'insufficient cash'], action: 'clock', to: at('2026-08-03'),
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Swap receipt on ${BASIS_NAME}, leg B (float), period 2026-05-01 to 2026-08-01: 156,208.33 EUR`, cash: { EUR: 156_208.33 }, date: '2026-08-03' }],
+        cash: { account: { EUR: { settled: 318_430.55, availableToTrade: 318_430.55, availableToWithdraw: 318_430.55 } } },
+        // The failed payment is listed with the failed items (Failed tab), not with the pending ones, and is retried every cycle.
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-11-02', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-02-01', status: 'pending' },
+        ],
+        lifecycleFailures: [{ type: 'swap.payment', instrument: 'main', dueDate: '2026-08-03', status: 'failed', owner: 'account', reason: /Swap payment of 325,000\.00 EUR on .* \(leg A\) could not be paid: insufficient settled EUR cash in Euro rates/ }],
+        alerts: ['funding.failed'],
+        failed: { lifecycle: 1 },
+        pnl: { account: { realized: 308_680.55, total: 320_930.55 } },
+        nav: { account: 330_930.55, book: 1_320_930.55 },
+        balance: { account: { cash: 318_430.55, assets: 330_930.55, netAssets: 330_930.55 } },
+      },
+    },
+    {
+      // Treasury funds the Account with 200,000; the payment is then made. Net of the two legs for the half-year: 152,472.22 + 156,208.33 - 325,000.00 = -16,319.45.
+      id: 'funded-and-paid', covers: ['floating payment', 'insufficient cash'], action: 'transfer', from: 'treasury', to: 'account', ccy: 'EUR', amount: 200_000,
+      expect: {
+        events: [
+          { type: 'transfer.funding' },
+          { type: 'swap.payment', summary: `Swap payment on ${BASIS_NAME}, leg A (float), period 2026-02-02 to 2026-08-01: 325,000.00 EUR`, cash: { EUR: -325_000 }, owner: 'account', date: '2026-08-03' },
+        ],
+        cash: { account: { EUR: { settled: 193_430.55, availableToTrade: 193_430.55, availableToWithdraw: 193_430.55 } }, treasury: { EUR: { settled: 790_000 } } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-11-02', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-02-01', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-02-01', status: 'pending' },
+        ],
+        alerts: [],
+        failed: { lifecycle: 0 }, lifecycleFailures: [],
+        pnl: { account: { realized: -16_319.45, total: -4_069.45 } }, // - 250 - 16,319.45 + 12,500
+        nav: { account: 205_930.55, treasury: 790_000, book: 995_930.55 }, // 10,000 + 200,000 funded - 4,069.45
+        balance: { account: { cash: 193_430.55, assets: 205_930.55, netAssets: 205_930.55 } },
+      },
+    },
+    { id: 'two-days-later', action: 'clock', to: at('2026-08-05'), expect: {} },
+    {
+      // A fifth (5,000,000) is terminated at -0.02 per 100, paid: 5,000,000 x 0.02 / 100 = 1,000. Nothing was paid to enter, so realized -1,000.
+      id: 'partial-termination', covers: ['reduce', 'partial termination'], action: 'close', lot: 'basis', scope: 'strategy', percent: 20, order: { statedPrice: -0.02 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 5_000_000, estimate: -0.02, model: 'stated-price', settleDate: '2026-08-07', cash: -1_000, fees: 50 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 5_000_000, avgPrice: -0.02 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Terminated in part: 5,000,000 of 25,000,000 notional of BASIS-EUR-3S6S at -0.02 per 100 notional (realized -1,000.00 EUR)' }],
+        cash: { account: { EUR: { settled: 193_430.55, unsettled: -1_050, availableToTrade: 192_380.55, availableToWithdraw: 192_380.55 } } },
+        positions: [{ instrument: 'main', lot: 'basis', qty: 20_000_000, cost: 0, price: 0.05, value: 10_000, unrealized: 10_000, notional: 20_000_000 }],
+        holdings: { main: { long: 20_000_000, short: 0, net: 20_000_000 } },
+        pending: [{ instrument: 'main', dueDate: '2026-08-07', amount: -1_050, ccy: 'EUR', into: 'cash' }],
+        pnl: { account: { realized: -17_319.45, commissions: -300, unrealized: 10_000, total: -7_619.45 } },
+        nav: { account: 202_380.55, book: 992_380.55 },
+        balance: { account: { positions: 10_000, payable: 1_050, assets: 203_430.55, liabilities: 1_050, netAssets: 202_380.55 } },
+      },
+    },
+    {
+      id: 'settle-partial-termination', covers: 'settlement', action: 'clock', to: at('2026-08-07'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 1,050.00 EUR from settled cash', cash: { EUR: -1_050 } }],
+        cash: { account: { EUR: { settled: 192_380.55, unsettled: 0, availableToTrade: 192_380.55, availableToWithdraw: 192_380.55 } } },
+        pending: [],
+        balance: { account: { cash: 192_380.55, payable: null, assets: 202_380.55, liabilities: 0 } },
+      },
+    },
+    {
+      // Monday 2 November, on the 20,000,000 left: 20,000,000 x (2.30% + 0.095%) x 92/360 = 122,411.11.
+      id: 'third-quarter', covers: 'floating payment', action: 'clock', to: at('2026-11-02'),
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Swap receipt on ${BASIS_NAME}, leg B (float), period 2026-08-01 to 2026-11-01: 122,411.11 EUR`, cash: { EUR: 122_411.11 }, date: '2026-11-02' }],
+        cash: { account: { EUR: { settled: 314_791.66, availableToTrade: 314_791.66, availableToWithdraw: 314_791.66 } } },
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-02-01', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-02-01', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-02-01', status: 'pending' },
+        ],
+        pnl: { account: { realized: 105_091.66, total: 114_791.66 } }, // -17,319.45 + 122,411.11; then - 300 + 10,000
+        nav: { account: 324_791.66, book: 1_114_791.66 },
+        balance: { account: { cash: 314_791.66, assets: 324_791.66, netAssets: 324_791.66 } },
+      },
+    },
+    {
+      // Maturity, 1 February 2027. 6-month leg, paid: 20,000,000 x 2.45% x 184/360 = 250,444.44.
+      // 3-month leg, received: 20,000,000 x (2.20% + 0.095%) x 92/360 = 117,300.00. Then the contract matures; its mark of 10,000 was never cash.
+      // 10,000 + 200,000 - 250 - 1,050 + 152,472.22 + 156,208.33 - 325,000 + 122,411.11 - 250,444.44 + 117,300 = 181,647.22.
+      id: 'final-payments-and-maturity', covers: ['floating payment', 'maturity', 'close'], action: 'clock', to: at('2027-02-01'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap payment on ${BASIS_NAME}, leg A (float), period 2026-08-01 to 2027-02-01: 250,444.44 EUR`, cash: { EUR: -250_444.44 }, date: '2027-02-01' },
+          { type: 'swap.payment', summary: `Swap receipt on ${BASIS_NAME}, leg B (float), period 2026-11-01 to 2027-02-01: 117,300.00 EUR`, cash: { EUR: 117_300 } },
+          { type: 'swap.matured', summary: `Swap matured: ${BASIS_NAME} (notional 20,000,000)`, owner: 'account' },
+        ],
+        cash: { account: { EUR: { settled: 181_647.22, unsettled: 0, margin: 0, restricted: 0, availableToTrade: 181_647.22, availableToWithdraw: 181_647.22 } }, treasury: { EUR: { settled: 790_000 } } },
+        positions: [], holdings: { main: null }, lifecycle: [], otc: [], pending: [], alerts: [],
+        pnl: { account: { realized: -28_052.78, commissions: -300, unrealized: 0, total: -28_352.78 } }, // 105,091.66 - 250,444.44 + 117,300.00
+        nav: { account: 181_647.22, treasury: 790_000, book: 971_647.22 },
+        provisional: { account: false, book: false },
+        balance: { account: { cash: 181_647.22, positions: null, assets: 181_647.22, liabilities: 0, netAssets: 181_647.22 } },
+      },
+    },
+  ],
+};
+
+export default [interestRateSwap, overnightIndexSwap, basisSwap];
