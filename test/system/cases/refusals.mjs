@@ -97,7 +97,7 @@ export default [
         c.near(end.payable, 0, 'nothing is left payable');
         await w.clean(c, book.id);
       }),
-      browser: async (b, c) => b.cases.transferRefused(b, c),
+      browser: (b, c) => b.cases.transferRefused(b, c),
     },
   },
 
@@ -127,7 +127,7 @@ export default [
         c.near((await w.cash(book.id, book.treasuryId)).settled, 0, 'Treasury holds nothing');
         await w.clean(c, book.id);
       }),
-      browser: async (b, c) => b.cases.withdrawalRefused(b, c),
+      browser: (b, c) => b.cases.withdrawalRefused(b, c),
     },
   },
 

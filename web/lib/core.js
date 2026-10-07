@@ -8,6 +8,36 @@ export class ApiError extends Error {
     this.status = status; this.code = code; this.details = details;
   }
 }
+// One instruction, one effect. Every request that changes something carries a token (Idempotency-Key) that the
+// server remembers with its answer (server/http/once.js):
+//   - a request that got no answer (the connection dropped, the server stopped) keeps its token, so sending the
+//     same request again is answered from the first one if that had been recorded, and recorded once if not;
+//   - an identical request made while the first is still on its way (a double click) shares the first one's answer.
+const MUTATING = new Set(['POST', 'PUT', 'DELETE']);
+const unanswered = new Map(); // request signature -> token of an attempt whose answer never arrived
+const onTheWay = new Map(); // request signature -> promise of the attempt in flight
+const newToken = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`);
+
+async function send(url, method, body, token) {
+  const headers = {};
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  if (token) headers['Idempotency-Key'] = token;
+  let res;
+  try {
+    res = await fetch(url, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
+  } catch {
+    setReachable(false);
+    throw new ApiError(token
+      ? 'The Terminal server is not reachable, so it is not known whether this was recorded. Sending it again unchanged is safe: it will not be recorded twice.'
+      : 'The Terminal server is not reachable. Check that it is still running.', { status: 0 });
+  }
+  setReachable(true);
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { /* not JSON */ }
+  if (!res.ok) throw new ApiError(data?.error || `Request failed (${res.status})`, { status: res.status, code: data?.code, details: data?.details });
+  return data;
+}
 export async function api(path, { method = 'GET', body, query } = {}) {
   let url = path;
   if (query) {
@@ -16,17 +46,38 @@ export async function api(path, { method = 'GET', body, query } = {}) {
     const s = q.toString();
     if (s) url += `?${s}`;
   }
-  let res;
-  try {
-    res = await fetch(url, { method, headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined, body: body !== undefined ? JSON.stringify(body) : undefined });
-  } catch {
-    throw new ApiError('The Terminal server is not reachable. Check that it is still running.', { status: 0 });
+  if (!MUTATING.has(method)) return send(url, method, body);
+  const signature = `${method} ${url} ${body !== undefined ? JSON.stringify(body) : ''}`;
+  if (onTheWay.has(signature)) return onTheWay.get(signature);
+  const token = unanswered.get(signature) || newToken();
+  const attempt = send(url, method, body, token).then(
+    (data) => { unanswered.delete(signature); return data; },
+    (err) => { if (err.status === 0) unanswered.set(signature, token); else unanswered.delete(signature); throw err; },
+  ).finally(() => onTheWay.delete(signature));
+  onTheWay.set(signature, attempt);
+  return attempt;
+}
+
+// ---- is the server there? ---------------------------------------------------------------------------
+// When a request cannot reach the server the shell says so (state.offline) instead of leaving a screen that
+// looks current, and the server is asked every two seconds until it answers; every screen then reloads.
+let probing = null;
+function setReachable(ok) {
+  if (ok) {
+    if (state.offline) { setState({ offline: null }); bump(); }
+    return;
   }
-  const text = await res.text();
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch { /* not JSON */ }
-  if (!res.ok) throw new ApiError(data?.error || `Request failed (${res.status})`, { status: res.status, code: data?.code, details: data?.details });
-  return data;
+  if (!state.offline) setState({ offline: { since: new Date().toISOString() } });
+  if (probing) return;
+  probing = setInterval(async () => {
+    try {
+      const res = await fetch('/api/status');
+      if (!res.ok) return;
+      clearInterval(probing); probing = null;
+      setReachable(true);
+      refreshStatus().catch(() => {});
+    } catch { /* still away */ }
+  }, 2000);
 }
 export const get = (path, query) => api(path, { query });
 export const post = (path, body) => api(path, { method: 'POST', body: body ?? {} });
@@ -34,7 +85,7 @@ export const put = (path, body) => api(path, { method: 'PUT', body: body ?? {} }
 export const del = (path) => api(path, { method: 'DELETE' });
 
 // ---- shared state -----------------------------------------------------------------------------------
-const state = { status: null, books: [], bookId: load('sdt.book'), unitId: load('sdt.unit'), tick: 0, toasts: [], overlay: [], theme: load('sdt.theme') || '' };
+const state = { status: null, books: [], bookId: load('sdt.book'), unitId: load('sdt.unit'), tick: 0, toasts: [], overlay: [], theme: load('sdt.theme') || '', offline: null };
 const subs = new Set();
 function load(k) { try { return localStorage.getItem(k) || ''; } catch { return ''; } }
 function save(k, v) { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch { /* private mode */ } }

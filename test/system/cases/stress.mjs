@@ -766,4 +766,31 @@ export default [
       browser: async (b, c) => b.cases.serviceAway(b, c),
     },
   },
+
+  // ---------------------------------------------------------------------------------------------------
+  // Duplicate clicks on every confirming button (browser level only: a click is a browser event; what a
+  // program can send twice is SE/SA:stress:repeated-requests and SE/SA:nodup:concurrent-confirmations).
+  {
+    id: 'double-click-confirm',
+    title: 'Double click on "Confirm paper trade"',
+    proves: 'Double-clicking the confirmation of a trade preview submits the package once.',
+    expected: 'A purchase of 100 shares at the ask 50.02 is previewed from the ticket and its Confirm button is double-clicked. Whatever the page sends, there is one strategy instance, one order and one fill of 100 at 50.02, and the Account owes 5,003.00 once.',
+    levels: { engine: 'a click is a browser event', api: 'a click is a browser event', browser: (b, c) => b.cases.doubleClickConfirm(b, c) },
+  },
+  {
+    id: 'double-click-transfer',
+    title: 'Double click on "Record transfer" and "Record deposit"',
+    proves: 'Double-clicking a button that records a cash movement records it once.',
+    expected: 'A transfer of 25,000.00 from Treasury to the Account is entered and "Record transfer" is double-clicked: one request leaves the page, one transfer is recorded, the Account holds 525,000.00. A deposit of 40,000.00 with "Record deposit" double-clicked: one request, one deposit, Treasury holds 515,000.00.',
+    levels: { engine: 'a click is a browser event', api: 'a click is a browser event', browser: (b, c) => b.cases.doubleClickTransfer(b, c) },
+  },
+
+  {
+    id: 'connection-loss',
+    title: 'The browser loses the server mid-session and recovers',
+    proves: 'A lost answer, a server that goes away and a server that comes back never leave a stale screen that looks current, and never turn one instruction into two.',
+    world: { engine: 'on' },
+    expected: '(1) A transfer of 10,000.00 is recorded by the server but its answer is lost before it reaches the page: the dialog says the server could not be reached and keeps what was typed; the user presses "Record transfer" again; there is exactly one transfer of 10,000.00 in the books. (2) The server process is killed: within the page\'s refresh interval the page itself says that it cannot reach the server; a transfer tried meanwhile is refused on the dialog with that reason. (3) The server is started again and 3,000.00 is deposited behind the page\'s back: nothing was recorded for the attempt made while it was away; the notice disappears and the Treasury page shows 493,000.00 without being reloaded; a transfer of 7,000.00 is then recorded once. In the end two transfers exist (10,000.00 and 7,000.00) and the integrity check is clean.',
+    levels: { engine: 'a browser losing its server needs a browser and a server', api: 'the server side of this (kill, restart, same token again) is SA:stress:kill-mid-confirmation and SA:stress:repeated-requests', browser: (b, c) => b.cases.connectionLoss(b, c) },
+  },
 ];

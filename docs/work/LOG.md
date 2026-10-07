@@ -64,3 +64,4 @@
 - 2026-10-07T11:45Z | s8 | +0 | history cases (data refresh, service reconnection, instrument, calendar and settings edits) pass at engine and API level
 - 2026-10-07T11:50Z | s8 | +0 | isolation cases pass at engine and API level (all 89 routes classified and tested; demo and normal databases separate); two more Terminal fixes (cross-Book hedge request, other Books' contracts hidden)
 - 2026-10-07T11:51Z | s8 | +0 | hedge reconnection case passes at API level with the engine timer on; all six areas now pass at engine and API level, browser level not started
+- 2026-10-07T11:57Z | s8 | +0 | browser level started: runner, refusal dialogs, double clicks and connection loss pass; the web client now sends a token with every mutating request, coalesces identical requests in flight, and shows when the server is not reachable

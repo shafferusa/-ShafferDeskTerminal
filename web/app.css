@@ -523,3 +523,8 @@ table.ledger.pv-legs td.amt .sub, table.ledger.pv-legs td.amt .was { white-space
 @media (max-width: 820px) { body:has(.hedge-modal) .toasts { top: 8px; bottom: auto; } }
 /* When the chips do not fit one line (a narrow screen with items to review), the top bar takes a second line instead of pushing controls off screen. */
 @media (max-width: 1100px) { .topbar { flex-wrap: wrap; height: auto; min-height: 46px; row-gap: 4px; padding-top: 5px; padding-bottom: 5px; } }
+
+/* ---- connection lost ---- */
+/* Shown by the shell while the server cannot be reached: above everything, so no screen or dialog reads as current. */
+.offline-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 90; padding: 9px 16px; font-size: 13px; text-align: center; color: var(--loss); background: var(--loss-soft); border-top: 2px solid var(--loss); box-shadow: var(--shadow); }
+.offline-bar b { font-family: var(--head); margin-right: 6px; }

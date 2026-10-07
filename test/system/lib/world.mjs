@@ -46,6 +46,7 @@ export async function openWorld(level, { label = 'case', at = MON, demo = true, 
   async function openTerminal({ at: at2 = at, demo: demo2 = demo, engine: engine2 = engine, dbByMode: byMode = dbByMode, sandbox = null, tag = label } = {}) {
     const sb = sandbox || createSandbox(`sys-${level}-${tag}`);
     if (!sandbox) sandboxes.push(sb);
+    // The browser level drives a real server too: its terminal is the API one.
     const t = level === 'engine'
       ? await openEngineTerminal({ sandbox: sb, at: at2, demo: demo2 })
       : await openApiTerminal({ sandbox: byMode ? { ...sb, dbFile: `${sb.dir}/${demo2 ? 'demo.db' : 'terminal.db'}` } : sb, at: at2, demo: demo2, engine: engine2, dbByMode: byMode });
@@ -270,6 +271,24 @@ export async function openWorld(level, { label = 'case', at = MON, demo = true, 
   }
 
   const main = await openTerminal();
+  // Browser level: one page of the shared Chromium on this world's server, and the label-based helpers of the
+  // product matrix's browser driver. Console errors of the page fail the case unless the case takes them.
+  if (level === 'browser') {
+    const { createUi } = await import('../../matrix/drivers/browser.mjs');
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const page = await context.newPage();
+    page.setDefaultTimeout(15_000);
+    const pageErrors = [];
+    page.on('pageerror', (e) => pageErrors.push(String(e.message || e)));
+    page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource|net::ERR_|ERR_CONNECTION/.test(m.text())) pageErrors.push(m.text()); });
+    await page.addInitScript(() => { try { if (!localStorage.getItem('sdt.theme')) localStorage.setItem('sdt.theme', 'light'); } catch { /* private mode */ } });
+    cleanups.push(() => context.close());
+    Object.assign(main, {
+      page, context, pageErrors, ui: createUi(page, main.t.url),
+      /** Console errors seen so far (and forget them): for a case that expects some, such as a lost connection. */
+      takePageErrors: () => pageErrors.splice(0),
+    });
+  }
   Object.assign(main, {
     /** Another Terminal in its own sandbox (or on a given sandbox), closed with this world. */
     open: openTerminal,

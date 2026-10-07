@@ -109,6 +109,8 @@ function Shell() {
   const unitId = useStore((s) => s.unitId);
   const tick = useStore((s) => s.tick);
   const overlayCount = useStore((s) => s.overlay.length);
+  // Set while the server cannot be reached (lib/core.js): the screen then says it is not current.
+  const offline = useStore((s) => s.offline);
   useEffect(() => { get('/api/hedge/service').then(setHedgeSvc, () => {}); }, [tick]);
 
   useEffect(() => {
@@ -192,6 +194,7 @@ function Shell() {
       ${!books.length ? html`<${NewBook} first />`
         : View ? html`<${View} args=${route.args} book=${book} status=${status} key=${`${route.page}:${book?.id}${route.page === 'account' ? `:${route.args[0]}` : ''}`} />` : html`<div class="note">Loading…</div>`}
     </main>
+    ${offline ? html`<div class="offline-bar" role="alert"><b>The Terminal server is not reachable.</b> What is on screen may be out of date, and nothing can be recorded until the server is back. Trying again every few seconds.</div>` : null}
     <${Overlays} /><${Toasts} />
   </div>`;
 }

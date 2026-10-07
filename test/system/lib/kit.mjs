@@ -100,15 +100,19 @@ export async function runCase(level, kase, extra = {}) {
   const c = createChecks();
   let w = null;
   try {
-    w = await openWorld(level, { label: `${kase.area}-${kase.id}`, ...(kase.world || {}), ...extra });
+    w = await openWorld(level, { label: `${kase.area}-${kase.id}`, ...(kase.world || {}), ...(level === 'browser' ? kase.browserWorld || {} : {}), browser: extra.browser });
+    if (extra.cases) w.cases = extra.cases;
     // A case that hangs is a failed case, not a stuck run.
     const limit = kase.timeoutMs || (level === 'browser' ? 240_000 : 120_000);
     let timer;
     await Promise.race([fn(w, c), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`The case did not finish within ${limit / 1000} seconds.`)), limit); })]).finally(() => clearTimeout(timer));
     for (const e of w.serverErrors) c.fail(`server error: ${e}`);
+    for (const e of w.pageErrors || []) c.fail(`browser console error: ${e}`);
     if (!c.count) c.fail('The case made no check.');
   } catch (err) {
     c.fail(`The case did not complete: ${err.stack || err.message || err}`);
+    // Browser level: keep the screen the case stopped on.
+    if (w?.page && extra.shotsDir) { try { mkdirSync(extra.shotsDir, { recursive: true }); const file = resolve(extra.shotsDir, `${kase.area}-${kase.id}.png`); await w.page.screenshot({ path: file, fullPage: true }); c.problems.push(`screen saved: ${file}`); } catch { /* the page is gone */ } }
   } finally {
     try { await w?.close(); } catch (err) { c.problems.push(`closing the world: ${err.message}`); }
   }
