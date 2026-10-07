@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 45.5% of the pass** (last milestone 2026-10-07T11:50Z, s8: isolation cases pass at engine and API level (all 89 routes classified and tested; demo and normal databases separate); two more Terminal fixes (cross-Book hedge request, other Books' contracts hidden))
+**Completeness: about 45.5% of the pass** (last milestone 2026-10-07T11:51Z, s8: hedge reconnection case passes at API level with the engine timer on; all six areas now pass at engine and API level, browser level not started)
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 
