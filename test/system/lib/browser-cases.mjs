@@ -8,7 +8,7 @@
 //
 // Locators go by what a person reads (labels, button text, headings), as in test/matrix/drivers/browser.mjs.
 
-import { evening, MON, SAT, TUE } from './world.mjs';
+import { evening, TUE } from './world.mjs';
 
 const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const exactly = (s) => new RegExp(`^\\s*${esc(s)}\\s*$`);
@@ -468,5 +468,324 @@ export async function cancelPartial(b, c) {
   c.eq((await b.books(book.id)).counts.fills, 1, 'later cycles fill nothing more');
   await ui.reloadAt(`#/accounting/pending/${book.accountId}`);
   c.eq(await page.locator('main').getByRole('button', { name: /^Cancel (the rest|order)$/ }).count(), 0, 'no order is left to cancel on the Pending tab');
+  await b.clean(c, book.id);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Refusals that time produces, read where a user finds them: the Failed tab and "to review"
+// ---------------------------------------------------------------------------------------------
+
+const flat = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+/** The top bar's "N to review" button opened: the texts under "Items needing attention". Empty when there is no button. */
+async function itemsToReview(b) {
+  const { page, ui } = b;
+  const chip = page.locator('.topbar').getByRole('button', { name: /to review$/ });
+  if (!(await chip.count())) return [];
+  await chip.click();
+  const dlg = ui.dialog('Items needing attention');
+  await dlg.waitFor();
+  const items = (await dlg.locator('.notice').allInnerTexts()).map(flat);
+  await ui.closeOverlays();
+  return items;
+}
+const LOAN_LEG = { kind: 'loan', action: 'borrow_cash', qty: 100_000, purpose: 'financing', contract: { productId: 'unsecured_loan', name: 'System test loan', marketView: 'US_CASH', venueType: 'otc', tradingCcy: 'USD', terms: { loanType: 'unsecured', rateType: 'fixed', rate: 0.05, maturity: '2026-04-01' } } };
+/** The Repay button of the Account's loan on Treasury's Borrowings page, pressed: the preview dialog. */
+async function openRepayment(b) {
+  const { page, ui } = b;
+  await ui.closeOverlays();
+  await ui.reloadAt('#/treasury/borrowings');
+  const panel = ui.section(page.locator('main'), 'Account-originated borrowings');
+  await panel.waitFor();
+  await ui.button(panel, 'Repay').first().click();
+  const modal = ui.dialog(/^Preview: /);
+  await modal.waitFor();
+  return modal;
+}
+
+/** SB:refusals:cash-repayment. */
+export async function repaymentRefused(b, c) {
+  const { page, ui } = b;
+  const book = await b.book('Browser repayment refused');
+  await b.trade({ bookId: book.id, unitId: book.accountId, template: 'custom', legs: [LOAN_LEG] });
+  await b.post(`/api/books/${book.id}/transfers`, { fromUnitId: book.accountId, toUnitId: book.treasuryId, ccy: 'USD', amount: 590_000 });
+  await enter(b, book, '#/treasury/borrowings');
+  const liab = async () => -(await b.balance(book.id, book.accountId, 'loan.liab'));
+
+  // Early repayment from the Borrowings page.
+  const before = await b.books(book.id);
+  const modal = await openRepayment(b);
+  const blocks = (await modal.locator('.checks .notice.err').allInnerTexts()).map(flat);
+  c.match(blocks.join(' | '), /short 90,000\.00 USD/, 'the repayment preview shows the blocking reason with the 90,000.00 shortfall');
+  const confirm = ui.button(modal, 'Confirm repayment');
+  c.eq(await confirm.isDisabled(), true, 'Confirm repayment cannot be pressed');
+  c.match(flat(await modal.locator('.pv-totals').innerText()), /short 90,000\.00 USD/, 'the totals line repeats the shortfall');
+  await ui.button(modal, 'Cancel').click();
+  await modal.waitFor({ state: 'hidden' });
+  w_same(b, c, before, await b.books(book.id), 'the refused early repayment');
+
+  // Maturity without the cash: the Failed tab and the items to review.
+  await b.clock('2026-04-01T15:00:00.000Z');
+  await ui.reloadAt(`#/accounting/failed/${book.accountId}`);
+  const failedItems = ui.section(page.locator('main'), 'Failed lifecycle items');
+  await failedItems.waitFor();
+  const row = flat(await failedItems.locator('tbody tr').first().innerText());
+  c.match(row, /2026-04-01/, 'the Failed tab lists the repayment due 1 April');
+  c.match(row, /10,000\.00 USD/, 'with a reason naming the 10,000.00 that is there');
+  c.note(`Failed tab: "${row.slice(0, 220)}"`);
+  const items = await itemsToReview(b);
+  c.ok(items.some((x) => /failed on System test loan/.test(x)), 'the top bar has an item to review for the failed repayment', items.join(' | '));
+  c.near(await liab(), 100_000, 'the principal is still owed in full');
+  c.near((await b.cash(book.id, book.accountId)).settled, 10_000, 'the cash was not part-used');
+
+  // The cash arrives, through the Transfer dialog.
+  const dlg = await openTransfer(b, { from: 'Treasury', to: 'Alpha', amount: 200_000 });
+  await ui.button(dlg, 'Record transfer').click();
+  await dlg.waitFor({ state: 'hidden' });
+  await b.tick();
+  await ui.reloadAt(`#/accounting/failed/${book.accountId}`);
+  await page.locator('main').getByText('Failed settlements').first().waitFor();
+  c.eq(await ui.section(page.locator('main'), 'Failed lifecycle items').count(), 0, 'after the funding the Failed tab no longer lists the repayment');
+  c.ok(!(await itemsToReview(b)).some((x) => /failed on System test loan/.test(x)), 'and the item to review is gone');
+  c.near(await liab(), 0, 'the loan is repaid');
+  c.near((await b.cash(book.id, book.accountId)).settled, 109_583.33, 'cash is 10,000.00 + 200,000.00 - 100,000.00 - 416.67 interest');
+  c.eq(b.sql(`SELECT COUNT(DISTINCT event_id) AS n FROM entries WHERE book_id = ? AND account = 'loan.liab'`, book.id)[0].n, 2, 'the principal moved twice in all: drawdown and one repayment');
+  await b.clean(c, book.id);
+}
+
+/** SB:refusals:failed-tab. A failed settlement and an unmet margin call, read on the Failed tab and under "to review". */
+export async function failedTab(b, c) {
+  const { page, ui } = b;
+  const book = await b.book('Browser failed tab', { funding: 100_000 });
+  const beta = (await b.post(`/api/books/${book.id}/accounts`, { name: 'Beta' })).id;
+  await b.post(`/api/books/${book.id}/transfers`, { fromUnitId: book.treasuryId, toUnitId: beta, ccy: 'USD', amount: 30_000 });
+  const aaa = await b.stock('FTA');
+  const bbb = await b.stock('FTB');
+  // Beta: a swap under an agreement with variation margin, marked at -50,000.00.
+  await b.fixture('rate', { code: 'TEST-3M', value: 4.0 });
+  const agr = await b.post(`/api/books/${book.id}/agreements`, { name: 'CSA Dealer A', counterparty: 'Dealer A', kind: 'bilateral', unitIds: [beta], terms: { variationMargin: true } });
+  const swap = await b.trade({ bookId: book.id, unitId: beta, template: 'custom', legs: [{ kind: 'trade', action: 'buy', qty: 1_000_000, statedPrice: 0, contract: { productId: 'interest_rate_swap', name: 'IRS system test', marketView: 'US_DERIV', venueType: 'otc', tradingCcy: 'USD', terms: { effective: '2026-03-02', maturity: '2027-03-02', counterparty: 'Dealer A', collateralBasis: { type: 'agreement', agreementId: agr.id }, legs: [
+    { id: 'A', side: 'pay', type: 'fixed', ccy: 'USD', rate: 0.04, months: 6, dayCount: '30/360' },
+    { id: 'B', side: 'receive', type: 'float', ccy: 'USD', index: 'TEST-3M', spread: 0, months: 3, dayCount: 'ACT/360' }] } } }] });
+  await b.post('/api/observations', { kind: 'price', subject: swap.positions[0].instrument.id, value: -5, units: 'per 100 notional' });
+  // Alpha: the purchase that cannot be paid on Wednesday.
+  const s1 = await b.buy(book, aaa, 1_000);
+  await b.clock(evening('2026-03-02'));
+  await b.clock(TUE);
+  await b.closeOut(s1.id, { positionIds: [s1.positions[0].positionId], qty: 1_000, order: { orderType: 'market', tif: 'day', settle: { lag: 3 } } });
+  await b.buy(book, bbb, 1_800);
+  await b.clock('2026-03-04T15:00:00.000Z');
+
+  await enter(b, book, `#/accounting/failed/${book.accountId}`);
+  await closeHedgePopup(b);
+  const main = page.locator('main');
+  const fails = ui.section(main, 'Failed settlements');
+  await fails.locator('tbody tr').first().waitFor();
+  const row = flat(await fails.locator('tbody tr').first().innerText());
+  c.match(row, /FTB/, 'Wednesday: the Failed tab lists the FTB settlement');
+  c.match(row, /90,045\.00/, 'to pay 90,045.00');
+  c.match(row, /2026-03-04/, 'due 4 March');
+  c.match(row, /49,975\.00 USD available, 90,045\.00 USD due/, 'with the reason: what is available and what is due');
+  c.eq(await fails.locator('tbody tr').count(), 1, 'one failed settlement, not one per retry');
+  let items = await itemsToReview(b);
+  c.ok(items.some((x) => /Settlement due 2026-03-04 failed/.test(x) && /49,975\.00 USD available/.test(x)), 'the items to review name the failed settlement and its reason', items.join(' | '));
+  c.ok(items.some((x) => /call of 50,000\.00 USD .* failed: Beta has 30,000\.00 USD/.test(x)), 'and the margin call Beta could not meet: 50,000.00 called, 30,000.00 there', items.join(' | '));
+  c.match(flat(await page.locator('.topbar').getByRole('button', { name: /to review$/ }).innerText()), /^2 to review$/, 'the top bar says "2 to review"');
+  const cashA = await b.cash(book.id, book.accountId);
+  c.near(cashA.settled, 49_975, 'Alpha: settled cash did not go negative');
+  c.near((await b.cash(book.id, beta)).margin, 0, 'Beta: nothing was posted');
+
+  // The cash arrives for both (the Friday receipt for Alpha; funding for Beta, through the Transfer dialog).
+  const dlg = await openTransfer(b, { from: 'Treasury', to: 'Beta', amount: 100_000 });
+  await ui.button(dlg, 'Record transfer').click();
+  await dlg.waitFor({ state: 'hidden' });
+  await b.clock(FRI_MORNING);
+  await b.tick();
+  await ui.reloadAt(`#/accounting/failed/${book.accountId}`);
+  await ui.section(main, 'Failed settlements').waitFor();
+  c.match(flat(await ui.section(main, 'Failed settlements').innerText()), /No settlement has failed/, 'Friday: the Failed tab says no settlement has failed');
+  items = await itemsToReview(b);
+  c.eq(items.filter((x) => /Settlement due|call of/.test(x)), [], 'and neither item is left to review');
+  c.near((await b.cash(book.id, book.accountId)).settled, 9_925, 'Alpha: 49,975.00 + 49,995.00 - 90,045.00');
+  c.near((await b.cash(book.id, beta)).margin, 50_000, 'Beta: the 50,000.00 call was delivered once');
+  c.eq(b.sql(`SELECT COUNT(*) AS n FROM collateral_movements WHERE book_id = ? AND kind = 'variation'`, book.id)[0].n, 1, 'one variation-margin movement');
+  await b.clean(c, book.id);
+}
+const FRI_MORNING = '2026-03-06T15:00:00.000Z';
+
+/** SB:refusals:calendar-closed-day. The world starts on Saturday 7 March. */
+export async function closedDay(b, c) {
+  const { page, ui } = b;
+  const book = await b.book('Browser closed day');
+  const inst = await b.stock('BCD', QUOTE);
+  await enter(b, book, '#/markets/US_CASH');
+  const drawer = await fillTicket(b, inst, { qty: 100 });
+  const { modal, confirm, pv } = await openPreviewFrom(b, drawer);
+  c.eq(pv.blocking, 0, 'Saturday: the order is not blocked');
+  const warnings = (await modal.locator('.checks .notice.warn').allInnerTexts()).map(flat);
+  c.match(warnings.join(' | '), /closed today on calendar US \(2026-03-07 is a Saturday\).*matched on 2026-03-09/, 'the preview dialog warns that the market is closed and says when the order will be matched');
+  c.match(flat(await modal.locator('table').first().innerText()), /2026-03-10/, 'the leg shows settlement on Tuesday 10 March');
+  await confirm.click();
+  await modal.waitFor({ state: 'hidden' });
+  await ui.closeOverlays();
+  await ui.reloadAt(`#/accounting/pending/${book.accountId}`);
+  const open = ui.section(page.locator('main'), 'Open orders');
+  await open.locator('tbody tr').first().waitFor();
+  c.match(flat(await open.locator('tbody tr').first().innerText()), /Market closed today on calendar US \(2026-03-07 is a Saturday\); will be matched on 2026-03-09/, 'the Pending tab shows the order waiting, with the reason');
+  const sat = await b.books(book.id);
+  c.eq(sat.counts.fills, 0, 'nothing filled on Saturday');
+  await b.tick(); await b.tick(); await b.tick();
+  w_same(b, c, sat, await b.books(book.id), 'three more cycles on Saturday');
+  await b.clock('2026-03-08T15:00:00.000Z');
+  c.eq((await b.books(book.id)).counts.fills, 0, 'Sunday: still no fill');
+  await b.clock(MON2_OPEN);
+  await ui.reloadAt(`#/accounting/pending/${book.accountId}`);
+  await page.locator('main').getByText('Executed trades awaiting settlement').first().waitFor();
+  c.eq(await ui.section(page.locator('main'), 'Open orders').locator('tbody tr').count(), 0, 'Monday: no open order is left on the Pending tab');
+  const awaiting = flat(await ui.section(page.locator('main'), 'Executed trades awaiting settlement').innerText());
+  c.match(awaiting, /BCD/, 'the trade is listed as executed, awaiting settlement');
+  c.match(awaiting, /2026-03-10/, 'expected to settle on Tuesday 10 March');
+  const fills = b.sql('SELECT qty, price, business_date, settle_date FROM fills');
+  c.eq(fills.map((f) => [f.qty, f.price, f.business_date, f.settle_date]), [[100, 50.02, '2026-03-09', '2026-03-10']], 'one fill: 100 at 50.02, trade date Monday, settlement Tuesday');
+  await b.tick();
+  c.eq((await b.books(book.id)).counts.fills, 1, 'another cycle does not fill again');
+  await closeHedgePopup(b);
+  await b.clean(c, book.id);
+}
+const MON2_OPEN = '2026-03-09T14:00:00.000Z';
+
+// ---------------------------------------------------------------------------------------------
+// A confirmation refused because the figures moved, and the second confirmation
+// ---------------------------------------------------------------------------------------------
+
+/** SB:stress:confirm-changed. */
+export async function confirmChanged(b, c) {
+  const { ui } = b;
+  const book = await b.book('Browser confirm changed');
+  const inst = await b.stock('BCC', QUOTE);
+  await enter(b, book, '#/markets/US_CASH');
+  const drawer = await fillTicket(b, inst, { qty: 100 });
+  const { modal, pv } = await openPreviewFrom(b, drawer);
+  c.eq(pv.legs[0].price?.estimate, 50.02, 'the preview shows the purchase at the ask 50.02');
+  await b.fixture('quote', { instrumentId: inst.id, bid: 50.98, ask: 51.00, last: 50.99, bidSize: 5000, askSize: 5000 });
+  const before = await b.books(book.id);
+  const refused = await ui.respondsTo('POST', /^\/api\/strategies$/, () => modal.getByRole('button', { name: /^Confirm/ }).click());
+  c.eq([refused.status, refused.body?.code], [409, 'preview_changed'], 'the confirmation of figures that have moved is refused');
+  await modal.getByText('Nothing was submitted.').waitFor();
+  const changed = modal.locator('[data-testid=changes]');
+  const text = flat(await changed.innerText());
+  c.match(text, /What changed since you confirmed/, 'the dialog shows what changed');
+  c.match(text, /50\.02.*51\.00/, 'was 50.02, now 51.00');
+  w_same(b, c, before, await b.books(book.id), 'the refused confirmation');
+  const again = ui.button(modal, 'Confirm the new figures');
+  c.eq(await again.isDisabled(), true, 'the new figures cannot be confirmed before they are checked');
+  await modal.getByLabel('I have checked the new figures').check();
+  const sent = watchRequests(b.page, 'POST', /^\/api\/strategies$/);
+  await again.dblclick();
+  await modal.waitFor({ state: 'hidden' });
+  await b.tick();
+  sent.stop();
+  c.note(`Confirm the new figures double-clicked: ${sent.seen.length} request${sent.seen.length === 1 ? '' : 's'} left the page`);
+  const n = await b.books(book.id);
+  c.eq([n.counts.strategies, n.counts.orders, n.counts.fills], [1, 1, 1], 'one strategy instance, one order, one fill');
+  c.eq(b.sql('SELECT qty, price FROM fills').map((f) => [f.qty, f.price]), [[100, 51]], '100 shares at 51.00, once');
+  await closeHedgePopup(b);
+  await b.clean(c, book.id);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Duplicate clicks on the other confirming buttons
+// ---------------------------------------------------------------------------------------------
+
+/** Choose a lifecycle action for the position of `symbol` in an open strategy drawer; returns the dialog. */
+async function openLifecycle(b, drawer, symbol, action, title) {
+  const { ui } = b;
+  const positions = ui.section(drawer, 'Positions');
+  const row = positions.locator('tbody tr').filter({ hasText: symbol }).filter({ has: b.page.locator('select') }).first();
+  await row.locator('select').selectOption({ label: action });
+  const dlg = ui.dialog(title);
+  await dlg.waitFor();
+  return dlg;
+}
+
+/** SB:stress:double-click-records. Repayment, manual cash flow, lender recall, corporate action: each button double-clicked. */
+export async function doubleClickRecords(b, c) {
+  const { page, ui } = b;
+  const book = await b.book('Browser double click records', { funding: 600_000 });
+  const inst = await b.stock('DCR', QUOTE);
+  const shorted = await b.stock('DCS', QUOTE);
+  await b.fixture('borrow', { instrumentId: shorted.id, available: true, quantity: 1_000, feeRate: 0.01 });
+  await b.trade({ bookId: book.id, unitId: book.accountId, template: 'custom', legs: [LOAN_LEG] });
+  const long = await b.buy(book, inst, 100);
+  const short = await b.short(book, shorted, 100);
+  await b.clock(evening('2026-03-02'));
+  await b.clock(TUE);
+  await enter(b, book, '#/treasury/borrowings');
+  await closeHedgePopup(b);
+  const count = (sql, ...p) => b.sql(sql, ...p)[0].n;
+
+  // 1. Confirm repayment. One day of interest: 100,000 x 5% x 1 / 360 = 13.89.
+  const cash0 = (await b.cash(book.id, book.accountId)).settled;
+  let modal = await openRepayment(b);
+  let sent = watchRequests(page, 'POST', /^\/api\/strategies$/);
+  await ui.button(modal, 'Confirm repayment').dblclick();
+  await modal.waitFor({ state: 'hidden' });
+  await b.tick();
+  sent.stop();
+  c.note(`Confirm repayment double-clicked: ${sent.seen.length} request${sent.seen.length === 1 ? '' : 's'} left the page`);
+  c.near(-(await b.balance(book.id, book.accountId, 'loan.liab')), 0, 'the loan is repaid');
+  c.near((await b.cash(book.id, book.accountId)).settled - cash0, -100_013.89, 'cash fell by 100,000.00 and 13.89 interest, once');
+  c.eq(count(`SELECT COUNT(DISTINCT event_id) AS n FROM entries WHERE book_id = ? AND account = 'loan.liab'`, book.id), 2, 'the principal moved twice in all: drawdown and one repayment');
+
+  // 2. Manual cash flow on the stock position.
+  let drawer = await openStrategyDrawer(b, book, long.id);
+  let dlg = await openLifecycle(b, drawer, 'DCR', 'Manual cash flow', /^Manual cash flow: DCR/);
+  await ui.select(dlg, 'Kind of cash flow').selectOption({ label: 'Dividend' });
+  await ui.input(dlg, 'Amount (USD)').fill('125');
+  const cash1 = (await b.cash(book.id, book.accountId)).settled;
+  const events1 = (await b.books(book.id)).counts.events;
+  sent = watchRequests(page, 'POST', /\/lifecycle$/);
+  await ui.button(dlg, 'Record cash flow').dblclick();
+  await dlg.waitFor({ state: 'hidden' });
+  await ui.toast(/Cash flow recorded/);
+  sent.stop();
+  c.eq(sent.seen.length, 1, 'Record cash flow double-clicked: one request');
+  c.near((await b.cash(book.id, book.accountId)).settled - cash1, 125, 'the Account received 125.00 once');
+  c.eq((await b.books(book.id)).counts.events - events1, 1, 'one event was recorded');
+
+  // 3. Lender recall on the borrow behind the short sale.
+  drawer = await openStrategyDrawer(b, book, short.id);
+  dlg = await openLifecycle(b, drawer, 'DCS', 'Lender recall', /^Lender recall: /);
+  const recalls = () => count(`SELECT COUNT(*) AS n FROM tasks WHERE book_id = ? AND type = 'secloan.recall'`, book.id);
+  const notices = () => count(`SELECT COUNT(*) AS n FROM events WHERE book_id = ? AND type LIKE 'secloan.recall%'`, book.id);
+  const [r0, n0] = [recalls(), notices()];
+  sent = watchRequests(page, 'POST', /\/lifecycle$/);
+  await ui.button(dlg, 'Record lender recall').dblclick();
+  await dlg.waitFor({ state: 'hidden' });
+  await ui.toast(/Lender recall recorded/);
+  sent.stop();
+  c.eq(sent.seen.length, 1, 'Record lender recall double-clicked: one request');
+  c.eq([recalls() - r0, notices() - n0], [1, 1], 'one recall deadline and one recall notice were recorded');
+
+  // 4. A cash dividend recorded by hand on the instrument page.
+  await ui.closeOverlays();
+  const idrawer = await ui.openInstrument(inst);
+  await ui.tab(idrawer, 'History and actions');
+  const panel = ui.section(idrawer, 'Dividends and corporate actions');
+  await ui.field(panel, 'Ex-date').locator('input').fill('2026-03-05');
+  await ui.input(panel, 'Amount per unit').fill('0.5');
+  const ca0 = count('SELECT COUNT(*) AS n FROM corporate_actions WHERE instrument_id = ?', inst.id);
+  sent = watchRequests(page, 'POST', /\/corporate-actions$/);
+  await ui.button(panel, 'Record').dblclick();
+  await ui.toast(/Dividend recorded/);
+  await ui.drawn();
+  sent.stop();
+  c.note(`Record (corporate action) double-clicked: ${sent.seen.length} request${sent.seen.length === 1 ? '' : 's'} left the page`);
+  c.eq(count('SELECT COUNT(*) AS n FROM corporate_actions WHERE instrument_id = ?', inst.id) - ca0, 1, 'one corporate action is recorded');
+  // It pays once: 100 shares x 0.50 on Thursday 5 March.
+  await ui.closeOverlays();
+  await b.clock('2026-03-05T15:00:00.000Z');
+  await b.tick();
+  c.near(Math.abs(await b.balance(book.id, book.accountId, 'pnl.dividend')), 125 + 50, 'dividend income is 125.00 (by hand) + 50.00 (100 x 0.50), each once');
+  b.takePageErrors().forEach((e) => { if (!/400|Bad Request/.test(e)) c.fail(`browser console error: ${e}`); });
   await b.clean(c, book.id);
 }

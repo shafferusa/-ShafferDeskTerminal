@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 45.5% of the pass** (last milestone 2026-10-07T12:00Z, s8: browser cases for ticket refusals, the four recovery actions and cancellations pass)
+**Completeness: about 45.5% of the pass** (last milestone 2026-10-07T12:06Z, s8: browser cases: repayment refused, failed tab, closed day, confirm-changed, double-click-records pass)
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 

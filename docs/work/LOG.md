@@ -66,3 +66,4 @@
 - 2026-10-07T11:51Z | s8 | +0 | hedge reconnection case passes at API level with the engine timer on; all six areas now pass at engine and API level, browser level not started
 - 2026-10-07T11:57Z | s8 | +0 | browser level started: runner, refusal dialogs, double clicks and connection loss pass; the web client now sends a token with every mutating request, coalesces identical requests in flight, and shows when the server is not reachable
 - 2026-10-07T12:00Z | s8 | +0 | browser cases for ticket refusals, the four recovery actions and cancellations pass
+- 2026-10-07T12:06Z | s8 | +0 | browser cases: repayment refused, failed tab, closed day, confirm-changed, double-click-records pass

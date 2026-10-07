@@ -936,6 +936,14 @@ export default [
 
   // ---------------------------------------------------------------------------------------------------
   {
+    id: 'failed-tab',
+    title: 'What time refused is on the Failed tab and under "to review"',
+    proves: 'A settlement that failed for lack of cash and a margin call that could not be met are in front of the user with their reasons, once each, and disappear when they are made good.',
+    expected: 'One Book, two Accounts. Alpha (100,000.00) buys 1,000 FTA on Monday, on Tuesday sells them for settlement on Friday and buys 1,800 FTB (90,045.00 due Wednesday). Beta (30,000.00) holds a swap under a variation-margin agreement marked at -50,000.00 on Monday evening. On Wednesday the Failed tab of Alpha lists one failed settlement: FTB, 90,045.00 to pay, due 2026-03-04, reason "49,975.00 USD available, 90,045.00 USD due". The top bar says "2 to review"; opened, it names the failed settlement with that reason and the call of 50,000.00 that Beta, with 30,000.00, could not meet. Alpha\'s cash is 49,975.00 and Beta has posted nothing. After 100,000.00 is transferred to Beta in the Transfer dialog and Friday comes: the Failed tab says no settlement has failed, neither item is left to review, Alpha holds 9,925.00, and Beta has posted 50,000.00 in exactly one movement.',
+    levels: { engine: 'the failures themselves are SE:refusals:cash-settlement-day and SE:refusals:collateral-margin-call; this case reads the screen', api: 'as at engine level: SA:refusals:cash-settlement-day and SA:refusals:collateral-margin-call', browser: (b, c) => b.cases.failedTab(b, c) },
+  },
+  // ---------------------------------------------------------------------------------------------------
+  {
     id: 'ticket-blocks',
     title: 'Refusals read from the trade ticket and the preview dialog',
     proves: 'What the Terminal refuses, it refuses on the screen: the reason is shown, the Confirm button cannot be pressed, and nothing is stored.',
