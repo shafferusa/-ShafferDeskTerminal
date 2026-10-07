@@ -424,4 +424,294 @@ const equityIndexFuture = {
   ],
 };
 
-export default [equityIndexFuture];
+// ---------------------------------------------------------------------------------------------
+// equity_future
+// ---------------------------------------------------------------------------------------------
+// A single-stock future: 100 shares a contract, quoted in USD a share, minimum move 0.01 (1.00 USD a
+// contract), physically delivered: at expiry the long receives 100 shares a contract against payment
+// of the final settlement price. Initial margin 1,500 USD a contract (20% of a 75.00 share).
+// The Terminal does not simulate the delivery: it closes the contract in cash at the final settlement
+// price and says so. The delivery itself is then recorded by hand, as a purchase of the shares at that
+// price on the stock's own ticket. The final settlement price is also entered by hand here: the
+// contract stops quoting on its last day, the lifecycle item waits for the price, and nothing is
+// guessed in the meantime (the position is unpriced and the net asset value provisional).
+// Commission: 0.75 USD a contract, at least 5.00 USD an order. Shares are delivered free of commission.
+const equityFuture = {
+  productId: 'equity_future',
+  title: 'Calloway Freight Lines single-stock future (100 shares, physical delivery), March 2026',
+  matrix: {
+    ...FUTURES_TICKET,
+    requiredFields: ['Account', 'Action (Buy / Sell)', 'Contracts', 'for the delivery recorded by hand: the stock ticket with "State a fill price"'],
+    manualInputs: ['final settlement price, entered by hand on the contract (Overview, "Enter a price by hand", closing price for the last trading day)', 'physical delivery: purchase of 100 shares a contract at the final settlement price, on the stock ticket with a stated fill price'],
+    settlement: 'No purchase cash; initial margin 1,500 USD a contract; daily variation margin; at expiry closed out in cash at the final settlement price (physical delivery is not simulated); the shares delivered by hand settle T+1 like any stock purchase',
+    lifecycle: 'Daily variation margin (automatic); final settlement waits, visibly blocked, until a final settlement price exists, then closes the contract in cash (automatic) and states that delivery is not simulated; delivery by hand',
+    accounting: 'Nil cost; variation margin and closes are realized P&L; commission 0.75 USD a contract with a 5.00 USD minimum an order; without a price the position is unpriced and the net asset value provisional; delivered shares carried at the final settlement price',
+    collateral: 'Initial margin per contract, posted in cash, released on reduction, close and final settlement',
+  },
+  start: AM('2026-03-16'),
+  settlementCheck: { lag: 0, holidays: [] }, // US: no holiday between 16 and 25 March 2026
+  book: book('Matrix single-stock future', { funding: [{ ccy: 'USD', amount: 100_000 }], fee: { perUnit: 0.75, minimum: 5, bps: 0 }, extraFees: { equity: { perUnit: 0, minimum: 0, bps: 0 } }, settlement: { equity: 1 } }),
+  instruments: {
+    common: { productId: 'common_stock', name: 'Calloway Freight Lines Inc.', symbol: 'CWFL', marketView: 'US_CASH', venue: 'NYSE', venueType: 'exchange', venueCountry: 'US', issuer: 'Calloway Freight Lines Inc.', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', terms: {} },
+    main: { productId: 'equity_future', name: 'Calloway Freight Lines single-stock future, March 2026', symbol: 'CWFH6', marketView: 'US_DERIV', venue: 'Lakeshore Futures Exchange', venueType: 'exchange', venueCountry: 'US',
+      underlying: 'common', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 100,
+      terms: { root: 'CWF', expiration: '2026-03-20', tickSize: 0.01, initialMargin: 1_500, settlement: 'physical', priceUnits: 'USD per share' } },
+  },
+  quotes: {
+    common: { bid: 74.60, ask: 74.62, last: 74.61, bidSize: 5000, askSize: 5000 },
+    main: { bid: 74.95, ask: 75.00, last: 74.98, bidSize: 300, askSize: 300 },
+  },
+  closes: { main: { '2026-03-16': 75.40, '2026-03-17': 73.90, '2026-03-18': 74.10, '2026-03-19': 74.60 } },
+  expectAtStart: {
+    ...NO_STATE,
+    cash: { account: { USD: usd(100_000) }, treasury: { USD: usd(900_000) } },
+    positions: [], lifecycle: [],
+    nav: { account: 100_000, treasury: 900_000, book: 1_000_000 },
+  },
+  steps: [
+    {
+      id: 'open-short', covers: ['open short', 'initial margin'], action: 'ticket', instrument: 'main', side: 'sell', qty: 10, as: 'short',
+      expect: {
+        preview: { blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 10, estimate: 74.95, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2026-03-16', calendar: 'US',
+            notional: 74_950, initialMargin: 15_000, fees: 7.50 }], // 10 x 74.95 (the bid) x 100; 10 x 1,500; 10 x 0.75
+          cash: { USD: { purchases: 0, fees: 7.50, margin: 15_000, required: 15_007.50, available: 100_000, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 10, avgPrice: 74.95, fills: [{ qty: 10, price: 74.95, model: 'quoted-bid-ask', source: 'Test fixture', status: 'simulated' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Sold 10 CWFH6 @ 74.95 (notional 74,950.00 USD; margin posted 15,000.00 USD)', cash: { USD: -15_007.50 }, owner: 'account', date: '2026-03-16' }],
+        cash: { account: { USD: usd(84_992.50, 15_000) } },
+        positions: [{ instrument: 'main', lot: 'short', owner: 'account', direction: 'short', qty: -10, avgCost: 74.95, cost: 0, price: 74.98,
+          value: -30, unrealized: -30, // sold at 74.95, last 74.98: 0.03 x 100 x 10 against the short
+          notional: 74_980, margin: 15_000 }], // 10 x 74.98 x 100
+        holdings: { main: { long: 0, short: 10, net: -10 } },
+        lifecycle: [{ type: 'future.expiry', instrument: 'main', dueDate: '2026-03-20', status: 'pending' }],
+        pnl: { account: { realized: 0, dividends: 0, commissions: -7.50, fees: 0, borrowFunding: 0, unrealized: -30, fx: 0, total: -37.50 } },
+        nav: { account: 99_962.50, book: 999_962.50 },
+        balance: { account: { cash: 84_992.50, margin: 15_000, positions: -30, assets: 99_962.50, liabilities: 0, netAssets: 99_962.50 } },
+      },
+    },
+    {
+      id: 'day-1-variation', covers: 'variation margin', action: 'clock', to: EOD('2026-03-16'),
+      expect: {
+        // Settlement 75.40, 0.45 above the sale: the short pays 0.45 x 100 x 10 = 450.00.
+        events: [{ type: 'future.variation', summary: 'Variation margin paid on -10 CWFH6: 450.00 USD (settlement 75.40 vs 74.95)', cash: { USD: -450 }, date: '2026-03-16' }],
+        cash: { account: { USD: usd(84_542.50, 15_000) } },
+        positions: [{ instrument: 'main', lot: 'short', qty: -10, avgCost: 75.40, price: 74.98, value: 420, unrealized: 420 }], // (75.40 - 74.98) x 1,000
+        pnl: { account: { realized: -450, unrealized: 420, total: -37.50 } },
+        balance: { account: { cash: 84_542.50, positions: 420 } },
+      },
+    },
+    { id: 'tuesday', action: 'clock', to: AM('2026-03-17'), expect: {} },
+    {
+      id: 'quote-down', action: 'quote', instrument: 'main', quote: { bid: 73.80, ask: 73.85, last: 73.82, bidSize: 300, askSize: 300 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'short', qty: -10, avgCost: 75.40, price: 73.82, value: 1_580, unrealized: 1_580, notional: 73_820 }], // (75.40 - 73.82) x 1,000
+        pnl: { account: { unrealized: 1_580, total: 1_122.50 } }, // -450 - 7.50 + 1,580
+        nav: { account: 101_122.50, book: 1_001_122.50 },
+        balance: { account: { positions: 1_580, assets: 101_122.50, netAssets: 101_122.50 } },
+      },
+    },
+    {
+      id: 'reduce-short', covers: ['reduce', 'margin release'], action: 'close', lot: 'short', scope: 'strategy', percent: 40, // buys back 4 of the 10
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 4, estimate: 73.85, model: 'quoted-bid-ask', settleDate: '2026-03-17',
+          notional: 29_540, initialMargin: -6_000, fees: 5 }], // 4 x 73.85 (the ask) x 100; 4 x 0.75 = 3.00, raised to the 5.00 minimum
+          cash: { USD: { purchases: 0, fees: 5, margin: 0, required: 5, available: 84_542.50, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 4, avgPrice: 73.85 }] },
+        // Realized on the 4 bought back: (75.40 - 73.85) x 100 x 4 = 620.00. Cash: 620 - 5 + 6,000 = 6,615.00.
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Bought 4 CWFH6 @ 73.85 (notional 29,540.00 USD; margin released 6,000.00 USD; realized 620.00 USD)', cash: { USD: 6_615 } }],
+        cash: { account: { USD: usd(91_157.50, 9_000) } },
+        positions: [{ instrument: 'main', lot: 'short', qty: -6, avgCost: 75.40, price: 73.82, value: 948, unrealized: 948, notional: 44_292, margin: 9_000 }], // (75.40 - 73.82) x 600; 6 x 73.82 x 100
+        holdings: { main: { long: 0, short: 6, net: -6 } },
+        pnl: { account: { realized: 170, commissions: -12.50, unrealized: 948, total: 1_105.50 } },
+        nav: { account: 101_105.50, book: 1_001_105.50 },
+        balance: { account: { cash: 91_157.50, margin: 9_000, positions: 948, assets: 101_105.50, netAssets: 101_105.50 } },
+      },
+    },
+    {
+      id: 'day-2-variation', covers: 'variation margin', action: 'clock', to: EOD('2026-03-17'),
+      expect: {
+        // Settlement 73.90, 1.50 below the last one: the short receives 1.50 x 100 x 6 = 900.00.
+        events: [{ type: 'future.variation', summary: 'Variation margin received on -6 CWFH6: 900.00 USD (settlement 73.90 vs 75.40)', cash: { USD: 900 }, date: '2026-03-17' }],
+        cash: { account: { USD: usd(92_057.50, 9_000) } },
+        positions: [{ instrument: 'main', lot: 'short', qty: -6, avgCost: 73.90, price: 73.82, value: 48, unrealized: 48 }], // (73.90 - 73.82) x 600
+        pnl: { account: { realized: 1_070, unrealized: 48, total: 1_105.50 } },
+        balance: { account: { cash: 92_057.50, positions: 48 } },
+      },
+    },
+    { id: 'wednesday', action: 'clock', to: AM('2026-03-18'), expect: {} },
+    {
+      id: 'cover-rest', covers: ['close short', 'margin release'], action: 'close', lot: 'short', scope: 'position', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 6, estimate: 73.85, model: 'quoted-bid-ask', settleDate: '2026-03-18',
+          notional: 44_310, initialMargin: -9_000, fees: 5 }], // 6 x 73.85 x 100; 6 x 0.75 = 4.50, raised to 5.00
+          cash: { USD: { purchases: 0, fees: 5, margin: 0, required: 5, available: 92_057.50, shortfall: 0 } } },
+        result: { status: 'closed', orders: [{ action: 'buy', status: 'filled', filledQty: 6, avgPrice: 73.85 }] },
+        // Realized: (73.90 - 73.85) x 100 x 6 = 30.00. Cash: 30 - 5 + 9,000 = 9,025.00.
+        // The short as a whole: sold 10 at 74.95, bought 10 at 73.85: 1.10 x 100 x 10 = 1,100.00.
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Bought 6 CWFH6 @ 73.85 (notional 44,310.00 USD; margin released 9,000.00 USD; realized 30.00 USD)', cash: { USD: 9_025 } }],
+        cash: { account: { USD: usd(101_082.50, 0) } },
+        positions: [],
+        holdings: { main: null },
+        lifecycle: [],
+        pnl: { account: { realized: 1_100, commissions: -17.50, unrealized: 0, total: 1_082.50 } },
+        nav: { account: 101_082.50, book: 1_001_082.50 },
+        balance: { account: { cash: 101_082.50, margin: null, positions: null, assets: 101_082.50, netAssets: 101_082.50 } },
+      },
+    },
+    {
+      id: 'open-long', covers: ['open', 'initial margin'], action: 'ticket', instrument: 'main', side: 'buy', qty: 3, as: 'long',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 3, estimate: 73.85, model: 'quoted-bid-ask', settleDate: '2026-03-18',
+          notional: 22_155, initialMargin: 4_500, fees: 5 }], // 3 x 73.85 x 100; 3 x 1,500; 2.25 raised to 5.00
+          cash: { USD: { purchases: 0, fees: 5, margin: 4_500, required: 4_505, available: 101_082.50, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 3, avgPrice: 73.85 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 3 CWFH6 @ 73.85 (notional 22,155.00 USD; margin posted 4,500.00 USD)', cash: { USD: -4_505 } }],
+        cash: { account: { USD: usd(96_577.50, 4_500) } },
+        positions: [{ instrument: 'main', lot: 'long', owner: 'account', direction: 'long', qty: 3, avgCost: 73.85, cost: 0, price: 73.82, value: -9, unrealized: -9, notional: 22_146, margin: 4_500 }], // (73.82 - 73.85) x 300; 3 x 73.82 x 100
+        holdings: { main: { long: 3, short: 0, net: 3 } },
+        lifecycle: [{ type: 'future.expiry', instrument: 'main', dueDate: '2026-03-20', status: 'pending' }],
+        pnl: { account: { commissions: -22.50, unrealized: -9, total: 1_068.50 } },
+        nav: { account: 101_068.50, book: 1_001_068.50 },
+        balance: { account: { cash: 96_577.50, margin: 4_500, positions: -9, assets: 101_068.50, netAssets: 101_068.50 } },
+      },
+    },
+    {
+      id: 'day-3-variation', covers: 'variation margin', action: 'clock', to: EOD('2026-03-18'),
+      expect: {
+        events: [{ type: 'future.variation', summary: 'Variation margin received on 3 CWFH6: 75.00 USD (settlement 74.10 vs 73.85)', cash: { USD: 75 }, date: '2026-03-18' }], // 0.25 x 300
+        cash: { account: { USD: usd(96_652.50, 4_500) } },
+        positions: [{ instrument: 'main', lot: 'long', qty: 3, avgCost: 74.10, price: 73.82, value: -84, unrealized: -84 }], // (73.82 - 74.10) x 300
+        pnl: { account: { realized: 1_175, unrealized: -84, total: 1_068.50 } },
+        balance: { account: { cash: 96_652.50, positions: -84 } },
+      },
+    },
+    { id: 'thursday', action: 'clock', to: AM('2026-03-19'), expect: {} },
+    {
+      id: 'quote-up', action: 'quote', instrument: 'main', quote: { bid: 74.55, ask: 74.60, last: 74.58, bidSize: 300, askSize: 300 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'long', qty: 3, avgCost: 74.10, price: 74.58, value: 144, unrealized: 144 }], // 0.48 x 300
+        pnl: { account: { unrealized: 144, total: 1_296.50 } }, // 1,175 - 22.50 + 144
+        nav: { account: 101_296.50, book: 1_001_296.50 },
+        balance: { account: { positions: 144, assets: 101_296.50, netAssets: 101_296.50 } },
+      },
+    },
+    {
+      id: 'day-4-variation', covers: 'variation margin', action: 'clock', to: EOD('2026-03-19'),
+      expect: {
+        events: [{ type: 'future.variation', summary: 'Variation margin received on 3 CWFH6: 150.00 USD (settlement 74.60 vs 74.10)', cash: { USD: 150 }, date: '2026-03-19' }], // 0.50 x 300
+        cash: { account: { USD: usd(96_802.50, 4_500) } },
+        positions: [{ instrument: 'main', lot: 'long', qty: 3, avgCost: 74.60, price: 74.58, value: -6, unrealized: -6 }], // (74.58 - 74.60) x 300
+        pnl: { account: { realized: 1_325, unrealized: -6, total: 1_296.50 } },
+        balance: { account: { cash: 96_802.50, positions: -6 } },
+      },
+    },
+    {
+      // Last trading day. The final settlement is due and waits for its price.
+      id: 'last-trading-day', covers: 'final settlement', action: 'clock', to: AM('2026-03-20'),
+      expect: { lifecycle: [{ type: 'future.expiry', instrument: 'main', dueDate: '2026-03-20', status: 'blocked', reason: /^Awaiting the final settlement price for CWFH6 \(2026-03-20\)/ }] },
+    },
+    { id: 'stock-close', action: 'quote', instrument: 'common', quote: { bid: 74.20, ask: 74.30, last: 74.25, bidSize: 5000, askSize: 5000 }, expect: {} },
+    {
+      // The contract stops quoting. With no price its open trade equity cannot be stated: the position is unpriced and
+      // the net asset value, now settled cash plus margin (96,802.50 + 4,500), is marked provisional. Nothing is guessed.
+      id: 'quote-ends', covers: 'missing price', action: 'quote', instrument: 'main', quote: { clear: true },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'long', qty: 3, avgCost: 74.60, price: null, value: null, unrealized: null, notional: null, margin: 4_500, provisional: true }],
+        provisional: { account: true, book: true },
+        pnl: { account: { realized: 1_325, commissions: -22.50, unrealized: 0, total: 1_302.50, complete: false } },
+        nav: { account: 101_302.50, book: 1_001_302.50 },
+        balance: { account: { positions: null, assets: 101_302.50, netAssets: 101_302.50 } },
+      },
+    },
+    {
+      // The end-of-day pass of the last trading day: no settlement price, so no variation margin and no final settlement.
+      id: 'expiry-without-a-price', covers: ['final settlement', 'missing price'], action: 'clock', to: EOD('2026-03-20'),
+      expect: { events: [] },
+    },
+    {
+      // The final settlement price, the stock's closing price 74.25, is entered by hand for the last trading day.
+      // The next engine cycle closes the contract in cash: (74.25 - 74.60) x 300 = -105.00; margin 4,500 released; no fee.
+      id: 'final-price-by-hand', covers: ['final settlement', 'manual price', 'expiry', 'margin release'], action: 'manual_price', instrument: 'main', value: 74.25, forDate: '2026-03-20', note: 'Final settlement price: closing price of CWFL on 20 March 2026',
+      expect: {
+        events: [{ type: 'future.final_settlement', summary: 'Final settlement: 3 CWFH6 closed in cash at 74.25 (physical delivery is not simulated)', cash: { USD: 4_395 }, owner: 'account', date: '2026-03-20' }],
+        cash: { account: { USD: usd(101_197.50, 0) } },
+        positions: [],
+        holdings: { main: null },
+        lifecycle: [],
+        provisional: { account: false, book: false },
+        pnl: { account: { realized: 1_220, unrealized: 0, total: 1_197.50, complete: true } }, // 1,325 - 105
+        nav: { account: 101_197.50, book: 1_001_197.50 },
+        balance: { account: { cash: 101_197.50, margin: null, positions: null, assets: 101_197.50, netAssets: 101_197.50 } },
+      },
+    },
+    { id: 'monday', action: 'clock', to: AM('2026-03-23'), expect: {} },
+    {
+      id: 'trade-after-expiry', covers: 'expired contract', action: 'ticket', instrument: 'main', side: 'sell', qty: 1,
+      status: 'blocked', reason: 'The contract\'s last trading day was 20 March 2026.',
+      expect: { refused: 'CWFH6 expired on 2026-03-20' },
+    },
+    {
+      // The contract called for delivery of 3 x 100 shares against 300 x 74.25 = 22,275.00. The Terminal closed it in
+      // cash, so the delivery is recorded by hand: the shares are bought on the stock ticket at the final settlement price.
+      id: 'delivery-by-hand', covers: 'physical delivery', action: 'ticket', ticketOf: 'equity', instrument: 'common', side: 'buy', qty: 300, as: 'delivered', order: { statedPrice: 74.25 }, settlementCheck: false,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'common', qty: 300, estimate: 74.25, model: 'stated-price', settleDate: '2026-03-24', cash: -22_275, fees: 0 }], // 300 x 74.25; T+1
+          cash: { USD: { purchases: 22_275, fees: 0, required: 22_275, available: 101_197.50, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 300, avgPrice: 74.25, fills: [{ qty: 300, price: 74.25, model: 'stated-price' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 300 CWFL @ 74.25 USD', cash: {}, owner: 'account', date: '2026-03-23' }],
+        cash: { account: { USD: { settled: 101_197.50, unsettled: -22_275, margin: 0, availableToTrade: 78_922.50, availableToWithdraw: 78_922.50 } } }, // the 22,275 owed tomorrow is neither spendable nor withdrawable
+        positions: [{ instrument: 'common', lot: 'delivered', owner: 'account', direction: 'long', qty: 300, avgCost: 74.25, cost: 22_275, price: 74.25, value: 22_275, unrealized: 0 }],
+        holdings: { common: { long: 300, short: 0, net: 300 } },
+        pending: [{ instrument: 'common', owner: 'account', dueDate: '2026-03-24', amount: -22_275, ccy: 'USD', into: 'cash' }],
+        nav: { account: 101_197.50, book: 1_001_197.50 }, // bought at their value: nothing gained or lost
+        balance: { account: { cash: 101_197.50, positions: 22_275, payable: 22_275, assets: 123_472.50, liabilities: 22_275, netAssets: 101_197.50 } },
+      },
+    },
+    {
+      id: 'delivery-settles', covers: 'settlement', action: 'clock', to: AM('2026-03-24'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 22,275.00 USD from settled cash', cash: { USD: -22_275 }, date: '2026-03-24' }],
+        cash: { account: { USD: usd(78_922.50, 0) } },
+        pending: [],
+        balance: { account: { cash: 78_922.50, payable: null, assets: 101_197.50, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'stock-up', action: 'quote', instrument: 'common', quote: { bid: 74.40, ask: 74.44, last: 74.42, bidSize: 5000, askSize: 5000 },
+      expect: {
+        positions: [{ instrument: 'common', lot: 'delivered', qty: 300, cost: 22_275, price: 74.42, value: 22_326, unrealized: 51 }], // 300 x 74.42
+        pnl: { account: { unrealized: 51, total: 1_248.50 } },
+        nav: { account: 101_248.50, book: 1_001_248.50 },
+        balance: { account: { positions: 22_326, assets: 101_248.50, netAssets: 101_248.50 } },
+      },
+    },
+    {
+      id: 'sell-delivered-shares', covers: 'close', action: 'ticket', ticketOf: 'equity', instrument: 'common', side: 'sell', qty: 300, from: 'delivered', settlementCheck: false,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'common', qty: 300, estimate: 74.40, model: 'quoted-bid-ask', settleDate: '2026-03-25', cash: 22_320, fees: 0 }] }, // 300 x 74.40 (the bid)
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 300, avgPrice: 74.40 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 300 CWFL @ 74.40 USD (realized 45.00 USD)' }], // 300 x (74.40 - 74.25)
+        cash: { account: { USD: { settled: 78_922.50, unsettled: 22_320, availableToTrade: 101_242.50, availableToWithdraw: 78_922.50 } } }, // proceeds can be traded on, not withdrawn, before they settle
+        positions: [],
+        holdings: { common: null },
+        pending: [{ instrument: 'common', owner: 'account', dueDate: '2026-03-25', amount: 22_320, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: 1_265, unrealized: 0, total: 1_242.50 } },
+        nav: { account: 101_242.50, book: 1_001_242.50 },
+        balance: { account: { cash: 78_922.50, receivable: 22_320, positions: null, assets: 101_242.50, netAssets: 101_242.50 } },
+      },
+    },
+    {
+      id: 'sale-settles', covers: 'settlement', action: 'clock', to: AM('2026-03-25'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 22,320.00 USD into settled cash', cash: { USD: 22_320 } }],
+        // By hand: 100,000 + 1,100 (short) + 120 (long: 3 x 100 x (74.25 - 73.85)) + 45 (shares) - 22.50 commission = 101,242.50.
+        cash: { account: { USD: usd(101_242.50, 0) }, treasury: { USD: usd(900_000) } },
+        pending: [],
+        nav: { account: 101_242.50, treasury: 900_000, book: 1_001_242.50 },
+        balance: { account: { cash: 101_242.50, receivable: null, assets: 101_242.50, liabilities: 0, netAssets: 101_242.50 } },
+      },
+    },
+  ],
+};
+
+export default [equityIndexFuture, equityFuture];

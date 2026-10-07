@@ -13,15 +13,12 @@
 - test/matrix/specs/future.mjs: header, helpers, equity_index_future (28 steps incl. 3 blocked).
 - test/matrix/drivers/browser/future.mjs: contractTerms (incl. underlying picker, calendars, Quoted in), ticket,
   actions.roll, actions.close / resize for Treasury-owned positions.
-- equity_index_future passes at engine, API and browser level.
+- equity_index_future and equity_future (27 steps) pass at engine, API and browser level.
 
 ## In progress
 - Nothing half-edited.
 
 ## Next (designs are worked out; write each into specs/future.mjs, run engine, API, browser)
-1. equity_future: single-stock future, physical; short then long; final price entered by hand (quote cleared before
-   expiry -> lifecycle item blocked -> manual price for the date); delivery recorded by hand with a stock ticket at a
-   stated price (ticketOf: 'equity'); min fee per order.
 2. gov_bond_future: Bund-like, EUR, venue DE (TARGET); short; holiday 1 May 2026 (no variation); EUR/USD 1.10 -> 1.08.
 3. treasury_future: 10-year T-note-like, 1/64 tick, physical -> cash close-out labelled.
 4. stir_future: SOFR-like, 100 minus rate, 25 USD a basis point; owner Treasury.
@@ -34,4 +31,5 @@
 
 ## Product state (engine / API / browser)
 equity_index_future: passed / passed / passed
+equity_future: passed / passed / passed
 others: not written yet
