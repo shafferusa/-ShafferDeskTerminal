@@ -425,7 +425,10 @@ export function screenProblems(ctx, screen, { expected, state, events }) {
   const matched = [];
   for (const p of mine) {
     const sym = symbolOf(p.instrument);
-    const i = rows.findIndex((r) => (sym ? r.label === sym : startsWith(`Borrow of ${ctx.inst(p.instrument.slice(7)).symbol}`).test(r.label)) && numbersAgree(p.qty, r.qty));
+    const fits = (r) => (sym ? r.label === sym : startsWith(`Borrow of ${ctx.inst(p.instrument.slice(7)).symbol}`).test(r.label)) && numbersAgree(p.qty, r.qty);
+    // Two lots of one instrument can have the same quantity: the row meant is then the one whose average cost agrees too.
+    let i = typeof p.avgCost === 'number' && rows.filter(fits).length > 1 ? rows.findIndex((r) => fits(r) && numbersAgree(p.avgCost, r.avgCost)) : -1;
+    if (i < 0) i = rows.findIndex(fits);
     if (i < 0) { say(`position ${p.instrument} ${p.qty} is not in the Positions table (rows: ${screen.positions.map((r) => `${r.label} ${r.qty.text}`).join('; ') || 'none'})`); matched.push(null); continue; }
     const [r] = rows.splice(i, 1);
     matched.push(r);

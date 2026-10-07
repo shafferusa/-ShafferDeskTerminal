@@ -15,7 +15,7 @@
    binary float (the product is 938.28499...). Half-up gives 938.29. One cent; the convention for exact halves should be
    decided and the amount computed as notional x rate x days / 360 in that order (or in integer minor units).
 
-## b1 (bond family, government group), 2026-10-07: one finding outside my files, not fixed
+## b1 (bond family, government group), 2026-10-07: two findings outside my files, not fixed
 
 1. **Bond prices are displayed to three decimals, so a price in 32nds or 64ths is not shown as quoted**
    (`web/lib/core.js` `fmtPrice`: at most 3 decimals for a value of 10 or more; used by the trade preview's "Estimated
@@ -29,6 +29,13 @@
    other people's areas: it needs a units-aware variant (the leg and the position both carry `priceUnits`).
    Reproduce: `npm run test:browser -- --product=treasury_note --headed`, or register any bond, quote it at 99.53125
    and open the buy preview. The matrix compares a displayed figure to the decimals shown, so this does not fail a step.
+
+2. **Two strategy instances with the same name are listed in an arbitrary order in Accounting, Positions** (cosmetic;
+   `web/views/accounting.js`, the sort of the Positions table: owner, strategy name, then strategy id, which is random).
+   Product corporate_bond, step second-lot onwards: two purchases of one bond are two instances both named
+   "Long HALDEN-5.4-MAR32"; which lot is the first row changes from one database to the next, and nothing in the row
+   says which instance it is. What is right: the older instance first (opened_at, as the API lists them). Not fixed:
+   shared view. The browser check now tells two equal-sized lots apart by their average cost (drivers/browser.mjs).
 
 ## o1 (listed options), 2026-10-07: one gap outside my files, not fixed
 
