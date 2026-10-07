@@ -24,3 +24,4 @@
 - 2026-10-07T03:06Z | l1 | +0.2 | certificate_of_deposit passes at engine, API and browser (held to maturity across two market holidays, early redemption, 30/360 and secondary sale refused)
 - 2026-10-07T03:07Z | l1 | +0.2 | bank_deposit passes at engine, API and browser (open-ended, monthly interest, set rate, withdrawals, Account-to-Account transfer)
 - 2026-10-07T03:07Z | s1 | +0.2 | basis_swap passes at engine, API and browser
+- 2026-10-07T03:09Z | b1 | +0.2 | strips passes at engine, API and browser (stated price, manual mark, Columbus Day settlement, resting limit order)

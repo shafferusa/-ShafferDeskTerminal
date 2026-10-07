@@ -66,7 +66,14 @@ export function accruedPer100(terms, settle) {
   return 100 * rate * yearFraction(period.accrualStart, settle, basis);
 }
 
-/** Coupon paid per 100 face on a coupon date. */
+/**
+ * Coupon paid per 100 face on a coupon date.
+ *
+ * A fixed coupon on ACT/ACT, 30/360, 30E/360 or ACT/365 pays the annual rate divided by the frequency for every
+ * regular period: the day count of such a bond governs accrued interest between coupon dates, not the size of the
+ * coupon (a Japanese or Canadian government bond accrues on ACT/365 and still pays two equal half-year coupons).
+ * A floating coupon, and any coupon on the money-market basis ACT/360, pays the rate for the actual days of its period.
+ */
 export function couponPer100(terms, couponDate) {
   const freq = freqOf(terms);
   if (!freq) return 0;
@@ -78,7 +85,7 @@ export function couponPer100(terms, couponDate) {
   const dated = terms.datedDate || terms.issueDate;
   const accrualStart = dated && dated > start ? dated : start;
   const basis = terms.dayCount || 'ACT/ACT';
-  if (basis === 'ACT/ACT' || basis === '30/360' || basis === '30E/360') {
+  if (basis === 'ACT/ACT' || basis === '30/360' || basis === '30E/360' || (basis === 'ACT/365' && terms.couponType !== 'float')) {
     if (accrualStart === start) return 100 * rate / freq;
     if (basis === 'ACT/ACT') return (100 * rate / freq) * (diffDays(accrualStart, couponDate) / diffDays(start, couponDate));
     return 100 * rate * yearFraction(accrualStart, couponDate, basis);

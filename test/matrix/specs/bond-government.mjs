@@ -37,7 +37,10 @@ export const family = 'bond';
 /** 10:00 in New York on a date in Eastern Standard Time (UTC-5): November to early March. */
 const EST = (d) => `${d}T15:00:00.000Z`;
 
-/** Fill assumptions every scenario states in full. Quotes here always carry a bid and an ask, so the half spread is not used. */
+/** 10:00 in New York on a date in Eastern Daylight Time (UTC-4): mid-March to the end of October. */
+const EDT = (d) => `${d}T14:00:00.000Z`;
+
+/** Fill assumptions every scenario states in full. A quote with a bid and an ask fills at them; a manual mark without them fills 3 bp away from the mark (the Book's assumed half spread for bonds). */
 const FILL = { halfSpreadBps: { bond: 3 }, slippageBps: 0, participation: 1, maxQuoteAgeSec: 120, allowEndOfDayFills: false, maxPreviewDriftPct: 0.5 };
 const SHORT = { collateralPct: 1.02, marginPct: 0.3 };
 
@@ -788,4 +791,206 @@ const treasuryBond = {
   ],
 };
 
-export default [treasuryNote, treasuryBill, treasuryBond];
+
+// ---------------------------------------------------------------------------------------------
+// strips
+// ---------------------------------------------------------------------------------------------
+// A zero-coupon US Treasury STRIPS (the principal of a bond, stripped of its coupons): no coupon,
+// no accrued interest, a price far below par. It starts with NO market price at all, which is
+// usual for an off-the-run strip: the first purchase fills at a price the user states, the position
+// is provisional until a price is entered by hand, a second purchase fills on that manual mark with
+// the Book's assumed half spread, and only then does a quote arrive. T+1 on the US bond calendar;
+// the second purchase is made on Friday 9 October 2026 and settles on Tuesday 13 October, because
+// Monday 12 October is Columbus Day (bond market closed, stock market open).
+// A resting limit order is filled on a later day, when the quote trades through the limit.
+// Commission: 0.1 bp of principal with a minimum of 5.00 an order, which every order here pays.
+const strips = {
+  productId: 'strips',
+  title: 'US Treasury STRIPS due 15 May 2036: stated fill price, manual mark, Columbus Day settlement, a resting limit sale',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount', 'a stated fill price or a manual price while no quote exists', 'Order type, Limit price and Time in force for the resting sale'],
+    automaticInputs: ['settlement date', 'commission', 'bid, ask and last once a quote is supplied (quote fixture)'],
+    manualInputs: ['fill price stated on the ticket for the first purchase (no quote exists)', 'price entered by hand on the instrument, used to value the position and to fill the second purchase with the assumed half spread'],
+    settlement: 'T+1 on the US bond calendar; Columbus Day is skipped; a limit order that fills on a later day settles T+1 from the day it fills',
+    lifecycle: 'No coupon and no accrual; maturity scheduled; without a price the position is carried at cost and the net asset value is provisional',
+    accounting: 'Clean cost at average across a stated-price fill and a manual-mark fill; no accrued interest; realized P&L on each sale; minimum commission',
+    collateral: 'None for a long position',
+  },
+  start: EDT('2026-10-08'), // Thursday
+  settlementCheck: { lag: 1, holidays: ['2026-10-12'] }, // Columbus Day, a US bond-market holiday
+  book: {
+    name: 'Matrix STRIPS', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 2_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 1_000_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 5, bps: 0.1 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'strips', name: 'US Treasury STRIPS 15-May-2036', symbol: 'STRIPS-MAY36', marketView: 'US_CASH', venueType: 'otc', issuer: 'United States Treasury', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      terms: { couponType: 'zero', maturity: '2036-05-15', dayCount: 'ACT/ACT', redemption: 100, minDenomination: 100 } },
+  },
+  quotes: {}, // no quote to begin with
+  expectAtStart: { ...startState(1_000_000, 1_000_000), cash: { account: usdCash(1_000_000), treasury: usdCash(1_000_000) } },
+  steps: [
+    {
+      id: 'open-at-stated-price', covers: ['open', 'stated fill price'], action: 'ticket', instrument: 'main', side: 'buy', qty: 800_000, as: 'lot', order: { statedPrice: 62.125 }, // 62-04
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 800_000, estimate: 62.125, model: 'stated-price', priceSource: null, settleDate: '2026-10-09', calendar: 'USBOND',
+            gross: 497_000, // 800,000 x 62.125 / 100
+            accrued: 0, cash: -497_000, fees: 5 }], // 0.1 bp of 497,000 = 4.97, raised to the 5.00 minimum
+          cash: { USD: { purchases: 497_000, fees: 5, required: 497_005, available: 1_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 800_000, avgPrice: 62.125, fills: [{ qty: 800_000, price: 62.125, model: 'stated-price', settleDate: '2026-10-09' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 800,000 STRIPS-MAY36 @ 62.125 USD', owner: 'account', date: '2026-10-08' }],
+        cash: { account: { USD: { settled: 1_000_000, unsettled: -497_005, availableToTrade: 502_995 } } },
+        // No price exists: the value is missing, not zero and not the fill price. The position is carried at cost and everything built on it is provisional.
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 800_000, avgCost: 62.125, cost: 497_000, price: null, value: null, unrealized: null, accrued: 0, provisional: true, priceSource: null }],
+        holdings: { main: { long: 800_000, short: 0, net: 800_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-10-09', amount: -497_005, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'bond.maturity', instrument: 'main', dueDate: '2036-05-15', status: 'pending' }], // a Thursday; no coupon is scheduled
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -5, fees: 0, borrowFunding: 0, total: -5, complete: false } },
+        nav: { account: 999_995, book: 1_999_995 }, // at cost, less the commission
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 1_000_000, positions: 497_000, payable: 497_005, assets: 1_497_000, liabilities: 497_005, netAssets: 999_995 } },
+      },
+    },
+    {
+      id: 'manual-mark', covers: 'manual price', action: 'manual_price', instrument: 'main', value: 62.2, note: 'Dealer indication, 8 October',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 800_000, price: 62.2, value: 497_600, unrealized: 600, provisional: false, priceSource: 'Manual entry' }], // 800,000 x 62.2 / 100 - 497,000
+        pnl: { account: { unrealized: 600, total: 595, complete: true } },
+        nav: { account: 1_000_595, book: 2_000_595 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 497_600, assets: 1_497_600, netAssets: 1_000_595 } },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EDT('2026-10-09'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 497,005.00 USD from settled cash', cash: { USD: -497_005 }, date: '2026-10-09' }],
+        cash: { account: { USD: { settled: 502_995, unsettled: 0, availableToTrade: 502_995 } } },
+        pending: [],
+        balance: { account: { cash: 502_995, payable: null, assets: 1_000_595, liabilities: 0 } },
+      },
+    },
+    {
+      // Friday 9 October, still no quote: the manual mark is the only price. A buy fills at the mark plus the Book's assumed
+      // half spread of 3 bp: 62.2 x 1.0003 = 62.21866. T+1 skips Columbus Day (Monday 12 October): it settles Tuesday 13 October.
+      id: 'increase-on-manual-mark', covers: ['increase', 'manual price', 'market holiday'], action: 'resize', lot: 'lot', factor: 1.5, // 800,000 -> 1,200,000
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', qty: 400_000, estimate: 62.21866, model: 'manual-mark', priceSource: 'Manual entry', settleDate: '2026-10-13', calendar: 'USBOND',
+          gross: 248_874.64, // 400,000 x 62.21866 / 100
+          accrued: 0, cash: -248_874.64, fees: 5 }], // 0.1 bp is 2.49: the minimum again
+          cash: { USD: { purchases: 248_874.64, fees: 5, required: 248_879.64, available: 502_995, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 400_000, avgPrice: 62.21866, fills: [{ qty: 400_000, price: 62.21866, model: 'manual-mark', settleDate: '2026-10-13' }] }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Bought 400,000 STRIPS-MAY36 @ 62.21866 USD' }],
+        cash: { account: { USD: { settled: 502_995, unsettled: -248_879.64, availableToTrade: 254_115.36 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_200_000,
+          cost: 745_874.64, // 497,000 + 248,874.64
+          avgCost: 62.15622, // 745,874.64 / 1,200,000 x 100
+          price: 62.2, value: 746_400, // 1,200,000 x 62.2 / 100
+          unrealized: 525.36 }],
+        holdings: { main: { long: 1_200_000, short: 0, net: 1_200_000 } },
+        pending: [{ instrument: 'main', dueDate: '2026-10-13', amount: -248_879.64, into: 'cash' }],
+        pnl: { account: { commissions: -10, unrealized: 525.36, total: 515.36 } },
+        nav: { account: 1_000_515.36, book: 2_000_515.36 },
+        balance: { account: { cash: 502_995, positions: 746_400, payable: 248_879.64, assets: 1_249_395, liabilities: 248_879.64, netAssets: 1_000_515.36 } },
+      },
+    },
+    // Columbus Day: the stock market is open (so the Terminal's day ends as usual), the bond market is not. Nothing settles and nothing accrues on a strip.
+    { id: 'columbus-day', covers: 'market holiday', action: 'clock', to: EDT('2026-10-12'), expect: { events: [] } },
+    {
+      id: 'settle-increase', covers: 'settlement', action: 'clock', to: EDT('2026-10-13'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 248,879.64 USD from settled cash', cash: { USD: -248_879.64 }, date: '2026-10-13' }],
+        cash: { account: { USD: { settled: 254_115.36, unsettled: 0, availableToTrade: 254_115.36 } } },
+        pending: [],
+        balance: { account: { cash: 254_115.36, payable: null, assets: 1_000_515.36, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'quote-arrives', action: 'quote', instrument: 'main', quote: { bid: 62.375, ask: 62.4375, last: 62.40625, bidSize: 5_000_000, askSize: 5_000_000 }, // 62-12, 62-14, 62-13
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_200_000, price: 62.40625, value: 748_875, unrealized: 3_000.36, priceSource: 'Test fixture' }], // 1,200,000 x 62.40625 / 100 - 745,874.64
+        pnl: { account: { unrealized: 3_000.36, total: 2_990.36 } },
+        nav: { account: 1_002_990.36, book: 2_002_990.36 },
+        balance: { account: { positions: 748_875, assets: 1_002_990.36, netAssets: 1_002_990.36 } },
+      },
+    },
+    {
+      // A sale of 500,000 at 62.75 or better, good until cancelled. The bid is 62.375: the order rests.
+      id: 'limit-sell-rests', covers: ['reduce', 'limit order'], action: 'ticket', instrument: 'main', side: 'sell', qty: 500_000, from: 'lot', order: { orderType: 'limit', limitPrice: 62.75, tif: 'gtc' },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 500_000, estimate: 62.375, executable: false, settleDate: '2026-10-14', orderType: 'limit',
+          gross: 311_875, cash: 311_875, fees: 5 }] }, // what it would fetch at today's bid: 500,000 x 62.375 / 100
+        result: { orders: [{ kind: 'trade', action: 'sell', status: 'working', filledQty: 0, reason: 'Limit not reached: executable price 62.375 is below the limit 62.75.', fills: [] }] },
+        events: [{ type: 'strategy.legs_added' }],
+        openOrders: [{ instrument: 'main', kind: 'trade', action: 'sell', status: 'working', qty: 500_000, filledQty: 0 }],
+      },
+    },
+    { id: 'order-rests-overnight', covers: 'limit order', action: 'clock', to: EDT('2026-10-14'), expect: { events: [] } },
+    {
+      // The bid moves through the limit. The order fills at the bid, 62.78125 (62-25), on Wednesday 14 October and settles T+1 from then.
+      id: 'limit-sell-fills', covers: ['reduce', 'limit order'], action: 'quote', instrument: 'main', quote: { bid: 62.78125, ask: 62.84375, last: 62.8125, bidSize: 5_000_000, askSize: 5_000_000 },
+      expect: {
+        // Proceeds 500,000 x 62.78125% = 313,906.25. Cost removed at the average: 745,874.64 x 5/12 = 310,781.10. Realized 3,125.15.
+        // The fill is not what was confirmed (a better price, a later settlement), and the history says so.
+        events: [
+          { type: 'trade.fill', summary: 'Sold 500,000 STRIPS-MAY36 @ 62.78125 USD (realized 3,125.15 USD)', date: '2026-10-14' },
+          { type: 'order.fill_variance', summary: /Filled at the bid on a later matching cycle.*62\.78125 against 62\.375 confirmed.*Settles 2026-10-15, not 2026-10-14 as confirmed/s },
+        ],
+        cash: { account: { USD: { settled: 254_115.36, unsettled: 313_901.25, availableToTrade: 568_016.61 } } }, // 313,906.25 - 5.00
+        positions: [{ instrument: 'main', lot: 'lot', qty: 700_000, cost: 435_093.54, avgCost: 62.15622, price: 62.8125,
+          value: 439_687.50, // 700,000 x 62.8125 / 100
+          unrealized: 4_593.96 }],
+        holdings: { main: { long: 700_000, short: 0, net: 700_000 } },
+        pending: [{ instrument: 'main', dueDate: '2026-10-15', amount: 313_901.25, into: 'cash' }],
+        openOrders: [],
+        pnl: { account: { realized: 3_125.15, commissions: -15, unrealized: 4_593.96, total: 7_704.11 } },
+        nav: { account: 1_007_704.11, book: 2_007_704.11 },
+        balance: { account: { cash: 254_115.36, receivable: 313_901.25, positions: 439_687.50, assets: 1_007_704.11, liabilities: 0, netAssets: 1_007_704.11 } },
+      },
+    },
+    {
+      id: 'settle-limit-sale', covers: 'settlement', action: 'clock', to: EDT('2026-10-15'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 313,901.25 USD into settled cash', cash: { USD: 313_901.25 } }],
+        cash: { account: { USD: { settled: 568_016.61, unsettled: 0, availableToTrade: 568_016.61 } } },
+        pending: [],
+        balance: { account: { cash: 568_016.61, receivable: null } },
+      },
+    },
+    {
+      id: 'close', covers: 'close', action: 'close', lot: 'lot', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 700_000, estimate: 62.78125, settleDate: '2026-10-16',
+          gross: 439_468.75, // 700,000 x 62.78125 / 100
+          accrued: 0, cash: 439_468.75, fees: 5 }] }, // 0.1 bp is 4.39: the minimum
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 700_000, avgPrice: 62.78125 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 700,000 STRIPS-MAY36 @ 62.78125 USD (realized 4,375.21 USD)' }], // 439,468.75 - 435,093.54
+        cash: { account: { USD: { settled: 568_016.61, unsettled: 439_463.75, availableToTrade: 1_007_480.36 } } },
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', dueDate: '2026-10-16', amount: 439_463.75, into: 'cash' }],
+        lifecycle: [],
+        // Realized in all: 313,906.25 + 439,468.75 - 745,874.64 = 7,500.36. Four orders at the 5.00 minimum.
+        pnl: { account: { realized: 7_500.36, couponInterest: 0, commissions: -20, unrealized: 0, total: 7_480.36 } },
+        nav: { account: 1_007_480.36, book: 2_007_480.36 },
+        balance: { account: { cash: 568_016.61, receivable: 439_463.75, positions: null, assets: 1_007_480.36, liabilities: 0, netAssets: 1_007_480.36 } },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: EDT('2026-10-16'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 439,463.75 USD into settled cash', cash: { USD: 439_463.75 } }],
+        cash: { account: { USD: { settled: 1_007_480.36, unsettled: 0, availableToTrade: 1_007_480.36 } }, treasury: { USD: { settled: 1_000_000 } } },
+        pending: [],
+        balance: { account: { cash: 1_007_480.36, receivable: null, assets: 1_007_480.36, liabilities: 0, netAssets: 1_007_480.36 } },
+      },
+    },
+  ],
+};
+
+export default [treasuryNote, treasuryBill, treasuryBond, strips];
