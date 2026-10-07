@@ -21,3 +21,4 @@
 - 2026-10-07T03:05Z | fu1 | +0.2 | stir_future passes at engine, API and browser
 - 2026-10-07T03:05Z | fu1 | +0.2 | fx_future passes at engine, API and browser
 - 2026-10-07T03:05Z | fu1 | +0.2 | commodity_future passes at engine, API and browser
+- 2026-10-07T03:06Z | l1 | +0.2 | certificate_of_deposit passes at engine, API and browser (held to maturity across two market holidays, early redemption, 30/360 and secondary sale refused)

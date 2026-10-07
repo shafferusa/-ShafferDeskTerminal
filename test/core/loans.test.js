@@ -54,3 +54,30 @@ test('the preview shows one day of interest on the contract day count: ACT/365 d
   assert.equal(await daily('ACT/365'), 46.03); // 400,000 x 0.042 / 365 = 46.0274
   assert.equal(await daily('ACT/360'), 46.67); // 400,000 x 0.042 / 360 = 46.6667
 });
+
+test('a day count the accrual does not implement is refused, not replaced by ACT/360', async () => {
+  const { app } = makeApp();
+  const { book, acct } = makeBook(app);
+  const leg = loanLeg(100_000, { rate: 0.05, maturity: '2026-06-01', dayCount: '30/360' });
+  await assert.rejects(app.packages.preview({ bookId: book.id, unitId: acct.id, template: 'custom', legs: [leg] }), /Day count 30\/360 is not supported for a cash loan or deposit/);
+  // The two it does implement are accepted as stated.
+  for (const dayCount of ['ACT/360', 'ACT/365']) {
+    const pv = await app.packages.preview({ bookId: book.id, unitId: acct.id, template: 'custom', legs: [loanLeg(100_000, { rate: 0.05, maturity: '2026-06-01', dayCount })] });
+    assert.equal(pv.blocking, 0);
+    assert.ok(pv.legs[0].instrument.details.some(([k, v]) => k === 'Day count' && v === dayCount));
+  }
+});
+
+test('a loan or deposit cannot be bought or sold like a security, and is not enlarged by resizing: both are refused in words', async () => {
+  const { app } = makeApp();
+  const { book, acct } = makeBook(app);
+  const s = await trade(app, { bookId: book.id, unitId: acct.id, template: 'custom', legs: [loanLeg(100_000, { rate: 0.05, maturity: '2026-06-01' })] });
+  const instrumentId = s.positions.find((p) => p.family === 'loan').instrument.id;
+  await assert.rejects(app.packages.preview({ bookId: book.id, unitId: acct.id, template: 'custom', legs: [{ kind: 'trade', action: 'sell', instrumentId, qty: 100_000 }] }),
+    (err) => err.status === 400 && /is a financing arrangement\. It cannot be bought or sold/.test(err.message));
+  await assert.rejects(app.packages.previewAction(s.id, 'resize', { factor: 1.5 }),
+    (err) => err.status === 400 && /is not enlarged by resizing\. Open a new arrangement/.test(err.message));
+  // Resizing down is a part repayment, offered as an optional leg.
+  const down = await app.packages.previewAction(s.id, 'resize', { factor: 0.5 });
+  assert.deepEqual(down.legs.map((l) => [l.kind, l.qty]), [['repay', 50_000]]);
+});

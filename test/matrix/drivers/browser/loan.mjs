@@ -7,6 +7,7 @@
 //   ticket   step.ticket.kind = 'loan'            "Cash loan or deposit" (Treasury: New loan or deposit; Account: Borrow cash)
 //                               'convert'         "Convert currency"
 //                               'borrow_convert'  "Borrow and convert"
+//                               'secondary_sale'  the arrangement's own drawer (Instruments): no ticket is offered there
 //   repay                                         Repay / Withdraw on the row of the open arrangement; a part is typed in the preview
 //   instrument_lifecycle (set_rate)               Set rate on the row of the open arrangement
 //   transfer                                      Fund from Treasury, Return to Treasury, Transfer to another Account (Account page)
@@ -217,8 +218,29 @@ async function borrowConvertDialog(ui, ctx, step) {
   return { preview: () => ui.button(dlg, 'Preview borrow and convert').click() };
 }
 
+/**
+ * An attempt to sell an arrangement like a security. The registry lists it (when financing arrangements are
+ * included); its drawer's Trade tab offers no ticket and says where the arrangement is managed.
+ */
+async function secondarySale(ui, ctx, step) {
+  const { page } = ui;
+  const inst = ctx.inst(step.ticket.instrument);
+  await ui.closeOverlays();
+  await ui.goto('#/instruments');
+  await page.locator('main label.check', { hasText: 'Include loans, repos and securities loans' }).locator('input').check();
+  await page.getByPlaceholder(/Filter by symbol, name/).fill(inst.name);
+  await page.locator('main table tbody tr').filter({ hasText: inst.name }).first().click();
+  const drawer = page.getByRole('dialog').filter({ has: page.getByRole('tab', { name: /^Trade/ }) });
+  await drawer.waitFor();
+  await ui.tab(drawer, 'Trade');
+  await drawer.locator('.notice', { hasText: 'financing arrangement' }).first().waitFor();
+  if (await drawer.getByRole('button', { name: /^Preview/ }).count()) throw new Error(`The drawer of ${inst.name} offers a trade ticket.`);
+  return { refusal: { message: (await texts(drawer.locator('.notice'))).join(' | '), where: 'instrument drawer, Trade tab: no ticket is offered' } };
+}
+
 export async function ticket(ui, t, ctx, step) {
   switch (step.ticket?.kind) {
+    case 'secondary_sale': return secondarySale(ui, ctx, step);
     case 'loan': return loanDialog(ui, ctx, step);
     case 'convert': return convertDialog(ui, ctx, step);
     case 'borrow_convert': return borrowConvertDialog(ui, ctx, step);

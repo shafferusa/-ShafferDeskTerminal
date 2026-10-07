@@ -561,4 +561,421 @@ const termDeposit = {
   ],
 };
 
-export default [unsecuredLoan, termDeposit];
+// ---------------------------------------------------------------------------------------------
+// certificate_of_deposit
+// ---------------------------------------------------------------------------------------------
+// Two US dollar certificates of deposit bought by an Account from an issuing bank: fixed rate, ACT/360,
+// interest paid with the principal at maturity. The Terminal books a CD as cash lent to the issuer at the
+// stated rate. One is held to maturity across Good Friday (3 April) and Memorial Day (25 May 2026); the
+// other is redeemed early in full, which the Terminal allows with interest to the day and no penalty. A CD
+// is negotiable in the market; the Terminal has no secondary sale for it, and says so.
+//
+// Interest, by hand (ACT/360):
+//   3-month CD: 500,000 x 0.051 / 360 = 70.833333 a day; 2 March to 1 June is 29 + 30 + 31 + 1 = 91 days: 6,445.8333 -> 6,445.83
+//   2-month CD: 100,000 x 0.048 / 360 = 13.333333 a day; redeemed 6 April after 35 days: 466.6667 -> 466.67
+const CD = { owner: 'account', page: 'account', side: 'lend_cash', productId: 'certificate_of_deposit', productLabel: 'Certificate of deposit', ccy: 'USD', principal: 500_000, name: 'Meridian Bank 3-month CD', as: 'cd',
+  terms: { loanType: 'cd', rateType: 'fixed', rate: 0.051, dayCount: 'ACT/360', maturity: '2026-06-01', interestPayment: 'maturity', counterparty: 'Meridian Bank' } };
+const CD2 = { ...CD, principal: 100_000, name: 'Meridian Bank 2-month CD', as: 'cd2', terms: { ...CD.terms, rate: 0.048, maturity: '2026-05-04' } };
+
+const certificateOfDeposit = {
+  productId: 'certificate_of_deposit',
+  title: 'Meridian Bank certificates of deposit held by an Account: 500,000 USD at 5.10% to 1 June 2026, and 100,000 USD at 4.80% redeemed early',
+  matrix: {
+    ...LOAN_TICKET,
+    automaticInputs: ['interest start date', 'daily interest accrual at the end-of-day run, ACT/360 (no run on a market holiday; the next run covers the days)', 'principal and interest returned at maturity'],
+    manualInputs: ['every term of the certificate (issuer, principal, rate, day count, maturity), entered on the ticket'],
+    settlement: 'None: the cash leaves settled cash on the day the ticket is confirmed and returns at maturity or on redemption',
+    lifecycle: 'Interest accrues daily; principal and interest are returned at maturity. Early redemption in full is allowed with interest to the day and no penalty. A secondary-market sale is not supported and is refused',
+    accounting: 'Booked as cash lent to the issuing bank: an asset of the Account, carried at principal; interest is income accrued daily. Cash placed in a CD is not available to trade, transfer or withdraw',
+    collateral: 'None',
+  },
+  tradedOn: 'A certificate of deposit is not a registry instrument: it is entered on the Cash loan or deposit ticket (here opened from the Account page, side "Lend or deposit cash") and registers itself when the ticket is confirmed.',
+  start: AT_1000('2026-03-02'),
+  book: {
+    name: 'Matrix certificate of deposit', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 1_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 700_000 }] },
+    settings: { fees: {}, fill: FILL, settlement: {} },
+  },
+  instruments: {},
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 700_000, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 700_000, availableToWithdraw: 700_000, borrowed: 0, lent: 0 } },
+      treasury: { USD: { settled: 300_000, availableToTrade: 300_000, availableToWithdraw: 300_000, borrowed: 0, lent: 0 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 700_000, treasury: 300_000, book: 1_000_000 },
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+  },
+  steps: [
+    loanTicket('day-count-30-360', { ...CD, as: undefined, terms: { ...CD.terms, dayCount: '30/360' } }, {
+      covers: 'open', status: 'unsupported', reason: 'Interest on a loan or deposit is simulated on ACT/360 or ACT/365. Another day count is refused, not replaced.',
+      expect: { refused: { engine: 'Day count 30/360 is not supported for a cash loan or deposit. Interest is simulated on ACT/360 or ACT/365 only.', api: 'Day count 30/360 is not supported for a cash loan or deposit. Interest is simulated on ACT/360 or ACT/365 only.', browser: 'The Day count field of a loan or deposit offers only: ACT/360, ACT/365. "30/360" cannot be chosen.' } },
+    }),
+    loanTicket('buy-3-month-cd', CD, {
+      covers: ['open', 'lend'],
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'loan', action: 'lend_cash', purpose: 'financing', qty: 500_000, cash: -500_000, fees: 0, ccy: 'USD',
+            dailyCost: 70.83, // 500,000 x 0.051 / 360 = 70.8333
+            financing: { amount: -500_000, rateType: 'fixed', rate: 0.051, maturity: '2026-06-01', interestFrom: '2026-03-02' } }],
+          cash: { USD: { financingIn: 0, financingOut: 500_000, required: 500_000, available: 700_000, shortfall: 0, netCash: -500_000 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'loan', action: 'lend_cash', instrument: 'cd', status: 'filled', qty: 500_000, filledQty: 500_000 }] },
+        events: [
+          { type: 'strategy.submitted', owner: 'account' },
+          { type: 'loan.placed', summary: 'Lent 500,000.00 USD (cd, 5.100% fixed, due 2026-06-01)', cash: { USD: -500_000 }, owner: 'account', date: '2026-03-02' },
+        ],
+        cash: { account: { USD: { settled: 200_000, availableToTrade: 200_000, availableToWithdraw: 200_000, lent: 500_000, borrowed: 0 } } },
+        positions: [{ instrument: 'cd', lot: 'cd', owner: 'account', direction: 'lent', qty: 500_000, value: 500_000, carrying: 500_000, accrued: 0, provisional: false }],
+        holdings: {},
+        pending: [],
+        lifecycle: [{ type: 'loan.maturity', instrument: 'cd', dueDate: '2026-06-01', status: 'pending', owner: 'account' }],
+        borrowings: [],
+        pnl: { account: { realized: 0, dividends: 0, couponInterest: 0, borrowFunding: 0, commissions: 0, fees: 0, unrealized: 0, fx: 0, total: 0 }, book: { couponInterest: 0, total: 0 } },
+        nav: { account: 700_000, treasury: 300_000, book: 1_000_000 },
+        balance: {
+          account: { cash: 200_000, lent: 500_000, accruedIncome: null, assets: 700_000, liabilities: 0, netAssets: 700_000 },
+          book: { cash: 500_000, lent: 500_000, assets: 1_000_000, liabilities: 0, netAssets: 1_000_000 },
+          treasury: { cash: 300_000, lent: null, assets: 300_000, netAssets: 300_000 },
+        },
+      },
+    }),
+    loanTicket('buy-2-month-cd', CD2, {
+      covers: ['open', 'lend'],
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'loan', action: 'lend_cash', qty: 100_000, cash: -100_000, ccy: 'USD',
+            dailyCost: 13.33, // 100,000 x 0.048 / 360 = 13.3333
+            financing: { amount: -100_000, rate: 0.048, maturity: '2026-05-04', interestFrom: '2026-03-02' } }],
+          cash: { USD: { financingOut: 100_000, required: 100_000, available: 200_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'loan', action: 'lend_cash', instrument: 'cd2', status: 'filled', filledQty: 100_000 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'loan.placed', summary: 'Lent 100,000.00 USD (cd, 4.800% fixed, due 2026-05-04)', cash: { USD: -100_000 }, owner: 'account' }],
+        cash: { account: { USD: { settled: 100_000, availableToTrade: 100_000, availableToWithdraw: 100_000, lent: 600_000 } } },
+        positions: [
+          { instrument: 'cd', lot: 'cd', owner: 'account', direction: 'lent', qty: 500_000, value: 500_000, carrying: 500_000, accrued: 0 },
+          { instrument: 'cd2', lot: 'cd2', owner: 'account', direction: 'lent', qty: 100_000, value: 100_000, carrying: 100_000, accrued: 0 },
+        ],
+        lifecycle: [{ type: 'loan.maturity', instrument: 'cd2', dueDate: '2026-05-04', status: 'pending', owner: 'account' }, { type: 'loan.maturity', instrument: 'cd', dueDate: '2026-06-01', status: 'pending', owner: 'account' }],
+        balance: { account: { cash: 100_000, lent: 600_000, assets: 700_000, netAssets: 700_000 }, book: { cash: 400_000, lent: 600_000, assets: 1_000_000, netAssets: 1_000_000 } },
+      },
+    }),
+    {
+      // 700,000 was funded; 600,000 is in the certificates. Only the 100,000 left is cash that can move.
+      id: 'spend-the-cash-in-the-cds', covers: 'cash lent is not spendable', action: 'transfer', from: 'account', to: 'treasury', ccy: 'USD', amount: 150_000,
+      status: 'blocked', reason: 'Cash placed in a certificate of deposit is an asset, not cash: it cannot be transferred.',
+      expect: { refused: 'Alpha has 100,000.00 USD of settled USD available; 150,000.00 USD requested' },
+    },
+    {
+      // A CD is negotiable, but the Terminal books it as cash lent to the issuer. There is no secondary sale.
+      id: 'sell-in-the-secondary-market', covers: 'secondary sale', action: 'ticket', owner: 'account',
+      ticket: { kind: 'secondary_sale', instrument: 'cd' },
+      input: { template: 'custom', name: 'Sell Meridian Bank 3-month CD', legs: [{ kind: 'trade', action: 'sell', instrumentId: '$inst:cd', qty: 500_000 }] },
+      status: 'unsupported', reason: 'A certificate of deposit is held as cash lent to its issuer until maturity or redemption; a secondary-market sale at a price is not simulated.',
+      expect: { refused: { engine: 'Meridian Bank 3-month CD is a financing arrangement. It cannot be bought or sold; open, repay or terminate it from Treasury or the Account.', api: 'Meridian Bank 3-month CD is a financing arrangement. It cannot be bought or sold; open, repay or terminate it from Treasury or the Account.', browser: 'This is a financing arrangement. Open, repay or terminate it from Treasury or the Account.' } },
+    },
+    {
+      id: 'accrue-to-2-april', covers: 'interest accrual', action: 'clock', to: AT_1730('2026-04-02'), // Thursday: 31 days from 2 March
+      expect: {
+        events: [
+          { type: 'accrual.interest', summary: 'Interest accrued on Meridian Bank 3-month CD: 2,195.83 USD', owner: 'account', date: '2026-04-02' }, // 31 x 70.833333 = 2,195.8333
+          { type: 'accrual.interest', summary: 'Interest accrued on Meridian Bank 2-month CD: 413.33 USD', owner: 'account', date: '2026-04-02' }, // 31 x 13.333333 = 413.3333
+        ],
+        positions: [{ instrument: 'cd', qty: 500_000, accrued: 2_195.83 }, { instrument: 'cd2', qty: 100_000, accrued: 413.33 }],
+        pnl: { account: { couponInterest: 2_609.16, borrowFunding: 0, total: 2_609.16 }, book: { couponInterest: 2_609.16, total: 2_609.16 } },
+        nav: { account: 702_609.16, book: 1_002_609.16 },
+        balance: { account: { accruedIncome: 2_609.16, assets: 702_609.16, netAssets: 702_609.16 }, book: { accruedIncome: 2_609.16, assets: 1_002_609.16, netAssets: 1_002_609.16 } },
+      },
+    },
+    {
+      // Good Friday, 3 April: the stock exchange is closed and there is no end-of-day run. By Monday morning nothing has been booked.
+      id: 'monday-after-good-friday', covers: 'holiday', action: 'clock', to: AT_1000('2026-04-06'),
+      expect: { events: [], positions: [{ instrument: 'cd', qty: 500_000, accrued: 2_195.83 }, { instrument: 'cd2', qty: 100_000, accrued: 413.33 }], nav: { account: 702_609.16, book: 1_002_609.16 } },
+    },
+    {
+      // Early redemption of the 2-month CD, in full: allowed. Interest to today, 35 days: 466.6667 -> 466.67. No penalty is charged.
+      id: 'redeem-early-in-full', covers: ['close', 'early withdrawal'], action: 'repay', lot: 'cd2',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'repay', action: 'repay_cash', instrument: 'cd2', qty: 100_000, cash: 100_466.67, ccy: 'USD', financing: { amount: 100_466.67, principal: 100_000, interest: 466.67, full: true, interestThrough: '2026-04-06', rate: 0.048, maturity: '2026-05-04' } }],
+          cash: { USD: { financingIn: 100_466.67, financingOut: 0, required: 0, available: 100_000, shortfall: 0, netCash: 100_466.67 } },
+        },
+        result: { status: 'closed', orders: [{ kind: 'repay', action: 'repay_cash', status: 'filled', qty: 100_000, filledQty: 100_000 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'accrual.interest', summary: 'Interest accrued on Meridian Bank 2-month CD: 53.34 USD', date: '2026-04-06' }, // 466.67 - 413.33
+          { type: 'loan.withdrawal', summary: 'Received back 100,000.00 USD of principal on Meridian Bank 2-month CD (in full)', cash: { USD: 100_000 }, owner: 'account' },
+          { type: 'interest.payment', summary: 'Interest received on Meridian Bank 2-month CD: 466.67 USD', cash: { USD: 466.67 }, owner: 'account' },
+        ],
+        cash: { account: { USD: { settled: 200_466.67, availableToTrade: 200_466.67, availableToWithdraw: 200_466.67, lent: 500_000 } } },
+        positions: [{ instrument: 'cd', lot: 'cd', owner: 'account', direction: 'lent', qty: 500_000, value: 500_000, carrying: 500_000, accrued: 2_195.83 }],
+        lifecycle: [{ type: 'loan.maturity', instrument: 'cd', dueDate: '2026-06-01', status: 'pending', owner: 'account' }],
+        pnl: { account: { couponInterest: 2_662.50, total: 2_662.50 }, book: { couponInterest: 2_662.50, total: 2_662.50 } }, // 2,195.83 + 466.67
+        nav: { account: 702_662.50, book: 1_002_662.50 },
+        balance: { account: { cash: 200_466.67, lent: 500_000, accruedIncome: 2_195.83, assets: 702_662.50, netAssets: 702_662.50 }, book: { cash: 500_466.67, lent: 500_000, accruedIncome: 2_195.83, assets: 1_002_662.50, netAssets: 1_002_662.50 } },
+      },
+    },
+    {
+      // Monday's end-of-day run covers the four days since Thursday: 35 days in all, 2,479.1667 -> 2,479.17.
+      id: 'accrue-after-the-holiday', covers: ['interest accrual', 'holiday'], action: 'clock', to: AT_1730('2026-04-06'),
+      expect: {
+        events: [{ type: 'accrual.interest', summary: 'Interest accrued on Meridian Bank 3-month CD: 283.34 USD', date: '2026-04-06' }], // 2,479.17 - 2,195.83
+        positions: [{ instrument: 'cd', qty: 500_000, accrued: 2_479.17 }],
+        pnl: { account: { couponInterest: 2_945.84, total: 2_945.84 }, book: { couponInterest: 2_945.84, total: 2_945.84 } },
+        nav: { account: 702_945.84, book: 1_002_945.84 },
+        balance: { account: { accruedIncome: 2_479.17, assets: 702_945.84, netAssets: 702_945.84 }, book: { accruedIncome: 2_479.17, assets: 1_002_945.84, netAssets: 1_002_945.84 } },
+      },
+    },
+    {
+      // Tuesday 26 May, the day after Memorial Day: 29 + 30 + 26 = 85 days, 6,020.8333 -> 6,020.83.
+      id: 'accrue-past-memorial-day', covers: ['interest accrual', 'holiday'], action: 'clock', to: AT_1730('2026-05-26'),
+      expect: {
+        events: [{ type: 'accrual.interest', summary: 'Interest accrued on Meridian Bank 3-month CD: 3,541.66 USD', date: '2026-05-26' }], // 6,020.83 - 2,479.17
+        positions: [{ instrument: 'cd', qty: 500_000, accrued: 6_020.83 }],
+        pnl: { account: { couponInterest: 6_487.50, total: 6_487.50 }, book: { couponInterest: 6_487.50, total: 6_487.50 } },
+        nav: { account: 706_487.50, book: 1_006_487.50 },
+        balance: { account: { accruedIncome: 6_020.83, assets: 706_487.50, netAssets: 706_487.50 }, book: { accruedIncome: 6_020.83, assets: 1_006_487.50, netAssets: 1_006_487.50 } },
+      },
+    },
+    {
+      // Monday 1 June: maturity. Principal and 91 days of interest are returned: 6,445.8333 -> 6,445.83.
+      id: 'matures', covers: ['maturity', 'close'], action: 'clock', to: AT_1000('2026-06-01'),
+      expect: {
+        events: [
+          { type: 'accrual.interest', summary: 'Interest accrued on Meridian Bank 3-month CD: 425.00 USD', date: '2026-06-01' }, // 6,445.83 - 6,020.83
+          { type: 'loan.withdrawal', summary: 'Received back 500,000.00 USD of principal on Meridian Bank 3-month CD (in full)', cash: { USD: 500_000 }, owner: 'account', date: '2026-06-01' },
+          { type: 'interest.payment', summary: 'Interest received on Meridian Bank 3-month CD: 6,445.83 USD', cash: { USD: 6_445.83 }, owner: 'account', date: '2026-06-01' },
+        ],
+        cash: { account: { USD: { settled: 706_912.50, availableToTrade: 706_912.50, availableToWithdraw: 706_912.50, lent: 0, borrowed: 0 } }, treasury: { USD: { settled: 300_000 } } }, // 200,466.67 + 500,000 + 6,445.83
+        positions: [], lifecycle: [], borrowings: [],
+        pnl: { account: { couponInterest: 6_912.50, borrowFunding: 0, total: 6_912.50 }, book: { couponInterest: 6_912.50, total: 6_912.50 }, treasury: { total: 0 } }, // 6,445.83 + 466.67
+        nav: { account: 706_912.50, treasury: 300_000, book: 1_006_912.50 },
+        balance: {
+          account: { cash: 706_912.50, lent: null, accruedIncome: null, assets: 706_912.50, liabilities: 0, netAssets: 706_912.50 },
+          book: { cash: 1_006_912.50, lent: null, accruedIncome: null, assets: 1_006_912.50, liabilities: 0, netAssets: 1_006_912.50 },
+        },
+      },
+    },
+  ],
+};
+
+// ---------------------------------------------------------------------------------------------
+// bank_deposit
+// ---------------------------------------------------------------------------------------------
+// An open-ended (call) deposit held by an Account. With no maturity, interest is paid monthly, on the first
+// business day of each month. The bank changes the rate (entered by hand), the Account takes part of the
+// money out and passes it to a second Account of the Book, and finally closes the deposit.
+//
+// Interest, by hand (ACT/360):
+//   200,000 at 3.60%: 20.00 a day. 2 March to 1 April, 30 days: 600.00, paid 1 April.
+//   200,000 at 3.24% from 1 April: 18.00 a day. 1 to 15 April, 14 days: 252.00.
+//   150,000 at 3.24% from 15 April: 13.50 a day. 15 April to 1 May, 16 days: 216.00. Paid 1 May: 468.00.
+//   1 to 4 May, 3 days: 40.50, paid when the deposit is closed. Total 1,108.50.
+const BANK_DEPOSIT = { owner: 'account', page: 'account', side: 'lend_cash', productId: 'bank_deposit', productLabel: 'Bank deposit', ccy: 'USD', principal: 200_000, name: 'Northgate Bank call deposit', as: 'deposit',
+  terms: { loanType: 'deposit', rateType: 'fixed', rate: 0.036, dayCount: 'ACT/360', interestPayment: 'maturity', counterparty: 'Northgate Bank' } };
+
+const bankDeposit = {
+  productId: 'bank_deposit',
+  title: 'Northgate Bank call deposit of an Account: 200,000 USD at 3.60%, open-ended, interest paid monthly',
+  matrix: {
+    ...LOAN_TICKET,
+    automaticInputs: ['interest start date', 'daily interest accrual at the end-of-day run', 'interest paid on the first business day of each month, and the next payment date'],
+    manualInputs: ['every term of the deposit, entered on the ticket (no maturity: open-ended)', 'a change of rate by the bank, entered by hand with Set rate', 'the amount of a part withdrawal, entered in the preview'],
+    settlement: 'None: cash leaves and returns to settled cash at once',
+    lifecycle: 'Interest accrues daily and is paid monthly on the first business day; part and full withdrawal at any time, with interest to the day settled on a full withdrawal. A deposit is not enlarged: a further deposit is a new record (resizing is refused)',
+    accounting: 'Cash lent is an asset of the Account; interest is income. A transfer between two Accounts is internal to the Book: no P&L, eliminated in the Book balance sheet',
+    collateral: 'None',
+  },
+  tradedOn: 'A bank deposit is not a registry instrument: it is entered on the Cash loan or deposit ticket (opened from the Account page, side "Lend or deposit cash") and registers itself when the ticket is confirmed.',
+  start: AT_1000('2026-03-02'),
+  book: {
+    name: 'Matrix bank deposit', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 1_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 300_000 }] },
+    settings: { fees: {}, fill: FILL, settlement: {} },
+  },
+  instruments: {},
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 300_000, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 300_000, availableToWithdraw: 300_000, borrowed: 0, lent: 0 } },
+      treasury: { USD: { settled: 700_000, availableToTrade: 700_000, availableToWithdraw: 700_000, borrowed: 0, lent: 0 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 300_000, treasury: 700_000, book: 1_000_000 },
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+  },
+  steps: [
+    loanTicket('place', BANK_DEPOSIT, {
+      covers: ['open', 'lend'],
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'loan', action: 'lend_cash', purpose: 'financing', qty: 200_000, cash: -200_000, fees: 0, ccy: 'USD',
+            dailyCost: 20, // 200,000 x 0.036 / 360
+            financing: { amount: -200_000, rateType: 'fixed', rate: 0.036, maturity: null, interestFrom: '2026-03-02' } }],
+          cash: { USD: { financingIn: 0, financingOut: 200_000, required: 200_000, available: 300_000, shortfall: 0, netCash: -200_000 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'loan', action: 'lend_cash', instrument: 'deposit', status: 'filled', qty: 200_000, filledQty: 200_000 }] },
+        events: [
+          { type: 'strategy.submitted', owner: 'account' },
+          { type: 'loan.placed', summary: 'Lent 200,000.00 USD (deposit, 3.600% fixed, open-ended)', cash: { USD: -200_000 }, owner: 'account', date: '2026-03-02' },
+        ],
+        cash: { account: { USD: { settled: 100_000, availableToTrade: 100_000, availableToWithdraw: 100_000, lent: 200_000, borrowed: 0 } } },
+        positions: [{ instrument: 'deposit', lot: 'deposit', owner: 'account', direction: 'lent', qty: 200_000, value: 200_000, carrying: 200_000, accrued: 0, provisional: false }],
+        holdings: {},
+        pending: [],
+        // Open-ended: interest is paid monthly. The first payment is on the first business day of April.
+        lifecycle: [{ type: 'loan.interest', instrument: 'deposit', dueDate: '2026-04-01', status: 'pending', owner: 'account' }],
+        borrowings: [],
+        pnl: { account: { realized: 0, dividends: 0, couponInterest: 0, borrowFunding: 0, commissions: 0, fees: 0, unrealized: 0, fx: 0, total: 0 }, book: { couponInterest: 0, total: 0 } },
+        nav: { account: 300_000, treasury: 700_000, book: 1_000_000 },
+        balance: {
+          account: { cash: 100_000, lent: 200_000, accruedIncome: null, assets: 300_000, liabilities: 0, netAssets: 300_000, internal: 300_000 },
+          treasury: { cash: 700_000, assets: 700_000, netAssets: 700_000, internal: -300_000 },
+          book: { cash: 800_000, lent: 200_000, assets: 1_000_000, liabilities: 0, netAssets: 1_000_000, internal: 0 },
+        },
+        oversight: { accountBorrowings: [], treasuryOwn: [], accounts: { account: { cashBorrowed: 0, fundingReceived: 300_000 } } },
+      },
+    }),
+    {
+      // A deposit is not enlarged through its strategy instance: a further deposit is a new ticket and a new record.
+      id: 'top-up-by-resizing', covers: 'increase', action: 'resize', lot: 'deposit', factor: 1.5,
+      status: 'unsupported', reason: 'An arrangement is not enlarged by resizing; each deposit is its own record.',
+      expect: { refused: 'A loan, deposit, repo or securities loan is not enlarged by resizing. Open a new arrangement for the additional amount: each drawing or deposit is its own record.' },
+    },
+    {
+      id: 'accrue-march', covers: 'interest accrual', action: 'clock', to: AT_1730('2026-03-31'), // 29 days
+      expect: {
+        events: [{ type: 'accrual.interest', summary: 'Interest accrued on Northgate Bank call deposit: 580.00 USD', owner: 'account', date: '2026-03-31' }],
+        positions: [{ instrument: 'deposit', lot: 'deposit', qty: 200_000, value: 200_000, carrying: 200_000, accrued: 580 }],
+        pnl: { account: { couponInterest: 580, total: 580 }, book: { couponInterest: 580, total: 580 } },
+        nav: { account: 300_580, book: 1_000_580 },
+        balance: { account: { accruedIncome: 580, assets: 300_580, netAssets: 300_580 }, book: { accruedIncome: 580, assets: 1_000_580, netAssets: 1_000_580 } },
+      },
+    },
+    {
+      // Wednesday 1 April, the first business day of the month: 30 days of interest, 600.00, are paid, and the next payment is set for 1 May.
+      id: 'first-monthly-interest', covers: 'interest payment', action: 'clock', to: AT_1000('2026-04-01'),
+      expect: {
+        events: [
+          { type: 'accrual.interest', summary: 'Interest accrued on Northgate Bank call deposit: 20.00 USD', date: '2026-04-01' },
+          { type: 'interest.payment', summary: 'Interest received on Northgate Bank call deposit: 600.00 USD', cash: { USD: 600 }, owner: 'account', date: '2026-04-01' },
+        ],
+        cash: { account: { USD: { settled: 100_600, availableToTrade: 100_600, availableToWithdraw: 100_600, lent: 200_000 } } },
+        positions: [{ instrument: 'deposit', lot: 'deposit', qty: 200_000, accrued: 0 }],
+        lifecycle: [{ type: 'loan.interest', instrument: 'deposit', dueDate: '2026-05-01', status: 'pending', owner: 'account' }],
+        pnl: { account: { couponInterest: 600, total: 600 }, book: { couponInterest: 600, total: 600 } },
+        nav: { account: 300_600, book: 1_000_600 },
+        balance: { account: { cash: 100_600, lent: 200_000, accruedIncome: null, assets: 300_600, netAssets: 300_600 }, book: { cash: 800_600, accruedIncome: null, assets: 1_000_600, netAssets: 1_000_600 } },
+      },
+    },
+    {
+      // The bank lowers its deposit rate to 3.24% from today. Interest to today is already accrued (and paid), so only the reset is recorded.
+      id: 'bank-cuts-the-rate', covers: 'rate change', action: 'instrument_lifecycle', instrument: 'deposit', lot: 'deposit', body: { action: 'set_rate', rate: 0.0324 },
+      expect: { events: [{ type: 'rate.reset', summary: 'Rate on Northgate Bank call deposit reset to 3.240%', owner: 'account', date: '2026-04-01' }] },
+    },
+    {
+      id: 'mid-april', covers: 'interest accrual', action: 'clock', to: AT_1000('2026-04-15'), // the end-of-day run of 14 April: 13 days at 18.00
+      expect: {
+        events: [{ type: 'accrual.interest', summary: 'Interest accrued on Northgate Bank call deposit: 234.00 USD' }],
+        positions: [{ instrument: 'deposit', lot: 'deposit', qty: 200_000, accrued: 234 }],
+        pnl: { account: { couponInterest: 834, total: 834 }, book: { couponInterest: 834, total: 834 } },
+        nav: { account: 300_834, book: 1_000_834 },
+        balance: { account: { accruedIncome: 234, assets: 300_834, netAssets: 300_834 }, book: { accruedIncome: 234, assets: 1_000_834, netAssets: 1_000_834 } },
+      },
+    },
+    {
+      id: 'withdraw-part', covers: ['reduce', 'withdrawal'], action: 'repay', lot: 'deposit', amount: 50_000,
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'repay', action: 'repay_cash', instrument: 'deposit', qty: 50_000, cash: 50_000, ccy: 'USD', financing: { amount: 50_000, principal: 50_000, interest: 0, full: false, rate: 0.0324, maturity: null } }],
+          cash: { USD: { financingIn: 50_000, financingOut: 0, required: 0, available: 100_600, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'repay', action: 'repay_cash', status: 'filled', qty: 50_000, filledQty: 50_000 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'accrual.interest', summary: 'Interest accrued on Northgate Bank call deposit: 18.00 USD', date: '2026-04-15' }, // the 14th day at 18.00, on the 200,000 held until now
+          { type: 'loan.withdrawal', summary: 'Received back 50,000.00 USD of principal on Northgate Bank call deposit', cash: { USD: 50_000 }, owner: 'account' },
+        ],
+        cash: { account: { USD: { settled: 150_600, availableToTrade: 150_600, availableToWithdraw: 150_600, lent: 150_000 } } },
+        positions: [{ instrument: 'deposit', lot: 'deposit', owner: 'account', direction: 'lent', qty: 150_000, value: 150_000, carrying: 150_000, accrued: 252 }],
+        pnl: { account: { couponInterest: 852, total: 852 }, book: { couponInterest: 852, total: 852 } },
+        nav: { account: 300_852, book: 1_000_852 },
+        balance: { account: { cash: 150_600, lent: 150_000, accruedIncome: 252, assets: 300_852, netAssets: 300_852 }, book: { cash: 850_600, lent: 150_000, accruedIncome: 252, assets: 1_000_852, netAssets: 1_000_852 } },
+      },
+    },
+    {
+      id: 'open-a-second-account', covers: 'Account-to-Account transfer', action: 'create_account', name: 'Beta', as: 'beta',
+      expect: { events: [{ type: 'account.created', summary: 'Account "Beta" created in Book "Matrix bank deposit"' }] },
+    },
+    {
+      // Alpha passes the 50,000 to Beta. Internal to the Book: no income, no expense, and the Book's totals do not move.
+      id: 'pass-cash-to-another-account', covers: 'Account-to-Account transfer', action: 'transfer', from: 'account', to: 'beta', ccy: 'USD', amount: 50_000,
+      expect: {
+        events: [{ type: 'transfer.internal', summary: 'Transfer between Accounts: 50,000.00 USD from Alpha to Beta', owner: 'account', date: '2026-04-15' }],
+        cash: { account: { USD: { settled: 100_600, availableToTrade: 100_600, availableToWithdraw: 100_600, lent: 150_000 } }, beta: { USD: { settled: 50_000, availableToTrade: 50_000, availableToWithdraw: 50_000, borrowed: 0, lent: 0 } }, treasury: { USD: { settled: 700_000 } } },
+        pnl: { account: { couponInterest: 852, total: 852 }, book: { couponInterest: 852, realized: 0, fees: 0, total: 852 }, treasury: { total: 0 } },
+        nav: { account: 250_852, treasury: 700_000, book: 1_000_852 },
+        balance: {
+          account: { cash: 100_600, lent: 150_000, assets: 250_852, netAssets: 250_852, internal: 250_000 }, // 300,000 received from Treasury, 50,000 passed on
+          treasury: { cash: 700_000, netAssets: 700_000, internal: -300_000 },
+          book: { cash: 850_600, lent: 150_000, assets: 1_000_852, netAssets: 1_000_852, internal: 0 }, // 700,000 + 100,600 + 50,000
+        },
+        oversight: { accounts: { account: { cashBorrowed: 0, fundingReceived: 250_000 }, beta: { cashBorrowed: 0, fundingReceived: 50_000 } } },
+      },
+    },
+    {
+      // Friday 1 May: 252.00 to 15 April plus 16 days at 13.50 on the 150,000 left (216.00) = 468.00, paid today.
+      id: 'second-monthly-interest', covers: 'interest payment', action: 'clock', to: AT_1000('2026-05-01'),
+      expect: {
+        events: [
+          { type: 'accrual.interest', summary: 'Interest accrued on Northgate Bank call deposit: 216.00 USD', date: '2026-05-01' },
+          { type: 'interest.payment', summary: 'Interest received on Northgate Bank call deposit: 468.00 USD', cash: { USD: 468 }, owner: 'account', date: '2026-05-01' },
+        ],
+        cash: { account: { USD: { settled: 101_068, availableToTrade: 101_068, availableToWithdraw: 101_068, lent: 150_000 } } },
+        positions: [{ instrument: 'deposit', lot: 'deposit', qty: 150_000, accrued: 0 }],
+        lifecycle: [{ type: 'loan.interest', instrument: 'deposit', dueDate: '2026-06-01', status: 'pending', owner: 'account' }],
+        pnl: { account: { couponInterest: 1_068, total: 1_068 }, book: { couponInterest: 1_068, total: 1_068 } },
+        nav: { account: 251_068, book: 1_001_068 },
+        balance: { account: { cash: 101_068, lent: 150_000, accruedIncome: null, assets: 251_068, netAssets: 251_068 }, book: { cash: 851_068, accruedIncome: null, assets: 1_001_068, netAssets: 1_001_068 } },
+      },
+    },
+    { id: 'monday-4-may', action: 'clock', to: AT_1000('2026-05-04'), expect: {} },
+    {
+      id: 'withdraw-in-full', covers: ['close', 'withdrawal'], action: 'repay', lot: 'deposit',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'repay', action: 'repay_cash', instrument: 'deposit', qty: 150_000, cash: 150_040.50, ccy: 'USD', financing: { amount: 150_040.50, principal: 150_000, interest: 40.50, full: true, interestThrough: '2026-05-04' } }], // 3 days at 13.50
+          cash: { USD: { financingIn: 150_040.50, required: 0, available: 101_068, shortfall: 0 } },
+        },
+        result: { status: 'closed', orders: [{ kind: 'repay', action: 'repay_cash', status: 'filled', qty: 150_000, filledQty: 150_000 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'accrual.interest', summary: 'Interest accrued on Northgate Bank call deposit: 40.50 USD', date: '2026-05-04' },
+          { type: 'loan.withdrawal', summary: 'Received back 150,000.00 USD of principal on Northgate Bank call deposit (in full)', cash: { USD: 150_000 }, owner: 'account' },
+          { type: 'interest.payment', summary: 'Interest received on Northgate Bank call deposit: 40.50 USD', cash: { USD: 40.50 }, owner: 'account' },
+        ],
+        cash: { account: { USD: { settled: 251_108.50, availableToTrade: 251_108.50, availableToWithdraw: 251_108.50, lent: 0, borrowed: 0 } }, beta: { USD: { settled: 50_000 } }, treasury: { USD: { settled: 700_000 } } },
+        positions: [], lifecycle: [], borrowings: [],
+        pnl: { account: { couponInterest: 1_108.50, borrowFunding: 0, total: 1_108.50 }, book: { couponInterest: 1_108.50, total: 1_108.50 }, treasury: { total: 0 } },
+        nav: { account: 251_108.50, treasury: 700_000, book: 1_001_108.50 },
+        balance: {
+          account: { cash: 251_108.50, lent: null, accruedIncome: null, assets: 251_108.50, liabilities: 0, netAssets: 251_108.50, internal: 250_000 },
+          book: { cash: 1_001_108.50, lent: null, accruedIncome: null, assets: 1_001_108.50, liabilities: 0, netAssets: 1_001_108.50, internal: 0, capital: 1_000_000 },
+        },
+      },
+    },
+  ],
+};
+
+export default [unsecuredLoan, termDeposit, certificateOfDeposit, bankDeposit];
