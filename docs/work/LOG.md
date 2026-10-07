@@ -44,3 +44,4 @@
 - 2026-10-07T10:21Z | b1 | +0.2 | corporate_bond passes at engine, API and browser (all 13 government-group bond products done)
 - 2026-10-07T10:32Z | b1 | +0 | bond browser check tells two equal-sized lots apart; all 13 bond products pass at three levels, npm test 318 of 318
 - 2026-10-07T10:32Z | b1 | +0 | b1 progress note corrected; final report follows
+- 2026-10-07T10:36Z | s1 | +0 | swap.js: explicit 'Nothing due' record for caplets and floorlets out of the money; cap, floor and collar scenarios designed (core tests 178 of 178)
