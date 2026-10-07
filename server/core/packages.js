@@ -17,8 +17,7 @@ import { TEMPLATES, buildLegs, getTemplate } from './templates.js';
 import { AppError, isZero, money, need, newId, num, round, uuid } from './util.js';
 import { fmtQty } from '../products/common.js';
 import { calendarInfo } from '../products/security.js';
-import { closedReason, isBusinessDay } from '../quant/calendar.js';
-import { resolveSettlement } from './settlement.js';
+import { resolveSettlement, TRADING_DAY_KINDS, tradingDay } from './settlement.js';
 
 const BUY = new Set(['buy', 'buy_to_cover']);
 const ARR_OPEN = new Set(['loan', 'repo_open', 'lend_sec']);
@@ -278,6 +277,12 @@ export function createPackages(app) {
       const row = baseLegView(l);
       const inst = l.inst;
       const plugin = inst ? app.products.get(inst.family) : null;
+      // Trading calendar: a leg that is matched in a market is held as a working order on a day that market is
+      // closed. The preview says so (a warning, not a block) and counts the trade date from the day it will be matched.
+      const gate = inst && TRADING_DAY_KINDS.has(l.kind) ? tradingDay(inst, today) : null;
+      if (gate) row.trading = { open: gate.open, calendarId: gate.calendarId, tradeDate: gate.next, reason: gate.reason };
+      if (gate && !gate.open) check('warning', 'not-trading-day', `Leg ${l.n}: ${gate.reason.replace(/^Market closed/, `the market of ${inst.symbol || inst.name} is closed`).replace('; will be matched on', '. The order stays working and will be matched on')}${l.kind === 'trade' ? ` Its trade date and settlement are counted from that day; a Day order placed today is good for ${gate.next}.` : ''}`, l.n);
+      const tradeDate = gate ? gate.next : today;
 
       if (l.kind === 'trade') {
         if (!plugin.actions(inst).includes(l.action)) check('error', 'action', `Leg ${l.n}: ${inst.symbol || inst.name} cannot be traded with "${String(l.action).replace(/_/g, ' ')}".`, l.n);
@@ -295,24 +300,26 @@ export function createPackages(app) {
           waitingOnLimit: Boolean(fe.waitingOnLimit), waitingOnStop: Boolean(fe.waitingOnStop), observation: obs ? app.data.present(obs) : null,
           missing: refPrice === null,
         };
+        // On a closed day the estimate is the price now; the leg cannot fill until the market's next trading day.
+        if (gate && !gate.open) Object.assign(row.price, { executable: false, waitingOnCalendar: true, reason: gate.reason });
         // Settlement: the instrument's convention, or the date / lag stated for this trade (l.settle),
         // validated against the instrument's settlement calendar. A calendar conflict blocks the preview.
-        const stl = resolveSettlement(app, { inst, book, tradeDate: today, stated: l.settle || null });
+        // Counted from the day the leg will be matched (today, unless its market is closed today).
+        const stl = resolveSettlement(app, { inst, book, tradeDate, stated: l.settle || null });
         const settleDate = stl.date;
         row.settleDate = settleDate;
         row.settle = stl.stated;
-        row.settlement = { date: stl.date, lag: stl.lag, basis: stl.basis, label: stl.label, stated: stl.stated, standard: stl.standard, calendarId: stl.calendar.id, conflict: stl.conflicts[0]?.message || null };
+        row.settlement = { date: stl.date, lag: stl.lag, basis: stl.basis, label: stl.label, stated: stl.stated, standard: stl.standard, calendarId: stl.calendar.id, conflict: stl.conflicts[0]?.message || null, tradeDate };
         for (const cf of stl.conflicts) check('error', cf.code, `Leg ${l.n}: ${cf.message}`, l.n);
         row.currency = inst.trading_ccy;
         const cal = calendarInfo(inst);
         row.calendar = cal;
-        if (!isBusinessDay(today, cal.trading.id)) check('warning', 'not-trading-day', `Leg ${l.n}: today, ${today}, is ${closedReason(today, cal.trading.id)}, not a trading day on the trading calendar of ${inst.symbol || inst.name} (${cal.trading.id}). ${app.data.session(inst.id)?.state === 'open' || stated !== null ? 'The price source reports the market open (or a fill price is stated), so the order can still fill today; its settlement date is counted from the day it fills.' : 'The order waits for the market\'s next session; its settlement date is then counted from the day it fills.'}`, l.n);
         if (cal.settlement.fallback) check('warning', 'calendar-fallback', `Leg ${l.n}: the settlement date ${settleDate} for ${inst.symbol || inst.name} was worked out on weekends only. ${cal.settlement.note || 'No holiday calendar exists for its market.'}`, l.n);
         else if (cal.settlement.note) check('info', 'calendar-approximate', `Leg ${l.n}: settlement calendar for ${inst.symbol || inst.name}: ${cal.settlement.label}. ${cal.settlement.note}`, l.n);
         if (refPrice === null) {
           // Notional of a swap, CDS or forward does not depend on a price, so it can still be shown.
           if (['swap', 'cds', 'forward'].includes(inst.family)) {
-            const e0 = plugin.economics(app, { inst, action: l.action, qty: l.qty, price: 0, unit, strategyId: attach?.id || '', tradeDate: today, settleDate, book });
+            const e0 = plugin.economics(app, { inst, action: l.action, qty: l.qty, price: 0, unit, strategyId: attach?.id || '', tradeDate, settleDate, book });
             row.notional = inst.family === 'forward' && inst.terms.forwardType !== 'fra' ? l.qty : e0.notional;
             row.econNotes = e0.notes || [];
             // Collateral is a share of notional, so it is known without a price.
@@ -320,7 +327,7 @@ export function createPackages(app) {
             // The collateral basis the contract states, and what it calls for, do not wait for a price either.
             app.agreements.addToPreview(e0.collateral, { row, leg: l.n, check, bump, calls: collateralCalls });
           } else if (inst.family === 'otcoption') {
-            const e0 = plugin.economics(app, { inst, action: l.action, qty: l.qty, price: 0, unit, strategyId: attach?.id || '', tradeDate: today, settleDate, book });
+            const e0 = plugin.economics(app, { inst, action: l.action, qty: l.qty, price: 0, unit, strategyId: attach?.id || '', tradeDate, settleDate, book });
             if (e0.initialMargin > 0) { row.initialMargin = e0.initialMargin; bump(inst.trading_ccy, 'margin', e0.initialMargin); }
             app.agreements.addToPreview(e0.collateral, { row, leg: l.n, check, bump, calls: collateralCalls });
           }
@@ -328,7 +335,7 @@ export function createPackages(app) {
           check('warning', 'no-price', `Leg ${l.n}: no price for ${inst.symbol || inst.name}. ${connected ? 'No observation is available.' : `${awaiting}.`} The leg would wait as a working order; enter a manual price or state a fill price to execute it.`, l.n);
         } else {
           if (!fe.executable && !fe.waitingOnLimit && !fe.waitingOnStop) check('warning', 'not-executable', `Leg ${l.n}: ${fe.reason}`, l.n);
-          const econ = plugin.economics(app, { inst, action: l.action, qty: l.qty, price: refPrice, unit, strategyId: attach?.id || '', tradeDate: today, settleDate, book });
+          const econ = plugin.economics(app, { inst, action: l.action, qty: l.qty, price: refPrice, unit, strategyId: attach?.id || '', tradeDate, settleDate, book });
           const fees = computeFees(book, inst, l.qty, refPrice);
           const feeTotal = fees.reduce((a, f) => a + f.amount, 0);
           Object.assign(row, { gross: money(econ.principal, econ.ccy), cash: money(econ.cash, econ.ccy), accrued: money(econ.accrued || 0, econ.ccy), notional: econ.notional !== null && econ.notional !== undefined ? money(econ.notional, econ.ccy) : null, notionalBasis: econ.notionalBasis || null, exposure: econ.exposure ?? null, initialMargin: econ.initialMargin ?? 0, fees, feeTotal: money(feeTotal, econ.ccy), econNotes: econ.notes || [], otherCash: econ.otherCash || [] });
@@ -410,7 +417,7 @@ export function createPackages(app) {
         // The financing terms as displayed and confirmed: amount, rate and maturity of this leg.
         if (l.kind !== 'lend_sec') {
           const fx0 = inst.terms.rateType === 'floating' ? app.data.rate(inst.terms.referenceRate) : null;
-          row.financing = { amount: row.cash ?? null, ccy, rateType: inst.terms.rateType || null, rate: inst.terms.rateType === 'fixed' ? inst.terms.rate ?? null : null, referenceRate: inst.terms.rateType === 'floating' ? inst.terms.referenceRate || null : null, spread: inst.terms.rateType === 'floating' ? inst.terms.spread ?? 0 : null, fixing: fx0 ? fx0.value : null, maturity: inst.terms.maturity || inst.terms.endDate || null, dailyCost: row.dailyCost ?? null, interestFrom: inst.terms.startDate || today };
+          row.financing = { amount: row.cash ?? null, ccy, rateType: inst.terms.rateType || null, rate: inst.terms.rateType === 'fixed' ? inst.terms.rate ?? null : null, referenceRate: inst.terms.rateType === 'floating' ? inst.terms.referenceRate || null : null, spread: inst.terms.rateType === 'floating' ? inst.terms.spread ?? 0 : null, fixing: fx0 ? fx0.value : null, maturity: inst.terms.maturity || inst.terms.endDate || null, dailyCost: row.dailyCost ?? null, interestFrom: inst.terms.startDate || tradeDate };
         }
       } else if (ARR_CLOSE.has(l.kind)) {
         const p = l.targetPosition;
@@ -783,6 +790,7 @@ export function createPackages(app) {
             confirmed: confirmedLeg({
               shown: shown ? shown.legs.find((x) => x.n === l.n) || null : null, priced: pv.confirmation.legs.find((x) => x.n === l.n), tol,
               snapshotAt: shown ? shown.snapshotAt : null, confirmedAt: now, permitted: diffs.filter((c) => c.scope === 'leg' && c.n === l.n && c.within),
+              feeSchedule: l.kind === 'trade' && l.instrument ? book.settings.fees[l.instrument.family] || null : null,
             }),
             settle: l.settle || null,
           },

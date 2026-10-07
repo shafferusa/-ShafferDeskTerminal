@@ -33,8 +33,8 @@ const SPREAD_FAMILIES = ['equity', 'fund', 'spot', 'crypto', 'manual', 'fx', 'bo
 const SETTLE_FAMILIES = ['equity', 'fund', 'foreignCash', 'option', 'bond', 'crypto', 'spot', 'manual', 'otcoption', 'swap', 'cds'];
 const GROUPS = [
   { id: 'fees', title: 'Fees and commissions', wide: true,
-    intro: 'Charged on every simulated fill, in the instrument\'s trading currency: an amount per unit, plus basis points of the principal traded. If a minimum is set, it applies whenever a fee is charged. For swaps, credit default swaps and forwards the principal is the notional.',
-    cols: ['Per unit', 'Basis points', 'Minimum per fill'],
+    intro: 'Charged on every simulated fill, in the instrument\'s trading currency: an amount per unit, plus basis points of the principal traded. A minimum applies once to an order, not to each fill: an order filled in parts pays in total what the schedule gives for the quantity it filled, and its first fill carries the minimum. For swaps, credit default swaps and forwards the principal is the notional.',
+    cols: ['Per unit', 'Basis points', 'Minimum per order'],
     rows: FEE_FAMILIES.map((f) => ({ label: FAMILY_LABEL[f], hint: FEE_UNIT[f] ? `Per unit is ${FEE_UNIT[f]}` : '', paths: [`fees.${f}.perUnit`, `fees.${f}.bps`, `fees.${f}.minimum`] })) },
   { id: 'fill', title: 'Fill model',
     intro: 'How a paper order fills. A quoted bid and ask is always used when there is one: buys at the ask, sells at the bid. The spread assumptions below apply only when a price has no bid and ask of its own. Fair prices from Analytics Lab are never used to fill an order.',

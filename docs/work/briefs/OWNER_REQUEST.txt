@@ -1,0 +1,140 @@
+Complete a final functional correction and comprehensive end-to-end verification pass for Shaffer Desk Terminal.
+
+I want every supported trading workflow working from the actual interface through execution, settlement, accounting, persistence, and closure. Opening tickets and sweeping screens are insufficient. Fix failures you discover and rerun the affected tests.
+
+Preserve the completed Book isolation, navigation, Treasury → Accounts hierarchy, accounting scopes, borrowing ownership, gross holdings, and reconciled hedge previews.
+
+**1. Correct the issues visible in the screenshots**
+
+- The hedge review queue shows “recommendation ready — 4 packages” while Analytics Lab is awaiting. If those packages are demo fixtures, label their source on the queue row and review popup. If they are cached recommendations, show their source, timestamp, version, and freshness. If neither applies, correct the state. Readiness and connection status must accurately describe what is available.
+- The hedge preview clips leg columns. Make quantities, quotes, premiums, fees, margin, collateral, and financing requirements accessible before execution. Use responsive leg details or a clearly accessible table; keep totals and execution controls visible.
+- The awaiting hedge popup identifies missing Strategy, holding period, and objective. Provide a clear way to complete and save the request. Distinguish awaiting connection, incomplete request, ready for analysis, recommendation ready, and execution states.
+- Investment Strategies must use stable backend IDs once supplied. Temporary typed names must remain explicitly unresolved. Keep investment Strategies separate from execution templates such as collars and spreads.
+- Make balance sheets usable with many Accounts through filters, grouped columns, and pinned row labels.
+
+**2. Correct existing-protection allocation**
+
+Send the Account’s positions and hedges to Analytics Lab as context. Do not automatically count every hedge in the Account as protection for a new trade.
+
+Distinguish explicitly linked protection, server-identified shared protection, unrelated hedges, proposed template protection, and protection already allocated elsewhere.
+
+Analytics Lab determines applicability and sizing. The Terminal stores, displays, and validates the resulting allocations.
+
+Prevent protection capacity from being counted repeatedly across positions. While applicability is unavailable, show “Protection assessment unavailable.”
+
+Test unrelated hedges, partial coverage, shared hedges, opposite-direction exposure, expired protection, and protection already included in a template.
+
+Link primary trades, hedge requests, hedge legs, borrowings, and financing through shared identifiers. Financing legs should display those relationships without generating duplicate requests.
+
+**3. Complete collateral and execution validation**
+
+Do not hard-code “TRS posts collateral; CDS does not.” Use explicitly configured paper agreement or clearing terms for applicable products.
+
+Support the implemented collateral terms, including counterparty, agreement, netting scope, eligible collateral, thresholds, haircuts, margin requirements, movements, and release. Clearly identify unsupported rules and explicit uncollateralized assumptions.
+
+Never net across separate Books. Shared collateral across Accounts requires an explicit arrangement and recorded allocations.
+
+Keep the single quote snapshot. Make the 0.5% confirmation threshold configurable. Validate individual legs and the complete package, including freshness, exposure, funding, fees, financing, margin, and collateral. Small net cash changes must not conceal material changes in offsetting legs.
+
+Show changed terms and require renewed confirmation where applicable. Confirmed preview amounts must reconcile with fills and ledger postings, with any permitted changes explicitly recorded.
+
+**4. Complete settlement and calendar configuration**
+
+Allow instrument-specific trading, settlement, and payment calendars where applicable, plus relevant currency calendars.
+
+Keep settlement conventions configurable by instrument and transaction. Show approximate and weekends-only calendars prominently.
+
+Verify borrowing plus immediate FX execution separately from settlement: pending obligations, funding dates, interest start dates, cash availability, and repayment must reconcile.
+
+**5. Build a complete coverage and test matrix**
+
+Inventory every currently listed product—the previous coverage document listed 205—and every supported ticket action and execution template.
+
+For each product and action, record:
+
+- Ticket and required fields.
+- Automatic versus manual inputs.
+- Opening, increasing, reducing, and closing actions where applicable.
+- Settlement and lifecycle events.
+- Accounting and collateral behavior.
+- Engine, API, and browser test identifiers.
+- Passed, failed, blocked, or unsupported status.
+
+Do not mark a product tested because its ticket opens or another product uses the same engine. Shared test helpers are fine, but each supported variant must be exercised with its actual specifications.
+
+For products requiring manual marks or terms, test that manual workflow through completion. Unsupported workflows must be clearly blocked and documented rather than presented as functional.
+
+**6. Run full browser-to-ledger tests**
+
+Use isolated disposable test Books and databases. Never modify my existing paper books.
+
+Drive every supported ticket/action and execution template through the actual UI:
+
+1. Select the Book, owner, instrument, action, and amount.
+2. Enter or retrieve the required terms.
+3. Preview and independently check the calculations.
+4. Confirm and verify the execution result.
+5. Check pending obligations, positions, cash, liabilities, collateral, and history.
+6. Advance time through settlement and applicable lifecycle events.
+7. Reduce, close, repay, return, terminate, or mature the position.
+8. Verify the final balances and history.
+9. Restart the application and verify persistence.
+
+Exercise both trading paths: Strategy packages with protection included, and direct Marketplace trades followed by the Hedge popup and Execute Now.
+
+Use controlled quote and analytics fixtures where the Shaffer services do not exist. Label them. Exercise the real application routes, execution engine, and ledger; do not replace those components with mocks.
+
+Cover all applicable product families, including:
+
+- Securities, funds, bonds, loans, deposits, currencies, commodities, and crypto.
+- Long purchases, sales, security borrowing, shorts, covers, and returns.
+- Cash/currency borrowing and lending, conversions, internal funding, and repayment.
+- Repo, reverse repo, securities lending, collateral changes, and termination.
+- Listed and OTC options, multi-leg structures, exercise, assignment, expiry, and rolls.
+- Futures, forwards, margin movements, settlement, and expiry.
+- Swaps and credit derivatives, pay/receive directions, resets, payments, collateral, termination, and supported credit-event handling.
+- Manual or special workflows for remaining products.
+
+For physical settlement, simulate the delivery obligation and its ledger effects where supported. Do not imply that the Terminal performs actual physical delivery.
+
+**7. Verify accounting with independently calculated expectations**
+
+Use independently calculated examples, not expected values copied from the implementation.
+
+Check:
+
+- Assets minus liabilities equals net assets.
+- Book balances equal owner balances after internal eliminations.
+- Borrowings, interest, fees, and collateral obligations appear exactly once.
+- Internal transfers create no Book P&L.
+- Long assets, short obligations, derivative marks, loans, and collateral are classified and counted consistently.
+- Restricted short-sale proceeds and pledged collateral are not incorrectly spendable.
+- Gross holdings and net exposure reconcile.
+- Bond quotation units, accrued interest, contract multipliers, currencies, and settlement amounts reconcile.
+- Repo proceeds reconcile to collateral value, haircut, and any additional funding buffer.
+- Realized/unrealized P&L, income, financing costs, and FX effects reconcile.
+- Missing or stale marks/rates produce explicit provisional results without silently fabricating current values.
+
+**8. Test failure, recovery, and isolation**
+
+Include insufficient cash, unavailable borrow, insufficient collateral, missing/stale quotes and FX, incomplete terms, invalid quantities, expired contracts, and calendar conflicts.
+
+Test partial fills, failed dependent legs, cancellations, duplicate clicks, repeated requests, connection loss, retries, application restart, and recovery after interrupted submission.
+
+Verify no duplicate fills, hedge requests, accruals, payments, or ledger postings. Existing paper history must survive data refreshes and reconnection.
+
+Test Book isolation through the interface and application APIs. Verify demo and normal paper databases remain separate.
+
+Test hedge reconnection against current exposure, including positions changed or closed while waiting. Receiving a recommendation must never execute it automatically.
+
+**9. Verify the whole application and report evidence**
+
+Exercise Accounting’s tabs and scopes, Treasury, Accounts, Book management, all four Marketplaces, Strategies, instruments, settings, data connection, search, manual inputs, and the hedge queue.
+
+Check light/dark themes, normal/demo modes, awaiting/reconnected states, responsive layouts, and controls that must persist after restart.
+
+Report the tested commit, commands, environment, coverage matrix, failures fixed, and remaining blocked or unsupported behavior. Separate engine/API results from browser results.
+
+Finish all independently testable Terminal behavior now. Keep MarketData ingestion, investment valuation, hedge selection, and model calculations in their designated Shaffer services.
+
+Do not call this complete based only on a passing engine suite or screen sweep. Completion requires demonstrated trade lifecycles, reconciled accounting, persistence, and an explicit record of anything that still cannot work until the actual Shaffer services are connected.

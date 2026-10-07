@@ -15,6 +15,27 @@ const dayName = (iso) => DAY[new Date(`${iso}T00:00:00Z`).getUTCDay()];
 const realDate = (s) => ISO_DATE_RE.test(String(s || '')) && !Number.isNaN(Date.parse(s)) && new Date(`${s}T00:00:00Z`).toISOString().slice(0, 10) === s;
 
 /**
+ * Order kinds that are matched in a market and so wait for a trading day: trades, securities borrowing and
+ * lending, cash loans and repos, and their closing legs. Internal legs (Treasury funding, a cash reservation,
+ * linking a position already held) are not market actions and are never held back.
+ */
+export const TRADING_DAY_KINDS = new Set(['trade', 'borrow_sec', 'lend_sec', 'return_sec', 'recall_sec', 'loan', 'repay', 'repo_open', 'repo_close']);
+
+/**
+ * Whether an instrument's market is open on a date, by its trading calendar.
+ * Returns { open, calendarId, date, next, reason }: `next` is the date an order placed on `date` is matched
+ * (the date itself when open), `reason` the sentence shown on a waiting order when it is closed.
+ * An instrument on ALLDAYS is always open; one on the weekends-only fallback is closed at weekends only.
+ * Only the matching of orders is held back by this: settlements, lifecycle events and accruals are not.
+ */
+export function tradingDay(inst, date) {
+  const cal = calendarInfo(inst).trading;
+  if (isBusinessDay(date, cal.id)) return { open: true, calendarId: cal.id, date, next: date, reason: null };
+  const next = addBusinessDays(date, 1, cal.id);
+  return { open: false, calendarId: cal.id, date, next, reason: `Market closed today on calendar ${cal.id} (${date} is ${closedReason(date, cal.id)}); will be matched on ${next}.` };
+}
+
+/**
  * The settlement date of one trade, and where it came from.
  *
  *   stated: null | { date: 'YYYY-MM-DD' } | { lag: n }   a settlement stated for this transaction

@@ -8,6 +8,7 @@ import { html, useEffect, useState } from '../vendor/preact-htm.js';
 import { bump, currentBook, fmtMoney, fmtNum, fmtPrice, fmtQty, fmtTime, get, getState, isNum, openOverlay, post, setUnit, toast, toastError, useLive, VIEW_LABEL } from '../lib/core.js';
 import { Awaiting, Button, Check, Drawer, Empty, Field, Holdings, holdingsFromPositions, KV, LineChart, Missing, Modal, Money, Notice, Num, Panel, Pill, Price, Prov, Seg, Select, Signed, Support, Table, Tabs, Text } from '../lib/ui.js';
 import { openPreview } from './preview.js';
+import { strategyInput, StrategyPicker } from './hedge.js';
 
 const ACTION_LABEL = { buy: 'Buy', sell: 'Sell', sell_short: 'Sell short', buy_to_cover: 'Buy to cover' };
 const OBJECTIVES = [
@@ -45,18 +46,18 @@ export function OrderFields({ o, set }) {
 }
 
 /** Investment Strategy, holding period and hedge objective: the context a hedge request needs. */
+// The Strategy is chosen by its ID from the list Analytics Lab supplies (in demo mode, the labelled demo list). A
+// name can be typed only while that list is unavailable, and is then carried as an unresolved name. All three
+// fields may be left empty: the hedge popup that follows the fill asks for whatever is missing.
+const strategyRefOf = (v) => (typeof v === 'string' ? (v.trim() ? { id: null, name: v.trim(), resolved: false } : null) : v || null);
 export function HedgeContext({ c, set }) {
-  const known = useLive(() => get('/api/analytics/strategies'), [], { interval: false });
-  const list = known.data?.available ? known.data.items.map((s) => s.name) : known.data?.known || [];
   return html`
-    <${Field} label="Investment Strategy" hint=${known.data && !known.data.available ? `Strategy list: ${known.data.awaitingMessage}. Type a name for now.` : ''}>
-      <${Text} value=${c.strategy} onInput=${(v) => set({ strategy: v })} list="sdt-strategies" placeholder="Name of the Shaffer Strategy" />
-      <datalist id="sdt-strategies">${list.map((n) => html`<option value=${n}></option>`)}</datalist><//>
+    <${Field} label="Investment Strategy" span=${2}><${StrategyPicker} value=${strategyRefOf(c.strategy)} onChange=${(v) => set({ strategy: v })} /><//>
     <${Field} label="Intended holding period (days)"><${Num} value=${c.days} onInput=${(v) => set({ days: v })} /><//>
-    <${Field} label="Hedge objective"><${Select} value=${c.objective} onChange=${(v) => set({ objective: v })} options=${OBJECTIVES} /><//>`;
+    <${Field} label="Hedge objective" span=${2}><${Select} value=${c.objective} onChange=${(v) => set({ objective: v })} options=${OBJECTIVES} placeholder="Not set (the hedge popup will ask)" /><//>`;
 }
 export const hedgeContextInput = (c) => ({
-  investmentStrategy: c.strategy ? { name: c.strategy } : null,
+  investmentStrategy: strategyInput(strategyRefOf(c.strategy)),
   holdingPeriod: c.days ? { days: c.days } : null,
   hedgeObjective: c.objective ? { type: c.objective } : null,
 });
@@ -98,7 +99,8 @@ function SettlementField({ inst, detail, book, value, onChange }) {
   const how = std.basis === 'instrument' ? 'set on the instrument' : 'Book default';
   const conflict = check?.conflicts?.[0]?.message || null;
   const hint = stated ? (check && !conflict ? `Settles ${check.date}${isNum(check.lag) ? ` (${check.lag === 0 ? 'same day' : `T+${check.lag}`})` : ''} on ${check.calendar.id}. The convention would be ${std.date}.` : 'Checked against the settlement calendar.')
-    : `${std.label} (${how}): a trade today settles ${std.date}, counted on ${std.calendar.id}.`;
+    : detail.trading && !detail.trading.open ? `${std.label} (${how}): the market is closed today, so an order is matched on ${std.tradeDate} and settles ${std.date}, counted on ${std.calendar.id}.`
+      : `${std.label} (${how}): a trade today settles ${std.date}, counted on ${std.calendar.id}.`;
   return html`<${Field} label="Settlement" span=${2} hint=${conflict ? null : hint} error=${conflict}>
     <div class="row" style="flex-wrap:nowrap;gap:6px">
       <div style="flex:1;min-width:0"><${Select} value=${value.mode} onChange=${(m) => onChange({ ...value, mode: m })} options=${[{ value: 'std', label: `Convention: ${std.label}, ${std.date}` }, { value: 'date', label: 'State a settlement date' }, { value: 'lag', label: 'State a lag in business days' }]} /></div>
@@ -175,6 +177,7 @@ function Ticket({ inst, detail, book, onDone }) {
     </div>
     ${!obs ? html`<${Awaiting} compact what="There is no price for this instrument. A paper order would wait as a working order. Enter a price on the Overview tab, or state a fill price below." />` : null}
     <${CalendarFlag} calendar=${inst.calendar} />
+    ${detail.trading && !detail.trading.open ? html`<${Notice} tone="warn"><b>${detail.trading.reason}</b> An order placed now stays working until then; its trade date and settlement are counted from the day it fills. A Day order placed today is good for ${detail.trading.next}.<//>` : null}
     <div class="row" style="padding:6px 10px;border:1px solid var(--rule);border-radius:4px;background:var(--paper)"><${Holdings} h=${holdingsFromPositions(detail.positions)} detail label=${`${book.name} holds`} /></div>
     <div class="grid-form">
       <${Field} label="Account" hint=${mine.length ? html`In this Account: <${Holdings} h=${holdingsFromPositions(mine)} />` : 'No position in this Account'}><${UnitSelect} value=${unitId} onChange=${setUnitId} book=${book} /><//>
@@ -288,7 +291,7 @@ function Overview({ inst, detail, reload }) {
         ['Settlement calendar', html`<${CalendarLine} c=${inst.calendar.settlement} said=${[inst.calendar.trading.note]} />`],
         ['Payment calendar', html`<${CalendarLine} c=${inst.calendar.payment} said=${[inst.calendar.trading.note, inst.calendar.settlement.note]} extra=${inst.calendar.payment.currencies?.length ? `Payments in ${inst.calendar.payment.currencies.join(' and ')} follow ${inst.calendar.payment.currencies.map((x) => (inst.calendar.payment.currencyCalendars[x] ? `the ${x} payment calendar (${inst.calendar.payment.currencyCalendars[x]})` : `no built-in calendar for ${x}`)).join(' and ')}, joined with the calendar above.` : ''} />`],
         ['Settlement convention', html`${inst.settlement.configurable ? html`${detail.settlement ? detail.settlement.label : inst.settlement.label} <span class="muted">${inst.settlement.basis === 'instrument' ? 'set on the instrument' : 'from the Book\'s paper-desk assumptions'}</span>` : html`${inst.settlement.label} <span class="muted">fixed by the product</span>`}
-          ${detail.settlement ? html`<div class="sub">A trade today (${detail.settlement.tradeDate}) settles ${detail.settlement.date}. ${inst.settlement.configurable ? 'A date or lag can be stated for one trade on the ticket.' : inst.settlement.reason}</div>` : null}`],
+          ${detail.settlement ? html`<div class="sub">${detail.trading && !detail.trading.open ? `${detail.trading.reason} That trade settles ${detail.settlement.date}.` : `A trade today (${detail.settlement.tradeDate}) settles ${detail.settlement.date}.`}${inst.settlement.configurable ? 'A date or lag can be stated for one trade on the ticket.' : inst.settlement.reason}</div>` : null}`],
         ['Listing venue country', inst.venueCountry || html`<${Missing} reason="Not recorded. It selects the calendars unless they are set on the instrument." />`],
         ['Market view', `${VIEW_LABEL[inst.marketView]}${inst.tags.length ? ` (also tagged ${inst.tags.map((t) => VIEW_LABEL[t] || t).join(', ')})` : ''}`],
         ['Venue', inst.venue ? `${inst.venue} (${inst.venueType === 'otc' ? 'OTC' : 'exchange'})` : inst.venueType === 'otc' ? 'OTC' : null],
@@ -364,9 +367,17 @@ function Chain({ inst }) {
 function History({ inst }) {
   const res = useLive(() => get(`/api/instruments/${inst.id}/history`), [inst.id], { interval: false });
   const ca = useLive(() => get('/api/corporate-actions', { instrumentId: inst.id }), [inst.id]);
-  const [f, setF] = useState({ type: 'cash_dividend', exDate: '', amount: null, ratioNum: null, ratioDen: 1 });
+  const [f, setF] = useState({ type: 'cash_dividend', exDate: '', payDate: '', amount: null, ratioNum: null, ratioDen: 1 });
+  // A pay date is optional and applies to a cash dividend: entitlement is fixed by the holding at the open of the
+  // ex-date, the cash is posted on the pay date (on the ex-date when none is given). A split takes effect on its ex-date.
+  const payBad = f.type === 'cash_dividend' && f.payDate && f.exDate && f.payDate < f.exDate;
   const record = async () => {
-    try { await post('/api/corporate-actions', { instrumentId: inst.id, ...f }); toast('Corporate action recorded. It is applied on its date from the ex-date holding.'); setF({ ...f, exDate: '', amount: null, ratioNum: null }); ca.reload(); bump(); } catch (err) { toastError(err); }
+    try {
+      const { payDate, ...rest } = f;
+      await post('/api/corporate-actions', { instrumentId: inst.id, ...rest, ...(f.type === 'cash_dividend' && payDate ? { payDate } : {}) });
+      toast(f.type === 'cash_dividend' ? `Dividend recorded. It is paid on ${payDate || f.exDate} on the holding at the open of the ex-date.` : 'Split recorded. It is applied on its ex-date.');
+      setF({ ...f, exDate: '', payDate: '', amount: null, ratioNum: null }); ca.reload(); bump();
+    } catch (err) { toastError(err); }
   };
   const d = res.data;
   return html`<div class="stack">
@@ -374,16 +385,18 @@ function History({ inst }) {
     <${Panel} title="Dividends and corporate actions">
       ${ca.data?.items.length ? html`<${Table} columns=${[
         { label: 'Type', render: (c) => (c.type === 'split' ? 'Split' : 'Cash dividend') }, { label: 'Ex-date', key: 'ex_date' },
+        { label: 'Pay date', render: (c) => (c.type === 'split' ? html`<span class="muted">on the ex-date</span>` : c.pay_date || c.ex_date) },
         { label: 'Terms', render: (c) => (c.type === 'split' ? `${c.ratio_num} for ${c.ratio_den}` : `${c.amount} ${c.ccy} per unit`) },
         { label: 'Source', key: 'source' }, { label: 'Status', render: (c) => html`<${Pill} tone=${c.status === 'applied' ? 'ok' : ''}>${c.status}<//>` },
       ]} rows=${ca.data.items} />` : html`<p class="note">None recorded. Corporate actions are supplied by Shaffer MarketData when connected, or recorded here by hand.</p>`}
       <h4 style="margin:12px 0 6px">Record one by hand</h4>
       <div class="grid-form">
         <${Field} label="Type"><${Select} value=${f.type} onChange=${(v) => setF({ ...f, type: v })} options=${[{ value: 'cash_dividend', label: 'Cash dividend' }, { value: 'split', label: 'Split' }]} /><//>
-        <${Field} label="Ex-date"><${Text} type="date" value=${f.exDate} onInput=${(v) => setF({ ...f, exDate: v })} /><//>
+        <${Field} label=${html`Ex-date <span class="muted">(required)</span>`}><${Text} type="date" value=${f.exDate} onInput=${(v) => setF({ ...f, exDate: v })} /><//>
+        ${f.type === 'cash_dividend' ? html`<${Field} label="Pay date" hint="Optional. The cash is posted on this date; left empty, on the ex-date." error=${payBad ? 'The pay date must be on or after the ex-date.' : null}><${Text} type="date" value=${f.payDate} onInput=${(v) => setF({ ...f, payDate: v })} /><//>` : null}
         ${f.type === 'split' ? html`<${Field} label="New shares"><${Num} value=${f.ratioNum} onInput=${(v) => setF({ ...f, ratioNum: v })} /><//><${Field} label="For each old"><${Num} value=${f.ratioDen} onInput=${(v) => setF({ ...f, ratioDen: v })} /><//>`
           : html`<${Field} label=${`Amount per unit (${inst.tradingCcy})`}><${Num} value=${f.amount} onInput=${(v) => setF({ ...f, amount: v })} /><//>`}
-        <div class="field" style="justify-content:flex-end"><${Button} disabled=${!f.exDate} onClick=${record}>Record<//></div>
+        <div class="field" style="justify-content:flex-end"><${Button} disabled=${!f.exDate || Boolean(payBad)} onClick=${record}>Record<//></div>
       </div><//>
   </div>`;
 }

@@ -8,7 +8,7 @@ import { FAMILIES, MARKET_VIEWS, catalogSummary } from './core/catalog.js';
 import { BOOK_DEFAULTS } from './core/defaults.js';
 import { createIntegrity } from './core/integrity.js';
 import { ACCOUNTS } from './core/ledger.js';
-import { resolveSettlement } from './core/settlement.js';
+import { resolveSettlement, tradingDay } from './core/settlement.js';
 import { TEMPLATES } from './core/templates.js';
 import { AppError, isZero, need, num } from './core/util.js';
 import { createFixtureControls } from './data/demo.js';
@@ -138,9 +138,13 @@ export function createApi(app) {
     // How a trade done today would settle in this Book: the convention (instrument, else the Book's assumption),
     // the date it gives and the settlement calendar it was counted on. The ticket shows it and may override it.
     const bookRow = query.bookId ? books.getBook(query.bookId) : null;
-    const stl = bookRow && !instruments.isArrangement(inst) ? resolveSettlement(app, { inst, book: bookRow, tradeDate: app.clock.today() }) : null;
+    // `trading`: whether the instrument's market is open today by its trading calendar. On a closed day an order
+    // stays working and is matched on `trading.next`; the settlement shown is counted from that day.
+    const trading = tradingDay(inst, app.clock.today());
+    const stl = bookRow && !instruments.isArrangement(inst) ? resolveSettlement(app, { inst, book: bookRow, tradeDate: trading.next }) : null;
     return {
-      settlement: stl ? { tradeDate: app.clock.today(), date: stl.date, lag: stl.lag, basis: stl.basis, label: stl.label, calendar: stl.calendar, configurable: instruments.toView(inst).settlement.configurable, reason: instruments.toView(inst).settlement.reason, maxLag: instruments.toView(inst).settlement.maxLag } : null,
+      trading,
+      settlement: stl ? { tradeDate: trading.next, date: stl.date, lag: stl.lag, basis: stl.basis, label: stl.label, calendar: stl.calendar, configurable: instruments.toView(inst).settlement.configurable, reason: instruments.toView(inst).settlement.reason, maxLag: instruments.toView(inst).settlement.maxLag } : null,
       instrument: instruments.toView(inst), observation: app.data.present(app.data.price(inst.id)), underlyingObservation: und ? app.data.present(app.data.price(und.id)) : null,
       session: app.data.session(inst.id), borrow: ['equity', 'bond'].includes(inst.family) ? app.data.borrowInfo(inst.id) : null,
       analytics: an.get(inst.id), analyticsState: app.data.analytics.state(), marketState: app.data.market.state(),
@@ -154,7 +158,10 @@ export function createApi(app) {
   r.get('/api/instruments/:id/settlement', ({ params, query }) => {
     need(query.bookId, 'bookId is required.');
     const stated = query.date ? { date: query.date } : query.lag !== undefined && query.lag !== '' ? { lag: query.lag } : null;
-    return { tradeDate: app.clock.today(), ...resolveSettlement(app, { inst: instruments.require(params.id), book: books.requireBook(query.bookId), tradeDate: app.clock.today(), stated }) };
+    // Counted from the day an order placed now would be matched: today, or the next trading day when the market is closed today.
+    const inst = instruments.require(params.id);
+    const tradeDate = tradingDay(inst, app.clock.today()).next;
+    return { tradeDate, ...resolveSettlement(app, { inst, book: books.requireBook(query.bookId), tradeDate, stated }) };
   });
   r.get('/api/instruments/:id/history', async ({ params, query }) => app.data.market.history(instruments.require(params.id), { from: query.from, to: query.to, interval: query.interval || '1d' }));
   r.get('/api/instruments/:id/chain', async ({ params, query }) => {

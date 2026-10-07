@@ -228,6 +228,20 @@ that is not a business day on the settlement calendar, or is before the trade da
 conflict: the preview blocks with the reason and nothing is re-dated silently. Futures, forwards
 and financing arrangements have their settlement fixed by the product.
 
+The trading calendar gates matching (`tradingDay` in `core/settlement.js`, applied in
+`orders.tryOrder`). An order is not filled on a day that is closed in its instrument's trading
+calendar: it stays working with the reason ("Market closed today on calendar X (...); will be
+matched on <date>"), which the ticket, the preview (a warning, not a block), the working-order row
+and the strategy show. The trade date and the settlement run from the day it fills, and the
+preview counts them from that day. A Day order is good for the day it was placed, or for the next
+trading day of its instrument when that day is closed, and expires at the end-of-day run of that
+day (a leg that waits for other legs stays good as long as they are). This applies to trades,
+securities borrowing and lending, cash loans and repos and their closing legs; internal legs
+(Treasury funding, reservations, linking a held position) are not held back, and neither are
+settlements, lifecycle events or accruals. `ALLDAYS` instruments are never closed; the
+weekends-only fallback closes at weekends only. The end-of-day run itself follows New York
+business days, so a Day order whose good-for day is a New York holiday expires at the next run.
+
 ## Packages, orders and fills
 
 1. **Build.** An execution template (`core/templates.js`) or a custom list turns into legs.
@@ -254,7 +268,11 @@ and financing arrangements have their settlement fixed by the product.
 4. **Match** (`core/orders.js`). Legs are not assumed to execute together. A leg waits for its
    dependencies, is rejected if a dependency fails, and is scaled down if a dependency only partly
    fills. Fills use quoted bid/ask where there is one, otherwise a named fill model; a stated price
-   is recorded as a manual input.
+   is recorded as a manual input. The fee schedule, its minimum included, applies to the order and
+   not to each fill (`feeForFill` in `core/fillmodel.js`): a fill pays what the schedule gives for
+   everything the order has filled including it, less what its earlier fills were charged. The
+   minimum is therefore carried by the first fill, and an order filled in parts costs exactly what
+   the same order filled at once costs.
 5. **Settle** (`core/settlement.js`). Cash moves on the settlement date. A payment that cannot be
    covered fails visibly and is retried; it is never funded silently.
 

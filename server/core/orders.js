@@ -18,8 +18,8 @@
 import { j, pj } from '../db/db.js';
 import { fmt } from './books.js';
 import { fillVariance } from './confirmation.js';
-import { computeFees, estimateFill, FILL_MODEL_LABEL } from './fillmodel.js';
-import { resolveSettlement } from './settlement.js';
+import { computeFees, estimateFill, feePrincipal, FILL_MODEL_LABEL, scheduleFee } from './fillmodel.js';
+import { resolveSettlement, TRADING_DAY_KINDS, tradingDay } from './settlement.js';
 import { optionRequirement } from './payoff.js';
 import { AppError, isZero, money, newId, qty8, round } from './util.js';
 import { fmtQty } from '../products/common.js';
@@ -40,7 +40,9 @@ export function createOrders(app) {
       `INSERT INTO orders (id, strategy_id, submission, leg_no, book_id, unit_id, instrument_id, kind, action, role, qty, order_type, limit_price, stop_price, tif, status, depends_on, required, data, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)`,
       id, o.strategyId, o.submission, o.legNo, o.bookId, o.unitId, o.instrumentId || null, o.kind, o.action, o.role || null, o.qty, o.orderType || 'market',
-      o.limitPrice ?? null, o.stopPrice ?? null, o.tif || 'day', j(o.dependsOn || []), o.required === false ? 0 : 1, j(o.data || {}), now, now,
+      // placedOn: the business date the order was placed on. A Day order is good for that day, or for the next
+      // trading day of its instrument when that day is closed (see goodFor below).
+      o.limitPrice ?? null, o.stopPrice ?? null, o.tif || 'day', j(o.dependsOn || []), o.required === false ? 0 : 1, j({ ...(o.data || {}), placedOn: clock.today() }), now, now,
     );
     return get(id);
   }
@@ -82,8 +84,25 @@ export function createOrders(app) {
   }
 
   /** Day orders that did not complete expire at the end of the business day. */
+  /**
+   * The business day a Day order is good for: the day it was placed, or, when its instrument's trading
+   * calendar is closed that day, the next day that calendar is open. A leg that waits for other legs of its
+   * package stays good for as long as they are, so a package is not split by a holiday in one of its markets.
+   */
+  function goodFor(o, seen = new Set()) {
+    seen.add(o.id);
+    const placed = o.data.placedOn || String(o.created_at).slice(0, 10);
+    const inst = o.instrument_id ? app.instruments.get(o.instrument_id) : null;
+    let day = inst && TRADING_DAY_KINDS.has(o.kind) ? tradingDay(inst, placed).next : placed;
+    if (o.depends_on.length) {
+      const deps = db.all(`SELECT * FROM orders WHERE submission = ? AND leg_no IN (${o.depends_on.map(() => '?').join(',')})`, o.submission, ...o.depends_on).map(parse);
+      for (const d of deps) if (!seen.has(d.id)) { const x = goodFor(d, seen); if (x > day) day = x; }
+    }
+    return day;
+  }
+
   function expireDayOrders(date) {
-    const rows = db.all(`SELECT * FROM orders WHERE status IN ('pending','working','partial') AND tif = 'day' AND substr(created_at, 1, 10) <= ?`, date).map(parse);
+    const rows = db.all(`SELECT * FROM orders WHERE status IN ('pending','working','partial') AND tif = 'day'`).map(parse).filter((o) => goodFor(o) <= date);
     const touched = new Set();
     for (const o of rows) {
       db.tx(() => setStatus(o, 'expired', 'Day order did not fill before the end of the business day'));
@@ -156,6 +175,13 @@ export function createOrders(app) {
     const book = app.books.getBook(o.book_id);
     const unit = app.books.getUnit(o.unit_id);
     const inst = o.instrument_id ? app.instruments.get(o.instrument_id) : null;
+    // Trading calendar: an order is matched only on a day its instrument's market is open. On a closed day it
+    // stays working and says when it will be matched. The trade date and settlement then run from the day it
+    // fills. Settlements, lifecycle events and accruals do not pass through here and are never held back.
+    if (inst && TRADING_DAY_KINDS.has(o.kind)) {
+      const day = tradingDay(inst, clock.today());
+      if (!day.open) return wait(o, day.reason);
+    }
     const plugin = inst ? app.products.get(inst.family) : null;
     const step = o.kind === 'trade' && plugin?.qtyStep ? plugin.qtyStep(inst) : 1e-8;
 
@@ -243,8 +269,22 @@ export function createOrders(app) {
     const stl = resolveSettlement(app, { inst, book, tradeDate: today, stated: o.data.settle || null });
     if (stl.conflicts.length) return reject(o, stl.conflicts[0].message);
     const settleDate = stl.date;
-    const fees = computeFees(book, inst, qty, price);
+    // The fee schedule, its minimum included, applies to the order and not to each fill: this fill pays what the
+    // schedule gives for everything the order has filled including it, less what its earlier fills were charged.
+    const earlier = fillsFor(o.id);
+    const prior = earlier.length ? {
+      qty: earlier.reduce((a, f) => a + f.qty, 0),
+      principal: earlier.reduce((a, f) => a + feePrincipal(inst, f.qty, f.price ?? 0), 0),
+      charged: earlier.reduce((a, f) => a + f.fees.filter((x) => x.kind === 'commission').reduce((b, x) => b + x.amount, 0), 0),
+    } : null;
+    const fees = computeFees(book, inst, qty, price, prior);
     const feeTotal = fees.reduce((a, f) => a + f.amount, 0);
+    // The same rule on the confirmed figures (confirmed price, the schedule as it stood at confirmation) gives the
+    // fee this fill was expected to carry, so each fill reconciles with the confirmation and so does their sum.
+    const cf = o.data.confirmed;
+    const expectedFees = cf?.feeSchedule && typeof cf.price === 'number'
+      ? money(scheduleFee(cf.feeSchedule, (prior?.qty || 0) + qty, feePrincipal(inst, (prior?.qty || 0) + qty, cf.price), ccy) - (prior ? scheduleFee(cf.feeSchedule, prior.qty, feePrincipal(inst, prior.qty, cf.price), ccy) : 0), ccy)
+      : null;
     const econ = plugin.economics(app, { inst, action: o.action, qty, price, unit, strategyId: o.strategy_id, tradeDate: today, settleDate, book });
     const cashNow = ledger.cash(unit.id, ccy);
     // OTC collateral follows the basis the contract states. At execution it must still hold (stated, an agreement of
@@ -285,7 +325,7 @@ export function createOrders(app) {
     const fillId = newId('F');
     const r = plugin.fill(app, { book, unit, inst, order: o, action: o.action, qty, price, fees, strategyId: o.strategy_id, tradeDate: today, settleDate, fillId, data: { fillModel: est.model, priceObsId: obs ? app.data.recordUsed(obs) : null, purpose: o.data.purpose || 'primary' } });
     recordFill(o, { qty, price, gross: r.gross ?? null, ccy, fees, model: est.model, note: `${est.label}. ${est.note}`, obs: est.model === 'stated-price' ? null : obs, settleDate, eventId: r.eventId,
-      actual: { cash: econ.cash, fees: feeTotal, accrued: econ.accrued || 0, margin: econ.initialMargin > 0 ? econ.initialMargin : null } });
+      actual: { cash: econ.cash, fees: feeTotal, expectedFees, accrued: econ.accrued || 0, margin: econ.initialMargin > 0 ? econ.initialMargin : null } });
     filledThisCycle.add(o.id);
     afterPositionChange({ book, unit, inst, plugin, o, position: r.position });
     return true;

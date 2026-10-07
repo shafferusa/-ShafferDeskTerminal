@@ -163,14 +163,17 @@ export async function demoHedgeResponse(app, request) {
       id: 'demo-trs', label: 'Equity total-return swap', recommended: false,
       riskAddressed: [long ? 'Price and dividend exposure' : 'Short exposure'], intendedProtection: `Transfers the total return on ${inst.symbol} for six months`,
       horizon: { until: maturity }, exposure, upsideSurrendered: long ? 'All of the reference return while the swap is on' : 'None',
-      costs: { currency: ccy, upfrontCash: 0, premiums: 0, expectedOngoing: null, margin: null, collateral: Math.round(notional) * 0.1, borrowing: 0, funding: null, basis: 'independent amount of 10% of notional, posted in cash' },
-      scenarios: [], valuation: { source: 'Demo fixture', asOf: now, status: 'indicative', availability: 'Indicative terms; not an executable dealer quote' }, notes,
+      // No collateral figure: the fixture states no collateral terms for the swap. They are the desk's own paper terms
+      // and are chosen on the contract (agreement, position-level terms, or explicitly uncollateralized) before execution.
+      costs: { currency: ccy, upfrontCash: 0, premiums: 0, expectedOngoing: null, margin: null, collateral: null, borrowing: 0, funding: null },
+      scenarios: [], valuation: { source: 'Demo fixture', asOf: now, status: 'indicative', availability: 'Indicative terms; not an executable dealer quote' },
+      notes: [...notes, 'No collateral terms are stated for this swap. Choose its collateral basis on the leg before executing.'],
       legs: [{
         role: 'hedge', hedgeFamily: 'Total-return and equity swaps', kind: 'trade', action: 'buy', quantity: Math.round(notional), sizingBasis: 'notional (illustrative)', hedgeRatio: 1, riskAddressed: 'Price and dividends',
         contract: {
           productId: 'equity_trs', name: `TRS on ${inst.symbol} ${today} to ${maturity} (demo)`, marketView: 'US_DERIV', venueType: 'otc', tradingCcy: ccy, underlyingId: inst.id,
           terms: {
-            effective: today, maturity, counterparty: 'Simulated dealer', initialMarginPct: 0.1, collateral: 'Cash, returned at maturity or close (demo terms)', initialPrices: { A: px },
+            effective: today, maturity, counterparty: 'Simulated dealer', initialPrices: { A: px },
             legs: [
               { id: 'A', side: long ? 'pay' : 'receive', type: 'return', ccy, months: 3, underlyingId: inst.id, passDividends: true, resetNotional: false },
               { id: 'B', side: long ? 'receive' : 'pay', type: 'float', ccy, index: 'SIM-ON', spread: 0.005, months: 3, dayCount: 'ACT/360' },

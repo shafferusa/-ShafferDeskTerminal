@@ -263,7 +263,7 @@ export function refusalMessage(changes) {
  * What an order keeps from its confirmation. `shown` is the leg as displayed (null when the caller
  * sent no displayed figures), `priced` the same leg as priced at the moment of confirmation.
  */
-export function confirmedLeg({ shown, priced, tol, snapshotAt, confirmedAt, permitted }) {
+export function confirmedLeg({ shown, priced, tol, snapshotAt, confirmedAt, permitted, feeSchedule = null }) {
   const src = shown || priced;
   const pick = (l) => (l ? { price: l.price, priceModel: l.priceModel, qty: l.qty, cash: l.cash, otherCash: l.otherCash, fees: l.fees, accrued: l.accrued, notional: l.notional, margin: l.margin, collateral: l.collateral, agreement: l.agreement || null, financing: l.financing, borrow: l.borrow, settleDate: l.settleDate, quote: l.quote } : null);
   return {
@@ -274,14 +274,20 @@ export function confirmedLeg({ shown, priced, tol, snapshotAt, confirmedAt, perm
     // Differences between what was displayed and the pricing at confirmation that the tolerances allowed.
     permitted: (permitted || []).map((c) => ({ field: c.field, fieldLabel: c.fieldLabel, was: c.was, now: c.now, changePct: c.changePct, tolerancePct: c.tolerancePct, unit: c.unit, ccy: c.ccy })),
     tolerances: { legPricePct: tol.legPricePct, legAmountPct: tol.legAmountPct },
+    // The Book's fee schedule for this product as it stood at confirmation. The confirmed fee is this schedule
+    // applied to the whole order; a partial fill is expected to carry its share by the same order-level rule.
+    feeSchedule: feeSchedule ? { perUnit: feeSchedule.perUnit || 0, bps: feeSchedule.bps || 0, minimum: feeSchedule.minimum || 0 } : null,
   };
 }
 
 /**
  * Reconcile one fill with what was confirmed for its order.
  *   confirmed: order.data.confirmed (or undefined for an order the engine created itself)
- *   actual: { qty, price, cash, fees, accrued, margin, settleDate, model, quoteAsOf, action, ccy }
- *   orderQty: the quantity confirmed for the whole order (figures are compared pro rata for a partial fill)
+ *   actual: { qty, price, cash, fees, expectedFees, accrued, margin, settleDate, model, quoteAsOf, action, ccy }
+ * Amounts are compared pro rata for a partial fill, except fees: the fee schedule and its minimum apply to the
+ * order, so the fee a fill is expected to carry (`expectedFees`, worked out by orders.js with the same order-level
+ * rule on the confirmed price) is not a pro-rata share. Over the fills of an order the expected fees add up to the
+ * confirmed fee.
  * Returns null when there is nothing to reconcile against.
  */
 export function fillVariance(confirmed, actual, { filledAt = null } = {}) {
@@ -289,7 +295,8 @@ export function fillVariance(confirmed, actual, { filledAt = null } = {}) {
   const ccy = actual.ccy || confirmed.ccy || 'USD';
   const share = confirmed.qty > 0 && actual.qty !== null && actual.qty !== undefined ? actual.qty / confirmed.qty : 1;
   const pro = (x) => (x === null || x === undefined ? null : money(x * share, ccy));
-  const exp = { qty: confirmed.qty, share: round(share, 8), price: confirmed.price ?? null, cash: pro(confirmed.cash), fees: pro(confirmed.fees), accrued: pro(confirmed.accrued), margin: pro(confirmed.margin), settleDate: confirmed.settleDate || null };
+  const expFees = n0(actual.expectedFees) !== null ? money(actual.expectedFees, ccy) : pro(confirmed.fees);
+  const exp = { qty: confirmed.qty, share: round(share, 8), price: confirmed.price ?? null, cash: pro(confirmed.cash), fees: expFees, accrued: pro(confirmed.accrued), margin: pro(confirmed.margin), settleDate: confirmed.settleDate || null };
   const act = { qty: actual.qty ?? null, price: n0(actual.price), cash: n0(actual.cash) === null ? null : money(actual.cash, ccy), fees: n0(actual.fees) === null ? null : money(actual.fees, ccy), accrued: n0(actual.accrued) === null ? null : money(actual.accrued, ccy), margin: n0(actual.margin), settleDate: actual.settleDate || null };
   const d = (a, b, dp) => (a === null || b === null ? null : round(b - a, dp));
   const dpm = ccyDecimals(ccy);

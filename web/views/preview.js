@@ -100,6 +100,11 @@ function LegRow({ leg, edit, onEdit, onRemove, canRemove, changes }) {
   const [open, setOpen] = useState(leg.instrument?.draft && !['option'].includes(leg.instrument.family));
   const [stating, setStating] = useState(Boolean(leg.settle));
   const stl = leg.settlement, cal = leg.calendar;
+  // Margin or independent amount this leg posts (positive) or gets back (negative). The server gives it as
+  // initialMargin when the leg is priced and always as the change in the independent amount under the agreement.
+  const indep = leg.collateral?.independent;
+  const held = isNum(leg.initialMargin) ? leg.initialMargin : isNum(indep?.delta) ? indep.delta : 0;
+  const heldCcy = isNum(leg.initialMargin) ? leg.currency : indep?.ccy || leg.currency;
   const e = { ...leg, ...edit };
   const p = leg.price;
   const set = (patch) => onEdit(leg.n, patch);
@@ -165,6 +170,7 @@ function LegRow({ leg, edit, onEdit, onRemove, canRemove, changes }) {
       <div class="nowrap">${leg.settleDate || ''}</div>
       ${stl ? html`<div class="sub">${stl.basis === 'transaction-date' || stl.basis === 'transaction-lag' ? html`<b>Stated for this trade</b>${isNum(stl.lag) && !stl.conflict ? ` (${stl.lag === 0 ? 'same day' : `T+${stl.lag}`})` : ''}` : stl.basis === 'instrument' ? `${stl.label}, set on the instrument` : stl.basis === 'book' ? `${stl.label}, Book default` : stl.label}</div>
         <div class="sub" title=${cal?.settlement?.label || ''}>on ${stl.calendarId}</div>` : null}
+      ${leg.trading && !leg.trading.open ? html`<div class="sub" style="color:var(--amber)">Market closed today on ${leg.trading.calendarId}: matched ${leg.trading.tradeDate}</div>` : null}
       <${Was} changes=${changes} field="settleDate" />
       ${leg.kind === 'trade' && stl && stl.basis !== 'product' ? html`${stating ? html`<div class="settle-edit">
           <label class="sub">date<input type="date" value=${e.settle?.date || ''} onInput=${(ev) => set({ settle: ev.target.value ? { date: ev.target.value } : null })} /></label>
@@ -181,7 +187,9 @@ function LegRow({ leg, edit, onEdit, onRemove, canRemove, changes }) {
     </td>
     <td class="r amt" data-label="Notional, margin">
       ${isNum(leg.notional) ? html`<div class="nowrap" title=${leg.notionalBasis || ''}>${fmtMoney(leg.notional, leg.currency)}</div>` : ''}
-      ${leg.initialMargin ? html`<div class="sub">margin ${fmtMoney(leg.initialMargin, leg.currency)}</div>` : null}
+      ${held > 0 ? html`<div class="sub">margin ${fmtMoney(held, heldCcy)}</div>` : null}
+      ${held < 0 ? html`<div class="sub" data-testid="released">${leg.instrument?.family === 'future' ? 'margin released' : 'collateral returned'} ${fmtMoney(-held, heldCcy)}</div>
+        <div class="sub">${leg.instrument?.family === 'future' ? 'Initial margin held for the contracts this leg closes comes back to free cash.' : 'The independent amount held for the part of the position this leg closes comes back to free cash.'}</div>` : null}
       ${leg.shortCollateral ? html`<div class="sub">collateral top-up ${fmtMoney(leg.shortCollateral.topUp, leg.currency)}</div><div class="sub">margin hold ${fmtMoney(leg.shortCollateral.marginHold, leg.currency)}</div>` : null}
       <${Was} changes=${changes} field="notional" /><${Was} changes=${changes} field="margin" /><${Was} changes=${changes} field="collateral.topUp" /><${Was} changes=${changes} field="agreement.independent" />
     </td>

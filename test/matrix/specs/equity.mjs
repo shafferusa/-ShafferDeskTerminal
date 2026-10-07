@@ -34,7 +34,7 @@ const book = (name, over = {}) => ({
   capital: [{ ccy: 'USD', amount: 1_000_000 }],
   account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 500_000 }] },
   settings: {
-    fees: { equity: { perUnit: 0.005, minimum: 1, bps: 0 }, ...(over.fees || {}) }, // 0.005 a share, at least 1.00 a fill
+    fees: { equity: { perUnit: 0.005, minimum: 1, bps: 0 }, ...(over.fees || {}) }, // 0.005 a share, at least 1.00 an order
     fill: { halfSpreadBps: { equity: 2 }, slippageBps: 0, participation: 1, maxQuoteAgeSec: 120, allowEndOfDayFills: false, maxPreviewDriftPct: 0.5 },
     settlement: { equity: 1, foreignCash: 2, ...(over.settlement || {}) }, // T+1 for US listings, T+2 for foreign listings
     short: { collateralPct: 1.02, marginPct: 0.3 },
@@ -869,7 +869,7 @@ const preferredStock = {
 // settlement lag: T+2 on England and Wales business days. The first purchase is made on Thursday
 // 2 April 2026 so that settlement has to step over Good Friday (3 April) and Easter Monday (6 April),
 // both London holidays: T+1 is Tuesday 7 April and T+2 is Wednesday 8 April.
-// Commission: 10 basis points of principal, at least 5.00 a fill.
+// Commission: 10 basis points of principal, at least 5.00 an order.
 const APR = (d) => `2026-04-${d}T14:00:00.000Z`; // 10:00 New York in April (daylight time)
 const gdr = {
   productId: 'gdr',
@@ -879,7 +879,7 @@ const gdr = {
     manualInputs: ['cash dividend (ex-date, amount per GDR), recorded by hand', 'depositary fee, recorded by hand as a manual cash flow of kind Fee on the position'],
     settlement: 'T+2 on the London calendar (Book setting settlement.foreignCash = 2); Good Friday and Easter Monday are skipped',
     lifecycle: 'Cash dividend from the recorded corporate action; depositary fee by hand',
-    accounting: 'Average cost; commission in basis points with a minimum per fill; dividend income; depositary fee booked as a fee',
+    accounting: 'Average cost; commission in basis points with a minimum per order; dividend income; depositary fee booked as a fee',
     collateral: 'None for a long position',
   },
   start: MON,
@@ -1379,8 +1379,9 @@ const etn = {
 // closed_end_fund
 // ---------------------------------------------------------------------------------------------
 // The offer shows 400 shares, so a market order for 1,000 fills 400 per engine cycle: 400 at once,
-// 400 on the next cycle, 200 on the one after. Each fill pays its own commission and settles on
-// its own. The monthly distribution has an income part (a recorded dividend) and a return of
+// 400 on the next cycle, 200 on the one after. The fee schedule applies to the order: each fill
+// pays what the schedule adds for the order's filled quantity (2.00, 2.00, 1.00 here; the 1.00
+// minimum never binds), and each fill settles on its own. The monthly distribution has an income part (a recorded dividend) and a return of
 // capital, which is recorded by hand and lowers the cost of the position instead of being income.
 const closedEndFund = {
   productId: 'closed_end_fund',
@@ -1390,7 +1391,7 @@ const closedEndFund = {
     manualInputs: ['income distribution (ex-date, amount per share), recorded by hand', 'return of capital, recorded by hand as a manual cash flow of kind Return of capital on the position'],
     settlement: 'T+1 on the US equity calendar, per fill',
     lifecycle: 'An order larger than the displayed size fills in parts, one per engine cycle; income distribution from the recorded corporate action; return of capital by hand',
-    accounting: 'Average cost over the partial fills; commission per fill; return of capital reduces cost and is not income',
+    accounting: 'Average cost over the partial fills; commission by the fee schedule on the order, charged as it fills; return of capital reduces cost and is not income',
     collateral: 'None for a long position',
   },
   start: MON,

@@ -221,21 +221,24 @@ test('calendar conflicts block the preview and the confirmation with a specific 
   assert.equal(app.ledger.balance(acct.id, 'pos', 'USD'), 0, 'nothing was booked');
 });
 
-test('a day that is not a trading day on the instrument trading calendar is flagged in the preview', async () => {
+test('a day that is closed on the instrument trading calendar is a warning in the preview, and the settlement date counts from the next trading day', async () => {
   const { app, inst } = makeApp({ at: '2026-03-20T03:00:00.000Z' }); // still Thursday 19 March in New York
   const { book, acct } = makeBook(app);
   pin(app, inst.KAIJ.id, 3000);
   let pv = await app.packages.preview(one(book, acct, inst.KAIJ));
   assert.ok(!pv.checks.some((c) => c.code === 'not-trading-day'), 'Thursday 19 March is a Tokyo trading day');
-  // Give the instrument a trading calendar on which the business date is closed (19 March entered as a one-off closure of WEEKEND would
-  // affect other markets, so use a joint calendar with a real holiday instead): Friday 20 March, Tokyo closed.
+  assert.deepEqual([pv.legs[0].trading.open, pv.legs[0].trading.tradeDate], [true, '2026-03-19']);
+  // Friday 20 March 2026: Tokyo is closed (Vernal Equinox Day), New York is open.
   const friday = makeApp({ at: '2026-03-20T15:00:00.000Z' });
   const fb = makeBook(friday.app);
   pin(friday.app, friday.inst.KAIJ.id, 3000);
   pv = await friday.app.packages.preview(one(fb.book, fb.acct, friday.inst.KAIJ));
   const w = pv.checks.find((c) => c.code === 'not-trading-day');
-  assert.equal(w.level, 'warning');
-  assert.match(w.message, /today, 2026-03-20, is a holiday on JP, not a trading day on the trading calendar of KAIJ \(JP\)/);
+  assert.equal(w.level, 'warning', 'a warning, not a block');
+  assert.equal(w.message, 'Leg 1: the market of KAIJ is closed today on calendar JP (2026-03-20 is a holiday on JP). The order stays working and will be matched on 2026-03-23. Its trade date and settlement are counted from that day; a Day order placed today is good for 2026-03-23.');
+  // Trade date Monday 23 March; foreign cash lag T+2 on Tokyo days: Tue 24, Wed 25.
+  assert.deepEqual([pv.legs[0].trading.open, pv.legs[0].trading.tradeDate, pv.legs[0].settlement.tradeDate, pv.legs[0].settleDate], [false, '2026-03-23', '2026-03-23', '2026-03-25']);
+  assert.deepEqual([pv.legs[0].price.executable, pv.legs[0].price.waitingOnCalendar, pv.legs[0].price.estimate], [false, true, 3000]);
   // The same day is a trading day for an NYSE instrument, and for KAIJ once its trading calendar is set to NYSE days.
   pin(friday.app, friday.inst.ALFA.id, 100);
   assert.ok(!(await friday.app.packages.preview(one(fb.book, fb.acct, friday.inst.ALFA))).checks.some((c) => c.code === 'not-trading-day'));

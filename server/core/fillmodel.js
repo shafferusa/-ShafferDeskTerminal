@@ -139,15 +139,47 @@ function applyOrderConditions(out, { buy, limitPrice, stopPrice, orderType, stop
   return out;
 }
 
-/** Commission and fees for a fill, from the Book's fee schedule. */
-export function computeFees(book, inst, qty, price) {
+/** What a fee schedule charges on principal: the notional itself for swaps, credit default swaps and forwards. */
+export const feePrincipal = (inst, qty, price) => Math.abs(['swap', 'cds', 'forward'].includes(inst.family) ? qty : qty * price * inst.multiplier);
+
+/**
+ * A fee schedule { perUnit, bps, minimum } applied to a quantity and its principal: an amount per
+ * unit plus basis points of principal, raised to the minimum when anything is charged at all.
+ */
+export function scheduleFee(f, qty, principal, ccy) {
+  if (!f) return 0;
+  let amount = (f.perUnit || 0) * qty + ((f.bps || 0) / 10000) * Math.abs(principal);
+  if (amount > 0 && f.minimum) amount = Math.max(amount, f.minimum);
+  return money(amount, ccy);
+}
+
+/**
+ * The fee of one fill of an order, given what the order had filled before it.
+ *
+ * The schedule, minimum included, applies to the ORDER, not to each fill: after every fill the
+ * fees charged on the order so far equal the schedule applied to everything it has filled so far
+ * (total quantity, total principal). So this fill pays
+ *     schedule(filled before + this fill)  -  fees already charged on the order
+ * The minimum is therefore carried by the first fill, and a later fill adds only what the schedule
+ * adds beyond what has been charged (nothing, until the per-unit and basis-point amounts catch up
+ * with the minimum). An order filled in parts costs exactly what the same order filled at once
+ * costs. `prior` is { qty, principal, charged } for the earlier fills; omit it for a whole order.
+ */
+export function feeForFill(f, inst, qty, price, prior = null) {
+  const ccy = inst.trading_ccy;
+  const toDate = scheduleFee(f, (prior?.qty || 0) + qty, (prior?.principal || 0) + feePrincipal(inst, qty, price), ccy);
+  return money(Math.max(0, toDate - (prior?.charged || 0)), ccy);
+}
+
+/**
+ * Commission and fees from the Book's fee schedule: for a whole order (the preview), or for one
+ * fill of an order when `prior` describes its earlier fills (see feeForFill).
+ */
+export function computeFees(book, inst, qty, price, prior = null) {
   const f = book.settings.fees[inst.family];
   if (!f) return [];
   const ccy = inst.trading_ccy;
-  const principal = ['swap', 'cds', 'forward'].includes(inst.family) ? qty : qty * price * inst.multiplier;
-  let amount = (f.perUnit || 0) * qty + ((f.bps || 0) / 10000) * Math.abs(principal);
-  if (amount > 0 && f.minimum) amount = Math.max(amount, f.minimum);
-  amount = money(amount, ccy);
+  const amount = feeForFill(f, inst, qty, price, prior);
   return amount > 0 ? [{ kind: 'commission', amount, ccy, label: `Commission (${describeFee(f)})` }] : [];
 }
 
@@ -155,6 +187,6 @@ function describeFee(f) {
   const parts = [];
   if (f.perUnit) parts.push(`${f.perUnit} per unit`);
   if (f.bps) parts.push(`${f.bps} bp`);
-  if (f.minimum) parts.push(`min ${f.minimum}`);
+  if (f.minimum) parts.push(`min ${f.minimum} an order`);
   return parts.join(', ') || 'none';
 }
