@@ -2111,4 +2111,325 @@ const forwardStartingSwap = {
   ],
 };
 
-export default [interestRateSwap, overnightIndexSwap, basisSwap, interestRateCap, interestRateFloor, interestRateCollar, forwardStartingSwap];
+// ---------------------------------------------------------------------------------------------
+// constant_maturity_swap
+// ---------------------------------------------------------------------------------------------
+// A one-year US dollar constant-maturity swap: pay 3-month term SOFR + 0.25% (ACT/360), receive the
+// 5-year constant-maturity swap rate (rate code USDCMS5Y, 30/360), both quarterly. The CMS rate is a
+// fixing like any other: the one published for the first day of the period (or the last business day
+// before it). The Terminal applies no convexity adjustment and says so on the product.
+//
+// Entered on the Strategies page (template Custom, Add a leg, New OTC contract), not through the
+// registry: that ticket has no market-view or calendar fields, so the contract is a US Derivatives
+// contract on the US market calendar (New York Stock Exchange rules). Its payment dates then use that
+// calendar together with the Federal Reserve's, the calendar of US dollar payments: a business day is a
+// day on which both are open.
+//
+// Schedule (effective Monday 12 January 2026, maturity Tuesday 12 January 2027):
+//   2026-01-12 to 2026-04-12 (90 days; 90 on 30/360), paid Monday 13 April (the 12th is a Sunday)    fixings of 12 January
+//   2026-04-12 to 2026-07-12 (91 days; 90 on 30/360), paid Monday 13 July (the 12th is a Sunday)     fixings of Friday 10 April
+//   2026-07-12 to 2026-10-12 (92 days; 90 on 30/360), paid Tuesday 13 October: Monday the 12th is
+//                                                     Columbus Day, a Federal Reserve holiday        fixings of Friday 10 July
+//   2026-10-12 to 2027-01-12 (92 days; 90 on 30/360), paid 12 January 2027                           fixings of Friday 9 October
+//   TSFR3M: 3.65%, 3.60%, 3.50%, 3.45%.  USDCMS5Y: 3.95%, 4.05%, 3.70%, and 9 October not supplied (entered by hand: 3.60%).
+//
+// Collateral: a cleared agreement in the Book. Independent amount 1% of notional; variation margin
+// exchanged in full every day (no threshold, no minimum transfer), in USD cash.
+const CMS_NAME = 'USD CMS 5Y v TSFR3M + 25bp 12 Jan 2027';
+const CMS_CONTRACT = {
+  productId: 'constant_maturity_swap', name: CMS_NAME, marketView: 'US_DERIV', venueType: 'otc', tradingCcy: 'USD', tags: [], externalIds: {},
+  multiplier: 0.01, // not on the ticket: every swap is priced per 100 of notional. Stated here so that the spec audit can check cash = notional x price / 100.
+  terms: {
+    effective: '2026-01-12', maturity: '2027-01-12', counterparty: 'Clearing broker D',
+    collateralBasis: { type: 'agreement', agreementId: '$agreement:ccp' },
+    legs: [
+      { side: 'pay', type: 'float', ccy: 'USD', index: 'TSFR3M', spread: 0.0025, months: 3, dayCount: 'ACT/360' },
+      { side: 'receive', type: 'float', ccy: 'USD', index: 'USDCMS5Y', spread: 0, months: 3, dayCount: '30/360' },
+    ],
+  },
+};
+const constantMaturitySwap = {
+  productId: 'constant_maturity_swap',
+  title: 'USD 1-year constant-maturity swap entered on the Strategies page, receive the 5-year CMS rate against 3-month term SOFR + 0.25%, under a cleared agreement',
+  matrix: {
+    ticket: 'Strategies page: Execution template "Custom", Add a leg, "New OTC contract", product, contract name, currency, the contract form (dates, counterparty, Collateral terms, each leg), Side, Notional, State a fill price; Preview package. The agreement is recorded first under Treasury, Collateral. Increase and termination from the strategy instance.',
+    requiredFields: ['Account', 'Execution template', 'Leg: New OTC contract', 'Product', 'Contract name', 'Currency', 'Effective date', 'Maturity', 'each leg: Side, Leg type, Currency, Index, Spread, Payment, Day count', 'Collateral basis', 'Side (Enter as written / Enter the opposite side)', 'Notional', 'State a fill price'],
+    automaticInputs: ['market view (US Derivatives) and calendars (US market calendar; payments on it and the Federal Reserve calendar together): the ticket has no fields for them', 'payment schedule of each leg', 'TSFR3M and USDCMS5Y fixings (rate fixtures standing in for Shaffer MarketData)', 'settlement date, T+2', 'independent amount and variation margin from the agreement'],
+    manualInputs: ['the agreement itself', 'the whole contract, typed into the ticket', 'upfront amount (stated fill price)', 'mark of the contract, entered by hand', 'the CMS fixing the data service did not supply, entered by hand', 'settlement amount of a partial termination'],
+    settlement: 'Upfront and termination amounts settle T+2 on the US market calendar; leg payments are cash on their payment date',
+    lifecycle: 'Two floating legs: one on the money-market index plus a spread, one on the CMS rate, each paid on its own; a payment date on a Federal Reserve holiday moves to the next day; the CMS payment whose fixing is missing is blocked until it is entered; partial termination; maturity',
+    accounting: 'Carried at the mark; leg payments and the termination result are realized P&L; no convexity adjustment is made, and none is implied by the figures',
+    collateral: 'Agreement "Clearing terms Broker D" (cleared): independent amount 1% of notional, trued up on increase and partial termination; variation margin in full each day, received when the mark is in the Account\'s favour (restricted, owed back) and posted when it is against it; everything returned at maturity',
+  },
+  tradedOn: 'A constant-maturity swap can also be registered under Instruments like the other swaps of this file. This scenario enters it on the Strategies page instead (template Custom, Add a leg, New OTC contract): the contract registers itself when the package is confirmed.',
+  start: at('2026-01-08'),
+  settlementCheck: { lag: 2, holidays: [] }, // no New York Stock Exchange holiday in the settlement windows used (8 to 12 January, 11 to 13 August 2026)
+  book: usdBook('Matrix constant-maturity swap', 'Rates', 300_000),
+  instruments: {},
+  rates: {
+    TSFR3M: { byDate: { '2026-01-12': 3.65, '2026-04-10': 3.60, '2026-07-10': 3.50, '2026-10-09': 3.45 } },
+    USDCMS5Y: { byDate: { '2026-01-12': 3.95, '2026-04-10': 4.05, '2026-07-10': 3.70 } }, // 9 October is deliberately missing
+  },
+  expectAtStart: usdStart(300_000),
+  steps: [
+    {
+      id: 'record-agreement', covers: 'collateral', action: 'agreement', as: 'ccp',
+      agreement: { name: 'Clearing terms Broker D', counterparty: 'Clearing broker D', kind: 'cleared', covers: ['account'], independentAmount: { type: 'pct', pct: 0.01 }, variationMargin: true, threshold: 0, minimumTransfer: 0, baseCcy: 'USD', postingCcy: 'USD', haircut: 0, nettingScope: 'account' },
+      expect: { events: [{ type: 'collateral.agreement', summary: 'Collateral agreement recorded: Clearing terms Broker D with Clearing broker D (Cleared)', owner: 'treasury' }] },
+    },
+    {
+      // The whole contract is typed into the ticket. 6,000,000 as written, no upfront amount. Independent amount 1% x 6,000,000 = 60,000.
+      // Thursday 8 January: any amount would settle Monday 12 January.
+      id: 'open', covers: ['open', 'collateral', 'registration'], action: 'package', as: 'cms', contractAs: 'main',
+      input: { template: 'custom', origin: 'strategy_page', legs: [{ kind: 'trade', action: 'buy', purpose: 'primary', role: 'leg', qty: 6_000_000, orderType: 'market', statedPrice: 0, contract: CMS_CONTRACT }] },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', qty: 6_000_000, estimate: 0, model: 'stated-price', settleDate: '2026-01-12', calendar: 'US', cash: 0, fees: 0 }],
+          cash: { USD: { purchases: 0, fees: 0, margin: 60_000, required: 60_000, available: 300_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 6_000_000, avgPrice: 0, fills: [{ qty: 6_000_000, price: 0, model: 'stated-price', settleDate: '2026-01-12' }] }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: `Entered as written: 6,000,000 notional of ${CMS_NAME} at 0.00 per 100 notional`, owner: 'account', date: '2026-01-08' },
+          { type: 'swap.collateral', summary: `Collateral posted on ${CMS_NAME} under "Clearing terms Broker D" (Clearing broker D): 60,000.00 USD (independent amount, 1.00% of 6,000,000.00 USD notional)`, cash: { USD: -60_000 }, owner: 'account' },
+        ],
+        cash: { account: { USD: { settled: 240_000, unsettled: 0, margin: 60_000, restricted: 0, availableToTrade: 240_000, availableToWithdraw: 240_000 } } },
+        positions: [{ instrument: 'main', lot: 'cms', owner: 'account', direction: 'as written', qty: 6_000_000, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, notional: 6_000_000, margin: 60_000 }],
+        holdings: { main: { long: 6_000_000, short: 0, net: 6_000_000 } },
+        pending: [],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-04-13', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-04-13', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-01-12', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', lot: 'cms', owner: 'account', qty: 6_000_000, basis: 'agreement', agreement: 'Clearing terms Broker D', mark: null, iaRequired: 60_000, iaPosted: 60_000, iaCcy: 'USD', vmPosted: 0, vmHeld: 0, vmStatus: 'not_valued_yet' }],
+        pnl: { account: { realized: 0, commissions: 0, unrealized: 0, total: 0 } },
+        nav: { account: 300_000, book: 1_000_000 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 240_000, margin: 60_000, payable: null, positions: null, accruedIncome: null, accruedExpense: null, assets: 300_000, liabilities: 0, netAssets: 300_000 } },
+      },
+    },
+    {
+      id: 'no-mark-no-call', covers: 'variation margin', action: 'clock', to: at('2026-01-09'),
+      expect: { otc: [{ instrument: 'main', vmStatus: 'cannot_value', vmPosted: 0 }], alerts: ['collateral.unvalued'] },
+    },
+    {
+      // 1,500,000 more on the same terms. Independent amount 1% x 7,500,000 = 75,000: 15,000 more.
+      id: 'increase', covers: ['increase', 'collateral'], action: 'resize', lot: 'cms', factor: 1.25, order: { statedPrice: 0 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 1_500_000, estimate: 0, model: 'stated-price', settleDate: '2026-01-13', cash: 0, fees: 0 }], cash: { USD: { margin: 15_000, required: 15_000, available: 240_000, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 1_500_000, avgPrice: 0 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: `Increased as written: 1,500,000 notional of ${CMS_NAME} at 0.00 per 100 notional` },
+          { type: 'swap.collateral', summary: `Collateral posted on ${CMS_NAME} under "Clearing terms Broker D" (Clearing broker D): 15,000.00 USD (independent amount, 1.00% of 7,500,000.00 USD notional)`, cash: { USD: -15_000 } },
+        ],
+        cash: { account: { USD: { settled: 225_000, margin: 75_000, availableToTrade: 225_000, availableToWithdraw: 225_000 } } },
+        positions: [{ instrument: 'main', lot: 'cms', qty: 7_500_000, cost: 0, notional: 7_500_000, margin: 75_000 }],
+        holdings: { main: { long: 7_500_000, short: 0, net: 7_500_000 } },
+        otc: [{ instrument: 'main', qty: 7_500_000, iaRequired: 75_000, iaPosted: 75_000 }],
+        nav: { account: 300_000, book: 1_000_000 },
+        balance: { account: { cash: 225_000, margin: 75_000, assets: 300_000, netAssets: 300_000 } },
+      },
+    },
+    { id: 'effective-date', action: 'clock', to: at('2026-01-12'), expect: {} },
+    {
+      id: 'mark-positive', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 0.12, note: 'Clearing broker mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'cms', qty: 7_500_000, price: 0.12, value: 9_000, unrealized: 9_000, provisional: false, priceSource: 'Manual entry', priceStatus: 'manual' }], // 7,500,000 x 0.12 / 100
+        otc: [{ instrument: 'main', mark: 0.12, markValue: 9_000 }],
+        pnl: { account: { unrealized: 9_000, total: 9_000 } },
+        nav: { account: 309_000, book: 1_009_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 9_000, assets: 309_000, netAssets: 309_000 } },
+      },
+    },
+    {
+      // Cleared: the whole 9,000 is received. It is restricted cash and a liability.
+      id: 'variation-margin-received', covers: 'variation margin', action: 'clock', to: eod('2026-01-12'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under "Clearing terms Broker D" (Clearing broker D): 9,000.00 USD received. Netting set of 1 position marked at 9,000.00 USD; threshold 0.00 USD.', owner: 'account', date: '2026-01-12' }],
+        cash: { account: { USD: { settled: 225_000, restricted: 9_000, margin: 75_000, availableToTrade: 225_000, availableToWithdraw: 225_000 } } },
+        otc: [{ instrument: 'main', vmPosted: 0, vmHeld: 9_000, vmExposure: 9_000, vmStatus: 'ok' }],
+        alerts: [],
+        nav: { account: 309_000, book: 1_009_000 },
+        balance: { account: { restricted: 9_000, collateralReceived: 9_000, assets: 318_000, liabilities: 9_000, netAssets: 309_000 } },
+      },
+    },
+    { id: 'tuesday-morning', action: 'clock', to: at('2026-01-13'), expect: {} },
+    {
+      id: 'mark-negative', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: -0.08, note: 'Clearing broker mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'cms', price: -0.08, value: -6_000, unrealized: -6_000 }], // 7,500,000 x -0.08 / 100
+        otc: [{ instrument: 'main', mark: -0.08, markValue: -6_000 }],
+        pnl: { account: { unrealized: -6_000, total: -6_000 } },
+        nav: { account: 294_000, book: 994_000 },
+        balance: { account: { positions: -6_000, assets: 303_000, liabilities: 9_000, netAssets: 294_000 } }, // 225,000 + 9,000 held + 75,000 - 6,000
+      },
+    },
+    {
+      // The 9,000 held goes back and 6,000 is posted.
+      id: 'variation-margin-swings', covers: 'variation margin', action: 'clock', to: eod('2026-01-13'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under "Clearing terms Broker D" (Clearing broker D): 9,000.00 USD returned to the counterparty and 6,000.00 USD posted. Netting set of 1 position marked at -6,000.00 USD; threshold 0.00 USD.', owner: 'account', date: '2026-01-13' }],
+        cash: { account: { USD: { settled: 219_000, restricted: 0, margin: 81_000, availableToTrade: 219_000, availableToWithdraw: 219_000 } } },
+        otc: [{ instrument: 'main', vmPosted: 6_000, vmHeld: 0, vmExposure: -6_000, vmStatus: 'ok' }],
+        balance: { account: { cash: 219_000, margin: 81_000, restricted: null, collateralReceived: null, assets: 294_000, liabilities: 0, netAssets: 294_000 } },
+      },
+    },
+    {
+      // Monday 13 April, on 7,500,000. Leg A, paid: 7,500,000 x (3.65% + 0.25%) x 90/360 = 73,125.00.
+      // Leg B, the CMS leg, received: 7,500,000 x 3.95% x 90/360 = 74,062.50.
+      id: 'first-quarter', covers: ['floating payment', 'CMS payment'], action: 'clock', to: at('2026-04-13'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap payment on ${CMS_NAME}, leg A (float), period 2026-01-12 to 2026-04-12: 73,125.00 USD`, cash: { USD: -73_125 }, owner: 'account', date: '2026-04-13' },
+          { type: 'swap.payment', summary: `Swap receipt on ${CMS_NAME}, leg B (float), period 2026-01-12 to 2026-04-12: 74,062.50 USD`, cash: { USD: 74_062.50 }, owner: 'account', date: '2026-04-13' },
+        ],
+        cash: { account: { USD: { settled: 219_937.50, availableToTrade: 219_937.50, availableToWithdraw: 219_937.50 } } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-07-13', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-07-13', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-01-12', status: 'pending' },
+        ],
+        pnl: { account: { realized: 937.50, unrealized: -6_000, total: -5_062.50 } },
+        nav: { account: 294_937.50, book: 994_937.50 },
+        balance: { account: { cash: 219_937.50, assets: 294_937.50, netAssets: 294_937.50 } },
+      },
+    },
+    {
+      // Monday 13 July, fixings of Friday 10 April. Leg A: 7,500,000 x (3.60% + 0.25%) x 91/360 = 72,989.58. Leg B: 7,500,000 x 4.05% x 90/360 = 75,937.50.
+      id: 'second-quarter', covers: ['floating payment', 'CMS payment'], action: 'clock', to: at('2026-07-13'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap payment on ${CMS_NAME}, leg A (float), period 2026-04-12 to 2026-07-12: 72,989.58 USD`, cash: { USD: -72_989.58 }, date: '2026-07-13' },
+          { type: 'swap.payment', summary: `Swap receipt on ${CMS_NAME}, leg B (float), period 2026-04-12 to 2026-07-12: 75,937.50 USD`, cash: { USD: 75_937.50 }, date: '2026-07-13' },
+        ],
+        cash: { account: { USD: { settled: 222_885.42, availableToTrade: 222_885.42, availableToWithdraw: 222_885.42 } } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-10-13', status: 'pending' }, // 12 October is Columbus Day
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-10-13', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-01-12', status: 'pending' },
+        ],
+        pnl: { account: { realized: 3_885.42, total: -2_114.58 } }, // 937.50 - 72,989.58 + 75,937.50; then - 6,000
+        nav: { account: 297_885.42, book: 997_885.42 },
+        balance: { account: { cash: 222_885.42, assets: 297_885.42, netAssets: 297_885.42 } },
+      },
+    },
+    { id: 'mid-august', action: 'clock', to: at('2026-08-11'), expect: {} },
+    {
+      // A fifth (1,500,000) is terminated at -0.10 per 100, paid: 1,500. Nothing was paid to enter, so realized -1,500. Settles Thursday 13 August.
+      // Left: 6,000,000, marked -0.08: -4,800. Independent amount 1% x 6,000,000 = 60,000: 15,000 returns.
+      id: 'partial-termination', covers: ['reduce', 'partial termination', 'collateral'], action: 'close', lot: 'cms', instrument: 'main', scope: 'strategy', percent: 20, order: { statedPrice: -0.10 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 1_500_000, estimate: -0.1, model: 'stated-price', settleDate: '2026-08-13', cash: -1_500, fees: 0 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 1_500_000, avgPrice: -0.1 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: `Terminated in part: 1,500,000 of 7,500,000 notional of ${CMS_NAME} at -0.10 per 100 notional (realized -1,500.00 USD)` },
+          { type: 'swap.collateral', summary: `Collateral returned on ${CMS_NAME} under "Clearing terms Broker D" (Clearing broker D): 15,000.00 USD (independent amount, 1.00% of 6,000,000.00 USD notional)`, cash: { USD: 15_000 } },
+        ],
+        cash: { account: { USD: { settled: 237_885.42, unsettled: -1_500, margin: 66_000, availableToTrade: 236_385.42, availableToWithdraw: 236_385.42 } } }, // 60,000 independent amount + 6,000 variation margin
+        positions: [{ instrument: 'main', lot: 'cms', qty: 6_000_000, cost: 0, price: -0.08, value: -4_800, unrealized: -4_800, notional: 6_000_000, margin: 60_000 }],
+        holdings: { main: { long: 6_000_000, short: 0, net: 6_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-08-13', amount: -1_500, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: 6_000_000, markValue: -4_800, iaRequired: 60_000, iaPosted: 60_000, vmPosted: 6_000 }],
+        pnl: { account: { realized: 2_385.42, unrealized: -4_800, total: -2_414.58 } },
+        nav: { account: 297_585.42, book: 997_585.42 },
+        balance: { account: { cash: 237_885.42, margin: 66_000, positions: -4_800, payable: 1_500, assets: 299_085.42, liabilities: 1_500, netAssets: 297_585.42 } },
+      },
+    },
+    {
+      // 4,800 is now required against 6,000 posted: 1,200 comes back (no minimum transfer).
+      id: 'variation-margin-trimmed', covers: 'variation margin', action: 'clock', to: eod('2026-08-11'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under "Clearing terms Broker D" (Clearing broker D): 1,200.00 USD returned to us. Netting set of 1 position marked at -4,800.00 USD; threshold 0.00 USD.', cash: { USD: 1_200 }, owner: 'account' }],
+        cash: { account: { USD: { settled: 239_085.42, margin: 64_800, availableToTrade: 237_585.42, availableToWithdraw: 237_585.42 } } },
+        otc: [{ instrument: 'main', vmPosted: 4_800, vmHeld: 0, vmExposure: -4_800, vmStatus: 'ok' }],
+        balance: { account: { cash: 239_085.42, margin: 64_800 } },
+      },
+    },
+    {
+      id: 'settle-partial-termination', covers: 'settlement', action: 'clock', to: at('2026-08-13'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 1,500.00 USD from settled cash', cash: { USD: -1_500 } }],
+        cash: { account: { USD: { settled: 237_585.42, unsettled: 0, availableToTrade: 237_585.42, availableToWithdraw: 237_585.42 } } },
+        pending: [],
+        balance: { account: { cash: 237_585.42, payable: null, assets: 297_585.42, liabilities: 0 } },
+      },
+    },
+    {
+      // Columbus Day: the stock exchange is open, the Federal Reserve is not. No US dollar payment is made.
+      id: 'columbus-day', covers: 'payment across a holiday', action: 'clock', to: at('2026-10-12'),
+      expect: { events: [], cash: { account: { USD: { settled: 237_585.42 } } } },
+    },
+    {
+      // Tuesday 13 October, on 6,000,000, fixings of Friday 10 July. Leg A: 6,000,000 x (3.50% + 0.25%) x 92/360 = 57,500.00. Leg B: 6,000,000 x 3.70% x 90/360 = 55,500.00.
+      id: 'third-quarter', covers: ['floating payment', 'CMS payment', 'payment across a holiday'], action: 'clock', to: at('2026-10-13'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap payment on ${CMS_NAME}, leg A (float), period 2026-07-12 to 2026-10-12: 57,500.00 USD`, cash: { USD: -57_500 }, date: '2026-10-13' },
+          { type: 'swap.payment', summary: `Swap receipt on ${CMS_NAME}, leg B (float), period 2026-07-12 to 2026-10-12: 55,500.00 USD`, cash: { USD: 55_500 }, date: '2026-10-13' },
+        ],
+        cash: { account: { USD: { settled: 235_585.42, availableToTrade: 235_585.42, availableToWithdraw: 235_585.42 } } },
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-01-12', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-01-12', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-01-12', status: 'pending' },
+        ],
+        pnl: { account: { realized: 385.42, total: -4_414.58 } },
+        nav: { account: 295_585.42, book: 995_585.42 },
+        balance: { account: { cash: 235_585.42, assets: 295_585.42, netAssets: 295_585.42 } },
+      },
+    },
+    {
+      // Maturity date, fixings of Friday 9 October. Leg A is paid: 6,000,000 x (3.45% + 0.25%) x 92/360 = 56,733.33.
+      // The CMS fixing for 9 October was never supplied: leg B waits, and so does maturity. The CMS rate of July is not reused.
+      id: 'cms-fixing-missing', covers: ['floating payment', 'missing fixing'], action: 'clock', to: at('2027-01-12'),
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Swap payment on ${CMS_NAME}, leg A (float), period 2026-10-12 to 2027-01-12: 56,733.33 USD`, cash: { USD: -56_733.33 }, date: '2027-01-12' }],
+        cash: { account: { USD: { settled: 178_852.09, availableToTrade: 178_852.09, availableToWithdraw: 178_852.09 } } },
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-01-12', status: 'blocked', reason: /Waiting for the final leg payments/ },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-01-12', status: 'blocked', reason: /Awaiting the USDCMS5Y fixing for 2026-10-09/ },
+        ],
+        pnl: { account: { realized: -56_347.91, total: -61_147.91 } },
+        nav: { account: 238_852.09, book: 938_852.09 },
+        balance: { account: { cash: 178_852.09, assets: 238_852.09, netAssets: 238_852.09 } },
+      },
+    },
+    {
+      // 3.60% for 9 October, by hand. Leg B is received: 6,000,000 x 3.60% x 90/360 = 54,000.00.
+      id: 'cms-fixing-entered-by-hand', covers: ['missing fixing', 'CMS payment'], action: 'manual_rate', code: 'USDCMS5Y', value: 3.60, date: '2026-10-09', note: 'Published CMS fixing, entered by hand',
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Swap receipt on ${CMS_NAME}, leg B (float), period 2026-10-12 to 2027-01-12: 54,000.00 USD`, cash: { USD: 54_000 }, owner: 'account', date: '2027-01-12' }],
+        cash: { account: { USD: { settled: 232_852.09, availableToTrade: 232_852.09, availableToWithdraw: 232_852.09 } } },
+        lifecycle: [{ type: 'swap.maturity', instrument: 'main', dueDate: '2027-01-12', status: 'blocked', reason: /Waiting for the final leg payments/ }], // looked at before the payment in this pass; the next pass ends the contract
+        pnl: { account: { realized: -2_347.91, total: -7_147.91 } },
+        nav: { account: 292_852.09, book: 992_852.09 },
+        balance: { account: { cash: 232_852.09, assets: 292_852.09, netAssets: 292_852.09 } },
+      },
+    },
+    {
+      // The swap ends. Nothing was paid to enter it; the mark of -4,800 was never cash. The 60,000 and the 4,800 posted come back.
+      // 300,000 - 73,125 + 74,062.50 - 72,989.58 + 75,937.50 - 1,500 - 57,500 + 55,500 - 56,733.33 + 54,000 = 297,652.09.
+      id: 'matured', covers: ['maturity', 'close', 'collateral'], action: 'cycle',
+      expect: {
+        events: [
+          { type: 'swap.matured', summary: `Swap matured: ${CMS_NAME} (notional 6,000,000)`, owner: 'account' },
+          { type: 'swap.collateral', summary: `Collateral returned on ${CMS_NAME} under "Clearing terms Broker D" (Clearing broker D): 60,000.00 USD (independent amount, the position ended)`, cash: { USD: 60_000 } },
+          { type: 'collateral.variation', summary: /Variation margin under "Clearing terms Broker D" \(Clearing broker D\): 4,800\.00 USD returned to us\./, cash: { USD: 4_800 } },
+        ],
+        cash: { account: { USD: { settled: 297_652.09, unsettled: 0, margin: 0, restricted: 0, reserved: 0, availableToTrade: 297_652.09, availableToWithdraw: 297_652.09 } }, treasury: { USD: { settled: 700_000 } } },
+        positions: [], holdings: { main: null }, lifecycle: [], otc: [], pending: [], alerts: [],
+        pnl: { account: { realized: -2_347.91, commissions: 0, unrealized: 0, total: -2_347.91 } },
+        nav: { account: 297_652.09, treasury: 700_000, book: 997_652.09 },
+        provisional: { account: false, book: false },
+        balance: { account: { cash: 297_652.09, margin: null, positions: null, assets: 297_652.09, liabilities: 0, netAssets: 297_652.09 } },
+      },
+    },
+  ],
+};
+
+export default [interestRateSwap, overnightIndexSwap, basisSwap, interestRateCap, interestRateFloor, interestRateCollar, forwardStartingSwap, constantMaturitySwap];

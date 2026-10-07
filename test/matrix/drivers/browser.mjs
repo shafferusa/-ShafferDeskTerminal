@@ -334,7 +334,10 @@ export async function readScreens(ui, ctx, t) {
   for (const r of rowsOf(held)) {
     const text = r.cells.slice(1).join(' ');
     const n = (re) => { const m = re.exec(text); return m ? shown(m[1]).value : 0; };
-    screen.holdings[firstLine(r.cells[0]).split(/\s/)[0]] = { long: n(/Long ([\d,.]+)/), short: n(/Short ([\d,.]+)/) };
+    // The row is known by its symbol, the first word of the cell. A contract entered on a ticket has no symbol: its row shows the name alone.
+    const line = firstLine(r.cells[0]);
+    const byName = Object.values(ctx.instruments).some((i) => i && !i.symbol && i.name === line);
+    screen.holdings[byName ? line : line.split(/\s/)[0]] = { long: n(/Long ([\d,.]+)/), short: n(/Short ([\d,.]+)/) };
   }
 
   // ---- pending trades ----
