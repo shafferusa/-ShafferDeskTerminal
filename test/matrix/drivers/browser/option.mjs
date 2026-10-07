@@ -139,6 +139,25 @@ export const actions = {
   },
 
   /**
+   * Selling (or buying back) half of ONE option position of a strategy instance that holds other positions too:
+   * the "Close half" button beside the position on the contract's own ticket. Every other close is the shared path
+   * (the strategy instance's Close, or the Close button of a position there).
+   */
+  async close(ui, t, ctx, step, { previewAndConfirm, expectsRefusal }) {
+    if (!(step.scope === 'position' && step.percent === 50)) return undefined;
+    const lot = ctx.lot(step.lot);
+    const inst = ctx.inst(step.instrument || lot.instrument);
+    if (inst.family !== 'option') return undefined;
+    const s = await t.strategy(lot.strategyId);
+    const drawer = await openContract(ui, ctx, inst);
+    await ui.tab(drawer, 'Trade');
+    await ui.select(drawer, 'Account').selectOption({ label: s.unit.kind === 'treasury' ? 'Treasury' : s.unit.name });
+    const row = ui.section(drawer, 'Positions in this Account').locator('tbody tr').filter({ hasText: s.name }).first();
+    await row.waitFor();
+    return previewAndConfirm(ui, ctx, () => ui.button(row, 'Close half').click(), { expectsRefusal });
+  },
+
+  /**
    * Roll: the Roll dialog of the strategy instance (Manage, Roll). Every option position of the instance is
    * selected when the dialog opens; `positions` on the step narrows that. The new expiration is typed (no option
    * chain is supplied for the fixtures), the new strike only when one option is rolled alone; a futures position

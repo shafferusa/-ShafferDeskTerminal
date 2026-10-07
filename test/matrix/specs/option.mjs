@@ -1430,4 +1430,305 @@ const indexOption = {
   ],
 };
 
-export default [equityOption, etfOption, indexOption, optionOnFuture];
+// ---------------------------------------------------------------------------------------------
+// listed_option
+// ---------------------------------------------------------------------------------------------
+// A Eurex-listed put on a Xetra-listed German share, in euros, held by a Book that reports in US
+// dollars: 100 shares a contract, American, physical delivery. It is bought together with the shares
+// as a protective put (one package on the Strategies page), carried over the Easter closing days of
+// its market, adjusted for a 2-for-1 split of the share, half sold, and the rest exercised
+// automatically at expiry: the shares held with it are delivered at the adjusted strike.
+//
+// Calendars: the venue country is DE, so trading and settlement dates are worked out on TARGET.
+// Good Friday 3 April and Easter Monday 6 April 2026 are closed (New York is open on the Monday).
+// Premium settles T+1, shares T+2 (settlement.foreignCash).
+//
+// FX fixture: EUR/USD 1.10 at the start, 1.12 from 7 April. Every euro amount is a multiple of 0.50
+// so that it converts to exact cents at both rates.
+//   - Entries are converted when posted. Balances are converted at the current rate. The difference
+//     is the FX effect: it is neither realized nor unrealized P&L.
+//   - When the rate moves to 1.12 the Account holds 128,435 EUR of cash and positions that cost
+//     21,555 EUR, all booked at 1.10: (128,435 + 21,555) x 0.02 = 2,999.80 USD of FX effect. Later
+//     entries are booked at 1.12, so that figure does not change again.
+const EUR_PUT = 'RMB260417P40';
+const AWAITING_RMB = /Awaiting the 2026-04-17 fixing for RMB/;
+const listedOption = {
+  productId: 'listed_option',
+  title: 'Rheintal Maschinenbau 17 April 2026 40 put, Eurex-listed, American, 100 shares, physical delivery, in euros in a US dollar Book',
+  matrix: {
+    ticket: 'Strategies page (execution template Protective Put) for the opening package; the contract\'s Trade tab for the part sale (Close half on the position); then the trade preview',
+    requiredFields: ['Account', 'Execution template', 'Instrument', 'Shares', 'Expiration', 'Put strike'],
+    automaticInputs: [...OPTION_TICKET.automaticInputs, 'EUR/USD rate (FX fixture) for reporting-currency figures', 'contracts from the share quantity and the contract\'s deliverable (500 shares / 100)'],
+    manualInputs: ['stock split of the underlying (ratio, ex-date), recorded by hand on the share'],
+    settlement: 'Premium T+1 and shares T+2 on TARGET: the shares bought on Wednesday 1 April settle on Tuesday 7 April, after Good Friday and Easter Monday; cash settles in euros',
+    lifecycle: 'A whole-number forward split of the underlying adjusts the contract on its ex-date (contracts x2, strike / 2, contract size unchanged); expiry item on the expiration date; long put in the money: exercised automatically, shares held in the same strategy instance delivered at the strike (simulated delivery)',
+    accounting: 'Average premium in euros; every entry also stored in US dollars at the rate when posted; balances translated at the current rate, the difference reported as FX effect; premium realized on sale and on exercise',
+    collateral: 'None: a long option and the shares it protects reserve nothing',
+  },
+  start: APR(1),
+  settlementCheck: { lag: 1, holidays: ['2026-04-03', '2026-04-06'] }, // TARGET closing days at Easter 2026; checked for the option legs (the share legs settle T+2 and state no date in their previews)
+  book: {
+    ...book('Matrix listed option', { fees: { option: { perUnit: 1, minimum: 0, bps: 0 }, equity: { perUnit: 0.01, minimum: 5, bps: 0 } } }), // 1.00 EUR a contract; 0.01 EUR a share, at least 5.00 an order
+    capital: [{ ccy: 'USD', amount: 1_000_000 }, { ccy: 'EUR', amount: 200_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 500_000 }, { ccy: 'EUR', amount: 150_000 }] },
+  },
+  fx: { 'EUR/USD': 1.10 },
+  instruments: {
+    stock: { productId: 'common_stock', name: 'Rheintal Maschinenbau AG', symbol: 'RMB', marketView: 'FOREIGN_CASH', venue: 'Xetra', venueType: 'exchange', venueCountry: 'DE', issuer: 'Rheintal Maschinenbau AG', domicile: 'DE', underlyingGeo: 'DE', tradingCcy: 'EUR', terms: {} },
+    main: { productId: 'listed_option', name: 'RMB 17 April 2026 40 put', symbol: EUR_PUT, marketView: 'FOREIGN_DERIV', venue: 'Eurex', venueType: 'exchange', venueCountry: 'DE', underlyingGeo: 'DE', tradingCcy: 'EUR', underlying: 'stock', multiplier: 100,
+      terms: { right: 'P', strike: 40, expiration: '2026-04-17', exercise: 'american', settlement: 'physical', deliverable: { units: 100 } } },
+  },
+  quotes: {
+    stock: { bid: 41.24, ask: 41.26, last: 41.25, bidSize: 20000, askSize: 20000 },
+    main: { bid: 1.80, ask: 1.85, last: 1.82, bidSize: 500, askSize: 500 },
+  },
+  expectAtStart: {
+    ...START_STATE,
+    cash: {
+      account: { USD: { settled: 500_000, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 500_000 }, EUR: { settled: 150_000, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 150_000, availableToWithdraw: 150_000 } },
+      treasury: { USD: { settled: 500_000 }, EUR: { settled: 50_000 } },
+    },
+    nav: { account: 665_000, treasury: 555_000, book: 1_220_000 }, // 500,000 + 150,000 x 1.10; 500,000 + 50,000 x 1.10
+  },
+  steps: [
+    {
+      // Protective put, as the Strategies page sends it: buy 500 shares and 5 puts (500 / 100 a contract).
+      id: 'protective-put', covers: ['open', 'protective put'], action: 'package', as: 'protected', instrument: 'stock',
+      input: {
+        template: 'protective_put', underlyingId: '$inst:stock', origin: 'strategy_page', investmentStrategy: null, holdingPeriod: null, hedgeObjective: null,
+        mode: 'new', quantity: 500, hedgeRatio: 1, options: { expiration: '2026-04-17', strikes: { put: 40 }, contracts: null },
+        borrow: null, orderType: 'market', limitPrice: null, stopPrice: null, tif: 'day', financing: null,
+      },
+      strategyPage: { template: 'Protective Put / Long + Put Cover', underlying: 'stock', quantity: 500, expiration: '2026-04-17', strikes: { 'Put strike': 40 } },
+      expect: {
+        preview: {
+          blocking: 0, errors: [], template: 'protective_put',
+          legs: [
+            { kind: 'trade', action: 'buy', purpose: 'primary', instrument: 'stock', qty: 500, estimate: 41.26, model: 'quoted-bid-ask', priceSource: 'Test fixture', calendar: 'TARGET', cash: -20_630, fees: 5 }, // 500 x 41.26 (the ask); 500 x 0.01
+            { kind: 'trade', action: 'buy', purpose: 'hedge', instrument: 'main', qty: 5, estimate: 1.85, model: 'quoted-bid-ask', settleDate: '2026-04-02', calendar: 'TARGET', cash: -925, fees: 5 }, // 5 x 1.85 (the ask) x 100; 5 x 1.00
+          ],
+          cash: { EUR: { purchases: 21_555, fees: 10, reserved: 0, required: 21_565, available: 150_000, shortfall: 0, netCash: -21_565 } },
+          netPremium: { amount: 925, ccy: 'EUR', type: 'debit' },
+        },
+        result: { status: 'open', orders: [
+          { kind: 'trade', action: 'buy', instrument: 'stock', status: 'filled', filledQty: 500, avgPrice: 41.26, fills: [{ qty: 500, price: 41.26, settleDate: '2026-04-07' }] }, // T+2 on TARGET: Thursday 2 (1); Friday 3 and Monday 6 are closed; Tuesday 7 (2)
+          { kind: 'trade', action: 'buy', instrument: 'main', status: 'filled', filledQty: 5, avgPrice: 1.85, fills: [{ qty: 5, price: 1.85, settleDate: '2026-04-02' }] },
+        ] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 500 RMB @ 41.26 EUR', owner: 'account', date: '2026-04-01' }, { type: 'trade.fill', summary: 'Bought 5 RMB260417P40 @ 1.85 EUR', owner: 'account' }],
+        cash: { account: { EUR: { settled: 150_000, unsettled: -21_565, availableToTrade: 128_435, availableToWithdraw: 128_435 }, USD: { settled: 500_000, availableToTrade: 500_000 } } }, // 20,635 for the shares and 930 for the puts
+        positions: [
+          { instrument: 'main', lot: 'protected', owner: 'account', direction: 'long', qty: 5, avgCost: 1.85, cost: 925, price: 1.82, value: 910, unrealized: -15, priceSource: 'Test fixture' }, // euros: 5 x 1.82 x 100
+          { instrument: 'stock', lot: 'protected', owner: 'account', direction: 'long', qty: 500, avgCost: 41.26, cost: 20_630, price: 41.25, value: 20_625, unrealized: -5 },
+        ],
+        holdings: { main: { long: 5, short: 0, net: 5 }, stock: { long: 500, short: 0, net: 500 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-04-02', amount: -930, ccy: 'EUR', into: 'cash' }, { instrument: 'stock', owner: 'account', dueDate: '2026-04-07', amount: -20_635, ccy: 'EUR', into: 'cash' }],
+        lifecycle: [{ type: 'option.expiry', instrument: 'main', dueDate: '2026-04-17', status: 'pending' }],
+        // In US dollars at 1.10: commission 10 x 1.10 = 11.00; unrealized (-15 - 5) x 1.10 = -22.00.
+        pnl: { account: { realized: 0, dividends: 0, commissions: -11, fees: 0, borrowFunding: 0, unrealized: -22, fx: 0, total: -33 } },
+        nav: { account: 664_967, treasury: 555_000, book: 1_219_967 },
+        balance: { account: {
+          cash: 665_000, positions: 23_688.50, payable: 23_721.50, assets: 688_688.50, liabilities: 23_721.50, netAssets: 664_967, // (910 + 20,625) x 1.10; 21,565 x 1.10
+          local: { EUR: { cash: 150_000, positions: 21_535, payable: 21_565 }, USD: { cash: 500_000 } },
+        } },
+      },
+    },
+    {
+      id: 'settle-premium', covers: 'settlement', action: 'clock', to: APR(2),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 930.00 EUR from settled cash', cash: { EUR: -930 }, date: '2026-04-02' }],
+        cash: { account: { EUR: { settled: 149_070, unsettled: -20_635, availableToTrade: 128_435, availableToWithdraw: 128_435 } } },
+        pending: [{ instrument: 'stock', owner: 'account', dueDate: '2026-04-07', amount: -20_635, ccy: 'EUR', into: 'cash' }],
+        balance: { account: { cash: 663_977, payable: 22_698.50, assets: 687_665.50, liabilities: 22_698.50, local: { EUR: { cash: 149_070, payable: 20_635 } } } }, // 500,000 + 149,070 x 1.10; 20,635 x 1.10
+      },
+    },
+    { id: 'good-friday', covers: 'holiday', action: 'clock', to: APR(3), expect: {} }, // TARGET (and New York) closed: nothing settles
+    { id: 'easter-monday', covers: 'holiday', action: 'clock', to: APR(6), expect: {} }, // New York is open, TARGET is not: the share purchase is still pending
+    {
+      id: 'settle-shares', covers: ['settlement', 'holiday'], action: 'clock', to: APR(7),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 20,635.00 EUR from settled cash', cash: { EUR: -20_635 }, date: '2026-04-07' }],
+        cash: { account: { EUR: { settled: 128_435, unsettled: 0, availableToTrade: 128_435, availableToWithdraw: 128_435 } } },
+        pending: [],
+        balance: { account: { cash: 641_278.50, payable: null, assets: 664_967, liabilities: 0, local: { EUR: { cash: 128_435, payable: null } } } }, // 500,000 + 128,435 x 1.10
+      },
+    },
+    {
+      // The euro rises to 1.12. Account: (128,435 cash + 21,555 of position cost) x 0.02 = 2,999.80 of FX effect;
+      // unrealized -20 EUR is now -22.40. Treasury: 50,000 x 0.02 = 1,000.
+      id: 'euro-rises', covers: 'fx', action: 'fx_rate', pair: 'EUR/USD', rate: 1.12,
+      expect: {
+        pnl: { account: { unrealized: -22.40, fx: 2_999.80, total: 2_966.40 }, treasury: { fx: 1_000, total: 1_000 } }, // -11 - 22.40 + 2,999.80
+        nav: { account: 667_966.40, treasury: 556_000, book: 1_223_966.40 }, // 500,000 + (128,435 + 21,535) x 1.12; 500,000 + 50,000 x 1.12
+        balance: { account: { cash: 643_847.20, positions: 24_119.20, assets: 667_966.40, netAssets: 667_966.40 } }, // 500,000 + 128,435 x 1.12; 21,535 x 1.12
+      },
+    },
+    {
+      id: 'stock-falls', action: 'quote', instrument: 'stock', quote: { bid: 38.50, ask: 38.54, last: 38.52, bidSize: 20000, askSize: 20000 },
+      expect: {
+        positions: [{ instrument: 'main', qty: 5 }, { instrument: 'stock', lot: 'protected', qty: 500, price: 38.52, value: 19_260, unrealized: -1_370 }], // 500 x 38.52 - 20,630
+        pnl: { account: { unrealized: -1_551.20, total: 1_437.60 } }, // (-15 - 1,370) x 1.12; -11 - 1,551.20 + 2,999.80
+        nav: { account: 666_437.60, book: 1_222_437.60 },
+        balance: { account: { positions: 22_590.40, assets: 666_437.60, netAssets: 666_437.60, local: { EUR: { positions: 20_170 } } } },
+      },
+    },
+    {
+      id: 'put-premium-up', action: 'quote', instrument: 'main', quote: { bid: 2.60, ask: 2.70, last: 2.65, bidSize: 500, askSize: 500 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'protected', qty: 5, price: 2.65, value: 1_325, unrealized: 400 }, { instrument: 'stock', qty: 500 }], // 5 x 2.65 x 100 - 925
+        pnl: { account: { unrealized: -1_086.40, total: 1_902.40 } }, // (400 - 1,370) x 1.12
+        nav: { account: 666_902.40, book: 1_222_902.40 },
+        balance: { account: { positions: 23_055.20, assets: 666_902.40, netAssets: 666_902.40, local: { EUR: { positions: 20_585 } } } },
+      },
+    },
+    { id: 'split-recorded', covers: 'split', action: 'corporate_action', instrument: 'stock', type: 'split', exDate: '2026-04-13', ratioNum: 2, ratioDen: 1, expect: {} },
+    {
+      // Ex-date. The shares double and keep their cost. The put is ADJUSTED, not flagged: 5 contracts at 40 become
+      // 10 contracts at 20, still 100 shares each, cost unchanged (average premium 925 / 1,000 = 0.925).
+      // Quotes are still the pre-split ones until the data source sends adjusted prices in the next two steps.
+      id: 'split-applied', covers: ['split', 'contract adjustment'], action: 'clock', to: APR(13),
+      expect: {
+        events: [
+          { type: 'split', summary: '2-for-1 split of RMB: 500 became 1,000; cost basis unchanged', owner: 'account' },
+          { type: 'split.option_adjustment', summary: 'Option adjusted for the 2-for-1 split of RMB: contracts x2, strike divided by 2', owner: 'account' },
+        ],
+        positions: [
+          { instrument: 'main', lot: 'protected', qty: 10, cost: 925, avgCost: 0.925, price: 2.65, value: 2_650, unrealized: 1_725 },
+          { instrument: 'stock', lot: 'protected', qty: 1000, cost: 20_630, avgCost: 20.63, price: 38.52, value: 38_520, unrealized: 17_890 },
+        ],
+        holdings: { main: { long: 10, short: 0, net: 10 }, stock: { long: 1000, short: 0, net: 1000 } },
+        pnl: { account: { unrealized: 21_968.80, total: 24_957.60 } }, // 19,615 x 1.12
+        nav: { account: 689_957.60, book: 1_245_957.60 },
+        balance: { account: { positions: 46_110.40, assets: 689_957.60, netAssets: 689_957.60, local: { EUR: { positions: 41_170 } } } },
+      },
+    },
+    {
+      id: 'stock-quote-post-split', action: 'quote', instrument: 'stock', quote: { bid: 19.25, ask: 19.27, last: 19.26, bidSize: 20000, askSize: 20000 },
+      expect: {
+        positions: [{ instrument: 'main', qty: 10 }, { instrument: 'stock', lot: 'protected', qty: 1000, price: 19.26, value: 19_260, unrealized: -1_370 }],
+        pnl: { account: { unrealized: 397.60, total: 3_386.40 } }, // (1,725 - 1,370) x 1.12
+        nav: { account: 668_386.40, book: 1_224_386.40 },
+        balance: { account: { positions: 24_539.20, assets: 668_386.40, netAssets: 668_386.40, local: { EUR: { positions: 21_910 } } } },
+      },
+    },
+    {
+      id: 'put-quote-post-split', action: 'quote', instrument: 'main', quote: { bid: 1.30, ask: 1.36, last: 1.33, bidSize: 500, askSize: 500 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'protected', qty: 10, price: 1.33, value: 1_330, unrealized: 405 }, { instrument: 'stock', qty: 1000 }], // 10 x 1.33 x 100 - 925
+        pnl: { account: { unrealized: -1_080.80, total: 1_908 } }, // (405 - 1,370) x 1.12
+        nav: { account: 666_908, book: 1_222_908 },
+        balance: { account: { positions: 23_060.80, assets: 666_908, netAssets: 666_908, local: { EUR: { positions: 20_590 } } } },
+      },
+    },
+    {
+      // Sell to close half of the puts: Close half on the position, on the contract's ticket. 5 x 1.30 x 100 = 650.
+      // Cost removed at the average premium: 5 x 0.925 x 100 = 462.50. Realized 187.50 EUR = 210.00 USD at 1.12.
+      id: 'sell-half-the-puts', covers: 'reduce', action: 'close', lot: 'protected', instrument: 'main', scope: 'position', percent: 50,
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 5, estimate: 1.30, model: 'quoted-bid-ask', settleDate: '2026-04-14', calendar: 'TARGET', cash: 650, fees: 5 }] },
+        result: { status: 'open', orders: [{ action: 'sell', instrument: 'main', status: 'filled', filledQty: 5, avgPrice: 1.30 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 5 RMB260417P40 @ 1.30 EUR (realized 187.50 EUR)' }],
+        cash: { account: { EUR: { settled: 128_435, unsettled: 645, availableToTrade: 129_080, availableToWithdraw: 128_435 } } },
+        positions: [
+          { instrument: 'main', lot: 'protected', qty: 5, cost: 462.50, avgCost: 0.925, price: 1.33, value: 665, unrealized: 202.50 },
+          { instrument: 'stock', lot: 'protected', qty: 1000, value: 19_260, unrealized: -1_370 },
+        ],
+        holdings: { main: { long: 5, short: 0, net: 5 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-04-14', amount: 645, ccy: 'EUR', into: 'cash' }],
+        pnl: { account: { realized: 210, commissions: -16.60, unrealized: -1_307.60, fx: 2_999.80, total: 1_885.60 } }, // 11 + 5 x 1.12; (202.50 - 1,370) x 1.12
+        nav: { account: 666_885.60, book: 1_222_885.60 },
+        balance: { account: { cash: 643_847.20, receivable: 722.40, positions: 22_316, assets: 666_885.60, netAssets: 666_885.60, local: { EUR: { receivable: 645, positions: 19_925 } } } }, // 645 x 1.12; (665 + 19,260) x 1.12
+      },
+    },
+    {
+      id: 'settle-part-sale', covers: 'settlement', action: 'clock', to: APR(14),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 645.00 EUR into settled cash', cash: { EUR: 645 } }],
+        cash: { account: { EUR: { settled: 129_080, unsettled: 0, availableToTrade: 129_080, availableToWithdraw: 129_080 } } },
+        pending: [],
+        balance: { account: { cash: 644_569.60, receivable: null, local: { EUR: { cash: 129_080, receivable: null } } } }, // 500,000 + 129,080 x 1.12
+      },
+    },
+    { id: 'expiry-close-known-later', action: 'close_price', instrument: 'stock', date: '2026-04-17', value: 18.60, expect: {} },
+    {
+      id: 'expiry-morning', covers: 'expiry', action: 'clock', to: APR(17),
+      expect: { lifecycle: [{ type: 'option.expiry', instrument: 'main', dueDate: '2026-04-17', status: 'blocked', reason: AWAITING_RMB }] },
+    },
+    {
+      id: 'stock-on-expiry-morning', action: 'quote', instrument: 'stock', quote: { bid: 18.60, ask: 18.64, last: 18.62, bidSize: 20000, askSize: 20000 },
+      expect: {
+        positions: [{ instrument: 'main', qty: 5 }, { instrument: 'stock', lot: 'protected', qty: 1000, price: 18.62, value: 18_620, unrealized: -2_010 }],
+        pnl: { account: { unrealized: -2_024.40, total: 1_168.80 } }, // (202.50 - 2,010) x 1.12; 210 - 16.60 - 2,024.40 + 2,999.80
+        nav: { account: 666_168.80, book: 1_222_168.80 },
+        balance: { account: { positions: 21_599.20, assets: 666_168.80, netAssets: 666_168.80, local: { EUR: { positions: 19_285 } } } },
+      },
+    },
+    {
+      id: 'put-on-expiry-morning', action: 'quote', instrument: 'main', quote: { bid: 1.36, ask: 1.42, last: 1.39, bidSize: 500, askSize: 500 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'protected', qty: 5, price: 1.39, value: 695, unrealized: 232.50 }, { instrument: 'stock', qty: 1000 }],
+        pnl: { account: { unrealized: -1_990.80, total: 1_202.40 } }, // (232.50 - 2,010) x 1.12
+        nav: { account: 666_202.40, book: 1_222_202.40 },
+        balance: { account: { positions: 21_632.80, assets: 666_202.40, netAssets: 666_202.40, local: { EUR: { positions: 19_315 } } } },
+      },
+    },
+    {
+      // 17:30 New York on the expiration date. The share closed at 18.60, below the adjusted strike of 20: the 5 puts
+      // are exercised automatically. Their remaining premium, 462.50 EUR, is realized as a loss (518.00 USD), and 500
+      // of the 1,000 shares held with them are delivered at 20: 10,000 EUR due T+2, Tuesday 21 April. Those shares
+      // cost 500 x 20.63 = 10,315: realized -315 EUR (-352.80 USD).
+      id: 'expiry-put-exercised', covers: ['expiry', 'exercise'], action: 'clock', to: APR(17, '17:30'),
+      expect: {
+        events: [
+          { type: 'option.exercised', summary: 'Exercised: 5 RMB260417P40 at strike 20', owner: 'account', date: '2026-04-17' },
+          { type: 'option.delivery', summary: /^Simulated delivery: delivered 500 RMB at strike 20 on exercise of RMB260417P40/, owner: 'account', date: '2026-04-17' },
+        ],
+        cash: { account: { EUR: { settled: 129_080, unsettled: 10_000, availableToTrade: 139_080, availableToWithdraw: 129_080 } } },
+        positions: [{ instrument: 'stock', lot: 'protected', owner: 'account', direction: 'long', qty: 500, cost: 10_315, avgCost: 20.63, price: 18.62, value: 9_310, unrealized: -1_005 }],
+        holdings: { main: null, stock: { long: 500, short: 0, net: 500 } },
+        pending: [{ instrument: 'stock', owner: 'account', dueDate: '2026-04-21', amount: 10_000, ccy: 'EUR', into: 'cash' }],
+        lifecycle: [],
+        alerts: ['hedge.review'], // the put was the hedge leg of the package: with it gone, the 500 shares left are flagged for a hedge review
+        pnl: { account: { realized: -660.80, unrealized: -1_125.60, fx: 2_999.80, total: 1_196.80 } }, // 210 - 518 - 352.80; -1,005 x 1.12
+        nav: { account: 666_196.80, book: 1_222_196.80 },
+        balance: { account: { cash: 644_569.60, receivable: 11_200, positions: 10_427.20, assets: 666_196.80, netAssets: 666_196.80, local: { EUR: { receivable: 10_000, positions: 9_310 } } } },
+      },
+    },
+    {
+      id: 'settle-delivery', covers: 'settlement', action: 'clock', to: APR(21),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 10,000.00 EUR into settled cash', cash: { EUR: 10_000 } }],
+        cash: { account: { EUR: { settled: 139_080, unsettled: 0, availableToTrade: 139_080, availableToWithdraw: 139_080 } } },
+        pending: [],
+        balance: { account: { cash: 655_769.60, receivable: null, local: { EUR: { cash: 139_080, receivable: null } } } }, // 500,000 + 139,080 x 1.12
+      },
+    },
+    {
+      id: 'sell-remaining-shares', covers: 'close', action: 'ticket', ticketOf: 'equity', instrument: 'stock', side: 'sell', qty: 500, from: 'protected',
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'sell', instrument: 'stock', qty: 500, estimate: 18.60, model: 'quoted-bid-ask', calendar: 'TARGET', cash: 9_300, fees: 5 }] }, // 500 x 18.60 (the bid)
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 500, avgPrice: 18.60, fills: [{ qty: 500, price: 18.60, settleDate: '2026-04-23' }] }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 500 RMB @ 18.60 EUR (realized -1,015.00 EUR)' }], // 9,300 - 10,315
+        cash: { account: { EUR: { settled: 139_080, unsettled: 9_295, availableToTrade: 148_375, availableToWithdraw: 139_080 } } },
+        positions: [],
+        holdings: { stock: null },
+        alerts: [], // the strategy instance is closed: nothing is left to review
+        pending: [{ instrument: 'stock', owner: 'account', dueDate: '2026-04-23', amount: 9_295, ccy: 'EUR', into: 'cash' }],
+        pnl: { account: { realized: -1_797.60, commissions: -22.20, unrealized: 0, fx: 2_999.80, total: 1_180 } }, // -660.80 - 1,015 x 1.12; 16.60 + 5.60
+        nav: { account: 666_180, book: 1_222_180 },
+        balance: { account: { cash: 655_769.60, receivable: 10_410.40, positions: null, assets: 666_180, netAssets: 666_180, local: { EUR: { receivable: 9_295, positions: null } } } },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: APR(23),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 9,295.00 EUR into settled cash', cash: { EUR: 9_295 } }],
+        // Euros: 150,000 - 21,565 + 645 + 10,000 + 9,295 = 148,375. In dollars: 500,000 + 148,375 x 1.12 = 666,180.
+        cash: { account: { EUR: { settled: 148_375, unsettled: 0, availableToTrade: 148_375, availableToWithdraw: 148_375 }, USD: { settled: 500_000 } }, treasury: { USD: { settled: 500_000 }, EUR: { settled: 50_000 } } },
+        pending: [],
+        balance: { account: { cash: 666_180, receivable: null, assets: 666_180, liabilities: 0, netAssets: 666_180, local: { EUR: { cash: 148_375, receivable: null } } } },
+      },
+    },
+  ],
+};
+
+export default [listedOption, equityOption, etfOption, indexOption, optionOnFuture];
