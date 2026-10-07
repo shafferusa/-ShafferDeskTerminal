@@ -138,6 +138,19 @@ export const bond = {
   },
   qtyStep: (inst) => inst.terms?.minDenomination || 1,
   settleDate: (app, inst, tradeDate, book) => standardSettleDate(inst, tradeDate, book),
+  /**
+   * A debt security trades only for settlement before its maturity date: on that date it is redeemed, and after it
+   * there is nothing left to deliver. The preview blocks on this and an order refuses to fill on it. (A trade on the
+   * last days before maturity can still state an earlier settlement on its ticket.)
+   */
+  tradeRefusal(app, { inst, settleDate }) {
+    const m = inst.terms?.perpetual ? null : inst.terms?.maturity;
+    if (!m || !settleDate || settleDate < m) return null;
+    const name = inst.symbol || inst.name;
+    return app.clock.today() >= m
+      ? { code: 'matured', message: `${name} matured on ${m} and was redeemed. It can no longer be traded.` }
+      : { code: 'matured', message: `${name} matures on ${m}; this trade would settle on ${settleDate}, when it is redeemed. A trade must settle before maturity: state an earlier settlement date, or hold to redemption.` };
+  },
   schedTerms,
   accruedAmount(inst, qty, date) {
     const ai = accruedPer100(schedTerms(inst), date);

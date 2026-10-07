@@ -10,3 +10,4 @@
 - 2026-10-07T02:53Z | l1 | +0.2 | unsecured_loan passes at engine, API and browser (Account-owned borrowing, three views, set rate, part and full repayment; loan browser driver built)
 - 2026-10-07T02:56Z | fu1 | +0.2 | equity_future passes at engine, API and browser
 - 2026-10-07T02:56Z | s1 | +0.2 | interest_rate_swap passes at engine, API and browser
+- 2026-10-07T02:57Z | b1 | +0.2 | treasury_bill passes at engine, API and browser (Treasury-owned, redeemed at par); trades settling on or after maturity are now refused

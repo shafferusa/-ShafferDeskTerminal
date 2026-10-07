@@ -14,3 +14,18 @@
    81,590 x 0.045 x 92 / 360 = 938.285 exactly; the Terminal paid 938.28 because the day-count fraction 92/360 is a
    binary float (the product is 938.28499...). Half-up gives 938.29. One cent; the convention for exact halves should be
    decided and the amount computed as notional x rate x days / 360 in that order (or in integer minor units).
+
+## b1 (bond family, government group), 2026-10-07: one finding outside my files, not fixed
+
+1. **Bond prices are displayed to three decimals, so a price in 32nds or 64ths is not shown as quoted**
+   (`web/lib/core.js` `fmtPrice`: at most 3 decimals for a value of 10 or more; used by the trade preview's "Estimated
+   fill" and "reference", the ticket's bid / ask, the Positions table's average cost and price, the instrument drawer).
+   A Treasury note filled at 99.53125 (99-17) shows "99.531" in the preview and in Positions; 99.515625 shows "99.516".
+   Every cash figure beside it is right (995,312.50 for 1,000,000 face), and the history line prints the full price
+   ("Bought 1,000,000 UST-4-NOV30 @ 99.53125 USD"), so nothing is mis-booked; but the displayed price times the face
+   does not reproduce the displayed principal (1,000,000 x 99.531% = 995,310.00). What is right: a price in % of par
+   shown with the decimals it has (up to 6, as the server's `fmtPx` does). Not fixed because `fmtPrice` has no
+   instrument context and is called from the preview, Accounting, the Marketplaces and the instrument drawer, all in
+   other people's areas: it needs a units-aware variant (the leg and the position both carry `priceUnits`).
+   Reproduce: `npm run test:browser -- --product=treasury_note --headed`, or register any bond, quote it at 99.53125
+   and open the buy preview. The matrix compares a displayed figure to the decimals shown, so this does not fail a step.

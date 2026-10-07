@@ -41,6 +41,15 @@ const EST = (d) => `${d}T15:00:00.000Z`;
 const FILL = { halfSpreadBps: { bond: 3 }, slippageBps: 0, participation: 1, maxQuoteAgeSec: 120, allowEndOfDayFills: false, maxPreviewDriftPct: 0.5 };
 const SHORT = { collateralPct: 1.02, marginPct: 0.3 };
 
+/** State before any trade: capital deposited in Treasury, part of it funded to the Account (reporting currency amounts). */
+const startState = (account, treasury) => ({
+  positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [],
+  nav: { account, treasury, book: account + treasury },
+  provisional: { account: false, book: false },
+  failed: { orders: 0, settlements: 0, lifecycle: 0 },
+});
+const usdCash = (amount) => ({ USD: { settled: amount, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: amount } });
+
 const BOND_TICKET = {
   ticket: 'Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview',
   requiredFields: ['Account', 'Action', 'Face amount'],
@@ -84,16 +93,7 @@ const treasuryNote = {
       terms: { couponType: 'fixed', couponRate: 0.04, frequency: 2, maturity: '2030-11-15', issueDate: '2023-11-15', dayCount: 'ACT/ACT', redemption: 100, minDenomination: 100 } },
   },
   quotes: { main: { bid: 99.5, ask: 99.53125, last: 99.515625, bidSize: 50_000_000, askSize: 50_000_000 } }, // 99-16, 99-17, 99-16+
-  expectAtStart: {
-    cash: {
-      account: { USD: { settled: 3_000_000, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 3_000_000 } },
-      treasury: { USD: { settled: 2_000_000, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 2_000_000 } },
-    },
-    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [],
-    nav: { account: 3_000_000, treasury: 2_000_000, book: 5_000_000 },
-    provisional: { account: false, book: false },
-    failed: { orders: 0, settlements: 0, lifecycle: 0 },
-  },
+  expectAtStart: { ...startState(3_000_000, 2_000_000), cash: { account: usdCash(3_000_000), treasury: usdCash(2_000_000) } },
   steps: [
     {
       id: 'odd-denomination', covers: 'minimum denomination', action: 'ticket', instrument: 'main', side: 'buy', qty: 1_000_050,
@@ -302,4 +302,207 @@ const treasuryNote = {
   ],
 };
 
-export default [treasuryNote];
+
+// ---------------------------------------------------------------------------------------------
+// treasury_bill
+// ---------------------------------------------------------------------------------------------
+// A 13-week US Treasury bill held by TREASURY (the Book's own liquidity, not an Account's trade):
+// a discount instrument with no coupon, bought below par, part sold, the rest held to maturity
+// and redeemed at par. Bills are quoted in the market as a bank discount rate on ACT/360; the
+// Terminal takes prices in percent of par, so each quote below is converted by hand:
+//     price = 100 - discount rate (%) x days from settlement to maturity / 360.
+// T+1 on the US bond calendar; multiples of 100 face. Commission: 5.00 per million face.
+// The discount earned is price gain (unrealized while held, realized at sale or redemption);
+// the Terminal does not accrete a discount into interest income.
+const treasuryBill = {
+  productId: 'treasury_bill',
+  title: 'US Treasury bill due 10 December 2026, held by Treasury: bought at a discount, part sold, the rest redeemed at par',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account (Treasury)', 'Action', 'Face amount', 'Settlement, when a trade must settle sooner than the convention'],
+    manualInputs: ['the bank discount rate is converted to a price in % of par by hand (the Terminal has no discount-yield quotation)', 'same-day settlement stated on the ticket for a purchase on the day before maturity'],
+    settlement: 'T+1 on the US bond calendar; a trade must settle before the maturity date, so the day before maturity only a same-day settlement stated on the ticket is accepted',
+    lifecycle: 'No coupon and no accrual; redemption at par on the maturity date, automatic; a trade in the matured bill is refused',
+    accounting: 'Clean cost at average; no accrued interest; discount earned is unrealized P&L while held and realized P&L at sale and at redemption; owned by Treasury, so the figures are Treasury\'s and the Book\'s, not an Account\'s',
+    collateral: 'None for a long position; a short sale is refused without securities-borrow data',
+  },
+  start: EST('2026-11-09'), // Monday
+  settlementCheck: { lag: 1, holidays: ['2026-11-11', '2026-11-26'] }, // Veterans Day, Thanksgiving
+  book: {
+    name: 'Matrix Treasury bill', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 5_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 500_000 }] }, // the Account stays idle: Treasury trades
+    settings: { fees: { bond: { perUnit: 0.000005, minimum: 0, bps: 0 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'treasury_bill', name: 'US Treasury Bill 10-Dec-2026', symbol: 'USTB-10DEC26', marketView: 'US_CASH', venueType: 'otc', issuer: 'United States Treasury', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      terms: { couponType: 'zero', maturity: '2026-12-10', issueDate: '2026-09-10', dayCount: 'ACT/360', redemption: 100, minDenomination: 100 } },
+  },
+  // Settlement 10 Nov, 30 days to maturity. Bid 4.32% discount: 100 - 4.32 x 30/360 = 99.64. Ask 4.29%: 99.6425. Last 4.305%: 99.64125.
+  quotes: { main: { bid: 99.64, ask: 99.6425, last: 99.64125, bidSize: 50_000_000, askSize: 50_000_000 } },
+  expectAtStart: { ...startState(500_000, 4_500_000), cash: { account: usdCash(500_000), treasury: usdCash(4_500_000) } },
+  steps: [
+    {
+      id: 'short-without-borrow', covers: 'short', action: 'ticket', instrument: 'main', side: 'sell_short', qty: 100_000, owner: 'treasury',
+      status: 'blocked', reason: 'No borrow availability or fee is supplied for the bill and none was stated: a short sale cannot proceed without a securities borrow.',
+      expect: { refused: 'no borrow availability data for USTB-10DEC26' },
+    },
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 2_000_000, as: 'lot', owner: 'treasury',
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 2_000_000, estimate: 99.6425, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2026-11-10', calendar: 'USBOND',
+            gross: 1_992_850, // 2,000,000 x 99.6425 / 100
+            accrued: 0, cash: -1_992_850, fees: 10 }], // 2,000,000 x 0.000005
+          cash: { USD: { purchases: 1_992_850, fees: 10, required: 1_992_860, available: 4_500_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 2_000_000, avgPrice: 99.6425, fills: [{ qty: 2_000_000, price: 99.6425, model: 'quoted-bid-ask', settleDate: '2026-11-10', source: 'Test fixture', status: 'simulated' }] }] },
+        events: [{ type: 'strategy.submitted', owner: 'treasury' }, { type: 'trade.fill', summary: 'Bought 2,000,000 USTB-10DEC26 @ 99.6425 USD', owner: 'treasury', date: '2026-11-09' }],
+        cash: { treasury: { USD: { settled: 4_500_000, unsettled: -1_992_860, availableToTrade: 2_507_140 } }, account: { USD: { settled: 500_000, availableToTrade: 500_000 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'treasury', direction: 'long', qty: 2_000_000, avgCost: 99.6425, cost: 1_992_850, price: 99.64125,
+          value: 1_992_825, // 2,000,000 x 99.64125 / 100
+          unrealized: -25, accrued: 0, priceSource: 'Test fixture' }],
+        holdings: { main: { long: 2_000_000, short: 0, net: 2_000_000 } },
+        pending: [{ instrument: 'main', owner: 'treasury', dueDate: '2026-11-10', amount: -1_992_860, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'bond.maturity', instrument: 'main', dueDate: '2026-12-10', status: 'pending' }], // a Thursday; no coupon is scheduled
+        pnl: {
+          account: { realized: 0, couponInterest: 0, commissions: 0, unrealized: 0, total: 0 },
+          book: { realized: 0, couponInterest: 0, commissions: -10, fees: 0, borrowFunding: 0, unrealized: -25, total: -35 },
+        },
+        nav: { account: 500_000, treasury: 4_499_965, book: 4_999_965 }, // 4,500,000 - 10 - 25
+        balance: {
+          account: { cash: 500_000, assets: 500_000, liabilities: 0, netAssets: 500_000 },
+          book: { cash: 5_000_000, positions: 1_992_825, payable: 1_992_860, assets: 6_992_825, liabilities: 1_992_860, netAssets: 4_999_965 },
+        },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EST('2026-11-10'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 1,992,860.00 USD from settled cash', cash: { USD: -1_992_860 }, owner: 'treasury', date: '2026-11-10' }],
+        cash: { treasury: { USD: { settled: 2_507_140, unsettled: 0, availableToTrade: 2_507_140 } } },
+        pending: [],
+        balance: { book: { cash: 3_007_140, payable: null, assets: 4_999_965, liabilities: 0 } }, // 2,507,140 + the Account's 500,000
+      },
+    },
+    { id: 'treasury-screens', covers: 'open', action: 'owner_screens', owner: 'treasury', expect: {} },
+    // Two weeks pass (Veterans Day in between). A bill has no coupon: nothing accrues and nothing is posted.
+    { id: 'two-weeks-on', action: 'clock', to: EST('2026-11-23'), expect: { events: [] } },
+    {
+      // Settlement 24 Nov, 16 days to maturity. Bid 4.3875% discount: 100 - 4.3875 x 16/360 = 99.805. Ask 4.33125%: 99.8075. Last 4.359375%: 99.80625.
+      id: 'quote-pull-to-par', action: 'quote', instrument: 'main', quote: { bid: 99.805, ask: 99.8075, last: 99.80625, bidSize: 50_000_000, askSize: 50_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'treasury', qty: 2_000_000, price: 99.80625, value: 1_996_125, unrealized: 3_275 }], // 1,996,125 - 1,992,850
+        pnl: { book: { unrealized: 3_275, total: 3_265 } },
+        nav: { treasury: 4_503_265, book: 5_003_265 },
+        balance: { book: { positions: 1_996_125, assets: 5_003_265, netAssets: 5_003_265 } },
+      },
+    },
+    {
+      id: 'reduce', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 500_000, from: 'lot', owner: 'treasury',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 500_000, estimate: 99.805, settleDate: '2026-11-24',
+          gross: 499_025, // 500,000 x 99.805 / 100
+          accrued: 0, cash: 499_025, fees: 2.50 }] }, // 500,000 x 0.000005
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 500_000, avgPrice: 99.805 }] },
+        // Cost removed at the average: 500,000 x 99.6425% = 498,212.50. Realized 499,025 - 498,212.50 = 812.50: discount earned on the part sold.
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 500,000 USTB-10DEC26 @ 99.805 USD (realized 812.50 USD)', owner: 'treasury' }],
+        cash: { treasury: { USD: { settled: 2_507_140, unsettled: 499_022.50, availableToTrade: 3_006_162.50 } } }, // 499,025 - 2.50
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'treasury', qty: 1_500_000, cost: 1_494_637.50, avgCost: 99.6425, price: 99.80625,
+          value: 1_497_093.75, // 1,500,000 x 99.80625 / 100
+          unrealized: 2_456.25 }],
+        holdings: { main: { long: 1_500_000, short: 0, net: 1_500_000 } },
+        pending: [{ instrument: 'main', owner: 'treasury', dueDate: '2026-11-24', amount: 499_022.50, into: 'cash' }],
+        pnl: { book: { realized: 812.50, commissions: -12.50, unrealized: 2_456.25, total: 3_256.25 } },
+        nav: { treasury: 4_503_256.25, book: 5_003_256.25 },
+        balance: { book: { cash: 3_007_140, receivable: 499_022.50, positions: 1_497_093.75, assets: 5_003_256.25, liabilities: 0, netAssets: 5_003_256.25 } },
+      },
+    },
+    {
+      id: 'settle-reduce', covers: 'settlement', action: 'clock', to: EST('2026-11-24'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 499,022.50 USD into settled cash', cash: { USD: 499_022.50 }, owner: 'treasury' }],
+        cash: { treasury: { USD: { settled: 3_006_162.50, unsettled: 0, availableToTrade: 3_006_162.50 } } },
+        pending: [],
+        balance: { book: { cash: 3_506_162.50, receivable: null } },
+      },
+    },
+    // Wednesday 9 December, the day before maturity (Thanksgiving, 26 Nov, has passed with nothing to post).
+    { id: 'day-before-maturity', action: 'clock', to: EST('2026-12-09'), expect: { events: [] } },
+    {
+      // One day to maturity. Last 4.32% discount: 100 - 4.32 x 1/360 = 99.988. Bid 4.50%: 99.9875. Ask 4.14%: 99.9885.
+      id: 'quote-last-day', action: 'quote', instrument: 'main', quote: { bid: 99.9875, ask: 99.9885, last: 99.988, bidSize: 50_000_000, askSize: 50_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'treasury', qty: 1_500_000, price: 99.988, value: 1_499_820, unrealized: 5_182.50 }], // 1,499,820 - 1,494,637.50
+        pnl: { book: { unrealized: 5_182.50, total: 5_982.50 } }, // 812.50 - 12.50 + 5,182.50
+        nav: { treasury: 4_505_982.50, book: 5_005_982.50 },
+        balance: { book: { positions: 1_499_820, assets: 5_005_982.50, netAssets: 5_005_982.50 } },
+      },
+    },
+    {
+      // A regular trade today would settle tomorrow, on the maturity date, when the bill is redeemed and cannot be delivered.
+      id: 'buy-regular-settlement', covers: 'maturity', action: 'ticket', instrument: 'main', side: 'buy', qty: 100_000, owner: 'treasury',
+      status: 'blocked', reason: 'A debt security trades only for settlement before its maturity date.',
+      expect: { refused: 'matures on 2026-12-10; this trade would settle on 2026-12-10' },
+    },
+    {
+      // The same purchase with same-day ("cash") settlement stated on the ticket: lag 0. It is paid for at once.
+      id: 'buy-cash-settlement', covers: ['increase', 'stated settlement'], action: 'ticket', instrument: 'main', side: 'buy', qty: 100_000, as: 'top-up', owner: 'treasury', order: { settle: { lag: 0 } }, settlementCheck: false,
+      expect: {
+        preview: { blocking: 0, errors: [], warnings: ['already-held'], legs: [{ kind: 'trade', action: 'buy', qty: 100_000, estimate: 99.9885, settleDate: '2026-12-09',
+          gross: 99_988.50, // 100,000 x 99.9885 / 100
+          accrued: 0, cash: -99_988.50, fees: 0.50 }], // 100,000 x 0.000005
+          cash: { USD: { purchases: 99_988.50, fees: 0.50, required: 99_989, available: 3_006_162.50, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 100_000, avgPrice: 99.9885, fills: [{ qty: 100_000, price: 99.9885, settleDate: '2026-12-09' }] }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Bought 100,000 USTB-10DEC26 @ 99.9885 USD', owner: 'treasury', date: '2026-12-09' },
+          { type: 'settlement.pay', summary: 'paid 99,989.00 USD from settled cash', cash: { USD: -99_989 }, date: '2026-12-09' },
+        ],
+        cash: { treasury: { USD: { settled: 2_906_173.50, unsettled: 0, availableToTrade: 2_906_173.50 } } }, // 3,006,162.50 - 99,989
+        positions: [
+          { instrument: 'main', lot: 'lot', owner: 'treasury', qty: 1_500_000, cost: 1_494_637.50, value: 1_499_820, unrealized: 5_182.50 },
+          { instrument: 'main', lot: 'top-up', owner: 'treasury', direction: 'long', qty: 100_000, avgCost: 99.9885, cost: 99_988.50, price: 99.988, value: 99_988, unrealized: -0.50, accrued: 0 },
+        ],
+        holdings: { main: { long: 1_600_000, short: 0, net: 1_600_000 } },
+        pending: [],
+        lifecycle: [{ type: 'bond.maturity', instrument: 'main', dueDate: '2026-12-10', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2026-12-10', status: 'pending' }], // one per position
+        pnl: { book: { commissions: -13, unrealized: 5_182, total: 5_981.50 } }, // 5,182.50 - 0.50; 812.50 - 13 + 5,182
+        nav: { treasury: 4_505_981.50, book: 5_005_981.50 },
+        balance: { book: { cash: 3_406_173.50, positions: 1_599_808, assets: 5_005_981.50, liabilities: 0, netAssets: 5_005_981.50 } }, // 1,499,820 + 99,988
+      },
+    },
+    {
+      id: 'maturity', covers: ['maturity', 'close'], action: 'clock', to: EST('2026-12-10'),
+      expect: {
+        // Redeemed at par, each position on its own. Realized: 1,500,000 - 1,494,637.50 = 5,362.50 and 100,000 - 99,988.50 = 11.50.
+        events: [
+          { type: 'bond.redemption', summary: 'Redeemed at maturity: 1,500,000 USTB-10DEC26 at 100.00% of par', owner: 'treasury', date: '2026-12-10' },
+          { type: 'settlement.receive', summary: 'received 1,500,000.00 USD into settled cash', cash: { USD: 1_500_000 } },
+          { type: 'bond.redemption', summary: 'Redeemed at maturity: 100,000 USTB-10DEC26 at 100.00% of par', owner: 'treasury' },
+          { type: 'settlement.receive', summary: 'received 100,000.00 USD into settled cash', cash: { USD: 100_000 } },
+        ],
+        cash: { treasury: { USD: { settled: 4_506_173.50, unsettled: 0, availableToTrade: 4_506_173.50 } }, account: { USD: { settled: 500_000 } } }, // 2,906,173.50 + 1,600,000
+        positions: [],
+        holdings: { main: null },
+        pending: [],
+        lifecycle: [],
+        // Discount earned in all: 812.50 + 5,362.50 + 11.50 = 6,186.50, all of it realized; commissions 13.00.
+        pnl: { book: { realized: 6_186.50, couponInterest: 0, commissions: -13, unrealized: 0, total: 6_173.50 }, account: { total: 0 } },
+        nav: { account: 500_000, treasury: 4_506_173.50, book: 5_006_173.50 },
+        balance: { book: { cash: 5_006_173.50, positions: null, assets: 5_006_173.50, liabilities: 0, netAssets: 5_006_173.50 } },
+      },
+    },
+    { id: 'treasury-screens-after-maturity', covers: 'maturity', action: 'owner_screens', owner: 'treasury', expect: {} },
+    { id: 'day-after-maturity', action: 'clock', to: EST('2026-12-11'), expect: { events: [] } },
+    {
+      // The quote fixture still shows a price, but there is nothing left to trade.
+      id: 'buy-after-maturity', covers: 'maturity', action: 'ticket', instrument: 'main', side: 'buy', qty: 100_000, owner: 'treasury',
+      status: 'blocked', reason: 'The bill has matured and was redeemed.',
+      expect: { refused: 'USTB-10DEC26 matured on 2026-12-10 and was redeemed. It can no longer be traded.' },
+    },
+  ],
+};
+
+export default [treasuryNote, treasuryBill];

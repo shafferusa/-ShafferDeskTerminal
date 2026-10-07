@@ -158,3 +158,28 @@ export async function ticket(ui, t, ctx, step) {
   }
   return { preview: () => preview.click() };
 }
+
+/**
+ * Step actions of this family's own.
+ *
+ * owner_screens ({ owner: 'treasury' })  The shared screen check after every step reads the Accounting tabs in the
+ *   scope of the scenario's Account. A scenario whose positions belong to Treasury adds this step where it wants the
+ *   screens checked: the same tabs are read in Treasury's scope (cash strip, positions, holdings, pending trades,
+ *   P&L, balance sheet, borrowings, history) and every figure is compared with the API's figures for Treasury, to the
+ *   decimals shown. The spec's own figures are compared with the API after every step as always, so the three agree.
+ */
+export const actions = {
+  async owner_screens(ui, t, ctx, step) {
+    if (step.owner !== 'treasury') throw new Error('owner_screens reads the screens of Treasury: state `owner: \'treasury\'`.');
+    const { readScreens, screenProblems } = await import('../browser.mjs');
+    const { observeState } = await import('../../lib/normalize.mjs');
+    // The shared readers work on "the scenario's Account": hand them Treasury in that place.
+    const as = Object.create(ctx);
+    as.accountId = ctx.treasuryId;
+    as.ownerKey = (unitId) => (unitId === ctx.treasuryId ? 'account' : unitId === ctx.accountId ? 'other' : unitId);
+    await ui.closeOverlays();
+    const state = await observeState(t, as);
+    const screen = await readScreens(ui, as, t);
+    return { problems: screenProblems(as, screen, { expected: {}, state, events: [] }).map((m) => `Treasury's screens: ${m}`) };
+  },
+};

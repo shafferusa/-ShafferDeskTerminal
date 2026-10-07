@@ -150,3 +150,34 @@ test('bond registration: the minimum denomination is a whole face amount, and tr
   assert.match(odd.checks.find((c) => c.level === 'error').message, /quantity must be a multiple of 5000/);
   assert.equal((await preview(15_000)).blocking, 0);
 });
+
+test('bond maturity: a debt security trades only for settlement before its maturity date', async () => {
+  const { app, clock } = makeApp({ at: '2026-12-08T15:00:00.000Z' }); // Tuesday
+  const { book, acct } = makeBook(app, { cash: 3_000_000, account: 2_000_000 });
+  const bill = app.instruments.create({ productId: 'treasury_bill', name: 'Test bill 10-Dec-2026', symbol: 'TESTBILL', marketView: 'US_CASH', venueType: 'otc', tradingCcy: 'USD', terms: { couponType: 'zero', maturity: '2026-12-10', dayCount: 'ACT/360' } });
+  pin(app, bill.id, 99.98);
+  const leg = (extra = {}) => ({ bookId: book.id, unitId: acct.id, template: 'custom', legs: [{ kind: 'trade', action: 'buy', instrumentId: bill.id, qty: 100_000, ...extra }] });
+  // Tuesday 8 Dec, T+1: settles Wednesday 9 Dec, the day before maturity. Allowed.
+  assert.equal((await app.packages.preview(leg())).blocking, 0);
+  // A buy order below the market, good until cancelled, rests unfilled.
+  const resting = await trade(app, leg({ orderType: 'limit', limitPrice: 99.5, tif: 'gtc' }));
+  assert.equal(resting.orders[0].status, 'working');
+  // Wednesday 9 Dec: a regular trade would settle on the maturity date itself, when the bill is redeemed. Refused, with the way out.
+  await goTo(app, clock, '2026-12-09T15:00:00.000Z');
+  const late = await app.packages.preview(leg());
+  assert.equal(late.blocking, 1);
+  assert.match(late.checks.find((c) => c.code === 'matured').message, /matures on 2026-12-10; this trade would settle on 2026-12-10/);
+  assert.equal((await app.packages.preview(leg({ settle: { lag: 0 } }))).blocking, 0, 'same-day settlement is still before maturity');
+  // Friday 11 Dec: the bill has matured. A new trade is refused, and the resting order, now marketable against the
+  // quote that is still on file, ends rejected instead of filling.
+  await goTo(app, clock, '2026-12-11T15:00:00.000Z');
+  const after = await app.packages.preview(leg());
+  assert.match(after.checks.find((c) => c.code === 'matured').message, /matured on 2026-12-10 and was redeemed/);
+  pin(app, bill.id, 99.4);
+  await app.engine.tick();
+  const o = app.packages.strategyView(resting.id).orders[0];
+  assert.equal(o.status, 'rejected');
+  assert.match(o.statusReason, /matured on 2026-12-10/);
+  assert.equal(o.filledQty, 0);
+  assert.equal(app.ledger.cash(acct.id, 'USD').settled, 2_000_000, 'nothing was bought');
+});
