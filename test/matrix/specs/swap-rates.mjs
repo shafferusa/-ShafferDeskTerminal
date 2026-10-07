@@ -1803,4 +1803,312 @@ const interestRateCollar = {
   ],
 };
 
-export default [interestRateSwap, overnightIndexSwap, basisSwap, interestRateCap, interestRateFloor, interestRateCollar];
+// ---------------------------------------------------------------------------------------------
+// forward_starting_swap
+// ---------------------------------------------------------------------------------------------
+// A one-year US dollar swap agreed on 10 March 2026 that only starts on 15 September 2026. The contract is
+// written "pay 3.60% fixed annually ACT/360, receive 3-month term SOFR quarterly ACT/360"; the Account
+// enters the opposite side: it receives the fixed amount and pays the floating amounts.
+// Before the effective date nothing is paid, nothing is exchanged and no fixing is used; the contract
+// still has a value (the mark), and collateral follows that value from the trade date.
+// Position-level collateral terms: independent amount 1% of notional; variation margin with a 25,000
+// threshold and a 5,000 minimum transfer. Commission: 20.00 per million of notional.
+//
+// Schedule (effective Tuesday 15 September 2026, maturity Wednesday 15 September 2027), every payment date a business day:
+//   fixed     2026-09-15 to 2027-09-15 (365 days), paid 15 September 2027
+//   floating  2026-09-15 to 2026-12-15 (91 days)  fixing of 15 September 2026: 3.70%
+//             2026-12-15 to 2027-03-15 (90 days)  fixing of 15 December 2026: 3.55%
+//             2027-03-15 to 2027-06-15 (92 days)  fixing of 15 March 2027: 3.40%
+//             2027-06-15 to 2027-09-15 (92 days)  fixing of 15 June 2027: 3.25%
+//   The 4.90% published on 1 June 2026, before the swap starts, must play no part.
+const FWD_NAME = 'USD forward-starting IRS 3.60% v TSFR3M 15 Sep 2026 to 15 Sep 2027';
+const forwardStartingSwap = {
+  productId: 'forward_starting_swap',
+  title: 'USD swap starting six months forward, receive 3.60% fixed against 3-month term SOFR, held to maturity',
+  matrix: {
+    ...OTC_TICKET,
+    automaticInputs: ['payment schedule of each leg from the effective date, the maturity and the USD payment calendar', 'TSFR3M fixings from the effective date on (rate fixture standing in for Shaffer MarketData)', 'settlement date, T+2 on the USD calendar', 'commission from the Book fee schedule', 'independent amount and variation margin from the position-level terms'],
+    manualInputs: ['upfront amount (stated fill price)', 'mark of the contract, entered by hand, from the trade date', 'settlement amount of a partial termination (stated fill price in the preview)'],
+    settlement: 'Upfront amounts and commission settle T+2 on the USD calendar; leg payments are cash on their payment date',
+    lifecycle: 'Nothing is paid or fixed between the trade date and the effective date, and nothing happens on the effective date itself; floating payments each quarter after it; the fixed amount once, at maturity; increase before the start; partial termination after it; maturity',
+    accounting: 'Carried at the mark from the trade date (a forward-starting swap has a value before it starts); leg payments and the termination result are realized P&L; commission expensed',
+    collateral: 'Position-level terms: independent amount 1% of notional from the trade date, trued up on increase and partial termination, returned at maturity; variation margin at end of day against the mark, threshold 25,000, minimum transfer 5,000, called and returned before the swap has started',
+  },
+  start: at('2026-03-10'),
+  settlementCheck: { lag: 2, holidays: [] }, // no Federal Reserve holiday in the settlement windows used (10 to 12 March, 1 to 3 June 2026, 12 to 14 January 2027)
+  book: usdBook('Matrix forward-starting swap', 'Rates', 500_000, { perUnit: 0.00002, minimum: 0, bps: 0 }),
+  instruments: {
+    main: {
+      productId: 'forward_starting_swap', name: FWD_NAME, symbol: 'FWD-IRS-0927', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: USD_CALENDARS,
+      terms: {
+        effective: '2026-09-15', maturity: '2027-09-15', counterparty: 'Dealer A',
+        collateralBasis: { type: 'position', independentAmount: { type: 'pct', pct: 0.01 }, variationMargin: true, threshold: 25_000, minimumTransfer: 5_000 },
+        legs: [
+          { side: 'pay', type: 'fixed', ccy: 'USD', rate: 0.036, months: 12, dayCount: 'ACT/360' },
+          { side: 'receive', type: 'float', ccy: 'USD', index: 'TSFR3M', spread: 0, months: 3, dayCount: 'ACT/360' },
+        ],
+      },
+    },
+  },
+  rates: { TSFR3M: { byDate: { '2026-06-01': 4.90, '2026-09-15': 3.70, '2026-12-15': 3.55, '2027-03-15': 3.40, '2027-06-15': 3.25 } } },
+  expectAtStart: usdStart(500_000),
+  steps: [
+    {
+      // Opposite side, 8,000,000, no upfront amount. Independent amount 1% x 8,000,000 = 80,000, posted now, six months before the start.
+      // Commission 8,000,000 x 0.00002 = 160, settling Thursday 12 March. The first payments scheduled are those after the effective date.
+      id: 'open', covers: ['open', 'collateral'], action: 'ticket', instrument: 'main', side: 'sell', qty: 8_000_000, as: 'fwd', order: { statedPrice: 0 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 8_000_000, estimate: 0, model: 'stated-price', settleDate: '2026-03-12', calendar: 'USD', cash: 0, fees: 160 }],
+          cash: { USD: { fees: 160, margin: 80_000, required: 80_160, available: 500_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 8_000_000, avgPrice: 0, fills: [{ qty: 8_000_000, price: 0, model: 'stated-price', settleDate: '2026-03-12' }] }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Entered on the opposite side: 8,000,000 notional of FWD-IRS-0927 at 0.00 per 100 notional', owner: 'account', date: '2026-03-10' },
+          { type: 'swap.collateral', summary: `Collateral posted on ${FWD_NAME} under its position-level terms: 80,000.00 USD (independent amount, 1.00% of 8,000,000.00 USD notional)`, cash: { USD: -80_000 }, owner: 'account' },
+        ],
+        cash: { account: { USD: { settled: 420_000, unsettled: -160, margin: 80_000, restricted: 0, availableToTrade: 419_840, availableToWithdraw: 419_840 } } },
+        positions: [{ instrument: 'main', lot: 'fwd', owner: 'account', direction: 'opposite side', qty: -8_000_000, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, notional: 8_000_000, margin: 80_000, accrued: 0 }],
+        holdings: { main: { long: 0, short: 8_000_000, net: -8_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-03-12', amount: -160, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-12-15', status: 'pending' }, // first floating payment, three months after the start
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-09-15', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-09-15', status: 'pending' }, // the fixed amount
+        ],
+        otc: [{ instrument: 'main', lot: 'fwd', owner: 'account', qty: -8_000_000, basis: 'position', mark: null, iaRequired: 80_000, iaPosted: 80_000, vmPosted: 0, vmHeld: 0, vmStatus: 'not_valued_yet' }],
+        pnl: { account: { realized: 0, commissions: -160, fees: 0, unrealized: 0, total: -160 } },
+        nav: { account: 499_840, book: 999_840 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 420_000, margin: 80_000, payable: 160, positions: null, accruedIncome: null, accruedExpense: null, assets: 500_000, liabilities: 160, netAssets: 499_840 } },
+      },
+    },
+    {
+      id: 'no-mark-no-call', covers: 'variation margin', action: 'clock', to: at('2026-03-11'),
+      expect: { otc: [{ instrument: 'main', vmStatus: 'cannot_value', vmReason: /FWD-IRS-0927 has no mark/, vmPosted: 0 }], alerts: ['collateral.unvalued'] },
+    },
+    {
+      // The mark is of the contract as written (pay fixed). On the opposite side: -8,000,000 x 0.40 / 100 = -32,000, six months before the start.
+      id: 'mark-before-the-start', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 0.40, note: 'Dealer mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'fwd', qty: -8_000_000, price: 0.4, value: -32_000, unrealized: -32_000, provisional: false, priceSource: 'Manual entry', priceStatus: 'manual' }],
+        otc: [{ instrument: 'main', mark: 0.4, markValue: -32_000 }],
+        pnl: { account: { unrealized: -32_000, total: -32_160 } },
+        nav: { account: 467_840, book: 967_840 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: -32_000, assets: 468_000, liabilities: 160, netAssets: 467_840 } },
+      },
+    },
+    {
+      // -32,000 is 7,000 beyond the 25,000 threshold: 7,000 is posted (more than the 5,000 minimum transfer).
+      id: 'variation-margin-call', covers: 'variation margin', action: 'clock', to: eod('2026-03-11'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under position-level terms: 7,000.00 USD posted. Netting set of 1 position marked at -32,000.00 USD; threshold 25,000.00 USD.', cash: { USD: -7_000 }, owner: 'account', date: '2026-03-11' }],
+        cash: { account: { USD: { settled: 413_000, margin: 87_000, availableToTrade: 412_840, availableToWithdraw: 412_840 } } },
+        otc: [{ instrument: 'main', vmPosted: 7_000, vmHeld: 0, vmExposure: -32_000, vmStatus: 'ok' }],
+        alerts: [],
+        balance: { account: { cash: 413_000, margin: 87_000 } },
+      },
+    },
+    {
+      id: 'settle-commission', covers: 'settlement', action: 'clock', to: at('2026-03-12'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 160.00 USD from settled cash', cash: { USD: -160 }, date: '2026-03-12' }],
+        cash: { account: { USD: { settled: 412_840, unsettled: 0, availableToTrade: 412_840, availableToWithdraw: 412_840 } } },
+        pending: [],
+        balance: { account: { cash: 412_840, payable: null, assets: 467_840, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'mark-improves', action: 'manual_price', instrument: 'main', value: 0.10, note: 'Dealer mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'fwd', price: 0.1, value: -8_000, unrealized: -8_000 }], // -8,000,000 x 0.10 / 100
+        otc: [{ instrument: 'main', mark: 0.1, markValue: -8_000 }],
+        pnl: { account: { unrealized: -8_000, total: -8_160 } },
+        nav: { account: 491_840, book: 991_840 },
+        balance: { account: { positions: -8_000, assets: 491_840, netAssets: 491_840 } },
+      },
+    },
+    {
+      // -8,000 is inside the threshold: the 7,000 comes back.
+      id: 'variation-margin-returned', covers: 'variation margin', action: 'clock', to: eod('2026-03-12'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under position-level terms: 7,000.00 USD returned to us. Netting set of 1 position marked at -8,000.00 USD; threshold 25,000.00 USD.', cash: { USD: 7_000 }, owner: 'account' }],
+        cash: { account: { USD: { settled: 419_840, margin: 80_000, availableToTrade: 419_840, availableToWithdraw: 419_840 } } },
+        otc: [{ instrument: 'main', vmPosted: 0, vmHeld: 0, vmExposure: -8_000, vmStatus: 'ok', vmReason: null }],
+        balance: { account: { cash: 419_840, margin: 80_000 } },
+      },
+    },
+    {
+      // Eleven weeks pass. A fixing is published on 1 June; the swap has not started and takes no notice of it.
+      id: 'nothing-before-the-start', covers: 'before the effective date', action: 'clock', to: at('2026-06-01'),
+      expect: {
+        events: [],
+        cash: { account: { USD: { settled: 419_840, unsettled: 0, margin: 80_000, restricted: 0 } } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-12-15', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-09-15', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-09-15', status: 'pending' },
+        ],
+        positions: [{ instrument: 'main', lot: 'fwd', qty: -8_000_000, value: -8_000, accrued: 0 }],
+        alerts: [], pending: [],
+        nav: { account: 491_840, book: 991_840 },
+      },
+    },
+    {
+      // 4,000,000 more on the opposite side at 0.10 per 100: 4,000 is received. Commission 4,000,000 x 0.00002 = 80. Settles Wednesday 3 June.
+      // Independent amount 1% x 12,000,000 = 120,000: 40,000 more. Average upfront 4,000 / 120,000 = 0.0333333 per 100.
+      id: 'increase-before-the-start', covers: ['increase', 'collateral', 'before the effective date'], action: 'resize', lot: 'fwd', factor: 1.5, order: { statedPrice: 0.10 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 4_000_000, estimate: 0.1, model: 'stated-price', settleDate: '2026-06-03', cash: 4_000, fees: 80 }],
+          cash: { USD: { proceeds: 4_000, fees: 80, margin: 40_000, required: 40_080, available: 419_840, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 4_000_000, avgPrice: 0.1 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Increased on the opposite side: 4,000,000 notional of FWD-IRS-0927 at 0.10 per 100 notional' },
+          { type: 'swap.collateral', summary: `Collateral posted on ${FWD_NAME} under its position-level terms: 40,000.00 USD (independent amount, 1.00% of 12,000,000.00 USD notional)`, cash: { USD: -40_000 } },
+        ],
+        cash: { account: { USD: { settled: 379_840, unsettled: 3_920, margin: 120_000, availableToTrade: 383_760, availableToWithdraw: 379_840 } } },
+        positions: [{ instrument: 'main', lot: 'fwd', qty: -12_000_000, cost: -4_000, avgCost: 0.0333333, price: 0.1, value: -12_000, unrealized: -8_000, notional: 12_000_000, margin: 120_000 }],
+        holdings: { main: { long: 0, short: 12_000_000, net: -12_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-06-03', amount: 3_920, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: -12_000_000, markValue: -12_000, iaRequired: 120_000, iaPosted: 120_000 }],
+        pnl: { account: { commissions: -240, unrealized: -8_000, total: -8_240 } },
+        nav: { account: 491_760, book: 991_760 },
+        balance: { account: { cash: 379_840, margin: 120_000, receivable: 3_920, positions: -12_000, assets: 491_760, liabilities: 0, netAssets: 491_760 } },
+      },
+    },
+    {
+      id: 'settle-increase', covers: 'settlement', action: 'clock', to: at('2026-06-03'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 3,920.00 USD into settled cash', cash: { USD: 3_920 } }],
+        cash: { account: { USD: { settled: 383_760, unsettled: 0, availableToTrade: 383_760, availableToWithdraw: 383_760 } } },
+        pending: [],
+        balance: { account: { cash: 383_760, receivable: null } },
+      },
+    },
+    {
+      // The effective date itself: a single-currency swap exchanges nothing, and the first amounts fall due three and twelve months later.
+      id: 'effective-date', covers: 'before the effective date', action: 'clock', to: at('2026-09-15'),
+      expect: {
+        events: [],
+        cash: { account: { USD: { settled: 383_760, unsettled: 0, margin: 120_000, restricted: 0 } } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-12-15', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-09-15', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-09-15', status: 'pending' },
+        ],
+        pnl: { account: { realized: 0, commissions: -240, unrealized: -8_000, total: -8_240 } },
+        nav: { account: 491_760, book: 991_760 },
+      },
+    },
+    {
+      // First floating amount, paid, at the fixing of 15 September (3.70%), not the 4.90% of June: 12,000,000 x 3.70% x 91/360 = 112,233.33.
+      id: 'first-floating-payment', covers: 'floating payment', action: 'clock', to: at('2026-12-15'),
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Swap payment on ${FWD_NAME}, leg B (float), period 2026-09-15 to 2026-12-15: 112,233.33 USD`, cash: { USD: -112_233.33 }, owner: 'account', date: '2026-12-15' }],
+        cash: { account: { USD: { settled: 271_526.67, availableToTrade: 271_526.67, availableToWithdraw: 271_526.67 } } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-03-15', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-09-15', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-09-15', status: 'pending' },
+        ],
+        pnl: { account: { realized: -112_233.33, total: -120_473.33 } },
+        nav: { account: 379_526.67, book: 879_526.67 },
+        balance: { account: { cash: 271_526.67, accruedIncome: null, accruedExpense: null, assets: 379_526.67, netAssets: 379_526.67 } },
+      },
+    },
+    { id: 'mid-january', action: 'clock', to: at('2027-01-12'), expect: {} },
+    {
+      // A quarter (3,000,000) is bought back at 0.20 per 100: 6,000 paid, commission 60, settling Thursday 14 January.
+      // Upfront carried on it: 4,000 x 25% = 1,000 received. Realized 1,000 - 6,000 = -5,000. Independent amount 1% x 9,000,000 = 90,000: 30,000 returns.
+      id: 'partial-termination', covers: ['reduce', 'partial termination', 'collateral'], action: 'close', lot: 'fwd', scope: 'strategy', percent: 25, order: { statedPrice: 0.20 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 3_000_000, estimate: 0.2, model: 'stated-price', settleDate: '2027-01-14', cash: -6_000, fees: 60 }] },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 3_000_000, avgPrice: 0.2 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Terminated in part: 3,000,000 of 12,000,000 notional of FWD-IRS-0927 at 0.20 per 100 notional (realized -5,000.00 USD)' },
+          { type: 'swap.collateral', summary: `Collateral returned on ${FWD_NAME} under its position-level terms: 30,000.00 USD (independent amount, 1.00% of 9,000,000.00 USD notional)`, cash: { USD: 30_000 } },
+        ],
+        cash: { account: { USD: { settled: 301_526.67, unsettled: -6_060, margin: 90_000, availableToTrade: 295_466.67, availableToWithdraw: 295_466.67 } } },
+        positions: [{ instrument: 'main', lot: 'fwd', qty: -9_000_000, cost: -3_000, avgCost: 0.0333333, price: 0.1, value: -9_000, unrealized: -6_000, notional: 9_000_000, margin: 90_000 }],
+        holdings: { main: { long: 0, short: 9_000_000, net: -9_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2027-01-14', amount: -6_060, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: -9_000_000, markValue: -9_000, iaRequired: 90_000, iaPosted: 90_000 }],
+        pnl: { account: { realized: -117_233.33, commissions: -300, unrealized: -6_000, total: -123_533.33 } },
+        nav: { account: 376_466.67, book: 876_466.67 },
+        balance: { account: { cash: 301_526.67, margin: 90_000, positions: -9_000, payable: 6_060, assets: 382_526.67, liabilities: 6_060, netAssets: 376_466.67 } },
+      },
+    },
+    {
+      id: 'settle-partial-termination', covers: 'settlement', action: 'clock', to: at('2027-01-14'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 6,060.00 USD from settled cash', cash: { USD: -6_060 } }],
+        cash: { account: { USD: { settled: 295_466.67, unsettled: 0, availableToTrade: 295_466.67, availableToWithdraw: 295_466.67 } } },
+        pending: [],
+        balance: { account: { cash: 295_466.67, payable: null, assets: 376_466.67, liabilities: 0 } },
+      },
+    },
+    {
+      // Second floating amount, on the 9,000,000 left: 9,000,000 x 3.55% x 90/360 = 79,875.00.
+      id: 'second-floating-payment', covers: 'floating payment', action: 'clock', to: at('2027-03-15'),
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Swap payment on ${FWD_NAME}, leg B (float), period 2026-12-15 to 2027-03-15: 79,875.00 USD`, cash: { USD: -79_875 }, date: '2027-03-15' }],
+        cash: { account: { USD: { settled: 215_591.67, availableToTrade: 215_591.67, availableToWithdraw: 215_591.67 } } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-06-15', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-09-15', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-09-15', status: 'pending' },
+        ],
+        pnl: { account: { realized: -197_108.33, total: -203_408.33 } },
+        nav: { account: 296_591.67, book: 796_591.67 },
+        balance: { account: { cash: 215_591.67, assets: 296_591.67, netAssets: 296_591.67 } },
+      },
+    },
+    {
+      // Third floating amount: 9,000,000 x 3.40% x 92/360 = 78,200.00.
+      id: 'third-floating-payment', covers: 'floating payment', action: 'clock', to: at('2027-06-15'),
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Swap payment on ${FWD_NAME}, leg B (float), period 2027-03-15 to 2027-06-15: 78,200.00 USD`, cash: { USD: -78_200 }, date: '2027-06-15' }],
+        cash: { account: { USD: { settled: 137_391.67, availableToTrade: 137_391.67, availableToWithdraw: 137_391.67 } } },
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-09-15', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-09-15', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-09-15', status: 'pending' },
+        ],
+        pnl: { account: { realized: -275_308.33, total: -281_608.33 } },
+        nav: { account: 218_391.67, book: 718_391.67 },
+        balance: { account: { cash: 137_391.67, assets: 218_391.67, netAssets: 218_391.67 } },
+      },
+    },
+    {
+      // Maturity. Fixed amount, received once: 9,000,000 x 3.60% x 365/360 = 328,500.00. Last floating amount, paid: 9,000,000 x 3.25% x 92/360 = 74,750.00.
+      // The swap ends: the 3,000 of upfront still carried is earned and the 90,000 comes back.
+      // 500,000 + 4,000 - 6,000 - 300 - 112,233.33 - 79,875 - 78,200 + 328,500 - 74,750 = 481,141.67.
+      id: 'final-payments-and-maturity', covers: ['fixed payment', 'floating payment', 'maturity', 'close', 'collateral'], action: 'clock', to: at('2027-09-15'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap receipt on ${FWD_NAME}, leg A (fixed), period 2026-09-15 to 2027-09-15: 328,500.00 USD`, cash: { USD: 328_500 }, owner: 'account', date: '2027-09-15' },
+          { type: 'swap.payment', summary: `Swap payment on ${FWD_NAME}, leg B (float), period 2027-06-15 to 2027-09-15: 74,750.00 USD`, cash: { USD: -74_750 }, date: '2027-09-15' },
+          { type: 'swap.matured', summary: `Swap matured: ${FWD_NAME} (notional 9,000,000)`, owner: 'account' },
+          { type: 'swap.collateral', summary: `Collateral returned on ${FWD_NAME} under its position-level terms: 90,000.00 USD (independent amount, the position ended)`, cash: { USD: 90_000 } },
+        ],
+        cash: { account: { USD: { settled: 481_141.67, unsettled: 0, margin: 0, restricted: 0, reserved: 0, availableToTrade: 481_141.67, availableToWithdraw: 481_141.67 } }, treasury: { USD: { settled: 500_000 } } },
+        positions: [], holdings: { main: null }, lifecycle: [], otc: [], pending: [], alerts: [],
+        pnl: { account: { realized: -18_558.33, commissions: -300, unrealized: 0, total: -18_858.33 } }, // -275,308.33 + 328,500 - 74,750 + 3,000
+        nav: { account: 481_141.67, treasury: 500_000, book: 981_141.67 },
+        provisional: { account: false, book: false },
+        balance: { account: { cash: 481_141.67, margin: null, positions: null, assets: 481_141.67, liabilities: 0, netAssets: 481_141.67 } },
+      },
+    },
+  ],
+};
+
+export default [interestRateSwap, overnightIndexSwap, basisSwap, interestRateCap, interestRateFloor, interestRateCollar, forwardStartingSwap];

@@ -48,3 +48,4 @@
 - 2026-10-07T10:39Z | s1 | +0.2 | interest_rate_cap passes at engine, API and browser
 - 2026-10-07T10:41Z | s1 | +0.2 | interest_rate_floor passes at engine, API and browser
 - 2026-10-07T10:44Z | s1 | +0.2 | interest_rate_collar passes at engine, API and browser
+- 2026-10-07T10:48Z | s1 | +0.2 | forward_starting_swap passes at engine, API and browser
