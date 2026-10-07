@@ -1010,12 +1010,12 @@ const basisSwap = {
 // Shared by the US dollar scenarios below
 // ---------------------------------------------------------------------------------------------
 const USD_CALENDARS = { tradingCalendar: 'USD', settlementCalendar: 'USD', paymentCalendar: 'USD' };
-/** A 1,000,000 USD Book whose Account is funded with `funding`; no commission on swaps unless `fee` is given. */
-const usdBook = (name, accountName, funding, fee = NO_FEE) => ({
+/** A 1,000,000 USD Book whose Account is funded with `funding`; no commission on swaps unless `fee` is given. `otherFees`: schedules of other families the scenario registers. */
+const usdBook = (name, accountName, funding, fee = NO_FEE, otherFees = {}) => ({
   name, reportingCcy: 'USD',
   capital: [{ ccy: 'USD', amount: 1_000_000 }],
   account: { name: accountName, funding: [{ ccy: 'USD', amount: funding }] },
-  settings: { fees: { swap: fee }, fill: FILL, settlement: { swap: 2 } },
+  settings: { fees: { swap: fee, ...otherFees }, fill: FILL, settlement: { swap: 2 } },
 });
 const usdStart = (funding) => ({
   cash: {
@@ -3140,4 +3140,215 @@ const crossCurrencyBasisSwap = {
   ],
 };
 
-export default [interestRateSwap, overnightIndexSwap, basisSwap, interestRateCap, interestRateFloor, interestRateCollar, forwardStartingSwap, constantMaturitySwap, crossCurrencySwap, crossCurrencyBasisSwap];
+// ---------------------------------------------------------------------------------------------
+// Inflation swaps: the reference index
+// ---------------------------------------------------------------------------------------------
+// The catalog has no product for a published index that is only ever referred to. The consumer price
+// index is therefore registered here as a stand-in instrument (a spot asset whose price per unit is the
+// index level, never traded in these scenarios), and its fixings are instrument prices "for a date": published
+// ones arrive as closing prices from the data service (a fixture here), a missing one is entered by
+// hand under Data connection, Manual entries, Instrument price, "Close or fixing for date".
+// The Terminal applies no publication lag and no interpolation: the fixing it asks for is the index
+// level for the first and the last day of the period, and that is what must be supplied.
+const CPI_DRAFT = { productId: 'physical_commodity', name: 'US CPI-U reference index (stand-in)', symbol: 'CPI-U', marketView: 'US_CASH', venueType: 'otc', tradingCcy: 'USD', terms: {} };
+
+// ---------------------------------------------------------------------------------------------
+// zc_inflation_swap
+// ---------------------------------------------------------------------------------------------
+// A two-year US dollar zero-coupon inflation swap: nothing is paid until maturity, when
+//   the fixed leg pays     notional x ((1 + 2.50%)^2 - 1) = notional x 5.0625%   (compounded annually, 30/360: exactly 2 years)
+//   the inflation leg pays notional x (index at maturity / index at the start - 1)
+// Entered as written: pay fixed, receive inflation. Uncollateralized.
+// Index: 325.000 for 2 March 2026 (published), 340.925 for 2 March 2028 (not supplied; entered by hand): 340.925 / 325 - 1 = 4.90%.
+const ZCI_NAME = 'USD zero-coupon inflation swap 2.50% v CPI-U 2 Mar 2028';
+const zcInflationSwap = {
+  productId: 'zc_inflation_swap',
+  title: 'USD 2-year zero-coupon inflation swap, pay 2.50% compounded against the CPI-U index ratio, held to maturity',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'fixed leg: Payment "At maturity only", Compounding "Annual"', 'inflation leg: Leg type "Return on a reference asset", Reference asset (the index), Reset and payment "At maturity only"'],
+    automaticInputs: ['one payment per leg, on the maturity date', 'index fixing for the effective date (closing price fixture standing in for Shaffer MarketData)', 'settlement date, T+2 on the USD calendar', 'commission from the Book fee schedule'],
+    manualInputs: ['the reference index itself, registered as a stand-in instrument', 'upfront amount (stated fill price)', 'mark of the contract, entered by hand', 'settlement amount of a partial termination', 'the index fixing for the maturity date, entered by hand when it has not been supplied'],
+    settlement: 'Upfront and termination amounts and commission settle T+2 on the USD calendar; both legs pay once, at maturity',
+    lifecycle: 'Nothing is paid during the life of the swap; at maturity the fixed amount, compounded annually, is paid; the inflation amount waits, visibly, for the index fixing of the maturity date and is received once that is entered; the swap then matures',
+    accounting: 'Carried at the upfront amounts paid until a mark is entered, then at the mark; the two maturity payments and the termination result are realized P&L; commission expensed',
+    collateral: 'Uncollateralized (paper assumption): nothing is posted or received, whatever the mark',
+  },
+  start: at('2026-02-26'),
+  settlementCheck: { lag: 2, holidays: [] }, // no Federal Reserve holiday in the settlement windows used (26 February to 3 March 2026, 2 to 4 March 2027)
+  book: usdBook('Matrix zero-coupon inflation swap', 'Inflation', 600_000, { perUnit: 0.00001, minimum: 0, bps: 0 }, { spot: NO_FEE }), // 10.00 per million of notional; the index stand-in is never traded
+  instruments: {
+    cpi: CPI_DRAFT,
+    main: {
+      productId: 'zc_inflation_swap', name: ZCI_NAME, symbol: 'ZCIS-CPI-0328', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: USD_CALENDARS,
+      terms: {
+        effective: '2026-03-02', maturity: '2028-03-02', counterparty: 'Dealer G', collateralBasis: { type: 'uncollateralized' },
+        legs: [
+          { side: 'pay', type: 'fixed', ccy: 'USD', rate: 0.025, months: 0, dayCount: '30/360', compounding: 'annual' },
+          { side: 'receive', type: 'return', ccy: 'USD', months: 0, underlyingId: '$inst:cpi' },
+        ],
+      },
+    },
+  },
+  expectAtStart: usdStart(600_000),
+  steps: [
+    {
+      // 8,000,000 as written, no upfront amount. Commission 8,000,000 x 0.00001 = 80, settling Monday 2 March. One payment per leg, at maturity.
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 8_000_000, as: 'zc', order: { statedPrice: 0 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 8_000_000, estimate: 0, model: 'stated-price', settleDate: '2026-03-02', calendar: 'USD', cash: 0, fees: 80 }],
+          cash: { USD: { purchases: 0, fees: 80, margin: 0, required: 80, available: 600_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 8_000_000, avgPrice: 0, fills: [{ qty: 8_000_000, price: 0, model: 'stated-price', settleDate: '2026-03-02' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Entered as written: 8,000,000 notional of ZCIS-CPI-0328 at 0.00 per 100 notional', owner: 'account', date: '2026-02-26' }],
+        cash: { account: { USD: { settled: 600_000, unsettled: -80, margin: 0, restricted: 0, availableToTrade: 599_920, availableToWithdraw: 599_920 } } },
+        positions: [{ instrument: 'main', lot: 'zc', owner: 'account', direction: 'as written', qty: 8_000_000, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, notional: 8_000_000, margin: 0 }],
+        holdings: { main: { long: 8_000_000, short: 0, net: 8_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-03-02', amount: -80, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2028-03-02', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2028-03-02', status: 'pending' }, // the fixed amount
+          { type: 'swap.payment', instrument: 'main', dueDate: '2028-03-02', status: 'pending' }, // the inflation amount
+        ],
+        otc: [{ instrument: 'main', lot: 'zc', owner: 'account', qty: 8_000_000, basis: 'uncollateralized', agreement: null, iaPosted: 0, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: -80, unrealized: 0, total: -80 } },
+        nav: { account: 599_920, book: 999_920 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 600_000, payable: 80, positions: null, accruedIncome: null, accruedExpense: null, assets: 600_000, liabilities: 80, netAssets: 599_920 } },
+      },
+    },
+    { id: 'friday', action: 'clock', to: at('2026-02-27'), expect: { events: [] } },
+    {
+      // 2,000,000 more at 0.05 per 100: 1,000 paid, commission 20, settling Tuesday 3 March. Still before the start: the added notional takes the whole two years.
+      id: 'increase', covers: 'increase', action: 'resize', lot: 'zc', factor: 1.25, order: { statedPrice: 0.05 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 2_000_000, estimate: 0.05, model: 'stated-price', settleDate: '2026-03-03', cash: -1_000, fees: 20 }], cash: { USD: { purchases: 1_000, fees: 20, required: 1_020, available: 599_920, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 2_000_000, avgPrice: 0.05 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Increased as written: 2,000,000 notional of ZCIS-CPI-0328 at 0.05 per 100 notional' }],
+        cash: { account: { USD: { settled: 600_000, unsettled: -1_100, availableToTrade: 598_900, availableToWithdraw: 598_900 } } },
+        positions: [{ instrument: 'main', lot: 'zc', qty: 10_000_000, cost: 1_000, avgCost: 0.01, price: null, value: null, notional: 10_000_000 }], // 1,000 / 100,000
+        holdings: { main: { long: 10_000_000, short: 0, net: 10_000_000 } },
+        pending: [{ instrument: 'main', dueDate: '2026-03-02', amount: -80, ccy: 'USD', into: 'cash' }, { instrument: 'main', dueDate: '2026-03-03', amount: -1_020, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: 10_000_000 }],
+        pnl: { account: { commissions: -100, total: -100 } },
+        nav: { account: 599_900, book: 999_900 }, // carried at the 1,000 paid
+        balance: { account: { payable: 1_100, positions: 1_000, assets: 601_000, liabilities: 1_100, netAssets: 599_900 } },
+      },
+    },
+    {
+      id: 'settle-commission', covers: 'settlement', action: 'clock', to: at('2026-03-02'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 80.00 USD from settled cash', cash: { USD: -80 }, date: '2026-03-02' }],
+        cash: { account: { USD: { settled: 599_920, unsettled: -1_020, availableToTrade: 598_900, availableToWithdraw: 598_900 } } },
+        pending: [{ instrument: 'main', dueDate: '2026-03-03', amount: -1_020, ccy: 'USD', into: 'cash' }],
+        balance: { account: { cash: 599_920, payable: 1_020, assets: 600_920, liabilities: 1_020 } },
+      },
+    },
+    // The index for the effective date is published: 325.000. Nothing is paid on it for two years.
+    { id: 'start-index-published', covers: 'index fixing', action: 'close_price', instrument: 'cpi', date: '2026-03-02', value: 325, expect: { events: [] } },
+    {
+      id: 'settle-increase', covers: 'settlement', action: 'clock', to: at('2026-03-03'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 1,020.00 USD from settled cash', cash: { USD: -1_020 } }],
+        cash: { account: { USD: { settled: 598_900, unsettled: 0, availableToTrade: 598_900, availableToWithdraw: 598_900 } } },
+        pending: [],
+        balance: { account: { cash: 598_900, payable: null, assets: 599_900, liabilities: 0 } },
+      },
+    },
+    {
+      // 10,000,000 x 0.40 / 100 = 40,000; 39,000 above the 1,000 paid.
+      id: 'mark', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 0.40, note: 'Dealer mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'zc', qty: 10_000_000, price: 0.4, value: 40_000, unrealized: 39_000, provisional: false, priceSource: 'Manual entry', priceStatus: 'manual' }],
+        otc: [{ instrument: 'main', mark: 0.4, markValue: 40_000 }],
+        pnl: { account: { unrealized: 39_000, total: 38_900 } },
+        nav: { account: 638_900, book: 1_038_900 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 40_000, assets: 638_900, netAssets: 638_900 } },
+      },
+    },
+    {
+      // A year on, nothing has been paid or accrued in the ledger: a zero-coupon swap pays only at maturity.
+      id: 'one-year-on', covers: 'zero coupon', action: 'clock', to: at('2027-03-02'),
+      expect: {
+        events: [],
+        cash: { account: { USD: { settled: 598_900, unsettled: 0 } } },
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2028-03-02', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2028-03-02', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2028-03-02', status: 'pending' },
+        ],
+        pnl: { account: { realized: 0, commissions: -100, unrealized: 39_000, total: 38_900 } },
+        nav: { account: 638_900, book: 1_038_900 },
+        balance: { account: { accruedIncome: null, accruedExpense: null, assets: 638_900, netAssets: 638_900 } },
+      },
+    },
+    {
+      // A fifth (2,000,000) is terminated at 0.60 per 100, received: 12,000; commission 20. Upfront carried on it: 1,000 / 5 = 200. Realized 11,800.
+      // Left: 8,000,000 carrying 800, marked 0.40: 32,000, 31,200 up. Tuesday 2 March 2027, settles Thursday 4 March.
+      id: 'partial-termination', covers: ['reduce', 'partial termination'], action: 'close', lot: 'zc', scope: 'strategy', percent: 20, order: { statedPrice: 0.60 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 2_000_000, estimate: 0.6, model: 'stated-price', settleDate: '2027-03-04', cash: 12_000, fees: 20 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 2_000_000, avgPrice: 0.6 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Terminated in part: 2,000,000 of 10,000,000 notional of ZCIS-CPI-0328 at 0.60 per 100 notional (realized 11,800.00 USD)' }],
+        cash: { account: { USD: { settled: 598_900, unsettled: 11_980, availableToTrade: 610_880, availableToWithdraw: 598_900 } } },
+        positions: [{ instrument: 'main', lot: 'zc', qty: 8_000_000, cost: 800, avgCost: 0.01, price: 0.4, value: 32_000, unrealized: 31_200, notional: 8_000_000 }],
+        holdings: { main: { long: 8_000_000, short: 0, net: 8_000_000 } },
+        pending: [{ instrument: 'main', dueDate: '2027-03-04', amount: 11_980, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: 8_000_000, markValue: 32_000 }],
+        pnl: { account: { realized: 11_800, commissions: -120, unrealized: 31_200, total: 42_880 } },
+        nav: { account: 642_880, book: 1_042_880 },
+        balance: { account: { cash: 598_900, receivable: 11_980, positions: 32_000, assets: 642_880, liabilities: 0, netAssets: 642_880 } },
+      },
+    },
+    {
+      id: 'settle-partial-termination', covers: 'settlement', action: 'clock', to: at('2027-03-04'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 11,980.00 USD into settled cash', cash: { USD: 11_980 } }],
+        cash: { account: { USD: { settled: 610_880, unsettled: 0, availableToTrade: 610_880, availableToWithdraw: 610_880 } } },
+        pending: [],
+        balance: { account: { cash: 610_880, receivable: null } },
+      },
+    },
+    {
+      // Maturity, Thursday 2 March 2028. Fixed leg, paid: 8,000,000 x (1.025^2 - 1) = 8,000,000 x 0.050625 = 405,000.00 (simple interest would be 400,000.00).
+      // The inflation leg needs the index for 2 March 2028, which has not been supplied: it waits, and so does maturity. No index level is assumed.
+      id: 'fixed-paid-index-missing', covers: ['fixed payment', 'compounding', 'missing fixing'], action: 'clock', to: at('2028-03-02'),
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Swap payment on ${ZCI_NAME}, leg A (fixed), period 2026-03-02 to 2028-03-02: 405,000.00 USD`, cash: { USD: -405_000 }, owner: 'account', date: '2028-03-02' }],
+        cash: { account: { USD: { settled: 205_880, availableToTrade: 205_880, availableToWithdraw: 205_880 } } },
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2028-03-02', status: 'blocked', reason: /Waiting for the final leg payments/ },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2028-03-02', status: 'blocked', reason: /Awaiting the 2028-03-02 fixing for CPI-U/ },
+        ],
+        positions: [{ instrument: 'main', lot: 'zc', qty: 8_000_000, value: 32_000 }],
+        pnl: { account: { realized: -393_200, commissions: -120, unrealized: 31_200, total: -362_120 } }, // 11,800 - 405,000
+        nav: { account: 237_880, book: 637_880 },
+        balance: { account: { cash: 205_880, assets: 237_880, netAssets: 237_880 } },
+      },
+    },
+    {
+      // The index for 2 March 2028 is entered by hand: 340.925. Inflation leg, received: 8,000,000 x (340.925 / 325 - 1) = 8,000,000 x 4.90% = 392,000.00.
+      // The swap then matures: the 800 still carried is written off; the mark of 32,000 was never cash.
+      // 600,000 - 120 - 1,000 + 12,000 - 405,000 + 392,000 = 597,880.
+      id: 'index-entered-and-matured', covers: ['missing fixing', 'inflation payment', 'maturity', 'close'], action: 'manual_price', instrument: 'cpi', value: 340.925, forDate: '2028-03-02', note: 'Published index level, entered by hand',
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap receipt on ${ZCI_NAME}, leg B (return), period 2026-03-02 to 2028-03-02: 392,000.00 USD`, cash: { USD: 392_000 }, owner: 'account', date: '2028-03-02' },
+          { type: 'swap.matured', summary: `Swap matured: ${ZCI_NAME} (notional 8,000,000)`, owner: 'account' },
+        ],
+        cash: { account: { USD: { settled: 597_880, unsettled: 0, margin: 0, restricted: 0, reserved: 0, availableToTrade: 597_880, availableToWithdraw: 597_880 } }, treasury: { USD: { settled: 400_000 } } },
+        positions: [], holdings: { main: null }, lifecycle: [], otc: [], pending: [], alerts: [],
+        pnl: { account: { realized: -2_000, commissions: -120, unrealized: 0, total: -2_120 } }, // -393,200 + 392,000 - 800
+        nav: { account: 597_880, treasury: 400_000, book: 997_880 },
+        provisional: { account: false, book: false },
+        balance: { account: { cash: 597_880, positions: null, assets: 597_880, liabilities: 0, netAssets: 597_880 } },
+      },
+    },
+  ],
+};
+
+export default [interestRateSwap, overnightIndexSwap, basisSwap, interestRateCap, interestRateFloor, interestRateCollar, forwardStartingSwap, constantMaturitySwap, crossCurrencySwap, crossCurrencyBasisSwap, zcInflationSwap];

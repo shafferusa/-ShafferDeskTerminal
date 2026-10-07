@@ -228,7 +228,7 @@ export function presetLegs(productId, ccy = 'USD') {
     case 'basis_swap': case 'cms_spread_swap': return [float('pay'), float('receive')];
     case 'cross_currency_swap': case 'cross_currency_basis_swap': case 'non_deliverable_swap':
       return [float('pay', { exchangeNotional: productId !== 'non_deliverable_swap' }), float('receive', { ccy: 'EUR', notionalFactor: 1, exchangeNotional: productId !== 'non_deliverable_swap' })];
-    case 'zc_inflation_swap': return [fixed('pay', { months: 0 }), { side: 'receive', type: 'return', ccy, months: 0, underlyingId: '' }];
+    case 'zc_inflation_swap': return [fixed('pay', { months: 0, compounding: 'annual' }), { side: 'receive', type: 'return', ccy, months: 0, underlyingId: '' }];
     case 'yoy_inflation_swap': return [fixed('pay', { months: 12 }), { side: 'receive', type: 'return', ccy, months: 12, underlyingId: '' }];
     case 'equity_swap': case 'equity_index_swap': case 'equity_basket_swap': case 'commodity_index_swap':
       return [{ side: 'receive', type: 'return', ccy, months: 3, underlyingId: '', resetNotional: false, passDividends: false }, float('pay')];
@@ -255,13 +255,14 @@ function LegsEditor({ legs, onChange, ccy }) {
         <${Field} label="Currency"><${Text} value=${l.ccy} onInput=${(v) => set(i, { ccy: v.toUpperCase() })} /><//>
         <${Field} label="Notional factor" hint="1 = the trade notional"><${Num} value=${l.notionalFactor ?? 1} onInput=${(v) => set(i, { notionalFactor: v })} /><//>
         ${l.type === 'fixed' ? html`<${Field} label="Fixed rate (decimal)" hint="0.04 = 4%"><${Num} value=${l.rate} onInput=${(v) => set(i, { rate: v })} /><//>` : null}
+        ${l.type === 'fixed' && !l.months ? html`<${Field} label="Compounding" hint="For a leg paid once, at maturity"><${Select} value=${l.compounding || 'none'} onChange=${(v) => set(i, { compounding: v === 'none' ? null : v })} options=${opt([['none', 'None: rate x time'], ['annual', 'Annual: (1 + rate)^years - 1']])} /><//>` : null}
         ${['float', 'ois', 'cap', 'floor'].includes(l.type) ? html`<${Field} label="Index (rate code)" hint="Financing benchmark"><${Text} value=${l.index} onInput=${(v) => set(i, { index: v })} /><//>` : null}
         ${['float', 'ois'].includes(l.type) ? html`<${Field} label="Spread (decimal)"><${Num} value=${l.spread} onInput=${(v) => set(i, { spread: v })} /><//>` : null}
         ${['cap', 'floor'].includes(l.type) ? html`<${Field} label="Strike rate (decimal)"><${Num} value=${l.strike} onInput=${(v) => set(i, { strike: v })} /><//>` : null}
         ${['return', 'price'].includes(l.type) ? html`<${Field} label="Reference asset" span=${2}><${InstrumentPicker} value=${l.underlyingId} onChange=${(v) => set(i, { underlyingId: v })} /><//>` : null}
         ${l.type === 'price' ? html`<${Field} label="Units per unit of notional"><${Num} value=${l.units} onInput=${(v) => set(i, { units: v })} /><//>
           <${Field} label="Fixed price" hint="Leave empty for the floating price"><${Num} value=${l.fixedPrice} onInput=${(v) => set(i, { fixedPrice: v })} /><//>` : null}
-        <${Field} label=${['return', 'price'].includes(l.type) ? 'Reset and payment' : 'Payment'}><${Select} value=${l.months} onChange=${(v) => set(i, { months: Number(v) })} options=${MONTHS} /><//>
+        <${Field} label=${['return', 'price'].includes(l.type) ? 'Reset and payment' : 'Payment'}><${Select} value=${l.months} onChange=${(v) => set(i, { months: Number(v), ...(Number(v) && l.compounding ? { compounding: null } : {}) })} options=${MONTHS} /><//>
         ${!['return', 'price'].includes(l.type) ? html`<${Field} label="Day count"><${Select} value=${l.dayCount} onChange=${(v) => set(i, { dayCount: v })} options=${DAY_COUNTS} /><//>` : null}
         ${l.type === 'return' ? html`<${Field} label="Options"><${Check} checked=${l.passDividends} onChange=${(v) => set(i, { passDividends: v })}>Total return (pass income through)<//><${Check} checked=${l.resetNotional} onChange=${(v) => set(i, { resetNotional: v })}>Notional resets<//><//>` : null}
         ${['fixed', 'float', 'ois'].includes(l.type) ? html`<${Field} label="Notional"><${Check} checked=${l.exchangeNotional} onChange=${(v) => set(i, { exchangeNotional: v })}>Exchanged at start and maturity<//><//>` : null}

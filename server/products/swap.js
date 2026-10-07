@@ -6,7 +6,8 @@
 // total-return and equity swaps, commodity swaps, and caps/floors (a capped or floored floating leg).
 //
 // Leg types
-//   fixed    notional x rate x day-count fraction
+//   fixed    notional x rate x day-count fraction; compounded annually when the leg says so (a leg paid once,
+//            at maturity, as on a zero-coupon swap): notional x ((1 + rate)^fraction - 1)
 //   float    notional x (fixing at period start + spread) x fraction
 //   ois      notional x (compounded overnight fixings over the period - 1) + spread
 //   return   notional x (fixing at period end / fixing at period start - 1) of the reference asset
@@ -36,7 +37,7 @@ export function describeLeg(leg, app) {
   const und = leg.underlyingId && app ? app.instruments.get(leg.underlyingId) : null;
   const ref = und ? (und.symbol || und.name) : leg.underlyingName || 'reference asset';
   switch (leg.type) {
-    case 'fixed': return `${side} fixed ${pct(leg.rate)} ${leg.ccy}, ${freq}, ${leg.dayCount}`;
+    case 'fixed': return `${side} fixed ${pct(leg.rate)} ${leg.ccy}${leg.compounding === 'annual' ? ', compounded annually' : ''}, ${freq}, ${leg.dayCount}`;
     case 'float': return `${side} ${leg.index}${leg.spread ? ` ${leg.spread > 0 ? '+' : '-'} ${pct(Math.abs(leg.spread), 2)}` : ''} ${leg.ccy}, ${freq}, ${leg.dayCount}`;
     case 'ois': return `${side} compounded ${leg.index}${leg.spread ? ` ${leg.spread > 0 ? '+' : '-'} ${pct(Math.abs(leg.spread), 2)}` : ''} ${leg.ccy}, ${freq}, ${leg.dayCount}`;
     case 'return': return `${side} ${leg.passDividends ? 'total' : 'price'} return on ${ref} (${leg.ccy}), reset ${freq}${leg.resetNotional ? ', notional resets' : ''}`;
@@ -98,7 +99,8 @@ function legAmount(app, inst, pos, leg, period) {
   const used = [];
   switch (leg.type) {
     case 'fixed':
-      return { amount: N * leg.rate * yf, detail: { notional: N, rate: leg.rate, fraction: yf } };
+      // Simple interest, or (a zero-coupon leg) compounded once a year over the period.
+      return { amount: leg.compounding === 'annual' ? N * ((1 + leg.rate) ** yf - 1) : N * leg.rate * yf, detail: { notional: N, rate: leg.rate, fraction: yf, compounding: leg.compounding || null } };
     case 'float':
     case 'cap':
     case 'floor': {
@@ -269,7 +271,9 @@ export const swap = {
         l.rate = num(l.rate);
         if (l.rate === null) errors.push(`${at}: fixed rate is required as a decimal (0.04 = 4%).`);
         else if (Math.abs(l.rate) > 1) errors.push(`${at}: the fixed rate looks like a percentage; enter it as a decimal.`);
-      }
+        l.compounding = l.compounding === 'annual' ? 'annual' : null;
+        if (l.compounding && l.months) errors.push(`${at}: compounding applies to a fixed leg paid once, at maturity. Choose payment at maturity, or no compounding.`);
+      } else delete l.compounding;
       if (['float', 'ois', 'cap', 'floor'].includes(l.type)) {
         if (!l.index) errors.push(`${at}: floating index (rate code) is required.`);
         l.spread = num(l.spread) ?? 0;
@@ -398,6 +402,13 @@ export const swap = {
         if (u) {
           out.instruments.push(u);
           if (task?.data?.periodEnd) out.closes.push({ instrument: u, date: task.data.periodEnd });
+          // A return leg also needs the fixing its period starts from, unless an earlier reset or the contract already gave it
+          // (asking for it again does no harm): without this the first period of an index or return leg could never be paid
+          // from supplied data.
+          if (l.type === 'return' && l.id === task?.data?.legId && task.data.periodEnd) {
+            const period = legSchedule(inst, l).find((x) => x.end === task.data.periodEnd);
+            if (period) out.closes.push({ instrument: u, date: period.start });
+          }
         }
       }
     }
