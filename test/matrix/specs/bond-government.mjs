@@ -40,6 +40,8 @@ const EST = (d) => `${d}T15:00:00.000Z`;
 /** 10:00 in New York on a date in Eastern Daylight Time (UTC-4): mid-March to the end of October. */
 const EDT = (d) => `${d}T14:00:00.000Z`;
 
+const EDT_1730 = (d) => `${d}T21:30:00.000Z`; // 17:30 New York in daylight time, after the 17:00 end-of-day cutoff
+
 /** Fill assumptions every scenario states in full. A quote with a bid and an ask fills at them; a manual mark without them fills 3 bp away from the mark (the Book's assumed half spread for bonds). */
 const FILL = { halfSpreadBps: { bond: 3 }, slippageBps: 0, participation: 1, maxQuoteAgeSec: 120, allowEndOfDayFills: false, maxPreviewDriftPct: 0.5 };
 const SHORT = { collateralPct: 1.02, marginPct: 0.3 };
@@ -2027,4 +2029,202 @@ const agencyDebt = {
   ],
 };
 
-export default [treasuryNote, treasuryBill, treasuryBond, strips, foreignGovBill, foreignGovBond, emLocalDebt, emHardDebt, agencyDebt];
+
+// ---------------------------------------------------------------------------------------------
+// supranational_bond
+// ---------------------------------------------------------------------------------------------
+// A euro bond of a supranational issuer, listed in Luxembourg, in a Book that reports in US
+// dollars. 2.75% paid ONCE a year on 30 April, ACT/ACT (a coupon period is the whole year, 365
+// days here), T+2 set on the instrument, on the TARGET calendar (a euro-area venue: the Terminal
+// uses TARGET closing days and says its calendar is approximate), multiples of 1,000 euro.
+// Bought three days before the coupon date: almost a full year of accrued interest is paid, and the
+// full annual coupon is received. Friday 1 May 2026 is a TARGET holiday on which New York is open:
+// a sale made on Thursday 30 April settles on Tuesday 5 May.
+// EUR/USD is 1.10 at the start and 1.12 after the coupon. Commission: 0.25 bp of principal.
+// (At these rates each posting rounds to the cent in dollars, so a cent or two of rounding shows in
+// FX effects from the first trade on; the figures below follow every posting.)
+const supranationalBond = {
+  productId: 'supranational_bond',
+  title: 'International Bank for Reconstruction and Development 2.75% euro bond due 30 April 2031: annual coupon, T+2 over the 1 May TARGET holiday, FX effects',
+  matrix: {
+    ...BOND_TICKET,
+    manualInputs: ['none'],
+    settlement: 'T+2 from the instrument\'s own convention on the TARGET calendar (Luxembourg listing; flagged approximate); the 1 May TARGET holiday is skipped',
+    lifecycle: 'Daily accrual on ACT/ACT with one coupon period a year; annual coupon to the face settled before the coupon date; accrual continues on a TARGET holiday',
+    accounting: 'Euro position, cash, accrued interest and settlement; US dollar figures at the current rate for balances and unrealized P&L, at the booking rate for income, commission and realized P&L; FX effects reported separately',
+    collateral: 'None for a long position',
+  },
+  start: EDT('2026-04-27'), // Monday
+  settlementCheck: { lag: 2, holidays: ['2026-05-01'] }, // Labour Day, a TARGET closing day
+  book: {
+    name: 'Matrix supranational euro bond', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 1_000_000 }, { ccy: 'EUR', amount: 3_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'EUR', amount: 2_500_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.25 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  fx: { 'EUR/USD': 1.10 },
+  instruments: {
+    main: { productId: 'supranational_bond', name: 'International Bank for Reconstruction and Development 2.75% 30-Apr-2031 EUR', symbol: 'IBRD-2.75-APR31', marketView: 'FOREIGN_CASH', venueType: 'exchange', venue: 'Luxembourg Stock Exchange', venueCountry: 'LU', issuer: 'International Bank for Reconstruction and Development', domicile: 'US', underlyingGeo: 'Global', tradingCcy: 'EUR', multiplier: 0.01,
+      conventions: { settleLag: 2 },
+      terms: { couponType: 'fixed', couponRate: 0.0275, frequency: 1, maturity: '2031-04-30', issueDate: '2021-04-30', dayCount: 'ACT/ACT', redemption: 100, minDenomination: 1_000 } },
+  },
+  quotes: { main: { bid: 98.6, ask: 98.7, last: 98.65, bidSize: 20_000_000, askSize: 20_000_000 } },
+  expectAtStart: {
+    ...startState(2_750_000, 1_550_000), // 2,500,000 EUR x 1.10; 1,000,000 USD + 500,000 EUR x 1.10
+    cash: { account: { EUR: idle(2_500_000) }, treasury: { USD: idle(1_000_000), EUR: idle(500_000) } },
+  },
+  steps: [
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 2_000_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 2_000_000, estimate: 98.7, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2026-04-29', calendar: 'TARGET',
+            gross: 1_974_000, // 2,000,000 x 98.70 / 100
+            accrued: 54_849.32, // settles 29 Apr, 364 days into the 365-day year: 2,000,000 x 2.75% x 364/365 = 54,849.315
+            cash: -2_028_849.32, fees: 49.35 }], // 0.25 bp of 1,974,000
+          cash: { EUR: { purchases: 2_028_849.32, fees: 49.35, required: 2_028_898.67, available: 2_500_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 2_000_000, avgPrice: 98.7, fills: [{ qty: 2_000_000, price: 98.7, model: 'quoted-bid-ask', settleDate: '2026-04-29', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 2,000,000 IBRD-2.75-APR31 @ 98.70 EUR', owner: 'account', date: '2026-04-27' }],
+        cash: { account: { EUR: { settled: 2_500_000, unsettled: -2_028_898.67, availableToTrade: 471_101.33 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 2_000_000, avgCost: 98.7, cost: 1_974_000, price: 98.65,
+          value: 1_973_000, unrealized: -1_000, accrued: 54_849.32, priceSource: 'Test fixture' }], // euro
+        holdings: { main: { long: 2_000_000, short: 0, net: 2_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-04-29', amount: -2_028_898.67, ccy: 'EUR', into: 'cash' }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2026-04-30', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2031-04-30', status: 'pending' }], // a Thursday; a Wednesday
+        // In dollars at 1.10: commission 49.35 x 1.10 = 54.29; unrealized -1,000 x 1.10 = -1,100.
+        // One cent of FX effects from rounding the postings to the cent: the accrued bought, 54,849.32 x 1.10 = 60,334.252, is
+        // booked at 60,334.25 and the payable, 2,231,788.537, at 2,231,788.54: half a cent between them, shown as 0.01.
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -54.29, fees: 0, borrowFunding: 0, unrealized: -1_100, fx: 0.01, total: -1_154.28 } },
+        nav: { account: 2_748_845.72, book: 4_298_845.72 }, // (2,500,000 - 2,028,898.67 + 1,973,000 + 54,849.32) x 1.10
+        balance: { account: { cash: 2_750_000, accruedIncome: 60_334.25, positions: 2_170_300, payable: 2_231_788.54, assets: 4_980_634.25, liabilities: 2_231_788.54, netAssets: 2_748_845.72,
+          local: { EUR: { cash: 2_500_000, accruedIncome: 54_849.32, positions: 1_973_000, payable: 2_028_898.67 } } } },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EDT('2026-04-29'), // Wednesday
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 2,028,898.67 EUR from settled cash', cash: { EUR: -2_028_898.67 }, date: '2026-04-29' }],
+        cash: { account: { EUR: { settled: 471_101.33, unsettled: 0, availableToTrade: 471_101.33 } } },
+        pending: [],
+        balance: { account: { cash: 518_211.46, payable: null, assets: 2_748_845.72, liabilities: 0, local: { EUR: { cash: 471_101.33, payable: null } } } }, // 471,101.33 x 1.10
+      },
+    },
+    {
+      id: 'annual-coupon', covers: 'coupon', action: 'clock', to: EDT('2026-04-30'), // Thursday
+      expect: {
+        // The whole year's coupon: 2,000,000 x 2.75% = 55,000.00 euro, to the face settled yesterday. 54,849.32 of it was bought
+        // as accrued interest; the income is the one day held, 150.68 euro, 165.75 dollars.
+        events: [
+          { type: 'bond.coupon', summary: 'Coupon received on 2,000,000 IBRD-2.75-APR31: 55,000.00 EUR', cash: { EUR: 55_000 }, owner: 'account', date: '2026-04-30' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on IBRD-2.75-APR31: 150.68 EUR' },
+        ],
+        cash: { account: { EUR: { settled: 526_101.33, availableToTrade: 526_101.33 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_000_000, accrued: 0 }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-04-30', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2031-04-30', status: 'pending' }], // a Friday: one coupon a year
+        pnl: { account: { couponInterest: 165.75, fx: 0, total: -988.54 } },
+        nav: { account: 2_749_011.46, book: 4_299_011.46 }, // (526,101.33 + 1,973,000) x 1.10
+        balance: { account: { cash: 578_711.46, accruedIncome: null, assets: 2_749_011.46, netAssets: 2_749_011.46, local: { EUR: { cash: 526_101.33, accruedIncome: null } } } },
+      },
+    },
+    {
+      id: 'euro-rises', covers: 'fx', action: 'fx_rate', pair: 'EUR/USD', rate: 1.12,
+      expect: {
+        // Net assets 2,499,101.33 euro x 1.12 = 2,798,993.49. Unrealized -1,000 x 1.12 = -1,120.
+        // FX effects: cash and the position at cost, 2,500,101.33 euro, booked at 2,750,111.46 dollars, are worth 2,800,113.49: +50,002.03.
+        pnl: { account: { couponInterest: 165.75, commissions: -54.29, unrealized: -1_120, fx: 50_002.03, total: 48_993.49 }, book: { fx: 60_002.03 } }, // Treasury's 500,000 euro gained 10,000.00
+        nav: { account: 2_798_993.49, treasury: 1_560_000, book: 4_358_993.49 },
+        balance: { account: { cash: 589_233.49, positions: 2_209_760, assets: 2_798_993.49, netAssets: 2_798_993.49 } }, // 526,101.33 x 1.12; 1,973,000 x 1.12
+      },
+    },
+    {
+      // Thursday 30 April. T+2: Friday 1 May is a TARGET holiday, so Monday 4 May is the first day and Tuesday 5 May the second.
+      id: 'reduce', covers: ['reduce', 'market holiday'], action: 'ticket', instrument: 'main', side: 'sell', qty: 800_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 800_000, estimate: 98.6, settleDate: '2026-05-05', calendar: 'TARGET',
+          gross: 788_800, // 800,000 x 98.60 / 100
+          accrued: 301.37, // settles 5 May, 5 days into the new 365-day year: 800,000 x 2.75% x 5/365 = 301.370
+          cash: 789_101.37, fees: 19.72 }] }, // 0.25 bp of 788,800
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 800_000, avgPrice: 98.6 }] },
+        // Realized in euro: 788,800 - 800,000 x 98.70% = -800; in dollars at 1.12: -896. Commission 19.72 x 1.12 = 22.09.
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: /^Sold 800,000 IBRD-2\.75-APR31 @ 98\.60 EUR \(realized [-−]800\.00 EUR\)$/ }],
+        cash: { account: { EUR: { settled: 526_101.33, unsettled: 789_081.65, availableToTrade: 1_315_182.98 } } }, // 788,800 + 301.37 - 19.72
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_200_000, cost: 1_184_400, avgCost: 98.7, price: 98.65, value: 1_183_800, unrealized: -600,
+          accrued: -301.37 }], // the interest sold, booked ahead of the five days it covers
+        holdings: { main: { long: 1_200_000, short: 0, net: 1_200_000 } },
+        pending: [{ instrument: 'main', dueDate: '2026-05-05', amount: 789_081.65, ccy: 'EUR', into: 'cash' }],
+        pnl: { account: { realized: -896, couponInterest: 165.75, commissions: -76.38, unrealized: -672, fx: 50_002.02, total: 48_523.39 }, book: { fx: 60_002.02 } }, // 54.29 + 22.09; -600 x 1.12
+        nav: { account: 2_798_523.40, book: 4_358_523.40 }, // (526,101.33 + 789,081.65 + 1,183,800 - 301.37) x 1.12
+        balance: { account: { cash: 589_233.49, receivable: 883_771.45, accruedIncome: -337.53, positions: 1_325_856, assets: 2_798_523.40, liabilities: 0, netAssets: 2_798_523.40,
+          local: { EUR: { cash: 526_101.33, receivable: 789_081.65, accruedIncome: -301.37, positions: 1_183_800 } } } },
+      },
+    },
+    {
+      // Friday 1 May, 17:30 New York: TARGET was closed, New York was not. End of day 1 May: all 2,000,000 still settled, one day:
+      // 55,000 x 1/365 = 150.68; less the 301.37 sold: -150.68. On the books -301.37: income 150.69 euro (168.77 dollars).
+      id: 'target-holiday', covers: ['market holiday', 'accrual'], action: 'clock', to: EDT_1730('2026-05-01'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on IBRD-2.75-APR31: 150.69 EUR', date: '2026-05-01' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_200_000, accrued: -150.68 }],
+        pnl: { account: { couponInterest: 334.52, fx: 50_002.03, total: 48_692.17 }, book: { fx: 60_002.03 } },
+        nav: { account: 2_798_692.18, book: 4_358_692.18 },
+        balance: { account: { accruedIncome: -168.76, assets: 2_798_692.18, netAssets: 2_798_692.18, local: { EUR: { accruedIncome: -150.68 } } } },
+      },
+    },
+    {
+      id: 'settle-reduce', covers: ['settlement', 'accrual'], action: 'clock', to: EDT('2026-05-05'), // Tuesday
+      expect: {
+        // End of day 4 May: 2,000,000 settled, four days: 55,000 x 4/365 = 602.74; less the 301.37 sold: 301.37. Income 452.05 euro.
+        events: [
+          { type: 'settlement.receive', summary: 'received 789,081.65 EUR into settled cash', cash: { EUR: 789_081.65 } },
+          { type: 'accrual.coupon', summary: 'Interest accrued on IBRD-2.75-APR31: 452.05 EUR' },
+        ],
+        cash: { account: { EUR: { settled: 1_315_182.98, unsettled: 0, availableToTrade: 1_315_182.98 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_200_000, accrued: 301.37 }],
+        pending: [],
+        pnl: { account: { couponInterest: 840.82, fx: 50_002.02, total: 49_198.46 }, book: { fx: 60_002.02 } },
+        nav: { account: 2_799_198.47, book: 4_359_198.47 },
+        balance: { account: { cash: 1_473_004.94, receivable: null, accruedIncome: 337.53, assets: 2_799_198.47, netAssets: 2_799_198.47, local: { EUR: { cash: 1_315_182.98, receivable: null, accruedIncome: 301.37 } } } },
+      },
+    },
+    {
+      id: 'close', covers: 'close', action: 'close', lot: 'lot', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 1_200_000, estimate: 98.6, settleDate: '2026-05-07',
+          gross: 1_183_200, // 1,200,000 x 98.60 / 100
+          accrued: 632.88, // settles 7 May, 7 days: 1,200,000 x 2.75% x 7/365 = 632.877
+          cash: 1_183_832.88, fees: 29.58 }] }, // 0.25 bp of 1,183,200
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 1_200_000, avgPrice: 98.6 }] },
+        // Realized -1,200 euro (-1,344 dollars). Interest: 632.88 sold against 301.37 on the books: 331.51 more income.
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: /^Sold 1,200,000 IBRD-2\.75-APR31 @ 98\.60 EUR \(realized [-−]1,200\.00 EUR\)$/ },
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of IBRD-2.75-APR31: 331.51 EUR' },
+        ],
+        cash: { account: { EUR: { settled: 1_315_182.98, unsettled: 1_183_803.30, availableToTrade: 2_498_986.28 } } }, // 1,183,200 + 632.88 - 29.58
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', dueDate: '2026-05-07', amount: 1_183_803.30, ccy: 'EUR', into: 'cash' }],
+        lifecycle: [],
+        // Euro result: interest 150.68 + 150.69 + 452.05 + 331.51 = 1,084.93 (55,000 + 301.37 + 632.88 - 54,849.32); realized -2,000; commissions 98.65: -1,013.72.
+        pnl: { account: { realized: -2_240, couponInterest: 1_212.11, commissions: -109.51, unrealized: 0, fx: 50_002.02, total: 48_864.62 } },
+        nav: { account: 2_798_864.63, book: 4_358_864.63 }, // 2,498,986.28 x 1.12
+        balance: { account: { cash: 1_473_004.94, receivable: 1_325_859.70, positions: null, accruedIncome: null, assets: 2_798_864.63, liabilities: 0, netAssets: 2_798_864.63,
+          local: { EUR: { cash: 1_315_182.98, receivable: 1_183_803.30, positions: null, accruedIncome: null } } } },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: EDT('2026-05-07'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 1,183,803.30 EUR into settled cash', cash: { EUR: 1_183_803.30 } }],
+        cash: { account: { EUR: { settled: 2_498_986.28, unsettled: 0, availableToTrade: 2_498_986.28 } }, treasury: { USD: { settled: 1_000_000 }, EUR: { settled: 500_000 } } },
+        pending: [],
+        nav: { account: 2_798_864.63, treasury: 1_560_000, book: 4_358_864.63 },
+        balance: { account: { cash: 2_798_864.63, receivable: null, assets: 2_798_864.63, liabilities: 0, netAssets: 2_798_864.63, local: { EUR: { cash: 2_498_986.28, receivable: null } } } },
+      },
+    },
+  ],
+};
+
+export default [treasuryNote, treasuryBill, treasuryBond, strips, foreignGovBill, foreignGovBond, emLocalDebt, emHardDebt, agencyDebt, supranationalBond];
