@@ -17,6 +17,7 @@
 //                        leg in the preview, Re-check edited package, Confirm. Without `order.statedPrice`
 //                        the shared path is used.
 //   actions.manual_rate  Data connection, Manual entries, "Reference or funding rate": a fixing by hand
+//   actions.owner_screens  the Accounting screens read with Treasury in scope (`owner: 'treasury'`), for a swap Treasury owns
 //   actions.agreement    Treasury, Collateral, New agreement: a paper collateral agreement of the Book
 //
 // What a draft may state, and where it goes on the form (everything the form has):
@@ -326,6 +327,25 @@ export const actions = {
   close: atStatedPrice,
   resize: atStatedPrice,
   package: strategiesPage,
+
+  /**
+   * The Accounting screens read in Treasury's scope (`owner: 'treasury'`). The shared check after every step reads the
+   * tabs of the scenario's Account; a scenario whose swap belongs to Treasury adds this step where it wants Treasury's
+   * own screens compared with the API's figures for Treasury (cash, positions, holdings, pending, P&L, balance sheet).
+   */
+  async owner_screens(ui, t, ctx, step) {
+    if (step.owner !== 'treasury') throw new Error('owner_screens reads the screens of Treasury: state `owner: \'treasury\'`.');
+    const { readScreens, screenProblems } = await import('../browser.mjs');
+    const { observeState } = await import('../../lib/normalize.mjs');
+    // The shared readers work on "the scenario's Account": hand them Treasury in that place.
+    const as = Object.create(ctx);
+    as.accountId = ctx.treasuryId;
+    as.ownerKey = (unitId) => (unitId === ctx.treasuryId ? 'account' : unitId === ctx.accountId ? 'other' : unitId);
+    await ui.closeOverlays();
+    const state = await observeState(t, as);
+    const screen = await readScreens(ui, as, t);
+    return { problems: screenProblems(as, screen, { expected: {}, state, events: [] }).map((m) => `Treasury's screens: ${m}`) };
+  },
 
   /** A reference-rate fixing entered by hand: Data connection, Manual entries, "Reference or funding rate". */
   async manual_rate(ui, t, ctx, step) {

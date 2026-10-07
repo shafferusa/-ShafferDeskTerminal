@@ -51,3 +51,4 @@
 - 2026-10-07T10:48Z | s1 | +0.2 | forward_starting_swap passes at engine, API and browser
 - 2026-10-07T10:53Z | s1 | +0.2 | constant_maturity_swap passes at engine, API and browser (Strategies-page OTC ticket)
 - 2026-10-07T11:01Z | s1 | +0 | swap.js: cross-currency notional exchange is funded or fails visibly (no negative cash), settles with the trade; npm test 328 of 328
+- 2026-10-07T11:05Z | s1 | +0.2 | cross_currency_swap passes at engine, API and browser (Treasury-owned, principal exchange funded or failed visibly)

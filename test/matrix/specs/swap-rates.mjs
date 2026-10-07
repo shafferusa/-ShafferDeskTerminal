@@ -2432,4 +2432,327 @@ const constantMaturitySwap = {
   ],
 };
 
-export default [interestRateSwap, overnightIndexSwap, basisSwap, interestRateCap, interestRateFloor, interestRateCollar, forwardStartingSwap, constantMaturitySwap];
+// ---------------------------------------------------------------------------------------------
+// cross_currency_swap
+// ---------------------------------------------------------------------------------------------
+// Owned by Treasury, in a Book that reports in US dollars. A one-year fixed-for-fixed euro / dollar swap
+// with exchange of principal: the contract is written "pay 2.40% on the euro notional, annually; receive
+// 4.10% on the dollar notional, semi-annually", both 30/360, with the dollar notional 1.10 times the euro
+// notional (the EUR/USD rate when it was agreed). Quantity and price are in euros: the euro notional, and
+// an amount per 100 of it.
+//
+// Principal, as the Terminal books it:
+//   - Entered as written, Treasury receives the euro notional at the start and owes it back (an amount
+//     borrowed), and pays the dollar notional and is owed it back (an amount lent). Both go back the other
+//     way at maturity. They are cash movements against those two balances, not profit or loss.
+//   - The exchange is made in both currencies or in neither. If the cash to be paid is not there, nothing
+//     moves, the exchange is listed as failed and it is made as soon as the cash is there.
+//   - A change agreed after the start (an increase, a termination) exchanges its principal when it settles.
+//   - The mark is the value of the rest of the contract. The principal exchanged is on the balance sheet at
+//     the current rate, so a mark entered by hand must not include it a second time.
+// Reporting currency: euro balances at the current EUR/USD fixture; each entry keeps the rate of its day;
+// the difference is the FX effect. Realized amounts are converted at the rate of the day they are booked.
+//
+// Schedule (effective Monday 11 May 2026, maturity Tuesday 11 May 2027; payments on days when both TARGET and the Federal Reserve are open):
+//   leg A, EUR fixed  2026-05-11 to 2027-05-11 (360 days 30/360), paid 11 May 2027
+//   leg B, USD fixed  2026-05-11 to 2026-11-11 (180 days), paid Thursday 12 November: the 11th is Veterans Day, a Federal Reserve holiday
+//                     2026-11-11 to 2027-05-11 (180 days), paid 11 May 2027
+const XCCY_NAME = 'EUR/USD cross-currency swap 2.40% EUR v 4.10% USD 11 May 2027';
+const crossCurrencySwap = {
+  productId: 'cross_currency_swap',
+  title: 'EUR/USD 1-year fixed-for-fixed cross-currency swap owned by Treasury, principal exchanged at start and maturity, reported in USD',
+  matrix: {
+    ...OTC_TICKET,
+    ticket: `${OTC_TICKET.ticket}. Owner chosen on the ticket: Treasury`,
+    requiredFields: [...OTC_TICKET.requiredFields, 'each leg: Notional factor, Notional exchanged'],
+    automaticInputs: ['payment schedule of each leg; payment dates on the TARGET and Federal Reserve calendars together', 'principal exchanged at the start, on the settlement of a later change, and back at maturity', 'EUR/USD rate (FX fixture) for the reporting-currency figures', 'settlement date, T+2 on TARGET', 'commission from the Book fee schedule'],
+    manualInputs: ['upfront amount (stated fill price, in euros per 100 of euro notional)', 'mark of the contract, entered by hand, excluding the principal already on the balance sheet', 'settlement amount of a partial termination', 'cash moved to Treasury when the principal cannot be paid'],
+    settlement: 'Upfront amount and commission settle T+2 on TARGET; principal for a change made after the start moves on that settlement date; leg payments are cash on their payment date',
+    lifecycle: 'Initial exchange of principal on the effective date (failed visibly for want of dollars, then made once funded); dollar interest semi-annually (moved over Veterans Day); a trade that could not pay its principal is refused; partial termination returns part of the principal on its settlement date; euro interest, last dollar interest, maturity and the final exchange',
+    accounting: 'Principal received is cash and an amount owed; principal paid is an amount lent: neither is P&L. Interest and the termination result are realized P&L at the rate of their day; euro balances are revalued at the current rate and the difference is the FX effect; the figures are Treasury\'s and the Book\'s',
+    collateral: 'Uncollateralized (paper assumption): nothing is posted or received, whatever the mark',
+  },
+  start: at('2026-05-05'),
+  settlementCheck: { lag: 2, holidays: [] }, // TARGET: no holiday in the settlement windows used (5 to 11 May, 15 to 17 June, 1 to 3 December 2026)
+  book: {
+    name: 'Matrix cross-currency swap', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 6_000_000 }, { ccy: 'EUR', amount: 500_000 }],
+    account: { name: 'Rates', funding: [{ ccy: 'USD', amount: 1_000_000 }] }, // the Account does not trade; Treasury is left 500,000 USD short of the dollar principal
+    settings: { fees: { swap: { perUnit: 0.00001, minimum: 0, bps: 0 } }, fill: FILL, settlement: { swap: 2 } }, // 10.00 per million of euro notional, in euros
+  },
+  instruments: {
+    main: {
+      productId: 'cross_currency_swap', name: XCCY_NAME, symbol: 'XCCY-EURUSD-0527', marketView: 'FOREIGN_DERIV', venueType: 'otc', venueCountry: 'DE', tradingCcy: 'EUR', multiplier: 0.01,
+      conventions: { tradingCalendar: 'TARGET', settlementCalendar: 'TARGET', paymentCalendar: 'TARGET+USD' },
+      terms: {
+        effective: '2026-05-11', maturity: '2027-05-11', counterparty: 'Dealer E', collateralBasis: { type: 'uncollateralized' },
+        legs: [
+          { side: 'pay', type: 'fixed', ccy: 'EUR', rate: 0.024, months: 12, dayCount: '30/360', exchangeNotional: true },
+          { side: 'receive', type: 'fixed', ccy: 'USD', rate: 0.041, months: 6, dayCount: '30/360', notionalFactor: 1.1, exchangeNotional: true },
+        ],
+      },
+    },
+  },
+  fx: { 'EUR/USD': 1.10 },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 1_000_000, unsettled: 0, margin: 0, restricted: 0, availableToTrade: 1_000_000 } },
+      treasury: { USD: { settled: 5_000_000, unsettled: 0, borrowed: 0, lent: 0, availableToTrade: 5_000_000 }, EUR: { settled: 500_000, unsettled: 0, borrowed: 0, lent: 0, availableToTrade: 500_000 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], lifecycleFailures: [], borrowings: [], otc: [], alerts: [],
+    nav: { account: 1_000_000, treasury: 5_550_000, book: 6_550_000 }, // 500,000 EUR at 1.10 = 550,000
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+  },
+  steps: [
+    {
+      // 4,000,000 EUR as written, no upfront amount. Commission 4,000,000 x 0.00001 = 40.00 EUR (44.00 USD), settling Thursday 7 May.
+      // The swap has not started: no principal moves and none is required today.
+      id: 'open', covers: ['open', 'before the effective date'], action: 'ticket', owner: 'treasury', instrument: 'main', side: 'buy', qty: 4_000_000, as: 'xccy', order: { statedPrice: 0 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 4_000_000, estimate: 0, model: 'stated-price', settleDate: '2026-05-07', calendar: 'TARGET', cash: 0, fees: 40, otherCash: {} }],
+          cash: { EUR: { purchases: 0, proceeds: 0, fees: 40, margin: 0, required: 40, available: 500_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 4_000_000, avgPrice: 0, fills: [{ qty: 4_000_000, price: 0, model: 'stated-price', settleDate: '2026-05-07' }] }] },
+        events: [{ type: 'strategy.submitted', owner: 'treasury' }, { type: 'trade.fill', summary: 'Entered as written: 4,000,000 notional of XCCY-EURUSD-0527 at 0.00 per 100 notional', owner: 'treasury', date: '2026-05-05' }],
+        cash: { treasury: { EUR: { settled: 500_000, unsettled: -40, availableToTrade: 499_960 }, USD: { settled: 5_000_000, availableToTrade: 5_000_000 } } },
+        positions: [{ instrument: 'main', lot: 'xccy', owner: 'treasury', direction: 'as written', qty: 4_000_000, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, notional: 4_000_000, margin: 0 }],
+        holdings: { main: { long: 4_000_000, short: 0, net: 4_000_000 } },
+        pending: [{ instrument: 'main', owner: 'treasury', dueDate: '2026-05-07', amount: -40, ccy: 'EUR', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.notional', instrument: 'main', dueDate: '2026-05-11', status: 'pending', owner: 'treasury' }, // the initial exchange of principal
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-11-12', status: 'pending', owner: 'treasury' },  // dollar interest; 11 November is Veterans Day
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-05-11', status: 'pending', owner: 'treasury' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-05-11', status: 'pending', owner: 'treasury' },  // euro interest
+        ],
+        otc: [{ instrument: 'main', lot: 'xccy', owner: 'treasury', qty: 4_000_000, basis: 'uncollateralized', agreement: null, iaPosted: 0, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { total: 0 }, book: { realized: 0, commissions: -44, unrealized: 0, fx: 0, total: -44 } }, // 40 EUR x 1.10
+        nav: { account: 1_000_000, treasury: 5_549_956, book: 6_549_956 },
+        provisional: { account: false, book: true },
+        balance: { treasury: { cash: 5_550_000, payable: 44, positions: null, lent: null, borrowed: null, assets: 5_550_000, liabilities: 44, netAssets: 5_549_956 } },
+      },
+    },
+    {
+      id: 'settle-commission', covers: 'settlement', action: 'clock', to: at('2026-05-07'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 40.00 EUR from settled cash', cash: { EUR: -40 }, owner: 'treasury', date: '2026-05-07' }],
+        cash: { treasury: { EUR: { settled: 499_960, unsettled: 0, availableToTrade: 499_960 } } },
+        pending: [],
+        balance: { treasury: { cash: 5_549_956, payable: null, assets: 5_549_956, liabilities: 0 } }, // 5,000,000 + 499,960 x 1.10
+      },
+    },
+    {
+      // 1,000,000 EUR more at 0.02 per 100: 200.00 EUR, commission 10.00 EUR. It settles Monday 11 May, the effective date, so its
+      // principal is exchanged with that settlement and is part of what the trade needs: 1,100,000 USD to pay, 1,000,000 EUR to receive.
+      id: 'increase', covers: ['increase', 'notional exchange'], action: 'resize', owner: 'treasury', lot: 'xccy', factor: 1.25, order: { statedPrice: 0.02 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 1_000_000, estimate: 0.02, model: 'stated-price', settleDate: '2026-05-11', cash: -200, fees: 10, otherCash: { EUR: 1_000_000, USD: -1_100_000 } }],
+          cash: { EUR: { purchases: 200, proceeds: 1_000_000, fees: 10, required: 210, available: 499_960, shortfall: 0 }, USD: { purchases: 1_100_000, proceeds: 0, required: 1_100_000, available: 5_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 1_000_000, avgPrice: 0.02 }] },
+        events: [{ type: 'strategy.legs_added', owner: 'treasury' }, { type: 'trade.fill', summary: 'Increased as written: 1,000,000 notional of XCCY-EURUSD-0527 at 0.02 per 100 notional', owner: 'treasury' }],
+        cash: { treasury: { EUR: { settled: 499_960, unsettled: -210, availableToTrade: 499_750 }, USD: { settled: 5_000_000 } } },
+        positions: [{ instrument: 'main', lot: 'xccy', owner: 'treasury', qty: 5_000_000, cost: 200, avgCost: 0.004, price: null, value: null, notional: 5_000_000 }], // 200 / 50,000
+        holdings: { main: { long: 5_000_000, short: 0, net: 5_000_000 } },
+        pending: [{ instrument: 'main', owner: 'treasury', dueDate: '2026-05-11', amount: -210, ccy: 'EUR', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: 5_000_000 }],
+        pnl: { book: { commissions: -55, total: -55 } }, // 50 EUR x 1.10
+        nav: { treasury: 5_549_945, book: 6_549_945 }, // 5,000,000 + (499,960 - 210 + 200 carried at cost) x 1.10
+        balance: { treasury: { cash: 5_549_956, positions: 220, payable: 231, assets: 5_550_176, liabilities: 231, netAssets: 5_549_945 } },
+      },
+    },
+    {
+      // The effective date. The 210.00 EUR settles. The principal is due: 5,500,000 USD to pay (5,000,000 x 1.10) and 5,000,000 EUR to receive.
+      // Treasury has 5,000,000 USD. Nothing is exchanged in either currency, cash does not go below zero, and the exchange is listed as failed.
+      id: 'initial-exchange-unfunded', covers: ['notional exchange', 'insufficient cash'], action: 'clock', to: at('2026-05-11'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 210.00 EUR from settled cash', cash: { EUR: -210 }, owner: 'treasury', date: '2026-05-11' }],
+        cash: { treasury: { EUR: { settled: 499_750, unsettled: 0, borrowed: 0, availableToTrade: 499_750 }, USD: { settled: 5_000_000, lent: 0, availableToTrade: 5_000_000 } } },
+        pending: [],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-11-12', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-05-11', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-05-11', status: 'pending' },
+        ],
+        lifecycleFailures: [{ type: 'swap.notional', instrument: 'main', dueDate: '2026-05-11', status: 'failed', owner: 'treasury', reason: /Notional exchange on .* could not be made: 5,500,000\.00 USD is to be paid and Treasury has 5,000,000\.00 USD of settled USD cash\. Nothing was exchanged in either currency\./ }],
+        alerts: ['funding.failed'],
+        failed: { lifecycle: 1 },
+        nav: { treasury: 5_549_945, book: 6_549_945 },
+        balance: { treasury: { cash: 5_549_725, payable: null, positions: 220, lent: null, borrowed: null, assets: 5_549_945, liabilities: 0, netAssets: 5_549_945 } }, // 5,000,000 + 499,750 x 1.10
+      },
+    },
+    {
+      // The Account returns 600,000 USD to Treasury. The exchange is then made: 5,000,000 EUR received and owed back, 5,500,000 USD paid and owed to Treasury.
+      // Net assets do not change: cash 100,000 USD + 5,499,750 EUR, lent 5,500,000 USD, owed 5,000,000 EUR.
+      id: 'funded-and-exchanged', covers: ['notional exchange', 'insufficient cash'], action: 'transfer', from: 'account', to: 'treasury', ccy: 'USD', amount: 600_000,
+      expect: {
+        events: [
+          { type: 'transfer.return' },
+          { type: 'swap.notional_exchange', summary: `Notional exchange on ${XCCY_NAME}: received 5,000,000.00 EUR`, cash: { EUR: 5_000_000 }, owner: 'treasury', date: '2026-05-11' },
+          { type: 'swap.notional_exchange', summary: `Notional exchange on ${XCCY_NAME}: paid 5,500,000.00 USD`, cash: { USD: -5_500_000 }, owner: 'treasury', date: '2026-05-11' },
+        ],
+        cash: {
+          account: { USD: { settled: 400_000, availableToTrade: 400_000 } },
+          treasury: { EUR: { settled: 5_499_750, borrowed: 5_000_000, lent: 0, availableToTrade: 5_499_750 }, USD: { settled: 100_000, lent: 5_500_000, borrowed: 0, availableToTrade: 100_000 } },
+        },
+        lifecycleFailures: [], alerts: [], failed: { lifecycle: 0 },
+        pnl: { book: { realized: 0, commissions: -55, fx: 0, total: -55 } }, // principal is not profit or loss
+        nav: { account: 400_000, treasury: 6_149_945, book: 6_549_945 }, // 100,000 + 5,500,000 lent + (5,499,750 - 5,000,000 + 200) x 1.10
+        balance: { treasury: { cash: 6_149_725, lent: 5_500_000, borrowed: 5_500_000, positions: 220, assets: 11_649_945, liabilities: 5_500_000, netAssets: 6_149_945 } }, // cash 100,000 + 5,499,750 x 1.10
+      },
+    },
+    { id: 'treasury-screens-after-exchange', covers: 'notional exchange', action: 'owner_screens', owner: 'treasury', expect: {} },
+    { id: 'mid-june', action: 'clock', to: at('2026-06-15'), expect: { events: [] } },
+    {
+      // Doubling the swap now would exchange another 5,500,000 USD when the trade settles. Treasury has 100,000 USD: refused, 5,400,000 short.
+      id: 'increase-without-the-dollars', covers: ['notional exchange', 'insufficient cash'], action: 'resize', owner: 'treasury', lot: 'xccy', factor: 2, order: { statedPrice: 0 },
+      status: 'blocked', reason: 'The principal a trade exchanges at its settlement is part of the cash the trade needs.',
+      expect: { refused: /Treasury is short 5,400,000\.00 USD: the package needs 5,500,000\.00 USD \(purchases 5,500,000\.00 USD, fees 0\.00 USD, margin and collateral 0\.00 USD, reserved 0\.00 USD\) and 100,000\.00 USD is available/ },
+    },
+    {
+      // The euro rises to 1.12. Treasury's euro net assets: cash 5,499,750 - owed 5,000,000 + 200 carried = 499,950 EUR.
+      // FX effect: 499,950 x (1.12 - 1.10) = 9,999.00. The dollars lent do not move.
+      id: 'euro-rises', covers: 'reporting currency', action: 'fx_rate', pair: 'EUR/USD', rate: 1.12,
+      expect: {
+        pnl: { book: { realized: 0, commissions: -55, unrealized: 0, fx: 9_999, total: 9_944 } },
+        nav: { account: 400_000, treasury: 6_159_944, book: 6_559_944 }, // 5,600,000 + 499,950 x 1.12
+        balance: { treasury: { cash: 6_259_720, lent: 5_500_000, borrowed: 5_600_000, positions: 224, assets: 11_759_944, liabilities: 5_600_000, netAssets: 6_159_944 } }, // 100,000 + 5,499,750 x 1.12; 5,000,000 x 1.12; 200 x 1.12
+      },
+    },
+    {
+      // Mark 0.30 per 100 of euro notional: 5,000,000 x 0.30 / 100 = 15,000 EUR, 14,800 above the 200 paid: 16,576.00 USD at 1.12.
+      id: 'mark', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 0.30, note: 'Dealer mark, by hand, excluding the principal',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'xccy', owner: 'treasury', qty: 5_000_000, price: 0.3, value: 15_000, unrealized: 14_800, provisional: false, priceSource: 'Manual entry', priceStatus: 'manual' }],
+        otc: [{ instrument: 'main', mark: 0.3, markValue: 15_000 }],
+        pnl: { book: { unrealized: 16_576, fx: 9_999, total: 26_520 } },
+        nav: { treasury: 6_176_520, book: 6_576_520 },
+        provisional: { account: false, book: false },
+        balance: { treasury: { positions: 16_800, assets: 11_776_520, netAssets: 6_176_520 } }, // 15,000 x 1.12
+      },
+    },
+    {
+      // Veterans Day: TARGET is open, the Federal Reserve is not. The dollar interest is not paid today.
+      id: 'veterans-day', covers: 'payment across a holiday', action: 'clock', to: at('2026-11-11'),
+      expect: { events: [], cash: { treasury: { USD: { settled: 100_000 } } }, lifecycle: [
+        { type: 'swap.payment', instrument: 'main', dueDate: '2026-11-12', status: 'pending' },
+        { type: 'swap.maturity', instrument: 'main', dueDate: '2027-05-11', status: 'pending' },
+        { type: 'swap.payment', instrument: 'main', dueDate: '2027-05-11', status: 'pending' },
+      ] },
+    },
+    {
+      // Dollar interest, received on Thursday 12 November: 5,500,000 x 4.10% x 180/360 = 112,750.00 USD.
+      id: 'dollar-interest', covers: ['fixed payment', 'payment across a holiday'], action: 'clock', to: at('2026-11-12'),
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Swap receipt on ${XCCY_NAME}, leg B (fixed), period 2026-05-11 to 2026-11-11: 112,750.00 USD`, cash: { USD: 112_750 }, owner: 'treasury', date: '2026-11-12' }],
+        cash: { treasury: { USD: { settled: 212_750, availableToTrade: 212_750 } } },
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-05-11', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-05-11', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-05-11', status: 'pending' },
+        ],
+        pnl: { book: { realized: 112_750, total: 139_270 } },
+        nav: { treasury: 6_289_270, book: 6_689_270 },
+        balance: { treasury: { cash: 6_372_470, assets: 11_889_270, netAssets: 6_289_270 } },
+      },
+    },
+    { id: 'first-of-december', action: 'clock', to: at('2026-12-01'), expect: { events: [] } },
+    {
+      // 40% (2,000,000 EUR) is terminated for 0.25 per 100, received: 5,000.00 EUR; commission 20.00 EUR. Settles Thursday 3 December.
+      // Upfront carried on it: 200 x 40% = 80. Realized 4,920.00 EUR = 5,510.40 USD at 1.12. Commission 22.40 USD.
+      // Its principal goes back with that settlement: 2,000,000 EUR to pay, 2,200,000 USD to receive. Nothing of it moves today.
+      // Left: 3,000,000 EUR carrying 120, marked 0.30: 9,000 EUR, 8,880 up = 9,945.60 USD.
+      id: 'partial-termination', covers: ['reduce', 'partial termination', 'notional exchange'], action: 'close', owner: 'treasury', lot: 'xccy', scope: 'strategy', percent: 40, order: { statedPrice: 0.25 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 2_000_000, estimate: 0.25, model: 'stated-price', settleDate: '2026-12-03', cash: 5_000, fees: 20, otherCash: { EUR: -2_000_000, USD: 2_200_000 } }],
+          cash: { EUR: { purchases: 2_000_000, proceeds: 5_000, fees: 20, required: 2_000_020, available: 5_499_750, shortfall: 0 }, USD: { purchases: 0, proceeds: 2_200_000, required: 0, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 2_000_000, avgPrice: 0.25 }] },
+        events: [{ type: 'strategy.legs_added', owner: 'treasury' }, { type: 'trade.fill', summary: 'Terminated in part: 2,000,000 of 5,000,000 notional of XCCY-EURUSD-0527 at 0.25 per 100 notional (realized 4,920.00 EUR)', owner: 'treasury' }],
+        cash: { treasury: { EUR: { settled: 5_499_750, unsettled: 4_980, borrowed: 5_000_000, availableToTrade: 5_504_730 }, USD: { settled: 212_750, lent: 5_500_000 } } },
+        positions: [{ instrument: 'main', lot: 'xccy', owner: 'treasury', qty: 3_000_000, cost: 120, avgCost: 0.004, price: 0.3, value: 9_000, unrealized: 8_880, notional: 3_000_000 }],
+        holdings: { main: { long: 3_000_000, short: 0, net: 3_000_000 } },
+        pending: [{ instrument: 'main', owner: 'treasury', dueDate: '2026-12-03', amount: 4_980, ccy: 'EUR', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.notional', instrument: 'main', dueDate: '2026-12-03', status: 'pending', owner: 'treasury' }, // the principal of the part terminated
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-05-11', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-05-11', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-05-11', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', qty: 3_000_000, markValue: 9_000 }],
+        pnl: { book: { realized: 118_260.40, commissions: -77.40, unrealized: 9_945.60, fx: 9_999, total: 138_127.60 } },
+        nav: { treasury: 6_288_127.60, book: 6_688_127.60 }, // 212,750 + 5,500,000 + (5,499,750 + 4,980 - 5,000,000 + 9,000) x 1.12
+        balance: { treasury: { cash: 6_372_470, receivable: 5_577.60, lent: 5_500_000, borrowed: 5_600_000, positions: 10_080, assets: 11_888_127.60, liabilities: 5_600_000, netAssets: 6_288_127.60 } },
+      },
+    },
+    {
+      // Thursday 3 December: the 4,980.00 EUR settles, and the principal of the part terminated goes back: 2,000,000 EUR paid, 2,200,000 USD received.
+      // Left: 3,000,000 EUR owed, 3,300,000 USD lent. Net assets do not change.
+      id: 'termination-settles-with-its-principal', covers: ['settlement', 'notional exchange'], action: 'clock', to: at('2026-12-03'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 4,980.00 EUR into settled cash', cash: { EUR: 4_980 }, owner: 'treasury', date: '2026-12-03' },
+          { type: 'swap.notional_exchange', summary: `Notional exchange on ${XCCY_NAME}: paid 2,000,000.00 EUR`, cash: { EUR: -2_000_000 }, owner: 'treasury', date: '2026-12-03' },
+          { type: 'swap.notional_exchange', summary: `Notional exchange on ${XCCY_NAME}: received 2,200,000.00 USD`, cash: { USD: 2_200_000 }, owner: 'treasury', date: '2026-12-03' },
+        ],
+        cash: { treasury: { EUR: { settled: 3_504_730, unsettled: 0, borrowed: 3_000_000, availableToTrade: 3_504_730 }, USD: { settled: 2_412_750, lent: 3_300_000, availableToTrade: 2_412_750 } } },
+        pending: [],
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-05-11', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-05-11', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-05-11', status: 'pending' },
+        ],
+        pnl: { book: { realized: 118_260.40, commissions: -77.40, unrealized: 9_945.60, fx: 9_999, total: 138_127.60 } },
+        nav: { treasury: 6_288_127.60, book: 6_688_127.60 },
+        // cash 2,412,750 + 3,504,730 x 1.12 = 6,338,047.60; owed 3,000,000 x 1.12
+        balance: { treasury: { cash: 6_338_047.60, receivable: null, lent: 3_300_000, borrowed: 3_360_000, positions: 10_080, assets: 9_648_127.60, liabilities: 3_360_000, netAssets: 6_288_127.60 } },
+      },
+    },
+    { id: 'treasury-screens-after-termination', covers: 'partial termination', action: 'owner_screens', owner: 'treasury', expect: {} },
+    { id: 'mid-january', action: 'clock', to: at('2027-01-15'), expect: { events: [] } },
+    {
+      // The euro falls to 1.07. Euro net assets: 3,504,730 - 3,000,000 + 9,000 = 513,730 EUR = 549,691.10 USD.
+      // FX effect since the entries were booked: cash 3,504,730 x 1.07 = 3,750,061.10 against 3,815,302.60 booked (6,049,725 + 5,577.60 - 2,240,000): -65,241.50;
+      // the 3,000,000 owed: 3,210,000 against 3,260,000 booked (5,500,000 - 2,240,000): +50,000.00; the 120 carried: 128.40 against 130.40: -2.00. Total -15,243.50.
+      id: 'euro-falls', covers: 'reporting currency', action: 'fx_rate', pair: 'EUR/USD', rate: 1.07,
+      expect: {
+        pnl: { book: { realized: 118_260.40, commissions: -77.40, unrealized: 9_501.60, fx: -15_243.50, total: 112_441.10 } }, // 8,880 x 1.07
+        nav: { treasury: 6_262_441.10, book: 6_662_441.10 }, // 2,412,750 + 3,300,000 + 549,691.10
+        balance: { treasury: { cash: 6_162_811.10, lent: 3_300_000, borrowed: 3_210_000, positions: 9_630, assets: 9_472_441.10, liabilities: 3_210_000, netAssets: 6_262_441.10 } },
+      },
+    },
+    {
+      // Maturity, 11 May 2027. Euro interest, paid: 3,000,000 x 2.40% x 360/360 = 72,000.00 EUR (77,040.00 USD at 1.07).
+      // Dollar interest, received: 3,300,000 x 4.10% x 180/360 = 67,650.00 USD. The swap ends: the 120 EUR still carried is written off (128.40 USD),
+      // and the principal goes back: 3,000,000 EUR paid, 3,300,000 USD received.
+      // Treasury ends with 5,000,000 + 600,000 + 112,750 + 67,650 = 5,780,400.00 USD and 500,000 - 40 - 210 + 4,980 - 72,000 = 432,730.00 EUR.
+      id: 'final-interest-maturity-and-exchange', covers: ['fixed payment', 'maturity', 'close', 'notional exchange'], action: 'clock', to: at('2027-05-11'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap payment on ${XCCY_NAME}, leg A (fixed), period 2026-05-11 to 2027-05-11: 72,000.00 EUR`, cash: { EUR: -72_000 }, owner: 'treasury', date: '2027-05-11' },
+          { type: 'swap.payment', summary: `Swap receipt on ${XCCY_NAME}, leg B (fixed), period 2026-11-11 to 2027-05-11: 67,650.00 USD`, cash: { USD: 67_650 }, owner: 'treasury', date: '2027-05-11' },
+          { type: 'swap.matured', summary: `Swap matured: ${XCCY_NAME} (notional 3,000,000)`, owner: 'treasury' },
+          { type: 'swap.notional_exchange', summary: `Notional exchange on ${XCCY_NAME}: paid 3,000,000.00 EUR`, cash: { EUR: -3_000_000 }, owner: 'treasury', date: '2027-05-11' },
+          { type: 'swap.notional_exchange', summary: `Notional exchange on ${XCCY_NAME}: received 3,300,000.00 USD`, cash: { USD: 3_300_000 }, owner: 'treasury', date: '2027-05-11' },
+        ],
+        cash: { treasury: { EUR: { settled: 432_730, unsettled: 0, borrowed: 0, lent: 0, availableToTrade: 432_730 }, USD: { settled: 5_780_400, lent: 0, borrowed: 0, availableToTrade: 5_780_400 } }, account: { USD: { settled: 400_000 } } },
+        positions: [], holdings: { main: null }, lifecycle: [], lifecycleFailures: [], otc: [], pending: [], alerts: [],
+        // Realized 118,260.40 - 77,040.00 + 67,650.00 - 128.40. FX effect unchanged at 1.07: cash 432,730 x 1.07 = 463,021.10 against 528,262.60 booked (-65,241.50),
+        // +50,000.00 on the principal repaid, -2.00 on the upfront written off.
+        pnl: { book: { realized: 108_742, commissions: -77.40, unrealized: 0, fx: -15_243.50, total: 93_421.10 } },
+        nav: { account: 400_000, treasury: 6_243_421.10, book: 6_643_421.10 }, // 5,780,400 + 432,730 x 1.07
+        provisional: { account: false, book: false },
+        balance: { treasury: { cash: 6_243_421.10, lent: null, borrowed: null, positions: null, assets: 6_243_421.10, liabilities: 0, netAssets: 6_243_421.10 } },
+      },
+    },
+    { id: 'treasury-screens-after-maturity', covers: 'maturity', action: 'owner_screens', owner: 'treasury', expect: {} },
+  ],
+};
+
+export default [interestRateSwap, overnightIndexSwap, basisSwap, interestRateCap, interestRateFloor, interestRateCollar, forwardStartingSwap, constantMaturitySwap, crossCurrencySwap];
