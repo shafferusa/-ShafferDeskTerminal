@@ -2755,4 +2755,389 @@ const crossCurrencySwap = {
   ],
 };
 
-export default [interestRateSwap, overnightIndexSwap, basisSwap, interestRateCap, interestRateFloor, interestRateCollar, forwardStartingSwap, constantMaturitySwap, crossCurrencySwap];
+// ---------------------------------------------------------------------------------------------
+// cross_currency_basis_swap
+// ---------------------------------------------------------------------------------------------
+// A one-year US dollar / yen basis swap in a Book that reports in dollars, held by the Account. The
+// contract is written "pay 3-month TORF less 0.35% on the yen notional (ACT/365), receive 3-month term
+// SOFR flat on the dollar notional (ACT/360)", quarterly, principal exchanged, yen notional 150 times the
+// dollar notional. Quantity and price are in dollars. The Account enters the opposite side: it lends its
+// yen and borrows dollars. At the start it pays the yen notional and receives the dollar notional; each
+// quarter it receives the yen interest and pays the dollar interest; at maturity the principal goes back.
+// Yen amounts have no decimals.
+//
+// Schedule (effective Monday 23 March 2026, maturity Tuesday 23 March 2027; payments on days when both the
+// Federal Reserve and Tokyo are open). The fixing of a period is the one of its first day or, when that is
+// not such a day, of the last one before it.
+//   2026-03-23 to 2026-06-23 (92 days), paid 23 June        fixings of 23 March:  TSFR3M 4.20%, TORF3M 0.75%
+//   2026-06-23 to 2026-09-23 (92 days), paid Thursday 24 September: the 23rd is the autumn equinox in Tokyo
+//                                                           fixings of 23 June:   TSFR3M 4.05%, TORF3M 0.80%
+//   2026-09-23 to 2026-12-23 (91 days), paid 23 December    fixings of Friday 18 September (the 21st, 22nd and 23rd are holidays in Tokyo): 3.90%, 0.85%
+//   2026-12-23 to 2027-03-23 (90 days), paid 23 March 2027  fixings of 23 December: 3.75%, 0.90%
+//
+// Collateral: a bilateral agreement that covers the Account and Treasury and is posted by Treasury (shared
+// netting): no independent amount, variation margin in full in USD cash. The Account's swap is marked;
+// Treasury's cash moves.
+//
+// Reporting currency, by hand. USD/JPY is 150, then 156, then 144; a yen amount is worth amount / rate.
+// Each entry keeps the dollar value of its day. FX effect = yen balances at today's rate less what the
+// entries were booked at, over the Account's two yen balances (cash, and the principal lent):
+//   booked: cash 1,560,000,000 (10,400,000.00) - 1,500,000,000 (10,000,000.00) + 1,512,329 at 150 (10,082.19)
+//           + 1,701,370 at 156 (10,906.22) + 600,000,000 at 156 (3,846,153.85) + 1,121,918 at 156 (7,191.78) + 1,220,548 at 144 (8,476.03)
+//           + 900,000,000 at 144 (6,250,000.00);  lent 10,000,000.00 - 3,846,153.85 - 6,250,000.00
+const XBS_NAME = 'USD/JPY cross-currency basis swap TSFR3M v TORF3M - 35bp 23 Mar 2027';
+const XBS_DRAFT = {
+  productId: 'cross_currency_basis_swap', name: XBS_NAME, symbol: 'XCCY-USDJPY-0327', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 0.01,
+  conventions: { tradingCalendar: 'USD', settlementCalendar: 'USD', paymentCalendar: 'USD+JP' },
+  terms: {
+    effective: '2026-03-23', maturity: '2027-03-23', counterparty: 'Dealer F',
+    collateralBasis: { type: 'agreement', agreementId: '$agreement:csa' },
+    legs: [
+      { side: 'pay', type: 'float', ccy: 'JPY', index: 'TORF3M', spread: -0.0035, months: 3, dayCount: 'ACT/365', notionalFactor: 150, exchangeNotional: true },
+      { side: 'receive', type: 'float', ccy: 'USD', index: 'TSFR3M', spread: 0, months: 3, dayCount: 'ACT/360', exchangeNotional: true },
+    ],
+  },
+};
+const crossCurrencyBasisSwap = {
+  productId: 'cross_currency_basis_swap',
+  title: 'USD/JPY 1-year cross-currency basis swap, yen lent against dollars (opposite side), collateral posted by Treasury under a shared agreement, reported in USD',
+  matrix: {
+    ...OTC_TICKET,
+    ticket: `${OTC_TICKET.ticket}; the agreement is recorded first under Treasury, Collateral`,
+    requiredFields: [...OTC_TICKET.requiredFields, 'Trading currency (the currency of the notional and the price)', 'each leg: Notional factor, Spread, Notional exchanged'],
+    automaticInputs: ['payment schedule of each leg; payment dates on the Federal Reserve and Tokyo calendars together', 'TSFR3M and TORF3M fixings (rate fixtures standing in for Shaffer MarketData)', 'principal exchanged at the start, on the settlement of a termination, and back at maturity', 'USD/JPY rate (FX fixture) for the reporting-currency figures', 'settlement date, T+2 on the USD calendar', 'variation margin from the agreement, moved by Treasury'],
+    manualInputs: ['the agreement itself', 'mark of the contract, entered by hand, in dollars per 100 of dollar notional', 'settlement amount of a partial termination', 'cash moved from Treasury when the principal cannot be repaid at maturity'],
+    settlement: 'Termination amount settles T+2 on the USD calendar, and the principal of the part terminated with it; leg payments are cash on their payment date; yen in whole yen',
+    lifecycle: 'Initial exchange on the effective date; yen interest received and dollar interest paid each quarter, each leg on its own index, spread and day count; a payment date that is a holiday in Tokyo moves to the next day and its fixings are the last ones before the holidays; partial termination; at maturity the final exchange fails visibly for want of dollars, and the swap matures once the Account is funded',
+    accounting: 'Principal paid is an amount lent (in yen), principal received an amount owed (in dollars); interest is realized P&L at the rate of its day; yen balances are revalued at the current rate and the difference is the FX effect; price amounts (mark, termination) are in dollars, the trading currency stated on the contract',
+    collateral: 'Agreement "CSA Dealer F" covering the Account and Treasury, posted by Treasury: variation margin in full, in USD, from Treasury\'s cash against the Account\'s swap; reduced after the partial termination; returned at maturity',
+  },
+  tradedOn: 'The contract names a collateral agreement, so a step registers it (Instruments, New instrument) once the agreement exists; it is then traded from the instrument drawer like the other registered swaps of this file.',
+  start: at('2026-03-18'),
+  settlementCheck: { lag: 2, holidays: [] }, // no Federal Reserve holiday in the settlement windows used (18 to 23 March, 6 to 8 October 2026)
+  book: {
+    name: 'Matrix cross-currency basis swap', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 1_000_000 }, { ccy: 'JPY', amount: 1_560_000_000 }],
+    account: { name: 'Yen desk', funding: [{ ccy: 'USD', amount: 200_000 }, { ccy: 'JPY', amount: 1_560_000_000 }] },
+    settings: { fees: { swap: NO_FEE }, fill: FILL, settlement: { swap: 2 } },
+  },
+  instruments: {},
+  fx: { 'USD/JPY': 150 },
+  rates: {
+    TSFR3M: { byDate: { '2026-03-23': 4.20, '2026-06-23': 4.05, '2026-09-18': 3.90, '2026-12-23': 3.75 } },
+    TORF3M: { currency: 'JPY', byDate: { '2026-03-23': 0.75, '2026-06-23': 0.80, '2026-09-18': 0.85, '2026-12-23': 0.90 } },
+  },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 200_000, unsettled: 0, margin: 0, restricted: 0, borrowed: 0, lent: 0, availableToTrade: 200_000 }, JPY: { settled: 1_560_000_000, unsettled: 0, borrowed: 0, lent: 0, availableToTrade: 1_560_000_000 } },
+      treasury: { USD: { settled: 800_000, unsettled: 0, margin: 0, availableToTrade: 800_000 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], lifecycleFailures: [], borrowings: [], otc: [], alerts: [],
+    nav: { account: 10_600_000, treasury: 800_000, book: 11_400_000 }, // 200,000 + 1,560,000,000 / 150
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+  },
+  steps: [
+    {
+      id: 'record-agreement', covers: 'collateral', action: 'agreement', as: 'csa',
+      agreement: { name: 'CSA Dealer F', counterparty: 'Dealer F', kind: 'bilateral', covers: ['account', 'treasury'], postedBy: 'treasury', independentAmount: { type: 'none' }, variationMargin: true, threshold: 0, minimumTransfer: 0, baseCcy: 'USD', postingCcy: 'USD', haircut: 0, nettingScope: 'shared' },
+      expect: { events: [{ type: 'collateral.agreement', summary: 'Collateral agreement recorded: CSA Dealer F with Dealer F (Bilateral (CSA-style))', owner: 'treasury' }] },
+    },
+    { id: 'register-under-agreement', covers: 'registration', action: 'register_instrument', as: 'main', draft: XBS_DRAFT, expect: {} },
+    {
+      // Opposite side, 8,000,000 USD of notional, no upfront amount. The swap starts on Monday: no principal moves and none is required today.
+      id: 'open', covers: ['open', 'before the effective date'], action: 'ticket', instrument: 'main', side: 'sell', qty: 8_000_000, as: 'basis', order: { statedPrice: 0 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 8_000_000, estimate: 0, model: 'stated-price', settleDate: '2026-03-20', calendar: 'USD', cash: 0, fees: 0, otherCash: {} }],
+          cash: { USD: { purchases: 0, proceeds: 0, fees: 0, margin: 0, required: 0, available: 200_000, shortfall: 0 } }, // the price is in dollars, the currency stated on the contract
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 8_000_000, avgPrice: 0, fills: [{ qty: 8_000_000, price: 0, model: 'stated-price', settleDate: '2026-03-20' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Entered on the opposite side: 8,000,000 notional of XCCY-USDJPY-0327 at 0.00 per 100 notional', owner: 'account', date: '2026-03-18' }],
+        cash: { account: { USD: { settled: 200_000, unsettled: 0 }, JPY: { settled: 1_560_000_000, unsettled: 0 } } },
+        positions: [{ instrument: 'main', lot: 'basis', owner: 'account', direction: 'opposite side', qty: -8_000_000, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, notional: 8_000_000, margin: 0 }],
+        holdings: { main: { long: 0, short: 8_000_000, net: -8_000_000 } },
+        pending: [],
+        lifecycle: [
+          { type: 'swap.notional', instrument: 'main', dueDate: '2026-03-23', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-06-23', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-06-23', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-03-23', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', lot: 'basis', owner: 'account', qty: -8_000_000, basis: 'agreement', agreement: 'CSA Dealer F', postedBy: 'treasury', iaRequired: 0, iaPosted: 0, vmPosted: 0, vmHeld: 0, vmCcy: 'USD', vmStatus: 'not_valued_yet' }],
+        pnl: { account: { realized: 0, commissions: 0, unrealized: 0, fx: 0, total: 0 } },
+        nav: { account: 10_600_000, treasury: 800_000, book: 11_400_000 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 10_600_000, positions: null, lent: null, borrowed: null, assets: 10_600_000, liabilities: 0, netAssets: 10_600_000 } },
+      },
+    },
+    {
+      id: 'no-mark-no-call', covers: 'variation margin', action: 'clock', to: at('2026-03-19'),
+      expect: { otc: [{ instrument: 'main', vmStatus: 'cannot_value', vmPosted: 0 }], alerts: ['collateral.unvalued'] },
+    },
+    {
+      // 2,000,000 more on the same terms. It settles Monday 23 March, the effective date, so its principal is exchanged with that settlement
+      // and is part of what the trade needs: 2,000,000 x 150 = 300,000,000 JPY to pay, 2,000,000 USD to receive.
+      id: 'increase', covers: ['increase', 'notional exchange'], action: 'resize', lot: 'basis', factor: 1.25, order: { statedPrice: 0 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 2_000_000, estimate: 0, model: 'stated-price', settleDate: '2026-03-23', cash: 0, fees: 0, otherCash: { JPY: -300_000_000, USD: 2_000_000 } }],
+          cash: { JPY: { purchases: 300_000_000, proceeds: 0, required: 300_000_000, available: 1_560_000_000, shortfall: 0 }, USD: { purchases: 0, proceeds: 2_000_000, required: 0, available: 200_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 2_000_000, avgPrice: 0 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Increased on the opposite side: 2,000,000 notional of XCCY-USDJPY-0327 at 0.00 per 100 notional' }],
+        positions: [{ instrument: 'main', lot: 'basis', qty: -10_000_000, cost: 0, notional: 10_000_000 }],
+        holdings: { main: { long: 0, short: 10_000_000, net: -10_000_000 } },
+        otc: [{ instrument: 'main', qty: -10_000_000 }],
+        nav: { account: 10_600_000, book: 11_400_000 },
+      },
+    },
+    {
+      // The effective date. Principal: 10,000,000 x 150 = 1,500,000,000 JPY paid (an amount lent), 10,000,000 USD received (an amount owed).
+      // Net assets do not change: 10,200,000 - 10,000,000 owed + (60,000,000 + 1,500,000,000) / 150.
+      id: 'initial-exchange', covers: 'notional exchange', action: 'clock', to: at('2026-03-23'),
+      expect: {
+        events: [
+          { type: 'swap.notional_exchange', summary: `Notional exchange on ${XBS_NAME}: paid 1,500,000,000 JPY`, cash: { JPY: -1_500_000_000 }, owner: 'account', date: '2026-03-23' },
+          { type: 'swap.notional_exchange', summary: `Notional exchange on ${XBS_NAME}: received 10,000,000.00 USD`, cash: { USD: 10_000_000 }, owner: 'account', date: '2026-03-23' },
+        ],
+        cash: { account: { JPY: { settled: 60_000_000, lent: 1_500_000_000, borrowed: 0, availableToTrade: 60_000_000 }, USD: { settled: 10_200_000, borrowed: 10_000_000, lent: 0, availableToTrade: 10_200_000 } } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-06-23', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-06-23', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-03-23', status: 'pending' },
+        ],
+        pnl: { account: { realized: 0, fx: 0, total: 0 } },
+        nav: { account: 10_600_000, book: 11_400_000 },
+        balance: { account: { cash: 10_600_000, lent: 10_000_000, borrowed: 10_000_000, assets: 20_600_000, liabilities: 10_000_000, netAssets: 10_600_000 } }, // cash 10,200,000 + 60,000,000 / 150
+      },
+    },
+    {
+      // The mark is of the contract as written, in dollars per 100 of dollar notional. On the opposite side: -10,000,000 x 0.10 / 100 = -10,000 USD.
+      id: 'mark', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 0.10, note: 'Dealer mark, by hand, excluding the principal',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'basis', qty: -10_000_000, price: 0.1, value: -10_000, unrealized: -10_000, provisional: false, priceSource: 'Manual entry', priceStatus: 'manual' }],
+        otc: [{ instrument: 'main', mark: 0.1, markValue: -10_000 }],
+        pnl: { account: { unrealized: -10_000, total: -10_000 } },
+        nav: { account: 10_590_000, book: 11_390_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: -10_000, assets: 20_590_000, netAssets: 10_590_000 } },
+      },
+    },
+    {
+      // No threshold: the whole 10,000 is posted, and it is Treasury's cash that moves. The Account's cash is untouched.
+      id: 'variation-margin-posted-by-treasury', covers: ['variation margin', 'collateral'], action: 'clock', to: eod('2026-03-23'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under "CSA Dealer F" (Dealer F): 10,000.00 USD posted. Netting set of 1 position marked at -10,000.00 USD; threshold 0.00 USD. Moved by Treasury.', cash: { USD: -10_000 }, date: '2026-03-23' }],
+        cash: { treasury: { USD: { settled: 790_000, margin: 10_000, availableToTrade: 790_000 } }, account: { USD: { settled: 10_200_000, margin: 0 } } },
+        otc: [{ instrument: 'main', postedBy: 'treasury', vmPosted: 10_000, vmHeld: 0, vmExposure: -10_000, vmStatus: 'ok' }],
+        alerts: [],
+        nav: { account: 10_590_000, treasury: 800_000, book: 11_390_000 },
+        balance: { treasury: { cash: 790_000, margin: 10_000, assets: 800_000, liabilities: 0, netAssets: 800_000 } },
+      },
+    },
+    {
+      // First quarter. Yen leg, received: 1,500,000,000 x (0.75% - 0.35%) x 92/365 = 1,512,328.77, in whole yen 1,512,329 (10,082.19 USD at 150).
+      // Dollar leg, paid: 10,000,000 x 4.20% x 92/360 = 107,333.33.
+      id: 'first-quarter', covers: 'floating payment', action: 'clock', to: at('2026-06-23'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap receipt on ${XBS_NAME}, leg A (float), period 2026-03-23 to 2026-06-23: 1,512,329 JPY`, cash: { JPY: 1_512_329 }, owner: 'account', date: '2026-06-23' },
+          { type: 'swap.payment', summary: `Swap payment on ${XBS_NAME}, leg B (float), period 2026-03-23 to 2026-06-23: 107,333.33 USD`, cash: { USD: -107_333.33 }, owner: 'account', date: '2026-06-23' },
+        ],
+        cash: { account: { JPY: { settled: 61_512_329, availableToTrade: 61_512_329 }, USD: { settled: 10_092_666.67, availableToTrade: 10_092_666.67 } } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-09-24', status: 'pending' }, // 23 September is a holiday in Tokyo
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-09-24', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-03-23', status: 'pending' },
+        ],
+        pnl: { account: { realized: -97_251.14, unrealized: -10_000, fx: 0, total: -107_251.14 } }, // 10,082.19 - 107,333.33
+        nav: { account: 10_492_748.86, book: 11_292_748.86 },
+        balance: { account: { cash: 10_502_748.86, assets: 20_492_748.86, netAssets: 10_492_748.86 } }, // 10,092,666.67 + 61,512,329 / 150
+      },
+    },
+    { id: 'mid-july', action: 'clock', to: at('2026-07-15'), expect: { events: [] } },
+    {
+      // The yen weakens to 156. Cash 61,512,329 / 156 = 394,309.80 against 410,082.19 booked: -15,772.39. Lent 1,500,000,000 / 156 = 9,615,384.62 against 10,000,000: -384,615.38.
+      // FX effect -400,387.77. The dollars owed do not move.
+      id: 'yen-weakens', covers: 'reporting currency', action: 'fx_rate', pair: 'USD/JPY', rate: 156,
+      expect: {
+        pnl: { account: { realized: -97_251.14, unrealized: -10_000, fx: -400_387.77, total: -507_638.91 } },
+        nav: { account: 10_092_361.09, treasury: 800_000, book: 10_892_361.09 }, // 10,092,666.67 - 10,000,000 - 10,000 + 1,561,512,329 / 156
+        balance: { account: { cash: 10_486_976.47, lent: 9_615_384.62, borrowed: 10_000_000, positions: -10_000, assets: 20_092_361.09, liabilities: 10_000_000, netAssets: 10_092_361.09 } },
+      },
+    },
+    {
+      // The autumn equinox: the Federal Reserve is open, Tokyo is not. Nothing is paid in either currency today.
+      id: 'holiday-in-tokyo', covers: 'payment across a holiday', action: 'clock', to: at('2026-09-23'),
+      expect: { events: [], cash: { account: { JPY: { settled: 61_512_329 }, USD: { settled: 10_092_666.67 } } } },
+    },
+    {
+      // Thursday 24 September. Yen leg: 1,500,000,000 x (0.80% - 0.35%) x 92/365 = 1,701,369.86, 1,701,370 yen (10,906.22 USD at 156). Dollar leg: 10,000,000 x 4.05% x 92/360 = 103,500.00.
+      id: 'second-quarter', covers: ['floating payment', 'payment across a holiday'], action: 'clock', to: at('2026-09-24'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap receipt on ${XBS_NAME}, leg A (float), period 2026-06-23 to 2026-09-23: 1,701,370 JPY`, cash: { JPY: 1_701_370 }, date: '2026-09-24' },
+          { type: 'swap.payment', summary: `Swap payment on ${XBS_NAME}, leg B (float), period 2026-06-23 to 2026-09-23: 103,500.00 USD`, cash: { USD: -103_500 }, date: '2026-09-24' },
+        ],
+        cash: { account: { JPY: { settled: 63_213_699, availableToTrade: 63_213_699 }, USD: { settled: 9_989_166.67, availableToTrade: 9_989_166.67 } } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-12-23', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-12-23', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-03-23', status: 'pending' },
+        ],
+        // FX effect: cash 63,213,699 / 156 = 405,216.019 against 420,988.41 booked, lent as before: -400,387.775, shown as -400,387.78.
+        pnl: { account: { realized: -189_844.92, unrealized: -10_000, fx: -400_387.78, total: -600_232.70 } }, // -97,251.14 + 10,906.22 - 103,500
+        nav: { account: 9_999_767.30, book: 10_799_767.30 }, // 9,989,166.67 - 10,000,000 - 10,000 + 1,563,213,699 / 156
+        // Net assets are the NAV: yen converted once, 1,563,213,699 / 156 = 10,020,600.63. The two yen lines are each rounded on their own (405,216.02 and 9,615,384.62).
+        balance: { account: { cash: 10_394_382.69, lent: 9_615_384.62, borrowed: 10_000_000, positions: -10_000, assets: 19_999_767.30, liabilities: 10_000_000, netAssets: 9_999_767.30 } }, // cash 9,989,166.67 + 405,216.02
+      },
+    },
+    { id: 'early-october', action: 'clock', to: at('2026-10-06'), expect: { events: [] } },
+    {
+      // 40% (4,000,000 USD) is terminated at -0.05 per 100 as written: on the opposite side 4,000,000 x 0.05 / 100 = 2,000 USD is received. Settles Thursday 8 October.
+      // Its principal goes back with that settlement: 4,000,000 USD to pay, 600,000,000 JPY to receive. Left: 6,000,000, marked 0.10: -6,000.
+      id: 'partial-termination', covers: ['reduce', 'partial termination', 'notional exchange'], action: 'close', lot: 'basis', scope: 'strategy', percent: 40, order: { statedPrice: -0.05 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 4_000_000, estimate: -0.05, model: 'stated-price', settleDate: '2026-10-08', cash: 2_000, fees: 0, otherCash: { JPY: 600_000_000, USD: -4_000_000 } }],
+          cash: { USD: { purchases: 4_000_000, proceeds: 2_000, required: 4_000_000, available: 9_989_166.67, shortfall: 0 }, JPY: { purchases: 0, proceeds: 600_000_000, required: 0, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 4_000_000, avgPrice: -0.05 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Terminated in part: 4,000,000 of 10,000,000 notional of XCCY-USDJPY-0327 at -0.05 per 100 notional (realized 2,000.00 USD)' }],
+        cash: { account: { USD: { settled: 9_989_166.67, unsettled: 2_000, borrowed: 10_000_000, availableToTrade: 9_991_166.67 }, JPY: { settled: 63_213_699, lent: 1_500_000_000 } } },
+        positions: [{ instrument: 'main', lot: 'basis', qty: -6_000_000, cost: 0, price: 0.1, value: -6_000, unrealized: -6_000, notional: 6_000_000 }],
+        holdings: { main: { long: 0, short: 6_000_000, net: -6_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-10-08', amount: 2_000, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.notional', instrument: 'main', dueDate: '2026-10-08', status: 'pending' }, // the principal of the part terminated
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-12-23', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-12-23', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-03-23', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', qty: -6_000_000, markValue: -6_000, vmPosted: 10_000 }],
+        pnl: { account: { realized: -187_844.92, unrealized: -6_000, fx: -400_387.78, total: -594_232.70 } },
+        nav: { account: 10_005_767.30, book: 10_805_767.30 }, // 9,999,767.30 + 2,000 received + 4,000 less of the mark
+        balance: { account: { cash: 10_394_382.69, receivable: 2_000, positions: -6_000, lent: 9_615_384.62, borrowed: 10_000_000, assets: 20_005_767.30, liabilities: 10_000_000, netAssets: 10_005_767.30 } },
+      },
+    },
+    {
+      // -6,000 now calls for 6,000: 4,000 of the 10,000 comes back to Treasury.
+      id: 'variation-margin-trimmed', covers: 'variation margin', action: 'clock', to: eod('2026-10-06'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under "CSA Dealer F" (Dealer F): 4,000.00 USD returned to us. Netting set of 1 position marked at -6,000.00 USD; threshold 0.00 USD. Moved by Treasury.', cash: { USD: 4_000 } }],
+        cash: { treasury: { USD: { settled: 794_000, margin: 6_000, availableToTrade: 794_000 } } },
+        otc: [{ instrument: 'main', vmPosted: 6_000, vmExposure: -6_000, vmStatus: 'ok' }],
+        nav: { treasury: 800_000 },
+        balance: { treasury: { cash: 794_000, margin: 6_000, assets: 800_000, netAssets: 800_000 } },
+      },
+    },
+    {
+      // Thursday 8 October: the 2,000 USD settles and the principal of the part terminated goes back: 600,000,000 JPY received (3,846,153.85 USD at 156), 4,000,000 USD paid.
+      // Left: 900,000,000 JPY lent, 6,000,000 USD owed. Net assets do not change.
+      id: 'termination-settles-with-its-principal', covers: ['settlement', 'notional exchange'], action: 'clock', to: at('2026-10-08'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 2,000.00 USD into settled cash', cash: { USD: 2_000 }, date: '2026-10-08' },
+          { type: 'swap.notional_exchange', summary: `Notional exchange on ${XBS_NAME}: received 600,000,000 JPY`, cash: { JPY: 600_000_000 }, owner: 'account', date: '2026-10-08' },
+          { type: 'swap.notional_exchange', summary: `Notional exchange on ${XBS_NAME}: paid 4,000,000.00 USD`, cash: { USD: -4_000_000 }, owner: 'account', date: '2026-10-08' },
+        ],
+        cash: { account: { USD: { settled: 5_991_166.67, unsettled: 0, borrowed: 6_000_000, availableToTrade: 5_991_166.67 }, JPY: { settled: 663_213_699, lent: 900_000_000, availableToTrade: 663_213_699 } } },
+        pending: [],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-12-23', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-12-23', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-03-23', status: 'pending' },
+        ],
+        pnl: { account: { realized: -187_844.92, unrealized: -6_000, fx: -400_387.78, total: -594_232.70 } },
+        nav: { account: 10_005_767.30, book: 10_805_767.30 }, // 5,991,166.67 - 6,000,000 - 6,000 + 1,563,213,699 / 156
+        balance: { account: { cash: 10_242_536.54, receivable: null, lent: 5_769_230.77, borrowed: 6_000_000, positions: -6_000, assets: 16_005_767.30, liabilities: 6_000_000, netAssets: 10_005_767.30 } }, // 5,991,166.67 + 663,213,699 / 156; 900,000,000 / 156
+      },
+    },
+    {
+      // Third quarter, on what is left, at the fixings of Friday 18 September. Yen leg: 900,000,000 x (0.85% - 0.35%) x 91/365 = 1,121,917.81, 1,121,918 yen (7,191.78 USD at 156).
+      // Dollar leg: 6,000,000 x 3.90% x 91/360 = 59,150.00.
+      id: 'third-quarter', covers: 'floating payment', action: 'clock', to: at('2026-12-23'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap receipt on ${XBS_NAME}, leg A (float), period 2026-09-23 to 2026-12-23: 1,121,918 JPY`, cash: { JPY: 1_121_918 }, date: '2026-12-23' },
+          { type: 'swap.payment', summary: `Swap payment on ${XBS_NAME}, leg B (float), period 2026-09-23 to 2026-12-23: 59,150.00 USD`, cash: { USD: -59_150 }, date: '2026-12-23' },
+        ],
+        cash: { account: { JPY: { settled: 664_335_617, availableToTrade: 664_335_617 }, USD: { settled: 5_932_016.67, availableToTrade: 5_932_016.67 } } },
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-03-23', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-03-23', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-03-23', status: 'pending' },
+        ],
+        // FX effect: cash 664,335,617 / 156 = 4,258,561.647 against 4,274,334.04 booked; lent 5,769,230.769 against 6,153,846.15: -400,387.774, shown as -400,387.77.
+        pnl: { account: { realized: -239_803.14, unrealized: -6_000, fx: -400_387.77, total: -646_190.91 } }, // -187,844.92 + 7,191.78 - 59,150
+        nav: { account: 9_953_809.09, book: 10_753_809.09 },
+        balance: { account: { cash: 10_190_578.32, assets: 15_953_809.09, liabilities: 6_000_000, netAssets: 9_953_809.09 } }, // 5,932,016.67 + 4,258,561.65
+      },
+    },
+    { id: 'mid-february', action: 'clock', to: at('2027-02-10'), expect: { events: [] } },
+    {
+      // The yen strengthens to 144. Cash 664,335,617 / 144 = 4,613,441.78 against 4,274,334.04 booked: +339,107.74. Lent 900,000,000 / 144 = 6,250,000.00 against 6,153,846.15: +96,153.85.
+      // FX effect +435,261.59.
+      id: 'yen-strengthens', covers: 'reporting currency', action: 'fx_rate', pair: 'USD/JPY', rate: 144,
+      expect: {
+        pnl: { account: { realized: -239_803.14, unrealized: -6_000, fx: 435_261.59, total: 189_458.45 } },
+        nav: { account: 10_789_458.45, treasury: 800_000, book: 11_589_458.45 }, // 5,932,016.67 - 6,000,000 - 6,000 + 1,564,335,617 / 144
+        balance: { account: { cash: 10_545_458.45, lent: 6_250_000, borrowed: 6_000_000, positions: -6_000, assets: 16_789_458.45, liabilities: 6_000_000, netAssets: 10_789_458.45 } },
+      },
+    },
+    {
+      // Maturity date. Yen leg: 900,000,000 x (0.90% - 0.35%) x 90/365 = 1,220,547.95, 1,220,548 yen (8,476.03 USD at 144). Dollar leg: 6,000,000 x 3.75% x 90/360 = 56,250.00.
+      // The principal must now go back: 6,000,000 USD to pay. The Account has paid its dollar interest out of the dollars and has 5,875,766.67 left.
+      // The final exchange is not made in either currency, the swap is not ended, and the reason is shown.
+      id: 'final-exchange-unfunded', covers: ['floating payment', 'notional exchange', 'insufficient cash'], action: 'clock', to: at('2027-03-23'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap receipt on ${XBS_NAME}, leg A (float), period 2026-12-23 to 2027-03-23: 1,220,548 JPY`, cash: { JPY: 1_220_548 }, date: '2027-03-23' },
+          { type: 'swap.payment', summary: `Swap payment on ${XBS_NAME}, leg B (float), period 2026-12-23 to 2027-03-23: 56,250.00 USD`, cash: { USD: -56_250 }, date: '2027-03-23' },
+        ],
+        cash: { account: { JPY: { settled: 665_556_165, lent: 900_000_000, availableToTrade: 665_556_165 }, USD: { settled: 5_875_766.67, borrowed: 6_000_000, availableToTrade: 5_875_766.67 } } },
+        positions: [{ instrument: 'main', lot: 'basis', qty: -6_000_000, value: -6_000 }],
+        lifecycle: [],
+        lifecycleFailures: [{ type: 'swap.maturity', instrument: 'main', dueDate: '2027-03-23', status: 'failed', owner: 'account', reason: /Final notional exchange on .* could not be made: 6,000,000\.00 USD is to be paid and Yen desk has 5,875,766\.67 USD of settled USD cash\. Nothing was exchanged in either currency\./ }],
+        alerts: ['funding.failed'],
+        failed: { lifecycle: 1 },
+        pnl: { account: { realized: -287_577.11, unrealized: -6_000, fx: 435_261.59, total: 141_684.48 } }, // -239,803.14 + 8,476.03 - 56,250
+        nav: { account: 10_741_684.48, book: 11_541_684.48 },
+        balance: { account: { cash: 10_497_684.48, lent: 6_250_000, borrowed: 6_000_000, positions: -6_000, assets: 16_741_684.48, liabilities: 6_000_000, netAssets: 10_741_684.48 } }, // 5,875,766.67 + 665,556,165 / 144
+      },
+    },
+    {
+      // Treasury funds the Account with 150,000 USD. The swap then matures: 900,000,000 JPY comes back (6,250,000.00 USD at 144), 6,000,000 USD is repaid,
+      // and the 6,000 of variation margin returns to Treasury.
+      // The Account ends with 200,000 + 150,000 + 2,000 - 107,333.33 - 103,500 - 59,150 - 56,250 = 25,766.67 USD
+      // and 1,560,000,000 + 1,512,329 + 1,701,370 + 1,121,918 + 1,220,548 = 1,565,556,165 JPY (10,871,917.81 USD at 144).
+      id: 'funded-matured-and-exchanged', covers: ['maturity', 'close', 'notional exchange', 'collateral', 'insufficient cash'], action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 150_000,
+      expect: {
+        events: [
+          { type: 'transfer.funding' },
+          { type: 'swap.matured', summary: `Swap matured: ${XBS_NAME} (notional 6,000,000)`, owner: 'account' },
+          { type: 'swap.notional_exchange', summary: `Notional exchange on ${XBS_NAME}: received 900,000,000 JPY`, cash: { JPY: 900_000_000 }, owner: 'account', date: '2027-03-23' },
+          { type: 'swap.notional_exchange', summary: `Notional exchange on ${XBS_NAME}: paid 6,000,000.00 USD`, cash: { USD: -6_000_000 }, owner: 'account', date: '2027-03-23' },
+          { type: 'collateral.variation', summary: /Variation margin under "CSA Dealer F" \(Dealer F\): 6,000\.00 USD returned to us\..*Moved by Treasury\./, cash: { USD: 6_000 } },
+        ],
+        cash: {
+          account: { USD: { settled: 25_766.67, unsettled: 0, borrowed: 0, lent: 0, margin: 0, availableToTrade: 25_766.67 }, JPY: { settled: 1_565_556_165, lent: 0, borrowed: 0, availableToTrade: 1_565_556_165 } },
+          treasury: { USD: { settled: 650_000, margin: 0, availableToTrade: 650_000 } },
+        },
+        positions: [], holdings: { main: null }, lifecycle: [], lifecycleFailures: [], otc: [], pending: [], alerts: [],
+        failed: { lifecycle: 0 },
+        // FX effect unchanged: cash 1,565,556,165 / 144 = 10,871,917.81 against 10,532,810.07 booked: +339,107.74; +96,153.85 on the principal that came back.
+        pnl: { account: { realized: -287_577.11, unrealized: 0, fx: 435_261.59, total: 147_684.48 } },
+        nav: { account: 10_897_684.48, treasury: 650_000, book: 11_547_684.48 }, // 25,766.67 + 10,871,917.81
+        provisional: { account: false, book: false },
+        balance: { account: { cash: 10_897_684.48, lent: null, borrowed: null, positions: null, assets: 10_897_684.48, liabilities: 0, netAssets: 10_897_684.48 }, treasury: { cash: 650_000, margin: null, assets: 650_000, netAssets: 650_000 } },
+      },
+    },
+  ],
+};
+
+export default [interestRateSwap, overnightIndexSwap, basisSwap, interestRateCap, interestRateFloor, interestRateCollar, forwardStartingSwap, constantMaturitySwap, crossCurrencySwap, crossCurrencyBasisSwap];
