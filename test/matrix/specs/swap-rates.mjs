@@ -1273,4 +1273,233 @@ const interestRateCap = {
   ],
 };
 
-export default [interestRateSwap, overnightIndexSwap, basisSwap, interestRateCap];
+// ---------------------------------------------------------------------------------------------
+// interest_rate_floor
+// ---------------------------------------------------------------------------------------------
+// A one-year floor at 3.75% on 3-month term SOFR, sold. The contract is written from the buyer's side
+// ("receive the floor"), so the Account enters the opposite side: it receives the premium and each
+// quarter pays notional x max(3.75% - fixing, 0) x days/360. Position-level collateral terms: a fixed
+// independent amount of 100,000 and no variation margin.
+//
+// Schedule (effective Wednesday 1 April 2026, maturity Thursday 1 April 2027):
+//   2026-04-01 to 2026-07-01 (91 days), paid 1 July          fixing of 1 April 3.90%     above the strike: nothing due
+//   2026-07-01 to 2026-10-01 (92 days), paid 1 October       fixing of 1 July 3.60%      0.15% below
+//   2026-10-01 to 2027-01-01 (92 days), paid Monday 4 January 2027 (New Year's Day is a holiday)   fixing of 1 October 3.20%   0.55% below
+//   2027-01-01 to 2027-04-01 (90 days), paid 1 April 2027    fixing of Thursday 31 December 2026 (1 January is not a business day) 3.75%: at the strike, nothing due
+const FLOOR_NAME = 'USD floor 3.75% on TSFR3M 1 Apr 2027';
+const interestRateFloor = {
+  productId: 'interest_rate_floor',
+  title: 'USD 1-year floor at 3.75% on 3-month term SOFR, sold for a premium, fixed independent amount, held to maturity',
+  matrix: {
+    ...OTC_TICKET,
+    automaticInputs: ['floorlet schedule from the contract terms and the USD payment calendar', 'TSFR3M fixings (rate fixture standing in for Shaffer MarketData)', 'settlement date of the premium, T+2 on the USD calendar', 'independent amount from the position-level terms'],
+    manualInputs: ['premium (stated fill price, per 100 notional)', 'mark of the floor, entered by hand', 'amount paid to buy part of it back (stated fill price in the preview)'],
+    settlement: 'Premium and buy-back amount settle T+2 on the USD calendar; floorlet payments are cash on their payment date',
+    lifecycle: 'Each quarter the seller pays the floorlet when the fixing is below the strike and nothing when it is at or above it (recorded as nothing due); a payment date on a holiday moves to the next business day; at maturity the floor ends and the premium still carried is earned',
+    accounting: 'A sold floor is a negative position carried at the premium received until a mark is entered, then at the mark; floorlet payments are realized P&L; a buy-back realizes the difference from the average premium; at maturity the remaining premium is a realized gain',
+    collateral: 'Position-level terms: a fixed independent amount of 100,000 posted when the position opens, unchanged by an increase or a partial buy-back, returned when the position ends; no variation margin',
+  },
+  start: at('2026-03-30'),
+  settlementCheck: { lag: 2, holidays: [] }, // no Federal Reserve holiday in the settlement windows used (30 March to 2 April, 14 to 18 August 2026)
+  book: usdBook('Matrix interest-rate floor', 'Rates', 300_000),
+  instruments: {
+    main: {
+      productId: 'interest_rate_floor', name: FLOOR_NAME, symbol: 'FLOOR-TSFR-375', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: USD_CALENDARS,
+      terms: {
+        effective: '2026-04-01', maturity: '2027-04-01', counterparty: 'Dealer A',
+        collateralBasis: { type: 'position', independentAmount: { type: 'fixed', amount: 100_000 }, variationMargin: false },
+        legs: [{ side: 'receive', type: 'floor', ccy: 'USD', index: 'TSFR3M', strike: 0.0375, months: 3, dayCount: 'ACT/360' }],
+      },
+    },
+  },
+  rates: { TSFR3M: { byDate: { '2026-04-01': 3.90, '2026-07-01': 3.60, '2026-10-01': 3.20, '2026-12-31': 3.75 } } },
+  expectAtStart: usdStart(300_000),
+  steps: [
+    {
+      // Sold: the premium 15,000,000 x 0.30 / 100 = 45,000 is received, settling Wednesday 1 April (T+2). The 100,000 is posted at once.
+      id: 'open', covers: ['open', 'premium', 'collateral'], action: 'ticket', instrument: 'main', side: 'sell', qty: 15_000_000, as: 'floor', order: { statedPrice: 0.30 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 15_000_000, estimate: 0.3, model: 'stated-price', settleDate: '2026-04-01', calendar: 'USD', cash: 45_000, fees: 0 }],
+          cash: { USD: { proceeds: 45_000, fees: 0, margin: 100_000, required: 100_000, available: 300_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 15_000_000, avgPrice: 0.3, fills: [{ qty: 15_000_000, price: 0.3, model: 'stated-price', settleDate: '2026-04-01' }] }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Entered on the opposite side: 15,000,000 notional of FLOOR-TSFR-375 at 0.30 per 100 notional', owner: 'account', date: '2026-03-30' },
+          { type: 'swap.collateral', summary: `Collateral posted on ${FLOOR_NAME} under its position-level terms: 100,000.00 USD (independent amount, fixed amount for the position)`, cash: { USD: -100_000 }, owner: 'account' },
+        ],
+        cash: { account: { USD: { settled: 200_000, unsettled: 45_000, margin: 100_000, restricted: 0, availableToTrade: 245_000, availableToWithdraw: 200_000 } } },
+        positions: [{ instrument: 'main', lot: 'floor', owner: 'account', direction: 'opposite side', qty: -15_000_000, avgCost: 0.3, cost: -45_000, price: null, value: null, unrealized: null, provisional: true, notional: 15_000_000, margin: 100_000 }],
+        holdings: { main: { long: 0, short: 15_000_000, net: -15_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-04-01', amount: 45_000, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-07-01', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-04-01', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', lot: 'floor', owner: 'account', qty: -15_000_000, basis: 'position', mark: null, iaRequired: 100_000, iaPosted: 100_000, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: 0, unrealized: 0, total: 0 } },
+        nav: { account: 300_000, book: 1_000_000 }, // carried at the premium received, the receivable against it
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 200_000, margin: 100_000, receivable: 45_000, positions: -45_000, payable: null, accruedIncome: null, accruedExpense: null, assets: 300_000, liabilities: 0, netAssets: 300_000 } },
+      },
+    },
+    { id: 'tuesday', action: 'clock', to: at('2026-03-31'), expect: {} },
+    {
+      // 3,000,000 more is sold at 0.32: 9,600 received, settling Thursday 2 April. Average premium (45,000 + 9,600) / 180,000 = 0.3033333 per 100.
+      // The independent amount is a fixed amount for the position: it does not change.
+      id: 'increase', covers: ['increase', 'premium', 'collateral'], action: 'resize', lot: 'floor', factor: 1.2, order: { statedPrice: 0.32 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 3_000_000, estimate: 0.32, model: 'stated-price', settleDate: '2026-04-02', cash: 9_600, fees: 0 }],
+          cash: { USD: { proceeds: 9_600, margin: 0, required: 0, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 3_000_000, avgPrice: 0.32 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Increased on the opposite side: 3,000,000 notional of FLOOR-TSFR-375 at 0.32 per 100 notional' }],
+        cash: { account: { USD: { settled: 200_000, unsettled: 54_600, margin: 100_000, availableToTrade: 254_600, availableToWithdraw: 200_000 } } },
+        positions: [{ instrument: 'main', lot: 'floor', qty: -18_000_000, cost: -54_600, avgCost: 0.3033333, price: null, value: null, notional: 18_000_000, margin: 100_000 }],
+        holdings: { main: { long: 0, short: 18_000_000, net: -18_000_000 } },
+        pending: [{ instrument: 'main', dueDate: '2026-04-01', amount: 45_000, ccy: 'USD', into: 'cash' }, { instrument: 'main', dueDate: '2026-04-02', amount: 9_600, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: -18_000_000, iaRequired: 100_000, iaPosted: 100_000 }],
+        nav: { account: 300_000, book: 1_000_000 },
+        balance: { account: { receivable: 54_600, positions: -54_600, assets: 300_000, netAssets: 300_000 } },
+      },
+    },
+    {
+      id: 'settle-premium', covers: 'settlement', action: 'clock', to: at('2026-04-01'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 45,000.00 USD into settled cash', cash: { USD: 45_000 }, date: '2026-04-01' }],
+        cash: { account: { USD: { settled: 245_000, unsettled: 9_600, availableToTrade: 254_600, availableToWithdraw: 245_000 } } },
+        pending: [{ instrument: 'main', dueDate: '2026-04-02', amount: 9_600, ccy: 'USD', into: 'cash' }],
+        balance: { account: { cash: 245_000, receivable: 9_600 } },
+      },
+    },
+    {
+      id: 'settle-increase', covers: 'settlement', action: 'clock', to: at('2026-04-02'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 9,600.00 USD into settled cash', cash: { USD: 9_600 } }],
+        cash: { account: { USD: { settled: 254_600, unsettled: 0, availableToTrade: 254_600, availableToWithdraw: 254_600 } } },
+        pending: [],
+        balance: { account: { cash: 254_600, receivable: null } },
+      },
+    },
+    {
+      // The mark is of the contract as written. Sold: -18,000,000 x 0.45 / 100 = -81,000, against 54,600 received: 26,400 down.
+      id: 'mark', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 0.45, note: 'Dealer mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'floor', qty: -18_000_000, price: 0.45, value: -81_000, unrealized: -26_400, provisional: false, priceSource: 'Manual entry', priceStatus: 'manual' }],
+        otc: [{ instrument: 'main', mark: 0.45, markValue: -81_000 }],
+        pnl: { account: { unrealized: -26_400, total: -26_400 } },
+        nav: { account: 273_600, book: 973_600 }, // 254,600 + 100,000 - 81,000
+        provisional: { account: false, book: false },
+        balance: { account: { positions: -81_000, assets: 273_600, netAssets: 273_600 } },
+      },
+    },
+    {
+      // The terms state no variation margin: the end-of-day pass calls nothing, though the mark is 81,000 against the Account.
+      id: 'no-variation-margin', covers: 'collateral', action: 'clock', to: eod('2026-04-02'),
+      expect: { events: [], otc: [{ instrument: 'main', iaPosted: 100_000, vmPosted: 0, vmHeld: 0 }], alerts: [], cash: { account: { USD: { settled: 254_600, margin: 100_000, restricted: 0 } } } },
+    },
+    {
+      // First floorlet: the fixing of 1 April, 3.90%, is above the 3.75% strike. Nothing is due.
+      id: 'floorlet-out-of-the-money', covers: 'floorlet payment', action: 'clock', to: at('2026-07-01'),
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Nothing due on ${FLOOR_NAME}, leg A (floor), period 2026-04-01 to 2026-07-01: the TSFR3M fixing 3.900% is not below the strike 3.750%`, owner: 'account', date: '2026-07-01' }],
+        cash: { account: { USD: { settled: 254_600, availableToTrade: 254_600 } } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-10-01', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-04-01', status: 'pending' },
+        ],
+        pnl: { account: { realized: 0, total: -26_400 } },
+        nav: { account: 273_600, book: 973_600 },
+      },
+    },
+    { id: 'mid-august', action: 'clock', to: at('2026-08-14'), expect: {} },
+    {
+      // Half (9,000,000) is bought back for 0.50 per 100: 45,000 paid. Premium received on it: 54,600 / 2 = 27,300. Realized -17,700.
+      // Left: -9,000,000 carrying -27,300, marked 0.45: -40,500, 13,200 down. Friday 14 August, settles Tuesday 18 August.
+      id: 'partial-buy-back', covers: ['reduce', 'partial termination', 'collateral'], action: 'close', lot: 'floor', scope: 'strategy', percent: 50, order: { statedPrice: 0.50 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 9_000_000, estimate: 0.5, model: 'stated-price', settleDate: '2026-08-18', cash: -45_000, fees: 0 }] },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 9_000_000, avgPrice: 0.5 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Terminated in part: 9,000,000 of 18,000,000 notional of FLOOR-TSFR-375 at 0.50 per 100 notional (realized -17,700.00 USD)' }], // the fixed independent amount stays
+        cash: { account: { USD: { settled: 254_600, unsettled: -45_000, margin: 100_000, availableToTrade: 209_600, availableToWithdraw: 209_600 } } },
+        positions: [{ instrument: 'main', lot: 'floor', qty: -9_000_000, cost: -27_300, avgCost: 0.3033333, price: 0.45, value: -40_500, unrealized: -13_200, notional: 9_000_000, margin: 100_000 }],
+        holdings: { main: { long: 0, short: 9_000_000, net: -9_000_000 } },
+        pending: [{ instrument: 'main', dueDate: '2026-08-18', amount: -45_000, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: -9_000_000, markValue: -40_500, iaRequired: 100_000, iaPosted: 100_000 }],
+        pnl: { account: { realized: -17_700, unrealized: -13_200, total: -30_900 } },
+        nav: { account: 269_100, book: 969_100 }, // 254,600 + 100,000 - 45,000 - 40,500
+        balance: { account: { cash: 254_600, margin: 100_000, payable: 45_000, positions: -40_500, assets: 314_100, liabilities: 45_000, netAssets: 269_100 } },
+      },
+    },
+    {
+      id: 'settle-buy-back', covers: 'settlement', action: 'clock', to: at('2026-08-18'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 45,000.00 USD from settled cash', cash: { USD: -45_000 } }],
+        cash: { account: { USD: { settled: 209_600, unsettled: 0, availableToTrade: 209_600, availableToWithdraw: 209_600 } } },
+        pending: [],
+        balance: { account: { cash: 209_600, payable: null, assets: 269_100, liabilities: 0 } },
+      },
+    },
+    {
+      // Second floorlet, paid: 9,000,000 x (3.75% - 3.60%) x 92/360 = 3,450.00.
+      id: 'floorlet-paid', covers: 'floorlet payment', action: 'clock', to: at('2026-10-01'),
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Swap payment on ${FLOOR_NAME}, leg A (floor), period 2026-07-01 to 2026-10-01: 3,450.00 USD`, cash: { USD: -3_450 }, owner: 'account', date: '2026-10-01' }],
+        cash: { account: { USD: { settled: 206_150, availableToTrade: 206_150, availableToWithdraw: 206_150 } } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-01-04', status: 'pending' }, // 1 January is a holiday
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-04-01', status: 'pending' },
+        ],
+        pnl: { account: { realized: -21_150, total: -34_350 } },
+        nav: { account: 265_650, book: 965_650 },
+        balance: { account: { cash: 206_150, assets: 265_650, netAssets: 265_650 } },
+      },
+    },
+    {
+      // Nothing is paid on the holiday itself.
+      id: 'new-years-day', covers: 'payment across a holiday', action: 'clock', to: at('2027-01-01'),
+      expect: { events: [], cash: { account: { USD: { settled: 206_150 } } }, lifecycle: [{ type: 'swap.payment', instrument: 'main', dueDate: '2027-01-04', status: 'pending' }, { type: 'swap.maturity', instrument: 'main', dueDate: '2027-04-01', status: 'pending' }] },
+    },
+    {
+      // Third floorlet, paid Monday 4 January: 9,000,000 x (3.75% - 3.20%) x 92/360 = 12,650.00.
+      id: 'floorlet-paid-after-holiday', covers: ['floorlet payment', 'payment across a holiday'], action: 'clock', to: at('2027-01-04'),
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Swap payment on ${FLOOR_NAME}, leg A (floor), period 2026-10-01 to 2027-01-01: 12,650.00 USD`, cash: { USD: -12_650 }, date: '2027-01-04' }],
+        cash: { account: { USD: { settled: 193_500, availableToTrade: 193_500, availableToWithdraw: 193_500 } } },
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-04-01', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-04-01', status: 'pending' },
+        ],
+        pnl: { account: { realized: -33_800, total: -47_000 } },
+        nav: { account: 253_000, book: 953_000 },
+        balance: { account: { cash: 193_500, assets: 253_000, netAssets: 253_000 } },
+      },
+    },
+    {
+      // Maturity. The last period started on a holiday, so its fixing is 31 December's: 3.75%, exactly the strike. Nothing is due.
+      // The floor ends: the 27,300 of premium still carried is earned, and the 100,000 comes back.
+      // 300,000 + 45,000 + 9,600 - 45,000 - 3,450 - 12,650 = 293,500.
+      id: 'maturity', covers: ['floorlet payment', 'maturity', 'close', 'collateral'], action: 'clock', to: at('2027-04-01'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Nothing due on ${FLOOR_NAME}, leg A (floor), period 2027-01-01 to 2027-04-01: the TSFR3M fixing 3.750% is not below the strike 3.750%`, date: '2027-04-01' },
+          { type: 'swap.matured', summary: `Swap matured: ${FLOOR_NAME} (notional 9,000,000)`, owner: 'account' },
+          { type: 'swap.collateral', summary: `Collateral returned on ${FLOOR_NAME} under its position-level terms: 100,000.00 USD (independent amount, the position ended)`, cash: { USD: 100_000 } },
+        ],
+        cash: { account: { USD: { settled: 293_500, unsettled: 0, margin: 0, restricted: 0, reserved: 0, availableToTrade: 293_500, availableToWithdraw: 293_500 } }, treasury: { USD: { settled: 700_000 } } },
+        positions: [], holdings: { main: null }, lifecycle: [], otc: [], pending: [], alerts: [],
+        pnl: { account: { realized: -6_500, commissions: 0, unrealized: 0, total: -6_500 } }, // -33,800 + 27,300
+        nav: { account: 293_500, treasury: 700_000, book: 993_500 },
+        provisional: { account: false, book: false },
+        balance: { account: { cash: 293_500, margin: null, positions: null, assets: 293_500, liabilities: 0, netAssets: 293_500 } },
+      },
+    },
+  ],
+};
+
+export default [interestRateSwap, overnightIndexSwap, basisSwap, interestRateCap, interestRateFloor];
