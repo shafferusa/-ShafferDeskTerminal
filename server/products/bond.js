@@ -6,17 +6,81 @@
 // and trued up each day, so "coupon and interest income" is earned over time rather than
 // appearing as a jump on the coupon date. Coupons and redemption are paid on the schedule in the
 // contract terms. A floating coupon needs its fixing: without one the coupon is blocked visibly.
+//
+// Interest follows settlement, positions follow the trade date:
+//   - the interest bought or sold in a trade runs to that trade's settlement date, so until the trade
+//     settles the accrued balance is the interest on the face already settled plus the interest in
+//     the unsettled trades (never a day of negative income on the trade date);
+//   - a coupon belongs to the face settled before its coupon date: a purchase that settles on or
+//     after the coupon date pays no accrued for that coupon and does not receive it, and a sale that
+//     settles on or after it keeps the coupon;
+//   - the accrued balance only moves forward in time: an end-of-day run for a date before the last
+//     coupon paid (catching up after downtime) is skipped rather than re-accruing the old period.
 
 import { fmt } from '../core/books.js';
 import { addBusinessDays, adjust } from '../quant/calendar.js';
 import { accruedPer100, couponPer100, nextCouponDate } from '../quant/bond.js';
 import { DAY_COUNTS } from '../quant/daycount.js';
 import { ISO_DATE_RE, isZero, money, need, num } from '../core/util.js';
-import { bookSecurityFill, fmtPx, fmtQty, trueUpAccrual } from './common.js';
+import { bookSecurityFill, dqOf, fmtPx, fmtQty, trueUpAccrual } from './common.js';
 import { calendarFor, paymentCalendarFor, standardSettleDate } from './security.js';
 
 /** Face outstanding per unit of original face (pool factor for securitised paper). */
 const factorOf = (inst) => inst.terms.factor ?? 1;
+
+/** The trades booked on a position: signed face, trade date and settlement date of each fill. */
+function fillsOf(app, positionId) {
+  return app.db.all(`SELECT business_date, data FROM events WHERE position_id = ? AND type = 'trade.fill' ORDER BY id`, positionId)
+    .map((r) => { const d = JSON.parse(r.data || '{}'); return { dq: dqOf(d.action, d.qty), tradeDate: r.business_date, settleDate: d.settleDate || r.business_date }; })
+    .filter((f) => Number.isFinite(f.dq));
+}
+
+/**
+ * Accrued interest a position carries at the end of `date`: interest to `date` on the face settled by
+ * then, plus the interest bought (or less the interest sold) in each trade that settles later, which
+ * runs to that trade's settlement date, plus any coupon that has fallen due and is not paid yet (its
+ * payment date is later, or it waits for a fixing). `paying` names a coupon date being paid right now.
+ * Returns null when a floating coupon has no fixing.
+ */
+function accrualTarget(app, inst, pos, date, { paying = null } = {}) {
+  const later = fillsOf(app, pos.id).filter((f) => f.settleDate > date);
+  let total = bond.accruedAmount(inst, pos.qty - later.reduce((a, f) => a + f.dq, 0), date);
+  if (total === null) return null;
+  for (const f of later) {
+    const ai = bond.accruedAmount(inst, f.dq, f.settleDate);
+    if (ai === null) return null;
+    total += ai;
+  }
+  for (const c of unpaidCoupons(app, pos.id)) {
+    if (c.couponDate > date || c.couponDate === paying) continue;
+    const per100 = couponPer100(schedTerms(inst), c.couponDate);
+    if (per100 === null) return null;
+    total += (entitledFace(app, pos, c.couponDate) * factorOf(inst) * per100) / 100;
+  }
+  return total;
+}
+
+/** Coupons scheduled for a position and not paid yet: [{ couponDate, dueDate }]. */
+function unpaidCoupons(app, positionId) {
+  return app.db.all(`SELECT due_date, data FROM tasks WHERE position_id = ? AND type = 'bond.coupon' AND status IN ('pending','blocked','failed') ORDER BY due_date`, positionId)
+    .map((r) => ({ dueDate: r.due_date, couponDate: JSON.parse(r.data || '{}').couponDate }))
+    .filter((c) => c.couponDate);
+}
+
+/** Face entitled to the coupon of `couponDate`: what the position held at the open of that date, less the trades done before it that settle on or after it. */
+function entitledFace(app, pos, couponDate) {
+  const unsettled = fillsOf(app, pos.id).filter((f) => f.tradeDate < couponDate && f.settleDate >= couponDate);
+  return app.positions.qtyAt(pos.id, couponDate, 'open') - unsettled.reduce((a, f) => a + f.dq, 0);
+}
+
+/** True up the accrued balance as of `date` and remember that it stands at that date. */
+function accrueTo(app, { book, unit, inst, pos, date, summary, paying = null }) {
+  const target = accrualTarget(app, inst, pos, date, { paying });
+  if (target === null) return;
+  trueUpAccrual(app, { book, unit, pos, inst, account: 'accrued.asset', pnlAccount: 'pnl.coupon', ccy: inst.trading_ccy, target: money(target, inst.trading_ccy), summary, type: 'accrual.coupon' });
+  const fresh = app.positions.get(pos.id);
+  if (fresh.data.accruedThrough !== date) app.positions.setData(fresh, { accruedThrough: date });
+}
 
 export const bond = {
   family: 'bond',
@@ -53,6 +117,12 @@ export const bond = {
     t.factor = num(t.factor) ?? 1;
     if (!(t.factor > 0 && t.factor <= 1)) errors.push('Pool factor must be between 0 and 1.');
     if (t.issueDate && !ISO_DATE_RE.test(t.issueDate)) errors.push('Issue date must be YYYY-MM-DD.');
+    // Minimum denomination: trades are in multiples of it (the quantity step of the ticket and the preview).
+    if (t.minDenomination === undefined || t.minDenomination === null || t.minDenomination === '') delete t.minDenomination;
+    else {
+      t.minDenomination = num(t.minDenomination);
+      if (!(t.minDenomination >= 1) || !Number.isInteger(t.minDenomination)) errors.push('Minimum denomination must be a whole face amount of 1 or more (1,000 for a bond traded in pieces of 1,000).');
+    }
     return { terms: t, multiplier: 0.01, errors };
   },
   describe(inst) {
@@ -61,6 +131,7 @@ export const bond = {
     if (t.frequency) rows.push(['Payments per year', t.frequency]);
     rows.push(['Maturity', t.perpetual ? 'Perpetual' : t.maturity], ['Day count', t.dayCount], ['Redemption', `${t.redemption}% of par`]);
     if (t.factor !== 1) rows.push(['Pool factor', t.factor]);
+    if (t.minDenomination > 1) rows.push(['Minimum denomination', `${fmtQty(t.minDenomination)} face`]);
     if (t.issueDate) rows.push(['Issue date', t.issueDate]);
     if (t.seniority) rows.push(['Seniority', t.seniority]);
     return rows;
@@ -79,7 +150,9 @@ export const bond = {
     const buy = action === 'buy' || action === 'buy_to_cover';
     const notes = [];
     if (ai === null) notes.push('Accrued interest cannot be computed: the floating coupon has no fixing. It is booked as zero until the fixing is supplied.');
-    const total = principal + (ai || 0);
+    // Principal and accrued interest are each rounded to the cent, as the fill books them, so the previewed
+    // settlement amount is the amount that settles.
+    const total = money(principal, ccy) + money(ai || 0, ccy);
     return { ccy, principal, cash: buy ? -total : total, accrued: ai || 0, notional: qty * factorOf(inst), exposure: buy ? principal : -principal, initialMargin: 0, notes };
   },
   fill(app, c) {
@@ -107,14 +180,27 @@ export const bond = {
     };
   },
   onPositionChange(app, { book, unit, inst, pos }) {
-    if (isZero(pos.qty)) {
-      // Whatever accrued interest was earned but not yet recognised is income; nothing stays behind.
-      trueUpAccrual(app, { book, unit, pos, inst, account: 'accrued.asset', pnlAccount: 'pnl.coupon', ccy: inst.trading_ccy, target: 0, summary: `Interest earned to disposal of ${inst.symbol || inst.name}`, type: 'accrual.coupon' });
-      return app.tasks.cancelFor(pos.id);
-    }
     const t = schedTerms(inst);
     const common = { bookId: book.id, unitId: unit.id, positionId: pos.id, instrumentId: inst.id, strategyId: pos.strategy_id };
     const today = app.clock.today();
+    if (isZero(pos.qty)) {
+      // A coupon stays with the seller when the sale settles on or after its coupon date (or was made after it and
+      // before it was paid). Such a coupon stays scheduled and the accrued balance is left at exactly what is still
+      // to be received. Whatever else was earned and not yet recognised is income now; nothing else stays behind.
+      const scheduled = unpaidCoupons(app, pos.id);
+      app.tasks.cancelFor(pos.id);
+      let owed = 0;
+      for (const c of scheduled) {
+        const face = inst.terms.couponSuspended ? 0 : entitledFace(app, pos, c.couponDate);
+        if (isZero(face)) continue;
+        app.tasks.schedule({ ...common, type: 'bond.coupon', dueDate: c.dueDate, data: { key: c.couponDate, couponDate: c.couponDate } });
+        const per100 = couponPer100(t, c.couponDate);
+        if (per100 === null) owed = null; // a floating coupon without its fixing: the balance waits for it
+        else if (owed !== null) owed += (face * factorOf(inst) * per100) / 100;
+      }
+      if (owed !== null) trueUpAccrual(app, { book, unit, pos, inst, account: 'accrued.asset', pnlAccount: 'pnl.coupon', ccy: inst.trading_ccy, target: money(owed, inst.trading_ccy), summary: `Interest earned to disposal of ${inst.symbol || inst.name}`, type: 'accrual.coupon' });
+      return undefined;
+    }
     const next = nextCouponDate(t, addBusinessDays(today, -1, 'ALLDAYS'));
     if (next && inst.terms.couponType !== 'zero') app.tasks.schedule({ ...common, type: 'bond.coupon', dueDate: adjust(next, 'following', paymentCalendarFor(inst)), data: { key: next, couponDate: next } });
     if (inst.terms.maturity) app.tasks.schedule({ ...common, type: 'bond.maturity', dueDate: adjust(inst.terms.maturity, 'following', paymentCalendarFor(inst)) });
@@ -126,9 +212,9 @@ export const bond = {
   /** Daily accrual true-up: earned interest goes to coupon income as it accrues. */
   eod(app, { book, unit, inst, pos, date }) {
     if (isZero(pos.qty) || inst.terms.couponSuspended) return;
-    const target = bond.accruedAmount(inst, pos.qty, date);
-    if (target === null) return;
-    trueUpAccrual(app, { book, unit, pos, inst, account: 'accrued.asset', pnlAccount: 'pnl.coupon', ccy: inst.trading_ccy, target: money(target, inst.trading_ccy), summary: `Interest accrued on ${inst.symbol || inst.name}`, type: 'accrual.coupon' });
+    // The balance already stands at a later date (a coupon was paid before this end-of-day run caught up).
+    if (pos.data?.accruedThrough && date < pos.data.accruedThrough) return;
+    accrueTo(app, { book, unit, inst, pos, date, summary: `Interest accrued on ${inst.symbol || inst.name}` });
   },
   runTask(app, task, { book, unit, inst, pos }) {
     const { ledger, positions } = app;
@@ -138,8 +224,8 @@ export const bond = {
     if (task.type === 'bond.coupon') {
       const couponDate = task.data.couponDate;
       const t = schedTerms(inst);
-      // Entitlement: face held at the open of the coupon date.
-      const face = positions.qtyAt(pos.id, couponDate, 'open');
+      // Entitlement: face settled before the coupon date.
+      const face = entitledFace(app, pos, couponDate);
       const live = positions.get(pos.id);
       const scheduleNext = () => {
         const next = nextCouponDate(t, couponDate);
@@ -157,8 +243,14 @@ export const bond = {
         entries: [{ account: 'cash', ccy, amount, positionId: pos.id }, { account: 'accrued.asset', ccy, amount: -amount, positionId: pos.id }],
       });
       if (inst.terms.couponType === 'float') resetFloat(app, inst, couponDate);
-      // Whatever the coupon exceeded the accrued balance by is income earned on the last day.
-      bond.eod(app, { book, unit, inst: app.instruments.get(inst.id), pos: live, date: app.clock.today() });
+      // Whatever the coupon exceeded the accrued balance by is income earned up to the coupon date. The balance
+      // then stands at the coupon date (or at the last end of day, if that is later because the coupon was paid late).
+      const asOf = live.data?.accruedThrough && live.data.accruedThrough > couponDate ? live.data.accruedThrough : couponDate;
+      if (!isZero(live.qty)) {
+        if (!inst.terms.couponSuspended) accrueTo(app, { book, unit, inst: app.instruments.get(inst.id), pos: live, date: asOf, paying: couponDate, summary: `Interest accrued on ${inst.symbol || inst.name}` });
+      } else if (!unpaidCoupons(app, pos.id).some((c) => c.couponDate !== couponDate)) {
+        trueUpAccrual(app, { book, unit, pos: live, inst, account: 'accrued.asset', pnlAccount: 'pnl.coupon', ccy, target: 0, summary: `Interest earned to disposal of ${inst.symbol || inst.name}`, type: 'accrual.coupon' });
+      }
       scheduleNext();
       return { done: true, eventId };
     }
