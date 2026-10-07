@@ -16,3 +16,4 @@
 - 2026-10-07T03:01Z | s1 | +0.2 | ois passes at engine, API and browser
 - 2026-10-07T03:01Z | fu1 | +0.2 | gov_bond_future passes at engine, API and browser
 - 2026-10-07T03:01Z | fu1 | +0.2 | treasury_future passes at engine, API and browser
+- 2026-10-07T03:02Z | o1 | +0.2 | index_option passes at engine, API and browser

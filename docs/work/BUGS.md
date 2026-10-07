@@ -29,3 +29,19 @@
    other people's areas: it needs a units-aware variant (the leg and the position both carry `priceUnits`).
    Reproduce: `npm run test:browser -- --product=treasury_note --headed`, or register any bond, quote it at 99.53125
    and open the buy preview. The matrix compares a displayed figure to the decimals shown, so this does not fail a step.
+
+## o1 (listed options), 2026-10-07: one gap outside my files, not fixed
+
+1. **No catalog product for an index, so an index option's underlying is a stand-in** (server/core/catalog.js; the
+   option registration form in web/lib/contracts.js requires an underlying instrument of family equity, fund, future,
+   spot, crypto or bond). Product index_option, every step. What the Terminal does: an index option cannot be
+   registered through the form without a registry underlying, and no catalog product represents a published index
+   level. The scenario registers the level as a reference instrument of product "ETF" (named "... Index (reference
+   level)", quoted with a last value only); the Terminal then treats it as a tradable ETF everywhere. What is right:
+   an index level is not tradable and should be a reference instrument of its own kind (or the listed-option form
+   should accept a named index with a fixing code, which `normalizeOption` already allows through the API with
+   `terms.underlyingDescription` / `terms.fixingRate`, but the form has no field for either). Not fixed because it
+   changes the catalog inventory or the shared form. Also note: an AM-settled series settles against whatever fixing
+   exists for its expiration date; if the settlement value is not entered by hand before that day's close of the
+   reference instrument is supplied, the engine settles on the close. Reproduce: Instruments, New instrument, Index
+   option: "Underlying (required)" lists registry instruments only.

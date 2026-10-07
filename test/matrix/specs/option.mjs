@@ -1156,4 +1156,278 @@ const optionOnFuture = {
   ],
 };
 
-export default [equityOption, etfOption, optionOnFuture];
+// ---------------------------------------------------------------------------------------------
+// index_option
+// ---------------------------------------------------------------------------------------------
+// European, cash-settled options on a share index, 100 times the index, AM-settled: they stop
+// trading the day before the third Friday and are settled in cash against a special opening
+// quotation published that Friday morning. Nothing is delivered. The Account holds calls and writes
+// an uncovered call at a higher strike (in a strategy instance of its own); Treasury holds puts as a
+// Book-level hedge. Early exercise and early assignment are refused: the contracts are European.
+//
+// The index itself: the catalog has no product for an index (a published level that nothing trades
+// on), and the option's registration form requires an underlying from the registry. The level is
+// therefore carried by a reference instrument registered as an ETF and named as a reference level.
+// It is given a last value only, never a bid or an ask, and nothing is traded on it here.
+const IDX_CALL = 'NMX260417C4000', IDX_CALL2 = 'NMX260417C4050', IDX_PUT = 'NMX260417P3900';
+const indexOptionDraft = (name, symbol, right, strike) => ({
+  productId: 'index_option', name, symbol, marketView: 'US_DERIV', venue: 'Cboe Options Exchange', venueType: 'exchange', venueCountry: 'US', underlyingGeo: 'US', tradingCcy: 'USD', underlying: 'index', multiplier: 100,
+  terms: { right, strike, expiration: '2026-04-17', exercise: 'european', settlement: 'cash', deliverable: { units: 100 } },
+});
+const AWAITING_NMX = /Awaiting the 2026-04-17 fixing for NMX/;
+const indexOption = {
+  productId: 'index_option',
+  title: 'Northmark 400 Index options, 17 April 2026 (4000 call, 4050 call, 3900 put), Cboe-listed, European, cash-settled at 100 x the index, AM-settled',
+  matrix: {
+    ticket: `${OPTION_TICKET.ticket}. The settlement value is entered on the index reference instrument (Overview, Enter a price by hand, with its date)`,
+    requiredFields: OPTION_TICKET.requiredFields,
+    automaticInputs: ['premium bid, ask, last and size (quote fixture)', 'index level for the notional and for the reserve of an uncovered call (quote fixture, last value only)', 'fill price and fill model', 'premium settlement date', 'commission per contract', 'cash reserved against the written call'],
+    manualInputs: ['the settlement value of an AM-settled series (special opening quotation), entered by hand as the index fixing for the expiration date', 'registration: the index level is carried by a reference instrument, because the catalog has no index product'],
+    settlement: 'Premium T+1 on the US calendar; the cash settlement amount at expiry is due on the next business day (Monday 20 April for the Friday 17 April expiry)',
+    lifecycle: 'Expiry items wait, blocked, until the settlement value for the expiration date exists; then settled in cash at 100 x (settlement value - strike) for a call in the money, nothing delivered; out of the money lapses; early exercise and early assignment refused (European)',
+    accounting: 'Average premium; the cash settlement amount closes the position and the difference to the premium is realized; Treasury\'s puts are on Treasury\'s own balance sheet and P&L and in the Book\'s',
+    collateral: 'The uncovered written call reserves 20% of 100 x the index level in its strategy instance, marked at each end of day and released at settlement',
+  },
+  start: APR(6),
+  settlementCheck: { lag: 1, holidays: [] }, // US: no market holiday between 6 and 20 April 2026 (Good Friday was 3 April)
+  book: book('Matrix index option'),
+  instruments: {
+    index: { productId: 'etf', name: 'Northmark 400 Index (reference level)', symbol: 'NMX', marketView: 'US_CASH', venue: 'Northmark Indices', venueType: 'exchange', venueCountry: 'US', issuer: 'Northmark Indices LLC', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', terms: {} },
+    main: indexOptionDraft('NMX 17 April 2026 4000 call', IDX_CALL, 'C', 4000),
+    call2: indexOptionDraft('NMX 17 April 2026 4050 call', IDX_CALL2, 'C', 4050),
+    put: indexOptionDraft('NMX 17 April 2026 3900 put', IDX_PUT, 'P', 3900),
+  },
+  quotes: {
+    index: { last: 4012.50 }, // a published level: no bid, no ask
+    main: { bid: 62.00, ask: 63.00, last: 62.50, bidSize: 100, askSize: 100 },
+    call2: { bid: 38.00, ask: 39.00, last: 38.50, bidSize: 100, askSize: 100 },
+    put: { bid: 40.00, ask: 41.00, last: 40.50, bidSize: 100, askSize: 100 },
+  },
+  expectAtStart: START_STATE,
+  steps: [
+    optionTicket({
+      id: 'buy-to-open', covers: 'open', instrument: 'main', side: 'buy', qty: 3, symbol: IDX_CALL, as: 'calls',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 3, estimate: 63.00, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2026-04-07', calendar: 'US',
+            cash: -18_900, // 3 contracts x 63.00 (the ask) x 100
+            fees: 1.95, // 3 x 0.65
+            notional: 1_203_750 }], // 3 x 100 x 4,012.50 (the index level)
+          cash: { USD: { purchases: 18_900, fees: 1.95, reserved: 0, required: 18_901.95, available: 500_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 3, avgPrice: 63.00, fills: [{ qty: 3, price: 63.00, model: 'quoted-bid-ask', settleDate: '2026-04-07', source: 'Test fixture', status: 'simulated' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 3 NMX260417C4000 @ 63.00 USD', owner: 'account', date: '2026-04-06' }],
+        cash: { account: { USD: { settled: 500_000, unsettled: -18_901.95, availableToTrade: 481_098.05, availableToWithdraw: 481_098.05 } } },
+        positions: [{ instrument: 'main', lot: 'calls', owner: 'account', direction: 'long', qty: 3, avgCost: 63, cost: 18_900, price: 62.50,
+          value: 18_750, // 3 x 62.50 (last) x 100
+          unrealized: -150, priceSource: 'Test fixture' }],
+        holdings: { main: { long: 3, short: 0, net: 3 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-04-07', amount: -18_901.95, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'option.expiry', instrument: 'main', dueDate: '2026-04-17', status: 'pending', owner: 'account' }],
+        pnl: { account: { realized: 0, dividends: 0, commissions: -1.95, fees: 0, borrowFunding: 0, unrealized: -150, total: -151.95 } },
+        nav: { account: 499_848.05, treasury: 500_000, book: 999_848.05 },
+        balance: { account: { cash: 500_000, positions: 18_750, payable: 18_901.95, assets: 518_750, liabilities: 18_901.95, netAssets: 499_848.05 } },
+      },
+    }),
+    optionTicket({
+      // Treasury buys 2 puts for the Book: 2 x 41.00 x 100 = 8,200, paid from Treasury's own cash.
+      id: 'treasury-buys-puts', covers: ['open', 'treasury'], instrument: 'put', side: 'buy', qty: 2, symbol: IDX_PUT, as: 'hedge', owner: 'treasury',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'put', qty: 2, estimate: 41.00, model: 'quoted-bid-ask', settleDate: '2026-04-07', cash: -8_200, fees: 1.30, notional: 802_500 }], // 2 x 100 x 4,012.50
+          cash: { USD: { purchases: 8_200, fees: 1.30, required: 8_201.30, available: 500_000, shortfall: 0 } }, // Treasury's cash, not the Account's
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 2, avgPrice: 41.00 }] },
+        events: [{ type: 'strategy.submitted', owner: 'treasury' }, { type: 'trade.fill', summary: 'Bought 2 NMX260417P3900 @ 41.00 USD', owner: 'treasury', date: '2026-04-06' }],
+        cash: { treasury: { USD: { settled: 500_000, unsettled: -8_201.30, availableToTrade: 491_798.70 } } },
+        positions: [
+          { instrument: 'main', lot: 'calls', owner: 'account', qty: 3 },
+          { instrument: 'put', lot: 'hedge', owner: 'treasury', direction: 'long', qty: 2, avgCost: 41, cost: 8_200, price: 40.50, value: 8_100, unrealized: -100 }, // 2 x 40.50 x 100
+        ],
+        holdings: { put: { long: 2, short: 0, net: 2 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-04-07', amount: -18_901.95 }, { instrument: 'put', owner: 'treasury', dueDate: '2026-04-07', amount: -8_201.30, into: 'cash' }],
+        lifecycle: [{ type: 'option.expiry', instrument: 'main', dueDate: '2026-04-17', status: 'pending', owner: 'account' }, { type: 'option.expiry', instrument: 'put', dueDate: '2026-04-17', status: 'pending', owner: 'treasury' }],
+        pnl: { treasury: { realized: 0, commissions: -1.30, unrealized: -100, total: -101.30 }, book: { commissions: -3.25, unrealized: -250, total: -253.25 } },
+        nav: { treasury: 499_898.70, book: 999_746.75 }, // 499,848.05 + 499,898.70
+        balance: { treasury: { cash: 500_000, positions: 8_100, payable: 8_201.30, netAssets: 499_898.70 } },
+      },
+    }),
+    optionTicket({
+      // The Account writes 1 call at 4050 on its own ticket: a strategy instance of its own, so it is uncovered there
+      // (the 4000 calls sit in another one). Reserve: 1 contract x 100 x 4,012.50 x 20% = 80,250.
+      id: 'write-uncovered-call', covers: ['write', 'reserve'], instrument: 'call2', side: 'sell', qty: 1, symbol: IDX_CALL2, as: 'written',
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: ['naked-call', 'unbounded'],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'call2', qty: 1, estimate: 38.00, model: 'quoted-bid-ask', settleDate: '2026-04-07', cash: 3_800, fees: 0.65, notional: 401_250 }], // 1 x 38.00 (the bid) x 100
+          cash: { USD: { purchases: 0, proceeds: 3_800, fees: 0.65, reserved: 80_250, required: 80_250.65, available: 481_098.05, shortfall: 0, netCash: 3_799.35 } },
+          optionRequirement: [{ ccy: 'USD', amount: 80_250, finite: 0, naked: 80_250, uncoveredCallUnits: 100 }],
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 1, avgPrice: 38.00 }] },
+        events: [{ type: 'strategy.submitted', owner: 'account' }, { type: 'trade.fill', summary: /^Sold 1 NMX260417C4050 @ 38\.00 USD$/, owner: 'account' }],
+        cash: { account: { USD: { settled: 500_000, unsettled: -15_102.60, reserved: 80_250, availableToTrade: 404_647.40, availableToWithdraw: 400_848.05 } } }, // 500,000 + 3,799.35 - 18,901.95 - 80,250; 500,000 - 18,901.95 - 80,250
+        positions: [
+          { instrument: 'call2', lot: 'written', owner: 'account', direction: 'short', qty: -1, avgCost: 38, cost: -3_800, price: 38.50, value: -3_850, unrealized: -50 },
+          { instrument: 'main', lot: 'calls', owner: 'account', qty: 3, value: 18_750, unrealized: -150 },
+          { instrument: 'put', lot: 'hedge', owner: 'treasury', qty: 2 },
+        ],
+        holdings: { call2: { long: 0, short: 1, net: -1 } },
+        pending: [
+          { instrument: 'call2', owner: 'account', dueDate: '2026-04-07', amount: 3_799.35, into: 'cash' },
+          { instrument: 'main', owner: 'account', dueDate: '2026-04-07', amount: -18_901.95 },
+          { instrument: 'put', owner: 'treasury', dueDate: '2026-04-07', amount: -8_201.30 },
+        ],
+        lifecycle: [
+          { type: 'option.expiry', instrument: 'call2', dueDate: '2026-04-17', status: 'pending', owner: 'account' },
+          { type: 'option.expiry', instrument: 'main', dueDate: '2026-04-17', status: 'pending', owner: 'account' },
+          { type: 'option.expiry', instrument: 'put', dueDate: '2026-04-17', status: 'pending', owner: 'treasury' },
+        ],
+        pnl: { account: { commissions: -2.60, unrealized: -200, total: -202.60 }, book: { commissions: -3.90, unrealized: -300, total: -303.90 } },
+        nav: { account: 499_797.40, book: 999_696.10 },
+        balance: { account: { cash: 500_000, receivable: 3_799.35, positions: 14_900, payable: 18_901.95, assets: 518_699.35, liabilities: 18_901.95, netAssets: 499_797.40 } }, // 18,750 - 3,850
+      },
+    }),
+    {
+      id: 'settle-premiums', covers: 'settlement', action: 'clock', to: APR(7),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 3,799.35 USD into settled cash', owner: 'account' },
+          { type: 'settlement.pay', summary: 'paid 18,901.95 USD from settled cash', owner: 'account' },
+          { type: 'settlement.pay', summary: 'paid 8,201.30 USD from settled cash', owner: 'treasury' },
+        ],
+        cash: {
+          account: { USD: { settled: 484_897.40, unsettled: 0, reserved: 80_250, availableToTrade: 404_647.40, availableToWithdraw: 404_647.40 } }, // 500,000 + 3,799.35 - 18,901.95
+          treasury: { USD: { settled: 491_798.70, unsettled: 0, availableToTrade: 491_798.70 } },
+        },
+        pending: [],
+        balance: { account: { cash: 484_897.40, receivable: null, payable: null, assets: 499_797.40, liabilities: 0 }, treasury: { cash: 491_798.70, payable: null } },
+      },
+    },
+    {
+      id: 'exercise-early', covers: 'exercise', action: 'lifecycle', lot: 'calls', body: { action: 'exercise', contracts: 1 },
+      status: 'blocked', reason: 'A European option can be exercised only at expiration.',
+      expect: { refused: 'This option is European: it can only be exercised at expiration.' },
+    },
+    {
+      id: 'assign-early', covers: 'assignment', action: 'lifecycle', lot: 'written', body: { action: 'assign', contracts: 1 },
+      status: 'blocked', reason: 'A written European option cannot be assigned before expiration.',
+      expect: { refused: 'A European option cannot be assigned before expiration.' },
+    },
+    {
+      id: 'treasury-exercise-early', covers: ['exercise', 'treasury'], action: 'lifecycle', lot: 'hedge', body: { action: 'exercise', contracts: 2 },
+      status: 'blocked', reason: 'A European option can be exercised only at expiration, whoever holds it.',
+      expect: { refused: 'This option is European: it can only be exercised at expiration.' },
+    },
+    { id: 'thursday-9-april', action: 'clock', to: APR(9), expect: {} },
+    { id: 'index-up', action: 'quote', instrument: 'index', quote: { last: 4060.00 }, expect: {} }, // the reserve follows at the end of the day
+    {
+      id: 'calls-up', action: 'quote', instrument: 'main', quote: { bid: 88.00, ask: 89.50, last: 88.75, bidSize: 100, askSize: 100 },
+      expect: {
+        positions: [{ instrument: 'call2', qty: -1 }, { instrument: 'main', lot: 'calls', qty: 3, price: 88.75, value: 26_625, unrealized: 7_725 }, { instrument: 'put', qty: 2 }], // 3 x 88.75 x 100 - 18,900
+        pnl: { account: { unrealized: 7_675, total: 7_672.40 }, book: { unrealized: 7_575, total: 7_571.10 } }, // Account 7,725 - 50; Book: less Treasury's 100, and 3.90 of commission
+        nav: { account: 507_672.40, book: 1_007_571.10 },
+        balance: { account: { positions: 22_775, assets: 507_672.40, netAssets: 507_672.40 } },
+      },
+    },
+    {
+      id: 'written-call-up', action: 'quote', instrument: 'call2', quote: { bid: 54.00, ask: 55.50, last: 54.75, bidSize: 100, askSize: 100 },
+      expect: {
+        positions: [{ instrument: 'call2', lot: 'written', qty: -1, price: 54.75, value: -5_475, unrealized: -1_675 }, { instrument: 'main', qty: 3 }, { instrument: 'put', qty: 2 }], // -5,475 + 3,800
+        pnl: { account: { unrealized: 6_050, total: 6_047.40 }, book: { unrealized: 5_950, total: 5_946.10 } },
+        nav: { account: 506_047.40, book: 1_005_946.10 },
+        balance: { account: { positions: 21_150, assets: 506_047.40, netAssets: 506_047.40 } },
+      },
+    },
+    {
+      id: 'puts-down', action: 'quote', instrument: 'put', quote: { bid: 22.00, ask: 23.00, last: 22.50, bidSize: 100, askSize: 100 },
+      expect: {
+        positions: [{ instrument: 'call2', qty: -1 }, { instrument: 'main', qty: 3 }, { instrument: 'put', lot: 'hedge', owner: 'treasury', qty: 2, price: 22.50, value: 4_500, unrealized: -3_700 }], // 2 x 22.50 x 100 - 8,200
+        pnl: { treasury: { unrealized: -3_700, total: -3_701.30 }, book: { unrealized: 2_350, total: 2_346.10 } }, // 6,050 - 3,700; less 3.90 commission
+        nav: { treasury: 496_298.70, book: 1_002_346.10 },
+        balance: { treasury: { positions: 4_500, netAssets: 496_298.70 } },
+      },
+    },
+    {
+      id: 'sell-to-close-one', covers: 'reduce', action: 'close', lot: 'calls', scope: 'strategy', percent: 34, // 34% of 3 contracts, in whole contracts: sells 1
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'sell', qty: 1, estimate: 88.00, model: 'quoted-bid-ask', settleDate: '2026-04-10', cash: 8_800, fees: 0.65 }] }, // 1 x 88.00 (the bid) x 100
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 1, avgPrice: 88.00 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 1 NMX260417C4000 @ 88.00 USD (realized 2,500.00 USD)' }], // 8,800 - 6,300
+        cash: { account: { USD: { settled: 484_897.40, unsettled: 8_799.35, reserved: 80_250, availableToTrade: 413_446.75, availableToWithdraw: 404_647.40 } } },
+        positions: [{ instrument: 'call2', qty: -1, value: -5_475, unrealized: -1_675 }, { instrument: 'main', lot: 'calls', qty: 2, cost: 12_600, avgCost: 63, price: 88.75, value: 17_750, unrealized: 5_150 }, { instrument: 'put', qty: 2 }],
+        holdings: { main: { long: 2, short: 0, net: 2 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-04-10', amount: 8_799.35, into: 'cash' }],
+        pnl: { account: { realized: 2_500, commissions: -3.25, unrealized: 3_475, total: 5_971.75 }, book: { realized: 2_500, commissions: -4.55, unrealized: -225, total: 2_270.45 } },
+        nav: { account: 505_971.75, book: 1_002_270.45 },
+        balance: { account: { cash: 484_897.40, receivable: 8_799.35, positions: 12_275, assets: 505_971.75, netAssets: 505_971.75 } }, // 17,750 - 5,475
+      },
+    },
+    {
+      // Friday: the sale settles, and Thursday's end of day marked the reserve to the index at 4,060: 100 x 4,060 x 20% = 81,200.
+      id: 'settle-reduce', covers: ['settlement', 'reserve mark'], action: 'clock', to: APR(10),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 8,799.35 USD into settled cash', owner: 'account' }],
+        cash: { account: { USD: { settled: 493_696.75, unsettled: 0, reserved: 81_200, availableToTrade: 412_496.75, availableToWithdraw: 412_496.75 } } },
+        pending: [],
+        balance: { account: { cash: 493_696.75, receivable: null } },
+      },
+    },
+    {
+      // Expiration morning. The series stopped trading yesterday; its settlement value is not known to the Terminal,
+      // so all three expiry items wait, blocked, naming the missing fixing.
+      id: 'expiry-morning', covers: 'expiry', action: 'clock', to: APR(17),
+      expect: {
+        lifecycle: [
+          { type: 'option.expiry', instrument: 'call2', dueDate: '2026-04-17', status: 'blocked', owner: 'account', reason: AWAITING_NMX },
+          { type: 'option.expiry', instrument: 'main', dueDate: '2026-04-17', status: 'blocked', owner: 'account', reason: AWAITING_NMX },
+          { type: 'option.expiry', instrument: 'put', dueDate: '2026-04-17', status: 'blocked', owner: 'treasury', reason: AWAITING_NMX },
+        ],
+      },
+    },
+    { id: 'index-trading-on-friday', action: 'quote', instrument: 'index', quote: { last: 4080.00 }, expect: {} }, // the live level is not the settlement value
+    {
+      // The special opening quotation, 4,071.36, entered by hand as the index fixing for 17 April. On the next cycle:
+      //   Account's 2 calls at 4000: cash 2 x 100 x (4,071.36 - 4,000) = 14,272, due Monday; less cost 12,600 = 1,672 realized.
+      //   Treasury's 2 puts at 3900: out of the money, lapse; their cost, 8,200, is realized as a loss.
+      //   Account's written call at 4050: assigned in cash, 1 x 100 x (4,071.36 - 4,050) = 2,136 to pay Monday;
+      //   3,800 received less 2,136 = 1,664 realized; the 81,200 reserve is released.
+      id: 'settlement-value-by-hand', covers: ['expiry', 'cash settlement', 'assignment', 'lapse', 'reserve release'], action: 'manual_price', instrument: 'index', value: 4071.36, forDate: '2026-04-17', note: 'Special opening quotation, 17 April 2026',
+      expect: {
+        events: [
+          { type: 'option.cash_settled', summary: 'Exercised (cash settlement): 2 NMX260417C4000 at 71.36 per unit', owner: 'account', date: '2026-04-17' },
+          { type: 'option.expired', summary: 'Expired worthless: 2 NMX260417P3900 (fixing 4071.36)', owner: 'treasury', date: '2026-04-17' },
+          { type: 'option.cash_settled', summary: 'Assigned (cash settlement): 1 NMX260417C4050 at 21.36 per unit', owner: 'account', date: '2026-04-17' },
+        ],
+        cash: { account: { USD: { settled: 493_696.75, unsettled: 12_136, reserved: 0, availableToTrade: 505_832.75, availableToWithdraw: 491_560.75 } } }, // 14,272 - 2,136; 493,696.75 - 2,136
+        positions: [],
+        holdings: { main: null, call2: null, put: null },
+        pending: [{ instrument: 'call2', lot: 'written', owner: 'account', dueDate: '2026-04-20', amount: -2_136, into: 'cash' }, { instrument: 'main', lot: 'calls', owner: 'account', dueDate: '2026-04-20', amount: 14_272, into: 'cash' }],
+        lifecycle: [],
+        pnl: {
+          account: { realized: 5_836, commissions: -3.25, unrealized: 0, total: 5_832.75 }, // 2,500 + 1,672 + 1,664
+          treasury: { realized: -8_200, commissions: -1.30, unrealized: 0, total: -8_201.30 },
+          book: { realized: -2_364, commissions: -4.55, unrealized: 0, total: -2_368.55 },
+        },
+        nav: { account: 505_832.75, treasury: 491_798.70, book: 997_631.45 },
+        balance: {
+          account: { cash: 493_696.75, receivable: 14_272, payable: 2_136, positions: null, assets: 507_968.75, liabilities: 2_136, netAssets: 505_832.75 },
+          treasury: { cash: 491_798.70, positions: null, netAssets: 491_798.70 },
+        },
+      },
+    },
+    {
+      id: 'settle-cash-settlement', covers: 'settlement', action: 'clock', to: APR(20),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 14,272.00 USD into settled cash', owner: 'account' }, { type: 'settlement.pay', summary: 'paid 2,136.00 USD from settled cash', owner: 'account' }],
+        // Account: 500,000 - 18,901.95 + 3,799.35 + 8,799.35 + 14,272 - 2,136 = 505,832.75. Treasury: 500,000 - 8,201.30.
+        cash: { account: { USD: { settled: 505_832.75, unsettled: 0, reserved: 0, availableToTrade: 505_832.75, availableToWithdraw: 505_832.75 } }, treasury: { USD: { settled: 491_798.70 } } },
+        pending: [],
+        balance: { account: { cash: 505_832.75, receivable: null, payable: null, assets: 505_832.75, liabilities: 0, netAssets: 505_832.75 } },
+      },
+    },
+  ],
+};
+
+export default [equityOption, etfOption, indexOption, optionOnFuture];
