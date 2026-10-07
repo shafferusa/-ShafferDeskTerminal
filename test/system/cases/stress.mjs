@@ -18,7 +18,7 @@ const put = (und, symbol) => ({ productId: 'equity_option', name: `${symbol} 202
 const commission = async (w, book) => (await w.balance(book.id, book.accountId, 'pnl.commission')) + (await w.balance(book.id, book.accountId, 'pnl.fee'));
 
 /** A package whose protective leg fails: 100 shares bought, a day limit order for 1 put (limit 1.00, ask 2.10) that never fills. */
-async function brokenPackage(w, symbol) {
+export async function brokenPackage(w, symbol) {
   const book = await w.book(`Stress ${symbol}`);
   const stock = await w.stock(symbol, QUOTE);
   const opt = await w.instrument(put(stock, symbol));
@@ -112,7 +112,7 @@ export default [
         w.sameRows(c, after, await w.books(book.id), 'the repeated cancellations');
         await w.clean(c, book.id);
       }),
-      browser: async (b, c) => b.cases.failedLegRecovery(b, c, 'cancel'),
+      browser: (b, c) => b.cases.failedLegRecovery(b, c, 'cancel'),
     },
   },
   {
@@ -148,7 +148,7 @@ export default [
         c.near(await commission(w, book), 1.65, 'commission 1.00 + 0.65');
         await w.clean(c, book.id);
       }),
-      browser: async (b, c) => b.cases.failedLegRecovery(b, c, 'retry'),
+      browser: (b, c) => b.cases.failedLegRecovery(b, c, 'retry'),
     },
   },
   {
@@ -175,7 +175,7 @@ export default [
         c.eq([cash.settled, cash.payable, cash.receivable], [499_996, 0, 0], 'after settlement: 499,996.00, nothing payable or receivable');
         await w.clean(c, book.id);
       }),
-      browser: async (b, c) => b.cases.failedLegRecovery(b, c, 'unwind'),
+      browser: (b, c) => b.cases.failedLegRecovery(b, c, 'unwind'),
     },
   },
   {
@@ -202,7 +202,7 @@ export default [
         w.sameRows(c, after, await w.books(book.id), 'accepting again');
         await w.clean(c, book.id);
       }),
-      browser: async (b, c) => b.cases.failedLegRecovery(b, c, 'accept'),
+      browser: (b, c) => b.cases.failedLegRecovery(b, c, 'accept'),
     },
   },
 
@@ -249,7 +249,7 @@ export default [
         c.refused(await w.req('POST', '/api/orders/ORD-0000000000/cancel'), { status: 404 }, '(e) cancel an order that does not exist');
         await w.clean(c, book.id);
       }),
-      browser: async (b, c) => b.cases.cancelPartial(b, c),
+      browser: (b, c) => b.cases.cancelPartial(b, c),
     },
   },
 

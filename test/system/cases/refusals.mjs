@@ -933,4 +933,13 @@ export default [
       browser: async (b, c) => b.cases.closedDay(b, c),
     },
   },
+
+  // ---------------------------------------------------------------------------------------------------
+  {
+    id: 'ticket-blocks',
+    title: 'Refusals read from the trade ticket and the preview dialog',
+    proves: 'What the Terminal refuses, it refuses on the screen: the reason is shown, the Confirm button cannot be pressed, and nothing is stored.',
+    expected: 'From the Marketplace ticket of a stock (ask 50.02; 300 available to borrow; the Account holds 200 shares bought today, so 489,995.00 of its 500,000.00 is available): (a) buy 20,000 (1,000,400.00 plus 100.00 commission): the preview dialog shows the blocking reason naming the shortfall of 1,000,500.00 - 489,995.00 = 510,505.00 and its Confirm button is disabled; (b) sell short 500: blocked naming 300 available to borrow; (c) a quantity of 0 or left empty: the ticket cannot be previewed; (d) 10.5 shares: blocked (whole shares); (e) sell 300 of the 200 held: blocked naming 200; (f) settlement stated on Saturday 7 March: the ticket itself shows the calendar conflict and the preview is blocked; (g) a second stock whose borrow is not available: sell short is blocked naming it; (h) an option that has expired: blocked naming its expiry date. After all of it there is no new order, fill or ledger entry, and the Accounting positions screen still shows 200 shares and 489,995.00 available to trade.',
+    levels: { engine: 'the same refusals without a screen are SE:refusals:cash-trade, borrow-unavailable, borrow-exhausted, invalid-quantity, expired-contract and calendar-settlement', api: 'as at engine level: the SA: cases of the same names', browser: (b, c) => b.cases.ticketBlocks(b, c) },
+  },
 ];

@@ -275,3 +275,198 @@ async function openTransferOffline(b, amount) {
     return dlg;
   } catch { return null; }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Refusals read from the ticket and the preview dialog
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Fill the ticket, ask for the preview, and report how the interface refuses: { where, text, confirmDisabled }.
+ * `where` is 'ticket' (Preview cannot be pressed, or the ticket shows the reason), 'message' (the request was
+ * refused and the reason shown as a message) or 'preview' (the dialog shows a blocking check). Null: not refused.
+ */
+async function refusalOf(b, inst, spec) {
+  const { page, ui } = b;
+  const drawer = await fillTicket(b, inst, spec);
+  if (spec.settleOn) {
+    await ui.field(drawer, 'Settlement').locator('select').selectOption({ label: 'State a settlement date' });
+    await ui.field(drawer, 'Settlement').locator('input[type=date]').fill(spec.settleOn);
+    await ui.field(drawer, 'Settlement').locator('.err').waitFor();
+  }
+  const ticketError = spec.settleOn ? (await ui.field(drawer, 'Settlement').locator('.err').innerText()).trim() : null;
+  const preview = drawer.getByRole('button', { name: /^Preview/ });
+  if (await preview.isDisabled()) return { where: 'ticket', text: ticketError || (await drawer.locator('.notice').allInnerTexts()).join(' | ') || 'Preview is disabled', confirmDisabled: true };
+  const { asked, modal, confirm } = await openPreviewFrom(b, drawer);
+  if (!asked.ok) {
+    await page.locator('.toasts .toast, .notice.err', { hasText: asked.body?.error || 'no message' }).first().waitFor();
+    return { where: 'message', text: asked.body?.error, confirmDisabled: true };
+  }
+  const blocks = (await modal.locator('.checks .notice.err').allInnerTexts()).map((x) => x.trim().replace(/\s+/g, ' '));
+  const disabled = await confirm.isDisabled();
+  await ui.button(modal, 'Cancel').click();
+  await modal.waitFor({ state: 'hidden' });
+  if (!blocks.length && !disabled) return null;
+  return { where: 'preview', text: [ticketError, ...blocks].filter(Boolean).join(' | '), confirmDisabled: disabled };
+}
+
+/** SB:refusals:ticket-blocks. */
+export async function ticketBlocks(b, c) {
+  const book = await b.book('Browser ticket blocks');
+  const inst = await b.stock('TKB', QUOTE);
+  await b.fixture('borrow', { instrumentId: inst.id, available: true, quantity: 300, feeRate: 0.01 });
+  const noBorrow = await b.stock('TKN', QUOTE);
+  await b.fixture('borrow', { instrumentId: noBorrow.id, available: false, quantity: 0, feeRate: 0.01 });
+  const opt = await b.instrument({ productId: 'equity_option', name: 'TKB 2026-02-20 50 Call', symbol: 'TKB 260220C50', marketView: 'US_DERIV', venue: 'CBOE', venueType: 'exchange', venueCountry: 'US', underlyingId: inst.id, tradingCcy: 'USD', multiplier: 100, terms: { right: 'C', strike: 50, expiration: '2026-02-20', exercise: 'american', settlement: 'physical', deliverable: { units: 100 } } });
+  await b.fixture('quote', { instrumentId: opt.id, bid: 1.00, ask: 1.10, last: 1.05, bidSize: 50, askSize: 50 });
+  await b.buy(book, inst, 200);
+  await enter(b, book, '#/markets/US_CASH');
+  await closeHedgePopup(b);
+  const before = await b.books(book.id);
+  const expectRefusal = async (label, instrument, spec, text, where) => {
+    const r = await refusalOf(b, instrument, spec);
+    if (!c.ok(r, `${label}: the interface refuses it`, 'the preview opened with nothing blocking and Confirm enabled')) return;
+    c.match(r.text, text, `${label}: the reason on screen`);
+    c.eq(r.confirmDisabled, true, `${label}: it cannot be confirmed`);
+    if (where) c.eq(r.where, where, `${label}: refused on the ${where}`);
+    c.note(`${label}: on the ${r.where}: "${r.text.slice(0, 160)}"`);
+  };
+  await expectRefusal('(a) buy 20,000', inst, { qty: 20_000 }, /short 510,505\.00 USD/, 'preview'); // 1,000,500.00 needed, 489,995.00 available
+  await expectRefusal('(b) sell short 500 with 300 to borrow', inst, { action: 'Sell short', qty: 500 }, /only 300 TKB is available to borrow/, 'preview');
+  await expectRefusal('(c) a quantity of 0', inst, { qty: 0 }, /./);
+  await expectRefusal('(d) 10.5 shares', inst, { qty: 10.5 }, /multiple of 1/);
+  await expectRefusal('(e) sell 300 of the 200 held', inst, { action: 'Sell', qty: 300 }, /200/);
+  await expectRefusal('(f) settlement on Saturday 7 March', inst, { qty: 100, settleOn: '2026-03-07' }, /2026-03-07 \(Saturday\) is a Saturday/);
+  await expectRefusal('(g) sell short with the borrow unavailable', noBorrow, { action: 'Sell short', qty: 100 }, /TKN is not available to borrow/, 'preview');
+  await expectRefusal('(h) an expired option', opt, { qty: 1, account: 'Alpha' }, /expired on 2026-02-20/);
+  await b.ui.closeOverlays();
+  const after = await b.books(book.id);
+  b.sameBooks(c, before, after, 'after every refusal');
+  b.sameRows(c, before, after, 'after every refusal');
+  // The screen agrees: 200 shares, 489,995.00 available to trade.
+  await b.ui.reloadAt(`#/accounting/positions/${book.accountId}`);
+  const main = b.page.locator('main');
+  await main.locator('table').first().waitFor();
+  const text = (await main.innerText()).replace(/\s+/g, ' ');
+  c.match(text, /489,995\.00/, 'the positions screen shows 489,995.00 available to trade');
+  c.match(text, /TKB/, 'and the 200 TKB held');
+}
+
+// ---------------------------------------------------------------------------------------------
+// A failed dependent leg, and cancellations, from the strategy instance
+// ---------------------------------------------------------------------------------------------
+
+async function openStrategyDrawer(b, book, strategyId) {
+  const { page, ui } = b;
+  await ui.closeOverlays();
+  await ui.reloadAt(`#/accounting/positions/${book.accountId}`);
+  await page.locator(`main a[title="Strategy instance ${strategyId}"]`).first().click();
+  const drawer = page.getByRole('dialog').filter({ has: page.locator('header h3', { hasText: /^Positions/ }) });
+  await drawer.waitFor();
+  return drawer;
+}
+
+/** SB:stress:failed-leg-cancel / -retry / -unwind / -accept. */
+export async function failedLegRecovery(b, c, mode) {
+  const { page, ui } = b;
+  const { brokenPackage } = await import('../cases/stress.mjs');
+  const { book, opt, s } = await brokenPackage(b, `BF${mode[0].toUpperCase()}`);
+  await enter(b, book);
+  let drawer;
+  if (mode === 'cancel') {
+    drawer = await openStrategyDrawer(b, book, s.id);
+    c.ok(await drawer.getByText(/In progress, not complete/).first().isVisible(), 'the strategy instance says it is in progress, not complete');
+    const sent = watchRequests(page, 'POST', /\/action$/);
+    await ui.button(drawer, 'Cancel working legs').dblclick();
+    await ui.toast(/Working legs cancelled/);
+    sent.stop();
+    c.eq(sent.seen.length, 1, 'Cancel working legs double-clicked: one request');
+  } else {
+    await b.clock(evening('2026-03-02')); // the day order for the put expires unfilled
+    await b.clock(TUE);
+    drawer = await openStrategyDrawer(b, book, s.id);
+  }
+  const residual = ui.section(drawer, 'Residual exposure');
+  await residual.waitFor();
+  c.match(await residual.innerText(), /1 required leg did not execute while other legs did/, 'the drawer shows the residual exposure and says the package is not complete');
+  c.eq(await ui.button(drawer, 'Cancel working legs').count(), 0, 'no leg is left to cancel');
+  const view = async () => b.strategy(s.id);
+  if (mode === 'cancel') {
+    c.eq((await view()).status, 'attention', 'the package is in attention');
+    for (const name of ['Retry the failed legs', 'Unwind what filled', 'Accept as it stands']) c.ok(await ui.button(residual, name).isVisible(), `"${name}" is offered`);
+    c.eq((await b.books(book.id)).counts.orders, 2, 'two orders exist: the filled stock leg and the cancelled put leg');
+  } else if (mode === 'retry') {
+    await b.fixture('quote', { instrumentId: opt.id, bid: 0.90, ask: 0.95, last: 0.95, bidSize: 50, askSize: 50 }); // the retried limit (1.00) can now fill
+    await ui.button(residual, 'Retry the failed legs').click();
+    const modal = ui.dialog(/^Preview: /);
+    await modal.waitFor();
+    const confirm = modal.getByRole('button', { name: /^Confirm/ });
+    await confirm.dblclick();
+    await modal.waitFor({ state: 'hidden' });
+    await b.tick();
+    const v = await view();
+    c.eq([v.status, v.complete], ['open', true], 'after the retry the package is open and complete');
+    c.eq(v.orders.map((o) => [o.legNo, o.status, o.filledQty]), [[1, 'filled', 100], [2, 'expired', 0], [3, 'filled', 1]], 'three legs: stock filled, put expired, put filled once (Confirm was double-clicked)');
+    c.eq(v.orders[2].avgPrice, 0.95, 'the put filled at the ask 0.95');
+  } else if (mode === 'unwind') {
+    await ui.button(residual, 'Unwind what filled').click();
+    const modal = ui.dialog(/^Preview: /);
+    await modal.waitFor();
+    await modal.getByRole('button', { name: /^Confirm/ }).dblclick();
+    await modal.waitFor({ state: 'hidden' });
+    await b.tick();
+    const v = await view();
+    c.eq([v.status, v.positions.length], ['closed', 0], 'after the unwind the package is closed and holds nothing');
+    c.eq(v.orders.filter((o) => o.action === 'sell').map((o) => [o.status, o.filledQty, o.avgPrice]), [['filled', 100, 50]], 'one sale of 100 at the bid 50.00 (Confirm was double-clicked)');
+  } else if (mode === 'accept') {
+    const before = await b.books(book.id);
+    await ui.button(residual, 'Accept as it stands').click();
+    const dlg = ui.dialog('Accept the position as it stands');
+    const sent = watchRequests(page, 'POST', /\/action$/);
+    await ui.button(dlg, 'Accept as it stands').dblclick();
+    await dlg.waitFor({ state: 'hidden' });
+    sent.stop();
+    c.eq(sent.seen.length, 1, 'Accept double-clicked: one request');
+    const v = await view();
+    c.eq(v.status, 'open', 'after accepting the package is open');
+    c.eq(b.sql(`SELECT COUNT(*) AS n FROM events WHERE book_id = ? AND type = 'strategy.accepted'`, book.id)[0].n, 1, 'one accepted event');
+    b.sameBooks(c, before, await b.books(book.id), 'accepting');
+  }
+  await b.clean(c, book.id);
+}
+
+/** SB:stress:cancellations. The partly filled order on the Pending tab, cancelled from there. */
+export async function cancelPartial(b, c) {
+  const { page, ui } = b;
+  const book = await b.book('Browser cancel partial');
+  const inst = await b.stock('BCP', { ...QUOTE, askSize: 300, bidSize: 300 });
+  const s = await b.trade(b.ticketInput(book, inst, 'buy', 1_000, { order: { tif: 'gtc' } }));
+  const rest = await b.trade(b.ticketInput(book, inst, 'buy', 50, { order: { orderType: 'limit', limitPrice: 40, tif: 'gtc' } }));
+  await enter(b, book, `#/accounting/pending/${book.accountId}`);
+  const partly = ui.section(page.locator('main'), 'Partly filled');
+  await partly.waitFor();
+  const row = partly.locator('tbody tr').first();
+  c.match((await row.innerText()).replace(/\s+/g, ' '), /300 of 1,000.*700/, 'the Pending tab lists the order as partly filled: 300 of 1,000, 700 remaining');
+  let sent = watchRequests(page, 'POST', /\/cancel$/);
+  await ui.button(row, 'Cancel the rest').dblclick();
+  await ui.toast(/Order cancelled/);
+  sent.stop();
+  c.eq(sent.seen.length, 1, 'Cancel the rest double-clicked: one request');
+  await partly.locator('tbody tr').first().waitFor({ state: 'detached' }).catch(() => {});
+  let v = await b.strategy(s.id);
+  c.eq([v.orders[0].status, v.orders[0].filledQty, v.positions[0]?.qty], ['cancelled', 300, 300], 'the order is cancelled with 300 filled, and the 300 shares stay');
+  c.eq(b.sql(`SELECT COUNT(*) AS n FROM events WHERE order_id = ? AND type = 'order.cancelled'`, s.orders[0].id)[0].n, 1, 'one cancellation event');
+  // The resting order, from the Open orders table.
+  const open = ui.section(page.locator('main'), 'Open orders');
+  sent = watchRequests(page, 'POST', /\/cancel$/);
+  await ui.button(open.locator('tbody tr').first(), 'Cancel order').dblclick();
+  await ui.toast(/Order cancelled/);
+  sent.stop();
+  c.eq(sent.seen.length, 1, 'Cancel order double-clicked: one request');
+  v = await b.strategy(rest.id);
+  c.eq([v.orders[0].status, v.orders[0].filledQty], ['cancelled', 0], 'the resting order is cancelled, unfilled');
+  await b.tick(); await b.tick();
+  c.eq((await b.books(book.id)).counts.fills, 1, 'later cycles fill nothing more');
+  await ui.reloadAt(`#/accounting/pending/${book.accountId}`);
+  c.eq(await page.locator('main').getByRole('button', { name: /^Cancel (the rest|order)$/ }).count(), 0, 'no order is left to cancel on the Pending tab');
+  await b.clean(c, book.id);
+}
