@@ -42,12 +42,23 @@ Round 1 notes: $SP/v1/PROGRESS.md (docs/work/progress/v1.md in the repo).
     was / now for the leg (estimated fill, notional) and the package (gross notional), button disabled until ticked,
     then filled at the new price.
 
+- D, more browser checks: refusal view at 390 dark from the review queue (ECHO; controls in view, "Refresh prices"
+  clears the change list); a basis stated by the scripted test fixture that cannot be used (agreement not in the Book):
+  shown as stated with the reason, replaced by "Uncollateralized", confirmed through Inspect or edit (1024 light, 1440
+  dark); Strategy page package detail shows the basis read-only and the package preview offers Edit contract terms.
+- E: docs/ARCHITECTURE.md hedge section: "What a recommendation leaves to the desk", the refusal behaviour, and a route
+  table (hedge, protection, analytics strategies, strategies, demo hedge routes).
+- $SP/BUGS.md: two findings for other owners (forward notional before a rate labelled in the trading currency in
+  packages.js; swap float leg rounds an exact half cent down, 938.285 -> 938.28).
+- Final: `npm test` 184 pass, 0 fail. Servers 8811 and 8812 stopped.
+
 ## In progress
-- Nothing half-edited. web/views/hedge.js is in a working state.
+- Nothing. All files are in a working state.
 
 ## Next
-- 390 px check of the refusal view; light/dark screenshots review.
-- E: routes into docs/ARCHITECTURE.md (hedge / protection / strategy routes, incl. the new preview body fields).
-- BUGS.md notes for others: forward notional before a rate is labelled in the trading currency (packages.js); the swap
-  float leg rounds an exact half cent down (938.285 -> 938.28).
-- full npm test, stop server 8811 (PID in v1b/server-8811.pid), save-note 0.5, report under 40 lines.
+- Nothing open in this follow-up. For the coordinator to commit: server/core/hedge.js, server/api.js (one route line),
+  web/views/hedge.js, test/core/reconciliation.test.js, docs/ARCHITECTURE.md (test/core/hedge.test.js went with the notes).
+- Not done: no chooser on the Strategy page's package panel (the basis is chosen there in the preview dialog, Edit
+  contract terms); a registered OTC instrument as a hedge leg takes its basis from the contract (not choosable in the popup).
+- To resume a browser check: v1b/start.sh 8811 data ; node v1b/flow_trs.mjs <SYM> <qty> 8811 <WxH> [dark] (the demo
+  clock in v1b/data stands at 2027-01-08).
