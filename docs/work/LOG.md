@@ -39,3 +39,4 @@
 - 2026-10-07T09:59Z | b1 | +0.2 | em_hard_debt passes at engine, API and browser (USD sovereign, 30/360, T+2, shortfall funded by Treasury from the ticket)
 - 2026-10-07T10:02Z | b1 | +0.2 | agency_debt passes at engine, API and browser (limit order in partial fills, order-level commission minimum, day order expiry, coupon)
 - 2026-10-07T10:05Z | b1 | +0.2 | supranational_bond passes at engine, API and browser (euro, annual coupon, T+2 over the TARGET holiday, FX effects)
+- 2026-10-07T10:09Z | b1 | +0.2 | municipal_bond passes at engine, API and browser

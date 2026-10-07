@@ -2227,4 +2227,217 @@ const supranationalBond = {
   ],
 };
 
-export default [treasuryNote, treasuryBill, treasuryBond, strips, foreignGovBill, foreignGovBond, emLocalDebt, emHardDebt, agencyDebt, supranationalBond];
+
+// ---------------------------------------------------------------------------------------------
+// municipal_bond
+// ---------------------------------------------------------------------------------------------
+// A US state general-obligation bond: 5% coupon priced well above par (a premium bond, as most
+// municipals are), coupons 1 June and 1 December, 30/360, T+1 on the US bond calendar, and
+// 5,000 denominations. The denominations run through the scenario: an order that is not a
+// multiple of 5,000 is refused, and "Close 50%" of 125,000 sells 60,000, not 62,500.
+// A stop order protects part of the position: it rests until the last price falls to the stop,
+// then sells at the bid, on Monday 30 November, for settlement on Tuesday 1 December, which is the
+// coupon date. A sale that settles on the coupon date carries no accrued interest, and the coupon
+// on the face sold stays with the seller.
+// 30/360 days from 1 June 2026: to 24 Nov 173, to 27 Nov 176, to 1 Dec 180 (the full period).
+// A full coupon is 2.50 per 100. Commission: 1.00 per bond of 1,000 face, at least 10.00 an order.
+// Not modelled: the tax treatment of the interest, and amortisation of the premium (the premium
+// stays in cost and comes out as realized loss).
+const municipalBond = {
+  productId: 'municipal_bond',
+  title: 'State of California general obligation 5% due 1 December 2034: 5,000 denominations, a stop order, a sale settling on the coupon date',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount (a multiple of 5,000)', 'Order type Stop with a Stop price, for the protective sale'],
+    manualInputs: ['none (tax treatment is not modelled: no tax-equivalent yield, no tax lot)'],
+    settlement: 'T+1 on the US bond calendar; Thanksgiving is skipped; a stop order that triggers later settles T+1 from the day it fills',
+    lifecycle: 'Daily accrual on 30/360; semi-annual coupon to the face settled before the coupon date (a sale settling on the coupon date leaves the coupon with the seller); a resting stop order triggers on the last price',
+    accounting: 'Clean cost at average, premium included and not amortised; realized P&L on each sale; coupon income separate; per-bond commission',
+    collateral: 'None for a long position',
+  },
+  start: EST('2026-11-23'), // Monday
+  settlementCheck: { lag: 1, holidays: ['2026-11-26'] }, // Thanksgiving Day
+  book: {
+    name: 'Matrix municipal bond', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 1_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 500_000 }] },
+    settings: { fees: { bond: { perUnit: 0.001, minimum: 10, bps: 0 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'municipal_bond', name: 'State of California General Obligation 5% 1-Dec-2034', symbol: 'CA-GO-5-DEC34', marketView: 'US_CASH', venueType: 'otc', issuer: 'State of California', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      terms: { couponType: 'fixed', couponRate: 0.05, frequency: 2, maturity: '2034-12-01', issueDate: '2024-12-01', dayCount: '30/360', redemption: 100, minDenomination: 5_000 } },
+  },
+  quotes: { main: { bid: 108.25, ask: 108.5, last: 108.375, bidSize: 2_000_000, askSize: 2_000_000 } },
+  expectAtStart: { ...startState(500_000, 500_000), cash: { account: usdCash(500_000), treasury: usdCash(500_000) } },
+  steps: [
+    {
+      id: 'odd-denomination', covers: 'minimum denomination', action: 'ticket', instrument: 'main', side: 'buy', qty: 252_000,
+      status: 'blocked', reason: 'Municipal bonds trade in 5,000 denominations; 252,000 is not a multiple of 5,000.',
+      expect: { refused: 'quantity must be a multiple of 5000' },
+    },
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 250_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 250_000, estimate: 108.5, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2026-11-24', calendar: 'USBOND',
+            gross: 271_250, // 250,000 x 108.50 / 100: 21,250 of premium over par
+            accrued: 6_006.94, // settles 24 Nov, 173 days of 30/360: 250,000 x 5% x 173/360 = 6,006.944
+            cash: -277_256.94, fees: 250 }], // 250 bonds x 1.00
+          cash: { USD: { purchases: 277_256.94, fees: 250, required: 277_506.94, available: 500_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 250_000, avgPrice: 108.5, fills: [{ qty: 250_000, price: 108.5, model: 'quoted-bid-ask', settleDate: '2026-11-24', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 250,000 CA-GO-5-DEC34 @ 108.50 USD', owner: 'account', date: '2026-11-23' }],
+        cash: { account: { USD: { settled: 500_000, unsettled: -277_506.94, availableToTrade: 222_493.06 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 250_000, avgCost: 108.5, cost: 271_250, price: 108.375,
+          value: 270_937.50, unrealized: -312.50, accrued: 6_006.94, priceSource: 'Test fixture' }], // 250,000 x 108.375 / 100
+        holdings: { main: { long: 250_000, short: 0, net: 250_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-11-24', amount: -277_506.94, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2026-12-01', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2034-12-01', status: 'pending' }], // a Tuesday; a Friday
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -250, fees: 0, borrowFunding: 0, unrealized: -312.50, total: -562.50 } },
+        nav: { account: 499_437.50, book: 999_437.50 },
+        balance: { account: { cash: 500_000, accruedIncome: 6_006.94, positions: 270_937.50, payable: 277_506.94, assets: 776_944.44, liabilities: 277_506.94, netAssets: 499_437.50 } },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EST('2026-11-24'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 277,506.94 USD from settled cash', cash: { USD: -277_506.94 }, date: '2026-11-24' }],
+        cash: { account: { USD: { settled: 222_493.06, unsettled: 0, availableToTrade: 222_493.06 } } },
+        pending: [],
+        balance: { account: { cash: 222_493.06, payable: null, assets: 499_437.50, liabilities: 0 } },
+      },
+    },
+    {
+      // Sell 125,000 if the last price falls to 107.50, good until cancelled. The last is 108.375: the order rests.
+      // The preview shows what a sale would fetch at today's bid.
+      id: 'stop-order-rests', covers: ['reduce', 'stop order'], action: 'ticket', instrument: 'main', side: 'sell', qty: 125_000, from: 'lot', order: { orderType: 'stop', stopPrice: 107.5, tif: 'gtc' },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 125_000, estimate: 108.25, executable: false, settleDate: '2026-11-25', orderType: 'stop',
+          gross: 135_312.50, // 125,000 x 108.25 / 100
+          accrued: 3_020.83, // 125,000 x 5% x 174/360
+          cash: 138_333.33, fees: 125 }] },
+        result: { orders: [{ kind: 'trade', action: 'sell', status: 'working', filledQty: 0, reason: 'Stop not triggered: last 108.375 has not fallen to 107.5.', fills: [] }] },
+        events: [{ type: 'strategy.legs_added' }],
+        openOrders: [{ instrument: 'main', kind: 'trade', action: 'sell', status: 'working', qty: 125_000, filledQty: 0 }],
+      },
+    },
+    {
+      // Monday 30 Nov, after Thanksgiving (Thursday 26). The last end of day was Friday 27 Nov: 176 days, 250,000 x 5% x 176/360 = 6,111.11.
+      id: 'after-thanksgiving', covers: ['market holiday', 'accrual'], action: 'clock', to: EST('2026-11-30'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on CA-GO-5-DEC34: 104.17 USD' }], // three 30/360 days: 6,111.11 - 6,006.94
+        positions: [{ instrument: 'main', lot: 'lot', qty: 250_000, accrued: 6_111.11 }],
+        pnl: { account: { couponInterest: 104.17, total: -458.33 } },
+        nav: { account: 499_541.67, book: 999_541.67 },
+        balance: { account: { accruedIncome: 6_111.11, assets: 499_541.67, netAssets: 499_541.67 } },
+      },
+    },
+    {
+      // The market falls: last 107.40, through the stop. The order becomes a market sale and fills at the bid, 107.25.
+      // It settles T+1, Tuesday 1 December, the coupon date: no accrued interest changes hands, and the coupon is the seller's.
+      id: 'stop-triggers', covers: ['reduce', 'stop order'], action: 'quote', instrument: 'main', quote: { bid: 107.25, ask: 107.75, last: 107.4, bidSize: 2_000_000, askSize: 2_000_000 },
+      expect: {
+        // Proceeds 125,000 x 107.25% = 134,062.50, less 125.00 commission. Cost removed 125,000 x 108.50% = 135,625: realized -1,562.50.
+        events: [
+          { type: 'trade.fill', summary: /^Sold 125,000 CA-GO-5-DEC34 @ 107\.25 USD \(realized [-−]1,562\.50 USD\)$/, date: '2026-11-30' },
+          { type: 'order.fill_variance', summary: /outside tolerance.*107\.25 against 108\.25 confirmed.*Settles 2026-12-01, not 2026-11-25 as confirmed/s },
+        ],
+        openOrders: [],
+        cash: { account: { USD: { settled: 222_493.06, unsettled: 133_937.50, availableToTrade: 356_430.56 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 125_000, cost: 135_625, avgCost: 108.5, price: 107.4,
+          value: 134_250, // 125,000 x 107.40 / 100
+          unrealized: -1_375, accrued: 6_111.11 }], // nothing was sold with the bond: the coupon on all 250,000 is still to come
+        holdings: { main: { long: 125_000, short: 0, net: 125_000 } },
+        pending: [{ instrument: 'main', dueDate: '2026-12-01', amount: 133_937.50, into: 'cash' }],
+        pnl: { account: { realized: -1_562.50, couponInterest: 104.17, commissions: -375, unrealized: -1_375, total: -3_208.33 } },
+        nav: { account: 496_791.67, book: 996_791.67 },
+        balance: { account: { cash: 222_493.06, receivable: 133_937.50, accruedIncome: 6_111.11, positions: 134_250, assets: 496_791.67, liabilities: 0, netAssets: 496_791.67 } },
+      },
+    },
+    {
+      id: 'coupon', covers: ['coupon', 'settlement'], action: 'clock', to: EST('2026-12-01'), // Tuesday
+      expect: {
+        // The sale settles. The coupon is paid on 250,000: the 125,000 still held and the 125,000 whose sale settles today, not before.
+        // 250,000 x 2.5% = 6,250.00; accrued on the books 6,111.11; the last four 30/360 days are 138.89 of income.
+        events: [
+          { type: 'settlement.receive', summary: 'received 133,937.50 USD into settled cash', cash: { USD: 133_937.50 } },
+          { type: 'bond.coupon', summary: 'Coupon received on 250,000 CA-GO-5-DEC34: 6,250.00 USD', cash: { USD: 6_250 }, owner: 'account', date: '2026-12-01' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on CA-GO-5-DEC34: 138.89 USD' },
+        ],
+        cash: { account: { USD: { settled: 362_680.56, unsettled: 0, availableToTrade: 362_680.56 } } }, // 222,493.06 + 133,937.50 + 6,250
+        positions: [{ instrument: 'main', lot: 'lot', qty: 125_000, accrued: 0 }],
+        pending: [],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-06-01', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2034-12-01', status: 'pending' }],
+        pnl: { account: { couponInterest: 243.06, total: -3_069.44 } },
+        nav: { account: 496_930.56, book: 996_930.56 },
+        balance: { account: { cash: 362_680.56, receivable: null, accruedIncome: null, assets: 496_930.56, netAssets: 496_930.56 } },
+      },
+    },
+    {
+      // "Close 50%" of 125,000 would be 62,500, which no one can deliver in 5,000 pieces: the Terminal rounds down to 60,000.
+      id: 'close-half', covers: ['reduce', 'minimum denomination'], action: 'close', lot: 'lot', scope: 'strategy', percent: 50,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 60_000, estimate: 107.25, settleDate: '2026-12-02',
+          gross: 64_350, // 60,000 x 107.25 / 100
+          accrued: 8.33, // one day of the new period: 60,000 x 5% x 1/360
+          cash: 64_358.33, fees: 60 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 60_000, avgPrice: 107.25 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: /^Sold 60,000 CA-GO-5-DEC34 @ 107\.25 USD \(realized [-−]750\.00 USD\)$/ }], // 64,350 - 60,000 x 108.50%
+        cash: { account: { USD: { settled: 362_680.56, unsettled: 64_298.33, availableToTrade: 426_978.89 } } }, // 64,350 + 8.33 - 60
+        positions: [{ instrument: 'main', lot: 'lot', qty: 65_000, cost: 70_525, avgCost: 108.5, price: 107.4, value: 69_810, unrealized: -715, accrued: -8.33 }],
+        holdings: { main: { long: 65_000, short: 0, net: 65_000 } },
+        pending: [{ instrument: 'main', dueDate: '2026-12-02', amount: 64_298.33, into: 'cash' }],
+        pnl: { account: { realized: -2_312.50, couponInterest: 243.06, commissions: -435, unrealized: -715, total: -3_219.44 } },
+        nav: { account: 496_780.56, book: 996_780.56 },
+        balance: { account: { cash: 362_680.56, receivable: 64_298.33, accruedIncome: -8.33, positions: 69_810, assets: 496_780.56, liabilities: 0, netAssets: 496_780.56 } },
+      },
+    },
+    {
+      // End of day 1 Dec, the coupon date: no interest yet on the 125,000 settled; the 8.33 sold is already on the books.
+      id: 'settle-half', covers: 'settlement', action: 'clock', to: EST('2026-12-02'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 64,298.33 USD into settled cash', cash: { USD: 64_298.33 } }],
+        cash: { account: { USD: { settled: 426_978.89, unsettled: 0, availableToTrade: 426_978.89 } } },
+        pending: [],
+        balance: { account: { cash: 426_978.89, receivable: null } },
+      },
+    },
+    {
+      id: 'close-rest', covers: 'close', action: 'close', lot: 'lot', scope: 'position', percent: 100, // the Close button on the position
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 65_000, estimate: 107.25, settleDate: '2026-12-03',
+          gross: 69_712.50, // 65,000 x 107.25 / 100
+          accrued: 18.06, // two days: 65,000 x 5% x 2/360 = 18.056
+          cash: 69_730.56, fees: 65 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 65_000, avgPrice: 107.25 }] },
+        // Realized 69,712.50 - 70,525 = -812.50. Interest: 18.06 sold now and 8.33 before, none of it yet recognised: 26.39 of income.
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: /^Sold 65,000 CA-GO-5-DEC34 @ 107\.25 USD \(realized [-−]812\.50 USD\)$/ },
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of CA-GO-5-DEC34: 26.39 USD' },
+        ],
+        cash: { account: { USD: { settled: 426_978.89, unsettled: 69_665.56, availableToTrade: 496_644.45 } } }, // 69,712.50 + 18.06 - 65
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', dueDate: '2026-12-03', amount: 69_665.56, into: 'cash' }],
+        lifecycle: [],
+        // Interest in all: 6,250 coupon + 8.33 + 18.06 sold - 6,006.94 bought = 269.45. Realized -3,125.00: the 1.25 points the price fell on 250,000.
+        pnl: { account: { realized: -3_125, couponInterest: 269.45, commissions: -500, unrealized: 0, total: -3_355.55 } }, // 250 + 125 + 60 + 65
+        nav: { account: 496_644.45, book: 996_644.45 },
+        balance: { account: { cash: 426_978.89, receivable: 69_665.56, positions: null, accruedIncome: null, assets: 496_644.45, liabilities: 0, netAssets: 496_644.45 } },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: EST('2026-12-03'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 69,665.56 USD into settled cash', cash: { USD: 69_665.56 } }],
+        cash: { account: { USD: { settled: 496_644.45, unsettled: 0, availableToTrade: 496_644.45 } }, treasury: { USD: { settled: 500_000 } } },
+        pending: [],
+        balance: { account: { cash: 496_644.45, receivable: null, assets: 496_644.45, liabilities: 0, netAssets: 496_644.45 } },
+      },
+    },
+  ],
+};
+
+export default [treasuryNote, treasuryBill, treasuryBond, strips, foreignGovBill, foreignGovBond, emLocalDebt, emHardDebt, agencyDebt, supranationalBond, municipalBond];
