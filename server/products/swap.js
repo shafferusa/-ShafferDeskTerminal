@@ -24,7 +24,7 @@ import { addDays, addMonths, diffDays } from '../quant/dates.js';
 import { cdsDates, generateSchedule } from '../quant/schedule.js';
 import { CCY_RE, ISO_DATE_RE, isZero, money, need, num, sign } from '../core/util.js';
 import { normalizeBasis } from '../core/agreements.js';
-import { bookSecurityFill, fmtQty } from './common.js';
+import { bookSecurityFill, fmtPx, fmtQty } from './common.js';
 import { calendarFor, paymentCalendarFor, standardSettleDate } from './security.js';
 
 const LEG_TYPES = ['fixed', 'float', 'ois', 'return', 'price', 'cap', 'floor'];
@@ -58,13 +58,36 @@ const scheduleFactor = (leg, date) => {
   return f;
 };
 
-function rateFixing(app, code, date) {
-  const o = app.data.rate(code, date);
-  if (!o) return null;
-  const d = (o.forDate || o.asOf || '').slice(0, 10);
-  if (diffDays(d, date) > 7) return null; // too old to be this period's fixing
-  return o;
+/**
+ * The date whose fixing a period starting on `date` uses: that date itself, or, when it is not a
+ * business day of the contract's payment calendar (accrual dates are not adjusted), the last
+ * business day before it.
+ */
+export function fixingDate(inst, date) {
+  const cal = paymentCalendarFor(inst);
+  let d = date;
+  for (let i = 0; i < 14 && !isBusinessDay(d, cal); i++) d = addDays(d, -1);
+  return d;
 }
+
+/**
+ * The fixing of a rate for one date, or null. Only the fixing published (or entered by hand) for
+ * exactly the fixing date counts: an older fixing is never used in its place, so a fixing that has
+ * not arrived blocks the payment that needs it instead of being replaced by the one before it.
+ */
+function rateFixing(app, inst, code, date) {
+  const d = fixingDate(inst, date);
+  const o = app.data.rate(code, d);
+  if (!o) return null;
+  return (o.forDate || o.asOf || '').slice(0, 10) === d ? o : null;
+}
+
+/**
+ * Binary floating point leaves residue in a product such as 81,590 x 0.045 x 92 / 360 (938.2849999...
+ * for 938.285). It is removed before an amount is rounded to the minor unit, so an exact half rounds
+ * as a half.
+ */
+const exact = (x) => (Number.isFinite(x) ? Number(x.toPrecision(14)) : x);
 
 /** Contractual amount of one leg for one period, unsigned for side. Returns {amount} or {missing}. */
 function legAmount(app, inst, pos, leg, period) {
@@ -79,8 +102,8 @@ function legAmount(app, inst, pos, leg, period) {
     case 'float':
     case 'cap':
     case 'floor': {
-      const o = rateFixing(app, leg.index, period.start);
-      if (!o) return { missing: { kind: 'rate', subject: leg.index, date: period.start } };
+      const o = rateFixing(app, inst, leg.index, period.start);
+      if (!o) return { missing: { kind: 'rate', subject: leg.index, date: fixingDate(inst, period.start) } };
       used.push(app.data.recordUsed(o));
       const fix = o.value / 100;
       let r = fix + (leg.spread || 0);
@@ -89,15 +112,18 @@ function legAmount(app, inst, pos, leg, period) {
       return { amount: N * r * yf, detail: { notional: N, fixing: o.value, fraction: yf }, used };
     }
     case 'ois': {
-      const cal = calendarFor(inst);
+      // Each business day's fixing applies until the next business day (so a Friday fixing covers three days),
+      // on the day-count basis of the leg: 365 for ACT/365, otherwise 360.
+      const cal = paymentCalendarFor(inst);
+      const basis = leg.dayCount === 'ACT/365' ? 365 : 360;
       let growth = 1;
       let d = period.start;
       while (d < period.end) {
         let next = addDays(d, 1);
         while (next < period.end && !isBusinessDay(next, cal)) next = addDays(next, 1);
-        const o = rateFixing(app, leg.index, d);
-        if (!o) return { missing: { kind: 'rate', subject: leg.index, date: d } };
-        growth *= 1 + ((o.value / 100) * diffDays(d, next)) / 360;
+        const o = rateFixing(app, inst, leg.index, d);
+        if (!o) return { missing: { kind: 'rate', subject: leg.index, date: fixingDate(inst, d) } };
+        growth *= 1 + ((o.value / 100) * diffDays(d, next)) / basis;
         d = next;
       }
       return { amount: N * (growth - 1 + (leg.spread || 0) * yf), detail: { notional: N, compounded: growth - 1, fraction: yf } };
@@ -256,7 +282,9 @@ export const swap = {
     return { ccy: inst.trading_ccy, principal: upfront, cash: buy ? -upfront : upfront, accrued: 0, notional: qty, exposure: null, initialMargin: coll.initialMargin, collateral: coll, notes: [...notes, ...coll.notes] };
   },
   fill(app, c) {
-    const r = bookSecurityFill(app, c, { unitCost: c.price / 100 });
+    // The audit trail names what was done to the contract (entered, increased, terminated), never "bought" or "sold".
+    const summary = c.summary || swapFillSummary(app, c);
+    const r = bookSecurityFill(app, { ...c, summary }, { unitCost: c.price / 100 });
     if (r.wasFlat && !isZero(r.position.qty)) app.positions.change(r.position, { data: { cashflowsFrom: c.tradeDate, legs: {}, notionalScale: 1 } });
     return { ...r, position: app.positions.get(r.position.id) };
   },
@@ -276,7 +304,8 @@ export const swap = {
     const out = { rateCodes: [], closes: [], instruments: [] };
     if (!task) return out; // swaps accrue nothing in the ledger between payment dates
     const leg = inst.terms.legs.find((l) => l.id === task.data?.legId);
-    if (leg && task.data?.periodEnd) out.rateFrom = addDays(addMonths(task.data.periodEnd, -(leg.months || 12)), -10);
+    // Fixings from the start of the period being paid: a leg that pays once, at maturity, has one period from the effective date.
+    if (leg && task.data?.periodEnd) out.rateFrom = addDays(leg.months ? addMonths(task.data.periodEnd, -leg.months) : inst.terms.effective, -10);
     else out.rateFrom = addDays(inst.terms.effective, -10);
     for (const l of inst.terms.legs) {
       if (l.index) out.rateCodes.push(l.index);
@@ -315,15 +344,19 @@ export const swap = {
         return { blocked: `Awaiting ${what}. ${awaiting}, or enter the fixing manually.`, needs: [r.missing] };
       }
       const s = sign(pos.qty) * (leg.side === 'receive' ? 1 : -1);
-      const amount = money(s * r.amount, leg.ccy);
+      const amount = money(s * exact(r.amount), leg.ccy);
       if (amount < 0 && app.ledger.balance(unit.id, 'cash', leg.ccy) < -amount - 0.004) {
         const msg = `Swap payment of ${fmt(-amount, leg.ccy)} on ${inst.name} (leg ${leg.id}) could not be paid: insufficient settled ${leg.ccy} cash in ${unit.name}.`;
         app.alerts.raise({ bookId: book.id, unitId: unit.id, level: 'error', code: 'funding.failed', refType: 'task', refId: task.id, message: msg });
         return { failed: msg };
       }
+      // A caplet or floorlet whose fixing is not through the strike pays nothing: that is recorded, and said in those words.
+      const nothing = amount === 0 && (leg.type === 'cap' || leg.type === 'floor') && r.detail?.fixing !== undefined;
       const eventId = app.ledger.post({
         ...base, type: 'swap.payment',
-        summary: `Swap ${amount >= 0 ? 'receipt' : 'payment'} on ${inst.name}, leg ${leg.id} (${leg.type}), period ${eff.start} to ${period.end}: ${fmt(Math.abs(amount), leg.ccy)}`,
+        summary: nothing
+          ? `Nothing due on ${inst.name}, leg ${leg.id} (${leg.type}), period ${eff.start} to ${period.end}: the ${leg.index} fixing ${pct(r.detail.fixing / 100)} is not ${leg.type === 'cap' ? 'above' : 'below'} the strike ${pct(leg.strike)}`
+          : `Swap ${amount >= 0 ? 'receipt' : 'payment'} on ${inst.name}, leg ${leg.id} (${leg.type}), period ${eff.start} to ${period.end}: ${fmt(Math.abs(amount), leg.ccy)}`,
         data: { legId: leg.id, period: eff, detail: r.detail, obsIds: r.used || [] },
         entries: [{ account: 'cash', ccy: leg.ccy, amount, positionId: pos.id }, { account: 'pnl.realized', ccy: leg.ccy, amount: -amount, positionId: pos.id }],
       });
@@ -380,6 +413,27 @@ export const swap = {
     return eventId;
   },
 };
+
+/**
+ * What a fill did to a swap-family contract, for the audit trail: entered (as written or on the
+ * opposite side), increased, terminated in part or terminated, with the notional, the amount per
+ * 100 notional it was done at, and the realized result of a termination.
+ */
+function swapFillSummary(app, c) {
+  const ccy = c.inst.trading_ccy;
+  const before = app.positions.find(c.unit.id, c.inst.id, c.strategyId) || { qty: 0, cost: 0 };
+  const dq = c.action === 'buy' ? c.qty : -c.qty;
+  const m = app.positions.tradeMath(before, dq, c.price / 100, ccy);
+  const what = `${fmtQty(c.qty)} notional of ${c.inst.symbol || c.inst.name}`;
+  const at = `at ${fmtPx(c.price)} per 100 notional`;
+  const side = dq > 0 ? 'as written' : 'on the opposite side';
+  if (isZero(before.qty)) return `Entered ${side}: ${what} ${at}`;
+  if (isZero(m.closedQty)) return `Increased ${side}: ${what} ${at}`;
+  const realized = ` (realized ${fmt(m.realized, ccy)})`;
+  if (!isZero(m.openedQty)) return `Terminated ${fmtQty(Math.abs(before.qty))} notional of ${c.inst.symbol || c.inst.name} and entered ${fmtQty(Math.abs(m.openedQty))} ${side} ${at}${realized}`;
+  const left = Math.abs(before.qty) - Math.abs(m.closedQty);
+  return isZero(left) ? `Terminated: ${what} ${at}${realized}` : `Terminated in part: ${fmtQty(c.qty)} of ${fmtQty(Math.abs(before.qty))} notional of ${c.inst.symbol || c.inst.name} ${at}${realized}`;
+}
 
 /** The "Collateral terms" rows of an OTC contract: the basis it states, and any free-text terms kept on record. */
 function collateralRows(inst, app) {

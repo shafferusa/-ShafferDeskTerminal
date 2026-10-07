@@ -30,7 +30,9 @@ export function validateSpec(spec, file) {
   if (!b?.name || !b.reportingCcy || !b.capital?.length || !b.account?.name || !b.account.funding) bad('book needs name, reportingCcy, capital and account { name, funding }.');
   const s = b.settings;
   if (!s?.fees || !s.fill || !s.settlement) bad('book.settings must state fees, fill and settlement explicitly, so expected figures come from the spec and not from defaults.');
-  if (!spec.instruments || !Object.keys(spec.instruments).length) bad('needs at least one instrument.');
+  // A product whose contract is entered on a ticket (a loan, a deposit) has no registry instrument at all: such a
+  // spec states `instruments: {}` and says in `tradedOn` where the contract is entered.
+  if (!spec.instruments || (!Object.keys(spec.instruments).length && !(typeof spec.tradedOn === 'string' && spec.tradedOn.length > 20))) bad('needs at least one instrument (or `instruments: {}` with `tradedOn` saying where its contract is entered).');
   for (const [key, d] of Object.entries(spec.instruments)) {
     if (!d.productId || !d.name || !d.marketView || !d.tradingCcy) bad(`instrument "${key}" needs productId, name, marketView and tradingCcy.`);
     if (!getProduct(d.productId)) bad(`instrument "${key}" has an unknown productId.`);

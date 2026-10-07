@@ -107,8 +107,11 @@ test('repo pledges collateral and repurchases with interest; reverse repo earns 
   assert.equal(tv.arrangements.length, 1);
   // The pledged bond cannot be sold while it is on repo.
   const sell = await app.packages.previewAction(hold.id, 'close');
-  const r = await app.packages.submit({ bookId: book.id, unitId: treasury.id, template: 'custom', attachTo: hold.id, intent: 'close', legs: sell.legs, clientToken: sell.token, confirm: true });
-  assert.match(r.strategy.orders.at(-1).statusReason, /pledged/);
+  // The preview blocks it, so no order is created and the holding's strategy instance is left as it was.
+  assert.match(sell.checks.find((c) => c.level === 'error').message, /only 0 of the 1,000,000 SIMGOV31 held is unencumbered; the rest is pledged/);
+  await assert.rejects(app.packages.submit({ bookId: book.id, unitId: treasury.id, template: 'custom', attachTo: hold.id, intent: 'close', legs: sell.legs, clientToken: sell.token, confirm: true }), /pledged/);
+  assert.equal(app.packages.strategyView(hold.id).orders.length, 1, 'no sell order exists');
+  assert.equal(app.packages.strategyView(hold.id).status, 'open');
   await goTo(app, clock, '2026-03-10T22:30:00.000Z');
   assert.equal(app.packages.strategyView(s.id).status, 'closed');
   assert.equal(app.positions.get(bondPos).pledged_qty, 0);
@@ -141,7 +144,8 @@ test('securities lending: shares go on loan, cash collateral is a liability, fee
   near(app.accounting.pnl(book.id, acct.id).categories.find((x) => x.key === 'lendingIncome').rc, 600 * 200 * 0.036 * 10 / 360);
   // Only the 400 not on loan can be sold.
   const sell = await app.packages.preview({ bookId: book.id, unitId: acct.id, template: 'custom', attachTo: s.id, legs: [{ kind: 'trade', action: 'sell', instrumentId: inst.ALFA.id, qty: 500 }] });
-  const r = await app.packages.submit({ bookId: book.id, unitId: acct.id, template: 'custom', attachTo: s.id, legs: sell.legs, clientToken: sell.token, confirm: true });
-  assert.match(r.strategy.orders.at(-1).statusReason, /unencumbered/);
+  // The preview blocks it, so no order is created.
+  assert.match(sell.checks.find((c) => c.level === 'error').message, /only 400 of the 1,000 ALFA held is unencumbered/);
+  await assert.rejects(app.packages.submit({ bookId: book.id, unitId: acct.id, template: 'custom', attachTo: s.id, legs: sell.legs, clientToken: sell.token, confirm: true }), /unencumbered/);
   assert.deepEqual(ledgerImbalance(app), []);
 });

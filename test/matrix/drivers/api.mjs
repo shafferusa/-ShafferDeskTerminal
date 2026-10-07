@@ -27,8 +27,8 @@ export function httpClient(baseUrl) {
   };
 }
 
-export async function openApiTerminal({ sandbox, at, demo = true }) {
-  let server = await startServer(sandbox, { demo });
+export async function openApiTerminal({ sandbox, at, demo = true, engine = 'off', dbByMode = false }) {
+  let server = await startServer(sandbox, { demo, engine, dbByMode });
   let call = httpClient(server.url);
   let instant = at;
   const get = (path, query) => call('GET', path, undefined, query);
@@ -41,7 +41,16 @@ export async function openApiTerminal({ sandbox, at, demo = true }) {
     level: 'api',
     get url() { return server.url; },
     describe: () => ({ level: 'api', url: server.url, pid: server.pid, database: server.database, clock: 'demo clock, set by the scenario', engine: 'timer off; explicit cycles (POST /api/engine/tick)' }),
-    http: { get, post, put },
+    http: { get, post, put, del: (path) => call('DELETE', path) },
+    // For the system suite (test/system): the server process (pid, logs), and an interrupted run: kill() ends the
+    // process at once; start() brings a new one up on the same database and port without touching the clock.
+    get server() { return server; },
+    kill: () => server.kill(),
+    async start({ setClock = false } = {}) {
+      server = await startServer(sandbox, { demo, engine, dbByMode, port: server.port });
+      call = httpClient(server.url);
+      if (setClock && demo && instant) await call('POST', '/api/demo/advance', { to: instant });
+    },
     status: () => get('/api/status'),
     createBook: (body) => post('/api/books', body),
     getBook: async (id) => (await get(`/api/books/${id}`)).book,
@@ -76,7 +85,7 @@ export async function openApiTerminal({ sandbox, at, demo = true }) {
     /** Stop the server process and start a new one on the same database. */
     async restart() {
       await server.stop();
-      server = await startServer(sandbox, { demo, port: server.port });
+      server = await startServer(sandbox, { demo, engine, dbByMode, port: server.port });
       call = httpClient(server.url);
       if (demo && instant) await call('POST', '/api/demo/advance', { to: instant });
     },

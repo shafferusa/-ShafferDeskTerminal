@@ -13,11 +13,14 @@ import { TEMPLATES } from './core/templates.js';
 import { AppError, isZero, need, num } from './core/util.js';
 import { createFixtureControls } from './data/demo.js';
 import { STATUS_LABEL } from './data/observation.js';
+import { guardRepeats } from './http/once.js';
 import { createRouter } from './http/router.js';
 import { CALENDARS, COUNTRY_CALENDAR, CURRENCY_CALENDAR, getExtraHolidays, holidaysOf, setExtraHolidays } from './quant/calendar.js';
 
 export function createApi(app) {
-  const r = createRouter();
+  // Every mutating route below takes an optional client token (body `clientToken` or the Idempotency-Key header):
+  // the same request sent again under the same token is answered from the first one and does nothing (http/once.js).
+  const r = guardRepeats(createRouter(), app);
   const { db, books, instruments, positions } = app;
   const lastQuoteRefresh = new Map();
   const analyticsCache = new Map();
@@ -316,6 +319,14 @@ export function createApi(app) {
     const plugin = app.products.get(inst.family);
     const book = books.getBook(pos.book_id), unit = books.getUnit(pos.unit_id);
     const ctx = { book, unit, inst, pos };
+    // A number of contracts stated for an exercise or an assignment follows the instrument's own quantity step:
+    // listed contracts are whole, so "1.5 contracts" is refused instead of leaving half a contract behind.
+    if (['exercise', 'assign'].includes(body.action) && body.contracts !== undefined && body.contracts !== null && body.contracts !== '') {
+      const n = num(body.contracts);
+      const step = plugin.qtyStep ? plugin.qtyStep(inst) : 1;
+      need(n !== null && n > 0, 'Enter the number of contracts as a positive number.');
+      need(!(step >= 1) || Math.abs(n / step - Math.round(n / step)) < 1e-9, `The number of contracts must be a multiple of ${step}.`);
+    }
     const out = db.tx(() => {
       let result;
       switch (body.action) {
@@ -417,7 +428,8 @@ export function createApi(app) {
     units: books.requireBook(params.id).units.map((u) => { const v = app.protection.forUnit(u.id); return { id: u.id, name: u.name, kind: u.kind, hedges: v.hedges, positions: [...v.byPosition].map(([positionId, x]) => ({ positionId, ...x })) }; }),
     capacityRules: app.protection.CAPACITY_RULES,
   }));
-  r.post('/api/hedge/requests/:id/preview', ({ params, body }) => app.hedge.previewPackage(params.id, body.packageId, { legs: body.legs, extraProtection: body.extraProtection }));
+  // collateral: { [legNo]: basis } chosen for an OTC leg; statedPrices: { [legNo]: price } for a leg with no executable quote.
+  r.post('/api/hedge/requests/:id/preview', ({ params, body }) => app.hedge.previewPackage(params.id, body.packageId, { legs: body.legs, extraProtection: body.extraProtection, collateral: body.collateral, statedPrices: body.statedPrices }));
   r.post('/api/hedge/requests/:id/dismiss', ({ params }) => app.hedge.dismiss(params.id));
   r.post('/api/hedge/requests/:id/seen', ({ params }) => { app.hedge.markSeen(params.id); return { ok: true }; });
   r.get('/api/hedge/prompts', ({ query }) => ({ items: query.bookId ? app.hedge.prompts(query.bookId) : [] }));

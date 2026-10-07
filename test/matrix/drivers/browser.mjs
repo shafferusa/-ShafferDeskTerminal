@@ -23,7 +23,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { openApiTerminal } from './api.mjs';
-import { actThroughClient, createContext, fixtureCalls, TRADE_ACTIONS } from '../lib/actions.mjs';
+import { actThroughClient, createContext, fixtureCalls, rateFixtureCalls, TRADE_ACTIONS } from '../lib/actions.mjs';
 import { diff, numbersAgree, Shown } from '../lib/compare.mjs';
 import { eventsSince, normalizePreview, normalizeResult, observeState } from '../lib/normalize.mjs';
 import { specKey } from '../lib/runner.mjs';
@@ -215,7 +215,7 @@ function previewDisplayProblems(pv, screen) {
  * Press the button that asks for a preview, read the dialog, and confirm it unless a refusal is expected.
  * `open` clicks the button. Returns { preview, result, refusal, problems, strategy }.
  */
-export async function previewAndConfirm(ui, ctx, open, { expectsRefusal }) {
+export async function previewAndConfirm(ui, ctx, open, { expectsRefusal, edit, inspect }) {
   const { page } = ui;
   const asked = await ui.respondsTo('POST', /^\/api\/strategies\/(preview|[^/]+\/preview-action)$/, open);
   if (!asked.ok) {
@@ -223,12 +223,29 @@ export async function previewAndConfirm(ui, ctx, open, { expectsRefusal }) {
     await page.locator('.toasts .toast, .notice.err', { hasText: asked.body?.error || 'no message' }).first().waitFor();
     return { refusal: { message: asked.body?.error, status: asked.status, code: asked.body?.code, where: 'preview request, shown as a message' } };
   }
-  const pv = asked.body;
+  let pv = asked.body;
   const modal = ui.dialog(/^Preview: /);
   await modal.waitFor();
+  // Optional, for a ticket whose amount is changed in the preview itself (a part repayment): `edit(modal, pv)` changes
+  // the legs on screen, then the edited package is re-checked, as the dialog requires before it can be confirmed.
+  if (edit) {
+    await edit(modal, pv);
+    const again = await ui.respondsTo('POST', /^\/api\/strategies\/preview$/, () => ui.button(modal, 'Re-check edited package').click());
+    if (!again.ok) {
+      await modal.locator('.notice.err', { hasText: again.body?.error || 'no message' }).first().waitFor();
+      await ui.button(modal, 'Cancel').click();
+      await modal.waitFor({ state: 'hidden' });
+      return { refusal: { message: again.body?.error, status: again.status, code: again.body?.code, where: 're-check of the edited preview, shown in the dialog' } };
+    }
+    pv = again.body;
+    await modal.locator('.notice.warn', { hasText: 'You changed the package' }).waitFor({ state: 'hidden' });
+    await ui.drawn();
+  }
   const screen = await readPreview(ui, modal);
   const preview = normalizePreview(pv, ctx);
   const problems = previewDisplayProblems(pv, screen);
+  // Optional: a family's own check of what the dialog displays for its legs (`inspect(modal, pv)` returns mismatches).
+  if (inspect) problems.push(...await inspect(modal, pv));
   const confirm = modal.getByRole('button', { name: /^Confirm/ });
   if (pv.blocking) {
     if (!screen.blocks.length) problems.push('The preview is blocked but the dialog shows no blocking message.');
@@ -300,10 +317,16 @@ export async function readScreens(ui, ctx, t) {
   const pos = tableOf(tables, 'Positions');
   screen.positions = rowsOf(pos).map((r) => {
     const qty = (cellOf(pos, r, 'Quantity') || '').split('\n').map((x) => x.trim()).filter(Boolean);
+    // Accrued income or cost is shown with the position ("accrued 19,456.52 USD"), signed; nothing is shown when it is zero.
+    const accruedText = /(?:^|\n)\s*accrued\s+([^\n]+)/.exec(cellOf(pos, r, 'Accrued, collateral') || '')?.[1];
     return {
+      accrued: accruedText ? shown(accruedText) : undefined,
       label: firstLine(cellOf(pos, r, 'Instrument and role')), qty: shown(qty[0]), direction: qty[1] || '',
       avgCost: shown(firstLine(cellOf(pos, r, 'Average cost'))), price: shown(firstLine(cellOf(pos, r, 'Current market price'))),
       value: shown(firstLine(cellOf(pos, r, 'Value or notional'))), unrealized: shown(firstLine(cellOf(pos, r, 'Unrealized'))),
+      // A contract on a notional amount (future, forward, swap) shows its notional there, labelled "notional", with the margin posted beneath.
+      valueIsNotional: /(?:^|\n)\s*notional\s*(?:\n|$)/.test(cellOf(pos, r, 'Value or notional') || ''),
+      marginShown: (() => { const m = /(?:^|\n)\s*margin\s+([^\n]+)/.exec(cellOf(pos, r, 'Value or notional') || ''); return m ? shown(m[1]) : undefined; })(),
       extra: cellOf(pos, r, 'Accrued, collateral') || '',
     };
   });
@@ -413,18 +436,35 @@ export function screenProblems(ctx, screen, { expected, state, events }) {
       num(`${at} price`, p.price, r.price);
       num(`${at} unrealized`, p.unrealized, r.unrealized);
     }
-    num(`${at} value`, p.value, r.value);
+    // A loan, deposit or repo is displayed at its signed principal (what is carried in the ledger), not at a market value.
+    // A contract on a notional amount is displayed at its notional, labelled as such, with the margin posted for it:
+    // its open trade equity or mark is in the Unrealized column, compared above.
+    if (r.valueIsNotional) {
+      num(`${at} notional`, p.notional, r.value);
+      if (p.margin || r.marginShown) num(`${at} margin posted`, p.margin || null, r.marginShown);
+    } else num(`${at} value`, typeof p.carrying === 'number' ? p.carrying : p.value, r.value);
+    // Accrued interest (a debt security's accrued coupon, a borrow's accrued fee): shown beside the position whenever it is not zero.
+    if (p.accrued || r.accrued) num(`${at} accrued`, p.accrued || null, r.accrued);
     if (p.restrictedCash && !new RegExp(`restricted cash ${esc(Math.abs(p.restrictedCash).toLocaleString('en-US', { minimumFractionDigits: 2 }))}`).test(r.extra)) say(`${at}: restricted cash ${p.restrictedCash} is not shown with the position ("${r.extra.replace(/\n/g, ' | ')}")`);
   }
   for (const r of rows) say(`the Positions table has a row the API does not: ${r.label} ${r.qty.text}`);
 
   // gross holdings
-  for (const [key, h] of Object.entries(state.holdings)) {
+  // The table read is the Account's. When another owner (Treasury) holds positions too, the Account's share of a
+  // holding is taken from its own positions; an instrument only the other owner holds is not expected on this screen.
+  const onlyMine = state.positions.every((p) => p.owner === 'account');
+  const heldHere = {};
+  for (const [key, all] of Object.entries(state.holdings)) {
+    const own = mine.filter((p) => p.instrument === key);
+    if (onlyMine) heldHere[key] = all;
+    else if (own.length) heldHere[key] = { long: own.reduce((a, p) => a + Math.max(p.qty, 0), 0), short: own.reduce((a, p) => a + Math.max(-p.qty, 0), 0) };
+  }
+  for (const [key, h] of Object.entries(heldHere)) {
     const s = screen.holdings[symbolOf(key)];
     if (!s) { say(`holding of ${symbolOf(key)} is not in Holdings by instrument`); continue; }
     if (s.long !== h.long || s.short !== h.short) say(`holding of ${symbolOf(key)} shows long ${s.long} and short ${s.short}; the API has long ${h.long} and short ${h.short}`);
   }
-  for (const sym of Object.keys(screen.holdings)) if (!Object.keys(state.holdings).some((k) => symbolOf(k) === sym)) say(`Holdings by instrument lists ${sym}, which the API does not hold`);
+  for (const sym of Object.keys(screen.holdings)) if (!Object.keys(heldHere).some((k) => symbolOf(k) === sym)) say(`Holdings by instrument lists ${sym}, which the API does not hold`);
 
   // pending settlements
   const pend = state.pending.filter((p) => p.owner === 'account');
@@ -435,8 +475,10 @@ export function screenProblems(ctx, screen, { expected, state, events }) {
     else left.splice(i, 1);
   }
   for (const r of left) say(`the Pending trades tab has a settlement the API does not: ${r.label} ${r.amount.text} due ${r.dueDate}`);
-  if (screen.openOrders !== state.openOrders.length) say(`${screen.openOrders} working or partly filled orders are shown; the API has ${state.openOrders.length}`);
-  const life = state.lifecycle.length;
+  // These screens are the Account's: orders and lifecycle items of Treasury or of another Account are not on them.
+  const ownOrders = state.openOrders.filter((o) => (o.owner ?? 'account') === 'account').length;
+  if (screen.openOrders !== ownOrders) say(`${screen.openOrders} working or partly filled orders are shown; the API has ${ownOrders}`);
+  const life = state.lifecycle.filter((x) => (x.owner ?? 'account') === 'account').length;
   if (screen.lifecycle.length !== life) say(`${screen.lifecycle.length} lifecycle items are shown; the API has ${life}`);
 
   // P&L and balance sheet
@@ -475,10 +517,15 @@ export function screenProblems(ctx, screen, { expected, state, events }) {
   const asState = {
     cash: { account: screen.cash }, nav: screen.nav, provisional: screen.provisional,
     pnl: { account: screen.pnl }, balance: { account: screen.balance },
-    positions: mine.map((p, i) => (matched[i] ? { qty: matched[i].qty, avgCost: matched[i].avgCost, price: matched[i].price, value: matched[i].value, unrealized: matched[i].unrealized } : {})),
+    positions: mine.map((p, i) => (matched[i] ? { qty: matched[i].qty, avgCost: matched[i].avgCost, price: matched[i].price, unrealized: matched[i].unrealized, accrued: matched[i].accrued,
+      // The value cell of a loan, deposit or repo shows its signed principal: it answers the spec's `carrying`, not its `value`.
+      // A cell labelled "notional" answers the spec's `notional` and `margin` (the margin posted for the position).
+      ...(typeof p.carrying === 'number' ? { carrying: matched[i].value } : matched[i].valueIsNotional ? { notional: matched[i].value, margin: matched[i].marginShown } : { value: matched[i].value }) } : {})),
     borrowings: owed.map((b, i) => (regMatched[i] ? { [b.qty !== null ? 'qty' : 'principal']: regMatched[i].principal, value: regMatched[i].worth, accrued: regMatched[i].accrued, costToDate: regMatched[i].costToDate } : {})),
   };
-  const wanted = prune({ cash: expected.cash, nav: expected.nav, provisional: expected.provisional, pnl: expected.pnl, balance: expected.balance, positions: (expected.positions || []).filter((p) => (p.owner || 'account') === 'account').length === mine.length ? expected.positions : undefined,
+  // The spec's positions of the Account (a position stated without an owner is the Account's; Treasury's are not on this screen).
+  const expectedMine = (expected.positions || []).filter((p) => (p.owner || 'account') === 'account');
+  const wanted = prune({ cash: expected.cash, nav: expected.nav, provisional: expected.provisional, pnl: expected.pnl, balance: expected.balance, positions: expectedMine.length === mine.length ? expectedMine : undefined,
     borrowings: (expected.borrowings || []).filter((b) => (b.owner || 'account') === 'account').length === owed.length && (expected.borrowings || []).length === owed.length ? expected.borrowings : undefined }, asState);
   out.push(...diff(wanted, asState).map((m) => `spec vs screen: ${m}`));
   return out;
@@ -530,7 +577,7 @@ async function setupInBrowser(ui, t, spec, family) {
   await ui.input(dlg, 'Starting paper capital').fill(first ? String(first.amount) : '');
   // FX and rate fixtures have to be in force before any cash is posted (entries are converted when posted).
   for (const [pair, rate] of Object.entries(spec.fx || {})) await t.fixture('fx', { pair, rate });
-  for (const [code, r] of Object.entries(spec.rates || {})) await t.fixture('rate', typeof r === 'number' ? { code, value: r } : { code, ...r });
+  for (const [kind, body] of rateFixtureCalls(spec)) await t.fixture(kind, body);
   const made = await ui.respondsTo('POST', /^\/api\/books$/, () => ui.button(dlg, 'Create Book').click());
   if (!made.ok) throw new Error(`The Book was not created: ${made.body?.error}`);
   await dlg.waitFor({ state: 'hidden' });
@@ -844,7 +891,12 @@ export function browserDriver(browser, { shotsDir } = {}) {
       try {
         await ui.closeOverlays();
         const screen = await readScreens(ui, ctx, t);
-        return [...screenProblems(ctx, screen, info), ...takeErrors()];
+        const problems = screenProblems(ctx, screen, info);
+        // A family may read further screens of its own (for loans: the Treasury page, the Account page) and
+        // compare them: `export async function screens(ui, ctx, t, info)` returns a list of mismatches.
+        const own = family.of(ctx.spec.family).screens;
+        if (own) problems.push(...await own(ui, ctx, t, info));
+        return [...problems, ...takeErrors()];
       } catch (err) {
         if (shotsDir) { mkdirSync(shotsDir, { recursive: true }); await page.screenshot({ path: join(shotsDir, `${specKey(ctx.spec).replace(':', '-')}-${info.step?.id || 'check'}.png`) }).catch(() => {}); }
         return [`The Accounting screens could not be read: ${err.message.split('\n').slice(0, 6).join(' ')}`];

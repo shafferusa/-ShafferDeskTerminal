@@ -29,15 +29,32 @@ for (const spec of specs) {
     let now = spec.start;
     let checked = 0;
     const lotInstrument = new Map();
+    const registered = new Map();
     for (const step of spec.steps) {
       if (step.action === 'clock') now = step.to;
       if (step.as) lotInstrument.set(step.as, step.instrument);
+      // An instrument registered by a step (`register_instrument` with `as`), or by a contract leg (`contractAs`), is audited like one of the spec's own.
+      if (step.action === 'register_instrument' && step.as && step.draft) registered.set(step.as, step.draft);
+      [].concat(step.contractAs || []).forEach((key, i) => { const c = (step.input?.legs || []).filter((l) => l.contract)[i]?.contract; if (key && c) registered.set(key, c); });
       const legs = step.expect?.preview?.legs;
       if (!legs || step.status) continue;
       for (const leg of legs) {
+        // A cash loan or deposit leg moves its principal: received by the borrower, paid out by the lender. A
+        // repayment or withdrawal moves the principal stated plus the interest settled with it, the other way.
+        if (leg.kind === 'loan' && typeof leg.qty === 'number' && typeof leg.cash === 'number') {
+          assert.ok(['borrow_cash', 'lend_cash'].includes(leg.action), `${spec.productId}:${step.id}: a loan leg states its action (borrow_cash or lend_cash)`);
+          assert.equal(leg.cash, leg.action === 'borrow_cash' ? leg.qty : -leg.qty, `${spec.productId}:${step.id}: the cash of a loan leg is its principal (${leg.qty}), received when borrowing and paid when lending`);
+          checked++;
+          continue;
+        }
+        if (leg.kind === 'repay' && typeof leg.cash === 'number' && typeof leg.financing?.principal === 'number') {
+          assert.equal(Math.abs(leg.cash), money(leg.financing.principal + (leg.financing.interest || 0), leg.ccy || 'USD'), `${spec.productId}:${step.id}: the cash of a repayment is its principal plus the interest settled with it`);
+          checked++;
+          continue;
+        }
         if ((leg.kind || 'trade') !== 'trade' || typeof leg.estimate !== 'number' || typeof leg.qty !== 'number') continue;
         const key = leg.instrument || step.instrument || lotInstrument.get(step.lot || step.from) || 'main';
-        const inst = spec.instruments[key];
+        const inst = spec.instruments[key] || registered.get(key);
         assert.ok(inst, `${step.id}: instrument "${key}" is not in the spec`);
         const ccy = inst.tradingCcy;
         const principal = leg.qty * leg.estimate * (inst.multiplier ?? 1);
@@ -45,7 +62,10 @@ for (const spec of specs) {
         if (typeof leg.cash === 'number') {
           const action = leg.action || step.side;
           assert.ok(action, `${where}: the leg needs its action to check the sign of its cash`);
-          assert.equal(leg.cash, money(BUYS.has(action) ? -principal : principal, ccy), `${where}: cash is not quantity x estimated fill (${leg.qty} x ${leg.estimate})`);
+          // A debt security settles its principal plus the accrued interest the leg states (`accrued`), each to the cent.
+          const accrued = typeof leg.accrued === 'number' ? leg.accrued : 0;
+          const settles = money(principal, ccy) + accrued;
+          assert.equal(leg.cash, money(BUYS.has(action) ? -settles : settles, ccy), `${where}: cash is not quantity x estimated fill (${leg.qty} x ${leg.estimate})${accrued ? ` plus the stated accrued interest ${accrued}` : ''}`);
           checked++;
         }
         if (typeof leg.fees === 'number') {
@@ -53,7 +73,9 @@ for (const spec of specs) {
           assert.equal(leg.fees, commission(schedule, leg.qty, principal, ccy), `${where}: fee does not follow from the Book's fee schedule ${JSON.stringify(schedule)}`);
           checked++;
         }
-        if (leg.settleDate && spec.settlementCheck) {
+        // A step that states its own settlement on the ticket (`order.settle`) or audits a different trade date (an
+        // order placed while the market is closed) is not on the scenario's standing lag: it sets `settlementCheck: false`.
+        if (leg.settleDate && spec.settlementCheck && step.settlementCheck !== false) {
           const { lag, holidays } = spec.settlementCheck;
           assert.equal(leg.settleDate, addBusinessDays(newYorkDate(now), lag, holidays), `${where}: settlement date is not T+${lag} from ${newYorkDate(now)} skipping ${holidays.join(', ') || 'no holidays'}`);
           checked++;

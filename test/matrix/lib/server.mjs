@@ -12,12 +12,17 @@ import { assertSandbox, REPO_ROOT } from './sandbox.mjs';
 
 const START_TIMEOUT_MS = 20_000;
 
-export async function startServer(sandbox, { demo = true, port: wantPort = 0 } = {}) {
+// Options used by the system suite (test/system): `engine: 'on'` leaves the engine timer running, as a user's
+// Terminal does; `dbByMode: true` does not name the database file, so the server picks demo.db or terminal.db
+// inside the sandbox by its mode, and that is the path it must report.
+export async function startServer(sandbox, { demo = true, port: wantPort = 0, engine = 'off', dbByMode = false } = {}) {
   assertSandbox(sandbox);
   const env = {};
   // The server must not inherit a data directory, a service address or a credential from the caller.
   for (const [k, v] of Object.entries(process.env)) if (!/^(SDT_|SHAFFER_)/.test(k) && k !== 'PORT' && k !== 'HOST') env[k] = v;
-  Object.assign(env, { SDT_DATA_DIR: sandbox.dir, SDT_DB_FILE: sandbox.dbFile, SDT_ENGINE: 'off', SDT_HOST: '127.0.0.1' });
+  Object.assign(env, { SDT_DATA_DIR: sandbox.dir, SDT_ENGINE: engine === 'on' ? 'on' : 'off', SDT_HOST: '127.0.0.1' });
+  const expectedDb = dbByMode ? resolve(sandbox.dir, demo ? 'demo.db' : 'terminal.db') : sandbox.dbFile;
+  if (!dbByMode) env.SDT_DB_FILE = sandbox.dbFile;
   // Port 0 lets the system pick a free port. A restart asks for the port it had, so the browser's origin stays the same.
   const args = ['--disable-warning=ExperimentalWarning', resolve(REPO_ROOT, 'server/index.js'), `--port=${wantPort}`, ...(demo ? ['--demo'] : [])];
   const child = spawn(process.execPath, args, { cwd: REPO_ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -44,9 +49,15 @@ export async function startServer(sandbox, { demo = true, port: wantPort = 0 } =
     await new Promise((r) => setTimeout(r, 25));
   }
   if (!port || !database) { await stop(); throw new Error(`The test server did not report its port and database in time:\n${out}`); }
-  if (resolve(database) !== resolve(sandbox.dbFile)) {
+  if (resolve(database) !== resolve(expectedDb)) {
     await stop();
-    throw new Error(`The test server opened ${database}, not the sandbox database ${sandbox.dbFile}. Stopped it.`);
+    throw new Error(`The test server opened ${database}, not the sandbox database ${expectedDb}. Stopped it.`);
   }
-  return { url: `http://127.0.0.1:${port}`, port: Number(port), pid: child.pid, database, demo, stop, logs: () => out, exited: () => exited };
+  // kill(): end the process at once (SIGKILL), with no chance to finish or close anything: an interrupted run.
+  const kill = () => new Promise((done) => {
+    if (exited) return done(exited);
+    child.once('exit', () => done(exited));
+    try { child.kill('SIGKILL'); } catch { done(exited); }
+  });
+  return { url: `http://127.0.0.1:${port}`, port: Number(port), pid: child.pid, database, demo, engine, stop, kill, logs: () => out, exited: () => exited };
 }

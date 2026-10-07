@@ -98,7 +98,7 @@ database, so they survive a restart.
 |---|---|
 | `POST /api/demo/fixtures/quote` | `{ instrumentId, bid, ask, last, bidSize, askSize, asOf? }`; `{ instrumentId, clear: true }` stops the quote |
 | `POST /api/demo/fixtures/close` | `{ instrumentId, date, value }` end-of-day close |
-| `POST /api/demo/fixtures/fx` | `{ pair: 'USD/JPY', rate }` (the inverse pair is answered too) |
+| `POST /api/demo/fixtures/fx` | `{ pair: 'USD/JPY', rate, asOf? }` (the inverse pair is answered too; `asOf` states an older observation time, for a rate that has gone stale); `{ pair, clear: true }` removes it |
 | `POST /api/demo/fixtures/rate` | `{ code, value, date?, currency? }` reference rate, percent per annum |
 | `POST /api/demo/fixtures/borrow` | `{ instrumentId, available, quantity, feeRate }` securities-borrow data |
 | `GET /api/demo/fixtures` | what is in force |
@@ -164,6 +164,7 @@ matrix action or actions it exercises: `open`, `increase`, `reduce`, `close`, `s
 | `quote`, `close_price`, `fx_rate`, `rate`, `borrow` | fixture bodies (`quote: {...}` or `quote: { clear: true }`, `pair`/`rate`, ...) | fixture route | fixture route |
 | `clock` | `to` (absolute instant) | demo clock, then one engine cycle | same |
 | `cycle` | none | one more engine cycle (working orders, partial fills) | same |
+| `owner_screens` | `owner: 'treasury'` | nothing (the state is verified after the step as always) | the family's `actions.owner_screens` (bond): reads the Accounting tabs in Treasury's scope and compares every figure with the API's for Treasury; the shared screen check reads the Account's scope only |
 | `deposit`, `instrument_lifecycle` | see `lib/actions.mjs` | route | not implemented in the browser driver yet |
 
 A step the Terminal should refuse adds `status: 'blocked'` or `'unsupported'`, a `reason`, and

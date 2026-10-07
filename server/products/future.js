@@ -10,8 +10,9 @@
 
 import { fmt } from '../core/books.js';
 import { ISO_DATE_RE, isZero, money, num, qty8, sign } from '../core/util.js';
+import { isBusinessDay } from '../quant/calendar.js';
 import { dqOf, fmtPx, fmtQty } from './common.js';
-import { calendarFor } from './security.js';
+import { calendarFor, tradingCalendarFor } from './security.js';
 
 function postFees(c, ccy) {
   const commission = money(c.fees?.filter((f) => f.kind === 'commission').reduce((a, f) => a + f.amount, 0) || 0, ccy);
@@ -131,9 +132,15 @@ export const future = {
     if (task?.type === 'future.expiry') return { closes: [{ instrument: inst, date: inst.terms.expiration }] };
     return date ? { closes: [{ instrument: inst, date }] } : {};
   },
-  /** Daily variation margin against the settlement price for `date`. Skipped (not guessed) when no price exists. */
+  /**
+   * Daily variation margin against the settlement price for `date`. Skipped (not guessed) when no price exists,
+   * and on a day the contract's own market is closed: an exchange publishes no settlement price on its holiday,
+   * so nothing is exchanged that day whatever a standing quote says. The next trading day settles against the
+   * last settlement price.
+   */
   eod(app, { book, unit, inst, pos, date }) {
     if (isZero(pos.qty) || pos.data.lastSettleDate >= date) return;
+    if (!isBusinessDay(date, tradingCalendarFor(inst))) return;
     const obs = app.data.closeFor(inst.id, date);
     if (!obs || obs.value === null) return;
     variation(app, { book, unit, inst, pos, price: obs.value, obs, date });

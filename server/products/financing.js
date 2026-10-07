@@ -93,7 +93,7 @@ function describeRate(t) {
   return `${((t.rate || 0) * 100).toFixed(3)}% fixed`;
 }
 
-function normalizeRate(t, errors) {
+function normalizeRate(t, errors, { strictDayCount = false } = {}) {
   t.rateType = t.rateType === 'floating' ? 'floating' : 'fixed';
   if (t.rateType === 'fixed') {
     t.rate = num(t.rate);
@@ -103,6 +103,9 @@ function normalizeRate(t, errors) {
     if (!t.referenceRate) errors.push('A floating rate needs its reference rate code.');
     t.spread = num(t.spread) ?? 0;
   }
+  // A day count the accrual does not implement is refused (cash loans and deposits), never replaced in silence:
+  // interest would otherwise be worked out on a basis the contract does not state.
+  if (strictDayCount && t.dayCount && !['ACT/360', 'ACT/365'].includes(t.dayCount)) errors.push(`Day count ${t.dayCount} is not supported for a cash loan or deposit. Interest is simulated on ACT/360 or ACT/365 only.`);
   t.dayCount = ['ACT/360', 'ACT/365'].includes(t.dayCount) ? t.dayCount : 'ACT/360';
 }
 
@@ -120,7 +123,7 @@ export const loan = {
   normalize(app, draft) {
     const errors = [];
     const t = { ...(draft.terms || {}) };
-    normalizeRate(t, errors);
+    normalizeRate(t, errors, { strictDayCount: true });
     if (!CCY_RE.test(draft.trading_ccy || '')) errors.push('Loan currency is required.');
     t.loanType = t.loanType || 'unsecured';
     t.interestPayment = t.interestPayment === 'monthly' ? 'monthly' : 'maturity';
@@ -161,6 +164,9 @@ export const loan = {
     const today = c.tradeDate;
     if (!inst.terms.startDate) app.instruments.update(inst.id, { terms: { ...inst.terms, startDate: today } }, { system: true });
     let pos = positions.ensure({ bookId: c.book.id, unitId: c.unit.id, instrumentId: inst.id, strategyId: c.strategyId });
+    // More principal on an arrangement that is already open: interest on what was outstanding is accrued to today
+    // first, so the addition bears interest from today and not from the last accrual date.
+    if (!isZero(pos.qty)) pos = trueUpInterest(app, { book: c.book, unit: c.unit, inst, pos, date: today });
     const eventId = ledger.post({
       bookId: c.book.id, unitId: c.unit.id, type: borrow ? 'loan.drawdown' : 'loan.placed', instrumentId: inst.id, strategyId: c.strategyId, orderId: c.order?.id, positionId: pos.id,
       summary: `${borrow ? 'Borrowed' : 'Lent'} ${fmt(P, ccy)} (${inst.terms.loanType}, ${describeRate(inst.terms)}${inst.terms.maturity ? `, due ${inst.terms.maturity}` : ', open-ended'})`,
@@ -208,7 +214,10 @@ export const loan = {
     const x = money(Math.min(c.qty, Math.abs(pos.qty)), ccy);
     const borrowed = pos.qty < 0;
     const full = x >= Math.abs(pos.qty) - 0.004;
-    if (full) pos = trueUpInterest(app, { book: c.book, unit: c.unit, inst, pos, date: c.tradeDate });
+    // Interest is accrued to today on the principal outstanding until now, whether the repayment is in full or in
+    // part: after a part repayment the reduced principal bears interest from today only. (In part, the accrued
+    // interest itself stays on its schedule; in full, it is settled below.)
+    pos = trueUpInterest(app, { book: c.book, unit: c.unit, inst, pos, date: c.tradeDate });
     const eventId = ledger.post({
       bookId: c.book.id, unitId: c.unit.id, type: borrowed ? 'loan.repayment' : 'loan.withdrawal', instrumentId: inst.id, strategyId: pos.strategy_id, orderId: c.order?.id, positionId: pos.id,
       actor: c.actor || 'user',
@@ -264,7 +273,11 @@ export const loan = {
     if (task.type === 'loan.maturity') {
       const problems = loan.checkClose(app, { unit, inst, pos, qty: Math.abs(pos.qty) });
       if (problems.length) return fundingFailure(app, { book, unit, inst, pos, what: 'Repayment at maturity', detail: problems[0] });
-      const r = loan.close(app, { book, unit, inst, pos, qty: Math.abs(pos.qty), tradeDate: today, actor: 'engine' });
+      // A maturity reached for the first time after its date (the Terminal was not running that day) is settled as of
+      // that date: interest stops at maturity, exactly as if the Terminal had been running. A repayment that was
+      // tried and failed for want of cash goes on accruing until it is made.
+      const asOf = task.status === 'pending' && task.due_date < today ? task.due_date : today;
+      const r = loan.close(app, { book, unit, inst, pos, qty: Math.abs(pos.qty), tradeDate: asOf, actor: 'engine' });
       app.alerts.resolve({ refType: 'position', refId: pos.id, code: 'funding.failed' });
       return { done: true, eventId: r.eventId };
     }
@@ -322,6 +335,23 @@ export const repo = {
       const p = collateralPositionId ? app.positions.get(collateralPositionId) : null;
       if (!p || p.unit_id !== unit.id || p.instrument_id !== inst.terms.collateralInstrumentId) out.push('Choose a position in this Treasury/Account that holds the collateral security.');
       else if (app.positions.freeQty(p) < inst.terms.collateralQty - 1e-9) out.push(`Only ${fmtQty(app.positions.freeQty(p))} of the collateral is unencumbered; ${fmtQty(inst.terms.collateralQty)} is needed.`);
+      else {
+        // The cash raised cannot exceed what the pledged collateral supports: its market value (with the accrued
+        // interest that belongs to the pledged quantity) less the haircut. Without a price, or without a conversion
+        // rate when the collateral is in another currency, that cannot be worked out and nothing is assumed.
+        const coll = app.instruments.get(p.instrument_id);
+        const name = coll.symbol || coll.name;
+        const cq = inst.terms.collateralQty;
+        const v = app.valuation.position({ ...p, qty: cq });
+        const fx = app.data.fx(coll.trading_ccy, ccy);
+        if (v.mv === null || v.mv === undefined) out.push(`${name} has no price, so the cash this collateral supports cannot be worked out. Enter a price for it first.`);
+        else if (!fx) out.push(`No ${coll.trading_ccy}/${ccy} conversion rate is available, so the cash this collateral supports cannot be worked out.`);
+        else {
+          const worth = money((v.mv + (v.accrued || 0) * Math.min(1, cq / p.qty)) * fx.rate, ccy);
+          const max = money(worth * (1 - (inst.terms.haircut || 0)), ccy);
+          if (qty > max + 0.004) out.push(`The collateral supports at most ${fmt(max, ccy)}: ${fmtQty(cq)} ${name} is worth ${fmt(worth, ccy)} and the haircut is ${((inst.terms.haircut || 0) * 100).toFixed(2)}%; ${fmt(qty, ccy)} requested.`);
+        }
+      }
     } else {
       const c = app.ledger.cash(unit.id, ccy);
       if (c.availableToWithdraw < qty - 0.004) out.push(`${unit.name} has ${fmt(c.availableToWithdraw, ccy)} of settled ${ccy} available to lend; ${fmt(qty, ccy)} requested.`);
@@ -421,7 +451,10 @@ export const repo = {
     if (!pos || isZero(pos.qty)) return 'done';
     const problems = repo.checkClose(app, { unit, inst, pos });
     if (problems.length) return fundingFailure(app, { book, unit, inst, pos, what: 'Repo repurchase', detail: problems[0] });
-    const r = repo.close(app, { book, unit, inst, pos, tradeDate: app.clock.today(), actor: 'engine' });
+    // As for a loan: a repurchase date reached for the first time after the day itself is settled as of that date.
+    const today = app.clock.today();
+    const asOf = task.status === 'pending' && task.due_date < today ? task.due_date : today;
+    const r = repo.close(app, { book, unit, inst, pos, tradeDate: asOf, actor: 'engine' });
     app.alerts.resolve({ refType: 'position', refId: pos.id, code: 'funding.failed' });
     return { done: true, eventId: r.eventId };
   },

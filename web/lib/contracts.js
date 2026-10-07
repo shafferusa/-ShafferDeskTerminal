@@ -86,7 +86,7 @@ const F = {
     { path: 'terms.exercise', label: 'Exercise style', type: 'select', options: opt([['american', 'American'], ['european', 'European']]), default: 'american' },
     { path: 'terms.settlement', label: 'Settlement', type: 'select', options: opt([['physical', 'Physical delivery'], ['cash', 'Cash']]), default: 'physical' },
     { path: 'multiplier', label: 'Premium multiplier per contract', type: 'number', required: true, hint: 'Not assumed. 100 for a standard US equity option.' },
-    { path: 'terms.deliverable.units', label: 'Deliverable units per contract', type: 'number', hint: 'Defaults to the multiplier' },
+    { path: 'terms.deliverable.units', label: 'Deliverable units per contract', type: 'number', hint: 'Defaults to the multiplier; to 1 future for an option on a future' },
   ],
   otcoption: [
     { path: 'underlyingId', label: 'Underlying instrument', type: 'instrument', span: 2, hint: 'Or name a rate fixing instead' },
@@ -114,6 +114,7 @@ const F = {
     { path: 'terms.tickSize', label: 'Tick size', type: 'number' },
     { path: 'terms.initialMargin', label: 'Initial margin per contract', type: 'number', hint: 'From contract data. None is posted if left empty.' },
     { path: 'terms.settlement', label: 'Settlement', type: 'select', options: opt([['cash', 'Cash'], ['physical', 'Physical (closed out in cash here)']]), default: 'cash' },
+    { path: 'terms.priceUnits', label: 'Quoted in', type: 'text', span: 2, hint: 'The unit of its price, shown on the ticket: index points, % of par, 100 minus the rate, JPY per EUR, USD per barrel. "Contract price" if left empty.' },
   ],
   fx: [
     { path: 'terms.base', label: 'Base currency', type: 'text', required: true },
@@ -152,6 +153,7 @@ const F = {
     { path: 'terms.dayCount', label: 'Day count', type: 'select', options: DAY_COUNTS, default: 'ACT/ACT' },
     { path: 'terms.redemption', label: 'Redemption (% of par)', type: 'number', default: 100 },
     { path: 'terms.factor', label: 'Pool factor', type: 'number', hint: 'For securitised paper. 1 otherwise.' },
+    { path: 'terms.minDenomination', label: 'Minimum denomination (face)', type: 'number', hint: 'A trade must be a multiple of it. 1 if left empty.' },
     { path: 'terms.seniority', label: 'Seniority', type: 'text' },
   ],
   loan: [

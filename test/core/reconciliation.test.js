@@ -440,18 +440,36 @@ test('the TRS alternative is a complete swap: both legs, posted collateral, rese
   const s = await trade(app, { bookId: book.id, unitId: acct.id, template: 'long', underlyingId: inst.ALFA.id, quantity: 500, origin: 'marketplace', ...HEDGE_CTX });
   await advance(app, clock, 1000);
   const h = app.hedge.prompts(book.id)[0];
-  const pv = await app.hedge.previewPackage(h.id, 'demo-trs');
+  // The fixture states no collateral terms for the swap: they are the desk's own paper terms. As it arrives the
+  // package cannot be executed, and the preview says what is missing instead of assuming anything.
+  const bare = await app.hedge.previewPackage(h.id, 'demo-trs');
+  assert.match(Object.fromEntries(bare.legs[0].instrument.details)['Collateral terms'], /None stated/);
+  assert.ok(bare.blocking > 0);
+  assert.ok(bare.checks.some((c) => c.code === 'collateral-basis' && c.level === 'error'));
+  assert.equal(bare.legs[0].notional, 100_000, '500 ALFA at 200');
+  assert.ok(!bare.legs[0].initialMargin, 'no collateral figure is invented while no basis is chosen');
+  assert.deepEqual(bare.hedge.completion.missing.map((m) => [m.leg, m.what]), [[1, 'collateral'], [1, 'price']]);
+  assert.deepEqual([bare.hedge.completion.legs[0].collateral.origin, bare.hedge.completion.legs[0].collateral.needsChoice], ['none', true]);
+  // The desk chooses position-level terms on the leg, an independent amount of 10% of notional, and enters the swap
+  // at a stated price of zero upfront (indicative terms are not an executable quote). Both go through the same
+  // preview the popup uses.
+  //   notional            500 x 200          = 100,000
+  //   independent amount  10% x 100,000      =  10,000, posted in cash, returned on close
+  const pv = await app.hedge.previewPackage(h.id, 'demo-trs', { collateral: { 1: { type: 'position', independentAmount: { type: 'pct', pct: 0.10 } } }, statedPrices: { 1: 0 } });
   const leg = pv.legs[0];
   const terms = Object.fromEntries(leg.instrument.details);
   assert.match(terms['Leg A'], /Pay total return on ALFA/);
   assert.match(terms['Leg B'], /Receive SIM-ON \+ 0\.50% USD/);
-  assert.match(terms['Collateral terms'], /Independent amount of 10\.00% of notional/);
+  assert.match(terms['Collateral terms'], /Position-level terms\. Independent amount of 10\.00% of notional/);
   assert.equal(leg.notional, 100_000);
   assert.equal(leg.initialMargin, 10_000, 'collateral is a share of notional, so it is known before any price');
   assert.equal(pv.totals.cash.USD.margin, 10_000);
   assert.equal(pv.totals.cash.USD.required, 10_000);
-  // Indicative terms are not an executable quote: the swap is entered at a stated price of zero upfront.
-  const out = await app.packages.submit({ ...pv.input, legs: pv.legs.map((l) => ({ ...l, statedPrice: 0 })), clientToken: pv.token, confirm: true });
+  assert.equal(pv.blocking, 0);
+  assert.deepEqual(pv.hedge.completion.missing, []);
+  assert.deepEqual([pv.hedge.completion.legs[0].collateral.origin, pv.hedge.completion.legs[0].collateral.label, pv.hedge.completion.legs[0].collateral.independent.delta], ['chosen', 'Position-level terms', 10_000]);
+  // Executed exactly as displayed: the same legs, with the displayed figures sent back for the confirmation check.
+  const out = await app.packages.submit({ ...pv.input, legs: pv.legs, clientToken: pv.token, confirm: true, expected: pv.confirmation });
   const swap = out.strategy.positions.find((p) => p.family === 'swap');
   assert.equal(swap.purpose, 'hedge');
   assert.equal(swap.marginPosted, 10_000);

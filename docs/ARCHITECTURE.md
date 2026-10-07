@@ -365,6 +365,52 @@ tests and the browser harness; everything it returns is labelled `test-fixture`.
 The popup's cost table and the totals that stay in view are built only from the Terminal's own
 priced legs in one snapshot; the service's estimate is shown beside them for comparison. "Execute
 now" submits the displayed preview with its expected figures, under the same confirmation guard.
+When that guard refuses (`409 preview_changed`) nothing is submitted: the popup takes the new
+preview from the refusal, lists what changed, was and now, per leg and per package total (the
+preview dialog's `Changes` component), and executing the new figures needs a fresh confirmation.
+
+**What a recommendation leaves to the desk.** Two things can be missing from a hedge leg that only
+the desk can supply, and both are completed on the package preview, leg by leg, before execution
+(`hedge.previewPackage(requestId, packageId, { collateral, statedPrices })`):
+
+- *Collateral basis of an OTC leg* (swap, credit default swap, forward, OTC option). The service
+  may state one on the contract (`terms.collateralBasis`); it is then shown as stated and validated
+  like any contract's basis (`core/agreements.js`: the agreement exists, belongs to this Book, is
+  active and covers the unit). Where none is stated, or the stated one cannot be used, the desk
+  chooses it: `collateral: { [legNo]: { type: 'agreement', agreementId } | { type: 'position',
+  independentAmount, variationMargin, threshold, minimumTransfer } | { type: 'uncollateralized' } }`.
+  Nothing is assumed from the product; a leg with no basis blocks the preview (`collateral-basis`).
+- *Fill price of a leg with no executable quote.* Indicative terms are never a quote.
+  `statedPrices: { [legNo]: price | null }` states the fill (a manual input); without one the leg
+  can only be submitted as a working order.
+
+The preview's `hedge.completion` reports, per leg, where the basis came from (`origin`: `none`,
+`recommendation`, `chosen`, or `contract` for a registered instrument), whether a choice is still
+needed and why, the independent amount it calls for, and whether a fill price is needed; `missing`
+lists what stands between the package and execution. The popup disables Execute now and says why
+in plain words while anything is missing or blocking; warnings are acknowledged in the popup.
+
+**Routes** (all in `server/api.js`; a request or queue row always carries `state`, `complete`,
+`missing`, `connection`, `source` and `freshness`):
+
+| Route | What it does |
+|---|---|
+| `POST /api/hedge/requests` | Build and store a request (one per primary: an open one is rebuilt in place); sent only when complete and the service can be reached |
+| `GET /api/hedge/requests?bookId=` , `GET /api/hedge/requests/:id` | Stored requests of a Book; one request |
+| `POST /api/hedge/requests/:id/complete` | Save missing or changed context (investment Strategy, holding period, objective, scope) under the same id |
+| `POST /api/hedge/requests/:id/refresh` | Ask again in place against exposure as it is now; never executes |
+| `POST /api/hedge/requests/:id/preview` | Price and check one package: `{ packageId, legs?, extraProtection?, collateral?, statedPrices? }`; returns the normal preview plus `hedge` (state, source, freshness, `completion`) |
+| `POST /api/hedge/requests/:id/dismiss` , `POST /api/hedge/requests/:id/seen` | Dismiss or withdraw a request; mark a post-trade prompt as shown |
+| `GET /api/hedge/prompts?bookId=` | Post-trade requests the interface has not shown yet |
+| `GET /api/hedge/queue?bookId=` | The hedge review queue of one Book, with who is answering |
+| `POST /api/hedge/refresh` | Refresh every waiting request now |
+| `GET /api/hedge/service` | Who would answer a request right now (Shaffer Hedge, or a labelled fixture) |
+| `GET /api/books/:id/protection` | Hedges with capacity and allocations, and each position's protection, for one Book |
+| `GET /api/analytics/strategies?bookId=` | The investment Strategy list (IDs) and every Strategy reference in use in the Book |
+| `POST /api/analytics/strategies/resolve` | The user confirms that a typed name is a listed Strategy: `{ bookId, name, id }` |
+| `POST /api/strategies/preview` , `POST /api/strategies` | The normal package preview and confirmation; a hedge package is confirmed here with `hedgeLinkId`, `hedgePackageId` and `expected` |
+| `GET /api/strategies/:id` | A strategy instance with `hedge` (requests, relationship lines, protection) |
+| `POST /api/demo/hedge-fixture` , `GET/POST /api/demo/hedge-script` | Demo only: switch the demo fixture; load or clear a scripted service |
 
 ## Engine (`core/engine.js`)
 

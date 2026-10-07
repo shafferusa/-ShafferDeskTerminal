@@ -539,4 +539,22 @@ ALTER TABLE instruments ADD COLUMN conventions TEXT;
 ALTER TABLE fills ADD COLUMN confirm TEXT;
 `,
   },
+  {
+    id: 7,
+    name: 'request tokens',
+    sql: `
+-- A mutating request may carry a client token (body clientToken, or the Idempotency-Key header). One row per
+-- token whose request completed: a repeat of the same request is answered from here and does nothing more
+-- (a duplicate click, a retry after a lost connection or a restart); a token reused for a different request is
+-- refused. Transport bookkeeping only: not part of the paper history, and safe to prune.
+CREATE TABLE request_tokens (
+  token TEXT PRIMARY KEY,
+  route TEXT NOT NULL,                   -- method, route pattern and its parameters
+  request_hash TEXT NOT NULL,            -- of the route and the request body
+  response TEXT NOT NULL,                -- the JSON answer of the first, completed request
+  created_at TEXT NOT NULL               -- real time, for pruning
+);
+CREATE INDEX idx_request_tokens_created ON request_tokens(created_at);
+`,
+  },
 ];

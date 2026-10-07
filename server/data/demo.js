@@ -77,7 +77,8 @@ export function createDemoMarketPort({ clock, resolveInstrument }) {
   let frozenSizes = null;
   // Controlled test fixtures, set through createFixtureControls() below. Unlike the pins above (which keep the
   // demo feed's source for the engine tests) these are labelled "Test fixture" on every observation.
-  const fixt = { quotes: new Map(), closes: new Map(), fx: new Map(), rates: new Map(), borrow: new Map() };
+  // fxAsOf: an optional observation time per FX pair, so a test can state a rate that has gone stale (as a quote fixture can).
+  const fixt = { quotes: new Map(), closes: new Map(), fx: new Map(), rates: new Map(), borrow: new Map(), fxAsOf: new Map() };
   const fxObs = (o) => makeObservation({ ...o, source: FIXTURE_SOURCE, providerId: FIXTURE_PROVIDER, status: 'simulated', delayMinutes: 0, assumptions: [FIXTURE_NOTE] });
   const fixtureFx = (pair) => {
     if (fixt.fx.has(pair)) return fixt.fx.get(pair);
@@ -214,10 +215,14 @@ export function createDemoMarketPort({ clock, resolveInstrument }) {
     fixture: {
       setQuote(instrumentId, q) { if (q) fixt.quotes.set(instrumentId, q); else fixt.quotes.delete(instrumentId); },
       setClose(instrumentId, date, value) { const k = `${instrumentId}@${date}`; if (value === null || value === undefined) fixt.closes.delete(k); else fixt.closes.set(k, value); },
-      setFx(pair, rate) { if (rate === null || rate === undefined) fixt.fx.delete(pair); else fixt.fx.set(pair, rate); },
+      setFx(pair, rate, asOf = null) {
+        const [a, b] = pair.split('/');
+        fixt.fxAsOf.delete(pair); fixt.fxAsOf.delete(`${b}/${a}`);
+        if (rate === null || rate === undefined) fixt.fx.delete(pair); else { fixt.fx.set(pair, rate); if (asOf) fixt.fxAsOf.set(pair, asOf); }
+      },
       setRate(code, r) { if (r) fixt.rates.set(code, r); else fixt.rates.delete(code); },
       setBorrow(instrumentId, b) { if (b) fixt.borrow.set(instrumentId, b); else fixt.borrow.delete(instrumentId); },
-      dump: () => ({ quotes: Object.fromEntries(fixt.quotes), closes: Object.fromEntries(fixt.closes), fx: Object.fromEntries(fixt.fx), rates: Object.fromEntries(fixt.rates), borrow: Object.fromEntries(fixt.borrow) }),
+      dump: () => ({ quotes: Object.fromEntries(fixt.quotes), closes: Object.fromEntries(fixt.closes), fx: Object.fromEntries(fixt.fx), rates: Object.fromEntries(fixt.rates), borrow: Object.fromEntries(fixt.borrow), fxAsOf: Object.fromEntries(fixt.fxAsOf) }),
       load(d) { for (const k of Object.keys(fixt)) { fixt[k].clear(); for (const [a, b] of Object.entries(d?.[k] || {})) fixt[k].set(a, b); } },
     },
     state: () => ({
@@ -240,7 +245,8 @@ export function createDemoMarketPort({ clock, resolveInstrument }) {
       const nowIso = clock.now().toISOString();
       return new Map(pairs.map((pair) => {
         const fixed = fixtureFx(pair);
-        if (fixed !== null) return [pair, fxObs({ kind: 'fx', subject: pair, value: fixed, bid: fixed, ask: fixed, currency: pair.split('/')[1], units: `${pair.split('/')[1]} per ${pair.split('/')[0]}`, asOf: nowIso, receivedAt: nowIso })];
+        const statedAsOf = fixt.fxAsOf.get(pair) || fixt.fxAsOf.get(pair.split('/').reverse().join('/')) || null;
+        if (fixed !== null) return [pair, fxObs({ kind: 'fx', subject: pair, value: fixed, bid: fixed, ask: fixed, currency: pair.split('/')[1], units: `${pair.split('/')[1]} per ${pair.split('/')[0]}`, asOf: statedAsOf || nowIso, receivedAt: nowIso })];
         const ov = overrides.get(pair);
         const p = ov ? ov.value : fxAt(pair, t);
         if (p === null || p === undefined) return [pair, null];
@@ -512,7 +518,8 @@ export function createFixtureControls(app) {
         const r = body.clear ? null : num(body.rate);
         if (!body.clear && !(r > 0)) throw new AppError('An FX fixture needs a positive rate.');
         const [a, b] = body.pair.split('/');
-        f.setFx(body.pair, r);
+        if (body.asOf && Number.isNaN(Date.parse(body.asOf))) throw new AppError('asOf must be an ISO instant.');
+        f.setFx(body.pair, r, body.asOf || null);
         dropCached('fx', body.pair);
         dropCached('fx', `${b}/${a}`);
         save();

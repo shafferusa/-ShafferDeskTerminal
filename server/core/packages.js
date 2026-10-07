@@ -94,6 +94,9 @@ export function createPackages(app) {
     }
     need(leg.instrumentId, `Leg ${n}: choose an instrument.`);
     out.inst = instruments.require(leg.instrumentId);
+    // A loan, deposit, repo or securities loan is a contract with a counterparty, not something a market makes a
+    // price in: a buy or sell of it is refused here, in words, instead of failing further on for want of a price rule.
+    if (out.kind === 'trade') need(!instruments.isArrangement(out.inst), `Leg ${n}: ${out.inst.symbol || out.inst.name} is a financing arrangement. It cannot be bought or sold; open, repay or terminate it from Treasury or the Account.`);
     return out;
   }
 
@@ -311,6 +314,9 @@ export function createPackages(app) {
         row.settle = stl.stated;
         row.settlement = { date: stl.date, lag: stl.lag, basis: stl.basis, label: stl.label, stated: stl.stated, standard: stl.standard, calendarId: stl.calendar.id, conflict: stl.conflicts[0]?.message || null, tradeDate };
         for (const cf of stl.conflicts) check('error', cf.code, `Leg ${l.n}: ${cf.message}`, l.n);
+        // A product can refuse a trade outright for that settlement date (a debt security that has matured, or would by then).
+        const refused = plugin.tradeRefusal ? plugin.tradeRefusal(app, { inst, action: l.action, tradeDate, settleDate }) : null;
+        if (refused) check('error', refused.code, `Leg ${l.n}: ${refused.message}`, l.n);
         row.currency = inst.trading_ccy;
         const cal = calendarInfo(inst);
         row.calendar = cal;
@@ -364,6 +370,13 @@ export function createPackages(app) {
           const linked = legs.filter((x) => x.kind === 'link' && x.inst?.id === inst.id).reduce((a, x) => a + x.qty, 0);
           const bought = legs.filter((x) => x.kind === 'trade' && x.action === 'buy' && x.inst?.id === inst.id && x.n < l.n).reduce((a, x) => a + x.qty, 0);
           if (held + linked + bought < l.qty - 1e-9) check('error', 'no-position', `Leg ${l.n}: this strategy holds ${fmtQty(Math.max(held, 0))} ${inst.symbol || inst.name}; it cannot sell ${fmtQty(l.qty)}. To go short, use a short sale with a securities borrow.`, l.n);
+          // What is pledged (repo collateral) or out on loan cannot be sold until it is released. Blocked here, as the
+          // order engine would reject it at execution: otherwise the sale is accepted, rejected a moment later, and the
+          // holding's strategy instance is left asking for attention although nothing happened to it.
+          else if (pos && held > 0) {
+            const free = Math.max(0, positions.freeQty(pos));
+            if (free + linked + bought < l.qty - 1e-9) check('error', 'encumbered', `Leg ${l.n}: only ${fmtQty(free)} of the ${fmtQty(held)} ${inst.symbol || inst.name} held is unencumbered; the rest is pledged or out on loan and cannot be sold until it is released.`, l.n);
+          }
         }
         if (l.action === 'buy_to_cover') {
           const short = Math.max(0, -(pos?.qty || 0));
@@ -408,11 +421,13 @@ export function createPackages(app) {
         row.terms = plugin.describe(inst, app);
         if (l.action === 'borrow_cash' || l.action === 'repo') { bump(ccy, 'financingIn', l.qty); row.cash = l.qty; }
         if (l.action === 'lend_cash' || l.action === 'reverse_repo') { bump(ccy, 'financingOut', l.qty); row.cash = -l.qty; }
-        if (inst.terms.rateType === 'fixed' && inst.terms.rate !== null && inst.terms.rate !== undefined && l.kind !== 'lend_sec') row.dailyCost = money((l.qty * inst.terms.rate) / 360, ccy);
+        // One day's interest on the contract's own day-count basis (ACT/365 for sterling, ACT/360 otherwise).
+        const yearDays = inst.terms.dayCount === 'ACT/365' ? 365 : 360;
+        if (inst.terms.rateType === 'fixed' && inst.terms.rate !== null && inst.terms.rate !== undefined && l.kind !== 'lend_sec') row.dailyCost = money((l.qty * inst.terms.rate) / yearDays, ccy);
         if (inst.terms.rateType === 'floating') {
           const ro = app.data.rate(inst.terms.referenceRate);
           if (!ro) check('warning', 'no-rate', `Leg ${l.n}: no fixing for ${inst.terms.referenceRate}. ${connected ? '' : `${awaiting}. `}Interest will not accrue until a rate is supplied or entered.`, l.n);
-          else row.dailyCost = money((l.qty * (ro.value / 100 + (inst.terms.spread || 0))) / 360, ccy);
+          else row.dailyCost = money((l.qty * (ro.value / 100 + (inst.terms.spread || 0))) / yearDays, ccy);
         }
         // The financing terms as displayed and confirmed: amount, rate and maturity of this leg.
         if (l.kind !== 'lend_sec') {
@@ -421,7 +436,9 @@ export function createPackages(app) {
         }
       } else if (ARR_CLOSE.has(l.kind)) {
         const p = l.targetPosition;
-        const problems = plugin.checkClose ? plugin.checkClose(app, { unit, inst, pos: p, qty: Math.min(l.qty, Math.abs(p.qty)) }) : [];
+        // A cash repayment or withdrawal is checked at the amount asked for, so more than is outstanding is refused
+        // rather than quietly cut down to what is owed. The other closing legs are capped at what is outstanding.
+        const problems = plugin.checkClose ? plugin.checkClose(app, { unit, inst, pos: p, qty: l.kind === 'repay' ? l.qty : Math.min(l.qty, Math.abs(p.qty)) }) : [];
         // A return that waits for a cover leg in the same package is expected, not an error.
         const coveredHere = l.kind === 'return_sec' && legs.some((x) => x.kind === 'trade' && x.action === 'buy_to_cover' && x.inst?.id === inst.underlying_id);
         for (const msg of problems) check(coveredHere ? 'info' : l.required === false ? 'warning' : 'error', 'arrangement', `Leg ${l.n}: ${msg}`, l.n);
@@ -501,6 +518,18 @@ export function createPackages(app) {
       }
     }
     if (anyUnknownCash) check('warning', 'cash-unknown', 'Cash, margin and collateral requirements cannot be fully computed while a leg has no price.');
+
+    // ---- conversion to the reporting currency ------------------------------------------------------------
+    // Every entry is also recorded in the Book's reporting currency at the rate in force. Where a currency of this
+    // package has no rate, or only one that is no longer current, the preview says so. The trade is still booked in
+    // its own currency; its reporting-currency equivalent is then missing (never zero, never invented) or rests on
+    // the stale rate, and the net asset value is provisional until a current rate is supplied.
+    for (const ccy of new Set(out.map((r) => r.currency).filter((x) => x && x !== rc))) {
+      const fx = app.data.fx(ccy, rc);
+      const fxObs = fx?.obs ? app.data.present(fx.obs) : null;
+      if (!fx) check('warning', 'fx-missing', `No ${ccy}/${rc} conversion rate is available.${connected ? '' : ` ${awaiting}.`} Amounts in ${ccy} will be booked without a ${rc} equivalent, and the net asset value will be provisional until a rate is supplied.`);
+      else if (fxObs?.freshness === 'stale') check('warning', 'fx-stale', `The ${ccy}/${rc} conversion rate is not current (${fxObs.statusLabel || fxObs.status}, ${fxObs.source}, as of ${fxObs.asOf}). The ${rc} equivalents of this package's ${ccy} amounts will rest on it, and the net asset value will be provisional until a current rate is supplied.`);
+    }
 
     // ---- settlement timing ------------------------------------------------------------------------------
     // Cash owed to the unit (an unsettled sale, a spot FX conversion still inside its T+2) counts as
@@ -1057,6 +1086,9 @@ export function createPackages(app) {
         legs.push({ purpose, role: `add_${inst.id}`, kind: 'trade', action: 'sell_short', instrumentId: inst.id, qty: q, dependsOnRole: `borrow_${inst.id}` });
       } else legs.push({ purpose, role: `add_${inst.id}`, kind: 'trade', action: p.qty > 0 ? 'buy' : 'sell', instrumentId: inst.id, qty: q, group: inst.family === 'option' ? 'options' : null });
     }
+    // A strategy that holds only financing arrangements has nothing a resize can enlarge: say so, rather than "too small".
+    need(legs.length || !open.length || !open.every((p) => ['secloan', 'loan', 'repo'].includes(instruments.get(p.instrument_id).family)),
+      'A loan, deposit, repo or securities loan is not enlarged by resizing. Open a new arrangement for the additional amount: each drawing or deposit is its own record.');
     need(legs.length, 'The resize is too small to change any leg by a whole unit.');
     const roleN = new Map(legs.map((l, i) => [l.role, i + 1]));
     return legs.map((l) => { const { dependsOnRole, ...rest } = l; return { ...rest, dependsOn: dependsOnRole ? [roleN.get(dependsOnRole)] : [] }; });

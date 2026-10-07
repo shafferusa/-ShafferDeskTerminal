@@ -175,6 +175,12 @@ export function createOrders(app) {
     const book = app.books.getBook(o.book_id);
     const unit = app.books.getUnit(o.unit_id);
     const inst = o.instrument_id ? app.instruments.get(o.instrument_id) : null;
+    // A contract that has expired cannot trade. An order still resting in it ends here, with the reason, instead of
+    // filling against whatever quote is left (the preview refuses a new order in an expired contract by the same rule).
+    if (inst && o.kind === 'trade' && inst.terms?.expiration && inst.terms.expiration < clock.today()) {
+      setStatus(o, 'expired', `${inst.symbol || inst.name} expired on ${inst.terms.expiration}; the unfilled order ended with it`);
+      return true;
+    }
     // Trading calendar: an order is matched only on a day its instrument's market is open. On a closed day it
     // stays working and says when it will be matched. The trade date and settlement then run from the day it
     // fills. Settlements, lifecycle events and accruals do not pass through here and are never held back.
@@ -269,6 +275,10 @@ export function createOrders(app) {
     const stl = resolveSettlement(app, { inst, book, tradeDate: today, stated: o.data.settle || null });
     if (stl.conflicts.length) return reject(o, stl.conflicts[0].message);
     const settleDate = stl.date;
+    // The product's own refusal for that settlement date (the preview applies the same rule): an order still resting
+    // in a debt security that has matured, or would have by settlement, ends here instead of filling against a stale quote.
+    const refused = plugin.tradeRefusal ? plugin.tradeRefusal(app, { inst, action: o.action, tradeDate: today, settleDate }) : null;
+    if (refused) return reject(o, refused.message);
     // The fee schedule, its minimum included, applies to the order and not to each fill: this fill pays what the
     // schedule gives for everything the order has filled including it, less what its earlier fills were charged.
     const earlier = fillsFor(o.id);

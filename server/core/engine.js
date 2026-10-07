@@ -171,7 +171,10 @@ export function createEngine(app) {
         const obs = app.data.price(inst.id);
         const px = markOf(obs);
         if (px === null) continue; // no price: leave the collateral as it is rather than guess
-        target = money(book.settings.short.collateralPct * Math.abs(pos.qty) * px * inst.multiplier * (inst.family === 'bond' ? (inst.terms.factor ?? 1) : 1), ccy);
+        // A debt security is collateralised on its market value including accrued interest: the accrued coupon the
+        // short owes is part of what was borrowed (and part of the sale proceeds the preview sizes the top-up on).
+        const accruedOwed = inst.family === 'bond' ? Math.max(0, -ledger.positionBalance(pos.id, 'accrued.asset', ccy)) : 0;
+        target = money(book.settings.short.collateralPct * (Math.abs(pos.qty) * px * inst.multiplier * (inst.family === 'bond' ? (inst.terms.factor ?? 1) : 1) + accruedOwed), ccy);
       }
       // Restricted cash already earmarked to pay for a cover is not surplus.
       let delta = money(target + owedFromRestricted - held - pending, ccy);
@@ -205,6 +208,18 @@ export function createEngine(app) {
     }
   }
 
+  /**
+   * A cash deficit that has since been covered (Treasury funding, a conversion, a borrowing) stops being reported
+   * at the next cycle. Deficits are raised where they arise and in the end-of-day sweep; without this the alert
+   * went on naming a deficit that no longer existed until the next end of day.
+   */
+  function clearCoveredDeficits() {
+    for (const a of db.all(`SELECT ref_id FROM alerts WHERE code = 'margin.deficit' AND ref_type = 'unit-ccy' AND resolved_at IS NULL`)) {
+      const [unitId, ccy] = String(a.ref_id).split('|');
+      if (unitId && ccy && ledger.balance(unitId, 'cash', ccy) >= -0.005) app.alerts.resolve({ refType: 'unit-ccy', refId: a.ref_id, code: 'margin.deficit' });
+    }
+  }
+
   // ---- the cycle ---------------------------------------------------------------------------------------
   async function tick() {
     if (running) return { skipped: true };
@@ -230,6 +245,7 @@ export function createEngine(app) {
         summary.eod = target;
         summary.settled += app.settle.settleDue(today);
       }
+      clearCoveredDeficits();
       // A collateral call that failed for want of cash is tried again each cycle. A retry delivers only what is still missing.
       summary.collateral = app.agreements.retryFailed();
       if (summary.tasks || summary.corporateActions) summary.matched += await app.packages.runMatching();

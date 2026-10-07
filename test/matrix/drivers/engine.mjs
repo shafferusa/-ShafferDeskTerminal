@@ -67,6 +67,10 @@ export async function openEngineTerminal({ sandbox, at, demo = true }) {
 
   return {
     level: 'engine',
+    // For the system suite (test/system): the application itself (to read stored rows), and any API route handler
+    // called in-process with the same method names as the API client's `http`.
+    get app() { return app; },
+    http: { get: (path, query) => route('GET', path, {}, query || {}), post: (path, body = {}) => route('POST', path, body), put: (path, body = {}) => route('PUT', path, body), del: (path) => route('DELETE', path) },
     describe: () => ({ level: 'engine', database: sandbox.dbFile, clock: 'frozen, moved only by the scenario', engine: 'explicit cycles (app.engine.tick)' }),
     status: async () => ({ demo: app.config.demo, now: app.clock.now().toISOString(), today: app.clock.today() }),
     createBook: async (body) => bookView(app.books.createBook(body)),

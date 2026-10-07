@@ -108,7 +108,16 @@ export async function openWorld(level, { label = 'case', at = MON, demo = true, 
       fixture: (kind, body) => w.post(`/api/demo/fixtures/${kind}`, body),
       clock: (iso) => t.setClock(iso),
       tick: () => t.tick(),
-      async restart() { await t.restart(); },
+      /**
+       * Stop the Terminal and start it again on the same database. Nothing else happens: no engine cycle runs and
+       * the clock is not touched (the demo clock persists by itself), so what is read after is what was stored.
+       */
+      async restart() {
+        if (level === 'engine') return t.restart();
+        await t.server.stop();
+        await t.start();
+        return undefined;
+      },
 
       // ---- trading, the way the screens do it --------------------------------------------------------------
       preview: (input) => w.req('POST', '/api/strategies/preview', input),
@@ -187,6 +196,35 @@ export async function openWorld(level, { label = 'case', at = MON, demo = true, 
         const file = t.server?.database || sandbox.dbFile;
         const db = new DatabaseSync(file, { readOnly: true });
         try { return db.prepare(query).all(...params); } finally { db.close(); }
+      },
+      /**
+       * A fingerprint of everything stored (every table of the paper books, the registry and the settings), with
+       * time stamps left out so that only content counts. Two fingerprints compare with c.eq: any added, removed or
+       * changed row shows up by table.
+       */
+      fingerprint() {
+        const skip = new Set(['quote_cache', 'request_tokens', 'engine_state', 'schema_migrations', 'snapshots', 'sqlite_sequence']);
+        const stamps = new Set(['ts', 'updated_at', 'created_at', 'received_at', 'applied_at', 'done_at', 'settled_at', 'released_at', 'resolved_at', 'closed_at', 'opened_at', 'ended_at']);
+        const out = {};
+        for (const { name } of w.sql(`SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name`)) {
+          if (skip.has(name)) continue;
+          let rows = w.sql(`SELECT * FROM ${name} ORDER BY rowid`);
+          if (name === 'settings') rows = rows.filter((r) => r.key !== 'demo.clockOffsetMs');
+          if (name === 'observations') rows = rows.filter((r) => r.origin === 'manual-entry');
+          // The demo environment tops up its own fictional futures chain from the clock each time it starts; those
+          // registry rows are its fixtures, not paper history. Everything a case registers itself is compared.
+          if (name === 'instruments') rows = rows.filter((r) => r.ref_source !== 'demo');
+          // A hedge request's stored request and response carry observation times; its identity and status are what count here.
+          const drop = name === 'hedge_requests' ? new Set([...stamps, 'request', 'response', 'message']) : stamps;
+          const slim = rows.map((r) => Object.fromEntries(Object.entries(r).filter(([k]) => !drop.has(k))));
+          out[name] = `${rows.length} rows ${sha(slim).slice(0, 12)}`;
+        }
+        return out;
+      },
+      /** Two fingerprints must be equal; a difference is reported by table. */
+      sameStored(c, before, after, label) {
+        const diff = Object.keys({ ...before, ...after }).filter((k) => before[k] !== after[k]).map((k) => `${k}: ${before[k]} -> ${after[k]}`);
+        return c.ok(diff.length === 0, label, diff.join('; '));
       },
       /** One hash per table over all its rows (or the rows `where` selects), in primary-key order. */
       hashTables(tables, { where = {} } = {}) {

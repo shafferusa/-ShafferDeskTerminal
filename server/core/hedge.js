@@ -20,6 +20,8 @@
 import { j, pj } from '../db/db.js';
 import { demoHedgeResponse } from '../data/demo-hedge.js';
 import { fmtQty } from '../products/common.js';
+import { contractBasis, normalizeBasis, OTC_FAMILIES } from './agreements.js';
+import { getProduct } from './catalog.js';
 import { createProtection } from './protection.js';
 import { isZero, need, newId, num } from './util.js';
 
@@ -65,7 +67,18 @@ export function createHedge(app) {
   app.protection = protection;
   const parse = (r) => r && { ...r, request: pj(r.request, {}), response: pj(r.response, null) };
   const get = (id) => parse(db.get('SELECT * FROM hedge_requests WHERE id = ?', id));
-  const postTradeQueue = new Set();
+  // The automatic post-trade requests that wait for the next engine cycle. Kept in the database (engine_state), not
+  // only in memory: a Terminal that stops or is killed between a fill and the next cycle still owes the request
+  // when it starts again. An id leaves the queue when it has been dealt with.
+  const QUEUE_KEY = 'hedge.postTradeQueue';
+  const storedQueue = () => pj(db.get('SELECT value FROM engine_state WHERE key = ?', QUEUE_KEY)?.value, []) || [];
+  const storeQueue = (ids) => db.run('INSERT INTO engine_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', QUEUE_KEY, j(ids));
+  const postTradeQueue = {
+    add(id) { const ids = storedQueue(); if (!ids.includes(id)) storeQueue([...ids, id]); },
+    delete(id) { const ids = storedQueue(); if (ids.includes(id)) storeQueue(ids.filter((x) => x !== id)); },
+    get size() { return storedQueue().length; },
+    [Symbol.iterator]() { return storedQueue()[Symbol.iterator](); },
+  };
   const purposeOf = (p) => p.data.purpose || 'primary';
 
   // ---- who answers hedge requests ------------------------------------------------------------------------
@@ -699,15 +712,78 @@ export function createHedge(app) {
     });
   }
 
-  /** Preview a proposed package through the normal package engine (quotes, funding, collateral, per-leg checks). */
-  async function previewPackage(requestId, packageId, { legs, extraProtection } = {}) {
+  // ---- what a recommendation leaves to the desk ---------------------------------------------------------------
+  // A hedge leg can arrive without two things only the desk can supply: the collateral basis of an
+  // OTC contract (the desk's own paper terms: an agreement of the Book, position-level terms, or
+  // the explicit choice of no collateral) and a fill price where the service gave indicative terms
+  // and no executable quote exists. Both are completed on the preview, leg by leg, and travel with
+  // the legs into the confirmation. Nothing is assumed for either.
+
+  /** Whether a package leg is an OTC contract, and the collateral basis its terms state (null when none). */
+  function otcOf(leg) {
+    if (!leg || (leg.kind || 'trade') !== 'trade') return null;
+    if (leg.contract) {
+      const product = getProduct(leg.contract.productId);
+      if (!product || !OTC_FAMILIES.includes(product.family)) return null;
+      return { registered: false, basis: contractBasis({ terms: leg.contract.terms || {} }) };
+    }
+    const inst = leg.instrumentId ? instruments.get(leg.instrumentId) : null;
+    if (!inst || !OTC_FAMILIES.includes(inst.family)) return null;
+    return { registered: true, basis: contractBasis(inst) };
+  }
+
+  const CHOICE_FIXES = new Set(['collateral-basis', 'collateral-other-book', 'collateral-closed', 'collateral-not-covered']);
+
+  /**
+   * Preview a proposed package through the normal package engine (quotes, funding, collateral, per-leg checks).
+   * opts:
+   *   legs             edited legs to preview instead of the package's own (leg numbers are theirs)
+   *   extraProtection  true when protection beyond the remaining exposure is added deliberately
+   *   collateral       { [legNo]: basis }: the collateral basis chosen for an OTC leg. basis is
+   *                    { type: 'agreement', agreementId } | { type: 'position', independentAmount, variationMargin,
+   *                    threshold, minimumTransfer } | { type: 'uncollateralized' }. It is written onto the leg's
+   *                    contract and validated like any contract's basis (core/agreements.js).
+   *   statedPrices     { [legNo]: price | null }: a fill price stated for a leg that has no executable quote
+   * The result's `hedge.completion` says, leg by leg, where the collateral basis came from (the
+   * recommendation, or chosen here), whether it can be used, and what is still missing before the
+   * package can be executed.
+   */
+  async function previewPackage(requestId, packageId, { legs, extraProtection, collateral, statedPrices } = {}) {
     const row = get(requestId);
     need(row, 'Hedge request not found.', { status: 404 });
     const req = row.request;
-    const useLegs = legs && legs.length ? legs : packageLegs(requestId, packageId);
+    const pkg = row.response?.packages?.find((p) => p.id === packageId);
+    const fromService = pkg ? packageLegs(requestId, packageId) : [];
+    const useLegs = (legs && legs.length ? legs : fromService).map((l) => ({ ...l }));
+    const legAt = (key, what) => {
+      const n = Number(key);
+      const leg = Number.isInteger(n) && n >= 1 ? useLegs[n - 1] : null;
+      need(leg, `${what}: this package has no leg ${key}.`);
+      return { n, leg };
+    };
+    for (const [key, raw] of Object.entries(collateral && typeof collateral === 'object' ? collateral : {})) {
+      if (raw === null || raw === undefined) continue;
+      const { n, leg } = legAt(key, 'Collateral basis');
+      const otc = otcOf(leg);
+      need(otc, `Leg ${n} is not an OTC contract (swap, credit default swap, forward or OTC option), so it has no collateral basis to choose.`);
+      need(!otc.registered, `Leg ${n} trades a contract that is already registered. Its collateral terms are on the contract and are changed there, not on this package.`);
+      const errors = [];
+      const basis = normalizeBasis(raw, errors);
+      need(!errors.length && basis, `Leg ${n}: ${errors[0] || 'Choose the collateral basis: an agreement, position-level terms, or uncollateralized.'}`);
+      // The older single field is superseded by an explicit basis, so the contract states one thing only.
+      const { initialMarginPct: _superseded, ...terms } = leg.contract.terms || {};
+      leg.contract = { ...leg.contract, terms: { ...terms, collateralBasis: basis } };
+    }
+    for (const [key, raw] of Object.entries(statedPrices && typeof statedPrices === 'object' ? statedPrices : {})) {
+      const { n, leg } = legAt(key, 'Stated fill price');
+      need((leg.kind || 'trade') === 'trade', `Leg ${n} is not a trade leg, so it has no fill price to state.`);
+      if (raw === null || raw === undefined || raw === '') { leg.statedPrice = null; continue; }
+      const price = num(raw);
+      need(price !== null && price >= 0, `Leg ${n}: a stated fill price is a number, zero or more.`);
+      leg.statedPrice = price;
+    }
     const attach = row.strategy_id && ['trade', 'strategy_package'].includes(row.scope_type) ? row.strategy_id : null;
     const unitId = req.scope.unitId || books.treasuryOf(req.scope.bookId).id;
-    const pkg = row.response?.packages?.find((p) => p.id === packageId);
     const pv = await app.packages.preview({
       bookId: req.scope.bookId, unitId, template: 'custom', attachTo: attach, intent: 'hedge', legs: useLegs, hedgeLinkId: requestId, hedgePackageId: packageId || null,
       name: attach ? undefined : `Hedge: ${pkg?.label || 'package'} (${req.account?.name || req.book.name})`,
@@ -715,7 +791,53 @@ export function createHedge(app) {
       extraProtection: extraProtection === true ? true : undefined,
     });
     const v = view(get(requestId));
-    return { ...pv, hedge: { requestId, packageId, package: pkg || null, state: v.state, source: v.source, freshness: v.freshness, canExecute: v.canExecute } };
+    return { ...pv, hedge: { requestId, packageId, package: pkg || null, state: v.state, source: v.source, freshness: v.freshness, canExecute: v.canExecute, completion: completionOf(pv, useLegs, fromService) } };
+  }
+
+  /**
+   * What the desk has completed on a priced package and what is still missing, leg by leg.
+   * `sent` are the legs that were priced, `fromService` the same package as the recommendation gave it.
+   */
+  function completionOf(pv, sent, fromService) {
+    const out = { legs: [], missing: [] };
+    for (const r of pv.legs) {
+      const leg = sent[r.n - 1];
+      const otc = otcOf(leg);
+      const entry = { n: r.n, label: r.label, collateral: null, price: null };
+      if (otc) {
+        // The leg in the same place of the recommendation, when it is the same contract.
+        const first = fromService[r.n - 1];
+        const same = first && ((first.contract && leg.contract && first.contract.productId === leg.contract.productId && first.contract.name === leg.contract.name) || (first.instrumentId && first.instrumentId === leg.instrumentId));
+        const stated = same ? otcOf(first)?.basis || null : null;
+        const inForce = otc.basis;
+        const plain = (b) => { const { source: _where, ...rest } = b; return rest; };
+        const sameBasis = (a, b) => JSON.stringify(plain(a)) === JSON.stringify(plain(b));
+        const origin = !inForce ? 'none' : otc.registered ? 'contract' : stated && sameBasis(stated, inForce) ? 'recommendation' : 'chosen';
+        const problems = pv.checks.filter((c) => c.leg === r.n && c.level === 'error' && /^collateral-/.test(c.code));
+        const fixable = problems.find((c) => CHOICE_FIXES.has(c.code));
+        entry.collateral = {
+          // origin: 'recommendation' (the service stated it), 'chosen' (chosen on this package), 'contract' (a registered contract's own terms), 'none'
+          origin, statedByService: Boolean(stated), replacesStated: origin === 'chosen' && Boolean(stated),
+          basis: inForce ? plain(inForce) : null, label: r.collateral?.basis?.label || null,
+          independent: r.collateral?.independent ? { required: r.collateral.independent.required, delta: r.collateral.independent.delta, ccy: r.collateral.independent.ccy, holder: r.collateral.independent.holder || null } : null,
+          variationMargin: r.collateral?.variation ? Boolean(r.collateral.variation.on) : null,
+          canChoose: !otc.registered, needsChoice: !otc.registered && (origin === 'none' || Boolean(fixable)),
+          problem: problems[0]?.message.replace(/^Leg \d+: /, '') || null,
+        };
+        if (entry.collateral.needsChoice) out.missing.push({ leg: r.n, what: 'collateral', text: `the collateral basis of leg ${r.n}` });
+      }
+      if (r.kind === 'trade' && r.price) {
+        entry.price = {
+          statedPrice: r.statedPrice ?? null, executable: Boolean(r.price.executable),
+          // No price of any kind: the leg can only execute at a price the desk states.
+          needsStatedPrice: Boolean(r.price.missing),
+          canState: !(r.price.waitingOnLimit || r.price.waitingOnStop), indicative: r.indicative || null, reason: r.price.reason || null,
+        };
+        if (entry.price.needsStatedPrice) out.missing.push({ leg: r.n, what: 'price', text: `a fill price for leg ${r.n}` });
+      }
+      out.legs.push(entry);
+    }
+    return out;
   }
 
   /**
@@ -905,13 +1027,18 @@ export function createHedge(app) {
     protection.syncAll();
     closeOrphans();
     const ids = [...postTradeQueue];
-    postTradeQueue.clear();
     const out = [];
     for (const id of ids) {
-      const s = app.packages.getStrategyRow(id);
-      if (!s || !hasOpenPrimary(id)) continue;
-      if (db.get('SELECT 1 FROM hedge_requests WHERE strategy_id = ? LIMIT 1', id)) continue;
-      out.push(await request({ bookId: s.book_id, unitId: s.unit_id, strategyId: id, scope: { type: 'trade' }, trigger: 'post_trade', investmentStrategy: s.params.investmentStrategy, holdingPeriod: s.params.holdingPeriod, objective: s.params.hedgeObjective }));
+      // Taken off the queue once dealt with, whatever the outcome; an interrupted cycle finds it again, and the
+      // check for an existing request keeps a second pass from asking twice.
+      try {
+        const s = app.packages.getStrategyRow(id);
+        if (!s || !hasOpenPrimary(id)) continue;
+        if (db.get('SELECT 1 FROM hedge_requests WHERE strategy_id = ? LIMIT 1', id)) continue;
+        out.push(await request({ bookId: s.book_id, unitId: s.unit_id, strategyId: id, scope: { type: 'trade' }, trigger: 'post_trade', investmentStrategy: s.params.investmentStrategy, holdingPeriod: s.params.holdingPeriod, objective: s.params.hedgeObjective }));
+      } finally {
+        postTradeQueue.delete(id);
+      }
     }
     return out;
   }

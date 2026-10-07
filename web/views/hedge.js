@@ -8,10 +8,17 @@
 // still the exposure held; to let an incomplete request be completed and saved; to show every
 // leg's figures before execution; and to run confirmed paper execution through the normal package
 // engine. Nothing in this file chooses or sizes a hedge, and nothing is executed on receipt.
+//
+// Two things a recommendation can leave to the desk are completed on the leg, in the popup, before
+// execution: the collateral basis of an OTC contract (an agreement of the Book, position-level
+// terms, or explicitly uncollateralized) and a fill price where no executable quote exists. Execute
+// now sends the figures on screen; if they have moved when it is pressed, nothing is submitted, what
+// changed is shown was / now per leg and per total, and the new figures need a fresh confirmation.
 import { html, useEffect, useRef, useState } from '../vendor/preact-htm.js';
 import { bump, fmtMoney, fmtNum, fmtPrice, fmtQty, fmtTime, get, isNum, openOverlay, post, toast, toastError, useLive } from '../lib/core.js';
-import { Awaiting, Button, Checks, Empty, ErrorNote, Field, KV, Missing, Money, Notice, Num, Pill, Prov, Select, Text } from '../lib/ui.js';
-import { expectedOf, PreviewModal } from './preview.js';
+import { Awaiting, Button, Check, Checks, Empty, ErrorNote, Field, KV, Missing, Money, Notice, Num, Pill, Prov, Select, Text } from '../lib/ui.js';
+import { CollateralBasisFields } from '../lib/contracts.js';
+import { Changes, expectedOf, PreviewModal } from './preview.js';
 
 export const OBJECTIVES = [
   { value: 'downside_protection', label: 'Downside protection' }, { value: 'upside_protection_short', label: 'Upside protection for shorts' },
@@ -172,41 +179,120 @@ export function PackageList({ response, selected, onSelect, allowNone }) {
 const F = ({ k, children, sub }) => html`<div class="hf"><span class="k">${k}</span><span class="v">${children}</span>${sub ? html`<span class="s">${sub}</span>` : null}</div>`;
 const none = html`<span class="muted">none</span>`;
 
+// A block under a leg's figures for something the desk completes on the leg.
+const MORE = 'margin-top:8px;padding-top:8px;border-top:1px dashed var(--rule)';
+const basisReady = (v) => {
+  if (!v?.type) return false;
+  if (v.type === 'uncollateralized') return true;
+  if (v.type === 'agreement') return Boolean(v.agreementId);
+  const ia = v.independentAmount || { type: 'none' };
+  return ia.type === 'pct' ? ia.pct > 0 && ia.pct < 1 : ia.type === 'fixed' ? ia.amount > 0 : true;
+};
+
+/**
+ * The collateral basis of an OTC leg (swap, credit default swap, forward, OTC option). A basis the
+ * recommendation states is shown as stated, with the reason when it cannot be used. Where none is
+ * stated, or the stated one cannot be used, the desk chooses it here: an agreement of the Book,
+ * position-level terms, or explicitly uncollateralized. Nothing is pre-selected.
+ * `c` is the leg's `completion.collateral`; `onChoose(n, basis)` re-prices the package with the choice.
+ */
+function LegCollateral({ leg, c, unitId, onChoose }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(null);
+  const [busy, setBusy] = useState(false);
+  if (!c) return null;
+  const can = Boolean(onChoose) && c.canChoose;
+  const choosing = can && (open || c.needsChoice);
+  const value = draft ?? (c.origin === 'chosen' ? c.basis : null);
+  const apply = async () => { setBusy(true); const ok = await onChoose(leg.n, value); setBusy(false); if (ok) { setOpen(false); setDraft(null); } };
+  const unusable = Boolean(c.problem) && c.origin !== 'none';
+  const where = c.origin === 'recommendation' ? 'Stated in the recommendation.' : c.origin === 'chosen' ? `Chosen here${c.replacesStated ? ', replacing the basis stated in the recommendation' : ''}.` : c.origin === 'contract' ? 'On the registered contract.' : '';
+  return html`<div class="hleg-more" style=${MORE} data-testid="leg-collateral" data-origin=${c.origin} data-needs-choice=${c.needsChoice ? 'yes' : 'no'}>
+    <div class="row" style="flex-wrap:wrap;gap:4px 8px;align-items:baseline">
+      <span class="k muted small">Collateral basis</span>
+      ${c.origin === 'none' ? html`<${Pill} tone="warn">to choose<//>` : html`<b>${unusable && c.basis?.type === 'agreement' ? `Agreement ${c.basis.agreementId || 'not named'}` : c.label}</b>`}
+      ${unusable ? html`<${Pill} tone="bad">cannot be used<//>` : null}
+      ${where ? html`<span class="sub">${where}</span>` : null}
+      ${can && !choosing ? html`<button type="button" class="btn link small" onClick=${() => setOpen(true)}>Choose other terms</button>` : null}
+    </div>
+    ${c.origin === 'none' ? html`<div class="sub" style="white-space:normal">The recommendation states no collateral terms for this contract. They are the desk's own paper terms. ${can ? 'Choose the basis here before executing; nothing is assumed.' : 'Choose the basis in the package preview, under Edit contract terms; nothing is assumed.'}</div>` : null}
+    ${unusable ? html`<div class="sub loss" style="white-space:normal" data-testid="leg-collateral-problem">${c.problem}</div>` : null}
+    ${choosing ? html`<div class="grid-form" style="margin-top:6px"><${CollateralBasisFields} value=${value} onChange=${setDraft} ccy=${leg.currency} unitId=${unitId} /></div>
+      <div class="row" style="margin-top:8px;flex-wrap:wrap"><${Button} small kind="primary" busy=${busy} disabled=${!basisReady(value)} onClick=${apply}>Use these terms<//>
+        ${open && !c.needsChoice ? html`<${Button} small onClick=${() => { setOpen(false); setDraft(null); }}>Keep ${c.origin === 'recommendation' ? 'the stated basis' : 'the current basis'}<//>` : null}
+        <span class="note">The package is priced again with the basis you choose, and its checks apply.</span></div>` : null}
+  </div>`;
+}
+
+/**
+ * The fill price of a leg that has no executable quote. Indicative terms are not a quote: the leg
+ * executes only at a price the desk states (recorded as a manual input), or waits as a working order.
+ * `p` is the leg's `completion.price`; `onState(n, price | null)` re-prices the package.
+ */
+function LegStatedPrice({ leg, p, onState }) {
+  const [x, setX] = useState(null);
+  const [busy, setBusy] = useState(false);
+  if (!p || !onState || !(p.needsStatedPrice || p.statedPrice !== null)) return null;
+  const go = async (price) => { setBusy(true); await onState(leg.n, price); setBusy(false); };
+  return html`<div class="hleg-more" style=${MORE} data-testid="leg-price" data-needs-price=${p.needsStatedPrice ? 'yes' : 'no'}>
+    <div class="row" style="flex-wrap:wrap;gap:4px 8px;align-items:baseline">
+      <span class="k muted small">Fill price</span>
+      ${p.statedPrice !== null ? html`<b>${fmtPrice(p.statedPrice)}</b><span class="sub">Stated by you. Recorded as a manual input, not a market quote.</span>
+        <button type="button" class="btn link small" disabled=${busy} onClick=${() => go(null)}>Remove the stated price</button>`
+    : html`<${Pill} tone="warn">to state<//><span class="sub" style="white-space:normal">No executable quote exists for this leg. It executes at a fill price you state. Without one it can only be submitted as a working order, from Inspect or edit.</span>`}
+    </div>
+    ${p.statedPrice === null ? html`<div class="row" style="margin-top:6px;flex-wrap:wrap;gap:6px 8px">
+      <div style="width:120px"><${Num} value=${x} onInput=${setX} placeholder="Fill price" /></div>
+      <${Button} small kind="primary" busy=${busy} disabled=${!isNum(x) || x < 0} onClick=${() => go(x)}>Use this fill price<//>
+      ${p.indicative && isNum(p.indicative.value) ? html`<${Button} small disabled=${busy} onClick=${() => go(p.indicative.value)}>Use the indicative ${fmtPrice(p.indicative.value)}<//>` : null}
+    </div>` : null}
+  </div>`;
+}
+
 /**
  * One leg as a block of labelled figures: quantity, quote or indicative terms, premium or price,
  * fees, margin, collateral, financing requirement and notional. The fields wrap to the width
- * available, so nothing is cut off on a narrow screen.
+ * available, so nothing is cut off on a narrow screen. `done` is what has been completed on the
+ * leg and what is still missing (collateral basis, fill price); `changed` marks a leg whose
+ * figures moved since they were last confirmed.
  */
-function LegCard({ leg }) {
+function LegCard({ leg, done, changed, unitId, onCollateral, onStatedPrice }) {
   const p = leg.price;
   const fee = leg.feeTotal || 0;
   const ia = leg.collateral?.independent;
   const sc = leg.shortCollateral;
   const fin = leg.financing;
+  const cb = done?.collateral || null;
   const collateral = ia && isNum(ia.delta) ? ia.delta : sc ? sc.topUp : null;
   // An OTC contract's independent amount is collateral: when the leg's margin figure is that same amount it is shown once, as collateral.
   const sameMoney = ia && isNum(ia.delta) && leg.initialMargin && Math.abs(ia.delta - leg.initialMargin) < 0.005;
   const margin = (sameMoney ? 0 : leg.initialMargin || 0) + (sc?.marginHold || 0);
   // A future pays no premium: the cash that moves at trade is its margin, shown under Margin and not as a price paid.
   const marginOnly = !ia && leg.initialMargin > 0 && isNum(leg.cash) && Math.abs(Math.abs(leg.cash) - leg.initialMargin) < 0.005;
+  const stated = isNum(leg.statedPrice);
+  // A currency forward with no rate yet: the preview gives its notional as the amount of the currency dealt, so it is labelled in that currency.
+  const fwdBase = leg.instrument?.family === 'forward' && !isNum(p?.estimate) && ['fx', 'ndf'].includes(leg.contract?.terms?.forwardType) ? leg.contract.terms.base || null : null;
   return html`<div class="hleg" data-leg=${leg.n}>
     <div class="hleg-head"><span class="leg-n">${leg.n}</span>
-      <div class="grow"><div class="strong">${leg.label}</div>
+      <div class="grow"><div class="strong">${leg.label}${changed ? html` <${Pill} tone="warn" title="Figures of this leg moved since you pressed Execute now. See what changed at the top.">changed<//>` : null}</div>
         <div class="sub">${leg.purpose === 'financing' ? 'Financing' : leg.hedgeFamily || leg.kindLabel}${leg.riskAddressed ? `, addresses ${String(leg.riskAddressed).toLowerCase()}` : ''}${leg.dependsOn?.length ? `, after leg ${leg.dependsOn.join(', ')}` : ''}</div>
         ${leg.sizingBasis || isNum(leg.hedgeRatio) ? html`<div class="sub">Sized by ${leg.sizingBasis || 'the ratio supplied'}${isNum(leg.hedgeRatio) ? `, ratio ${leg.hedgeRatio}` : ''}</div>` : null}</div></div>
     <div class="hleg-fields">
       <${F} k="Quantity" sub=${leg.qtyLabel}>${fmtQty(leg.qty)}<//>
       <${F} k="Quote or indicative terms" sub=${html`${p?.label || (leg.kind === 'trade' ? '' : leg.kindLabel)}${leg.indicative ? html`${p?.label ? html`<br />` : null}Indicative ${fmtPrice(leg.indicative.value)} (${leg.indicative.status}, ${leg.indicative.source}). Not an executable quote.` : null}`}>
-        ${leg.kind !== 'trade' ? html`<span class="muted">not quoted</span>` : isNum(p?.estimate) ? html`<span class="price"><span class="v">${fmtPrice(p.estimate)}</span></span>${p?.observation ? html` <${Prov} obs=${p.observation} />` : null}` : html`<span class="missing" title=${p?.reason || ''}>no executable quote</span>`}<//>
+        ${leg.kind !== 'trade' ? html`<span class="muted">not quoted</span>` : isNum(p?.estimate) ? html`<span class="price"><span class="v">${fmtPrice(p.estimate)}</span></span>${p?.observation ? html` <${Prov} obs=${p.observation} />` : stated ? html` <span class="pill" title="A fill price stated by you, recorded as a manual input">stated</span>` : null}` : html`<span class="missing" title=${p?.reason || ''}>no executable quote</span>`}<//>
       <${F} k="Premium or price" sub=${marginOnly ? 'no premium; margin is posted instead' : isNum(leg.cash) ? (leg.cash < 0 ? 'paid at trade' : leg.cash > 0 ? 'received at trade' : 'no cash at trade') : ''}>
         ${marginOnly ? none : isNum(leg.cash) ? html`<${Money} value=${leg.cash} ccy=${leg.currency} signed />` : leg.kind === 'trade' && !leg.initialMargin ? html`<${Missing} reason="Needs a price" />` : none}<//>
       <${F} k="Fees">${fee ? fmtMoney(-fee, leg.currency, { sign: true }) : none}<//>
       <${F} k="Margin" sub=${!margin ? '' : sc ? 'margin hold against the short' : 'initial margin to post'}>${margin ? fmtMoney(margin, leg.currency) : none}<//>
-      <${F} k="Collateral" sub=${ia ? `independent amount${leg.collateral?.basis?.label ? `, ${String(leg.collateral.basis.label).replace(/^./, (c) => c.toLowerCase())}` : ''}` : sc ? 'top-up on the short-sale proceeds' : ''}>${isNum(collateral) && collateral ? fmtMoney(collateral, ia?.ccy || leg.currency) : none}<//>
+      <${F} k="Collateral" sub=${cb?.needsChoice ? 'not known until a collateral basis is chosen' : ia ? `${isNum(collateral) && collateral ? 'independent amount' : 'nothing to post'}${leg.collateral?.basis?.label ? `, ${leg.collateral.basis.type === 'agreement' ? `under ${leg.collateral.basis.label}` : String(leg.collateral.basis.label).replace(/^./, (c) => c.toLowerCase())}` : ''}` : sc ? 'top-up on the short-sale proceeds' : ''}>
+        ${cb?.needsChoice || (ia && !isNum(ia.delta)) ? html`<${Missing} reason=${cb?.needsChoice ? 'No usable collateral basis has been chosen for this contract' : ia.reason || 'Cannot be worked out yet'} />` : isNum(collateral) && collateral ? fmtMoney(collateral, ia?.ccy || leg.currency) : none}<//>
       <${F} k="Financing requirement" sub=${fin && isNum(fin.rate) ? `rate ${fmtNum(fin.rate * 100, 3)}% ${fin.rateType || ''}${fin.maturity ? `, to ${fin.maturity}` : ''}` : leg.borrowInfo ? `${leg.borrowInfo.source || 'borrow'}${isNum(leg.borrowInfo.dailyCost) ? `, about ${fmtMoney(leg.borrowInfo.dailyCost, leg.currency)} a day` : ''}` : isNum(leg.dailyCost) ? `about ${fmtMoney(leg.dailyCost, leg.currency)} a day` : ''}>
         ${fin && isNum(fin.amount) ? fmtMoney(Math.abs(fin.amount), fin.ccy || leg.currency) : leg.borrowInfo ? `${fmtQty(leg.borrowInfo.needed)} to borrow` : none}<//>
-      <${F} k="Notional">${isNum(leg.notional) ? fmtMoney(leg.notional, leg.currency) : none}<//>
+      <${F} k="Notional" sub=${fwdBase ? `the ${fwdBase} amount; its value in ${leg.currency} needs a rate` : ''}>${isNum(leg.notional) ? fmtMoney(leg.notional, fwdBase || leg.currency) : none}<//>
     </div>
+    <${LegCollateral} leg=${leg} c=${cb} unitId=${unitId} onChoose=${onCollateral} />
+    <${LegStatedPrice} leg=${leg} p=${done?.price} onState=${onStatedPrice} />
     ${leg.instrument?.details?.length ? html`<details open=${Boolean(leg.instrument.draft) && leg.instrument.family !== 'option'}><summary class="note">Contract terms</summary><dl class="terms">${leg.instrument.details.map(([k, v]) => html`<dt>${k}</dt><dd>${String(v)}</dd>`)}</dl></details>` : null}
   </div>`;
 }
@@ -237,7 +323,7 @@ function CostTable({ pv }) {
 }
 
 /** The totals that stay in view while the legs scroll: one line per currency, from the same snapshot. */
-function TotalsBar({ pv, loading }) {
+function TotalsBar({ pv, loading, why }) {
   if (!pv) return html`<div class="hedge-totals"><span class="muted">${loading ? 'Pricing the legs…' : 'No priced package to total.'}</span></div>`;
   const rows = Object.values(pv.totals.cash || {});
   return html`<div class="hedge-totals" data-testid="hedge-totals">
@@ -249,11 +335,12 @@ function TotalsBar({ pv, loading }) {
       <span class="ht"><span class="k">Shortfall</span><span class=${r.shortfall > 0 ? 'loss strong' : ''}>${r.shortfall > 0 ? fmtMoney(r.shortfall, r.ccy) : 'none'}</span></span>
     </div>`) : html`<span class="muted">No cash moves at trade for this package.</span>`}
     <span class="ht-note">${plural(pv.legs.length, 'leg')}, one snapshot at ${fmtTime(pv.generatedAt, { date: false, seconds: true })}${pv.blocking ? html`, <span class="loss strong">${plural(pv.blocking, 'blocking item')}</span>` : ''}</span>
+    ${why ? html`<div class="ht-why" data-testid="hedge-why" style="flex-basis:100%;white-space:normal;color:var(--ink)"><b>Not ready to execute.</b> ${why}</div>` : null}
   </div>`;
 }
 
 /** One package: what the service said about it, and what the Terminal found when it priced and validated the legs. */
-export function PackageDetail({ pkg, pv, loading, error, onRefresh, onAcknowledge }) {
+export function PackageDetail({ pkg, pv, loading, error, onRefresh, onAcknowledge, onCollateral, onStatedPrice, changes = [] }) {
   const c = pkg.costs;
   // The estimate that came with the recommendation is kept apart from the Terminal's own figures.
   const est = c ? [['premiums', c.premiums], ['upfront cash', c.upfrontCash], ['expected ongoing cost', c.expectedOngoing], ['margin', c.margin], ['collateral', c.collateral], ['borrowing', c.borrowing], ['funding', c.funding]].filter(([, v]) => isNum(v) && v !== 0) : [];
@@ -277,7 +364,8 @@ export function PackageDetail({ pkg, pv, loading, error, onRefresh, onAcknowledg
       ${onRefresh ? html`<${Button} small busy=${loading} onClick=${onRefresh}>Refresh prices<//>` : null}</div>
     <${ErrorNote} error=${error} />
     ${!pv ? (error ? null : html`<${Empty}>${loading ? 'Pricing the legs…' : ''}<//>`) : html`
-      <div class="hlegs" data-testid="hedge-legs">${pv.legs.map((l) => html`<${LegCard} key=${l.n} leg=${l} />`)}</div>
+      <div class="hlegs" data-testid="hedge-legs">${pv.legs.map((l) => html`<${LegCard} key=${l.n} leg=${l} done=${pv.hedge?.completion?.legs.find((x) => x.n === l.n)} unitId=${pv.unitId}
+        changed=${changes.some((c) => c.scope === 'leg' && c.n === l.n)} onCollateral=${onCollateral} onStatedPrice=${onStatedPrice} />`)}</div>
       <${CostTable} pv=${pv} />
       ${est.length ? html`<div class="note">Estimate that came with the recommendation${c.basis ? ` (${c.basis})` : ''}: ${est.map(([k, v]) => `${k} ${fmtMoney(v, c.currency)}`).join(', ')}. It was made when the package was proposed and is for comparison only: the figures above are the ones a confirmation would use.</div>` : null}
       ${prot?.needsAcknowledgement && !prot.acknowledged && onAcknowledge ? html`<${Notice} tone="warn"><b>Protection is already in place.</b> ${prot.prior.map((x) => x.label).join('; ')}. ${prot.explain}
@@ -286,22 +374,53 @@ export function PackageDetail({ pkg, pv, loading, error, onRefresh, onAcknowledg
   </div>`;
 }
 
-/** Load the Terminal's priced, validated view of one proposed package. `reload` prices it again; `set` replaces it. */
+const NOTHING_DONE = { extra: false, collateral: {}, statedPrices: {} };
+/**
+ * Load the Terminal's priced, validated view of one proposed package, together with what the user
+ * has completed on it: protection added deliberately (`acknowledge`), a collateral basis chosen for
+ * an OTC leg (`setCollateral(n, basis | null)`) and a fill price stated for a leg with no executable
+ * quote (`setStatedPrice(n, price | null)`). Each re-prices the package; when a change is refused
+ * the figures on screen stay and the reason is shown. `reload` prices it again; `set` replaces it.
+ */
 export function usePackagePreview(requestId, packageId, stamp = '') {
   const [box, setBox] = useState({ pv: null, error: null, loading: false });
-  const [extra, setExtra] = useState(false);
-  const [n, setN] = useState(0);
-  useEffect(() => { setExtra(false); }, [requestId, packageId]);
+  const done = useRef(NOTHING_DONE);
+  const seq = useRef(0);
+  const shown = useRef('');
+  const load = async (d, keep = true) => {
+    const n = ++seq.current;
+    if (!requestId || !packageId) { setBox({ pv: null, error: null, loading: false }); return false; }
+    setBox((b) => ({ pv: keep ? b.pv : null, error: null, loading: true }));
+    try {
+      const pv = await post(`/api/hedge/requests/${requestId}/preview`, {
+        packageId, extraProtection: d.extra || undefined,
+        collateral: Object.keys(d.collateral).length ? d.collateral : undefined, statedPrices: Object.keys(d.statedPrices).length ? d.statedPrices : undefined,
+      });
+      if (n !== seq.current) return false;
+      done.current = d;
+      setBox({ pv, error: null, loading: false });
+      return true;
+    } catch (error) {
+      if (n !== seq.current) return false;
+      setBox((b) => ({ pv: keep ? b.pv : null, error, loading: false }));
+      return false;
+    }
+  };
   useEffect(() => {
-    if (!requestId || !packageId) { setBox({ pv: null, error: null, loading: false }); return undefined; }
-    let live = true;
-    setBox((b) => ({ pv: n ? b.pv : null, error: null, loading: true }));
-    post(`/api/hedge/requests/${requestId}/preview`, { packageId, extraProtection: extra || undefined }).then(
-      (pv) => { if (live) setBox({ pv, error: null, loading: false }); },
-      (error) => { if (live) setBox({ pv: null, error, loading: false }); });
-    return () => { live = false; };
-  }, [requestId, packageId, extra, n, stamp]);
-  return { ...box, reload: () => setN((x) => x + 1), acknowledge: () => setExtra(true), set: (pv) => setBox({ pv, error: null, loading: false }) };
+    const key = `${requestId}|${packageId}`;
+    if (shown.current !== key) { shown.current = key; done.current = NOTHING_DONE; load(NOTHING_DONE, false); return; }
+    // The request itself changed (refreshed, completed): price again with what was completed; if the new
+    // recommendation no longer fits it (a leg is gone), start from the recommendation as it is now.
+    const d = done.current;
+    load(d).then((ok) => { if (!ok && d !== NOTHING_DONE && shown.current === key) { done.current = NOTHING_DONE; load(NOTHING_DONE, false); } });
+  }, [requestId, packageId, stamp]);
+  const without = (o, k) => Object.fromEntries(Object.entries(o).filter(([x]) => String(x) !== String(k)));
+  return {
+    ...box, reload: () => load(done.current), acknowledge: () => load({ ...done.current, extra: true }),
+    setCollateral: (n, basis) => load({ ...done.current, collateral: basis ? { ...done.current.collateral, [n]: basis } : without(done.current.collateral, n) }),
+    setStatedPrice: (n, price) => load({ ...done.current, statedPrices: { ...done.current.statedPrices, [n]: price } }),
+    set: (pv) => setBox({ pv, error: null, loading: false }),
+  };
 }
 
 // ---- completing a request ------------------------------------------------------------------------------------------
@@ -359,6 +478,11 @@ function CompletionForm({ r, onSaved, main }) {
  * form to complete it when it is incomplete, and the packages with every leg's figures. Totals and
  * the Execute, Inspect and Dismiss controls stay in view while the legs scroll. Dismissing leaves
  * the primary position unchanged.
+ *
+ * Execute now is available when nothing is missing and nothing blocks; otherwise the line above the
+ * buttons says plainly why not, and what is missing (a collateral basis, a fill price, a deliberate
+ * decision on extra protection) is completed on the leg or the notice it belongs to. Warnings are
+ * read and ticked here, not in a second dialog.
  */
 export function HedgePopup({ request, onClose, onDone }) {
   const [r, setR] = useState(request);
@@ -372,6 +496,12 @@ export function HedgePopup({ request, onClose, onDone }) {
   const box = usePackagePreview(r.id, pkg?.id, `${r.updatedAt}|${r.freshness?.status}`);
   const open = ['incomplete', 'awaiting_connection', 'ready_for_analysis', 'recommendation_ready', 'error'].includes(r.state) && ['awaiting', 'received', 'error'].includes(r.status);
   const stale = r.freshness?.status === 'stale';
+  // After a refused Execute now: what changed (was / now), and whether the new figures have been checked.
+  const [changes, setChanges] = useState([]);
+  const [reviewed, setReviewed] = useState(false);
+  const [read, setRead] = useState('');
+  const forget = () => { setChanges([]); setReviewed(false); setError(null); };
+  useEffect(forget, [pkg?.id]);
 
   // The state moves on by itself (the service answers, the position changes): keep the popup current.
   const live = useLive(() => get(`/api/hedge/requests/${r.id}`), [r.id]);
@@ -405,16 +535,31 @@ export function HedgePopup({ request, onClose, onDone }) {
   };
   const done = (s) => { bump(); onDone?.(s); onClose(); };
   const inspect = (pv, banner) => openOverlay((close) => html`<${PreviewModal} preview=${pv} onClose=${close} onDone=${done} confirmLabel="Confirm hedge" banner=${banner} />`);
+  // What stands between the package on screen and Execute now, in plain words (null when nothing does).
+  const pv = box.pv;
+  const prot = pv?.protection;
+  const needsAck = Boolean(prot?.needsAcknowledgement && !prot.acknowledged);
+  const told = pv?.hedge?.completion?.missing || [];
+  // After a refusal the legs are the newest pricing: a leg that lost its price since is missing one, whatever was known before.
+  const missing = pv ? [...told, ...pv.legs.filter((l) => l.kind === 'trade' && l.price?.missing && !told.some((m) => m.what === 'price' && m.leg === l.n)).map((l) => ({ leg: l.n, what: 'price', text: `a fill price for leg ${l.n}` }))] : [];
+  const errors = pv ? pv.checks.filter((k) => k.level === 'error' && k.code !== 'hedge-stale' && !(needsAck && k.code === 'extra-protection') && !(missing.some((m) => m.what === 'collateral' && m.leg === k.leg) && /^collateral-/.test(k.code))) : [];
+  const warnings = pv ? pv.checks.filter((k) => k.level === 'warning' && !(k.code === 'no-price' && missing.some((m) => m.what === 'price' && m.leg === k.leg))) : [];
+  const warnKey = warnings.map((k) => `${k.code}:${k.leg ?? ''}:${k.message}`).join('|');
+  const why = !ready || !pv ? null
+    : stale ? 'The recommendation is stale. Refresh it against current exposure first.'
+      : missing.length ? `Still needed: ${missing.map((m) => m.text).join(', ')}. Complete ${missing.length > 1 ? 'them' : 'it'} on the leg.`
+        : needsAck ? 'Protection is already in place. Decide above whether this hedge is added deliberately.'
+          : errors.length ? `${errors[0].message}${errors.length > 1 ? ` ${plural(errors.length - 1, 'more blocking item')} ${errors.length > 2 ? 'are' : 'is'} listed with the legs.` : ''}`
+            : null;
+  const mustReview = changes.length > 0;
+  const mustRead = warnings.length > 0 && !mustReview;
   // Execute now submits the package exactly as it is displayed: the same legs, under the same
-  // confirmation token, together with the cash requirement on screen. The server validates quotes,
-  // exposure, funding and collateral again; if anything blocks, or prices have moved away from what
-  // is displayed, nothing is submitted and the updated figures are shown instead. A stale
-  // recommendation is refused by the server until it has been refreshed.
+  // confirmation token, together with every figure on screen. The server prices the legs again and
+  // validates quotes, exposure, funding and collateral; if a leg or a total has moved beyond the
+  // Book's tolerances, or a term changed, nothing is submitted: the new figures replace the old ones
+  // here, what changed is listed was / now, and executing them takes a fresh confirmation.
   const execute = async () => {
-    const pv = box.pv;
-    if (busy || !pv || stale) return;
-    const review = pv.checks.filter((k) => k.level !== 'info');
-    if (review.length) { inspect(pv, html`<${Notice} tone="warn">${plural(review.length, 'item')} ${review.length > 1 ? 'need' : 'needs'} a decision before this hedge can be submitted. Deal with ${review.length > 1 ? 'them' : 'it'} here, then confirm.<//>`); return; }
+    if (busy || !pv || why || (mustReview && !reviewed) || (mustRead && read !== warnKey)) return;
     setBusy('execute'); setError(null);
     try {
       const out = await post('/api/strategies', { ...pv.input, legs: pv.legs, clientToken: pv.token, confirm: true, expected: expectedOf(pv) });
@@ -423,11 +568,15 @@ export function HedgePopup({ request, onClose, onDone }) {
       done(out.strategy);
       return;
     } catch (err) {
-      if (err.details?.preview) box.set(err.details.preview);
+      // The refusal carries the package as priced now. What was completed on the legs is unchanged, so it is kept.
+      if (err.details?.preview) box.set({ ...err.details.preview, hedge: pv.hedge });
+      setChanges(err.details?.changes || []);
+      setReviewed(false);
       setError(err);
     }
     setBusy('');
   };
+  const fresh = (fn) => (...a) => { forget(); return fn(...a); };
 
   const title = q.primary?.instrument ? `Hedge for ${q.primary.direction === 'short' ? 'short' : 'long'} ${q.primary.instrument.symbol || q.primary.instrument.name}` : `Hedge for ${q.account?.name || q.book.name}`;
   return html`<div class="scrim" onMouseDown=${(e) => { if (e.target === e.currentTarget) onClose?.(); }}>
@@ -441,13 +590,15 @@ export function HedgePopup({ request, onClose, onDone }) {
       </div>
       <div class="body">
         <div class="stack">
-          <${ErrorNote} error=${error} />
+          ${changes.length ? html`<${Notice} tone="warn"><b>Nothing was submitted.</b> The package was priced again when you pressed Execute now, and it no longer matches what was displayed. The figures below are the new ones. Check what changed, then execute the new figures, or dismiss.<//>
+            <${Changes} changes=${changes} />` : html`<${ErrorNote} error=${error} />`}
           ${stale ? html`<${Notice} tone="warn"><b>This recommendation is stale.</b> ${r.freshness.changes.join(' ')} It cannot be executed until it is refreshed against current exposure.
             <div style="margin-top:6px"><${Button} small kind="primary" busy=${busy === 'refresh'} onClick=${refresh}>Refresh against current exposure<//></div><//>` : null}
           <div class="hedge-split">
             <div class="stack">
               ${r.state === 'incomplete' ? html`<${RequestState} r=${r} /><${CompletionForm} r=${r} onSaved=${adopt} main />`
-    : ready ? html`<${PackageDetail} pkg=${pkg} pv=${box.pv} loading=${box.loading} error=${box.error} onRefresh=${open ? box.reload : null} onAcknowledge=${open ? box.acknowledge : null} />`
+    : ready ? html`<${PackageDetail} pkg=${pkg} pv=${box.pv} loading=${box.loading} error=${box.error} changes=${changes} onRefresh=${open ? fresh(box.reload) : null} onAcknowledge=${open ? fresh(box.acknowledge) : null}
+        onCollateral=${open ? fresh(box.setCollateral) : null} onStatedPrice=${open ? fresh(box.setStatedPrice) : null} />`
       : html`<${RequestState} r=${r} />
         ${r.state === 'ready_for_analysis' || r.state === 'error' ? html`<div class="row"><${Button} kind="primary" busy=${busy === 'refresh'} onClick=${refresh}>${r.state === 'error' ? 'Ask again now' : 'Ask now'}<//><span class="note">Nothing is traded when the answer arrives.</span></div>` : null}
         ${['dismissed', 'closed', 'executed', 'error'].includes(r.state) && r.strategyId && !open ? html`<div class="row"><${Button} busy=${busy === 'again'} onClick=${again}>Request the hedge again<//></div>` : null}
@@ -464,13 +615,16 @@ export function HedgePopup({ request, onClose, onDone }) {
           </div>
         </div>
       </div>
-      ${ready ? html`<${TotalsBar} pv=${box.pv} loading=${box.loading} />` : null}
+      ${ready ? html`<${TotalsBar} pv=${box.pv} loading=${box.loading} why=${open ? why : null} />` : null}
       <footer>
         <span class="note hedge-foot-note">${ready ? 'Closing this leaves the primary position exactly as it is.' : open ? 'The request stays on the position and in the hedge review queue.' : ''}</span><span class="grow"></span>
         ${open && ready ? html`<${Button} busy=${busy === 'dismiss'} onClick=${dismiss}>Dismiss, no hedge<//>` : html`<${Button} onClick=${onClose}>Close<//>`}
         ${open && !ready ? html`<${Button} busy=${busy === 'dismiss'} onClick=${dismiss} title="Remove this request from the review queue">Withdraw the request<//>` : null}
         ${ready && open ? html`<${Button} disabled=${!box.pv} onClick=${() => inspect(box.pv)}>Inspect or edit<//>
-          <${Button} kind="primary" busy=${busy === 'execute'} disabled=${Boolean(busy) || box.loading || !box.pv || stale} title=${stale ? 'Refresh the recommendation against current exposure first' : ''} onClick=${execute}>Execute now<//>` : null}
+          ${!why && mustReview ? html`<${Check} checked=${reviewed} onChange=${setReviewed}>I have checked the new figures<//>` : null}
+          ${!why && mustRead ? html`<${Check} checked=${read === warnKey} onChange=${(v) => setRead(v ? warnKey : '')}>I have read the ${plural(warnings.length, 'warning')} listed with the legs<//>` : null}
+          <${Button} kind="primary" busy=${busy === 'execute'} disabled=${Boolean(busy) || box.loading || !box.pv || Boolean(why) || (mustReview && !reviewed) || (mustRead && read !== warnKey)}
+            title=${why || (mustReview && !reviewed ? 'Check the new figures first' : mustRead && read !== warnKey ? 'Read the warnings first' : '')} onClick=${execute}>${mustReview ? 'Execute the new figures' : 'Execute now'}<//>` : null}
       </footer>
     </div></div>`;
 }

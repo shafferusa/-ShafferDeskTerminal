@@ -66,7 +66,10 @@ function expiryPayoff(app, { optionLegs, linearLegs, underlyingId, today, assume
   assumptions.push(`Payoff at the close of ${T0}, before fees. Entry prices are the estimated fills shown for each leg.`);
   if (linearLegs.some((l) => l.existing)) assumptions.push('For positions already held, the entry price is the current price, so the payoff is measured from today.');
 
-  const unitsOf = (l) => l.signedQty * (l.inst.family === 'option' ? l.inst.terms.deliverable.units : l.inst.multiplier);
+  // Underlying units of a leg, in units of the underlying's own price. A listed option delivers `deliverable.units`
+  // of the underlying instrument; when that instrument is itself a contract with a multiplier (an option on a
+  // future), each delivered contract stands for `multiplier` underlying units.
+  const unitsOf = (l) => l.signedQty * (l.inst.family === 'option' ? l.inst.terms.deliverable.units * (und?.multiplier ?? 1) : l.inst.multiplier);
   const premium = (l) => l.signedQty * l.price * l.inst.multiplier;
   const valueAt = (S) => {
     let v = 0;
@@ -193,7 +196,11 @@ export function optionRequirement(app, positions, { nakedCallPct }) {
     const shorts = opts.filter((p) => p.qty < 0);
     if (!shorts.length) continue;
     const lastShortExpiry = shorts.map((p) => p.inst.terms.expiration).sort().pop();
-    const units = (p) => p.qty * p.inst.terms.deliverable.units;
+    // Units of the underlying's own price per position: contracts x what one contract delivers x the multiplier of
+    // the instrument delivered (1 for shares; 1,000 barrels for a crude oil future). Measured this way, a written
+    // put on a future is secured on its whole contract value, and one future covers one option, unit for unit.
+    const perDelivered = app.instruments.get(underlyingId)?.multiplier ?? 1;
+    const units = (p) => p.qty * p.inst.terms.deliverable.units * perDelivered;
     // A long option only covers if it lives at least as long as the shorts.
     const live = opts.filter((p) => p.qty < 0 || p.inst.terms.expiration >= lastShortExpiry);
     const stock = positions.find((p) => p.inst.id === underlyingId);

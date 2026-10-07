@@ -32,17 +32,32 @@ Stop all background work when the owner's weekly **Fable** usage reaches 98%.
 Last known figures: 5:30 PM ET on 2026-10-06, Fable 14% against 10% for all models (r = 1.4), before this pass
 started. The all-models figure was reported as 35% at about 9:57 PM ET.
 
-## State at the last update (2026-10-07 02:10 UTC)
+## State at the last update (2026-10-07 09:45 UTC)
 
-**Running again since 2026-10-07 02:05 UTC** on the owner's instruction ("continue running the last 65%, save the
-note every percent it goes up"); the owner will send "pause" for the usage guard. The paragraph below describes
-the hold that preceded it.
+**Holding since the 5-hour session limit was hit at about 02:47 UTC (10:47 PM ET).** Six of the eight workers of
+wave 1 were cut off by it mid-task; their finished work is committed, their notes are in `progress/`, and none
+left a half-edited file. The engine suite passes 299 of 299 on the tree as committed. No agents are running and
+no check-in is scheduled. Under the usage guard the next heavy step waits for the owner's `/usage` numbers.
 
-No agents were running and nothing was scheduled. This session is not linked to the owner's computer, so
-the usage file cannot be read; under rule 2 the next heavy step waits for the owner's numbers and go-ahead. The
-hedge follow-up agent was stopped by the owner part-way through (its only change on disk is the demo fixture no
-longer stating collateral terms for its swap, which is what makes one test red, see below). The product fan-out
-(waves 1 to 3 below) has not started.
+Wave 1, product by product (a product counts only when it passed at engine, API and browser level; see `LOG.md`):
+- hedge follow-up (`progress/v1b.md`): finished. Collateral basis and stated fill price chosen in the hedge popup,
+  the swap and FX-forward packages executed from it, was / now on a refused "Execute now", routes documented.
+- listed options (`progress/o1.md`): 5 of 5 logged as passing. No final report was delivered.
+- futures (`progress/fu1.md`): 11 of 11 logged as passing. No final report was delivered.
+- bonds, government (`progress/b1.md`): 6 of 13 (treasury_note, treasury_bill, treasury_bond, strips,
+  foreign_gov_bill and one more in progress); the bond browser driver exists.
+- loans (`progress/l1.md`): 4 of 9 (unsecured_loan, term_deposit, certificate_of_deposit, bank_deposit); the loan
+  browser driver exists.
+- rate swaps (`progress/s1.md`): 3 of 12 (interest_rate_swap, ois, basis_swap); the swap browser driver exists.
+- failure and recovery (`progress/s8.md`): refusal cases (21) pass at engine and API level with five Terminal
+  fixes; stress, no-duplicates, history, isolation and hedge-reconnection areas and the whole browser level are open.
+- collateral follow-up (task 2 under "Not started or unfinished" below): NOT started; its worker was stopped.
+- The red test mentioned further down is fixed.
+
+To continue: start a fresh worker per unfinished group with the same prompt as before (the prompts are in the
+session transcript; the essentials are `briefs/BRIEF3.md`, `briefs/BRIEF4.md` and the group's product list above)
+and tell it that `progress/<id>.md` exists, so it resumes instead of starting over. Then waves 2 and 3 below.
+Findings waiting for an owner are in `BUGS.md`.
 
 ## State of the work (written 2026-10-07 01:58 UTC)
 

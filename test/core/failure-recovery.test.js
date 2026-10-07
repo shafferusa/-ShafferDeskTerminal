@@ -118,3 +118,42 @@ test('an order resting in a contract that expires ends with it and never fills a
   await app.engine.tick();
   assert.equal(app.db.get(`SELECT COUNT(*) AS n FROM events WHERE type = 'order.expired' AND order_id = ?`, o.id).n, 1, 'a later cycle adds nothing');
 });
+
+test('a loan or repo whose maturity passed while the Terminal was not running is settled as of the maturity date', async () => {
+  const run = async (stepThroughMaturity) => {
+    const { app, clock, inst } = makeApp();
+    const { book, acct, treasury } = makeBook(app, { cash: 3_000_000, account: 1_000_000 });
+    await trade(app, { bookId: book.id, unitId: acct.id, template: 'custom', legs: [{ kind: 'loan', action: 'borrow_cash', qty: 100_000, purpose: 'financing', contract: { productId: 'unsecured_loan', name: 'Loan', marketView: 'US_CASH', venueType: 'otc', tradingCcy: 'USD', terms: { loanType: 'unsecured', rateType: 'fixed', rate: 0.05, maturity: '2026-03-16' } } }] });
+    pin(app, inst.ALFA, 100);
+    const hold = await trade(app, { bookId: book.id, unitId: treasury.id, template: 'custom', legs: [{ kind: 'trade', action: 'buy', instrumentId: inst.ALFA.id, qty: 10_000 }] });
+    await trade(app, { bookId: book.id, unitId: treasury.id, template: 'custom', legs: [{ ...repoLeg(inst.ALFA, 900_000, 10_000, hold.positions[0].positionId), contract: { ...repoLeg(inst.ALFA, 900_000, 10_000, 'x').contract, terms: { collateralInstrumentId: inst.ALFA.id, collateralQty: 10_000, haircut: 0.02, rateType: 'fixed', rate: 0.045, term: 'term', endDate: '2026-03-16' } } }] });
+    if (stepThroughMaturity) await goTo(app, clock, '2026-03-16T14:00:00.000Z');
+    await goTo(app, clock, '2026-03-20T14:00:00.000Z'); // Friday: four days after both fell due
+    await app.engine.tick();
+    return { loan: app.ledger.balance(acct.id, 'pnl.funding', 'USD'), repo: app.ledger.balance(treasury.id, 'pnl.funding', 'USD'), owed: app.ledger.balance(acct.id, 'loan.liab', 'USD') + app.ledger.balance(treasury.id, 'loan.liab', 'USD'), imbalance: ledgerImbalance(app) };
+  };
+  // Loan: 100,000 x 5% x 14 / 360 = 194.44. Repo: 900,000 x 4.5% x 14 / 360 = 1,575.00. (2 to 16 March is 14 days.)
+  const running = await run(true);
+  const down = await run(false);
+  assert.deepEqual(running, { loan: 194.44, repo: 1575, owed: 0, imbalance: [] });
+  assert.deepEqual(down, running, 'a Terminal that was down over the maturity books the same interest');
+});
+
+test('the post-trade hedge request owed to a Marketplace trade survives a restart before the next engine cycle', async () => {
+  const { app, clock, inst } = makeApp();
+  const { book, acct } = makeBook(app);
+  pin(app, inst.ALFA, 190);
+  const s = await trade(app, { bookId: book.id, unitId: acct.id, template: 'long', underlyingId: inst.ALFA.id, quantity: 100, origin: 'marketplace' });
+  assert.equal(app.hedge.list(book.id).length, 0, 'the request is made by the next engine cycle, not at the fill');
+  assert.equal(app.hedge.queueSize(), 1);
+  // "Restart": a new application on the same database; nothing held in memory is carried over.
+  const { createApp } = await import('../../server/app.js');
+  const again = createApp({ config: app.config, clock, db: app.db });
+  assert.equal(again.hedge.queueSize(), 1, 'the queue was stored');
+  await again.engine.tick();
+  const reqs = again.hedge.list(book.id);
+  assert.deepEqual(reqs.map((r) => [r.strategyId, r.trigger]), [[s.id, 'post_trade']]);
+  assert.equal(again.hedge.queueSize(), 0);
+  await again.engine.tick();
+  assert.equal(again.hedge.list(book.id).length, 1, 'and it is made once');
+});
