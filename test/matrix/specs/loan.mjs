@@ -331,4 +331,234 @@ const unsecuredLoan = {
   ],
 };
 
-export default [unsecuredLoan];
+// ---------------------------------------------------------------------------------------------
+// term_deposit
+// ---------------------------------------------------------------------------------------------
+// A sterling term deposit placed by Treasury, in a Book that reports in US dollars. Sterling money-market
+// interest is ACT/365. The stated maturity, Friday 3 April 2026, is Good Friday and Monday 6 April is Easter
+// Monday, both bank holidays in England: the deposit is paid on Tuesday 7 April, with interest to that date.
+//
+// Interest, by hand (ACT/365):
+//   400,000 x 0.042 / 365 = 46.027397 a day; 300,000 x 0.042 / 365 = 34.520548 a day
+//   2 to 18 March, 16 days on 400,000:   736.438356
+//   18 March to 7 April, 20 days on 300,000: 690.410959
+//   total                                  1,426.849315 -> 1,426.85 GBP
+//
+// Reporting currency. Every ledger entry keeps the US dollar amount at the rate in force when it was posted
+// (GBP/USD 1.26 until 16 March, 1.285 after). Income is the sum of those amounts. Balances are converted at
+// the current rate; the difference between the two is the FX effect:
+//   interest posted: 46.03 and 460.27 at 1.26 (58.00, 579.94); 184.11, 46.03, 517.81 and 172.60 at 1.285
+//   (236.58, 59.15, 665.39, 221.79). Total 1,820.85 USD.
+//   From 16 March the 600,000 GBP held since the start is worth 0.025 more per pound: 15,000.00, plus the
+//   same on the interest accrued by then (506.30 x 1.285 - 637.94 = 12.66).
+const TERM_DEPOSIT = { owner: 'treasury', page: 'treasury', side: 'lend_cash', productId: 'term_deposit', productLabel: 'Term deposit', ccy: 'GBP', principal: 400_000, name: 'Kingsway sterling term deposit', as: 'deposit',
+  terms: { loanType: 'deposit', rateType: 'fixed', rate: 0.042, dayCount: 'ACT/365', maturity: '2026-04-03', interestPayment: 'maturity', counterparty: 'Kingsway Bank' } };
+
+const termDeposit = {
+  productId: 'term_deposit',
+  title: 'Sterling term deposit placed by Treasury with Kingsway Bank: 400,000 GBP at 4.20% fixed, ACT/365, to Good Friday 3 April 2026 (paid 7 April)',
+  matrix: {
+    ...LOAN_TICKET,
+    automaticInputs: ['interest start date', 'daily interest accrual at the end-of-day run, ACT/365', 'the payment date: the stated maturity moved to the next business day of the sterling payment calendar', 'principal and interest returned at maturity', 'conversion of each entry to the reporting currency at the rate in force (GBP/USD from a labelled fixture)'],
+    manualInputs: ['every term of the deposit, entered on the ticket', 'the amount of an early part withdrawal, entered in the preview'],
+    settlement: 'None: the cash leaves settled sterling on the day the ticket is confirmed and returns on the payment date',
+    lifecycle: 'Interest accrues daily; at maturity principal and interest are returned automatically. A maturity on a bank holiday is paid on the next business day with interest to that day. An early withdrawal, in part or in full, is allowed with interest to its date and no penalty (a break cost would be recorded by hand)',
+    accounting: 'Cash lent is an asset of Treasury; interest is income, accrued daily in sterling and converted at the rate of each day; the change in the dollar value of the sterling balances is the FX effect',
+    collateral: 'None',
+  },
+  tradedOn: 'A term deposit is not a registry instrument: it is entered on the Cash loan or deposit ticket of the Treasury page (side "Lend or deposit cash") and registers itself when the ticket is confirmed.',
+  start: AT_1000('2026-03-02'),
+  book: {
+    name: 'Matrix term deposit', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 1_000_000 }, { ccy: 'GBP', amount: 600_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 100_000 }] },
+    settings: { fees: {}, fill: FILL, settlement: {} },
+  },
+  instruments: {},
+  fx: { 'GBP/USD': 1.26 },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 100_000, availableToTrade: 100_000, availableToWithdraw: 100_000, borrowed: 0, lent: 0 } },
+      treasury: { USD: { settled: 900_000, availableToTrade: 900_000, availableToWithdraw: 900_000, borrowed: 0, lent: 0 }, GBP: { settled: 600_000, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 600_000, availableToWithdraw: 600_000, borrowed: 0, lent: 0 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 100_000, treasury: 1_656_000, book: 1_756_000 }, // 900,000 + 600,000 x 1.26; plus the Account's 100,000
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+    balance: { treasury: { cash: 1_656_000, assets: 1_656_000, liabilities: 0, netAssets: 1_656_000, local: { GBP: { cash: 600_000 } } } },
+    oversight: { accountBorrowings: [], treasuryOwn: [] },
+  },
+  steps: [
+    loanTicket('deposit-more-than-is-held', { ...TERM_DEPOSIT, as: undefined, principal: 700_000 }, {
+      covers: 'open', status: 'blocked', reason: 'Treasury holds 600,000 GBP. A deposit is paid from settled cash of its own currency; nothing is converted or borrowed for it.',
+      expect: { refused: 'Treasury has 600,000.00 GBP of settled GBP available to lend; 700,000.00 GBP requested.' },
+    }),
+    loanTicket('place', TERM_DEPOSIT, {
+      covers: ['open', 'lend'],
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'loan', action: 'lend_cash', purpose: 'financing', qty: 400_000, cash: -400_000, fees: 0, ccy: 'GBP',
+            dailyCost: 46.03, // 400,000 x 0.042 / 365 = 46.0274: the day's interest, on the contract's ACT/365 basis
+            financing: { amount: -400_000, rateType: 'fixed', rate: 0.042, maturity: '2026-04-03', interestFrom: '2026-03-02' } }],
+          cash: { GBP: { financingIn: 0, financingOut: 400_000, required: 400_000, available: 600_000, shortfall: 0, netCash: -400_000 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'loan', action: 'lend_cash', instrument: 'deposit', status: 'filled', qty: 400_000, filledQty: 400_000 }] },
+        events: [
+          { type: 'strategy.submitted', owner: 'treasury' },
+          { type: 'loan.placed', summary: 'Lent 400,000.00 GBP (deposit, 4.200% fixed, due 2026-04-03)', cash: { GBP: -400_000 }, owner: 'treasury', date: '2026-03-02' },
+        ],
+        cash: { treasury: { GBP: { settled: 200_000, availableToTrade: 200_000, availableToWithdraw: 200_000, lent: 400_000, borrowed: 0 }, USD: { settled: 900_000 } } },
+        positions: [{ instrument: 'deposit', lot: 'deposit', owner: 'treasury', direction: 'lent', qty: 400_000, value: 400_000, carrying: 400_000, accrued: 0, provisional: false }],
+        holdings: {},
+        pending: [],
+        // 3 April is Good Friday and 6 April Easter Monday: the sterling payment calendar moves the payment to Tuesday 7 April.
+        lifecycle: [{ type: 'loan.maturity', instrument: 'deposit', dueDate: '2026-04-07', status: 'pending', owner: 'treasury' }],
+        borrowings: [], // a deposit is lending: it is not in the borrowing register
+        pnl: {
+          account: { realized: 0, dividends: 0, couponInterest: 0, borrowFunding: 0, commissions: 0, fees: 0, unrealized: 0, fx: 0, total: 0 },
+          treasury: { couponInterest: 0, borrowFunding: 0, fx: 0, total: 0 }, book: { couponInterest: 0, fx: 0, total: 0 },
+        },
+        nav: { account: 100_000, treasury: 1_656_000, book: 1_756_000 }, // placing a deposit changes no net asset value
+        balance: {
+          account: { cash: 100_000, assets: 100_000, liabilities: 0, netAssets: 100_000 },
+          treasury: { cash: 1_152_000, lent: 504_000, accruedIncome: null, assets: 1_656_000, liabilities: 0, netAssets: 1_656_000, local: { GBP: { cash: 200_000, lent: 400_000 } } }, // 900,000 + 200,000 x 1.26; 400,000 x 1.26
+          book: { cash: 1_252_000, lent: 504_000, borrowed: null, assets: 1_756_000, liabilities: 0, netAssets: 1_756_000 },
+        },
+        oversight: { accountBorrowings: [], treasuryOwn: [] },
+      },
+    }),
+    {
+      id: 'accrue-first-day', covers: 'interest accrual', action: 'clock', to: AT_1730('2026-03-03'),
+      expect: {
+        events: [{ type: 'accrual.interest', summary: 'Interest accrued on Kingsway sterling term deposit: 46.03 GBP', owner: 'treasury', date: '2026-03-03' }],
+        positions: [{ instrument: 'deposit', lot: 'deposit', qty: 400_000, value: 400_000, carrying: 400_000, accrued: 46.03 }],
+        pnl: { treasury: { couponInterest: 58, borrowFunding: 0, fx: 0, total: 58 }, book: { couponInterest: 58, total: 58 } }, // 46.03 x 1.26 = 57.9978
+        nav: { treasury: 1_656_058, book: 1_756_058 }, // 900,000 + 600,046.03 x 1.26 = 900,000 + 756,058.00
+        balance: {
+          treasury: { accruedIncome: 58, assets: 1_656_058, netAssets: 1_656_058, local: { GBP: { cash: 200_000, lent: 400_000, accruedIncome: 46.03 } } },
+          book: { accruedIncome: 58, assets: 1_756_058, netAssets: 1_756_058 },
+        },
+      },
+    },
+    {
+      id: 'accrue-to-13-march', covers: 'interest accrual', action: 'clock', to: AT_1730('2026-03-13'), // 11 days from 2 March
+      expect: {
+        events: [{ type: 'accrual.interest', summary: 'Interest accrued on Kingsway sterling term deposit: 460.27 GBP' }], // 11 x 46.027397 = 506.3014 -> 506.30, less 46.03
+        positions: [{ instrument: 'deposit', lot: 'deposit', qty: 400_000, accrued: 506.30 }],
+        pnl: { treasury: { couponInterest: 637.94, fx: 0, total: 637.94 }, book: { couponInterest: 637.94, total: 637.94 } }, // 58.00 + 460.27 x 1.26 (579.9402)
+        nav: { treasury: 1_656_637.94, book: 1_756_637.94 }, // 600,506.30 x 1.26 = 756,637.938
+        balance: {
+          treasury: { accruedIncome: 637.94, assets: 1_656_637.94, netAssets: 1_656_637.94, local: { GBP: { accruedIncome: 506.30 } } },
+          book: { accruedIncome: 637.94, assets: 1_756_637.94, netAssets: 1_756_637.94 },
+        },
+      },
+    },
+    { id: 'monday-16-march', action: 'clock', to: AT_1000('2026-03-16'), expect: {} },
+    {
+      // Sterling rises from 1.26 to 1.285. Nothing is posted: the balances are worth more dollars, and that is the FX effect.
+      id: 'sterling-rises', covers: 'FX effect', action: 'fx_rate', pair: 'GBP/USD', rate: 1.285,
+      expect: {
+        events: [],
+        // Cash 200,000 and deposit 400,000, each 0.025 more per pound: 5,000 + 10,000. Accrued interest: 506.30 x 1.285 = 650.5955 against 637.94 booked: 12.6555.
+        pnl: { treasury: { couponInterest: 637.94, fx: 15_012.66, total: 15_650.60 }, book: { couponInterest: 637.94, fx: 15_012.66, total: 15_650.60 }, account: { fx: 0, total: 0 } },
+        nav: { account: 100_000, treasury: 1_671_650.60, book: 1_771_650.60 }, // 900,000 + 600,506.30 x 1.285 (771,650.5955)
+        balance: {
+          treasury: { cash: 1_157_000, lent: 514_000, accruedIncome: 650.60, assets: 1_671_650.60, netAssets: 1_671_650.60, local: { GBP: { cash: 200_000, lent: 400_000, accruedIncome: 506.30 } } }, // 900,000 + 257,000
+          book: { cash: 1_257_000, lent: 514_000, accruedIncome: 650.60, assets: 1_771_650.60, netAssets: 1_771_650.60 },
+        },
+      },
+    },
+    {
+      id: 'wednesday-18-march', covers: 'interest accrual', action: 'clock', to: AT_1000('2026-03-18'), // the end-of-day run of Tuesday 17 March: 15 days
+      expect: {
+        events: [{ type: 'accrual.interest', summary: 'Interest accrued on Kingsway sterling term deposit: 184.11 GBP' }], // 15 x 46.027397 = 690.4110 -> 690.41, less 506.30
+        positions: [{ instrument: 'deposit', lot: 'deposit', qty: 400_000, accrued: 690.41 }],
+        // Income 637.94 + 184.11 x 1.285 (236.58135 -> 236.58). FX effect: 15,000 + 690.41 x 1.285 (887.17685) - 874.52 = 15,012.65685.
+        pnl: { treasury: { couponInterest: 874.52, fx: 15_012.66, total: 15_887.18 }, book: { couponInterest: 874.52, fx: 15_012.66, total: 15_887.18 } },
+        nav: { treasury: 1_671_887.18, book: 1_771_887.18 }, // 900,000 + 600,690.41 x 1.285 (771,887.17685)
+        balance: {
+          treasury: { accruedIncome: 887.18, assets: 1_671_887.18, netAssets: 1_671_887.18, local: { GBP: { accruedIncome: 690.41 } } },
+          book: { accruedIncome: 887.18, assets: 1_771_887.18, netAssets: 1_771_887.18 },
+        },
+      },
+    },
+    {
+      // An early withdrawal of part of the deposit: allowed, with interest to today on the 400,000 held until now and no penalty.
+      id: 'withdraw-part-early', covers: ['reduce', 'early withdrawal'], action: 'repay', lot: 'deposit', owner: 'treasury', amount: 100_000,
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'repay', action: 'repay_cash', purpose: 'financing', instrument: 'deposit', qty: 100_000, cash: 100_000, ccy: 'GBP', financing: { amount: 100_000, principal: 100_000, interest: 0, full: false, rate: 0.042, maturity: '2026-04-03' } }],
+          cash: { GBP: { financingIn: 100_000, financingOut: 0, required: 0, available: 200_000, shortfall: 0, netCash: 100_000 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'repay', action: 'repay_cash', status: 'filled', qty: 100_000, filledQty: 100_000 }] },
+        events: [
+          { type: 'strategy.legs_added', owner: 'treasury' },
+          { type: 'accrual.interest', summary: 'Interest accrued on Kingsway sterling term deposit: 46.03 GBP', date: '2026-03-18' }, // 16 days: 736.4384 -> 736.44, less 690.41
+          { type: 'loan.withdrawal', summary: 'Received back 100,000.00 GBP of principal on Kingsway sterling term deposit', cash: { GBP: 100_000 }, owner: 'treasury', date: '2026-03-18' },
+        ],
+        cash: { treasury: { GBP: { settled: 300_000, availableToTrade: 300_000, availableToWithdraw: 300_000, lent: 300_000 } } },
+        positions: [{ instrument: 'deposit', lot: 'deposit', owner: 'treasury', direction: 'lent', qty: 300_000, value: 300_000, carrying: 300_000, accrued: 736.44 }],
+        lifecycle: [{ type: 'loan.maturity', instrument: 'deposit', dueDate: '2026-04-07', status: 'pending', owner: 'treasury' }],
+        // Income 874.52 + 46.03 x 1.285 (59.14855 -> 59.15). FX effect: 15,000 + 736.44 x 1.285 (946.3254) - 933.67 = 15,012.6554.
+        pnl: { treasury: { couponInterest: 933.67, fx: 15_012.66, total: 15_946.33 }, book: { couponInterest: 933.67, fx: 15_012.66, total: 15_946.33 } },
+        nav: { treasury: 1_671_946.33, book: 1_771_946.33 }, // 900,000 + 600,736.44 x 1.285 (771,946.3254)
+        balance: {
+          treasury: { cash: 1_285_500, lent: 385_500, accruedIncome: 946.33, assets: 1_671_946.33, netAssets: 1_671_946.33, local: { GBP: { cash: 300_000, lent: 300_000, accruedIncome: 736.44 } } }, // 900,000 + 300,000 x 1.285
+          book: { cash: 1_385_500, lent: 385_500, accruedIncome: 946.33, assets: 1_771_946.33, netAssets: 1_771_946.33 },
+        },
+      },
+    },
+    {
+      // Good Friday, the stated maturity. English banks are closed: nothing is paid. The end-of-day run of Thursday
+      // 2 April has accrued 15 days on 300,000: 15 x 34.520548 = 517.8082; running total 1,254.2466 -> 1,254.25.
+      id: 'good-friday-nothing-is-paid', covers: ['maturity', 'holiday'], action: 'clock', to: AT_1000('2026-04-03'),
+      expect: {
+        events: [{ type: 'accrual.interest', summary: 'Interest accrued on Kingsway sterling term deposit: 517.81 GBP', date: '2026-04-03' }],
+        cash: { treasury: { GBP: { settled: 300_000, lent: 300_000 } } },
+        positions: [{ instrument: 'deposit', lot: 'deposit', qty: 300_000, value: 300_000, carrying: 300_000, accrued: 1_254.25 }],
+        lifecycle: [{ type: 'loan.maturity', instrument: 'deposit', dueDate: '2026-04-07', status: 'pending', owner: 'treasury' }],
+        // Income 933.67 + 517.81 x 1.285 (665.38585 -> 665.39). FX effect: 15,000 + 1,254.25 x 1.285 (1,611.71125) - 1,599.06 = 15,012.65125.
+        pnl: { treasury: { couponInterest: 1_599.06, fx: 15_012.65, total: 16_611.71 }, book: { couponInterest: 1_599.06, fx: 15_012.65, total: 16_611.71 } },
+        nav: { treasury: 1_672_611.71, book: 1_772_611.71 }, // 900,000 + 601,254.25 x 1.285 (772,611.71125)
+        balance: {
+          treasury: { cash: 1_285_500, lent: 385_500, accruedIncome: 1_611.71, assets: 1_672_611.71, netAssets: 1_672_611.71, local: { GBP: { accruedIncome: 1_254.25 } } },
+          book: { accruedIncome: 1_611.71, assets: 1_772_611.71, netAssets: 1_772_611.71 },
+        },
+      },
+    },
+    {
+      // Easter Monday: still a bank holiday in England, and the New York stock exchange was closed on Friday, so no
+      // end-of-day run has become due either. Nothing happens.
+      id: 'easter-monday-nothing-is-paid', covers: 'holiday', action: 'clock', to: AT_1000('2026-04-06'),
+      expect: { events: [], cash: { treasury: { GBP: { settled: 300_000, lent: 300_000 } } }, nav: { treasury: 1_672_611.71, book: 1_772_611.71 } },
+    },
+    {
+      // Tuesday 7 April: the deposit is paid. Interest runs to the payment date: 20 days on 300,000 since 18 March,
+      // 690.4110; total 736.4384 + 690.4110 = 1,426.8493 -> 1,426.85 GBP.
+      id: 'paid-on-the-next-business-day', covers: ['maturity', 'close'], action: 'clock', to: AT_1000('2026-04-07'),
+      expect: {
+        events: [
+          { type: 'accrual.interest', summary: 'Interest accrued on Kingsway sterling term deposit: 172.60 GBP', date: '2026-04-07' }, // 1,426.85 - 1,254.25
+          { type: 'loan.withdrawal', summary: 'Received back 300,000.00 GBP of principal on Kingsway sterling term deposit (in full)', cash: { GBP: 300_000 }, owner: 'treasury', date: '2026-04-07' },
+          { type: 'interest.payment', summary: 'Interest received on Kingsway sterling term deposit: 1,426.85 GBP', cash: { GBP: 1_426.85 }, owner: 'treasury', date: '2026-04-07' },
+        ],
+        cash: { treasury: { GBP: { settled: 601_426.85, availableToTrade: 601_426.85, availableToWithdraw: 601_426.85, lent: 0, borrowed: 0 }, USD: { settled: 900_000 } }, account: { USD: { settled: 100_000 } } },
+        positions: [], lifecycle: [], borrowings: [],
+        // Income 1,599.06 + 172.60 x 1.285 (221.791 -> 221.79) = 1,820.85.
+        // FX effect: 601,426.85 x 1.285 = 772,833.50225, against the dollars booked for the same pounds:
+        // 756,000 + 1,820.85 = 757,820.85. Difference 15,012.65.
+        pnl: { treasury: { couponInterest: 1_820.85, borrowFunding: 0, fx: 15_012.65, total: 16_833.50 }, book: { couponInterest: 1_820.85, fx: 15_012.65, total: 16_833.50 }, account: { total: 0 } },
+        nav: { account: 100_000, treasury: 1_672_833.50, book: 1_772_833.50 },
+        balance: {
+          treasury: { cash: 1_672_833.50, lent: null, accruedIncome: null, assets: 1_672_833.50, liabilities: 0, netAssets: 1_672_833.50, local: { GBP: { cash: 601_426.85, lent: null, accruedIncome: null } } },
+          book: { cash: 1_772_833.50, lent: null, accruedIncome: null, assets: 1_772_833.50, liabilities: 0, netAssets: 1_772_833.50 },
+        },
+      },
+    },
+  ],
+};
+
+export default [unsecuredLoan, termDeposit];

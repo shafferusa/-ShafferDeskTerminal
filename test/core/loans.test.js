@@ -44,3 +44,13 @@ test('repaying more than is outstanding is refused, not quietly cut down to what
   assert.match(pv.checks.find((c) => c.level === 'error').message, /Outstanding principal is 100,000\.00 USD; cannot repay 150,000\.00 USD\./);
   assert.equal(app.ledger.balance(acct.id, 'loan.liab', 'USD'), -100_000, 'nothing was repaid');
 });
+
+test('the preview shows one day of interest on the contract day count: ACT/365 divides by 365', async () => {
+  const { app } = makeApp();
+  const { book, treasury } = makeBook(app);
+  const leg = (dayCount) => ({ kind: 'loan', action: 'borrow_cash', qty: 400_000, purpose: 'financing',
+    contract: { productId: 'unsecured_loan', name: `Loan ${dayCount}`, marketView: 'US_CASH', venueType: 'otc', tradingCcy: 'USD', terms: { loanType: 'unsecured', rateType: 'fixed', rate: 0.042, dayCount, maturity: '2026-06-01' } } });
+  const daily = async (dayCount) => (await app.packages.preview({ bookId: book.id, unitId: treasury.id, template: 'custom', legs: [leg(dayCount)] })).legs[0].dailyCost;
+  assert.equal(await daily('ACT/365'), 46.03); // 400,000 x 0.042 / 365 = 46.0274
+  assert.equal(await daily('ACT/360'), 46.67); // 400,000 x 0.042 / 360 = 46.6667
+});

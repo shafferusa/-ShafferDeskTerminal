@@ -12,3 +12,4 @@
 - 2026-10-07T02:56Z | s1 | +0.2 | interest_rate_swap passes at engine, API and browser
 - 2026-10-07T02:57Z | b1 | +0.2 | treasury_bill passes at engine, API and browser (Treasury-owned, redeemed at par); trades settling on or after maturity are now refused
 - 2026-10-07T02:57Z | o1 | +0.2 | option_on_future passes at engine, API and browser (reserve and notional of options on futures fixed)
+- 2026-10-07T03:00Z | l1 | +0.2 | term_deposit passes at engine, API and browser (Treasury, sterling ACT/365, FX effect, paid after the Easter bank holidays)

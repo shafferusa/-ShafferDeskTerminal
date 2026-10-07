@@ -654,7 +654,10 @@ export async function screens(ui, ctx, t, { expected, state }) {
   const head = sheets.find((x) => x.head.length)?.head || [];
   const body = sheets.find((x) => x.rows.length)?.rows.filter((r) => !r.group) || [];
   const column = (name) => head.findIndex((h) => h.replace(/\s+/g, ' ').trim() === name);
-  const sheetCell = (label, name) => { const r = body.find((x) => lines(x.cells[0])[0] === label); const i = column(name); return r && i >= 0 ? shown(r.cells[i]) : null; };
+  // A line is found by its label; with a foreign currency in play the label is followed by a "show currencies" control.
+  const labelled = (x, label) => lines(x.cells[0])[0] === label || lines(x.cells[0])[0].startsWith(`${label} `);
+  const sheetCell = (label, name) => { const r = body.find((x) => labelled(x, label)); const i = column(name); return r && i >= 0 ? shown(r.cells[i]) : null; };
+  if (process.env.SDT_LOAN_DEBUG === '2') console.log(JSON.stringify({ head, body: body.slice(0, 6), titles: tables.map((x) => [x.title, x.head.length, x.rows.length]) }, null, 1));
   if (column('Whole Book') < 0 || column('Treasury') < 0) api(`the Book balance sheet has columns ${head.join(' | ')}: Treasury and Whole Book are expected`);
   else {
     for (const [k, label] of Object.entries(SHEET_LINES)) {
@@ -665,12 +668,25 @@ export async function screens(ui, ctx, t, { expected, state }) {
       if (column(ctx.spec.book.account.name) >= 0) num(api, `Book balance sheet, ${label}, ${ctx.spec.book.account.name}`, state.balance.account[k] ?? null, sheetCell(label, ctx.spec.book.account.name));
     }
     // Internal funding is shown in each column and eliminated in the total.
-    const funding = body.find((x) => lines(x.cells[0])[0] === SHEET_LINES.internal);
+    const funding = body.find((x) => labelled(x, SHEET_LINES.internal));
     if (funding && state.balance.treasury.internal && !/eliminated/.test(funding.cells[column('Eliminations')] || '')) api('the Book balance sheet does not show internal funding as eliminated');
   }
   const record = tables.find((x) => /^Borrowings/.test(x.title) && x.head.some((h) => /^Record/.test(h)));
   const listed = (record?.rows || []).map((r) => lines(r.cells[0])[0]).sort().join(',');
   if (listed !== want) api(`the Book balance sheet lists borrowings ${listed || 'none'}; the register is ${want || 'empty'}: each must be there exactly once`);
+
+  // ---- 5. Treasury's own scheduled payments (the shared reader looks at the Account's only) ------------------------
+  await ui.goto(`#/accounting/pending/${ctx.treasuryId}`);
+  await main.locator('header h3, header h2', { hasText: /^Executed trades/ }).first().waitFor();
+  await ui.drawn();
+  tables = await ui.tables(main);
+  const life = tableOf(tables, 'Lifecycle items');
+  const due = (life?.rows || []).filter((r) => !r.group).map((r) => lines(r.cells[col(life, 'Due')])[0]).sort();
+  const mineDue = state.lifecycle.filter((x) => x.owner === 'treasury').map((x) => x.dueDate).sort();
+  if (due.join(',') !== mineDue.join(',')) api(`Treasury's pending lifecycle items are due ${due.join(', ') || 'never (none shown)'}; the API has ${mineDue.join(', ') || 'none'}`);
+  const wantDue = (expected.lifecycle || []).filter((x) => x.owner === 'treasury').map((x) => x.dueDate).sort();
+  if (Array.isArray(expected.lifecycle) && wantDue.join(',') !== due.join(',')) spec(`Treasury's pending lifecycle items are due ${due.join(', ') || 'never (none shown)'}; expected ${wantDue.join(', ') || 'none'}`);
+
   if (process.env.SDT_LOAN_DEBUG) console.log(`    loan screens: ${compared} figures compared, ${own.length} own and ${acct.length} Account-originated borrowing rows, ${lendRows.length} lending rows, ${out.length} mismatches`, JSON.stringify(acct[0] || own[0] || lendRows[0] || null));
   return out;
 }
