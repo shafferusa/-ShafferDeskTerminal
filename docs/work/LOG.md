@@ -7,3 +7,4 @@
 - 2026-10-07T02:51Z | o1 | +0.2 | etf_option passes at engine, API and browser
 - 2026-10-07T02:53Z | fu1 | +0.2 | equity_index_future passes at engine, API and browser
 - 2026-10-07T02:53Z | s8 | +0 | refusal cases (21) pass at engine and API level; five Terminal fixes with regression tests; browser level and other areas still open
+- 2026-10-07T02:53Z | l1 | +0.2 | unsecured_loan passes at engine, API and browser (Account-owned borrowing, three views, set rate, part and full repayment; loan browser driver built)
