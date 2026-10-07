@@ -5,3 +5,4 @@
 - 2026-10-07T02:43Z | o1 | +0.2 | equity_option passes at engine, API and browser
 - 2026-10-07T02:50Z | b1 | +0.2 | treasury_note passes at engine, API and browser; bond browser driver built; four bond accrual and coupon entitlement faults fixed with regression tests
 - 2026-10-07T02:51Z | o1 | +0.2 | etf_option passes at engine, API and browser
+- 2026-10-07T02:53Z | fu1 | +0.2 | equity_index_future passes at engine, API and browser
