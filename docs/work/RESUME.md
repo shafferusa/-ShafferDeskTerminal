@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 42.1% of the pass** (last milestone 2026-10-07T09:48Z, coord: restarting bonds, loans, rate swaps and failure-recovery from their notes; working until the Fable limit)
+**Completeness: about 42.1% of the pass** (last milestone 2026-10-07T09:49Z, b1: resumed; notes brought up to date (five bond products done, fixed ACT/365 coupon amount))
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 
