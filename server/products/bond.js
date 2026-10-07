@@ -73,11 +73,23 @@ function entitledFace(app, pos, couponDate) {
   return app.positions.qtyAt(pos.id, couponDate, 'open') - unsettled.reduce((a, f) => a + f.dq, 0);
 }
 
+/**
+ * Move the accrued balance of a position to `target`, the difference going to coupon and interest income. The history
+ * line says which way it went: interest earned on a holding, or interest cost on a short (whose accrued coupon is owed).
+ */
+function trueUp(app, { book, unit, inst, pos, target, disposal = false }) {
+  const ccy = inst.trading_ccy;
+  const name = inst.symbol || inst.name;
+  const cost = money(target, ccy) < app.ledger.positionBalance(pos.id, 'accrued.asset', ccy);
+  const summary = disposal ? `${cost ? 'Interest cost' : 'Interest earned'} to disposal of ${name}` : cost ? `Interest cost accrued on ${name}` : `Interest accrued on ${name}`;
+  return trueUpAccrual(app, { book, unit, pos, inst, account: 'accrued.asset', pnlAccount: 'pnl.coupon', ccy, target: money(target, ccy), summary, type: 'accrual.coupon' });
+}
+
 /** True up the accrued balance as of `date` and remember that it stands at that date. */
-function accrueTo(app, { book, unit, inst, pos, date, summary, paying = null }) {
+function accrueTo(app, { book, unit, inst, pos, date, paying = null }) {
   const target = accrualTarget(app, inst, pos, date, { paying });
   if (target === null) return;
-  trueUpAccrual(app, { book, unit, pos, inst, account: 'accrued.asset', pnlAccount: 'pnl.coupon', ccy: inst.trading_ccy, target: money(target, inst.trading_ccy), summary, type: 'accrual.coupon' });
+  trueUp(app, { book, unit, inst, pos, target });
   const fresh = app.positions.get(pos.id);
   if (fresh.data.accruedThrough !== date) app.positions.setData(fresh, { accruedThrough: date });
 }
@@ -211,7 +223,7 @@ export const bond = {
         if (per100 === null) owed = null; // a floating coupon without its fixing: the balance waits for it
         else if (owed !== null) owed += (face * factorOf(inst) * per100) / 100;
       }
-      if (owed !== null) trueUpAccrual(app, { book, unit, pos, inst, account: 'accrued.asset', pnlAccount: 'pnl.coupon', ccy: inst.trading_ccy, target: money(owed, inst.trading_ccy), summary: `Interest earned to disposal of ${inst.symbol || inst.name}`, type: 'accrual.coupon' });
+      if (owed !== null) trueUp(app, { book, unit, inst, pos, target: owed, disposal: true });
       return undefined;
     }
     const next = nextCouponDate(t, addBusinessDays(today, -1, 'ALLDAYS'));
@@ -227,7 +239,7 @@ export const bond = {
     if (isZero(pos.qty) || inst.terms.couponSuspended) return;
     // The balance already stands at a later date (a coupon was paid before this end-of-day run caught up).
     if (pos.data?.accruedThrough && date < pos.data.accruedThrough) return;
-    accrueTo(app, { book, unit, inst, pos, date, summary: `Interest accrued on ${inst.symbol || inst.name}` });
+    accrueTo(app, { book, unit, inst, pos, date });
   },
   runTask(app, task, { book, unit, inst, pos }) {
     const { ledger, positions } = app;
@@ -251,7 +263,8 @@ export const bond = {
       }
       const amount = money((face * factorOf(inst) * per100) / 100, ccy);
       const eventId = ledger.post({
-        ...base, type: 'bond.coupon', summary: `Coupon ${amount >= 0 ? 'received' : 'paid'} on ${fmtQty(face)} ${inst.symbol || inst.name}: ${fmt(Math.abs(amount), ccy)}`,
+        // A short owes the coupon to the lender of the securities: it is paid, on the face sold short.
+        ...base, type: 'bond.coupon', summary: `Coupon ${amount >= 0 ? 'received' : 'paid'} on ${fmtQty(Math.abs(face))} ${inst.symbol || inst.name}${face < 0 ? ' sold short' : ''}: ${fmt(Math.abs(amount), ccy)}`,
         data: { couponDate, per100, face },
         entries: [{ account: 'cash', ccy, amount, positionId: pos.id }, { account: 'accrued.asset', ccy, amount: -amount, positionId: pos.id }],
       });
@@ -260,9 +273,9 @@ export const bond = {
       // then stands at the coupon date (or at the last end of day, if that is later because the coupon was paid late).
       const asOf = live.data?.accruedThrough && live.data.accruedThrough > couponDate ? live.data.accruedThrough : couponDate;
       if (!isZero(live.qty)) {
-        if (!inst.terms.couponSuspended) accrueTo(app, { book, unit, inst: app.instruments.get(inst.id), pos: live, date: asOf, paying: couponDate, summary: `Interest accrued on ${inst.symbol || inst.name}` });
+        if (!inst.terms.couponSuspended) accrueTo(app, { book, unit, inst: app.instruments.get(inst.id), pos: live, date: asOf, paying: couponDate });
       } else if (!unpaidCoupons(app, pos.id).some((c) => c.couponDate !== couponDate)) {
-        trueUpAccrual(app, { book, unit, pos: live, inst, account: 'accrued.asset', pnlAccount: 'pnl.coupon', ccy, target: 0, summary: `Interest earned to disposal of ${inst.symbol || inst.name}`, type: 'accrual.coupon' });
+        trueUp(app, { book, unit, inst, pos: live, target: 0, disposal: true });
       }
       scheduleNext();
       return { done: true, eventId };

@@ -181,3 +181,34 @@ test('bond maturity: a debt security trades only for settlement before its matur
   assert.equal(o.filledQty, 0);
   assert.equal(app.ledger.cash(acct.id, 'USD').settled, 2_000_000, 'nothing was bought');
 });
+
+test('bond short: collateral is marked on the market value including the accrued coupon the short owes', async () => {
+  const { app, clock } = makeApp({ at: '2027-02-09T15:00:00.000Z' }); // Tuesday
+  const { book, acct } = makeBook(app, { cash: 5_000_000, account: 2_000_000 });
+  // 4.5% semi-annual ACT/ACT, coupons 15 Feb and 15 Aug. 15 Aug 2026 to 15 Feb 2027 is 184 days.
+  const b = app.instruments.create({ productId: 'treasury_bond', name: 'Test 4.5% 15-Feb-2052', symbol: 'TEST52', marketView: 'US_CASH', venueType: 'otc', tradingCcy: 'USD', terms: { couponType: 'fixed', couponRate: 0.045, frequency: 2, maturity: '2052-02-15', issueDate: '2022-02-15', dayCount: 'ACT/ACT' } });
+  pin(app, b.id, 96.5);
+  const s = await trade(app, { bookId: book.id, unitId: acct.id, template: 'short', underlyingId: b.id, legs: [
+    { kind: 'borrow_sec', action: 'borrow_sec', instrumentId: b.id, qty: 1_000_000, purpose: 'financing', role: 'borrow', borrow: { available: true, feeRate: 0.004 } },
+    { kind: 'trade', action: 'sell_short', instrumentId: b.id, qty: 1_000_000, role: 'underlying', dependsOn: [1] },
+  ] });
+  assert.equal(s.status, 'open');
+  // Sold at 96.5: principal 965,000. Accrued to the 10 Feb settlement, 179 of 184 days: 22,500 x 179/184 = 21,888.59. No commission in this Book.
+  await goTo(app, clock, '2027-02-10T15:00:00.000Z');
+  const restricted = () => app.ledger.balance(acct.id, 'cash.restricted', 'USD');
+  // 102% x (965,000 clean + 21,888.59 accrued owed) = 1,006,626.36. Marking on the clean value alone (984,300.00) would
+  // have released 2,588.59 of the accrued interest received from the buyer into free cash.
+  assert.equal(restricted(), 1_006_626.36);
+  assert.equal(app.ledger.cash(acct.id, 'USD').settled, 2_000_000 - (1_006_626.36 - 986_888.59), 'the top-up came from settled cash');
+  // Tuesday 16 Feb (15 Feb is Washington's Birthday): the coupon is paid to the lender, the accrued owed is gone, and the collateral follows.
+  await goTo(app, clock, '2027-02-16T15:00:00.000Z');
+  const coupon = events(app, book, acct, 'bond.coupon');
+  assert.equal(coupon.length, 1);
+  assert.equal(coupon[0].summary, 'Coupon paid on 1,000,000 TEST52 sold short: 22,500.00 USD');
+  assert.equal(accrued(app, acct), 0);
+  assert.equal(restricted(), 984_300, '102% of the clean value once no accrued coupon is owed');
+  // Interest cost of the short so far: 22,500 paid less 21,888.59 received.
+  assert.equal(couponIncome(app, book, acct), -611.41);
+  assert.ok(events(app, book, acct, 'accrual.coupon').every((e) => /^Interest cost accrued on TEST52/.test(e.summary)), 'a short accrues an interest cost, and the history says so');
+  assert.deepEqual(ledgerImbalance(app), []);
+});

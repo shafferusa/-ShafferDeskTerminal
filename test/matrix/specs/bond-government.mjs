@@ -505,4 +505,287 @@ const treasuryBill = {
   ],
 };
 
-export default [treasuryNote, treasuryBill];
+
+// ---------------------------------------------------------------------------------------------
+// treasury_bond
+// ---------------------------------------------------------------------------------------------
+// A 30-year US Treasury bond SOLD SHORT against a securities borrow, carried over a coupon date,
+// covered in two parts. 4.5% semi-annual, ACT/ACT, coupons 15 February and 15 August, T+1 on the
+// US bond calendar. The 15 February 2027 coupon date is Washington's Birthday (bond and stock
+// markets closed): the coupon moves to Tuesday 16 February, and no end-of-day run happens on the 15th.
+//
+// What a short in a bond adds to the rules at the top of this file:
+//   - The seller receives principal plus accrued interest; both are owed back. The accrued coupon is
+//     a negative balance of Accrued income, and its daily growth is an interest COST in coupon and
+//     interest income. On the coupon date the short pays the full coupon to the lender.
+//   - Sale proceeds settle into restricted cash. At each end of day the collateral is marked to
+//     102% of the market value INCLUDING accrued interest (clean value at the last price plus the
+//     accrued coupon owed), topped up from or released to settled cash. A further 30% of the clean
+//     value at the last price is reserved from free cash.
+//   - The borrow fee, 0.40% a year here, accrues per calendar day on the clean value at that
+//     day's last price, ACT/360; when securities are returned during the day it is accrued up to
+//     that day on the current price, and it is paid when the borrow is fully returned.
+//   - A cover is paid from restricted cash first; what is left once the short is gone is released.
+//
+// Coupon periods: 15 Aug 2026 to 15 Feb 2027 is 184 days; 15 Feb 2027 to 15 Aug 2027 is 181 days.
+// A full coupon is 2.25 per 100 face: 22,500 on 1,000,000. Commission: 0.5 bp of clean principal.
+const EST_1730 = (d) => `${d}T22:30:00.000Z`; // 17:30 New York, after the 17:00 end-of-day cutoff
+const treasuryBond = {
+  productId: 'treasury_bond',
+  title: 'US Treasury 4.5% bond due 15 February 2052, sold short against a securities borrow, carried over a coupon and covered',
+  matrix: {
+    ticket: 'Instrument drawer, Trade tab: Sell short (adds the securities borrow leg), then Buy to cover; the Close button of the short position',
+    requiredFields: ['Account', 'Action (Sell short / Buy to cover)', 'Face amount', 'borrow assumption only when no borrow data is supplied'],
+    automaticInputs: ['bid, ask, last in % of par (quote fixture)', 'borrow availability and fee (borrow fixture standing in for Shaffer MarketData)', 'accrued interest received on the short sale and paid on the cover', 'collateral and margin from the Book short assumptions', 'settlement date', 'commission'],
+    manualInputs: ['none'],
+    settlement: 'T+1 on the US bond calendar; sale proceeds (principal plus accrued) settle into restricted cash; a cover is paid from restricted cash first',
+    lifecycle: 'Daily interest cost on the short and daily borrow fee; collateral marked each end of day to 102% of clean value plus accrued; coupon paid to the lender on the next payment day after a holiday coupon date; fee paid when the borrow is returned',
+    accounting: 'Short position at negative clean cost; accrued coupon owed as a negative accrued balance; the coupon paid and the accrued received and paid net to an interest cost in coupon and interest income; borrow fee under borrowing and funding; realized P&L on the covers',
+    collateral: 'Restricted cash = 102% of market value including accrued interest, marked daily; 30% margin reserve on the clean value; neither is buying power or withdrawable',
+  },
+  start: EST('2027-02-09'), // Tuesday
+  settlementCheck: { lag: 1, holidays: ['2027-02-15'] }, // Washington's Birthday
+  book: {
+    name: 'Matrix Treasury bond', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 5_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 2_000_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.5 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'treasury_bond', name: 'US Treasury Bond 4.5% 15-Feb-2052', symbol: 'UST-4.5-FEB52', marketView: 'US_CASH', venueType: 'otc', issuer: 'United States Treasury', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      terms: { couponType: 'fixed', couponRate: 0.045, frequency: 2, maturity: '2052-02-15', issueDate: '2022-02-15', dayCount: 'ACT/ACT', redemption: 100, minDenomination: 100 } },
+  },
+  quotes: { main: { bid: 96.5, ask: 96.5625, last: 96.53125, bidSize: 50_000_000, askSize: 50_000_000 } }, // 96-16, 96-18, 96-17
+  borrow: { main: { available: true, quantity: 25_000_000, feeRate: 0.004 } },
+  expectAtStart: { ...startState(2_000_000, 3_000_000), cash: { account: usdCash(2_000_000), treasury: usdCash(3_000_000) } },
+  steps: [
+    {
+      id: 'short', covers: ['borrow', 'short'], action: 'ticket', instrument: 'main', side: 'sell_short', qty: 1_000_000, as: 'short',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [
+            { kind: 'borrow_sec', action: 'borrow_sec', instrument: 'main', qty: 1_000_000, borrow: { available: true, feeRate: 0.004, dailyCost: 10.73, source: 'Test fixture' } }, // 1,000,000 x 96.53125% x 0.004 / 360 = 10.7257
+            { kind: 'trade', action: 'sell_short', instrument: 'main', qty: 1_000_000, estimate: 96.5, model: 'quoted-bid-ask', settleDate: '2027-02-10', calendar: 'USBOND', dependsOn: [1],
+              gross: 965_000, // 1,000,000 x 96.5 / 100
+              accrued: 21_888.59, // settles 10 Feb, 179 days into the 184-day period: 22,500 x 179/184 = 21,888.587
+              cash: 986_888.59, fees: 48.25, // 0.5 bp of 965,000
+              shortCollateral: { topUp: 19_737.77, marginHold: 296_066.58 } }, // 2% and 30% of the 986,888.59 proceeds
+          ],
+          cash: { USD: { purchases: 0, proceeds: 0, restrictedProceeds: 986_888.59, fees: 48.25, collateral: 19_737.77, margin: 296_066.58, required: 315_852.60, available: 2_000_000, shortfall: 0 } }, // 48.25 + 19,737.77 + 296,066.58
+        },
+        result: { status: 'open', orders: [
+          { kind: 'borrow_sec', status: 'filled', filledQty: 1_000_000 },
+          { kind: 'trade', action: 'sell_short', status: 'filled', filledQty: 1_000_000, avgPrice: 96.5, fills: [{ qty: 1_000_000, price: 96.5, model: 'quoted-bid-ask', settleDate: '2027-02-10', source: 'Test fixture' }] },
+        ] },
+        events: [{ type: 'strategy.submitted' }, { type: 'secloan.borrow', summary: 'Borrowed 1,000,000 UST-4.5-FEB52 at a fee of 0.400% p.a.' }, { type: 'trade.fill', summary: 'Sold short 1,000,000 UST-4.5-FEB52 @ 96.50 USD', owner: 'account', date: '2027-02-09' }],
+        // Proceeds 986,888.59 less 48.25 commission are owed to the Account and will arrive as restricted cash.
+        // Reserve: 30% x 1,000,000 x 96.53125% = 289,593.75. Free cash to trade: 2,000,000 - 289,593.75.
+        cash: { account: { USD: { settled: 2_000_000, unsettled: 986_840.34, restricted: 0, reserved: 289_593.75, availableToTrade: 1_710_406.25, availableToWithdraw: 1_710_406.25 } } },
+        positions: [
+          { instrument: 'borrow:main', lot: 'short', owner: 'account', direction: 'securities borrowed', qty: 1_000_000, value: 965_312.50, accrued: 0 }, // clean value at the last price
+          { instrument: 'main', lot: 'short', owner: 'account', direction: 'short', qty: -1_000_000, avgCost: 96.5, cost: -965_000, price: 96.53125, value: -965_312.50, unrealized: -312.50, restrictedCash: 0,
+            accrued: -21_888.59 }, // the accrued coupon received from the buyer is owed
+        ],
+        holdings: { main: { long: 0, short: 1_000_000, net: -1_000_000 } },
+        pending: [{ instrument: 'main', dueDate: '2027-02-10', amount: 986_840.34, into: 'cash.restricted' }],
+        // 15 Feb 2027 is a holiday: the coupon is due 16 Feb. The borrow fee is paid on the first business day of March. 15 Feb 2052 is a Thursday.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-02-16', status: 'pending' }, { type: 'secloan.fee', instrument: 'borrow:main', dueDate: '2027-03-01', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2052-02-15', status: 'pending' }],
+        borrowings: [{ owner: 'account', family: 'secloan', instrument: 'main', lot: 'short', qty: 1_000_000, value: 965_312.50, rate: 0.004, accrued: 0, collateralCash: null, nextPayment: '2027-03-01' }], // no collateral until the sale settles
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -48.25, fees: 0, borrowFunding: 0, unrealized: -312.50, total: -360.75 } },
+        nav: { account: 1_999_639.25, book: 4_999_639.25 },
+        balance: { account: { cash: 2_000_000, receivable: 986_840.34, accruedIncome: -21_888.59, positions: -965_312.50, netAssets: 1_999_639.25 } },
+      },
+    },
+    {
+      id: 'settle-short', covers: ['settlement', 'collateral mark'], action: 'clock', to: EST('2027-02-10'),
+      expect: {
+        // Collateral required: 102% x (965,312.50 clean + 21,888.59 accrued) = 102% x 987,201.09 = 1,006,945.11.
+        // Proceeds received 986,840.34. Top-up from settled cash 20,104.77.
+        events: [
+          { type: 'settlement.receive', summary: 'received 986,840.34 USD into restricted cash' },
+          { type: 'collateral.mark', summary: 'Short collateral on UST-4.5-FEB52 marked to market: posted 20,104.77 USD', cash: { USD: -20_104.77 } },
+        ],
+        cash: { account: { USD: { settled: 1_979_895.23, unsettled: 0, restricted: 1_006_945.11, reserved: 289_593.75, availableToTrade: 1_690_301.48, availableToWithdraw: 1_690_301.48 } } },
+        positions: [{ instrument: 'borrow:main', qty: 1_000_000, value: 965_312.50 }, { instrument: 'main', qty: -1_000_000, value: -965_312.50, unrealized: -312.50, restrictedCash: 1_006_945.11, accrued: -21_888.59 }],
+        pending: [],
+        borrowings: [{ instrument: 'main', qty: 1_000_000, value: 965_312.50, accrued: 0, collateralCash: 1_006_945.11 }],
+        balance: { account: { cash: 1_979_895.23, restricted: 1_006_945.11, receivable: null, accruedIncome: -21_888.59, positions: -965_312.50, netAssets: 1_999_639.25 } },
+      },
+    },
+    {
+      id: 'fee-day-1', covers: 'borrow fee', action: 'clock', to: EST_1730('2027-02-10'),
+      expect: {
+        // End of day 10 Feb, the settlement date: the accrued owed to 10 Feb is what was received with the sale; nothing more yet. One day of fee: 10.7257.
+        events: [{ type: 'accrual.fee', summary: 'Borrow fee accrued on 1,000,000 UST-4.5-FEB52: 10.73 USD' }],
+        positions: [{ instrument: 'borrow:main', qty: 1_000_000, accrued: -10.73 }, { instrument: 'main', qty: -1_000_000, accrued: -21_888.59 }],
+        borrowings: [{ instrument: 'main', qty: 1_000_000, accrued: 10.73, costToDate: 10.73, collateralCash: 1_006_945.11 }],
+        pnl: { account: { borrowFunding: -10.73, total: -371.48 } },
+        nav: { account: 1_999_628.52, book: 4_999_628.52 },
+        balance: { account: { accruedExpense: 10.73, netAssets: 1_999_628.52 } },
+      },
+    },
+    {
+      id: 'carry-day-2', covers: ['accrual', 'borrow fee', 'collateral mark'], action: 'clock', to: EST_1730('2027-02-11'),
+      expect: {
+        // Fee: two days 21.4514 -> 21.45, so 10.72 is added.
+        // Interest owed to 11 Feb: 22,500 x 180/184 = 22,010.87; cost of the day 122.28.
+        // Collateral: 102% x (965,312.50 + 22,010.87) = 1,007,069.84; held 1,006,945.11; top-up 124.73.
+        events: [
+          { type: 'accrual.fee', summary: 'Borrow fee accrued on 1,000,000 UST-4.5-FEB52: 10.72 USD' },
+          { type: 'accrual.coupon', summary: 'Interest cost accrued on UST-4.5-FEB52: 122.28 USD' },
+          { type: 'collateral.mark', summary: 'Short collateral on UST-4.5-FEB52 marked to market: posted 124.73 USD', cash: { USD: -124.73 } },
+        ],
+        cash: { account: { USD: { settled: 1_979_770.50, restricted: 1_007_069.84, reserved: 289_593.75, availableToTrade: 1_690_176.75, availableToWithdraw: 1_690_176.75 } } },
+        positions: [{ instrument: 'borrow:main', qty: 1_000_000, accrued: -21.45 }, { instrument: 'main', qty: -1_000_000, restrictedCash: 1_007_069.84, accrued: -22_010.87 }],
+        borrowings: [{ instrument: 'main', qty: 1_000_000, accrued: 21.45, costToDate: 21.45, collateralCash: 1_007_069.84 }],
+        pnl: { account: { couponInterest: -122.28, borrowFunding: -21.45, total: -504.48 } }, // -48.25 - 122.28 - 21.45 - 312.50
+        nav: { account: 1_999_495.52, book: 4_999_495.52 },
+        balance: { account: { cash: 1_979_770.50, restricted: 1_007_069.84, accruedIncome: -22_010.87, accruedExpense: 21.45, netAssets: 1_999_495.52 } },
+      },
+    },
+    {
+      // Tuesday 16 Feb, after the long weekend. In order: the coupon of 15 Feb is paid to the lender, 22,500 on the
+      // 1,000,000 sold short; the accrued owed, 22,010.87, falls 489.13 short of it (the four days from 11 to 15 Feb);
+      // then the end-of-day run of Friday 12 Feb, the last business day: fee for three days in all 32.1771 -> 32.18,
+      // so 10.73 is added; collateral with no accrued owed 102% x 965,312.50 = 984,618.75, held 1,007,069.84,
+      // 22,451.09 released.
+      id: 'coupon-paid-to-lender', covers: ['coupon', 'collateral mark', 'borrow fee'], action: 'clock', to: EST('2027-02-16'),
+      expect: {
+        events: [
+          { type: 'bond.coupon', summary: 'Coupon paid on 1,000,000 UST-4.5-FEB52 sold short: 22,500.00 USD', cash: { USD: -22_500 }, owner: 'account', date: '2027-02-16' },
+          { type: 'accrual.coupon', summary: 'Interest cost accrued on UST-4.5-FEB52: 489.13 USD' },
+          { type: 'accrual.fee', summary: 'Borrow fee accrued on 1,000,000 UST-4.5-FEB52: 10.73 USD' },
+          { type: 'collateral.mark', summary: 'Short collateral on UST-4.5-FEB52 marked to market: released 22,451.09 USD', cash: { USD: 22_451.09 } },
+        ],
+        cash: { account: { USD: { settled: 1_979_721.59, restricted: 984_618.75, reserved: 289_593.75, availableToTrade: 1_690_127.84, availableToWithdraw: 1_690_127.84 } } }, // 1,979,770.50 - 22,500 + 22,451.09
+        positions: [{ instrument: 'borrow:main', qty: 1_000_000, accrued: -32.18 }, { instrument: 'main', qty: -1_000_000, restrictedCash: 984_618.75, accrued: 0 }],
+        lifecycle: [{ type: 'secloan.fee', instrument: 'borrow:main', dueDate: '2027-03-01', status: 'pending' }, { type: 'bond.coupon', instrument: 'main', dueDate: '2027-08-16', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2052-02-15', status: 'pending' }], // 15 Aug 2027 is a Sunday
+        borrowings: [{ instrument: 'main', qty: 1_000_000, accrued: 32.18, costToDate: 32.18, collateralCash: 984_618.75 }],
+        // Interest cost so far: 22,500 paid less 21,888.59 received with the sale = 611.41.
+        pnl: { account: { couponInterest: -611.41, borrowFunding: -32.18, total: -1_004.34 } },
+        nav: { account: 1_998_995.66, book: 4_998_995.66 },
+        balance: { account: { cash: 1_979_721.59, restricted: 984_618.75, accruedIncome: null, accruedExpense: 32.18, netAssets: 1_998_995.66 } },
+      },
+    },
+    {
+      id: 'quote-down', action: 'quote', instrument: 'main', quote: { bid: 95.75, ask: 95.8125, last: 95.78125, bidSize: 50_000_000, askSize: 50_000_000 }, // 95-24, 95-26, 95-25
+      expect: {
+        positions: [{ instrument: 'borrow:main', qty: 1_000_000, value: 957_812.50 }, { instrument: 'main', qty: -1_000_000, price: 95.78125, value: -957_812.50, unrealized: 7_187.50 }], // 965,000 - 957,812.50
+        borrowings: [{ instrument: 'main', qty: 1_000_000, value: 957_812.50, accrued: 32.18 }],
+        pnl: { account: { unrealized: 7_187.50, total: 6_495.66 } }, // -48.25 - 611.41 - 32.18 + 7,187.50
+        nav: { account: 2_006_495.66, book: 5_006_495.66 },
+        balance: { account: { positions: -957_812.50, netAssets: 2_006_495.66 } },
+      },
+    },
+    {
+      // Settled 1,979,721.59 plus restricted 984,618.75 is 2,964,340.34. Only 1,979,721.59 - 289,593.75 reserve = 1,690,127.84 can leave.
+      id: 'withdraw-restricted-cash', covers: 'restricted proceeds', action: 'transfer', from: 'account', to: 'treasury', ccy: 'USD', amount: 1_900_000,
+      status: 'blocked', reason: 'Restricted collateral and the margin reserve cannot leave the Account.',
+      expect: { refused: 'Alpha has 1,690,127.84 USD of settled USD available; 1,900,000.00 USD requested' },
+    },
+    {
+      id: 'cover-part', covers: ['cover', 'return', 'borrow fee'], action: 'ticket', instrument: 'main', side: 'buy_to_cover', qty: 400_000, from: 'short',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [
+          { kind: 'trade', action: 'buy_to_cover', qty: 400_000, estimate: 95.8125, settleDate: '2027-02-17',
+            gross: 383_250, // 400,000 x 95.8125 / 100
+            accrued: 99.45, // settles 17 Feb, 2 days into the 181-day period: 9,000 x 2/181 = 99.4475
+            cash: -383_349.45, fees: 19.16 }, // 0.5 bp of 383,250 = 19.1625
+          { kind: 'return_sec', action: 'return_sec', qty: 400_000, dependsOn: [1] },
+        ] },
+        result: { status: 'open', orders: [{ action: 'buy_to_cover', status: 'filled', filledQty: 400_000, avgPrice: 95.8125 }, { kind: 'return_sec', status: 'filled', filledQty: 400_000 }] },
+        // Realized: 400,000 x (96.5 - 95.8125)% = 2,750. Fee to today, four days since 12 Feb at the current price:
+        // 4 x 1,000,000 x 95.78125% x 0.004 / 360 = 42.5694; in all 32.1771 + 42.5694 = 74.7465 -> 74.75, so 42.57 is added.
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Bought to cover 400,000 UST-4.5-FEB52 @ 95.8125 USD (realized 2,750.00 USD)' },
+          { type: 'accrual.fee', summary: 'Borrow fee accrued on 1,000,000 UST-4.5-FEB52: 42.57 USD' },
+          { type: 'secloan.return', summary: 'Returned 400,000 borrowed UST-4.5-FEB52' },
+        ],
+        // Owed for the cover: 383,349.45 + 19.16 = 383,368.61. Reserve: 30% x 600,000 x 95.78125% = 172,406.25.
+        cash: { account: { USD: { settled: 1_979_721.59, unsettled: -383_368.61, restricted: 984_618.75, reserved: 172_406.25, availableToTrade: 1_423_946.73, availableToWithdraw: 1_423_946.73 } } }, // 1,979,721.59 - 383,368.61 - 172,406.25
+        positions: [
+          { instrument: 'borrow:main', qty: 600_000, value: 574_687.50, accrued: -74.75 }, // 600,000 x 95.78125%
+          { instrument: 'main', qty: -600_000, cost: -579_000, avgCost: 96.5, price: 95.78125, value: -574_687.50, unrealized: 4_312.50, restrictedCash: 984_618.75,
+            accrued: 99.45 }, // the interest bought with the cover; today's interest on the short is booked at the end of the day
+        ],
+        holdings: { main: { long: 0, short: 600_000, net: -600_000 } },
+        pending: [{ instrument: 'main', dueDate: '2027-02-17', amount: -383_368.61, into: 'cash.restricted' }],
+        borrowings: [{ instrument: 'main', qty: 600_000, value: 574_687.50, accrued: 74.75, costToDate: 74.75, collateralCash: 984_618.75 }],
+        pnl: { account: { realized: 2_750, couponInterest: -611.41, borrowFunding: -74.75, commissions: -67.41, unrealized: 4_312.50, total: 6_308.93 } }, // 48.25 + 19.16
+        nav: { account: 2_006_308.93, book: 5_006_308.93 },
+        balance: { account: { cash: 1_979_721.59, restricted: 984_618.75, accruedIncome: 99.45, positions: -574_687.50, payable: 383_368.61, accruedExpense: 74.75, netAssets: 2_006_308.93 } },
+      },
+    },
+    {
+      id: 'settle-cover-part', covers: ['settlement', 'accrual', 'collateral mark'], action: 'clock', to: EST('2027-02-17'),
+      expect: {
+        // The cover is paid from restricted cash: 984,618.75 - 383,368.61 = 601,250.14 left.
+        // End of day 16 Feb: 1,000,000 was still short on a settled basis: 22,500 x 1/181 = 124.3094 owed, less the 99.4475
+        // bought with the cover: 24.86 owed. On the books +99.45: interest cost 124.31.
+        // Collateral for the 600,000 still short: 102% x (574,687.50 + 24.86) = 586,206.61. The surplus 15,043.53 is released.
+        events: [
+          { type: 'settlement.pay', summary: 'paid 383,368.61 USD from restricted cash' },
+          { type: 'accrual.coupon', summary: 'Interest cost accrued on UST-4.5-FEB52: 124.31 USD' },
+          { type: 'collateral.mark', summary: 'Short collateral on UST-4.5-FEB52 marked to market: released 15,043.53 USD', cash: { USD: 15_043.53 } },
+        ],
+        cash: { account: { USD: { settled: 1_994_765.12, unsettled: 0, restricted: 586_206.61, reserved: 172_406.25, availableToTrade: 1_822_358.87, availableToWithdraw: 1_822_358.87 } } },
+        positions: [{ instrument: 'borrow:main', qty: 600_000 }, { instrument: 'main', qty: -600_000, restrictedCash: 586_206.61, accrued: -24.86 }],
+        borrowings: [{ instrument: 'main', qty: 600_000, accrued: 74.75, collateralCash: 586_206.61 }],
+        pending: [],
+        pnl: { account: { couponInterest: -735.72, total: 6_184.62 } },
+        nav: { account: 2_006_184.62, book: 5_006_184.62 },
+        balance: { account: { cash: 1_994_765.12, restricted: 586_206.61, accruedIncome: -24.86, payable: null, netAssets: 2_006_184.62 } },
+      },
+    },
+    {
+      id: 'cover-rest', covers: ['cover', 'return', 'close', 'borrow fee'], action: 'close', lot: 'short', scope: 'position', percent: 100, // the Close button on the short position itself
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [
+          { kind: 'trade', action: 'buy_to_cover', qty: 600_000, estimate: 95.8125, settleDate: '2027-02-18',
+            gross: 574_875, // 600,000 x 95.8125 / 100
+            accrued: 223.76, // settles 18 Feb, 3 days into the period: 13,500 x 3/181 = 223.7569
+            cash: -575_098.76, fees: 28.74 }, // 0.5 bp of 574,875 = 28.74375
+          { kind: 'return_sec', action: 'return_sec', qty: 600_000, dependsOn: [1] },
+        ] },
+        result: { status: 'closed', orders: [{ action: 'buy_to_cover', status: 'filled', filledQty: 600_000, avgPrice: 95.8125 }, { kind: 'return_sec', status: 'filled', filledQty: 600_000 }] },
+        // Realized: 579,000 - 574,875 = 4,125. Interest: 24.86 was owed and 223.76 is paid with the cover: 198.90 more cost.
+        // Fee for one more day on 600,000: 6.3854; in all 81.1319 -> 81.13, so 6.38 is added, and the whole 81.13 is paid now.
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Bought to cover 600,000 UST-4.5-FEB52 @ 95.8125 USD (realized 4,125.00 USD)' },
+          { type: 'accrual.coupon', summary: 'Interest cost to disposal of UST-4.5-FEB52: 198.90 USD' },
+          { type: 'accrual.fee', summary: 'Borrow fee accrued on 600,000 UST-4.5-FEB52: 6.38 USD' },
+          { type: 'secloan.return', summary: 'Returned 600,000 borrowed UST-4.5-FEB52' },
+          { type: 'interest.payment', summary: /Borrow fee paid on Borrow of UST-4\.5-FEB52.*: 81\.13 USD/, cash: { USD: -81.13 } },
+        ],
+        cash: { account: { USD: { settled: 1_994_683.99, unsettled: -575_127.50, restricted: 586_206.61, reserved: 0, availableToTrade: 1_419_556.49, availableToWithdraw: 1_419_556.49 } } }, // 1,994,765.12 - 81.13; 575,098.76 + 28.74 owed
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', dueDate: '2027-02-18', amount: -575_127.50, into: 'cash.restricted' }],
+        lifecycle: [],
+        borrowings: [],
+        // Interest cost in all: 22,500 coupon + 99.45 + 223.76 paid on the covers - 21,888.59 received on the sale = 934.62.
+        pnl: { account: { realized: 6_875, couponInterest: -934.62, borrowFunding: -81.13, commissions: -96.15, unrealized: 0, total: 5_763.10 } }, // 2,750 + 4,125; 67.41 + 28.74
+        nav: { account: 2_005_763.10, book: 5_005_763.10 },
+        balance: { account: { cash: 1_994_683.99, restricted: 586_206.61, positions: null, accruedIncome: null, payable: 575_127.50, accruedExpense: null, netAssets: 2_005_763.10 } },
+      },
+    },
+    {
+      id: 'settle-cover-rest', covers: ['settlement', 'collateral release'], action: 'clock', to: EST('2027-02-18'),
+      expect: {
+        // 586,206.61 - 575,127.50 = 11,079.11 of collateral is left with no short to secure: it is released.
+        events: [
+          { type: 'settlement.pay', summary: 'paid 575,127.50 USD from restricted cash' },
+          { type: 'collateral.mark', summary: 'Short collateral on UST-4.5-FEB52 marked to market: released 11,079.11 USD', cash: { USD: 11_079.11 } },
+        ],
+        cash: { account: { USD: { settled: 2_005_763.10, unsettled: 0, restricted: 0, reserved: 0, availableToTrade: 2_005_763.10, availableToWithdraw: 2_005_763.10 } }, treasury: { USD: { settled: 3_000_000 } } },
+        pending: [],
+        balance: { account: { cash: 2_005_763.10, restricted: null, payable: null, assets: 2_005_763.10, liabilities: 0, netAssets: 2_005_763.10 } },
+      },
+    },
+  ],
+};
+
+export default [treasuryNote, treasuryBill, treasuryBond];
