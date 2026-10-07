@@ -255,7 +255,7 @@ function LegsEditor({ legs, onChange, ccy }) {
         <${Field} label="Currency"><${Text} value=${l.ccy} onInput=${(v) => set(i, { ccy: v.toUpperCase() })} /><//>
         <${Field} label="Notional factor" hint="1 = the trade notional"><${Num} value=${l.notionalFactor ?? 1} onInput=${(v) => set(i, { notionalFactor: v })} /><//>
         ${l.type === 'fixed' ? html`<${Field} label="Fixed rate (decimal)" hint="0.04 = 4%"><${Num} value=${l.rate} onInput=${(v) => set(i, { rate: v })} /><//>` : null}
-        ${l.type === 'fixed' && !l.months ? html`<${Field} label="Compounding" hint="For a leg paid once, at maturity"><${Select} value=${l.compounding || 'none'} onChange=${(v) => set(i, { compounding: v === 'none' ? null : v })} options=${opt([['none', 'None: rate x time'], ['annual', 'Annual: (1 + rate)^years - 1']])} /><//>` : null}
+        ${l.type === 'fixed' && !l.months ? html`<${Field} label="Compounding" hint="Annual: (1 + rate)^years - 1"><${Select} value=${l.compounding || 'none'} onChange=${(v) => set(i, { compounding: v === 'none' ? null : v })} options=${opt([['none', 'None (simple)'], ['annual', 'Annual']])} /><//>` : null}
         ${['float', 'ois', 'cap', 'floor'].includes(l.type) ? html`<${Field} label="Index (rate code)" hint="Financing benchmark"><${Text} value=${l.index} onInput=${(v) => set(i, { index: v })} /><//>` : null}
         ${['float', 'ois'].includes(l.type) ? html`<${Field} label="Spread (decimal)"><${Num} value=${l.spread} onInput=${(v) => set(i, { spread: v })} /><//>` : null}
         ${['cap', 'floor'].includes(l.type) ? html`<${Field} label="Strike rate (decimal)"><${Num} value=${l.strike} onInput=${(v) => set(i, { strike: v })} /><//>` : null}
