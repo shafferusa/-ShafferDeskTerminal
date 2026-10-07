@@ -33,3 +33,4 @@
 - 2026-10-07T03:11Z | fu1 | +0.2 | perpetual_future passes at engine, API and browser
 - 2026-10-07T09:48Z | coord | +0 | restarting bonds, loans, rate swaps and failure-recovery from their notes; working until the Fable limit
 - 2026-10-07T09:49Z | b1 | +0 | resumed; notes brought up to date (five bond products done, fixed ACT/365 coupon amount)
+- 2026-10-07T09:52Z | b1 | +0.2 | foreign_gov_bond passes at engine, API and browser (JGB in yen: ACT/365 accrual, equal coupons, Tokyo holiday, FX effects)

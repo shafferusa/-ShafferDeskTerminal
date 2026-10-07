@@ -212,3 +212,19 @@ test('bond short: collateral is marked on the market value including the accrued
   assert.ok(events(app, book, acct, 'accrual.coupon').every((e) => /^Interest cost accrued on TEST52/.test(e.summary)), 'a short accrues an interest cost, and the history says so');
   assert.deepEqual(ledgerImbalance(app), []);
 });
+
+test('bond coupon: a fixed coupon on ACT/365 pays the rate divided by the frequency; the day count governs accrued interest only', async () => {
+  const { accruedPer100, couponPer100 } = await import('../../server/quant/bond.js');
+  // A Japanese government bond: 1.4%, semi-annual on 20 June and 20 December, accrued on ACT/365.
+  const jgb = { couponType: 'fixed', couponRate: 0.014, frequency: 2, maturity: '2035-12-20', dayCount: 'ACT/365' };
+  // 20 June to 20 December 2026 is 183 days, 20 December to 20 June 2027 is 182: both coupons are 0.70 per 100.
+  const near0 = (a, b) => assert.ok(Math.abs(a - b) < 1e-12, `${a} vs ${b}`);
+  near0(couponPer100(jgb, '2026-12-20'), 0.7);
+  near0(couponPer100(jgb, '2027-06-20'), 0.7);
+  // Accrued interest counts actual days over 365: 153 days to 20 November 2026.
+  assert.ok(Math.abs(accruedPer100(jgb, '2026-11-20') - (1.4 * 153) / 365) < 1e-12);
+  // A floating coupon on ACT/365, and any coupon on the money-market basis ACT/360, pays for the actual days of its period.
+  const frn = { couponType: 'float', currentCoupon: 0.014, frequency: 2, maturity: '2035-12-20', dayCount: 'ACT/365' };
+  assert.ok(Math.abs(couponPer100(frn, '2026-12-20') - (1.4 * 183) / 365) < 1e-12);
+  assert.ok(Math.abs(couponPer100({ ...jgb, dayCount: 'ACT/360' }, '2026-12-20') - (1.4 * 183) / 360) < 1e-12);
+});

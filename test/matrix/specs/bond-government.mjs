@@ -1166,4 +1166,214 @@ const foreignGovBill = {
   ],
 };
 
-export default [treasuryNote, treasuryBill, treasuryBond, strips, foreignGovBill];
+
+// ---------------------------------------------------------------------------------------------
+// foreign_gov_bond
+// ---------------------------------------------------------------------------------------------
+// A 10-year Japanese government bond in yen, a currency with no minor unit, in a Book that reports
+// in US dollars. 1.4%, coupons 20 June and 20 December, T+1 on the Tokyo calendar, traded in
+// multiples of 50,000 yen. Its accrued interest is counted on ACT/365 (face x 1.4% x days / 365)
+// while each coupon is exactly half the annual rate: 0.70 per 100, whatever the length of the period.
+// Days from the 20 June 2026 coupon date: to 20 Nov 153, to 23 Nov 156.
+// Monday 23 November 2026 is Labour Thanksgiving Day: Tokyo is closed, New York is open, and
+// interest accrues all the same. The 20 December coupon date is a Sunday: paid Monday 21 December.
+//
+// Reporting currency (see foreign_gov_bill): every posting is translated at the rate in force when
+// it is booked and rounded to the cent; balances and unrealized P&L at the current rate.
+// USD/JPY is 125 at the start (one yen is 0.008 dollars) and 128 later (0.0078125).
+// Commission: 0.1 bp of principal. Every yen amount is a whole number.
+const foreignGovBond = {
+  productId: 'foreign_gov_bond',
+  title: 'Japanese government bond 1.4% due 20 December 2035 in yen, reported in US dollars: ACT/365 accrual, a Tokyo holiday, a coupon, FX effects',
+  matrix: {
+    ...BOND_TICKET,
+    manualInputs: ['none'],
+    settlement: 'T+1 on the Tokyo calendar (venue country JP); amounts in whole yen',
+    lifecycle: 'Daily accrual on ACT/365, on a Tokyo holiday too; semi-annual coupon of exactly half the annual rate, paid on the next Tokyo business day after a Sunday coupon date',
+    accounting: 'Yen position, cash, accrued interest and settlement; US dollar figures at the current rate for balances and unrealized P&L, at the booking rate for income, commission and realized P&L; FX effects reported separately',
+    collateral: 'None for a long position',
+  },
+  start: EST('2026-11-19'), // Thursday
+  settlementCheck: { lag: 1, holidays: ['2026-11-23'] }, // Labour Thanksgiving Day in Japan
+  book: {
+    name: 'Matrix Japanese government bond', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 1_000_000 }, { ccy: 'JPY', amount: 300_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'JPY', amount: 250_000_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.1 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  fx: { 'USD/JPY': 125 },
+  instruments: {
+    main: { productId: 'foreign_gov_bond', name: 'Japan Government Bond 1.4% 20-Dec-2035', symbol: 'JGB-1.4-DEC35', marketView: 'FOREIGN_CASH', venueType: 'otc', venueCountry: 'JP', issuer: 'Government of Japan', domicile: 'JP', underlyingGeo: 'JP', tradingCcy: 'JPY', multiplier: 0.01,
+      terms: { couponType: 'fixed', couponRate: 0.014, frequency: 2, maturity: '2035-12-20', issueDate: '2025-12-20', dayCount: 'ACT/365', redemption: 100, minDenomination: 50_000 } },
+  },
+  quotes: { main: { bid: 98.44, ask: 98.46, last: 98.45, bidSize: 5_000_000_000, askSize: 5_000_000_000 } }, // yen per 100 yen face
+  expectAtStart: {
+    ...startState(2_000_000, 1_400_000), // 250,000,000 JPY / 125; 1,000,000 USD + 50,000,000 JPY / 125
+    cash: { account: { JPY: idle(250_000_000) }, treasury: { USD: idle(1_000_000), JPY: idle(50_000_000) } },
+  },
+  steps: [
+    {
+      id: 'odd-denomination', covers: 'minimum denomination', action: 'ticket', instrument: 'main', side: 'buy', qty: 200_030_000,
+      status: 'blocked', reason: 'The bond trades in multiples of 50,000 yen face; 200,030,000 is not one.',
+      expect: { refused: 'quantity must be a multiple of 50000' },
+    },
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 200_000_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 200_000_000, estimate: 98.46, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2026-11-20', calendar: 'JP',
+            gross: 196_920_000, // 200,000,000 x 98.46 / 100
+            accrued: 1_173_699, // settles 20 Nov, 153 days: 200,000,000 x 1.4% x 153/365 = 1,173,698.63
+            cash: -198_093_699, fees: 1_969 }], // 0.1 bp of 196,920,000 = 1,969.2
+          cash: { JPY: { purchases: 198_093_699, fees: 1_969, required: 198_095_668, available: 250_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 200_000_000, avgPrice: 98.46, fills: [{ qty: 200_000_000, price: 98.46, model: 'quoted-bid-ask', settleDate: '2026-11-20', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 200,000,000 JGB-1.4-DEC35 @ 98.46 JPY', owner: 'account', date: '2026-11-19' }],
+        cash: { account: { JPY: { settled: 250_000_000, unsettled: -198_095_668, availableToTrade: 51_904_332 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 200_000_000, avgCost: 98.46, cost: 196_920_000, price: 98.45,
+          value: 196_900_000, unrealized: -20_000, accrued: 1_173_699, priceSource: 'Test fixture' }], // yen
+        holdings: { main: { long: 200_000_000, short: 0, net: 200_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-11-20', amount: -198_095_668, ccy: 'JPY', into: 'cash' }],
+        // 20 Dec 2026 is a Sunday: the coupon is due Monday 21 Dec. 20 Dec 2035 is a Thursday.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2026-12-21', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2035-12-20', status: 'pending' }],
+        // In dollars at 0.008: commission 1,969 x 0.008 = 15.75; unrealized -20,000 x 0.008 = -160.
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -15.75, fees: 0, borrowFunding: 0, unrealized: -160, fx: 0, total: -175.75 } },
+        nav: { account: 1_999_824.25, book: 3_399_824.25 }, // (250,000,000 - 198,095,668 + 196,900,000 + 1,173,699) x 0.008
+        balance: { account: { cash: 2_000_000, accruedIncome: 9_389.59, positions: 1_575_200, payable: 1_584_765.34, assets: 3_584_589.59, liabilities: 1_584_765.34, netAssets: 1_999_824.25, // 1,173,699 x 0.008 = 9,389.592; 198,095,668 x 0.008 = 1,584,765.344
+          local: { JPY: { cash: 250_000_000, accruedIncome: 1_173_699, positions: 196_900_000, payable: 198_095_668 } } } },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EST('2026-11-20'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 198,095,668 JPY from settled cash', cash: { JPY: -198_095_668 }, date: '2026-11-20' }],
+        cash: { account: { JPY: { settled: 51_904_332, unsettled: 0, availableToTrade: 51_904_332 } } },
+        pending: [],
+        balance: { account: { cash: 415_234.66, payable: null, assets: 1_999_824.25, liabilities: 0, local: { JPY: { cash: 51_904_332, payable: null } } } }, // 51,904,332 x 0.008 = 415,234.656
+      },
+    },
+    {
+      // Monday 23 November, 17:30 New York: Tokyo was closed all day, New York was not. End of day 23 Nov: interest to 23 Nov,
+      // 156 days: 2,800,000 x 156/365 = 1,196,712.33 -> 1,196,712. Income 23,013 yen for the three days since settlement;
+      // in dollars 23,013 x 0.008 = 184.10.
+      id: 'tokyo-holiday', covers: ['market holiday', 'accrual'], action: 'clock', to: EST_1730('2026-11-23'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on JGB-1.4-DEC35: 23,013 JPY', date: '2026-11-23' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 200_000_000, accrued: 1_196_712 }],
+        pnl: { account: { couponInterest: 184.10, total: 8.35 } },
+        nav: { account: 2_000_008.35, book: 3_400_008.35 },
+        // Each line is its yen balance at the rate, rounded: 1,196,712 x 0.008 = 9,573.70. The total is the yen total at the rate, rounded.
+        balance: { account: { accruedIncome: 9_573.70, assets: 2_000_008.35, netAssets: 2_000_008.35, local: { JPY: { accruedIncome: 1_196_712 } } } },
+      },
+    },
+    {
+      id: 'yen-weakens', covers: 'fx', action: 'fx_rate', pair: 'USD/JPY', rate: 128, // one yen is now 0.0078125 dollars
+      expect: {
+        // Net assets 250,001,044 yen x 0.0078125 = 1,953,133.16. Unrealized -20,000 x 0.0078125 = -156.25.
+        // FX effects: the yen balances stand in the books at what they were booked at, cash 415,234.66 + position at cost
+        // 1,575,360.00 + accrued 9,573.69 = 2,000,168.35 dollars; at the new rate the same 250,021,044 yen are worth
+        // 1,953,289.41: the difference is -46,878.94 (to the cent, from the unrounded 1,953,289.40625).
+        pnl: { account: { couponInterest: 184.10, commissions: -15.75, unrealized: -156.25, fx: -46_878.94, total: -46_866.84 }, book: { fx: -56_253.94 } }, // Treasury's 50,000,000 yen: 390,625 - 400,000
+        nav: { account: 1_953_133.16, treasury: 1_390_625, book: 3_343_758.16 },
+        balance: { account: { cash: 405_502.59, accruedIncome: 9_349.31, positions: 1_538_281.25, assets: 1_953_133.16, netAssets: 1_953_133.16 } }, // 51,904,332; 1,196,712; 196,900,000, each x 0.0078125
+      },
+    },
+    {
+      id: 'coupon', covers: 'coupon', action: 'clock', to: EST('2026-12-21'),
+      expect: {
+        // The coupon of 20 Dec: half of 1.4% on 200,000,000 = 1,400,000 yen (not 2,800,000 x 183/365), paid Monday 21 Dec.
+        // Accrued on the books 1,196,712; the coupon exceeds it by 203,288, the income since 23 Nov. In dollars at
+        // 0.0078125: 203,288 x 0.0078125 = 1,588.19, so income to date is 184.10 + 1,588.19 = 1,772.29.
+        events: [
+          { type: 'bond.coupon', summary: 'Coupon received on 200,000,000 JGB-1.4-DEC35: 1,400,000 JPY', cash: { JPY: 1_400_000 }, owner: 'account', date: '2026-12-21' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on JGB-1.4-DEC35: 203,288 JPY' },
+        ],
+        cash: { account: { JPY: { settled: 53_304_332, availableToTrade: 53_304_332 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 200_000_000, accrued: 0 }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-06-21', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2035-12-20', status: 'pending' }], // 20 Jun 2027 is a Sunday
+        // Rounding each posting to the cent moves the FX line by a cent here: 1,400,000 yen of accrued left the books at 10,937.50 and
+        // the 203,288 came in at 1,588.19.
+        pnl: { account: { couponInterest: 1_772.29, fx: -46_878.95, total: -45_278.66 }, book: { fx: -56_253.95 } },
+        nav: { account: 1_954_721.34, book: 3_345_346.34 }, // (53,304,332 + 196,900,000) x 0.0078125
+        balance: { account: { cash: 416_440.09, accruedIncome: null, assets: 1_954_721.34, netAssets: 1_954_721.34, local: { JPY: { cash: 53_304_332, accruedIncome: null } } } },
+      },
+    },
+    {
+      id: 'reduce', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 80_000_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 80_000_000, estimate: 98.44, settleDate: '2026-12-22', calendar: 'JP',
+          gross: 78_752_000, // 80,000,000 x 98.44 / 100
+          accrued: 6_137, // settles 22 Dec, 2 days: 80,000,000 x 1.4% x 2/365 = 6,136.99
+          cash: 78_758_137, fees: 788 }] }, // 0.1 bp of 78,752,000 = 787.52
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 80_000_000, avgPrice: 98.44 }] },
+        // Realized in yen: 78,752,000 - 80,000,000 x 98.46% = -16,000; in dollars -125.00. Commission 788 x 0.0078125 = 6.16.
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: /^Sold 80,000,000 JGB-1\.4-DEC35 @ 98\.44 JPY \(realized [-−]16,000 JPY\)$/ }],
+        cash: { account: { JPY: { settled: 53_304_332, unsettled: 78_757_349, availableToTrade: 132_061_681 } } }, // 78,752,000 + 6,137 - 788
+        positions: [{ instrument: 'main', lot: 'lot', qty: 120_000_000, cost: 118_152_000, avgCost: 98.46, price: 98.45, value: 118_140_000, unrealized: -12_000,
+          accrued: -6_137 }], // the interest sold, booked ahead of the two days it covers
+        holdings: { main: { long: 120_000_000, short: 0, net: 120_000_000 } },
+        pending: [{ instrument: 'main', dueDate: '2026-12-22', amount: 78_757_349, ccy: 'JPY', into: 'cash' }],
+        pnl: { account: { realized: -125, couponInterest: 1_772.29, commissions: -21.91, unrealized: -93.75, fx: -46_878.94, total: -45_347.31 }, book: { fx: -56_253.94 } }, // 15.75 + 6.16; -12,000 x 0.0078125
+        nav: { account: 1_954_652.69, book: 3_345_277.69 }, // (53,304,332 + 78,757,349 + 118,140,000 - 6,137) x 0.0078125
+        balance: { account: { cash: 416_440.09, receivable: 615_291.79, accruedIncome: -47.95, positions: 922_968.75, assets: 1_954_652.69, liabilities: 0, netAssets: 1_954_652.69,
+          local: { JPY: { cash: 53_304_332, receivable: 78_757_349, accruedIncome: -6_137, positions: 118_140_000 } } } },
+      },
+    },
+    {
+      id: 'settle-reduce', covers: ['settlement', 'accrual'], action: 'clock', to: EST('2026-12-22'),
+      expect: {
+        // End of day 21 Dec: 200,000,000 was still settled, one day: 2,800,000 x 1/365 = 7,671.23; less the 6,136.99 sold: 1,534.
+        // On the books -6,137: income 7,671 yen, 59.93 dollars.
+        events: [
+          { type: 'settlement.receive', summary: 'received 78,757,349 JPY into settled cash', cash: { JPY: 78_757_349 } },
+          { type: 'accrual.coupon', summary: 'Interest accrued on JGB-1.4-DEC35: 7,671 JPY' },
+        ],
+        cash: { account: { JPY: { settled: 132_061_681, unsettled: 0, availableToTrade: 132_061_681 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 120_000_000, accrued: 1_534 }],
+        pending: [],
+        pnl: { account: { couponInterest: 1_832.22, total: -45_287.38 } },
+        nav: { account: 1_954_712.62, book: 3_345_337.62 },
+        balance: { account: { cash: 1_031_731.88, receivable: null, accruedIncome: 11.98, assets: 1_954_712.62, netAssets: 1_954_712.62, local: { JPY: { cash: 132_061_681, receivable: null, accruedIncome: 1_534 } } } },
+      },
+    },
+    {
+      id: 'close', covers: 'close', action: 'close', lot: 'lot', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 120_000_000, estimate: 98.44, settleDate: '2026-12-23',
+          gross: 118_128_000, // 120,000,000 x 98.44 / 100
+          accrued: 13_808, // settles 23 Dec, 3 days: 120,000,000 x 1.4% x 3/365 = 13,808.22
+          cash: 118_141_808, fees: 1_181 }] }, // 0.1 bp of 118,128,000 = 1,181.28
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 120_000_000, avgPrice: 98.44 }] },
+        // Realized -24,000 yen (-187.50 dollars). Interest: 13,808 sold against 1,534 on the books: 12,274 more income (95.89 dollars).
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: /^Sold 120,000,000 JGB-1\.4-DEC35 @ 98\.44 JPY \(realized [-−]24,000 JPY\)$/ },
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of JGB-1.4-DEC35: 12,274 JPY' },
+        ],
+        cash: { account: { JPY: { settled: 132_061_681, unsettled: 118_140_627, availableToTrade: 250_202_308 } } }, // 118,128,000 + 13,808 - 1,181
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', dueDate: '2026-12-23', amount: 118_140_627, ccy: 'JPY', into: 'cash' }],
+        lifecycle: [],
+        // Yen result: interest 23,013 + 203,288 + 7,671 + 12,274 = 246,246; realized -40,000; commissions 3,938: +202,308.
+        pnl: { account: { realized: -312.50, couponInterest: 1_928.11, commissions: -31.14, unrealized: 0, fx: -46_878.94, total: -45_294.47 } }, // 21.91 + 1,181 x 0.0078125
+        nav: { account: 1_954_705.53, book: 3_345_330.53 }, // 250,202,308 x 0.0078125
+        balance: { account: { cash: 1_031_731.88, receivable: 922_973.65, positions: null, accruedIncome: null, assets: 1_954_705.53, liabilities: 0, netAssets: 1_954_705.53,
+          local: { JPY: { cash: 132_061_681, receivable: 118_140_627, positions: null, accruedIncome: null } } } },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: EST('2026-12-23'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 118,140,627 JPY into settled cash', cash: { JPY: 118_140_627 } }],
+        cash: { account: { JPY: { settled: 250_202_308, unsettled: 0, availableToTrade: 250_202_308 } }, treasury: { USD: { settled: 1_000_000 }, JPY: { settled: 50_000_000 } } },
+        pending: [],
+        nav: { account: 1_954_705.53, treasury: 1_390_625, book: 3_345_330.53 },
+        balance: { account: { cash: 1_954_705.53, receivable: null, assets: 1_954_705.53, liabilities: 0, netAssets: 1_954_705.53, local: { JPY: { cash: 250_202_308, receivable: null } } } },
+      },
+    },
+  ],
+};
+
+export default [treasuryNote, treasuryBill, treasuryBond, strips, foreignGovBill, foreignGovBond];
