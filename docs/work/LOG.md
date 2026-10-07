@@ -47,3 +47,4 @@
 - 2026-10-07T10:36Z | s1 | +0 | swap.js: explicit 'Nothing due' record for caplets and floorlets out of the money; cap, floor and collar scenarios designed (core tests 178 of 178)
 - 2026-10-07T10:39Z | s1 | +0.2 | interest_rate_cap passes at engine, API and browser
 - 2026-10-07T10:41Z | s1 | +0.2 | interest_rate_floor passes at engine, API and browser
+- 2026-10-07T10:44Z | s1 | +0.2 | interest_rate_collar passes at engine, API and browser

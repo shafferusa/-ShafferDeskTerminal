@@ -1502,4 +1502,305 @@ const interestRateFloor = {
   ],
 };
 
-export default [interestRateSwap, overnightIndexSwap, basisSwap, interestRateCap, interestRateFloor];
+// ---------------------------------------------------------------------------------------------
+// interest_rate_collar
+// ---------------------------------------------------------------------------------------------
+// A one-year collar on 3-month term SOFR: the Account buys a cap at 4.50% (leg A, received) and sells
+// a floor at 3.50% (leg B, paid), for a small net premium. Each quarter, on the notional:
+//   fixing above 4.50%: the cap leg pays the Account (fixing - 4.50%) x days/360;
+//   fixing below 3.50%: the Account pays (3.50% - fixing) x days/360 on the floor leg;
+//   in between: nothing is due on either leg. Each leg is its own payment record.
+// Position-level collateral terms: no independent amount; variation margin with a 20,000 threshold
+// and a 5,000 minimum transfer.
+//
+// Schedule (effective Monday 15 June 2026, maturity Tuesday 15 June 2027), every payment date a business day:
+//   2026-06-15 to 2026-09-15 (92 days)  fixing of 15 June 4.80%       cap 0.30% in the money
+//   2026-09-15 to 2026-12-15 (91 days)  fixing of 15 September 4.00%  between the strikes
+//   2026-12-15 to 2027-03-15 (90 days)  fixing of 15 December 3.10%   floor 0.40% in the money
+//   2027-03-15 to 2027-06-15 (92 days)  terminated before it is paid
+const COLLAR_NAME = 'USD collar 3.50% / 4.50% on TSFR3M 15 Jun 2027';
+const interestRateCollar = {
+  productId: 'interest_rate_collar',
+  title: 'USD 1-year collar on 3-month term SOFR, cap bought at 4.50% and floor sold at 3.50%, variation margin under position-level terms',
+  matrix: {
+    ...OTC_TICKET,
+    automaticInputs: ['schedule of both legs from the contract terms and the USD payment calendar', 'TSFR3M fixings (rate fixture standing in for Shaffer MarketData)', 'settlement date, T+2 on the USD calendar', 'variation margin from the position-level terms'],
+    manualInputs: ['net premium (stated fill price, per 100 notional)', 'mark of the collar, entered by hand (negative when the floor is worth more than the cap)', 'settlement amounts of the partial and the full termination (stated fill price in the preview)'],
+    settlement: 'Net premium and termination amounts settle T+2 on the USD calendar; leg payments are cash on their payment date',
+    lifecycle: 'Two legs with their own strikes: the cap leg pays above 4.50%, the floor leg is paid below 3.50%, and between the strikes both legs record that nothing is due; partial termination; full termination before maturity, after which nothing is scheduled',
+    accounting: 'Carried at the net premium until a mark is entered, then at the mark, which can be negative; leg payments and termination results are realized P&L',
+    collateral: 'Position-level terms with no independent amount: variation margin at end of day against the mark, threshold 20,000, minimum transfer 5,000; posted when the mark is against the Account, received (restricted, owed back) when it is in its favour, reduced after a partial termination and returned at once on full termination',
+  },
+  start: at('2026-06-11'),
+  settlementCheck: { lag: 2, holidays: [] }, // no Federal Reserve holiday in the settlement windows used (11 to 16 June, 1 to 5 October 2026, 1 to 5 April 2027)
+  book: usdBook('Matrix interest-rate collar', 'Rates', 400_000),
+  instruments: {
+    main: {
+      productId: 'interest_rate_collar', name: COLLAR_NAME, symbol: 'COLLAR-TSFR-350-450', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: USD_CALENDARS,
+      terms: {
+        effective: '2026-06-15', maturity: '2027-06-15', counterparty: 'Dealer A',
+        collateralBasis: { type: 'position', independentAmount: { type: 'none' }, variationMargin: true, threshold: 20_000, minimumTransfer: 5_000 },
+        legs: [
+          { side: 'receive', type: 'cap', ccy: 'USD', index: 'TSFR3M', strike: 0.045, months: 3, dayCount: 'ACT/360' },
+          { side: 'pay', type: 'floor', ccy: 'USD', index: 'TSFR3M', strike: 0.035, months: 3, dayCount: 'ACT/360' },
+        ],
+      },
+    },
+  },
+  rates: { TSFR3M: { byDate: { '2026-06-15': 4.80, '2026-09-15': 4.00, '2026-12-15': 3.10, '2027-03-15': 4.50 } } },
+  expectAtStart: usdStart(400_000),
+  steps: [
+    {
+      // Net premium 20,000,000 x 0.05 / 100 = 10,000, settling Monday 15 June (T+2). No independent amount is called for.
+      id: 'open', covers: ['open', 'premium', 'collateral'], action: 'ticket', instrument: 'main', side: 'buy', qty: 20_000_000, as: 'collar', order: { statedPrice: 0.05 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 20_000_000, estimate: 0.05, model: 'stated-price', settleDate: '2026-06-15', calendar: 'USD', cash: -10_000, fees: 0 }],
+          cash: { USD: { purchases: 10_000, fees: 0, margin: 0, required: 10_000, available: 400_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 20_000_000, avgPrice: 0.05, fills: [{ qty: 20_000_000, price: 0.05, model: 'stated-price', settleDate: '2026-06-15' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Entered as written: 20,000,000 notional of COLLAR-TSFR-350-450 at 0.05 per 100 notional', owner: 'account', date: '2026-06-11' }], // nothing is posted
+        cash: { account: { USD: { settled: 400_000, unsettled: -10_000, margin: 0, restricted: 0, availableToTrade: 390_000, availableToWithdraw: 390_000 } } },
+        positions: [{ instrument: 'main', lot: 'collar', owner: 'account', direction: 'as written', qty: 20_000_000, avgCost: 0.05, cost: 10_000, price: null, value: null, unrealized: null, provisional: true, notional: 20_000_000, margin: 0 }],
+        holdings: { main: { long: 20_000_000, short: 0, net: 20_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-06-15', amount: -10_000, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-09-15', status: 'pending' }, // cap leg
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-09-15', status: 'pending' }, // floor leg
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-06-15', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', lot: 'collar', owner: 'account', qty: 20_000_000, basis: 'position', mark: null, iaRequired: 0, iaPosted: 0, vmPosted: 0, vmHeld: 0, vmStatus: 'not_valued_yet' }],
+        pnl: { account: { realized: 0, commissions: 0, unrealized: 0, total: 0 } },
+        nav: { account: 400_000, book: 1_000_000 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 400_000, payable: 10_000, margin: null, positions: 10_000, accruedIncome: null, accruedExpense: null, assets: 410_000, liabilities: 10_000, netAssets: 400_000 } },
+      },
+    },
+    {
+      // The end-of-day pass for 11 June has no mark to work with: no variation margin can be called, and that is said.
+      id: 'no-mark-no-call', covers: 'variation margin', action: 'clock', to: at('2026-06-12'),
+      expect: { otc: [{ instrument: 'main', vmStatus: 'cannot_value', vmReason: /COLLAR-TSFR-350-450 has no mark/, vmPosted: 0 }], alerts: ['collateral.unvalued'] },
+    },
+    {
+      // 5,000,000 more on the same terms: 2,500, settling Tuesday 16 June.
+      id: 'increase', covers: ['increase', 'premium'], action: 'resize', lot: 'collar', factor: 1.25, order: { statedPrice: 0.05 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 5_000_000, estimate: 0.05, model: 'stated-price', settleDate: '2026-06-16', cash: -2_500, fees: 0 }], cash: { USD: { purchases: 2_500, margin: 0, required: 2_500, available: 390_000, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 5_000_000, avgPrice: 0.05 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Increased as written: 5,000,000 notional of COLLAR-TSFR-350-450 at 0.05 per 100 notional' }],
+        cash: { account: { USD: { settled: 400_000, unsettled: -12_500, availableToTrade: 387_500, availableToWithdraw: 387_500 } } },
+        positions: [{ instrument: 'main', lot: 'collar', qty: 25_000_000, cost: 12_500, avgCost: 0.05, price: null, value: null, notional: 25_000_000 }],
+        holdings: { main: { long: 25_000_000, short: 0, net: 25_000_000 } },
+        pending: [{ instrument: 'main', dueDate: '2026-06-15', amount: -10_000, ccy: 'USD', into: 'cash' }, { instrument: 'main', dueDate: '2026-06-16', amount: -2_500, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: 25_000_000, iaRequired: 0, iaPosted: 0 }],
+        nav: { account: 400_000, book: 1_000_000 },
+        balance: { account: { payable: 12_500, positions: 12_500, assets: 412_500, liabilities: 12_500, netAssets: 400_000 } },
+      },
+    },
+    {
+      id: 'settle-premium', covers: 'settlement', action: 'clock', to: at('2026-06-15'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 10,000.00 USD from settled cash', cash: { USD: -10_000 }, date: '2026-06-15' }],
+        cash: { account: { USD: { settled: 390_000, unsettled: -2_500, availableToTrade: 387_500, availableToWithdraw: 387_500 } } },
+        pending: [{ instrument: 'main', dueDate: '2026-06-16', amount: -2_500, ccy: 'USD', into: 'cash' }],
+        balance: { account: { cash: 390_000, payable: 2_500, assets: 402_500, liabilities: 2_500 } },
+      },
+    },
+    {
+      id: 'settle-increase', covers: 'settlement', action: 'clock', to: at('2026-06-16'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 2,500.00 USD from settled cash', cash: { USD: -2_500 } }],
+        cash: { account: { USD: { settled: 387_500, unsettled: 0, availableToTrade: 387_500, availableToWithdraw: 387_500 } } },
+        pending: [],
+        balance: { account: { cash: 387_500, payable: null, assets: 400_000, liabilities: 0 } },
+      },
+    },
+    {
+      // Rates have fallen: the floor sold is worth more than the cap bought. 25,000,000 x -0.20 / 100 = -50,000; 62,500 below the 12,500 paid.
+      id: 'mark-negative', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: -0.20, note: 'Dealer mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'collar', qty: 25_000_000, price: -0.2, value: -50_000, unrealized: -62_500, provisional: false, priceSource: 'Manual entry', priceStatus: 'manual' }],
+        otc: [{ instrument: 'main', mark: -0.2, markValue: -50_000 }],
+        pnl: { account: { unrealized: -62_500, total: -62_500 } },
+        nav: { account: 337_500, book: 937_500 }, // 387,500 - 50,000
+        provisional: { account: false, book: false },
+        balance: { account: { positions: -50_000, assets: 337_500, netAssets: 337_500 } },
+      },
+    },
+    {
+      // -50,000 is 30,000 beyond the 20,000 threshold: 30,000 is posted.
+      id: 'variation-margin-call', covers: 'variation margin', action: 'clock', to: eod('2026-06-16'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under position-level terms: 30,000.00 USD posted. Netting set of 1 position marked at -50,000.00 USD; threshold 20,000.00 USD.', cash: { USD: -30_000 }, owner: 'account', date: '2026-06-16' }],
+        cash: { account: { USD: { settled: 357_500, margin: 30_000, availableToTrade: 357_500, availableToWithdraw: 357_500 } } },
+        otc: [{ instrument: 'main', vmPosted: 30_000, vmHeld: 0, vmExposure: -50_000, vmStatus: 'ok' }],
+        positions: [{ instrument: 'main', lot: 'collar', margin: 0 }], // the position's own margin figure is its independent amount; variation margin belongs to the netting set and shows under collateral
+        alerts: [],
+        balance: { account: { cash: 357_500, margin: 30_000 } },
+      },
+    },
+    { id: 'wednesday-morning', action: 'clock', to: at('2026-06-17'), expect: {} },
+    {
+      // Rates jump: 25,000,000 x 0.30 / 100 = 75,000; 62,500 above the 12,500 paid.
+      id: 'mark-positive', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 0.30, note: 'Dealer mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'collar', price: 0.3, value: 75_000, unrealized: 62_500 }],
+        otc: [{ instrument: 'main', mark: 0.3, markValue: 75_000 }],
+        pnl: { account: { unrealized: 62_500, total: 62_500 } },
+        nav: { account: 462_500, book: 1_062_500 }, // 357,500 + 30,000 posted + 75,000
+        balance: { account: { positions: 75_000, assets: 462_500, netAssets: 462_500 } },
+      },
+    },
+    {
+      // +75,000 is 55,000 beyond the threshold, in the Account's favour: its own 30,000 comes back and the counterparty posts 55,000,
+      // which is restricted cash and a liability.
+      id: 'variation-margin-swings', covers: 'variation margin', action: 'clock', to: eod('2026-06-17'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under position-level terms: 30,000.00 USD returned to us and 55,000.00 USD received. Netting set of 1 position marked at 75,000.00 USD; threshold 20,000.00 USD.', owner: 'account', date: '2026-06-17' }],
+        cash: { account: { USD: { settled: 387_500, margin: 0, restricted: 55_000, availableToTrade: 387_500, availableToWithdraw: 387_500 } } },
+        otc: [{ instrument: 'main', vmPosted: 0, vmHeld: 55_000, vmExposure: 75_000, vmStatus: 'ok' }],
+        nav: { account: 462_500, book: 1_062_500 }, // unchanged: what was received is owed back
+        balance: { account: { cash: 387_500, margin: null, restricted: 55_000, collateralReceived: 55_000, assets: 517_500, liabilities: 55_000, netAssets: 462_500 } },
+      },
+    },
+    {
+      // First period, fixing 4.80%. Cap leg, received: 25,000,000 x (4.80% - 4.50%) x 92/360 = 19,166.67. Floor leg: 4.80% is not below 3.50%.
+      id: 'cap-leg-pays', covers: ['caplet payment', 'floorlet payment'], action: 'clock', to: at('2026-09-15'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap receipt on ${COLLAR_NAME}, leg A (cap), period 2026-06-15 to 2026-09-15: 19,166.67 USD`, cash: { USD: 19_166.67 }, owner: 'account', date: '2026-09-15' },
+          { type: 'swap.payment', summary: `Nothing due on ${COLLAR_NAME}, leg B (floor), period 2026-06-15 to 2026-09-15: the TSFR3M fixing 4.800% is not below the strike 3.500%`, owner: 'account', date: '2026-09-15' },
+        ],
+        cash: { account: { USD: { settled: 406_666.67, restricted: 55_000, availableToTrade: 406_666.67, availableToWithdraw: 406_666.67 } } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-12-15', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-12-15', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-06-15', status: 'pending' },
+        ],
+        pnl: { account: { realized: 19_166.67, unrealized: 62_500, total: 81_666.67 } },
+        nav: { account: 481_666.67, book: 1_081_666.67 },
+        balance: { account: { cash: 406_666.67, assets: 536_666.67, liabilities: 55_000, netAssets: 481_666.67 } },
+      },
+    },
+    { id: 'first-of-october', action: 'clock', to: at('2026-10-01'), expect: {} },
+    {
+      // 40% (10,000,000) is terminated for 0.25 per 100, received: 25,000. Premium carried on it: 12,500 x 40% = 5,000. Realized 20,000.
+      // Left: 15,000,000 carrying 7,500, marked 0.30: 45,000, 37,500 up. Thursday 1 October, settles Monday 5 October.
+      id: 'partial-termination', covers: ['reduce', 'partial termination'], action: 'close', lot: 'collar', scope: 'strategy', percent: 40, order: { statedPrice: 0.25 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 10_000_000, estimate: 0.25, model: 'stated-price', settleDate: '2026-10-05', cash: 25_000, fees: 0 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 10_000_000, avgPrice: 0.25 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Terminated in part: 10,000,000 of 25,000,000 notional of COLLAR-TSFR-350-450 at 0.25 per 100 notional (realized 20,000.00 USD)' }],
+        cash: { account: { USD: { settled: 406_666.67, unsettled: 25_000, restricted: 55_000, availableToTrade: 431_666.67, availableToWithdraw: 406_666.67 } } },
+        positions: [{ instrument: 'main', lot: 'collar', qty: 15_000_000, cost: 7_500, avgCost: 0.05, price: 0.3, value: 45_000, unrealized: 37_500, notional: 15_000_000 }],
+        holdings: { main: { long: 15_000_000, short: 0, net: 15_000_000 } },
+        pending: [{ instrument: 'main', dueDate: '2026-10-05', amount: 25_000, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: 15_000_000, markValue: 45_000, vmHeld: 55_000 }], // the collateral held is looked at again at the end of the day
+        pnl: { account: { realized: 39_166.67, unrealized: 37_500, total: 76_666.67 } },
+        nav: { account: 476_666.67, book: 1_076_666.67 },
+        balance: { account: { cash: 406_666.67, restricted: 55_000, receivable: 25_000, positions: 45_000, collateralReceived: 55_000, assets: 531_666.67, liabilities: 55_000, netAssets: 476_666.67 } },
+      },
+    },
+    {
+      // +45,000 is 25,000 beyond the threshold: of the 55,000 held, 30,000 goes back to the counterparty.
+      id: 'collateral-partly-given-back', covers: ['variation margin', 'collateral'], action: 'clock', to: eod('2026-10-01'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under position-level terms: 30,000.00 USD returned to the counterparty. Netting set of 1 position marked at 45,000.00 USD; threshold 20,000.00 USD.', owner: 'account', date: '2026-10-01' }],
+        cash: { account: { USD: { settled: 406_666.67, restricted: 25_000, availableToTrade: 431_666.67, availableToWithdraw: 406_666.67 } } },
+        otc: [{ instrument: 'main', vmPosted: 0, vmHeld: 25_000, vmExposure: 45_000, vmStatus: 'ok' }],
+        nav: { account: 476_666.67, book: 1_076_666.67 },
+        balance: { account: { restricted: 25_000, collateralReceived: 25_000, assets: 501_666.67, liabilities: 25_000, netAssets: 476_666.67 } },
+      },
+    },
+    {
+      id: 'settle-partial-termination', covers: 'settlement', action: 'clock', to: at('2026-10-05'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 25,000.00 USD into settled cash', cash: { USD: 25_000 } }],
+        cash: { account: { USD: { settled: 431_666.67, unsettled: 0, restricted: 25_000, availableToTrade: 431_666.67, availableToWithdraw: 431_666.67 } } },
+        pending: [],
+        balance: { account: { cash: 431_666.67, receivable: null } },
+      },
+    },
+    {
+      // Second period, fixing 4.00%: between the strikes. Nothing is due on either leg, and each leg says so.
+      id: 'between-the-strikes', covers: ['caplet payment', 'floorlet payment'], action: 'clock', to: at('2026-12-15'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Nothing due on ${COLLAR_NAME}, leg A (cap), period 2026-09-15 to 2026-12-15: the TSFR3M fixing 4.000% is not above the strike 4.500%`, date: '2026-12-15' },
+          { type: 'swap.payment', summary: `Nothing due on ${COLLAR_NAME}, leg B (floor), period 2026-09-15 to 2026-12-15: the TSFR3M fixing 4.000% is not below the strike 3.500%`, date: '2026-12-15' },
+        ],
+        cash: { account: { USD: { settled: 431_666.67, restricted: 25_000 } } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-03-15', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-03-15', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-06-15', status: 'pending' },
+        ],
+        pnl: { account: { realized: 39_166.67, total: 76_666.67 } },
+        nav: { account: 476_666.67, book: 1_076_666.67 },
+      },
+    },
+    {
+      // Third period, fixing 3.10%. Cap leg: nothing. Floor leg, paid: 15,000,000 x (3.50% - 3.10%) x 90/360 = 15,000.00.
+      id: 'floor-leg-is-paid', covers: ['caplet payment', 'floorlet payment'], action: 'clock', to: at('2027-03-15'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Nothing due on ${COLLAR_NAME}, leg A (cap), period 2026-12-15 to 2027-03-15: the TSFR3M fixing 3.100% is not above the strike 4.500%`, date: '2027-03-15' },
+          { type: 'swap.payment', summary: `Swap payment on ${COLLAR_NAME}, leg B (floor), period 2026-12-15 to 2027-03-15: 15,000.00 USD`, cash: { USD: -15_000 }, owner: 'account', date: '2027-03-15' },
+        ],
+        cash: { account: { USD: { settled: 416_666.67, restricted: 25_000, availableToTrade: 416_666.67, availableToWithdraw: 416_666.67 } } },
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-06-15', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-06-15', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-06-15', status: 'pending' },
+        ],
+        pnl: { account: { realized: 24_166.67, total: 61_666.67 } },
+        nav: { account: 461_666.67, book: 1_061_666.67 },
+        balance: { account: { cash: 416_666.67, assets: 486_666.67, liabilities: 25_000, netAssets: 461_666.67 } },
+      },
+    },
+    { id: 'first-of-april', action: 'clock', to: at('2027-04-01'), expect: {} },
+    {
+      // The rest is terminated at -0.10 per 100, paid: 15,000,000 x 0.10 / 100 = 15,000. With the 7,500 still carried, realized -22,500.
+      // The 25,000 held is no longer owed to anything: it goes back to the counterparty at once. Thursday 1 April, settles Monday 5 April.
+      id: 'full-termination', covers: ['close', 'full termination', 'collateral'], action: 'close', lot: 'collar', scope: 'position', percent: 100, order: { statedPrice: -0.10 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 15_000_000, estimate: -0.1, model: 'stated-price', settleDate: '2027-04-05', cash: -15_000, fees: 0 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 15_000_000, avgPrice: -0.1 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Terminated: 15,000,000 notional of COLLAR-TSFR-350-450 at -0.10 per 100 notional (realized -22,500.00 USD)' },
+          { type: 'collateral.variation', summary: /Variation margin under position-level terms: 25,000\.00 USD returned to the counterparty\./, owner: 'account' },
+        ],
+        cash: { account: { USD: { settled: 416_666.67, unsettled: -15_000, margin: 0, restricted: 0, availableToTrade: 401_666.67, availableToWithdraw: 401_666.67 } } },
+        positions: [], holdings: { main: null }, lifecycle: [], otc: [],
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2027-04-05', amount: -15_000, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: 1_666.67, commissions: 0, unrealized: 0, total: 1_666.67 } }, // 24,166.67 - 22,500
+        nav: { account: 401_666.67, book: 1_001_666.67 },
+        balance: { account: { cash: 416_666.67, restricted: null, collateralReceived: null, positions: null, payable: 15_000, assets: 416_666.67, liabilities: 15_000, netAssets: 401_666.67 } },
+      },
+    },
+    {
+      id: 'settle-full-termination', covers: 'settlement', action: 'clock', to: at('2027-04-05'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 15,000.00 USD from settled cash', cash: { USD: -15_000 } }],
+        cash: { account: { USD: { settled: 401_666.67, unsettled: 0, availableToTrade: 401_666.67, availableToWithdraw: 401_666.67 } } },
+        pending: [],
+        balance: { account: { cash: 401_666.67, payable: null, assets: 401_666.67, liabilities: 0, netAssets: 401_666.67 } },
+      },
+    },
+    {
+      // The contract's own maturity date: nothing is paid, scheduled, posted or held.
+      // 400,000 - 10,000 - 2,500 + 19,166.67 + 25,000 - 15,000 - 15,000 = 401,666.67.
+      id: 'nothing-left-at-maturity', covers: 'close', action: 'clock', to: at('2027-06-15'),
+      expect: {
+        events: [], lifecycle: [], positions: [], pending: [], otc: [], alerts: [],
+        cash: { account: { USD: { settled: 401_666.67, unsettled: 0, margin: 0, restricted: 0, reserved: 0, availableToTrade: 401_666.67 } }, treasury: { USD: { settled: 600_000 } } },
+        nav: { account: 401_666.67, treasury: 600_000, book: 1_001_666.67 },
+      },
+    },
+  ],
+};
+
+export default [interestRateSwap, overnightIndexSwap, basisSwap, interestRateCap, interestRateFloor, interestRateCollar];
