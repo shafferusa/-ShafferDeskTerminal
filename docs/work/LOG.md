@@ -30,3 +30,4 @@
 - 2026-10-07T03:11Z | fu1 | +0.2 | volatility_future passes at engine, API and browser
 - 2026-10-07T03:11Z | fu1 | +0.2 | dividend_future passes at engine, API and browser
 - 2026-10-07T03:11Z | fu1 | +0.2 | crypto_future passes at engine, API and browser
+- 2026-10-07T03:11Z | fu1 | +0.2 | perpetual_future passes at engine, API and browser
