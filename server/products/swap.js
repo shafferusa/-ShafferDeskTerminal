@@ -291,7 +291,13 @@ export const swap = {
       if (Array.isArray(l.notionalSchedule)) l.notionalSchedule = l.notionalSchedule.filter((s) => ISO_DATE_RE.test(s.from || '') && num(s.factor) >= 0).map((s) => ({ from: s.from, factor: num(s.factor) })).sort((a, b) => (a.from < b.from ? -1 : 1));
       return l;
     });
-    const ccy = t.legs[0]?.ccy || draft.trading_ccy;
+    // Quantity (the notional) and price (upfront, mark, per 100 of notional) are in the contract's trading currency, and a
+    // leg's own notional is the quantity x its notional factor. The currency stated on the contract is kept when a leg is
+    // in it; it is never replaced silently by another one. Left empty, it is the first leg's.
+    const stated = String(draft.trading_ccy || '').toUpperCase();
+    const legCcys = t.legs.map((l) => l.ccy).filter((c) => CCY_RE.test(c));
+    if (stated && legCcys.length && !legCcys.includes(stated)) errors.push(`The trading currency ${stated} is not the currency of any leg (${[...new Set(legCcys)].join(', ')}). The notional and the price of a swap are stated in its trading currency: use the currency of one of the legs.`);
+    const ccy = legCcys.includes(stated) ? stated : (t.legs[0]?.ccy || stated);
     // Collateral follows the basis stated on the contract (an agreement, position-level terms, or an explicit
     // uncollateralized assumption). The older initialMarginPct field is still read as position-level terms.
     t.collateralBasis = normalizeBasis(t.collateralBasis, errors);

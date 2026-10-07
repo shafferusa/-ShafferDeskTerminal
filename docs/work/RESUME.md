@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 44.9% of the pass** (last milestone 2026-10-07T11:05Z, s1: cross_currency_swap passes at engine, API and browser (Treasury-owned, principal exchange funded or failed visibly))
+**Completeness: about 44.9% of the pass** (last milestone 2026-10-07T11:09Z, s1: swap.js: a swap keeps the trading currency stated on the contract when a leg is in it (was silently replaced by the first leg's); npm test 330 of 330)
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 
