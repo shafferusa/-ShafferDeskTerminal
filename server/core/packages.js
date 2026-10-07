@@ -332,6 +332,8 @@ export function createPackages(app) {
             if (e0.initialMargin > 0) { row.initialMargin = e0.initialMargin; bump(inst.trading_ccy, 'margin', e0.initialMargin); }
             // The collateral basis the contract states, and what it calls for, do not wait for a price either.
             app.agreements.addToPreview(e0.collateral, { row, leg: l.n, check, bump, calls: collateralCalls });
+            // Nor does the principal a cross-currency swap exchanges when the trade settles.
+            if (e0.otherCash?.length) { row.otherCash = e0.otherCash; for (const oc of e0.otherCash) { if (oc.amount < 0) bump(oc.ccy, 'purchases', -oc.amount); else bump(oc.ccy, 'proceeds', oc.amount); } }
           } else if (inst.family === 'otcoption') {
             const e0 = plugin.economics(app, { inst, action: l.action, qty: l.qty, price: 0, unit, strategyId: attach?.id || '', tradeDate, settleDate, book });
             if (e0.initialMargin > 0) { row.initialMargin = e0.initialMargin; bump(inst.trading_ccy, 'margin', e0.initialMargin); }

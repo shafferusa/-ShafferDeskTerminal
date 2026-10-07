@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 45.5% of the pass** (last milestone 2026-10-07T11:24Z, s1: yoy_inflation_swap passes at engine, API and browser (all 12 rate-swap products now pass at the three levels))
+**Completeness: about 45.5% of the pass** (last milestone 2026-10-07T11:29Z, s1: test/core/swap-rates.test.js: 7 regression tests for the swap.js fixes; preview counts cross-currency principal for an unpriced leg; npm test 343 of 343; 12 swap products pass at API level together)
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 
