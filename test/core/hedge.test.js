@@ -663,3 +663,47 @@ test('a collateral basis stated by the service is shown as stated and validated;
   assert.deepEqual([coll(stated).origin, coll(stated).statedByService, coll(stated).needsChoice, coll(stated).label, coll(stated).independent.delta], ['recommendation', true, false, 'Uncollateralized (paper assumption)', 0]);
   assert.deepEqual(stated.hedge.completion.missing.map((m) => m.what), ['price']);
 });
+
+test('a package with an unpriced leg is completed with a stated fill price and executed; until then it says what is missing', async () => {
+  const { app, clock, inst } = makeApp();
+  const { book, acct } = makeBook(app);
+  const jpy = inst['USD/JPY'];
+  app.data.market.set(jpy.id, { bid: 150, ask: 150, value: 150 });
+  app.data.market.set('USD/JPY', { value: 150 }); app.data.market.set('JPY/USD', { value: 1 / 150 });
+  await trade(app, { bookId: book.id, unitId: acct.id, template: 'custom', legs: [{ kind: 'trade', action: 'sell', instrumentId: jpy.id, qty: 100_000 }] });
+  clock.freeze('2026-03-04T15:00:00.000Z'); await app.engine.tick(); // Wednesday: the yen has settled, Tokyo and New York are open
+  pin(app, inst.KAIJ.id, 3000);
+  const s = await trade(app, { bookId: book.id, unitId: acct.id, template: 'long', underlyingId: inst.KAIJ.id, quantity: 1000, origin: 'marketplace', ...CTX });
+  await advance(app, clock, 1000);
+  const h = app.hedge.prompts(book.id)[0];
+  // The demo fixture's currency forward: sells the position's 1,000 x 3,000 = 3,000,000 JPY against USD. It states its
+  // collateral basis (uncollateralized, demo terms) and gives an indicative rate only, never an executable quote.
+  const bare = await app.hedge.previewPackage(h.id, 'demo-fx');
+  assert.deepEqual([bare.legs.length, bare.legs[0].instrument.family, bare.legs[0].action, bare.legs[0].qty], [1, 'forward', 'sell', 3_000_000]);
+  assert.deepEqual(errorCodes(bare), []);
+  assert.deepEqual([coll(bare).origin, coll(bare).label, coll(bare).needsChoice], ['recommendation', 'Uncollateralized (paper assumption)', false]);
+  assert.deepEqual(bare.hedge.completion.missing, [{ leg: 1, what: 'price', text: 'a fill price for leg 1' }]);
+  assert.deepEqual([bare.legs[0].price.executable, bare.hedge.completion.legs[0].price.needsStatedPrice, bare.hedge.completion.legs[0].price.statedPrice], [false, true, null]);
+  assert.ok(bare.checks.some((c) => c.code === 'no-price' && c.level === 'warning'));
+  // The desk states the fill: the indicative rate, 1 / 150 USD per JPY. Nothing is paid at trade and nothing is posted.
+  const rate = bare.legs[0].indicative.value;
+  assert.ok(Math.abs(rate - 1 / 150) < 1e-12);
+  const pv = await app.hedge.previewPackage(h.id, 'demo-fx', { statedPrices: { 1: rate } });
+  assert.deepEqual([pv.blocking, pv.hedge.completion.missing, pv.legs[0].price.executable, pv.legs[0].price.model], [0, [], true, 'stated-price']);
+  assert.ok(!pv.checks.some((c) => ['no-price', 'cash-unknown'].includes(c.code)));
+  assert.equal(pv.totals.cash.USD?.required ?? 0, 0);
+  const cashBefore = app.ledger.cash(acct.id, 'USD').settled;
+  const out = await app.packages.submit({ ...pv.input, legs: pv.legs, clientToken: pv.token, confirm: true, expected: pv.confirmation });
+  const fwd = out.strategy.positions.find((p) => p.family === 'forward');
+  assert.deepEqual([out.strategy.id, fwd.purpose, fwd.qty], [s.id, 'hedge', -3_000_000]);
+  const order = out.strategy.orders.find((o) => o.submission === pv.token);
+  assert.deepEqual([order.status, order.fills[0].price, app.orders.get(order.id).data.hedgeLinkId], ['filled', rate, h.id], 'filled at the stated price, linked to the request');
+  assert.equal(app.ledger.cash(acct.id, 'USD').settled, cashBefore);
+  assert.equal(app.ledger.balance(acct.id, 'cash.margin', 'USD'), 0);
+  assert.equal(app.hedge.get(h.id).state, 'executed');
+  // Removing a stated price puts the leg back to "missing"; it is never kept silently.
+  const again = await app.hedge.request({ bookId: book.id, unitId: acct.id, strategyId: s.id, scope: { type: 'trade' }, trigger: 'manual' });
+  const cleared = await app.hedge.previewPackage(again.id, 'demo-fx', { statedPrices: { 1: null } });
+  assert.deepEqual(cleared.hedge.completion.missing.map((m) => m.what), ['price']);
+  assert.deepEqual(ledgerImbalance(app), []);
+});

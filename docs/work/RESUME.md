@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 35.5% of the pass** (last milestone 2026-10-07T02:10Z, v1b: suite green again (183 of 183): hedge package preview takes a chosen collateral basis and a stated fill price for an OTC leg; TRS test chooses position-level terms through it)
+**Completeness: about 36.0% of the pass** (last milestone 2026-10-07T02:26Z, v1b: Marketplace ticket hedge context verified; OTC collateral basis and stated fill price completed in the hedge popup; TRS and FX-forward packages executed end to end in the browser)
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 
