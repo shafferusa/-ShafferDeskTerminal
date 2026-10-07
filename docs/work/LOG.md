@@ -2,3 +2,4 @@
 - 2026-10-07T02:10Z | v1b | +0.5 | suite green again (183 of 183): hedge package preview takes a chosen collateral basis and a stated fill price for an OTC leg; TRS test chooses position-level terms through it
 - 2026-10-07T02:26Z | v1b | +0.5 | Marketplace ticket hedge context verified; OTC collateral basis and stated fill price completed in the hedge popup; TRS and FX-forward packages executed end to end in the browser
 - 2026-10-07T02:31Z | v1b | +0.5 | hedge popup refusal shows was / now and needs a fresh confirmation (verified with a changed fixture quote); hedge, protection and strategy routes documented; npm test 184 of 184
+- 2026-10-07T02:43Z | o1 | +0.2 | equity_option passes at engine, API and browser

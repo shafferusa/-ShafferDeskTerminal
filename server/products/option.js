@@ -125,8 +125,9 @@ export function settleOption(app, { book, unit, inst, pos, S, date, contracts, m
   const undSettle = undPlugin.settleDate(app, und, date, book);
   const d = undPlugin.fill(app, {
     book, unit, inst: und, action, qty: units, price: t.strike, fees: [], strategyId: pos.strategy_id, tradeDate: date, settleDate: undSettle, actor: mode === 'user' ? 'user' : 'engine',
-    eventType: 'option.delivery', summary: `${receives ? 'Received' : 'Delivered'} ${fmtQty(units)} ${und.symbol || und.name} at strike ${t.strike} on ${long ? 'exercise' : 'assignment'} of ${inst.symbol || inst.name}`,
-    data: { fromOption: inst.id },
+    // The delivery is a paper entry: the Terminal moves nothing outside its own books, and the history says so.
+    eventType: 'option.delivery', summary: `Simulated delivery: ${receives ? 'received' : 'delivered'} ${fmtQty(units)} ${und.symbol || und.name} at strike ${t.strike} on ${long ? 'exercise' : 'assignment'} of ${inst.symbol || inst.name}`,
+    data: { fromOption: inst.id, simulated: true },
   });
   const undNow = app.positions.find(unit.id, und.id, pos.strategy_id);
   if (undNow && undPlugin.onPositionChange) undPlugin.onPositionChange(app, { book, unit, inst: und, pos: undNow });
