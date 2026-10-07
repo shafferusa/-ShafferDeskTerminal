@@ -1,6 +1,9 @@
 // Instrument drawer: quote with provenance, product-appropriate trade ticket, analytics from
 // Analytics Lab (or its waiting state), contract terms, option chain / contract months,
-// positions held, corporate actions and price history.
+// positions held, corporate actions and price history. The ticket states how the trade settles
+// (the instrument's convention, or a date or lag stated for this trade) and the Overview names the
+// trading, settlement and payment calendars; a calendar that is approximate or weekends only is
+// flagged with a badge and a sentence on both.
 import { html, useEffect, useState } from '../vendor/preact-htm.js';
 import { bump, currentBook, fmtMoney, fmtNum, fmtPrice, fmtQty, fmtTime, get, getState, isNum, openOverlay, post, setUnit, toast, toastError, useLive, VIEW_LABEL } from '../lib/core.js';
 import { Awaiting, Button, Check, Drawer, Empty, Field, Holdings, holdingsFromPositions, KV, LineChart, Missing, Modal, Money, Notice, Num, Panel, Pill, Price, Prov, Seg, Select, Signed, Support, Table, Tabs, Text } from '../lib/ui.js';
@@ -58,6 +61,54 @@ export const hedgeContextInput = (c) => ({
   hedgeObjective: c.objective ? { type: c.objective } : null,
 });
 
+const BASIS_WORDS = { explicit: 'set on the instrument', venue: 'from the venue country', currency: 'from the currency', fallback: 'weekends-only fallback' };
+/** Badge and sentence for a calendar that is approximate or weekends only. Nothing when the calendars are complete. */
+export function CalendarFlag({ calendar, compact }) {
+  if (!calendar?.flag) return null;
+  const pill = html`<${Pill} tone="warn">${calendar.flag === 'weekends-only' ? 'weekends-only calendar' : 'approximate calendar'}<//>`;
+  if (compact) return html`<div class="calflag">${pill} ${calendar.flagText}</div>`;
+  return html`<${Notice} tone="warn">${pill} ${calendar.flagText} ${calendar.flag === 'weekends-only' ? 'Set calendars on the instrument (Edit), or add local holidays under Settings, Market calendars.' : ''}<//>`;
+}
+/** One calendar role. `said` lists notes already shown for an earlier role, so the same sentence is not repeated three times. */
+function CalendarLine({ c, extra, said = [] }) {
+  const note = c.note && !said.some((x) => x && c.note.startsWith(x)) ? c.note : c.note && said.some((x) => x && c.note.startsWith(x) && c.note.length > x.length) ? c.note.slice(said.find((x) => x && c.note.startsWith(x)).length).trim() : null;
+  return html`<div class="calrow"><span>${c.label}</span><span class="muted">${c.id}, ${BASIS_WORDS[c.basis] || c.basis}</span>${c.fallback ? html`<${Pill} tone="warn">weekends only<//>` : c.approximate ? html`<${Pill} tone="warn">approximate<//>` : null}</div>
+    ${note ? html`<div class="sub">${note}</div>` : null}${extra ? html`<div class="sub">${extra}</div>` : null}`;
+}
+
+/**
+ * How this trade settles: the instrument's convention, or a settlement date or a lag stated for this
+ * trade alone. What is stated is checked against the settlement calendar as it is typed; a conflict
+ * is shown here and blocks the preview.
+ */
+function SettlementField({ inst, detail, book, value, onChange }) {
+  const std = detail.settlement;
+  const [check, setCheck] = useState(null);
+  const stated = value.mode === 'date' ? (value.date ? { date: value.date } : null) : value.mode === 'lag' ? (isNum(value.lag) ? { lag: value.lag } : null) : null;
+  const key = stated ? JSON.stringify(stated) : '';
+  useEffect(() => {
+    setCheck(null);
+    if (!stated || !book) return undefined;
+    let live = true;
+    const t = setTimeout(() => { get(`/api/instruments/${inst.id}/settlement`, { bookId: book.id, ...stated }).then((r) => { if (live) setCheck(r); }, () => {}); }, 250);
+    return () => { live = false; clearTimeout(t); };
+  }, [key, inst.id, book?.id]);
+  if (!std) return null;
+  if (!std.configurable) return html`<${Field} label="Settlement" span=${2} hint=${std.reason}><div class="small" style="padding-top:5px">${std.label}</div><//>`;
+  const how = std.basis === 'instrument' ? 'set on the instrument' : 'Book default';
+  const conflict = check?.conflicts?.[0]?.message || null;
+  const hint = stated ? (check && !conflict ? `Settles ${check.date}${isNum(check.lag) ? ` (${check.lag === 0 ? 'same day' : `T+${check.lag}`})` : ''} on ${check.calendar.id}. The convention would be ${std.date}.` : 'Checked against the settlement calendar.')
+    : `${std.label} (${how}): a trade today settles ${std.date}, counted on ${std.calendar.id}.`;
+  return html`<${Field} label="Settlement" span=${2} hint=${conflict ? null : hint} error=${conflict}>
+    <div class="row" style="flex-wrap:nowrap;gap:6px">
+      <div style="flex:1;min-width:0"><${Select} value=${value.mode} onChange=${(m) => onChange({ ...value, mode: m })} options=${[{ value: 'std', label: `Convention: ${std.label}, ${std.date}` }, { value: 'date', label: 'State a settlement date' }, { value: 'lag', label: 'State a lag in business days' }]} /></div>
+      ${value.mode === 'date' ? html`<div style="width:140px;flex:none"><${Text} type="date" value=${value.date} onInput=${(v) => onChange({ ...value, date: v })} /></div>` : null}
+      ${value.mode === 'lag' ? html`<div style="width:90px;flex:none"><${Num} value=${value.lag} onInput=${(v) => onChange({ ...value, lag: v })} placeholder="0 to 30" /></div>` : null}
+    </div><//>`;
+}
+/** The `settle` field of a leg for what the ticket states, or undefined for the convention. */
+const statedSettle = (v) => (v.mode === 'date' && v.date ? { date: v.date } : v.mode === 'lag' && isNum(v.lag) ? { lag: v.lag } : undefined);
+
 function Ticket({ inst, detail, book, onDone }) {
   const [unitId, setUnitId] = useState(defaultUnit(book));
   const [action, setAction] = useState(inst.actions[0]);
@@ -65,6 +116,7 @@ function Ticket({ inst, detail, book, onDone }) {
   const [qty, setQty] = useState(null);
   const [o, setO] = useState({ orderType: 'market', limitPrice: null, stopPrice: null, tif: 'day' });
   const [stated, setStated] = useState(null);
+  const [stl, setStl] = useState({ mode: 'std', date: '', lag: null });
   const [fin, setFin] = useState('none');
   const [loanRate, setLoanRate] = useState(null);
   const [borrow, setBorrow] = useState({ available: true, feeRate: null });
@@ -87,7 +139,7 @@ function Ticket({ inst, detail, book, onDone }) {
 
   const submit = async () => {
     setBusy(true);
-    const order = { orderType: o.orderType, limitPrice: o.limitPrice, stopPrice: o.stopPrice, tif: o.tif, statedPrice: stated };
+    const order = { orderType: o.orderType, limitPrice: o.limitPrice, stopPrice: o.stopPrice, tif: o.tif, statedPrice: stated, settle: statedSettle(stl) };
     if (reducing) {
       await openPreviewAction(from.strategyId, 'close', { positionIds: [from.positionId], qty, order }, { onDone: (st) => { setQty(null); onDone?.(st); } });
       setBusy(false);
@@ -122,6 +174,7 @@ function Ticket({ inst, detail, book, onDone }) {
       <span class="spacer"></span><span class="note">${inst.priceUnits}, ${inst.tradingCcy}</span>
     </div>
     ${!obs ? html`<${Awaiting} compact what="There is no price for this instrument. A paper order would wait as a working order. Enter a price on the Overview tab, or state a fill price below." />` : null}
+    <${CalendarFlag} calendar=${inst.calendar} />
     <div class="row" style="padding:6px 10px;border:1px solid var(--rule);border-radius:4px;background:var(--paper)"><${Holdings} h=${holdingsFromPositions(detail.positions)} detail label=${`${book.name} holds`} /></div>
     <div class="grid-form">
       <${Field} label="Account" hint=${mine.length ? html`In this Account: <${Holdings} h=${holdingsFromPositions(mine)} />` : 'No position in this Account'}><${UnitSelect} value=${unitId} onChange=${setUnitId} book=${book} /><//>
@@ -130,6 +183,7 @@ function Ticket({ inst, detail, book, onDone }) {
       <${Field} label=${inst.qtyLabel} hint=${inst.multiplier !== 1 && inst.family !== 'bond' && inst.family !== 'swap' && inst.family !== 'cds' ? `Contract multiplier ${inst.multiplier}` : inst.family === 'bond' ? 'Face amount' : ''}><${Num} value=${qty} onInput=${setQty} /><//>
       <${OrderFields} o=${o} set=${(p) => setO({ ...o, ...p })} />
       <${Field} label="State a fill price" hint="Optional. Recorded as a manual input, not a market quote."><${Num} value=${stated} onInput=${setStated} placeholder="none" /><//>
+      <${SettlementField} inst=${inst} detail=${detail} book=${book} value=${stl} onChange=${setStl} />
     </div>
     ${reducing && from ? html`<${Notice}>${action === 'sell' ? 'Sells from' : 'Covers'} <b>${from.strategy?.name || 'the position'}</b> in this Account, which is ${from.qty > 0 ? 'long' : 'short'} ${fmtQty(Math.abs(from.qty))}${isNum(from.avgCost) ? ` at an average ${fmtPrice(from.avgCost)}` : ''}.${action === 'buy_to_cover' ? ' The matching borrowed securities are returned once the cover fills.' : ''}${qty > Math.abs(from.qty) ? html` <b>${fmtQty(qty)} is more than it holds.</b>` : ''}<//>` : null}
     ${security && !longs.length && !shorts.length && detail.positions.length ? html`<div class="note">Held in other Accounts of this Book, not in this one. Choose that Account to sell it.</div>` : null}
@@ -225,12 +279,17 @@ function Overview({ inst, detail, reload }) {
     <//>
     <${Panel} title="Fair price and analytics" note="From Shaffer Analytics Lab"><${Analytics} a=${detail.analytics} state=${detail.analyticsState} /><//>
     <${Panel} title="Contract">
+      ${inst.calendar.flag ? html`<div style="margin-bottom:10px"><${CalendarFlag} calendar=${inst.calendar} /></div>` : null}
       <${KV} rows=${[
         ['Product', inst.support.productName],
         ['Lifecycle support', html`<${Support} level=${inst.support.level} note=${inst.support.note} /> ${inst.support.note || 'Orders, settlement, accounting and scheduled events are simulated from the contract terms.'}`],
         ['Pricing coverage', html`${inst.pricing.state === 'priced' ? html`<${Pill} tone="ok">priced now<//>` : inst.pricing.state === 'unpriced' ? html`<${Pill} tone="warn">no price yet<//>` : html`<${Pill}>not needed<//>`} ${inst.pricing.basisLabel}${inst.pricing.current ? `. Current source: ${inst.pricing.current.source} (${inst.pricing.current.status}).` : '.'} This is separate from lifecycle support.`],
-        ['Settlement calendar', html`${inst.calendar.label}${inst.calendar.fallback ? html` <${Pill} tone="warn">weekends only<//>` : ''}${inst.calendar.note ? html`<div class="sub">${inst.calendar.note}</div>` : null}`],
-        ['Listing venue country', inst.venueCountry || html`<${Missing} reason="Not recorded. It selects the settlement calendar." />`],
+        ['Trading calendar', html`<${CalendarLine} c=${inst.calendar.trading} />`],
+        ['Settlement calendar', html`<${CalendarLine} c=${inst.calendar.settlement} said=${[inst.calendar.trading.note]} />`],
+        ['Payment calendar', html`<${CalendarLine} c=${inst.calendar.payment} said=${[inst.calendar.trading.note, inst.calendar.settlement.note]} extra=${inst.calendar.payment.currencies?.length ? `Payments in ${inst.calendar.payment.currencies.join(' and ')} follow ${inst.calendar.payment.currencies.map((x) => (inst.calendar.payment.currencyCalendars[x] ? `the ${x} payment calendar (${inst.calendar.payment.currencyCalendars[x]})` : `no built-in calendar for ${x}`)).join(' and ')}, joined with the calendar above.` : ''} />`],
+        ['Settlement convention', html`${inst.settlement.configurable ? html`${detail.settlement ? detail.settlement.label : inst.settlement.label} <span class="muted">${inst.settlement.basis === 'instrument' ? 'set on the instrument' : 'from the Book\'s paper-desk assumptions'}</span>` : html`${inst.settlement.label} <span class="muted">fixed by the product</span>`}
+          ${detail.settlement ? html`<div class="sub">A trade today (${detail.settlement.tradeDate}) settles ${detail.settlement.date}. ${inst.settlement.configurable ? 'A date or lag can be stated for one trade on the ticket.' : inst.settlement.reason}</div>` : null}`],
+        ['Listing venue country', inst.venueCountry || html`<${Missing} reason="Not recorded. It selects the calendars unless they are set on the instrument." />`],
         ['Market view', `${VIEW_LABEL[inst.marketView]}${inst.tags.length ? ` (also tagged ${inst.tags.map((t) => VIEW_LABEL[t] || t).join(', ')})` : ''}`],
         ['Venue', inst.venue ? `${inst.venue} (${inst.venueType === 'otc' ? 'OTC' : 'exchange'})` : inst.venueType === 'otc' ? 'OTC' : null],
         ['Issuer', inst.issuer], ['Issuer domicile', inst.domicile], ['Underlying geography', inst.underlyingGeo],

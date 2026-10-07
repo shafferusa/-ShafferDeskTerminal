@@ -40,14 +40,38 @@
 //   async signals({bookId?, strategy?, since?}) -> {available, items:[Signal]} | unavailable
 //   async valuations(instruments[])           -> Map<instrumentId, Observation|null>   status 'model-derived'
 //   async risk(request)                       -> {available, ...} | unavailable
-//   async strategies()                        -> {available, items:[{id, name, hedgeObjective?, hedgeSettings?}]} | unavailable
+//   supports(op)                              -> boolean (sync): the operation is mapped and an address is configured
+//   async strategies()                        -> {available, items:[{id, name, version?, hedgeObjective?, hedgeSettings?}]} | unavailable
+//                                                Investment Strategies, identified by the service's stable `id`. The Terminal
+//                                                stores and sends that id; a name typed while the list is unavailable is kept
+//                                                as { id: null, name, resolved: false } until the user confirms a match.
+//                                                (Execution templates such as collars and spreads are the Terminal's own.)
 //   async hedge(HedgeRequest)                 -> {available, response: HedgeResponse} | unavailable
 //
 // Shaffer Hedge lives in Analytics Lab. It evaluates exposures, selects hedge structures, sizes
-// their legs and returns trade instructions. The Terminal only builds the request, shows the
-// proposals, and runs confirmed paper execution. The request shape is built in core/hedge.js.
+// their legs, decides which existing hedges apply to an exposure, and returns trade instructions.
+// The Terminal only builds the request, shows the proposals, validates and stores the protection
+// allocations, and runs confirmed paper execution. The request shape is built in core/hedge.js.
 //
-// HedgeResponse       { source, asOf, modelRun, recommendedId, packages: [HedgePackage] }
+// HedgeRequest (draft-2), the protection-related parts:
+//   primary             { positionId|null, instrument, direction, quantity, status: 'filled'|'proposed', ... }
+//   proposedLegs[]      legs of the execution template being built; isProtection + relation 'template' on its hedge legs
+//   linkedProtection[]  hedges the Terminal KNOWS protect this primary (executed from its hedge request, or a hedge leg
+//                       in the same strategy instance)
+//   hedgesHeld[]        every hedge in the Account (or Book, for Book scope) as context, each with
+//                       relation: 'linked' | 'shared' | 'allocated_elsewhere' | 'unassessed',
+//                       capacity {units, rule}, allocatedUnits, capacityLeft, allocations[]
+//   exposures.positions every open position in scope (facts only)
+//
+// HedgeResponse       { source?, version?, asOf, modelRun, recommendedId, packages: [HedgePackage], protection?: ProtectionAssessment }
+//                     The Terminal stamps the stored response with its own source record
+//                     { kind: 'shaffer-hedge'|'demo-fixture'|'test-fixture', label, version (version ?? modelRun ?? null),
+//                       receivedAt, exposureAsOf, fingerprint } and derives freshness from positions as they are later.
+// ProtectionAssessment { allocations: [{ hedgePositionId, protectedPositionId? (default: the request's primary position),
+//                       units, capacity? (required when the hedge has no unit measure in the Terminal), basis: 'shared', note? }],
+//                       unrelated: [{ hedgePositionId, protectedPositionId?, note? }] }
+//                     Validated in core/protection.js: capacity is never exceeded across positions, nothing crosses a Book,
+//                     and an expired or closed hedge cannot be allocated. A failing allocation is stored as rejected.
 // HedgePackage        { id, label, recommended, riskAddressed[], intendedProtection, horizon: {days?, until?},
 //                       exposure: [{ measure ('delta'|'beta'|'dv01'|'key-rate'|'fx'|'cs01'|'commodity'|…), unit, before, after, residual, basisRisk }],
 //                       upsideSurrendered, costs: { currency, upfrontCash, premiums, expectedOngoing, margin, collateral, borrowing, funding },
@@ -142,6 +166,7 @@ export function createAwaitingAnalyticsPort({ message = AWAITING_MESSAGE, addres
       datasets: datasetStates(ANALYTICS_DATASETS, 'awaiting'),
     }),
     testConnection: async () => ({ ok: false, reachable: false, detail: 'No Shaffer Analytics Lab address is configured.' }),
+    supports: () => false,
     instrumentAnalytics: async (instruments) => emptyMap(instruments.map((i) => i.id)),
     signals: async () => none(),
     valuations: async (instruments) => emptyMap(instruments.map((i) => i.id)),

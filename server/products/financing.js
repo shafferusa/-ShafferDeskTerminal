@@ -14,7 +14,7 @@ import { addBusinessDays, adjust } from '../quant/calendar.js';
 import { addDays, addMonths, diffDays, makeDate, ymd } from '../quant/dates.js';
 import { CCY_RE, ISO_DATE_RE, isZero, money, need, num } from '../core/util.js';
 import { fmtQty, trueUpAccrual } from './common.js';
-import { calendarFor } from './security.js';
+import { calendarFor, paymentCalendarFor } from './security.js';
 
 const basisDays = (dc) => (dc === 'ACT/365' ? 365 : 360);
 const firstBusinessDayNextMonth = (date, cal) => {
@@ -176,6 +176,17 @@ export const loan = {
     }
     return { eventId, position: pos, realized: 0, cashNet: borrow ? P : -P };
   },
+  /**
+   * What closing `qty` of principal moves in cash today: the principal, and the interest accrued to
+   * today when the close is in full (a part repayment leaves the interest to its schedule).
+   * The preview shows these so the repayment it displays is the cash that leaves the unit.
+   */
+  closeAmounts(app, { inst, pos, qty }) {
+    const principal = money(Math.min(qty, Math.abs(pos.qty)), inst.trading_ccy);
+    const full = principal >= Math.abs(pos.qty) - 0.004;
+    const a = full ? accruePrincipal(app, { inst, pos, date: app.clock.today() }) : null;
+    return { principal, interest: a ? money(a.accrued, inst.trading_ccy) : 0, full, accruedThrough: a ? a.accruedThrough : pos.data.accruedThrough || null, rateMissing: a ? a.rateMissing : null };
+  },
   /** Repay (borrowed) or withdraw (lent) principal. A full repayment also settles accrued interest. */
   checkClose(app, { unit, inst, pos, qty }) {
     const out = [];
@@ -206,7 +217,7 @@ export const loan = {
         ? [{ account: 'cash', ccy, amount: -x, positionId: pos.id }, { account: 'loan.liab', ccy, amount: x, positionId: pos.id }]
         : [{ account: 'cash', ccy, amount: x, positionId: pos.id }, { account: 'loan.asset', ccy, amount: -x, positionId: pos.id }],
     });
-    if (full) settleInterest(app, { book: c.book, unit: c.unit, inst, pos });
+    const paid = full ? settleInterest(app, { book: c.book, unit: c.unit, inst, pos }) : { amount: 0 };
     pos = positions.change(positions.get(pos.id), { dQty: borrowed ? x : -x });
     if (full) {
       for (const col of inst.terms.collateral || []) {
@@ -215,7 +226,8 @@ export const loan = {
       }
       app.tasks.cancelFor(pos.id);
     }
-    return { eventId, position: pos, realized: 0, cashNet: borrowed ? -x : x };
+    // interestPaid is signed like cashNet: negative when the unit paid it, positive when it received it.
+    return { eventId, position: pos, realized: 0, cashNet: borrowed ? -x : x, interestPaid: borrowed ? -(paid.amount || 0) : paid.amount || 0 };
   },
   value(app, inst, pos) {
     const ccy = inst.trading_ccy;
@@ -230,7 +242,7 @@ export const loan = {
   onPositionChange(app, { book, unit, inst, pos }) {
     if (isZero(pos.qty)) return app.tasks.cancelFor(pos.id);
     const common = { bookId: book.id, unitId: unit.id, positionId: pos.id, instrumentId: inst.id, strategyId: pos.strategy_id };
-    const cal = calendarFor(inst);
+    const cal = paymentCalendarFor(inst); // interest and principal are payments: the currency's payment calendar applies
     if (inst.terms.interestPayment === 'monthly') app.tasks.schedule({ ...common, type: 'loan.interest', dueDate: firstBusinessDayNextMonth(app.clock.today(), cal) });
     if (inst.terms.maturity) app.tasks.schedule({ ...common, type: 'loan.maturity', dueDate: adjust(inst.terms.maturity, 'following', cal) });
   },
@@ -246,7 +258,7 @@ export const loan = {
       const p = trueUpInterest(app, { book, unit, inst, pos, date: today });
       const r = settleInterest(app, { book, unit, inst, pos: p });
       if (!r.ok) return fundingFailure(app, { book, unit, inst, pos, amount: r.amount, what: 'Interest payment' });
-      app.tasks.schedule({ bookId: book.id, unitId: unit.id, positionId: pos.id, instrumentId: inst.id, strategyId: pos.strategy_id, type: 'loan.interest', dueDate: firstBusinessDayNextMonth(today, calendarFor(inst)) });
+      app.tasks.schedule({ bookId: book.id, unitId: unit.id, positionId: pos.id, instrumentId: inst.id, strategyId: pos.strategy_id, type: 'loan.interest', dueDate: firstBusinessDayNextMonth(today, paymentCalendarFor(inst)) });
       return { done: true, eventId: r.eventId };
     }
     if (task.type === 'loan.maturity') {
@@ -324,7 +336,7 @@ export const repo = {
     const isRepo = c.action === 'repo';
     const today = c.tradeDate;
     const coll = app.instruments.get(inst.terms.collateralInstrumentId);
-    const termEnd = inst.terms.term === 'overnight' && !inst.terms.endDate ? addBusinessDays(today, 1, calendarFor(inst)) : inst.terms.endDate;
+    const termEnd = inst.terms.term === 'overnight' && !inst.terms.endDate ? addBusinessDays(today, 1, paymentCalendarFor(inst)) : inst.terms.endDate;
     app.instruments.update(inst.id, { terms: { ...inst.terms, startDate: inst.terms.startDate || today, endDate: termEnd || null } }, { system: true });
     let pos = positions.ensure({ bookId: c.book.id, unitId: c.unit.id, instrumentId: inst.id, strategyId: c.strategyId });
     const eventId = ledger.post({
@@ -354,6 +366,11 @@ export const repo = {
     }
     return out;
   },
+  /** What a repurchase / termination moves in cash today: the principal and the repo interest accrued to today. */
+  closeAmounts(app, { inst, pos }) {
+    const a = accruePrincipal(app, { inst, pos, date: app.clock.today() });
+    return { principal: money(Math.abs(pos.qty), inst.trading_ccy), interest: money(a.accrued, inst.trading_ccy), full: true, accruedThrough: a.accruedThrough, rateMissing: a.rateMissing };
+  },
   /** Repurchase / terminate: principal and repo interest are paid and the collateral is returned. */
   close(app, c) {
     const { ledger, positions } = app;
@@ -378,7 +395,7 @@ export const repo = {
     }
     pos = positions.change(pos, { dQty: isRepo ? P : -P, data: { collateralHeld: null } });
     app.tasks.cancelFor(pos.id);
-    return { eventId, position: pos, realized: 0, cashNet: isRepo ? -P : P };
+    return { eventId, position: pos, realized: 0, cashNet: isRepo ? -P : P, interestPaid: isRepo ? -(interest.amount || 0) : interest.amount || 0 };
   },
   value(app, inst, pos) {
     const ccy = inst.trading_ccy;
@@ -392,7 +409,7 @@ export const repo = {
   onPositionChange(app, { book, unit, inst, pos }) {
     if (isZero(pos.qty)) return app.tasks.cancelFor(pos.id);
     const fresh = app.instruments.get(inst.id);
-    if (fresh.terms.endDate) app.tasks.schedule({ bookId: book.id, unitId: unit.id, positionId: pos.id, instrumentId: inst.id, strategyId: pos.strategy_id, type: 'repo.end', dueDate: adjust(fresh.terms.endDate, 'following', calendarFor(inst)) });
+    if (fresh.terms.endDate) app.tasks.schedule({ bookId: book.id, unitId: unit.id, positionId: pos.id, instrumentId: inst.id, strategyId: pos.strategy_id, type: 'repo.end', dueDate: adjust(fresh.terms.endDate, 'following', paymentCalendarFor(inst)) });
   },
   dataNeeds: floatingNeeds,
   eod(app, { book, unit, inst, pos, date }) {
@@ -554,7 +571,7 @@ export const secloan = {
   },
   onPositionChange(app, { book, unit, inst, pos }) {
     if (isZero(pos.qty)) return app.tasks.cancelFor(pos.id);
-    app.tasks.schedule({ bookId: book.id, unitId: unit.id, positionId: pos.id, instrumentId: inst.id, strategyId: pos.strategy_id, type: 'secloan.fee', dueDate: firstBusinessDayNextMonth(app.clock.today(), calendarFor(inst)) });
+    app.tasks.schedule({ bookId: book.id, unitId: unit.id, positionId: pos.id, instrumentId: inst.id, strategyId: pos.strategy_id, type: 'secloan.fee', dueDate: firstBusinessDayNextMonth(app.clock.today(), paymentCalendarFor(inst)) });
   },
   dataNeeds(app, { inst, date }) {
     const und = app.instruments.get(inst.underlying_id);
@@ -605,7 +622,7 @@ export const secloan = {
       secloan.eod(app, { book, unit, inst, pos, date: today });
       const r = settleFees(app, { book, unit, inst, pos: app.positions.get(pos.id) });
       if (!r.ok) return fundingFailure(app, { book, unit, inst, pos, amount: r.amount, what: 'Borrow fee payment' });
-      app.tasks.schedule({ bookId: book.id, unitId: unit.id, positionId: pos.id, instrumentId: inst.id, strategyId: pos.strategy_id, type: 'secloan.fee', dueDate: firstBusinessDayNextMonth(today, calendarFor(inst)) });
+      app.tasks.schedule({ bookId: book.id, unitId: unit.id, positionId: pos.id, instrumentId: inst.id, strategyId: pos.strategy_id, type: 'secloan.fee', dueDate: firstBusinessDayNextMonth(today, paymentCalendarFor(inst)) });
       return { done: true, eventId: r.eventId };
     }
     if (task.type === 'secloan.recall') {

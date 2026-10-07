@@ -4,13 +4,16 @@ import { makeApp, makeBook, trade, ledgerImbalance, advance, goTo } from '../hel
 
 const near = (a, b, tol = 0.011) => assert.ok(Math.abs(a - b) <= tol, `${a} vs ${b}`);
 const rate = (app, code, date, value) => app.data.enterManual({ kind: 'rate', subject: code, value, forDate: date, units: 'percent p.a.' });
+// Every OTC contract states its collateral basis. These tests are about cash flows, so they take the explicit
+// "uncollateralized" choice; collateral under agreements and position-level terms is tested in collateral.test.js.
+const NO_COLLATERAL = { collateralBasis: { type: 'uncollateralized' } };
 
 test('interest-rate swap: full contract terms, fixed and floating payments from fixings, never "buy/sell swap"', async () => {
   const { app, clock } = makeApp();
   const { book, acct } = makeBook(app);
   const contract = {
     productId: 'interest_rate_swap', name: 'USD IRS 4.00% vs TEST-3M 2026-03-02/2027-03-02', marketView: 'US_DERIV', venueType: 'otc', tradingCcy: 'USD',
-    terms: { effective: '2026-03-02', maturity: '2027-03-02', counterparty: 'Dealer A', collateral: 'CSA, daily, zero threshold', legs: [
+    terms: { effective: '2026-03-02', maturity: '2027-03-02', counterparty: 'Dealer A', collateral: 'CSA, daily, zero threshold', ...NO_COLLATERAL, legs: [
       { id: 'A', side: 'pay', type: 'fixed', ccy: 'USD', rate: 0.04, months: 6, dayCount: '30/360' },
       { id: 'B', side: 'receive', type: 'float', ccy: 'USD', index: 'TEST-3M', spread: 0.001, months: 3, dayCount: 'ACT/360' },
     ] },
@@ -20,7 +23,8 @@ test('interest-rate swap: full contract terms, fixed and floating payments from 
   assert.match(details['Leg A'], /Pay fixed 4\.000% USD, every 6 months, 30\/360/);
   assert.match(details['Leg B'], /Receive TEST-3M \+ 0\.10% USD, every 3 months, ACT\/360/);
   assert.equal(details.Counterparty, 'Dealer A');
-  assert.equal(details['Collateral terms'], 'CSA, daily, zero threshold');
+  assert.equal(details['Collateral terms'], 'Uncollateralized (paper assumption): nothing is posted and nothing is received.');
+  assert.equal(details['Other collateral terms'], 'CSA, daily, zero threshold (recorded, not simulated)', 'free text is kept and labelled; it drives nothing');
   assert.equal(pv.legs[0].notional, 10_000_000);
   assert.equal(pv.legs[0].cash, 0, 'notional is not paid');
   const r = await app.packages.submit({ bookId: book.id, unitId: acct.id, template: 'custom', legs: pv.legs, clientToken: pv.token, confirm: true });
@@ -55,7 +59,7 @@ test('total-return swap: return leg against financing leg, dividends passed thro
   const { book, acct } = makeBook(app);
   const contract = {
     productId: 'equity_trs', name: 'TRS ALFA', marketView: 'US_DERIV', venueType: 'otc', tradingCcy: 'USD', underlyingId: inst.ALFA.id,
-    terms: { effective: '2026-03-02', maturity: '2026-09-02', initialPrices: { A: 200 }, legs: [
+    terms: { effective: '2026-03-02', maturity: '2026-09-02', initialPrices: { A: 200 }, ...NO_COLLATERAL, legs: [
       { id: 'A', side: 'receive', type: 'return', ccy: 'USD', months: 3, underlyingId: inst.ALFA.id, passDividends: true },
       { id: 'B', side: 'pay', type: 'float', ccy: 'USD', index: 'SIM-ON', spread: 0.005, months: 3, dayCount: 'ACT/360' },
     ] },
@@ -80,7 +84,7 @@ test('total-return swap: return leg against financing leg, dividends passed thro
 test('credit default swap: quarterly premiums, then a credit event with stated recovery', async () => {
   const { app, clock } = makeApp();
   const { book, acct } = makeBook(app);
-  const contract = { productId: 'cds_single_name', name: 'CDS Acme 5Y', marketView: 'US_DERIV', venueType: 'otc', tradingCcy: 'USD', terms: { referenceEntity: 'Acme Corp', coupon: 0.01, effective: '2026-03-02', maturity: '2031-03-20', recovery: 0.4 } };
+  const contract = { productId: 'cds_single_name', name: 'CDS Acme 5Y', marketView: 'US_DERIV', venueType: 'otc', tradingCcy: 'USD', terms: { referenceEntity: 'Acme Corp', coupon: 0.01, effective: '2026-03-02', maturity: '2031-03-20', recovery: 0.4, ...NO_COLLATERAL } };
   const s = await trade(app, { bookId: book.id, unitId: acct.id, template: 'custom', legs: [{ kind: 'trade', action: 'buy', qty: 5_000_000, statedPrice: 1.5, contract }] });
   assert.equal(s.positions[0].direction, 'protection bought');
   await goTo(app, clock, '2026-03-20T15:00:00.000Z');
@@ -99,7 +103,7 @@ test('credit default swap: quarterly premiums, then a credit event with stated r
 test('FX forward delivers both currencies on the value date; an NDF cash-settles against its fixing', async () => {
   const { app, clock, inst } = makeApp();
   const { book, acct } = makeBook(app);
-  const fwd = { productId: 'fx_forward', name: 'EUR/USD fwd 2026-04-02', marketView: 'FOREIGN_DERIV', venueType: 'otc', tradingCcy: 'USD', terms: { forwardType: 'fx', base: 'EUR', quote: 'USD', valueDate: '2026-04-02', counterparty: 'Dealer B' } };
+  const fwd = { productId: 'fx_forward', name: 'EUR/USD fwd 2026-04-02', marketView: 'FOREIGN_DERIV', venueType: 'otc', tradingCcy: 'USD', terms: { forwardType: 'fx', base: 'EUR', quote: 'USD', valueDate: '2026-04-02', counterparty: 'Dealer B', ...NO_COLLATERAL } };
   const s = await trade(app, { bookId: book.id, unitId: acct.id, template: 'custom', legs: [{ kind: 'trade', action: 'buy', qty: 100_000, statedPrice: 1.09, contract: fwd }] });
   assert.equal(app.ledger.cash(acct.id, 'USD').settled, 500_000, 'no cash at trade');
   await goTo(app, clock, '2026-04-02T15:00:00.000Z');
@@ -107,7 +111,7 @@ test('FX forward delivers both currencies on the value date; an NDF cash-settles
   assert.equal(app.ledger.cash(acct.id, 'USD').settled, 500_000 - 109_000);
   assert.equal(app.packages.strategyView(s.id).status, 'closed');
   // NDF: sell 1,000,000 USD/JPY at 150, fixing 155 -> short USD loses 5 JPY per USD, settled in JPY.
-  const ndf = { productId: 'ndf', name: 'USD/JPY NDF 2026-05-01', marketView: 'FOREIGN_DERIV', venueType: 'otc', tradingCcy: 'JPY', underlyingId: inst['USD/JPY'].id, terms: { forwardType: 'ndf', base: 'USD', quote: 'JPY', valueDate: '2026-05-01', fixingDate: '2026-04-29', settleCcy: 'JPY' } };
+  const ndf = { productId: 'ndf', name: 'USD/JPY NDF 2026-05-01', marketView: 'FOREIGN_DERIV', venueType: 'otc', tradingCcy: 'JPY', underlyingId: inst['USD/JPY'].id, terms: { forwardType: 'ndf', base: 'USD', quote: 'JPY', valueDate: '2026-05-01', fixingDate: '2026-04-29', settleCcy: 'JPY', ...NO_COLLATERAL } };
   const n = await trade(app, { bookId: book.id, unitId: acct.id, template: 'custom', legs: [{ kind: 'trade', action: 'sell', qty: 1_000_000, statedPrice: 150, contract: ndf }] });
   app.data.market.set(`${inst['USD/JPY'].id}@2026-04-29`, { value: 155 });
   await goTo(app, clock, '2026-04-29T22:30:00.000Z');
@@ -123,8 +127,8 @@ test('FX forward delivers both currencies on the value date; an NDF cash-settles
 test('OTC digital option pays its fixed amount; an exotic waits for a manual settlement amount', async () => {
   const { app, clock, inst } = makeApp();
   const { book, acct } = makeBook(app);
-  const dig = { productId: 'digital_option', name: 'ALFA digital call 200', marketView: 'US_DERIV', venueType: 'otc', tradingCcy: 'USD', underlyingId: inst.ALFA.id, terms: { right: 'C', strike: 200, expiration: '2026-03-20', optionType: 'digital', payout: 10 } };
-  const asian = { productId: 'asian_option', name: 'ALFA asian call', marketView: 'US_DERIV', venueType: 'otc', tradingCcy: 'USD', underlyingId: inst.ALFA.id, terms: { right: 'C', strike: 190, expiration: '2026-03-20', optionType: 'asian', settlement: 'cash' } };
+  const dig = { productId: 'digital_option', name: 'ALFA digital call 200', marketView: 'US_DERIV', venueType: 'otc', tradingCcy: 'USD', underlyingId: inst.ALFA.id, terms: { right: 'C', strike: 200, expiration: '2026-03-20', optionType: 'digital', payout: 10, ...NO_COLLATERAL } };
+  const asian = { productId: 'asian_option', name: 'ALFA asian call', marketView: 'US_DERIV', venueType: 'otc', tradingCcy: 'USD', underlyingId: inst.ALFA.id, terms: { right: 'C', strike: 190, expiration: '2026-03-20', optionType: 'asian', settlement: 'cash', ...NO_COLLATERAL } };
   const s = await trade(app, { bookId: book.id, unitId: acct.id, template: 'custom', legs: [{ kind: 'trade', action: 'buy', qty: 1000, statedPrice: 3, contract: dig }, { kind: 'trade', action: 'buy', qty: 1000, statedPrice: 5, contract: asian }] });
   app.data.market.set(`${inst.ALFA.id}@2026-03-20`, { value: 201 });
   await goTo(app, clock, '2026-03-20T22:30:00.000Z');

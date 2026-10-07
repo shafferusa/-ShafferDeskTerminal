@@ -216,6 +216,10 @@ export function createAccounting(app) {
         borrowing,
         // The hedge request still open for this position's strategy, so it stays visible on the position.
         hedgeRequest: p.strategyId && app.hedge ? app.hedge.openForStrategy(p.strategyId) : null,
+        // Relationship fields, from stored identifiers only: `relationships` (what this position finances, hedges or is
+        // protected by), `protection` (linked, shared, allocated elsewhere, unrelated, unassessed; remaining exposure from
+        // allocations that exist) and `hedgeOf` (this position's capacity and allocations when it is a hedge).
+        ...(app.hedge?.positionLinks ? app.hedge.positionLinks(p.unitId, p.positionId) : {}),
         collateral: { pledgedQty: p.pledgedQty, onLoanQty: p.onLoanQty, restrictedCash: p.restrictedCash, marginPosted: p.marginPosted, received: p.collateral, held: p.data.collateralHeld || null },
         support: instruments.support(inst),
       };
@@ -290,7 +294,12 @@ export function createAccounting(app) {
       const strat = p.strategy_id ? app.packages.getStrategyRow(p.strategy_id) : null;
       let collateral;
       if (inst.family === 'repo') collateral = { kind: 'securities', description: `${coll ? coll.symbol || coll.name : 'Securities'}: ${Number(t.collateralQty).toLocaleString('en-US')} pledged, haircut ${((t.haircut || 0) * 100).toFixed(2)}%`, instrument: coll ? { id: coll.id, symbol: coll.symbol, name: coll.name } : null, qty: t.collateralQty };
-      else if (inst.family === 'secloan') { const held = ledger.positionBalance(p.id, 'cash.restricted', ccy); collateral = { kind: 'cash', description: `Cash collateral ${((t.collateralPct || 1) * 100).toFixed(0)}% of market value, held as restricted cash`, cash: held || null }; }
+      else if (inst.family === 'secloan') {
+        // The cash collateral of a borrow sits on the short position it supports (the sale proceeds settle there
+        // and the daily mark tops them up), so it is read from that position as well as from the borrow itself.
+        const shortPos = und ? positions.find(p.unit_id, und.id, p.strategy_id) : null;
+        const held = money(ledger.positionBalance(p.id, 'cash.restricted', ccy) + (shortPos ? ledger.positionBalance(shortPos.id, 'cash.restricted', ccy) : 0), ccy);
+        collateral = { kind: 'cash', description: `Cash collateral ${((t.collateralPct || 1) * 100).toFixed(0)}% of market value, held as restricted cash`, cash: held || null }; }
       else if (Array.isArray(t.collateral) && t.collateral.length) collateral = { kind: 'securities', description: t.collateral.map((c) => { const cp = positions.get(c.positionId); const ci = cp ? instruments.get(cp.instrument_id) : null; return `${c.qty} ${ci ? ci.symbol || ci.name : 'securities'}`; }).join(', ') };
       else collateral = { kind: 'none', description: t.loanType === 'margin' ? 'Secured on the Account\'s holdings (margin loan); no specific pledge recorded' : 'None (unsecured)' };
       out.push({
@@ -318,8 +327,8 @@ export function createAccounting(app) {
   // ---- balance sheet -----------------------------------------------------------------------------------------
   const BS_LINES = [
     { key: 'cash', section: 'assets', label: 'Settled cash', accounts: ['cash'] },
-    { key: 'restricted', section: 'assets', label: 'Restricted cash', accounts: ['cash.restricted'], note: 'Short-sale proceeds and collateral held against borrowed securities. Not buying power.' },
-    { key: 'margin', section: 'assets', label: 'Margin and collateral posted', accounts: ['cash.margin'] },
+    { key: 'restricted', section: 'assets', label: 'Restricted cash', accounts: ['cash.restricted'], note: 'Short-sale proceeds, collateral held against borrowed securities, and cash collateral received from OTC counterparties. Not buying power.' },
+    { key: 'margin', section: 'assets', label: 'Margin and collateral posted', accounts: ['cash.margin'], note: 'Futures margin, and collateral posted on OTC positions. The poster\'s own asset, not spendable while posted.' },
     { key: 'receivable', section: 'assets', label: 'Receivable for unsettled trades', accounts: ['recv.settle'] },
     { key: 'accruedIncome', section: 'assets', label: 'Accrued income', accounts: ['accrued.asset'] },
     { key: 'positions', section: 'assets', label: 'Positions at market value', accounts: ['pos'], unrealized: true, note: 'Long positions less short positions. A position with no price is carried at cost.' },
@@ -327,7 +336,7 @@ export function createAccounting(app) {
     { key: 'payable', section: 'liabilities', label: 'Payable for unsettled trades', accounts: ['pay.settle'] },
     { key: 'accruedExpense', section: 'liabilities', label: 'Accrued interest and fees payable', accounts: ['accrued.liab'] },
     { key: 'borrowed', section: 'liabilities', label: 'Cash borrowed', accounts: ['loan.liab'], note: 'External borrowing, on the balance sheet of the Treasury or Account that owes it.' },
-    { key: 'collateralReceived', section: 'liabilities', label: 'Cash collateral received', accounts: ['coll.received'] },
+    { key: 'collateralReceived', section: 'liabilities', label: 'Cash collateral received', accounts: ['coll.received'], note: 'Owed back to the counterparty that posted it. The cash itself is in Restricted cash.' },
   ];
 
   /**
@@ -409,15 +418,37 @@ export function createAccounting(app) {
     const results = { key: 'results', label: 'Results to date', note: 'Realized and unrealized profit and loss, income, expenses and FX effects, in the reporting currency.', cells: resultCells, elimination: null,
       total: { rc: money(netAssets.total.rc - capital.total.rc - internal.total.rc, rc), complete: netAssets.total.complete, byCurrency: [] } };
 
+    // The Accounts of the scope as one column, for a worksheet with many Accounts. It is computed the
+    // way an Accounts-only scope computes its total (the same cells added per currency, converted at
+    // the same rates, at the same instant), so a collapsed "Accounts, combined" column is that total.
+    // Transfers between the Accounts cancel in its funding line; funding from Treasury does not.
+    const members = units.filter((u) => u.kind === 'account');
+    let accountsCombined = null;
+    if (members.length > 1) {
+      const sum = (cells) => addCells(members.map((u) => cells[u.id]));
+      const net = sum(netCells), cap = sum(capitalCells), fund = sum(internalCells);
+      accountsCombined = {
+        members: members.map((u) => u.id),
+        lines: Object.fromEntries(lines.map((l) => [l.key, sum(l.cells)])),
+        assets: sum(assets.cells), liabilities: sum(liabilities.cells), netAssets: net,
+        representedBy: { capital: cap, internal: fund, results: { rc: money(net.rc - cap.rc - fund.rc, rc), complete: net.complete, byCurrency: [] } },
+      };
+    }
+
     const m = metrics(bookId, units.map((u) => u.id));
     const own = borrowings(bookId, units.map((u) => u.id).join(','));
     const out = {
       scope: scopeInfo(bookId, scope, units), reportingCcy: rc, asOf: app.clock.now().toISOString(), consolidated: whole && units.length > 1,
       columns: units.map((u) => ({ id: u.id, name: u.kind === 'treasury' ? 'Treasury' : u.name, kind: u.kind })),
-      lines, assets, liabilities, netAssets, representedBy: [capital, internal, results],
+      lines, assets, liabilities, netAssets, representedBy: [capital, internal, results], accountsCombined,
       nav: navStatus(bookId, m), borrowings: own,
       fxRates: [...rate].filter(([ccy]) => ccy !== rc).map(([ccy, r]) => ({ ccy, rate: r })),
       oversight: null,
+      // OTC collateral inside the lines above, from the collateral register: what each unit of the scope has posted
+      // (in "Margin and collateral posted") and holds from counterparties (in "Restricted cash", owed back in
+      // "Cash collateral received"). Each amount sits with the one unit whose ledger moved. A memorandum is added
+      // for amounts another unit posts on these units' behalf under a shared agreement.
+      collateral: app.agreements ? app.agreements.totals(bookId, units.map((u) => u.id)) : null,
     };
     // Treasury alone: its direct balances are the columns above. What it oversees but does not owe
     // or own is listed apart, so an Account's borrowing is visible here without becoming a second loan.
@@ -652,7 +683,7 @@ export function createAccounting(app) {
     const tm = metrics(bookId, [tr.id]);
     const allBorrow = borrowings(bookId, 'book');
     return {
-      book: { id: book.id, name: book.name, reportingCcy: rc }, treasury: { id: tr.id, name: tr.name }, cash, accountFunding: funding, arrangements, collateralInventory: inventory, collateralReceived: received,
+      book: { id: book.id, name: book.name, reportingCcy: rc }, treasury: { id: tr.id, name: tr.name }, cash, accountFunding: funding, arrangements, otcCollateral: app.agreements ? { agreements: app.agreements.list(bookId).filter((a) => a.status === 'active').length, ...app.agreements.totals(bookId) } : null, collateralInventory: inventory, collateralReceived: received,
       bookNav: navStatus(bookId, m), treasuryNav: navStatus(bookId, tm), holds: ledger.listHolds(ids),
       // One register: Treasury's own borrowings, and Account-originated borrowings it oversees but does not owe.
       borrowings: { direct: allBorrow.filter((b) => !b.accountOriginated), accountOriginated: allBorrow.filter((b) => b.accountOriginated) },

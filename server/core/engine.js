@@ -134,6 +134,15 @@ export function createEngine(app) {
       }
     }
     db.tx(() => markShortCollateral());
+    // OTC collateral: independent amounts trued up and variation margin exchanged, under the terms configured
+    // for each position (agreement, position-level terms, or none by explicit choice). Book by Book.
+    try {
+      await app.data.refresh({ pairs: app.agreements.fxNeeds() });
+      const coll = app.agreements.endOfDay(date);
+      if (coll.error) lastError = `Collateral valuation: ${coll.error}`;
+    } catch (err) {
+      lastError = `Collateral valuation: ${err.message}`;
+    }
     for (const s of db.all(`SELECT id FROM strategies WHERE status IN ('open','partial','attention','working')`)) db.tx(() => app.packages.recomputeHolds(s.id));
     app.orders.expireDayOrders(date);
     db.tx(() => cashDeficitSweep());
@@ -221,12 +230,14 @@ export function createEngine(app) {
         summary.eod = target;
         summary.settled += app.settle.settleDue(today);
       }
+      // A collateral call that failed for want of cash is tried again each cycle. A retry delivers only what is still missing.
+      summary.collateral = app.agreements.retryFailed();
       if (summary.tasks || summary.corporateActions) summary.matched += await app.packages.runMatching();
       summary.hedgeRequests = (await app.hedge.processQueue()).length;
       // Requests that were waiting for Shaffer Hedge are refreshed once it can answer. Never executed here.
       summary.hedgeRefreshed = (await app.hedge.refreshWaiting()).length;
       lastTick = clock.now().toISOString();
-      if (summary.matched || summary.settled || summary.tasks || summary.corporateActions || summary.eod || summary.hedgeRequests || summary.hedgeRefreshed) emit({ type: 'changed', summary });
+      if (summary.matched || summary.settled || summary.tasks || summary.corporateActions || summary.eod || summary.collateral || summary.hedgeRequests || summary.hedgeRefreshed) emit({ type: 'changed', summary });
       return summary;
     } catch (err) {
       lastError = String(err.stack || err.message || err);

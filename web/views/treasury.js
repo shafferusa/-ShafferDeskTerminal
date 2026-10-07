@@ -16,6 +16,7 @@ import { bump, fmtMoney, fmtNum, fmtQty, fmtTime, get, isNum, openOverlay, post,
 import { Awaiting, Button, Empty, ErrorNote, Field, Missing, Modal, Money, NavAffected, NavValue, Notice, Num, Panel, Pill, Price, Prov, Seg, Select, Stat, Table, Tabs, Text } from '../lib/ui.js';
 import { ContractFields, draftToContract, newDraft, PositionPicker } from '../lib/contracts.js';
 import { openPreview } from './preview.js';
+import { CollateralDesk } from './agreements.js';
 
 const TAB_IDS = ['cash', 'borrowings', 'collateral', 'holds', 'alerts'];
 const CCY = /^[A-Z]{3}$/;
@@ -126,7 +127,8 @@ export function TransferDialog({ book, status, from, to, unitId, accountsOnly, o
   const src = book.units.find((u) => u.id === f.from), dst = book.units.find((u) => u.id === f.to);
   const held = res.data?.overview.units.find((u) => u.id === f.from)?.cash || [];
   useEffect(() => {
-    if (res.data && !held.some((c) => c.ccy === f.ccy)) setF((x) => ({ ...x, ccy: (held.find((c) => c.ccy === book.reportingCcy) || held[0])?.ccy || '' }));
+    // Decide inside the update, on the latest state: a currency chosen in the same instant must not be overwritten.
+    if (res.data) setF((x) => (held.some((c) => c.ccy === x.ccy) ? x : { ...x, ccy: (held.find((c) => c.ccy === book.reportingCcy) || held[0])?.ccy || '' }));
   }, [f.from, Boolean(res.data)]);
   const kind = !src || !dst ? '' : src.kind === 'treasury' ? 'Treasury funding' : dst.kind === 'treasury' ? 'a return to Treasury' : 'a transfer between Accounts';
   const have = held.find((c) => c.ccy === f.ccy);
@@ -376,7 +378,7 @@ export function CashBuckets({ cash, rc, who, inventory, wide, empty }) {
     { _group: `Borrowed and lent by ${who} itself` },
     row('Cash borrowed', cell('borrowed'), `Cash ${who} has borrowed under its own loans and repos. A liability of ${who}.`),
     row('Cash lent', cell('lent'), `Cash ${who} has lent under loans, deposits and reverse repos.`),
-    row('Cash collateral received', cell('collateralReceived'), 'Owed back to the borrowers of securities lent. A liability.'),
+    row('Cash collateral received', cell('collateralReceived'), 'Owed back to the borrowers of securities lent, and to OTC counterparties that posted it under a collateral agreement. A liability; the cash itself is in Restricted.'),
     ...(inventory ? [{ _group: `Securities collateral held in ${who}, valued at current market prices` },
       row('Pledged collateral', secs('pledgedQty'), 'Securities pledged under repos and secured loans. They cannot be sold or lent until released.'),
       row('Available collateral', secs('availableQty'), 'Securities neither pledged nor out on loan, free to pledge or lend.')] : []),
@@ -572,9 +574,12 @@ function Accounts({ book, d, rc, act }) {
   <//>`;
 }
 
-function Collateral({ d }) {
+function Collateral({ d, book }) {
   const { collateralInventory: inv, collateralReceived: recv } = d.treasury;
   return html`<div class="stack">
+    <${Section} title="Agreements and OTC collateral" note="Swaps, credit default swaps, forwards and OTC options post and receive collateral only as their configured terms say: an agreement, position-level terms, or none by explicit choice." />
+    <${CollateralDesk} book=${book} />
+    <${Section} title="Securities inventory" note="What Treasury and the Accounts hold that can be pledged or lent, and securities held under reverse repos." />
     <${Panel} title="Securities held" note="Across Treasury and every Account of this Book, each with its owner" flush><${Table} margin rows=${inv} rowKey=${(i) => i.positionId}
       empty=${{ title: 'No securities are held', children: 'Securities bought in Treasury or an Account appear here with what is pledged, on loan and free to use as collateral.' }}
       columns=${[
@@ -701,7 +706,7 @@ export default function Treasury({ args, book, status }) {
     </div>` : null}
     <${Tabs} value=${tab} onChange=${(id) => { location.hash = `#/treasury/${id}`; }} tabs=${[
       { id: 'cash', label: 'Treasury and Accounts' }, { id: 'borrowings', label: 'Borrowings and lending', count: t.arrangements.length },
-      { id: 'collateral', label: 'Collateral inventory', count: t.collateralInventory.length }, { id: 'holds', label: 'Cash holds', count: t.holds.length },
+      { id: 'collateral', label: 'Collateral', count: (t.otcCollateral?.agreements || 0) + t.collateralInventory.length }, { id: 'holds', label: 'Cash holds', count: t.holds.length },
       { id: 'alerts', label: 'Needs attention', alert: d.alerts.length || undefined },
     ]} />
     ${tab === 'cash' ? html`<div class="stack">
@@ -718,7 +723,7 @@ export default function Treasury({ args, book, status }) {
       <${Accounts} book=${book} d=${d} rc=${rc} act=${act} />
     </div>` : null}
     ${tab === 'borrowings' ? html`<${Borrowings} book=${book} d=${d} rc=${rc} act=${act} />` : null}
-    ${tab === 'collateral' ? html`<${Collateral} d=${d} />` : null}
+    ${tab === 'collateral' ? html`<${Collateral} d=${d} book=${book} />` : null}
     ${tab === 'holds' ? html`<${Holds} book=${book} d=${d} />` : null}
     ${tab === 'alerts' ? html`<${Alerts} book=${book} d=${d} act=${act} />` : null}
   </div>`;

@@ -25,6 +25,9 @@ const parseHash = () => {
 const flag = (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : v === '1'; } catch { return d; } };
 const setFlag = (k, v) => { try { localStorage.setItem(k, v ? '1' : '0'); } catch { /* ignore */ } };
 
+// True while the post-trade hedge prompt is being fetched and opened, so two reloads cannot open two popups.
+let promptOpening = false;
+
 function Conn({ label, state }) {
   if (!state) return null;
   const cls = state.connection === 'connected' ? 'st-connected' : state.connection === 'demo' ? 'st-demo' : state.connection === 'error' ? 'st-error' : 'st-awaiting';
@@ -100,10 +103,13 @@ function Shell() {
   const [route, setRoute] = useState(parseHash());
   const [View, setView] = useState(null);
   const [alerts, setAlerts] = useState([]);
+  // Who answers hedge requests right now. Stated apart from the Analytics Lab connection, which it must never contradict.
+  const [hedgeSvc, setHedgeSvc] = useState(null);
   const [acctOpen, setAcctOpen] = useState(flag('sdt.accts', true));
   const unitId = useStore((s) => s.unitId);
   const tick = useStore((s) => s.tick);
   const overlayCount = useStore((s) => s.overlay.length);
+  useEffect(() => { get('/api/hedge/service').then(setHedgeSvc, () => {}); }, [tick]);
 
   useEffect(() => {
     const on = () => setRoute(parseHash());
@@ -123,13 +129,17 @@ function Shell() {
     // opens, with the recommended package or, while Analytics Lab is away, the waiting state. It never
     // opens on top of a dialog that is in use; it waits for that dialog to close.
     if (document.querySelector('.modal')) return;
+    // One popup at a time: when several positions are waiting to be shown, the next opens after this one closes.
+    if (promptOpening) return;
+    promptOpening = true;
     get('/api/hedge/prompts', { bookId }).then(async (r) => {
-      for (const h of r.items) {
+      const h = r.items[0];
+      if (h && !document.querySelector('.modal')) {
         await post(`/api/hedge/requests/${h.id}/seen`);
         const { HedgePopup } = await import('./views/hedge.js');
         openOverlay((close) => html`<${HedgePopup} request=${h} onClose=${close} />`);
       }
-    }, () => {});
+    }).catch(() => {}).finally(() => { promptOpening = false; });
   }, [bookId, tick, overlayCount]);
 
   if (!status) return html`<div class="boot">Shaffer Desk Terminal</div>`;
@@ -154,6 +164,7 @@ function Shell() {
       <span class="grow"></span>
       <${Conn} label="MarketData" state=${status.data.market} />
       <${Conn} label="Analytics Lab" state=${status.data.analytics} />
+      ${hedgeSvc?.fixture ? html`<a class="conn st-fixture" href="#/data" data-testid="hedge-service-chip" title=${`Analytics Lab is not connected. ${hedgeSvc.kind === 'demo-fixture' ? 'The labelled demo fixture' : 'A scripted test fixture'} answers complete hedge requests${hedgeSvc.reachable ? '' : ' (it is switched off for now)'} and supplies a fictional Strategy list. It is not Shaffer Hedge.`}><i></i>Hedge: ${hedgeSvc.kind === 'demo-fixture' ? 'demo fixture' : 'test fixture'}${hedgeSvc.reachable ? '' : ', off'}</a>` : null}
       <span class="clock" title="Business date and time, New York">${fmtTime(status.now)}</span>
       <${Button} small onClick=${() => setTheme(dark ? 'light' : 'dark')} title="Switch between light and dark mode">${dark ? 'Light mode' : 'Dark mode'}<//>
     </div>

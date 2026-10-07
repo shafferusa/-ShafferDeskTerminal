@@ -120,13 +120,13 @@ original.
 | Account | Type | Meaning |
 |---|---|---|
 | `cash` | asset | settled, unrestricted cash |
-| `cash.restricted` | asset | short-sale proceeds and collateral held against borrowed securities |
-| `cash.margin` | asset | margin posted for futures and OTC contracts |
+| `cash.restricted` | asset | short-sale proceeds, collateral held against borrowed securities, and cash collateral received from OTC counterparties |
+| `cash.margin` | asset | futures margin, and independent amounts and variation margin posted on OTC positions |
 | `recv.settle` / `pay.settle` | asset / liability | executed trades awaiting settlement |
 | `accrued.asset` / `accrued.liab` | asset / liability | interest and fees earned or owed, not yet paid |
 | `pos` | asset | positions at cost |
 | `loan.asset` / `loan.liab` | asset / liability | principal lent / principal borrowed |
-| `coll.received` | liability | cash collateral received against securities lent |
+| `coll.received` | liability | cash collateral received: against securities lent, and from OTC counterparties under a collateral agreement |
 | `internal` | equity | funding between Treasury and Accounts (nets to zero across a Book) |
 | `capital` | equity | external contributions and withdrawals |
 | `pnl.realized`, `pnl.dividend`, `pnl.coupon`, `pnl.interest`, `pnl.borrow`, `pnl.funding`, `pnl.lending`, `pnl.commission`, `pnl.fee`, `pnl.fx` | P&L | the P&L categories shown on the Accounting page |
@@ -159,15 +159,74 @@ stale, or a currency conversion is missing or stale, and lists each affected ite
 `accounting.holdingsOf` reports holdings gross per instrument: long, short and net, with each
 owning unit. No screen shows a net quantity as a long holding.
 
+### Collateral agreements and OTC collateral (`core/agreements.js`)
+
+Collateral on a swap, credit default swap, forward or OTC option follows the basis the contract
+states (`terms.collateralBasis`), fixed on the position when it opens (`position.data.collateralBasis`):
+
+| Basis | Meaning |
+|---|---|
+| `agreement` | a paper agreement recorded in the Book (`agreements`, `agreement_units`): `bilateral` (CSA-style), `cleared`, or `uncollateralized` |
+| `position` | terms entered on the contract itself; the older `terms.initialMarginPct` field is read as this |
+| `uncollateralized` | an explicit paper assumption: nothing is posted, nothing is received |
+
+No plugin carries a collateral rule. The OTC plugins only state the notional a percentage is taken
+on (`collateralNotional`) and call `app.agreements`: `tradeRequirement` in the preview and at
+execution (a contract with no basis, an agreement of another Book, a closed agreement, a unit the
+agreement does not cover, or an independent amount that settled cash cannot cover all block), and
+`onPositionChange` whenever a quantity changes. A position with no basis on record is flagged and
+treated as uncollateralized; it can be reduced, not increased.
+
+What is simulated: the independent amount (a share of notional or a fixed amount per position,
+posted at the fill, trued up when notional changes, returned when the position ends); variation
+margin in the end-of-day pass (`engine.runEod` calls `agreements.endOfDay`) from the mark of each
+netting set, with the threshold and the minimum transfer amount applied in both directions; netting
+per position, per Account, or shared across the Accounts an agreement lists; one eligible cash
+currency per agreement, valued at its conversion rate less its haircut. Everything else an
+agreement can carry (`RECORDED_ONLY`) is stored and shown as "recorded, not simulated".
+
+Posted collateral moves `cash` to `cash.margin` in the posting unit. Collateral received is
+`cash.restricted` against `coll.received`: it never reaches `cash`, and a settlement draws
+restricted cash only from the position it belongs to, so it cannot be spent. Each movement is one
+balanced ledger event (`<family>.collateral` for an independent amount, `collateral.variation` for
+variation margin) whose data names the agreement, the positions of the netting set, the requirement
+and the marks with their observations. The `collateral_movements` register mirrors it with the
+unit whose ledger moved and the Account the amount is allocated to; `agreements.reconcile` checks
+the register against the ledger. `collateral_state` keeps the latest valuation of each requirement.
+
+A call that cannot be met from settled, uncommitted cash posts nothing: it is recorded once
+(`collateral.call_failed`), raised as an alert and retried every engine cycle; a retry delivers the
+difference between what is required and what is held, so it cannot post twice. A netting set with
+a missing mark or conversion rate is not called at all and is flagged.
+
+An agreement belongs to one Book and covers units of that Book only; netting sets are built Book by
+Book. Sharing across Accounts exists only where an agreement lists them and names a posting unit;
+the collateral is then on that unit's balance sheet, once, and the Accounts see it as an allocation.
+Listed futures and options are cleared products whose margin follows the Book's paper-desk
+assumptions (`core/defaults.js`) and each contract's own initial margin, not these agreements.
+
 ## Calendars (`quant/calendar.js`)
 
 Holiday rules are built in for `US` (NYSE), `USBOND` (SIFMA), `USD` (Federal Reserve), `UK`,
-`TARGET`, `JP` and `CA`; `A+B` is a joint calendar. `calendarInfo(inst)` picks a calendar from an
-explicit term, the venue country or the currency, and reports the basis; a market with none falls
-back to `WEEKEND` and is flagged in the instrument view and as a warning in the preview.
-`fxValueDate` uses both currencies' calendars (and US dollar days for crosses). Holidays entered
-by hand are stored as a setting and applied on start. These are stand-ins until Shaffer MarketData
-supplies calendars.
+`TARGET`, `JP` and `CA`; `A+B` is a joint calendar, open only when every member is.
+
+An instrument has three calendars: trading, settlement and payment. Each can be set on the
+instrument (`instruments.conventions`: `tradingCalendar`, `settlementCalendar`, `paymentCalendar`,
+and `settleLag`); what is not set comes from the venue country, then the currency.
+`calendarInfo(inst)` (`products/security.js`) reports all three with their basis. Payment dates
+(coupons, interest, maturities, resets) always also follow the payment calendar of each currency
+paid. A role with no real calendar falls back to `WEEKEND`; `calendarInfo(inst).flag`
+(`weekends-only` or `approximate`) and `flagText` carry that to the instrument, its ticket, the
+Marketplaces row and the preview leg as a badge and a sentence. `fxValueDate` uses both
+currencies' calendars (and US dollar days for crosses). Holidays entered by hand are stored as a
+setting and applied on start. These are stand-ins until Shaffer MarketData supplies calendars.
+
+Settlement of a trade (`core/settlement.js`, `resolveSettlement`): the lag set on the instrument,
+else the Book's assumption for the product, counted on the settlement calendar; or a settlement
+date or lag stated for that one transaction (`leg.settle = { date }` or `{ lag }`). A stated date
+that is not a business day on the settlement calendar, or is before the trade date, is a calendar
+conflict: the preview blocks with the reason and nothing is re-dated silently. Futures, forwards
+and financing arrangements have their settlement fixed by the product.
 
 ## Packages, orders and fills
 
@@ -181,9 +240,17 @@ supplies calendars.
    reports protection already present in the template or the Account (`analyzeProtection`);
    adding more is an error unless the request says it is deliberate.
 3. **Confirm** (`packages.submit`). One confirmation creates one strategy instance; each leg
-   becomes its own order. A token can be used once. The browser sends back the cash total it
-   displayed; if re-pricing moves it by more than `fill.maxPreviewDriftPct`, the confirmation is
-   refused with `preview_changed` and the new preview is returned for review.
+   becomes its own order. A token can be used once. The confirmation carries the figures that
+   were displayed (`expected`: the preview's `confirmation` snapshot of every leg and every package
+   total). The legs are priced again as one snapshot and compared with it (`core/confirmation.js`)
+   under the Book's tolerances (`settings.confirmation`: leg price, leg amounts, package totals,
+   gross cash and notional, preview age). Each leg is checked alone and the gross measures add
+   absolute amounts, so offsetting moves cannot hide in a net figure. A figure beyond its
+   tolerance, or any changed term (settlement date, quote status, financing terms, borrow
+   availability, a missing leg), refuses the confirmation with `preview_changed`; the response
+   carries the new preview and the list of changes (was, now) for a new confirmation. Each order
+   keeps what it was confirmed on (`order.data.confirmed`), each fill records how it differs and
+   why (`fills.confirm`), and a difference is also posted to the history (`order.fill_variance`).
 4. **Match** (`core/orders.js`). Legs are not assumed to execute together. A leg waits for its
    dependencies, is rejected if a dependency fails, and is scaled down if a dependency only partly
    fills. Fills use quoted bid/ask where there is one, otherwise a named fill model; a stated price
@@ -196,22 +263,90 @@ filled, so residual exposure remains), `failed`, `closed`. Recovery actions are 
 accept as it stands, and cancel working legs. Close, resize and roll are new packages attached to
 the same strategy instance.
 
-## Hedge (`core/hedge.js`)
+## Hedge and protection (`core/hedge.js`, `core/protection.js`)
 
-Shaffer Hedge runs in Analytics Lab. The Terminal builds a complete request (instrument, direction,
-amount, Book, Account, investment Strategy, holding period, objective, scope, existing position,
-hedges already held, the template's own protection, and position facts for the Account or Book),
-stores it, and shows what comes back. Proposed legs run through the same preview, confirmation and
-per-leg checks as any other package, and stay linked to the primary position. When a hedged
-exposure changes, the strategy is flagged for review; nothing is traded without confirmation.
-No hedge selection or sizing logic exists in the Terminal.
+Shaffer Hedge runs in Analytics Lab. It selects and sizes hedges and decides which existing hedges
+apply to an exposure. The Terminal builds the request, says truthfully where it stands, validates
+and stores what comes back, and runs confirmed paper execution through the normal preview. No hedge
+selection or sizing logic exists in the Terminal, and nothing is executed because a recommendation
+arrived.
 
-A request made while Analytics Lab is unavailable is stored as waiting. It stays on the position
-(Accounting, open positions) and in the review queue (`hedge.queue`). Each engine cycle calls
-`hedge.refreshWaiting`, which re-asks for the same request, in place, against the exposure as it
-is then; it never creates a second request and never trades. The popup's cost table is built only
-from the Terminal's own priced legs; the service's estimate is shown beside it for comparison.
-"Execute now" submits the displayed preview with its expected cash, under the same drift guard.
+**One state per request**, derived on every read and returned by every route that returns a request:
+
+| State | Meaning |
+|---|---|
+| `incomplete` | Required context is missing (investment Strategy, holding period, objective, or the amount). Stored and shown; **not sent** to the service and not answered by a fixture. |
+| `awaiting_connection` | Complete; the service cannot be reached. |
+| `ready_for_analysis` | Complete and the service can be reached; not answered yet. |
+| `recommendation_ready` | A response is stored (with its source and freshness). |
+| `executing` / `executed` | A package was confirmed; legs still working / done. Confirmed with no leg executed reads as `error`. |
+| `dismissed`, `closed`, `error` | Dismissed by the user; the position it was for no longer exists (with the reason); the service call failed. |
+
+Completeness (`complete`, `missing`) and connection (`connection.reachable`, `kind`) are reported as
+separate facts beside the state. `POST /api/hedge/requests/:id/complete` saves missing context under
+the same request id and sends it when it is complete; the context is also written to the position's
+strategy instance.
+
+**Source and freshness.** Every stored response is stamped by the Terminal, from the channel it came
+through, with `{ kind: 'shaffer-hedge' | 'demo-fixture' | 'test-fixture', label, version, receivedAt,
+exposureAsOf, fingerprint }`. `version` is the service's version or run id, or null ("not supplied").
+Freshness is never stored as a claim: each read compares the fingerprint (scope, primary amount, and
+the hedges that are linked to the exposure or could still be allocated to it) with positions as they
+are, and reports `current` or `stale` with what changed, and separately whether the source can be
+reached now (a recommendation whose source is away is "cached"). A stale recommendation is refused by
+the preview (`hedge-stale`) until `POST /api/hedge/requests/:id/refresh` re-asks in place.
+
+**One request per primary.** A position's open request is reused and rebuilt in place by any later
+call; the automatic post-trade request is made once per position; a strategy instance that holds
+only hedge legs or financing never gets a request. On each engine cycle waiting requests are
+refreshed against exposure as it is then (`refreshWaiting`), and a request whose position was closed
+becomes `closed` and is not sent.
+
+**Investment Strategies** are identified by the IDs Analytics Lab supplies (`analytics.strategies()`).
+A reference is `{ id, name, resolved: true, source, version }` when chosen from that list and
+`{ id: null, name, resolved: false }` when typed while the list is unavailable. An unresolved name is
+labelled as such everywhere; an exact-name match is suggested and applied only when the user confirms
+it (`POST /api/analytics/strategies/resolve`). Execution templates are a separate concept.
+
+**Protection** (`core/protection.js`, tables `protection_allocations` and `protection_verdicts`). A
+hedge counts as protection for a position only through an active allocation:
+
+| Basis | Created when | By |
+|---|---|---|
+| `explicit_link` | a hedge leg executed from that position's hedge request fills | the Terminal, from the stored request id |
+| `template` | a hedge leg of the execution template that built the position fills | the Terminal, from the strategy instance id |
+| `service` | a hedge response carries a protection assessment | Analytics Lab; validated and stored by the Terminal |
+
+The request sends the Account's positions and hedges as context, each hedge tagged `linked`, `shared`,
+`allocated_elsewhere` (with the capacity left) or `unassessed`; only `linked` hedges and the template's
+own protection are stated to protect the exposure. Capacity is never counted twice: bought options
+have a capacity of contracts x deliverable units (a put covers long units, a call short units, a
+written option none); futures, forwards, swaps and other contracts have no unit measure in the
+Terminal, so an explicit link is recorded without units and a service allocation must state the
+capacity it is working from. An allocation that would exceed capacity, crosses a Book, or refers to
+an expired or closed hedge is stored as `rejected` with the reason. Allocations are released when the
+hedge or the protected position closes, and marked `expired` when the hedge expires. A position's
+remaining exposure is computed only from allocations that exist; while hedges are held in the
+Account that nobody has assessed, it says "Protection assessment unavailable." The preview's
+duplicate-protection check (`analyzeProtection`) works from the template's own legs and these
+allocations: adding more than the exposure still unprotected has to be confirmed as deliberate.
+
+**Shared identifiers.** Orders store the hedge request id on hedge legs (`hedgeLinkId`), the legs a
+financing leg funds (`fundsLegs`) and the legs a hedge leg protects (`protectsLegs`); positions carry
+the strategy instance id. `accounting.openPositions` and `packages.strategyView().hedge.links` turn
+these into relationship lines ("Financing for Long 300 BRVO", "Hedge leg of request HDG-...,
+protects Long 300 BRVO").
+
+**Fixtures (demo mode only).** The demo fixture (`data/demo-hedge.js`) answers complete requests with
+canned packages, an illustrative protection assessment and a small fictional Strategy list; it is
+labelled "demo fixture, not Shaffer Hedge" wherever its output appears, and the top bar shows
+"Hedge: demo fixture" beside "Analytics Lab: awaiting". `POST /api/demo/hedge-script` loads a scripted
+"service" (responses with packages and a protection assessment, optionally a Strategy list) for
+tests and the browser harness; everything it returns is labelled `test-fixture`.
+
+The popup's cost table and the totals that stay in view are built only from the Terminal's own
+priced legs in one snapshot; the service's estimate is shown beside them for comparison. "Execute
+now" submits the displayed preview with its expected figures, under the same confirmation guard.
 
 ## Engine (`core/engine.js`)
 
@@ -248,3 +383,10 @@ internal transfers and their elimination, hedge preview totals against the entri
 execution, a refused confirmation after a price move, duplicate protection, gross holdings, a
 failed then completed settlement, provisional NAV, a waiting hedge request refreshed in place, and
 a total-return swap with collateral, resets, financing and close-out.
+
+`test/core/collateral.test.js` checks collateral against hand-worked figures: a total-return swap
+and a credit default swap each under an agreement, position-level terms and an explicit
+uncollateralized assumption; threshold and minimum transfer; per-position against per-Account
+netting; collateral received that cannot be spent; release on reduction, close, maturity and credit
+event; a shared agreement and its allocations; Book isolation; a failed call retried without double
+posting; a missing mark; and each amount once on Account, Treasury and Book balance sheets.

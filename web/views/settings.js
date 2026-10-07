@@ -5,8 +5,9 @@
 // Terminal's own rule-based ones, with holidays added by hand, until Shaffer MarketData supplies
 // market calendars; a market with none falls back to weekends only and is flagged wherever a date
 // is shown. The assumptions are the parameters the simulation engine reads for fees, fills,
-// settlement, short selling, short options and dividends. They are editable assumptions of the
-// paper desk, not market data and not a risk model. Only values the engine uses are shown.
+// settlement, short selling, short options and dividends, and the tolerances a confirmation is held
+// to. They are editable assumptions of the paper desk, not market data and not a risk model. Only
+// values the engine uses are shown.
 import { html, useEffect, useState } from '../vendor/preact-htm.js';
 import { bump, fmtNum, fmtTime, get, isNum, put, refreshStatus, setTheme, toast, useLive, useStore } from '../lib/core.js';
 import { Button, Check, ErrorNote, KV, Notice, Num, Panel, Pill, Seg, Select, Text } from '../lib/ui.js';
@@ -46,12 +47,22 @@ const GROUPS = [
       { label: 'Listed options, half spread', hint: 'Percent of premium, never less than one tick.', paths: ['fill.optionHalfSpreadPct'], reads: (v) => `${v}% of premium` },
       { label: 'Futures, half spread', hint: 'In ticks of the contract. A contract with no tick size uses 0.01% of price as one tick.', paths: ['fill.futureHalfSpreadTicks'], reads: (v) => `${v} tick${v === 1 ? '' : 's'}` },
     ] },
+  { id: 'confirmation', title: 'Confirmation tolerances',
+    intro: 'A confirmation executes the figures that were displayed. When you confirm, the legs are priced again as one snapshot and compared with what was on screen, leg by leg and in total. A figure that moved by more than its tolerance refuses the confirmation and shows what changed, was and now. A changed term (settlement date, quote status, financing terms, borrow availability, a missing leg) is refused whatever these values say. Zero accepts no movement. A difference the tolerances allow is recorded on the order and its fill.',
+    cols: ['Value'],
+    rows: [
+      { label: 'Leg price', hint: 'How far the estimated fill price of one leg may move, in percent of the price displayed.', paths: ['confirmation.legPricePct'], reads: (v) => `${v}% of price` },
+      { label: 'Leg amounts', hint: 'Cash, fees, accrued interest, margin, collateral, notional and financing amount of one leg, each in percent of the amount displayed.', paths: ['confirmation.legAmountPct'], reads: (v) => `${v}% of amount` },
+      { label: 'Package totals', hint: 'Each total per currency: cash required, net cash, purchases, proceeds, fees, margin, collateral, financing and the funding shortfall.', paths: ['confirmation.packageCashPct'], reads: (v) => `${v}% of total` },
+      { label: 'Gross cash and notional', hint: 'The legs\' absolute cash amounts added together, and their notionals, per currency. Offsetting moves in two legs cannot cancel out in these.', paths: ['confirmation.grossCashPct'], reads: (v) => `${v}% of gross` },
+      { label: 'Preview age', hint: 'A preview older than this many seconds has to be priced again before it can be confirmed. Zero sets no limit.', paths: ['confirmation.maxPreviewAgeSec'], reads: (v) => (v ? `${v} s` : 'no limit') },
+    ] },
   { id: 'spread', title: 'Assumed half spread by product',
     intro: 'Basis points of price added to a buy and taken off a sell when only a last or manually entered price exists. OTC options fill at the stated or marked price with no spread.',
     cols: ['Basis points'],
     rows: SPREAD_FAMILIES.map((f) => ({ label: FAMILY_LABEL[f], paths: [`fill.halfSpreadBps.${f}`], reads: (v) => `${v} bp` })) },
   { id: 'settlement', title: 'Settlement lags',
-    intro: 'Business days from trade date to settlement. An instrument\'s own lag is used where it has one. Spot FX settles on the lag of the currency pair (T+2 unless the pair says otherwise), futures settle the same day and forwards on their value date, so they have no setting here.',
+    intro: 'Business days from trade date to settlement, counted on the instrument\'s settlement calendar. A lag set on the instrument (Instruments, Calendars and settlement) is used ahead of these, and a settlement date or lag can be stated for one trade on its ticket or in the preview. Spot FX settles on the lag of the currency pair (T+2 unless the pair says otherwise), futures settle the same day and forwards on their value date, so they have no setting here.',
     cols: ['Business days'],
     rows: SETTLE_FAMILIES.map((f) => ({ label: FAMILY_LABEL[f], hint: f === 'foreignCash' ? 'Equities, funds, spot assets and manually valued holdings in the Foreign Based view use this lag instead of their own row.' : '', paths: [`settlement.${f}`], reads: days })) },
   { id: 'short', title: 'Short selling',
@@ -96,15 +107,26 @@ function Group({ g, draft, saved, defaults, set }) {
         </tr>`; })}</tbody></table></div><//>`;
 }
 
+/**
+ * The settings as the engine applies them. A Book that changed the single confirmation threshold of
+ * earlier versions (fill.maxPreviewDriftPct) and has not set the package tolerance since keeps that
+ * value as its package tolerance, so that is the value shown.
+ */
+function applied(b) {
+  const legacy = b.settingsOverrides?.fill?.maxPreviewDriftPct;
+  if (isNum(legacy) && b.settingsOverrides?.confirmation?.packageCashPct === undefined) return setPath(b.settings, 'confirmation.packageCashPct', legacy);
+  return b.settings;
+}
+
 function Assumptions({ book }) {
   const defs = useLive(() => get('/api/defaults'), [], { interval: false });
-  const [draft, setDraft] = useState(book.settings);
-  const [saved, setSaved] = useState(book.settings);
+  const [draft, setDraft] = useState(applied(book));
+  const [saved, setSaved] = useState(applied(book));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const dirty = ALL_PATHS.filter((p) => getPath(draft, p) !== getPath(saved, p));
   // Follow the Book when nothing is being edited (a save made elsewhere, or a reload).
-  useEffect(() => { if (!dirty.length) { setDraft(book.settings); setSaved(book.settings); } }, [JSON.stringify(book.settings)]);
+  useEffect(() => { if (!dirty.length) { setDraft(applied(book)); setSaved(applied(book)); } }, [JSON.stringify(book.settings)]);
   if (!defs.data) return defs.error ? html`<${ErrorNote} error=${defs.error} />` : html`<div class="note">Loading the assumptions…</div>`;
   const defaults = defs.data.book;
   const invalid = ALL_PATHS.filter((p) => typeof getPath(defaults, p) === 'number' && !(isNum(getPath(draft, p)) && getPath(draft, p) >= 0));
@@ -117,7 +139,7 @@ function Assumptions({ book }) {
       let patch = {};
       for (const p of dirty) patch = setPath(patch, p, getPath(draft, p));
       const b = await put(`/api/books/${book.id}`, { settings: patch });
-      setSaved(b.settings); setDraft(b.settings);
+      setSaved(applied(b)); setDraft(applied(b));
       await refreshStatus(); bump();
       toast('Assumptions saved.');
     } catch (err) { setError(err); }
@@ -229,12 +251,13 @@ function Calendars({ today }) {
       <//>
       <${Panel} title="How an instrument gets its calendar" note="First rule that applies" flush>
         <div class="tablewrap"><table class="ledger fit"><tbody>
-          <tr><td class="nowrap">1. Set on the instrument</td><td>A calendar named in the instrument's own terms is used as it is. Digital assets always settle on every calendar day.</td></tr>
+          <tr><td class="nowrap">1. Set on the instrument</td><td>A trading, settlement or payment calendar set on the instrument is used as it is. Several joined with + make a joint calendar, open only when every one of them is open. Digital assets always trade and settle on every calendar day.</td></tr>
           <tr><td class="nowrap">2. Venue country</td><td>The country of the listing venue selects the market calendar. An instrument in a US market view with no country recorded uses the US calendars.</td></tr>
           <tr><td class="nowrap">3. Trading currency</td><td>With no venue country, the payment calendar of the settlement or trading currency is used, and the instrument says it was inferred.</td></tr>
-          <tr><td class="nowrap">4. Weekends only</td><td>With no calendar for the country or the currency, dates use weekends only. This is never silent: the instrument and every trade preview say so.</td></tr>
+          <tr><td class="nowrap">4. Weekends only</td><td>With no calendar for the country or the currency, dates use weekends only. This is never silent: the instrument, its ticket, the Marketplaces row and every trade preview say so.</td></tr>
+          <tr><td class="nowrap">Payments</td><td>Coupons, interest, maturities and resets are paid on the payment calendar set on the instrument, or else its settlement calendar, always joined with the payment calendar of each currency paid.</td></tr>
         </tbody></table></div>
-        <p class="note" style="margin:0;padding:8px 12px">Each instrument states its calendar and how it was chosen under <a href="#/instruments">Instruments</a>. Set the venue country there to change it.</p>
+        <p class="note" style="margin:0;padding:8px 12px">Each instrument states its three calendars and how each was chosen under <a href="#/instruments">Instruments</a>. Set the venue country or the calendars there to change them.</p>
       <//>
     </div>
   </div>`;

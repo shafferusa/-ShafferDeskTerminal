@@ -17,7 +17,9 @@
 
 import { j, pj } from '../db/db.js';
 import { fmt } from './books.js';
+import { fillVariance } from './confirmation.js';
 import { computeFees, estimateFill, FILL_MODEL_LABEL } from './fillmodel.js';
+import { resolveSettlement } from './settlement.js';
 import { optionRequirement } from './payoff.js';
 import { AppError, isZero, money, newId, qty8, round } from './util.js';
 import { fmtQty } from '../products/common.js';
@@ -44,7 +46,7 @@ export function createOrders(app) {
   }
   const get = (id) => parse(db.get('SELECT * FROM orders WHERE id = ?', id));
   const forStrategy = (strategyId) => db.all('SELECT * FROM orders WHERE strategy_id = ? ORDER BY created_at, leg_no', strategyId).map(parse);
-  const fillsFor = (orderId) => db.all('SELECT * FROM fills WHERE order_id = ? ORDER BY ts', orderId).map((f) => ({ ...f, fees: pj(f.fees, []) }));
+  const fillsFor = (orderId) => db.all('SELECT * FROM fills WHERE order_id = ? ORDER BY ts', orderId).map((f) => ({ ...f, fees: pj(f.fees, []), confirm: pj(f.confirm, null) }));
   const active = (strategyId) => (strategyId
     ? db.all(`SELECT * FROM orders WHERE strategy_id = ? AND status IN ('pending','working','partial') ORDER BY created_at, leg_no`, strategyId)
     : db.all(`SELECT * FROM orders WHERE status IN ('pending','working','partial') ORDER BY created_at, leg_no`)).map(parse);
@@ -108,7 +110,9 @@ export function createOrders(app) {
   const floorStep = (x, step) => qty8(Math.floor(x / step + 1e-9) * step);
 
   // ---- recording a fill --------------------------------------------------------------------
-  function recordFill(o, { qty, price, gross, ccy, fees = [], model, note, obs, settleDate, eventId }) {
+  // `actual` carries the fill's figures in the same terms the preview displayed them (cash before
+  // fees, fees, accrued interest, margin), so the fill can be reconciled with what was confirmed.
+  function recordFill(o, { qty, price, gross, ccy, fees = [], model, note, obs, settleDate, eventId, actual = null }) {
     const id = newId('FIL');
     const priceObsId = obs ? app.data.recordUsed(obs) : null;
     let fxObsId = null;
@@ -116,11 +120,23 @@ export function createOrders(app) {
       const fx = app.data.fx(ccy, ledger.rcOf(o.book_id));
       fxObsId = fx?.obs ? app.data.recordUsed(fx.obs) : null;
     }
+    // Confirmed -> fill reconciliation: the difference between this fill and the figures confirmed for
+    // its order, with the reason, is part of the fill record. A difference is also posted to the
+    // history as its own event, so a permitted change is never implicit.
+    const ts = clock.now().toISOString();
+    const recon = fillVariance(o.data.confirmed, { qty, price: price ?? null, ccy: ccy || o.data.confirmed?.ccy || null, settleDate: settleDate || null, model, quoteAsOf: obs?.asOf || null, action: o.action, ...(actual || {}) }, { filledAt: ts });
     db.run(
-      `INSERT INTO fills (id, order_id, ts, business_date, qty, price, gross, ccy, fees, fill_model, fill_note, price_obs_id, fx_obs_id, settle_date, event_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      id, o.id, clock.now().toISOString(), clock.today(), qty, price ?? null, gross ?? null, ccy || null, j(fees), model, note || null, priceObsId, fxObsId, settleDate || null, eventId || null,
+      `INSERT INTO fills (id, order_id, ts, business_date, qty, price, gross, ccy, fees, fill_model, fill_note, price_obs_id, fx_obs_id, settle_date, event_id, confirm)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      id, o.id, ts, clock.today(), qty, price ?? null, gross ?? null, ccy || null, j(fees), model, note || null, priceObsId, fxObsId, settleDate || null, eventId || null, recon ? j(recon) : null,
     );
+    if (recon && !recon.exact) {
+      ledger.post({
+        bookId: o.book_id, unitId: o.unit_id, type: 'order.fill_variance', instrumentId: o.instrument_id, strategyId: o.strategy_id, orderId: o.id, actor: 'engine',
+        summary: `Leg ${o.leg_no} fill differs from the confirmed figures (${recon.within ? 'within tolerance' : 'outside tolerance'}): ${describe(o)}. ${recon.reason}`,
+        data: { fillId: id, ...recon },
+      });
+    }
     const filled = qty8(o.filled_qty + qty);
     const avg = price !== null && price !== undefined ? ((o.avg_price || 0) * o.filled_qty + price * qty) / filled : o.avg_price;
     const status = filled >= o.qty - 1e-9 ? 'filled' : 'partial';
@@ -222,11 +238,19 @@ export function createOrders(app) {
     }
 
     // ---- cash, margin and collateral checks -------------------------------------------------
-    const settleDate = plugin.settleDate(app, inst, today, book);
+    // The instrument's settlement convention, or the date / lag stated for this trade at confirmation.
+    // A stated date that can no longer be honoured (the order filled after it) is a calendar conflict.
+    const stl = resolveSettlement(app, { inst, book, tradeDate: today, stated: o.data.settle || null });
+    if (stl.conflicts.length) return reject(o, stl.conflicts[0].message);
+    const settleDate = stl.date;
     const fees = computeFees(book, inst, qty, price);
     const feeTotal = fees.reduce((a, f) => a + f.amount, 0);
     const econ = plugin.economics(app, { inst, action: o.action, qty, price, unit, strategyId: o.strategy_id, tradeDate: today, settleDate, book });
     const cashNow = ledger.cash(unit.id, ccy);
+    // OTC collateral follows the basis the contract states. At execution it must still hold (stated, an agreement of
+    // this Book that is active and covers this unit) and the independent amount must be covered by settled cash of
+    // the unit that posts it. A shortfall rejects the leg: collateral is never funded silently.
+    if (econ.collateral?.blocking) return reject(o, econ.collateral.blocking);
     if (inst.family === 'future') {
       const need = Math.max(econ.initialMargin || 0, 0) + feeTotal;
       if (need > 0 && cashNow.availableToWithdraw < need - 0.004) return reject(o, `Insufficient settled ${ccy} cash for initial margin and fees: ${fmt(need, ccy)} needed, ${fmt(cashNow.availableToWithdraw, ccy)} available.`);
@@ -260,7 +284,8 @@ export function createOrders(app) {
     // ---- book it ----------------------------------------------------------------------------
     const fillId = newId('F');
     const r = plugin.fill(app, { book, unit, inst, order: o, action: o.action, qty, price, fees, strategyId: o.strategy_id, tradeDate: today, settleDate, fillId, data: { fillModel: est.model, priceObsId: obs ? app.data.recordUsed(obs) : null, purpose: o.data.purpose || 'primary' } });
-    recordFill(o, { qty, price, gross: r.gross ?? null, ccy, fees, model: est.model, note: `${est.label}. ${est.note}`, obs: est.model === 'stated-price' ? null : obs, settleDate, eventId: r.eventId });
+    recordFill(o, { qty, price, gross: r.gross ?? null, ccy, fees, model: est.model, note: `${est.label}. ${est.note}`, obs: est.model === 'stated-price' ? null : obs, settleDate, eventId: r.eventId,
+      actual: { cash: econ.cash, fees: feeTotal, accrued: econ.accrued || 0, margin: econ.initialMargin > 0 ? econ.initialMargin : null } });
     filledThisCycle.add(o.id);
     afterPositionChange({ book, unit, inst, plugin, o, position: r.position });
     return true;
@@ -340,7 +365,7 @@ export function createOrders(app) {
     const problems = plugin.checkOpen ? plugin.checkOpen(app, args) : [];
     if (problems.length) return reject(o, problems[0]);
     const r = plugin.open(app, { book, unit, inst, order: o, action: o.action, qty: remaining, strategyId: o.strategy_id, tradeDate: clock.today(), collateralPositionId: o.data.collateralPositionId, sourcePositionId: o.data.sourcePositionId });
-    recordFill(o, { qty: remaining, price: null, ccy: inst.trading_ccy, model: 'arrangement', note: 'Simulated financing arrangement opened on the stated terms.', eventId: r.eventId });
+    recordFill(o, { qty: remaining, price: null, ccy: inst.trading_ccy, model: 'arrangement', note: 'Simulated financing arrangement opened on the stated terms.', eventId: r.eventId, actual: typeof r.cashNet === 'number' && o.kind !== 'lend_sec' ? { cash: r.cashNet } : null });
     positions.setData(positions.get(r.position.id), { purpose: o.data.purpose || 'financing', hedgeLinkId: o.data.hedgeLinkId || null });
     if (plugin.onPositionChange) plugin.onPositionChange(app, { book, unit, inst: app.instruments.get(inst.id), pos: positions.get(r.position.id) });
     app.packages.recomputeHolds(o.strategy_id);
@@ -356,7 +381,8 @@ export function createOrders(app) {
     const problems = plugin.checkClose ? plugin.checkClose(app, { unit, inst, pos, qty }) : [];
     if (problems.length) return wait(o, problems[0]);
     const r = plugin.close(app, { book, unit, inst, pos, order: o, qty, tradeDate: clock.today() });
-    recordFill(o, { qty: remaining, price: null, ccy: inst.trading_ccy, model: 'arrangement', note: 'Simulated financing arrangement closed.', eventId: r.eventId });
+    recordFill(o, { qty: remaining, price: null, ccy: inst.trading_ccy, model: 'arrangement', note: 'Simulated financing arrangement closed.', eventId: r.eventId,
+      actual: typeof r.cashNet === 'number' && ['repay', 'repo_close'].includes(o.kind) ? { cash: r.cashNet + (r.interestPaid || 0) } : null });
     if (plugin.onPositionChange) plugin.onPositionChange(app, { book, unit, inst, pos: positions.get(pos.id) });
     app.packages.recomputeHolds(o.strategy_id);
     return true;
@@ -449,7 +475,7 @@ export function createOrders(app) {
     const amount = money((f.amount * remaining) / o.qty, f.ccy);
     try {
       const r = app.books.transfer({ bookId: book.id, fromUnitId: f.fromUnitId, toUnitId: unit.id, ccy: f.ccy, amount, purpose: `Funding for ${app.packages.getStrategyRow(o.strategy_id).name}`, strategyId: o.strategy_id, orderId: o.id });
-      recordFill(o, { qty: remaining, price: null, ccy: f.ccy, model: 'funding', note: 'Internal transfer from Treasury. No currency conversion.', eventId: r.eventId });
+      recordFill(o, { qty: remaining, price: null, ccy: f.ccy, model: 'funding', note: 'Internal transfer from Treasury. No currency conversion.', eventId: r.eventId, actual: { cash: amount } });
       return true;
     } catch (err) {
       if (err instanceof AppError) return reject(o, err.message);

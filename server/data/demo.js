@@ -12,11 +12,17 @@ import { blackScholes } from '../quant/options.js';
 import { addDays, diffDays, makeDate, weekday, ymd } from '../quant/dates.js';
 import { adjust, isBusinessDay, thirdFriday } from '../quant/calendar.js';
 import { instantInTz } from '../core/clock.js';
+import { AppError, num } from '../core/util.js';
 import { makeObservation, unavailable } from './observation.js';
 import { MARKET_DATASETS, datasetStates } from './ports.js';
 
 const SOURCE = 'Simulated demo feed';
 const PROVIDER = 'demo';
+// Controlled test fixtures (test/matrix): a stand-in for the Shaffer services with values the test
+// states. Every observation they produce says so in its source and is never a market quote.
+export const FIXTURE_SOURCE = 'Test fixture';
+const FIXTURE_PROVIDER = 'test-fixture';
+const FIXTURE_NOTE = 'Controlled test fixture set by the test harness. Not a market quote and not Shaffer data.';
 
 /** Fictional instruments. `seed` drives the deterministic price path. */
 export const DEMO_UNIVERSE = [
@@ -69,6 +75,16 @@ export function createDemoMarketPort({ clock, resolveInstrument }) {
   const overrides = new Map(); // subject -> {value, bid, ask, bidSize, askSize}
   const borrowOverrides = new Map();
   let frozenSizes = null;
+  // Controlled test fixtures, set through createFixtureControls() below. Unlike the pins above (which keep the
+  // demo feed's source for the engine tests) these are labelled "Test fixture" on every observation.
+  const fixt = { quotes: new Map(), closes: new Map(), fx: new Map(), rates: new Map(), borrow: new Map() };
+  const fxObs = (o) => makeObservation({ ...o, source: FIXTURE_SOURCE, providerId: FIXTURE_PROVIDER, status: 'simulated', delayMinutes: 0, assumptions: [FIXTURE_NOTE] });
+  const fixtureFx = (pair) => {
+    if (fixt.fx.has(pair)) return fixt.fx.get(pair);
+    const [a, b] = pair.split('/');
+    const inv = fixt.fx.get(`${b}/${a}`);
+    return inv ? 1 / inv : null;
+  };
 
   const spotAt = (symbol, tMs) => {
     const u = BY_SYMBOL.get(symbol);
@@ -135,6 +151,14 @@ export function createDemoMarketPort({ clock, resolveInstrument }) {
 
   function observe(instrument, tMs, { forDate } = {}) {
     const nowIso = clock.now().toISOString();
+    const fq = fixt.quotes.get(instrument.id);
+    if (fq) {
+      const last = fq.last ?? (fq.bid != null && fq.ask != null ? (fq.bid + fq.ask) / 2 : null);
+      return fxObs({
+        kind: 'price', subject: instrument.id, value: last, bid: fq.bid ?? null, ask: fq.ask ?? null, bidSize: fq.bidSize ?? null, askSize: fq.askSize ?? null, prevClose: fq.prevClose ?? null,
+        currency: instrument.trading_ccy, units: fq.units || 'per unit', asOf: fq.asOf || new Date(tMs).toISOString(), forDate: forDate || null, receivedAt: nowIso,
+      });
+    }
     const ov = overrides.get(instrument.id);
     const raw = rawPrice(instrument, tMs);
     if (!raw && !ov) return null;
@@ -186,6 +210,16 @@ export function createDemoMarketPort({ clock, resolveInstrument }) {
       borrowOverrides.clear();
       frozenSizes = null;
     },
+    /** Controlled test fixtures (see createFixtureControls). A null value removes the fixture. */
+    fixture: {
+      setQuote(instrumentId, q) { if (q) fixt.quotes.set(instrumentId, q); else fixt.quotes.delete(instrumentId); },
+      setClose(instrumentId, date, value) { const k = `${instrumentId}@${date}`; if (value === null || value === undefined) fixt.closes.delete(k); else fixt.closes.set(k, value); },
+      setFx(pair, rate) { if (rate === null || rate === undefined) fixt.fx.delete(pair); else fixt.fx.set(pair, rate); },
+      setRate(code, r) { if (r) fixt.rates.set(code, r); else fixt.rates.delete(code); },
+      setBorrow(instrumentId, b) { if (b) fixt.borrow.set(instrumentId, b); else fixt.borrow.delete(instrumentId); },
+      dump: () => ({ quotes: Object.fromEntries(fixt.quotes), closes: Object.fromEntries(fixt.closes), fx: Object.fromEntries(fixt.fx), rates: Object.fromEntries(fixt.rates), borrow: Object.fromEntries(fixt.borrow) }),
+      load(d) { for (const k of Object.keys(fixt)) { fixt[k].clear(); for (const [a, b] of Object.entries(d?.[k] || {})) fixt[k].set(a, b); } },
+    },
     state: () => ({
       connection: 'demo',
       message: 'Demo mode: simulated feed. Prices are not market quotes.',
@@ -205,6 +239,8 @@ export function createDemoMarketPort({ clock, resolveInstrument }) {
       const t = clock.ms();
       const nowIso = clock.now().toISOString();
       return new Map(pairs.map((pair) => {
+        const fixed = fixtureFx(pair);
+        if (fixed !== null) return [pair, fxObs({ kind: 'fx', subject: pair, value: fixed, bid: fixed, ask: fixed, currency: pair.split('/')[1], units: `${pair.split('/')[1]} per ${pair.split('/')[0]}`, asOf: nowIso, receivedAt: nowIso })];
         const ov = overrides.get(pair);
         const p = ov ? ov.value : fxAt(pair, t);
         if (p === null || p === undefined) return [pair, null];
@@ -216,6 +252,18 @@ export function createDemoMarketPort({ clock, resolveInstrument }) {
       const end = to || clock.today();
       const start = from || addDays(end, -10);
       return new Map(codes.map((code) => {
+        const fr = fixt.rates.get(code);
+        if (fr) {
+          // A fixture rate: the value stated for the date, else the fixture's standing value. No date is invented.
+          const out = [];
+          for (let d = start; d <= end; d = addDays(d, 1)) {
+            if (!isBusinessDay(d, 'US')) continue;
+            const v = fr.byDate?.[d] ?? fr.value ?? null;
+            if (v === null || v === undefined) continue;
+            out.push(fxObs({ kind: 'rate', subject: code, value: v, currency: fr.currency || 'USD', units: 'percent p.a.', asOf: `${d}T21:00:00.000Z`, forDate: d, receivedAt: nowIso }));
+          }
+          return [code, out];
+        }
         if (!(code in RATES)) return [code, []];
         const out = [];
         for (let d = start; d <= end; d = addDays(d, 1)) {
@@ -235,6 +283,9 @@ export function createDemoMarketPort({ clock, resolveInstrument }) {
         const t = closeMs(date);
         // A close exists only once the day's close has passed.
         if (date > today || t > now) return [key, null];
+        if (fixt.closes.has(key)) {
+          return [key, fxObs({ kind: 'price', subject: instrument.id, value: fixt.closes.get(key), currency: instrument.trading_ccy, units: 'per unit', asOf: new Date(t).toISOString(), forDate: date, receivedAt: clock.now().toISOString() })];
+        }
         const ov = overrides.get(key);
         if (ov) {
           return [key, makeObservation({ kind: 'price', subject: instrument.id, value: ov.value, currency: instrument.trading_ccy, units: 'per unit', source: SOURCE, providerId: PROVIDER, status: 'simulated', asOf: new Date(t).toISOString(), forDate: date, receivedAt: clock.now().toISOString(), assumptions: ['Simulated close from the demo feed.'] })];
@@ -246,6 +297,13 @@ export function createDemoMarketPort({ clock, resolveInstrument }) {
     async borrow(instruments) {
       const nowIso = clock.now().toISOString();
       return new Map(instruments.map((i) => {
+        const fb = fixt.borrow.get(i.id);
+        if (fb) {
+          return [i.id, {
+            available: fb.available !== false, quantity: fb.quantity ?? null, feeRate: fb.feeRate, rebateRate: 0,
+            obs: fxObs({ kind: 'borrow', subject: i.id, value: fb.feeRate * 100, units: 'percent p.a. (borrow fee)', asOf: nowIso, receivedAt: nowIso, extra: { available: fb.available !== false, quantity: fb.quantity ?? null } }),
+          }];
+        }
         const b = borrowOverrides.get(i.id) ?? BY_SYMBOL.get(i.symbol)?.borrow;
         if (!b) return [i.id, null];
         return [i.id, {
@@ -378,4 +436,132 @@ function demoExDates(from, to) {
     }
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Controlled test fixtures (demo mode only)
+// ---------------------------------------------------------------------------------------------
+//
+// The test matrix (test/matrix) needs prices, FX rates, reference rates and borrow terms whose
+// values the test states, so every expected figure can be worked out by hand. These controls put
+// such values behind the demo market port, in place of the Shaffer services that do not exist
+// yet. Nothing else is replaced: orders, fills, settlement, the ledger and accounting are the
+// real ones.
+//
+// - Only in demo mode. In the normal Terminal every call is refused (403).
+// - Every observation a fixture produces has source "Test fixture" and status "simulated".
+// - Fixtures are saved in the demo database's settings (key `demo.fixtures`) so they are still in
+//   force after the Terminal restarts, as a real data service would be.
+//
+// Kinds and bodies (a `clear: true` body removes that fixture):
+//   quote  { instrumentId, bid, ask, last, bidSize, askSize, asOf? }   asOf pins the quote's time so it can go stale
+//   close  { instrumentId, date, value }                               official close of one business date
+//   fx     { pair: 'EUR/USD', rate }                                   also answers the inverse pair
+//   rate   { code, value, date? , currency? }                          percent p.a.; with a date, that day's fixing only
+//   borrow { instrumentId, available, quantity, feeRate }              feeRate as a decimal per annum
+
+export function createFixtureControls(app) {
+  const port = () => {
+    if (!app.config.demo || !app.data.market.fixture) throw new AppError('Test fixtures exist only in demo mode.', { status: 403, code: 'demo_only' });
+    return app.data.market.fixture;
+  };
+  const save = () => app.data.setSetting('demo.fixtures', port().dump());
+  const dropCached = (kind, subject) => {
+    app.data._cache.delete(`${kind}|${subject}`);
+    app.db.run('DELETE FROM quote_cache WHERE kind = ? AND subject = ?', kind, subject);
+  };
+  const nonNeg = (x, what) => {
+    const n = num(x);
+    if (n === null) return null;
+    if (n < 0) throw new AppError(`${what} cannot be negative.`);
+    return n;
+  };
+
+  async function apply(kind, body = {}) {
+    const f = port();
+    switch (kind) {
+      case 'quote': {
+        const inst = app.instruments.require(body.instrumentId);
+        if (body.clear) {
+          f.setQuote(inst.id, null);
+          dropCached('price', inst.id);
+          save();
+          return { kind, instrumentId: inst.id, cleared: true };
+        }
+        const q = { bid: nonNeg(body.bid, 'Bid'), ask: nonNeg(body.ask, 'Ask'), last: nonNeg(body.last, 'Last'), bidSize: nonNeg(body.bidSize, 'Bid size'), askSize: nonNeg(body.askSize, 'Ask size'), asOf: body.asOf || null };
+        if (q.last === null && (q.bid === null || q.ask === null)) throw new AppError('A quote fixture needs a last price, or both a bid and an ask.');
+        if (q.bid !== null && q.ask !== null && q.bid > q.ask) throw new AppError('Bid cannot be above ask.');
+        if (q.asOf && Number.isNaN(Date.parse(q.asOf))) throw new AppError('asOf must be an ISO instant.');
+        f.setQuote(inst.id, q);
+        save();
+        await app.data.refresh({ instruments: [inst] });
+        return { kind, instrumentId: inst.id, observation: app.data.present(app.data.price(inst.id)) };
+      }
+      case 'close': {
+        const inst = app.instruments.require(body.instrumentId);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(body.date || '')) throw new AppError('A close fixture needs a date (YYYY-MM-DD).');
+        const v = body.clear ? null : nonNeg(body.value, 'Close');
+        if (!body.clear && v === null) throw new AppError('A close fixture needs a value.');
+        f.setClose(inst.id, body.date, v);
+        dropCached('close', `${inst.id}@${body.date}`);
+        save();
+        return { kind, instrumentId: inst.id, date: body.date, value: v };
+      }
+      case 'fx': {
+        if (!/^[A-Z]{3}\/[A-Z]{3}$/.test(body.pair || '')) throw new AppError('An FX fixture needs a pair such as EUR/USD.');
+        const r = body.clear ? null : num(body.rate);
+        if (!body.clear && !(r > 0)) throw new AppError('An FX fixture needs a positive rate.');
+        const [a, b] = body.pair.split('/');
+        f.setFx(body.pair, r);
+        dropCached('fx', body.pair);
+        dropCached('fx', `${b}/${a}`);
+        save();
+        await app.data.refresh({ pairs: [body.pair, `${b}/${a}`] });
+        return { kind, pair: body.pair, rate: r };
+      }
+      case 'rate': {
+        if (!body.code) throw new AppError('A rate fixture needs a rate code.');
+        if (body.clear) f.setRate(body.code, null);
+        else {
+          const v = num(body.value);
+          if (v === null) throw new AppError('A rate fixture needs a value in percent per annum.');
+          const cur = f.dump().rates[body.code] || { value: null, byDate: {}, currency: body.currency || 'USD' };
+          if (body.date) cur.byDate = { ...(cur.byDate || {}), [body.date]: v }; else cur.value = v;
+          if (body.currency) cur.currency = body.currency;
+          f.setRate(body.code, cur);
+        }
+        dropCached('rate', body.code);
+        save();
+        return { kind, code: body.code };
+      }
+      case 'borrow': {
+        const inst = app.instruments.require(body.instrumentId);
+        if (body.clear) f.setBorrow(inst.id, null);
+        else {
+          const fee = num(body.feeRate);
+          if (!(fee >= 0 && fee < 5)) throw new AppError('A borrow fixture needs the fee as a decimal per annum (0.005 = 0.5%).');
+          f.setBorrow(inst.id, { available: body.available !== false, quantity: nonNeg(body.quantity, 'Quantity'), feeRate: fee });
+        }
+        app.data._cache.delete(`borrow|${inst.id}`);
+        save();
+        await app.data.refresh({ borrow: [inst] });
+        return { kind, instrumentId: inst.id, borrow: app.data.borrowInfo(inst.id) };
+      }
+      default:
+        throw new AppError(`Unknown fixture kind "${kind}". Use quote, close, fx, rate or borrow.`, { status: 404 });
+    }
+  }
+
+  return {
+    apply,
+    /** Everything in force, labelled. */
+    list: () => ({ source: FIXTURE_SOURCE, note: FIXTURE_NOTE, fixtures: port().dump() }),
+    /** Put saved fixtures back in force after a restart. Does nothing outside demo mode. */
+    restore() {
+      if (!app.config.demo || !app.data.market.fixture) return false;
+      const saved = app.data.getSetting('demo.fixtures', null);
+      if (saved) app.data.market.fixture.load(saved);
+      return Boolean(saved);
+    },
+  };
 }

@@ -6,9 +6,12 @@
 
 import { FAMILIES, MARKET_VIEWS, catalogSummary } from './core/catalog.js';
 import { BOOK_DEFAULTS } from './core/defaults.js';
+import { createIntegrity } from './core/integrity.js';
 import { ACCOUNTS } from './core/ledger.js';
+import { resolveSettlement } from './core/settlement.js';
 import { TEMPLATES } from './core/templates.js';
 import { AppError, isZero, need, num } from './core/util.js';
+import { createFixtureControls } from './data/demo.js';
 import { STATUS_LABEL } from './data/observation.js';
 import { createRouter } from './http/router.js';
 import { CALENDARS, COUNTRY_CALENDAR, CURRENCY_CALENDAR, getExtraHolidays, holidaysOf, setExtraHolidays } from './quant/calendar.js';
@@ -52,7 +55,8 @@ export function createApi(app) {
     simulatedOnly: 'All orders, borrowing, lending, funding, collateral movements and settlements are simulated. This Terminal does not connect to real-money execution.',
   }));
   // demoHedgeFixture: whether the canned demo hedge fixture answers hedge requests (demo mode only; null otherwise).
-  r.get('/api/data', () => ({ ...app.data.describe(), demoHedgeFixture: app.config.demo ? Boolean(app.data.getSetting('demo.hedgeFixture', true)) : null }));
+  // hedgeService: who answers hedge requests right now (kind, label, reachable), stated apart from the Analytics Lab connection.
+  r.get('/api/data', () => ({ ...app.data.describe(), demoHedgeFixture: app.config.demo ? Boolean(app.data.getSetting('demo.hedgeFixture', true)) : null, hedgeService: app.hedge.serviceStatus() }));
   r.put('/api/data/connection', ({ body }) => { app.data.saveConnection(body); return app.data.describe(); });
   r.put('/api/data/refresh', ({ body }) => { app.data.saveRefresh(body); return app.data.describe(); });
   r.post('/api/data/test', async ({ body }) => {
@@ -131,7 +135,12 @@ export function createApi(app) {
     const held = query.bookId ? app.valuation.positionsOf(books.unitsOf(query.bookId).map((u) => u.id), { instrumentId: inst.id }) : [];
     const unitName = query.bookId ? new Map(books.unitsOf(query.bookId).map((u) => [u.id, u.name])) : new Map();
     const und = inst.underlying_id ? instruments.get(inst.underlying_id) : null;
+    // How a trade done today would settle in this Book: the convention (instrument, else the Book's assumption),
+    // the date it gives and the settlement calendar it was counted on. The ticket shows it and may override it.
+    const bookRow = query.bookId ? books.getBook(query.bookId) : null;
+    const stl = bookRow && !instruments.isArrangement(inst) ? resolveSettlement(app, { inst, book: bookRow, tradeDate: app.clock.today() }) : null;
     return {
+      settlement: stl ? { tradeDate: app.clock.today(), date: stl.date, lag: stl.lag, basis: stl.basis, label: stl.label, calendar: stl.calendar, configurable: instruments.toView(inst).settlement.configurable, reason: instruments.toView(inst).settlement.reason, maxLag: instruments.toView(inst).settlement.maxLag } : null,
       instrument: instruments.toView(inst), observation: app.data.present(app.data.price(inst.id)), underlyingObservation: und ? app.data.present(app.data.price(und.id)) : null,
       session: app.data.session(inst.id), borrow: ['equity', 'bond'].includes(inst.family) ? app.data.borrowInfo(inst.id) : null,
       analytics: an.get(inst.id), analyticsState: app.data.analytics.state(), marketState: app.data.market.state(),
@@ -139,6 +148,13 @@ export function createApi(app) {
       corporateActions: app.corpactions.list(inst.id), derivatives: instruments.list({ underlyingId: inst.id, limit: 200 }).map(instruments.toView),
       manualEntries: db.all(`SELECT id, kind, value, bid, ask, as_of, for_date, note, superseded_by FROM observations WHERE subject = ? AND origin = 'manual-entry' ORDER BY id DESC LIMIT 20`, inst.id),
     };
+  });
+  // Read-only: the settlement date of a trade done today, for a stated date (?date=) or lag (?lag=) or neither.
+  // Returns { date, lag, basis, label, calendar, stated, standard, conflicts: [{ code, message }] }; a conflict is what the preview would block on.
+  r.get('/api/instruments/:id/settlement', ({ params, query }) => {
+    need(query.bookId, 'bookId is required.');
+    const stated = query.date ? { date: query.date } : query.lag !== undefined && query.lag !== '' ? { lag: query.lag } : null;
+    return { tradeDate: app.clock.today(), ...resolveSettlement(app, { inst: instruments.require(params.id), book: books.requireBook(query.bookId), tradeDate: app.clock.today(), stated }) };
   });
   r.get('/api/instruments/:id/history', async ({ params, query }) => app.data.market.history(instruments.require(params.id), { from: query.from, to: query.to, interval: query.interval || '1d' }));
   r.get('/api/instruments/:id/chain', async ({ params, query }) => {
@@ -364,16 +380,82 @@ export function createApi(app) {
 
   // ---- analytics and hedge -----------------------------------------------------------------------------------------------
   r.get('/api/analytics/signals', async ({ query }) => ({ ...(await app.data.analytics.signals({ bookId: query.bookId })), state: app.data.analytics.state(), awaitingMessage: app.data.describe().awaitingMessage }));
-  r.get('/api/analytics/strategies', async () => ({ ...(await app.data.analytics.strategies()), state: app.data.analytics.state(), awaitingMessage: app.data.describe().awaitingMessage, known: db.all(`SELECT DISTINCT json_extract(params, '$.investmentStrategy.name') AS name FROM strategies WHERE json_extract(params, '$.investmentStrategy.name') IS NOT NULL`).map((x) => x.name) }));
+  // Investment Strategies: the list Analytics Lab supplies (stable IDs), plus every Strategy reference in use in the Book
+  // (`inUse`: resolved by ID, or a typed name that stays unresolved, with a suggested match the user may confirm).
+  r.get('/api/analytics/strategies', ({ query }) => app.hedge.strategiesView(query.bookId));
+  r.post('/api/analytics/strategies/resolve', async ({ body }) => {
+    const out = await app.hedge.resolveStrategyName({ bookId: body.bookId, name: body.name, id: body.id });
+    app.engine.emit({ type: 'changed', summary: { strategyResolved: out.strategies + out.requests } });
+    return out;
+  });
+  // Who would answer a hedge request right now (Shaffer Hedge, or in demo mode a labelled fixture), separate from the Analytics Lab connection.
+  r.get('/api/hedge/service', () => app.hedge.serviceStatus());
   r.post('/api/hedge/requests', ({ body }) => app.hedge.request(body));
   r.get('/api/hedge/requests', ({ query }) => ({ items: app.hedge.list(query.bookId) }));
-  r.get('/api/hedge/requests/:id', ({ params }) => app.hedge.get(params.id));
+  r.get('/api/hedge/requests/:id', ({ params }) => { const v = app.hedge.get(params.id); need(v, 'Hedge request not found.', { status: 404 }); return v; });
+  // Complete or change the request's context (investment Strategy, holding period, objective, scope) and save it. Same request id.
+  r.post('/api/hedge/requests/:id/complete', async ({ params, body }) => {
+    const out = await app.hedge.complete(params.id, { investmentStrategy: body.investmentStrategy, holdingPeriod: body.holdingPeriod, objective: body.objective, scope: body.scope });
+    app.engine.emit({ type: 'changed', summary: { hedgeRequest: 1 } });
+    return out;
+  });
+  // Ask again for one request against the exposure as it is now (in place). Never executes anything.
+  r.post('/api/hedge/requests/:id/refresh', async ({ params }) => {
+    const out = await app.hedge.refresh(params.id);
+    app.engine.emit({ type: 'changed', summary: { hedgeRefreshed: 1 } });
+    return out;
+  });
+  // The protection picture of a Book's units: hedges with capacity and allocations, and each position's protection. One Book only.
+  r.get('/api/books/:id/protection', ({ params }) => ({
+    units: books.requireBook(params.id).units.map((u) => { const v = app.protection.forUnit(u.id); return { id: u.id, name: u.name, kind: u.kind, hedges: v.hedges, positions: [...v.byPosition].map(([positionId, x]) => ({ positionId, ...x })) }; }),
+    capacityRules: app.protection.CAPACITY_RULES,
+  }));
   r.post('/api/hedge/requests/:id/preview', ({ params, body }) => app.hedge.previewPackage(params.id, body.packageId, { legs: body.legs, extraProtection: body.extraProtection }));
   r.post('/api/hedge/requests/:id/dismiss', ({ params }) => app.hedge.dismiss(params.id));
   r.post('/api/hedge/requests/:id/seen', ({ params }) => { app.hedge.markSeen(params.id); return { ok: true }; });
   r.get('/api/hedge/prompts', ({ query }) => ({ items: query.bookId ? app.hedge.prompts(query.bookId) : [] }));
   r.get('/api/hedge/queue', ({ query }) => { need(query.bookId, 'bookId is required.'); return app.hedge.queue(query.bookId); });
   r.post('/api/hedge/refresh', async () => ({ refreshed: await app.hedge.refreshWaiting({ force: true }) }));
+
+  // ---- collateral agreements and OTC collateral -----------------------------------------------------------------------------
+  // Every route is under its Book: an agreement, a position or a call of another Book is refused, not found.
+  const collateralChanged = () => app.engine.emit({ type: 'changed', summary: { collateral: 1 } });
+  r.get('/api/books/:id/agreements', ({ params }) => {
+    books.requireBook(params.id);
+    return { items: app.agreements.list(params.id).map(app.agreements.view) };
+  });
+  r.post('/api/books/:id/agreements', ({ params, body }) => {
+    const a = app.agreements.create(params.id, body);
+    collateralChanged();
+    return app.agreements.view(a);
+  });
+  r.get('/api/books/:id/agreements/:agreementId', ({ params }) => app.agreements.view(app.agreements.requireAgreement(params.agreementId, books.requireBook(params.id).id)));
+  r.put('/api/books/:id/agreements/:agreementId', ({ params, body }) => {
+    const a = app.agreements.update(params.agreementId, { ...body, bookId: books.requireBook(params.id).id });
+    collateralChanged();
+    return app.agreements.view(a);
+  });
+  r.post('/api/books/:id/agreements/:agreementId/close', ({ params }) => {
+    const a = app.agreements.close(params.agreementId, { bookId: books.requireBook(params.id).id });
+    collateralChanged();
+    return app.agreements.view(a);
+  });
+  // Agreements, OTC positions with their basis and requirement, netting sets, movements and failed calls of a scope.
+  r.get('/api/books/:id/collateral', async ({ params, query }) => { await refreshBook(params.id); return app.agreements.bookView(params.id, query.scope || 'book'); });
+  // Try failed collateral calls again now (the engine also does so each cycle). Delivers only what is still missing.
+  r.post('/api/books/:id/collateral/retry', ({ params }) => {
+    const delivered = app.agreements.retryFailed(books.requireBook(params.id).id);
+    if (delivered) collateralChanged();
+    return { delivered };
+  });
+  // Record the collateral basis of a position that has none on record (one opened before bases were required).
+  r.put('/api/books/:id/positions/:positionId/collateral-basis', ({ params, body }) => {
+    const pos = positions.get(params.positionId);
+    need(pos && pos.book_id === books.requireBook(params.id).id, 'Position not found in this Book.', { status: 404 });
+    const out = app.agreements.setPositionBasis(pos.id, body.basis || body);
+    collateralChanged();
+    return out;
+  });
 
   // ---- engine ---------------------------------------------------------------------------------------------------------------
   r.post('/api/engine/tick', async () => app.engine.tick());
@@ -385,7 +467,7 @@ export function createApi(app) {
       need(ms > 0 && ms <= 400 * 86400e3, 'Advance by a positive amount of time (at most 400 days).');
       app.clock.advance(ms);
     }
-    app.data.setSetting('demo.clockOffsetMs', Math.max(0, Math.round(app.clock.ms() - Date.now())));
+    app.data.setSetting('demo.clockOffsetMs', Math.round(app.clock.ms() - Date.now()));
     lastQuoteRefresh.clear();
     const summary = await app.engine.tick();
     return { now: app.clock.now().toISOString(), today: app.clock.today(), summary };
@@ -395,9 +477,39 @@ export function createApi(app) {
     app.data.setSetting('demo.hedgeFixture', Boolean(body.enabled));
     // Turning the fixture on plays the part of the service reconnecting: waiting requests are refreshed.
     const refreshed = body.enabled ? await app.hedge.refreshWaiting() : [];
-    if (refreshed.length) app.engine.emit({ type: 'changed', summary: { hedgeRefreshed: refreshed.length } });
-    return { enabled: Boolean(body.enabled), refreshed };
+    app.engine.emit({ type: 'changed', summary: { hedgeRefreshed: refreshed.length, hedgeService: 1 } });
+    return { enabled: Boolean(body.enabled), refreshed, service: app.hedge.serviceStatus() };
   });
+  // Demo only: a scripted "service" for tests and the browser harness. It answers hedge requests with the responses
+  // given (packages and a protection assessment), in order, and can supply a Strategy list. Everything it returns is
+  // stamped test-fixture. Body: { responses: [HedgeResponse | { error }], strategies?: [{ id, name }], available?: boolean,
+  // repeat?: boolean } to load, or { clear: true } to remove it.
+  r.get('/api/demo/hedge-script', () => { need(app.config.demo, 'Demo only.', { status: 403 }); return app.hedge.scriptView(); });
+  r.post('/api/demo/hedge-script', async ({ body }) => {
+    need(app.config.demo, 'Demo only.', { status: 403 });
+    app.hedge.setScript(body);
+    // Loading a script plays the part of the service coming up (or going away): waiting requests are refreshed, nothing is traded.
+    const refreshed = await app.hedge.refreshWaiting();
+    app.engine.emit({ type: 'changed', summary: { hedgeRefreshed: refreshed.length, hedgeService: 1 } });
+    return { script: app.hedge.scriptView(), refreshed, service: app.hedge.serviceStatus() };
+  });
+
+  // ---- test matrix: controlled fixtures (demo only) and the read-only integrity check ---------------------------------------
+  // Fixtures stand in for the Shaffer services with values a test states. Demo mode only (403 otherwise);
+  // every observation they produce is labelled "Test fixture". See createFixtureControls in data/demo.js.
+  const fixtures = createFixtureControls(app);
+  fixtures.restore();
+  r.get('/api/demo/fixtures', () => fixtures.list());
+  r.post('/api/demo/fixtures/:kind', async ({ params, body }) => {
+    const out = await fixtures.apply(params.kind, body);
+    lastQuoteRefresh.clear();
+    app.engine.emit({ type: 'changed', summary: { fixture: params.kind } });
+    return out;
+  });
+  // Read-only: do the Book's stored events, fills, settlements and positions still agree with each other
+  // and with its accounting views? Checks and duplicate keys are documented in core/integrity.js.
+  const integrity = createIntegrity(app);
+  r.get('/api/books/:id/integrity', async ({ params }) => { await refreshBook(params.id); return integrity.check(params.id); });
 
   return r;
 }

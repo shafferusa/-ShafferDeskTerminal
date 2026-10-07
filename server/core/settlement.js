@@ -6,7 +6,66 @@
 
 import { j, pj } from '../db/db.js';
 import { fmt } from './books.js';
-import { money, newId } from './util.js';
+import { ISO_DATE_RE, money, newId, num } from './util.js';
+import { calendarInfo, FIXED_SETTLEMENT, MAX_SETTLE_LAG, settleDateFor, settlementConvention } from '../products/security.js';
+import { addBusinessDays, businessDaysBetween, closedReason, isBusinessDay, prevBusinessDay } from '../quant/calendar.js';
+
+const DAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const dayName = (iso) => DAY[new Date(`${iso}T00:00:00Z`).getUTCDay()];
+const realDate = (s) => ISO_DATE_RE.test(String(s || '')) && !Number.isNaN(Date.parse(s)) && new Date(`${s}T00:00:00Z`).toISOString().slice(0, 10) === s;
+
+/**
+ * The settlement date of one trade, and where it came from.
+ *
+ *   stated: null | { date: 'YYYY-MM-DD' } | { lag: n }   a settlement stated for this transaction
+ *
+ * Without `stated` the instrument's convention applies (its own lag, else the Book's), counted on
+ * the instrument's settlement calendar. A stated date or lag is validated against that calendar;
+ * anything that cannot be honoured is a calendar conflict, returned in `conflicts` with a specific
+ * message (the preview blocks on it, and an order refuses to fill on it). Nothing is adjusted
+ * silently: a stated date on a holiday is refused, not moved.
+ *
+ * Returns { date, lag, basis, label, calendar: { id, label, fallback, approximate }, stated, conflicts: [{ code, message }] }
+ *   basis: transaction-date | transaction-lag | instrument | book | product
+ */
+export function resolveSettlement(app, { inst, book, tradeDate, stated = null }) {
+  const plugin = app.products.get(inst.family);
+  const info = calendarInfo(inst);
+  const cal = info.settlement;
+  const conv = settlementConvention(inst, book);
+  const name = inst.symbol || inst.name;
+  const calendar = { id: cal.id, label: cal.label, basis: cal.basis, fallback: cal.fallback, approximate: cal.approximate };
+  const standard = plugin.settleDate(app, inst, tradeDate, book);
+  const out = { date: standard, lag: conv.lag, basis: conv.basis, label: conv.label, calendar, stated: null, conflicts: [], standard: { date: standard, lag: conv.lag, basis: conv.basis, label: conv.label } };
+  const has = (v) => v !== null && v !== undefined && v !== '';
+  if (!stated || (!has(stated.date) && !has(stated.lag))) return out;
+  const conflict = (code, message) => { out.conflicts.push({ code, message }); return out; };
+  out.stated = has(stated.date) ? { date: String(stated.date) } : { lag: stated.lag };
+  if (!conv.configurable) return conflict('settlement-fixed', `A settlement date or lag cannot be stated for ${name}. ${FIXED_SETTLEMENT[inst.family]}`);
+  if (has(stated.date)) {
+    const d = String(stated.date);
+    out.basis = 'transaction-date';
+    if (!realDate(d)) return conflict('settle-date-invalid', `The stated settlement date "${d}" is not a calendar date in the form YYYY-MM-DD.`);
+    out.date = d;
+    out.label = `Stated date ${d}`;
+    if (d < tradeDate) return conflict('settle-before-trade', `Calendar conflict: the stated settlement date ${d} is before the trade date ${tradeDate}. A trade cannot settle before it is done.`);
+    if (!isBusinessDay(d, cal.id)) {
+      const before = prevBusinessDay(d, cal.id), after = addBusinessDays(d, 1, cal.id);
+      return conflict('settle-not-business-day', `Calendar conflict: the stated settlement date ${d} (${dayName(d)}) is ${closedReason(d, cal.id)}, not a business day on the settlement calendar of ${name} (${cal.id}: ${cal.label}). The nearest business days are ${before >= tradeDate ? `${before} and ` : ''}${after}.`);
+    }
+    out.lag = businessDaysBetween(tradeDate, d, cal.id);
+    out.label = out.lag === 0 ? `Stated date ${d} (same day)` : `Stated date ${d} (T+${out.lag})`;
+    if (out.lag > MAX_SETTLE_LAG) return conflict('settle-too-far', `The stated settlement date ${d} is ${out.lag} business days after the trade date; the longest a trade may state is ${MAX_SETTLE_LAG}. A later delivery is a forward, with its own contract.`);
+    return out;
+  }
+  const lag = num(stated.lag);
+  out.basis = 'transaction-lag';
+  if (lag === null || !Number.isInteger(lag) || lag < 0 || lag > MAX_SETTLE_LAG) return conflict('settle-lag-invalid', `The stated settlement lag must be a whole number of business days from 0 (same day) to ${MAX_SETTLE_LAG}.`);
+  out.lag = lag;
+  out.date = settleDateFor(inst, tradeDate, lag);
+  out.label = lag === 0 ? 'Stated: same day' : `Stated: T+${lag}`;
+  return out;
+}
 
 export function createSettlement(app) {
   const { db, clock, ledger } = app;
@@ -47,7 +106,12 @@ export function createSettlement(app) {
     let need = -row.amount;
     const draws = [];
     for (let i = 0; i < accounts.length && need > 0; i++) {
-      const bal = ledger.balance(row.unit_id, accounts[i], row.ccy);
+      // Restricted cash is drawn only from what is held against this position (the proceeds and collateral of the
+      // short being covered). Other restricted cash in the unit, such as collateral received from a counterparty,
+      // belongs to someone else and is never spent on a settlement.
+      const bal = accounts[i] === 'cash.restricted' && i < accounts.length - 1 && row.position_id
+        ? ledger.positionBalance(row.position_id, 'cash.restricted', row.ccy)
+        : ledger.balance(row.unit_id, accounts[i], row.ccy);
       const take = i === accounts.length - 1 ? need : Math.min(need, Math.max(0, bal));
       if (take <= 0) continue;
       if (i === accounts.length - 1 && bal < take - 0.004) {

@@ -3,7 +3,7 @@
 // Strategy page. A swap is entered leg by leg (side, type, currency, rate or index, schedule); it
 // is never reduced to "buy/sell swap".
 import { html, useEffect, useRef, useState } from '../vendor/preact-htm.js';
-import { currentBook, fmtQty, get, useStore } from './core.js';
+import { currentBook, fmtQty, get, isNum, unitLabel, useStore } from './core.js';
 import { Button, Check, Field, Holdings, Num, Select, Text } from './ui.js';
 
 const DAY_COUNTS = ['ACT/360', 'ACT/365', 'ACT/ACT', '30/360', '30E/360'].map((d) => ({ value: d, label: d }));
@@ -102,6 +102,8 @@ const F = {
     { path: 'terms.settlement', label: 'Settlement', type: 'select', options: opt([['cash', 'Cash'], ['physical', 'Physical delivery']]), default: 'cash' },
     { path: 'multiplier', label: 'Multiplier', type: 'number', hint: 'Usually 1: quantity is underlying units' },
     { path: 'terms.counterparty', label: 'Counterparty', type: 'text' },
+    { path: 'terms.collateralBasis', type: 'collateral' },
+    { path: 'terms.collateral', label: 'Other collateral terms', type: 'text', span: 2, hint: 'Free text. Recorded, not simulated.' },
   ],
   future: [
     { path: 'underlyingId', label: 'Underlying', type: 'instrument', span: 2, hint: 'Optional' },
@@ -133,7 +135,8 @@ const F = {
     { path: 'terms.fixingRate', label: 'Reference rate code', type: 'text', show: (d) => d.terms.forwardType === 'fra' },
     { path: 'terms.dayCount', label: 'Day count', type: 'select', options: DAY_COUNTS, show: (d) => d.terms.forwardType === 'fra' },
     { path: 'terms.counterparty', label: 'Counterparty', type: 'text' },
-    { path: 'terms.collateral', label: 'Collateral terms', type: 'text' },
+    { path: 'terms.collateralBasis', type: 'collateral' },
+    { path: 'terms.collateral', label: 'Other collateral terms', type: 'text', span: 2, hint: 'Free text. Recorded, not simulated.' },
   ],
   bond: [
     { path: 'terms.couponType', label: 'Coupon', type: 'select', default: 'fixed', options: opt([['fixed', 'Fixed'], ['zero', 'Zero coupon / discount'], ['float', 'Floating']]) },
@@ -191,8 +194,8 @@ const F = {
     { path: 'terms.effective', label: 'Effective date', type: 'date', required: true },
     { path: 'terms.maturity', label: 'Maturity', type: 'date', required: true },
     { path: 'terms.counterparty', label: 'Counterparty', type: 'text' },
-    { path: 'terms.initialMarginPct', label: 'Independent amount (share of notional)', type: 'number', hint: '0.10 = 10%, posted in cash at trade and returned when the swap ends. Leave empty for none.' },
-    { path: 'terms.collateral', label: 'Other collateral terms', type: 'text', span: 2 },
+    { path: 'terms.collateralBasis', type: 'collateral' },
+    { path: 'terms.collateral', label: 'Other collateral terms', type: 'text', span: 2, hint: 'Free text. Recorded, not simulated.' },
     { path: 'terms.legs', type: 'legs' },
   ],
   cds: [
@@ -204,7 +207,8 @@ const F = {
     { path: 'terms.indexFactor', label: 'Index factor', type: 'number', hint: 'For index CDS. 1 otherwise.' },
     { path: 'terms.seniority', label: 'Seniority', type: 'text' },
     { path: 'terms.counterparty', label: 'Counterparty', type: 'text' },
-    { path: 'terms.collateral', label: 'Collateral terms', type: 'text' },
+    { path: 'terms.collateralBasis', type: 'collateral' },
+    { path: 'terms.collateral', label: 'Other collateral terms', type: 'text', span: 2, hint: 'Free text. Recorded, not simulated.' },
   ],
 };
 for (const f of ['equity', 'fund', 'spot', 'crypto', 'manual']) F[f] = F.security;
@@ -264,6 +268,54 @@ function LegsEditor({ legs, onChange, ccy }) {
   </div>`;
 }
 
+const BASIS_OPTIONS = opt([['agreement', 'Under a collateral agreement of this Book'], ['position', 'Position-level terms, entered here'], ['uncollateralized', 'Uncollateralized (paper assumption)']]);
+const IA_OPTIONS = opt([['none', 'None'], ['pct', 'Share of notional'], ['fixed', 'Fixed amount']]);
+
+/**
+ * The "Collateral terms" group of an OTC contract (swap, credit default swap, forward, OTC option).
+ * The contract states one basis: an agreement of the selected Book, terms entered here, or the
+ * explicit choice of no collateral. Nothing is pre-selected and nothing is assumed from the product.
+ * value: null | { type: 'agreement', agreementId } | { type: 'position', independentAmount, variationMargin, threshold, minimumTransfer } | { type: 'uncollateralized' }
+ */
+export function CollateralBasisFields({ value, onChange, ccy, legacyPct, unitId }) {
+  const bookId = currentBook()?.id;
+  const inUse = useStore((s) => s.unitId);
+  const tick = useStore((s) => s.tick);
+  const [agreements, setAgreements] = useState(null);
+  useEffect(() => {
+    if (!bookId) return;
+    get(`/api/books/${bookId}/agreements`).then((r) => setAgreements(r.items.filter((a) => a.status === 'active')), () => setAgreements([]));
+  }, [bookId, tick]);
+  const v = value || {};
+  const unit = currentBook()?.units.find((u) => u.id === (unitId || inUse));
+  const set = (patch) => onChange({ ...v, ...patch });
+  const ia = v.independentAmount || { type: 'none' };
+  const picked = (agreements || []).find((a) => a.id === v.agreementId);
+  const covers = (a) => !unit || a.unitIds.includes(unit.id);
+  const pick = (type) => onChange(!type ? null : type === 'position' ? { type, independentAmount: { type: 'none' }, variationMargin: false, threshold: 0, minimumTransfer: 0 } : { type });
+  return html`<div class="span-all coll-terms">
+    <div class="row"><h4>Collateral terms</h4><span class="note">Collateral follows what is chosen here and nothing else. No rule is applied because of the product.</span></div>
+    <div class="grid-form">
+      <${Field} label=${html`Collateral basis <span class="muted">(required)</span>`} span=${2}
+        hint=${!v.type && isNum(legacyPct) ? `This contract carries an independent amount of ${(legacyPct * 100).toFixed(2)}% from the older field. It applies as position-level terms unless a basis is chosen here.` : !v.type ? 'A new position cannot be previewed until one of the three is chosen.' : undefined}>
+        <${Select} value=${v.type || ''} onChange=${pick} options=${BASIS_OPTIONS} placeholder="Choose…" /><//>
+      ${v.type === 'agreement' ? html`<${Field} label=${html`Agreement <span class="muted">(required)</span>`} span=${2}
+          hint=${agreements && !agreements.length ? html`This Book has no active agreement. Record one under <a href="#/treasury/collateral">Treasury, Collateral</a>, then choose it here.` : picked && !covers(picked) ? `${picked.name} does not cover ${unitLabel(unit)}. Add ${unitLabel(unit)} to the agreement, or trade from a unit it covers.` : undefined}>
+          <${Select} value=${v.agreementId || ''} onChange=${(id) => set({ agreementId: id })} placeholder=${agreements === null ? 'Loading agreements…' : 'Choose…'}
+            options=${(agreements || []).map((a) => ({ value: a.id, label: `${a.name}, ${a.counterparty} (${a.kindLabel})${covers(a) ? '' : `, does not cover ${unitLabel(unit)}`}` }))} /><//>
+        ${picked ? html`<div class="span-all note">${picked.summary}${picked.termRows.some((r) => !r.simulated) ? ` ${picked.termRows.filter((r) => !r.simulated).length} of its terms are recorded, not simulated: see the agreement.` : ''}</div>` : null}` : null}
+      ${v.type === 'position' ? html`
+        <${Field} label="Independent amount"><${Select} value=${ia.type || 'none'} onChange=${(t) => set({ independentAmount: { type: t } })} options=${IA_OPTIONS} /><//>
+        ${ia.type === 'pct' ? html`<${Field} label="Share of notional (decimal)" hint="0.05 = 5%. Posted in cash when the position opens, returned when it ends."><${Num} value=${ia.pct ?? null} onInput=${(x) => set({ independentAmount: { type: 'pct', pct: x } })} /><//>` : null}
+        ${ia.type === 'fixed' ? html`<${Field} label=${`Amount${ccy ? ` (${ccy})` : ''}`} hint="Posted in cash when the position opens, returned when it ends."><${Num} value=${ia.amount ?? null} onInput=${(x) => set({ independentAmount: { type: 'fixed', amount: x } })} /><//>` : null}
+        <${Field} label="Variation margin"><${Check} checked=${Boolean(v.variationMargin)} onChange=${(x) => set({ variationMargin: x })}>Exchanged each end of day against the mark<//><//>
+        ${v.variationMargin ? html`<${Field} label=${`Threshold${ccy ? ` (${ccy})` : ''}`} hint="No call while the mark is inside it"><${Num} value=${v.threshold ?? 0} onInput=${(x) => set({ threshold: x })} /><//>
+          <${Field} label=${`Minimum transfer amount${ccy ? ` (${ccy})` : ''}`} hint="Smaller transfers are not made"><${Num} value=${v.minimumTransfer ?? 0} onInput=${(x) => set({ minimumTransfer: x })} /><//>` : null}
+        <div class="span-all note">Posted and received in ${ccy || 'the contract currency'} cash by the unit that holds the position. This position is its own netting set.</div>` : null}
+      ${v.type === 'uncollateralized' ? html`<div class="span-all note">Nothing is posted and nothing is received on this contract, whatever its mark. It is recorded on the position as an explicit paper assumption.</div>` : null}
+    </div></div>`;
+}
+
 const getPath = (obj, path) => path.split('.').reduce((o, k) => (o === null || o === undefined ? undefined : o[k]), obj);
 function setPath(obj, path, value) {
   const keys = path.split('.');
@@ -286,6 +338,7 @@ export function ContractFields({ draft, onChange, skip = [] }) {
     const set = (x) => onChange(setPath(draft, f.path, x));
     const label = typeof f.label === 'function' ? f.label(draft) : f.label;
     if (f.type === 'legs') return html`<${LegsEditor} legs=${v || []} ccy=${draft.tradingCcy} onChange=${set} />`;
+    if (f.type === 'collateral') return html`<${CollateralBasisFields} value=${v} onChange=${set} ccy=${draft.tradingCcy} legacyPct=${draft.terms?.initialMarginPct} />`;
     if (f.type === 'note') return html`<${Field} label=${label}><div class="note" style="padding-top:6px">${f.text}</div><//>`;
     const req = f.required ? html`${label} <span class="muted">(required)</span>` : label;
     if (f.type === 'instrument') return html`<${Field} label=${req} hint=${f.hint} span=${f.span}><${InstrumentPicker} value=${v} onChange=${set} families=${f.families} /><//>`;

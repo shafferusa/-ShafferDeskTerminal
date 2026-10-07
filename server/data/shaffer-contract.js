@@ -58,6 +58,8 @@ export const analyticsContract = {
   signals: null, // async ({http, ctx}, filter) => [Signal]
   valuations: null, // async ({http, ctx}, instruments) => Map<instrumentId, Observation (status 'model-derived')>
   risk: null, // async ({http, ctx}, request) => risk output
-  strategies: null, // async ({http, ctx}) => [{ id, name, hedgeObjective, hedgeSettings }]
+  // Investment Strategies with the service's stable IDs. The Terminal stores and sends the id, never a typed name in its place.
+  strategies: null, // async ({http, ctx}) => [{ id, name, version, hedgeObjective, hedgeSettings }]
+  // The response may carry `version` (or `modelRun`) and a `protection` assessment: see HedgeResponse in ports.js.
   hedge: null, // async ({http, ctx}, hedgeRequest) => HedgeResponse (see ports.js); the request is built by core/hedge.js
 };

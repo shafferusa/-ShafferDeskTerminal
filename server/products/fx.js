@@ -12,8 +12,9 @@ import { fmt } from '../core/books.js';
 import { addBusinessDays, fxValueDate } from '../quant/calendar.js';
 import { yearFraction } from '../quant/daycount.js';
 import { CCY_RE, ISO_DATE_RE, isZero, money, num, qty8, sign } from '../core/util.js';
+import { normalizeBasis } from '../core/agreements.js';
 import { dqOf, fmtPx, fmtQty } from './common.js';
-import { calendarFor } from './security.js';
+import { calendarFor, calendarInfo, standardSettleDate } from './security.js';
 
 function feeTotals(c, ccy) {
   const commission = money(c.fees?.filter((f) => f.kind === 'commission').reduce((a, f) => a + f.amount, 0) || 0, ccy);
@@ -29,7 +30,7 @@ export const fx = {
   qtyLabel: 'Base-currency amount',
   actions: () => ['buy', 'sell'],
   priceUnits: (inst) => `${inst.terms.quote} per ${inst.terms.base}`,
-  calendar: (inst) => fxValueDate('2000-01-03', inst.terms.base, inst.terms.quote, 0).calendar,
+  calendar: calendarFor,
   normalize(app, draft) {
     const errors = [];
     const t = { ...(draft.terms || {}) };
@@ -43,12 +44,9 @@ export const fx = {
   describe: (inst) => [['Base currency', inst.terms.base], ['Quote currency', inst.terms.quote], ['Spot settlement', `T+${inst.terms.settleDays}`]],
   qtyStep: () => 0.01,
   // Spot value date: good days for both currencies; the value date is also a US dollar banking day.
-  settleDate: (app, inst, tradeDate) => fxValueDate(tradeDate, inst.terms.base, inst.terms.quote, inst.terms.settleDays ?? 2).date,
-  calendarInfo: (inst) => {
-    const v = fxValueDate('2000-01-03', inst.terms.base, inst.terms.quote, 0);
-    return { id: v.calendar, label: `Payment calendars of ${inst.terms.base} and ${inst.terms.quote}`, basis: 'currency', fallback: v.missing.length > 0, approximate: v.missing.length > 0,
-      note: v.missing.length ? `No payment calendar is built in for ${v.missing.join(' and ')}: weekends only are used for ${v.missing.length > 1 ? 'them' : 'it'}, so local holidays are not recognised.` : null };
-  },
+  // A lag or a calendar set on the pair itself (instrument conventions) is applied on top of that rule.
+  settleDate: (app, inst, tradeDate, book) => standardSettleDate(inst, tradeDate, book),
+  calendarInfo,
   economics(app, { inst, action, qty, price }) {
     const quoteAmt = qty * price;
     const buy = action === 'buy';
@@ -144,10 +142,13 @@ export const forward = {
       if (!draft.underlying_id) errors.push('An asset forward needs its underlying instrument.');
     }
     if (!ISO_DATE_RE.test(t.valueDate || '')) errors.push('Value (maturity) date is required.');
+    // Collateral follows the basis stated on the contract; nothing is assumed from the product.
+    t.collateralBasis = normalizeBasis(t.collateralBasis, errors);
+    if (!t.collateralBasis) delete t.collateralBasis;
     const multiplier = num(draft.multiplier) > 0 ? num(draft.multiplier) : 1;
     return { terms: t, multiplier, errors, tradingCcy, settleCcy };
   },
-  describe(inst) {
+  describe(inst, app) {
     const t = inst.terms;
     const rows = [['Type', { fx: 'Deliverable FX forward', ndf: 'Non-deliverable forward', asset: 'Asset forward', fra: 'Forward-rate agreement' }[t.forwardType]], ['Value date', t.valueDate]];
     if (t.base) rows.push(['Currency pair', `${t.base}/${t.quote}`]);
@@ -155,17 +156,34 @@ export const forward = {
     if (t.forwardType === 'fra') rows.push(['Interest period', `${t.periodStart} to ${t.periodEnd}`], ['Reference rate', t.fixingRate], ['Day count', t.dayCount]);
     if (t.forwardType === 'asset') rows.push(['Settlement', t.settlement]);
     if (t.counterparty) rows.push(['Counterparty', t.counterparty]);
-    if (t.collateral) rows.push(['Collateral terms', t.collateral]);
+    if (app?.agreements) rows.push(...app.agreements.describeRows(inst));
+    else if (t.collateral) rows.push(['Collateral terms', t.collateral]);
     return rows;
   },
   qtyStep: () => 0.01,
   settleDate: (app, inst) => inst.terms.valueDate,
-  economics(app, { inst, action, qty, price }) {
+  /**
+   * Notional on which a percentage independent amount is worked out: the FRA notional, otherwise
+   * quantity at the dealt price (the average dealt price once this trade is in).
+   */
+  collateralNotional(app, inst, { pos, qtyAfter, dq = 0, price = null }) {
+    if (inst.terms.forwardType === 'fra') return Math.abs(qtyAfter);
+    const before = pos?.qty || 0;
+    let k = pos?.data?.avgStrike ?? price;
+    if (dq && price !== null && price !== undefined) {
+      if (isZero(before) || sign(before) === sign(dq)) k = (Math.abs(before) * (pos?.data?.avgStrike ?? price) + Math.abs(dq) * price) / (Math.abs(before) + Math.abs(dq));
+      else if (Math.abs(dq) > Math.abs(before) + 1e-9) k = price;
+    }
+    return k === null || k === undefined ? null : Math.abs(qtyAfter) * k * inst.multiplier;
+  },
+  economics(app, { inst, action, qty, price, unit, strategyId, book }) {
     const t = inst.terms;
     const notional = t.forwardType === 'fra' ? qty : qty * price * inst.multiplier;
     const notes = ['No cash changes hands at trade. Settlement happens on the value date.'];
     if (t.forwardType === 'fx') notes.push(`On ${t.valueDate} the unit ${action === 'buy' ? 'receives' : 'pays'} ${fmt(qty, t.base)} and ${action === 'buy' ? 'pays' : 'receives'} ${fmt(qty * price, t.quote)}.`);
-    return { ccy: inst.trading_ccy, principal: 0, cash: 0, accrued: 0, notional, exposure: (action === 'buy' ? 1 : -1) * notional, initialMargin: 0, notes };
+    // Collateral under the basis the contract states (an agreement, position-level terms, or none by explicit choice).
+    const coll = app.agreements.tradeRequirement({ book, unit, inst, action, qty, price, strategyId });
+    return { ccy: inst.trading_ccy, principal: 0, cash: 0, accrued: 0, notional, exposure: (action === 'buy' ? 1 : -1) * notional, initialMargin: coll.initialMargin, collateral: coll, notes: [...notes, ...coll.notes] };
   },
   fill(app, c) {
     const { ledger, positions, settle } = app;
@@ -220,6 +238,7 @@ export const forward = {
     };
   },
   onPositionChange(app, { book, unit, inst, pos }) {
+    app.agreements.onPositionChange({ book, unit, inst, pos });
     if (isZero(pos.qty)) return app.tasks.cancelFor(pos.id);
     const due = inst.terms.forwardType === 'ndf' ? inst.terms.fixingDate : inst.terms.valueDate;
     app.tasks.schedule({ bookId: book.id, unitId: unit.id, positionId: pos.id, instrumentId: inst.id, strategyId: pos.strategy_id, type: 'forward.maturity', dueDate: due });
@@ -234,7 +253,16 @@ export const forward = {
     }
     return {};
   },
-  runTask(app, task, { book, unit, inst, pos }) {
+  runTask(app, task, ctx) {
+    const r = settleForwardTask(app, task, ctx);
+    // The forward ended: whatever collateral it carried is released.
+    if (r && r.done && ctx.pos) app.agreements.onPositionChange({ pos: ctx.pos });
+    return r;
+  },
+};
+
+function settleForwardTask(app, task, { book, unit, inst, pos }) {
+  {
     if (task.type !== 'forward.maturity') return { failed: `Unknown task ${task.type}` };
     if (!pos || isZero(pos.qty)) return 'done';
     const { ledger, positions } = app;
@@ -325,5 +353,5 @@ export const forward = {
     if (amount !== 0) app.settle.create({ bookId: book.id, unitId: unit.id, instrumentId: inst.id, strategyId: pos.strategy_id, positionId: pos.id, kind: 'forward', dueDate: due, ccy, amount });
     positions.change(pos, { dQty: -q, data: { avgStrike: null } });
     return { done: true, eventId };
-  },
-};
+  }
+}

@@ -13,7 +13,7 @@ import { accruedPer100, couponPer100, nextCouponDate } from '../quant/bond.js';
 import { DAY_COUNTS } from '../quant/daycount.js';
 import { ISO_DATE_RE, isZero, money, need, num } from '../core/util.js';
 import { bookSecurityFill, fmtPx, fmtQty, trueUpAccrual } from './common.js';
-import { calendarFor } from './security.js';
+import { calendarFor, paymentCalendarFor, standardSettleDate } from './security.js';
 
 /** Face outstanding per unit of original face (pool factor for securitised paper). */
 const factorOf = (inst) => inst.terms.factor ?? 1;
@@ -66,9 +66,7 @@ export const bond = {
     return rows;
   },
   qtyStep: (inst) => inst.terms?.minDenomination || 1,
-  settleDate(app, inst, tradeDate, book) {
-    return addBusinessDays(tradeDate, inst.terms?.settleDays ?? book.settings.settlement.bond ?? 1, calendarFor(inst));
-  },
+  settleDate: (app, inst, tradeDate, book) => standardSettleDate(inst, tradeDate, book),
   schedTerms,
   accruedAmount(inst, qty, date) {
     const ai = accruedPer100(schedTerms(inst), date);
@@ -118,8 +116,8 @@ export const bond = {
     const common = { bookId: book.id, unitId: unit.id, positionId: pos.id, instrumentId: inst.id, strategyId: pos.strategy_id };
     const today = app.clock.today();
     const next = nextCouponDate(t, addBusinessDays(today, -1, 'ALLDAYS'));
-    if (next && inst.terms.couponType !== 'zero') app.tasks.schedule({ ...common, type: 'bond.coupon', dueDate: adjust(next, 'following', calendarFor(inst)), data: { key: next, couponDate: next } });
-    if (inst.terms.maturity) app.tasks.schedule({ ...common, type: 'bond.maturity', dueDate: adjust(inst.terms.maturity, 'following', calendarFor(inst)) });
+    if (next && inst.terms.couponType !== 'zero') app.tasks.schedule({ ...common, type: 'bond.coupon', dueDate: adjust(next, 'following', paymentCalendarFor(inst)), data: { key: next, couponDate: next } });
+    if (inst.terms.maturity) app.tasks.schedule({ ...common, type: 'bond.maturity', dueDate: adjust(inst.terms.maturity, 'following', paymentCalendarFor(inst)) });
   },
   dataNeeds(app, { inst }) {
     if (inst.terms.couponType !== 'float') return {};
@@ -145,7 +143,7 @@ export const bond = {
       const live = positions.get(pos.id);
       const scheduleNext = () => {
         const next = nextCouponDate(t, couponDate);
-        if (next && !isZero(live.qty)) app.tasks.schedule({ ...base, type: 'bond.coupon', dueDate: adjust(next, 'following', calendarFor(inst)), data: { key: next, couponDate: next } });
+        if (next && !isZero(live.qty)) app.tasks.schedule({ ...base, type: 'bond.coupon', dueDate: adjust(next, 'following', paymentCalendarFor(inst)), data: { key: next, couponDate: next } });
       };
       if (isZero(face) || inst.terms.couponSuspended) { scheduleNext(); return 'done'; }
       const per100 = couponPer100(t, couponDate);

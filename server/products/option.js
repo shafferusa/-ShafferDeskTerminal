@@ -8,8 +8,9 @@
 import { addBusinessDays } from '../quant/calendar.js';
 import { intrinsic } from '../quant/options.js';
 import { AppError, ISO_DATE_RE, money, need, num } from '../core/util.js';
+import { normalizeBasis } from '../core/agreements.js';
 import { bookSecurityFill, fmtQty, valueSecurity } from './common.js';
-import { calendarFor } from './security.js';
+import { calendarFor, standardSettleDate } from './security.js';
 
 const EXOTIC_MANUAL = new Set(['asian', 'lookback', 'basket', 'spread', 'quanto', 'compound', 'swaption', 'other']);
 
@@ -46,6 +47,9 @@ function normalizeOption(app, draft, listed) {
       if (!(num(b.level) > 0)) errors.push('Barrier level must be positive.');
       t.barrier = { type: b.type, level: num(b.level), rebate: num(b.rebate) ?? 0 };
     }
+    // An OTC option carries counterparty exposure: collateral follows the basis stated on the contract.
+    t.collateralBasis = normalizeBasis(t.collateralBasis, errors);
+    if (!t.collateralBasis) delete t.collateralBasis;
   }
   if (!draft.underlying_id && !t.fixingRate && !t.underlyingDescription) errors.push('Choose the underlying instrument (or name the underlying rate / reference).');
   if (t.settlement === 'physical' && !draft.underlying_id) errors.push('Physical settlement needs an underlying instrument in the registry.');
@@ -140,30 +144,33 @@ function makeOptionPlugin(family, listed) {
     priceUnits: () => (listed ? 'premium per underlying unit' : 'premium per unit'),
     calendar: calendarFor,
     normalize: (app, draft) => normalizeOption(app, draft, listed),
-    describe(inst) {
+    describe(inst, app) {
       const t = inst.terms;
       const rows = [['Type', `${t.right === 'C' ? 'Call' : 'Put'}${t.optionType !== 'vanilla' ? ` (${t.optionType})` : ''}`], ['Strike', t.strike], ['Expiration', t.expiration], ['Exercise', t.exercise], ['Settlement', t.settlement], ['Multiplier', inst.multiplier]];
       if (listed) rows.push(['Deliverable per contract', `${t.deliverable.units} units${t.deliverable.cash ? ` + ${t.deliverable.cash} cash` : ''}`]);
       if (t.payout) rows.push(['Digital payout per unit', t.payout]);
       if (t.barrier) rows.push(['Barrier', `${t.barrier.type} at ${t.barrier.level}`]);
       if (t.counterparty) rows.push(['Counterparty', t.counterparty]);
+      if (!listed && app?.agreements) rows.push(...app.agreements.describeRows(inst));
       return rows;
     },
+    /** Notional on which a percentage independent amount is worked out: the deliverable at the strike. */
+    collateralNotional: (app, inst, { qtyAfter }) => Math.abs(qtyAfter) * inst.terms.deliverable.units * inst.terms.strike,
     qtyStep: () => (listed ? 1 : 1e-6),
-    settleDate(app, inst, tradeDate, book) {
-      return addBusinessDays(tradeDate, inst.terms?.settleDays ?? book.settings.settlement[family] ?? 1, calendarFor(inst));
-    },
-    economics(app, { inst, action, qty, price }) {
+    settleDate: (app, inst, tradeDate, book) => standardSettleDate(inst, tradeDate, book),
+    economics(app, { inst, action, qty, price, unit, strategyId, book }) {
       const gross = qty * price * inst.multiplier;
       const buy = action === 'buy';
       const und = inst.underlying_id ? app.data.price(inst.underlying_id) : null;
       const undPx = und?.value ?? null;
+      // OTC only: collateral under the basis the contract states. A listed option is a cleared product (Book assumptions).
+      const coll = listed ? null : app.agreements.tradeRequirement({ book, unit, inst, action, qty, price, strategyId, cashOut: buy ? gross : 0 });
       return {
         ccy: inst.trading_ccy, principal: gross, cash: buy ? -gross : gross, accrued: 0,
         // Notional is the value of the deliverable, which is not the premium paid.
         notional: undPx !== null ? qty * inst.terms.deliverable.units * undPx : qty * inst.terms.deliverable.units * inst.terms.strike,
         notionalBasis: undPx !== null ? 'underlying price' : 'strike (no underlying price available)',
-        exposure: null, initialMargin: 0, notes: [],
+        exposure: null, initialMargin: coll ? coll.initialMargin : 0, ...(coll ? { collateral: coll } : {}), notes: coll ? [...coll.notes] : [],
       };
     },
     fill(app, c) {
@@ -178,6 +185,7 @@ function makeOptionPlugin(family, listed) {
       return v;
     },
     onPositionChange(app, { book, unit, inst, pos }) {
+      if (!listed) app.agreements.onPositionChange({ book, unit, inst, pos });
       if (Math.abs(pos.qty) < 1e-9) return app.tasks.cancelFor(pos.id);
       app.tasks.schedule({ bookId: book.id, unitId: unit.id, positionId: pos.id, instrumentId: inst.id, strategyId: pos.strategy_id, type: 'option.expiry', dueDate: inst.terms.expiration });
     },
@@ -198,6 +206,7 @@ function makeOptionPlugin(family, listed) {
       }
       if (task.data.manualAmount !== undefined && task.data.manualAmount !== null) {
         const r = settleOption(app, { book, unit, inst, pos, S: null, date: t.expiration, manualAmount: task.data.manualAmount, mode: 'engine' });
+        if (!listed) app.agreements.onPositionChange({ pos }); // the option ended: its collateral is released
         return { done: true, eventId: r?.eventId };
       }
       const fx = fixingFor(app, inst, t.expiration);
@@ -210,6 +219,7 @@ function makeOptionPlugin(family, listed) {
         };
       }
       const r = settleOption(app, { book, unit, inst, pos, S: fx.value, date: t.expiration, obs: fx.obs, mode: 'engine' });
+      if (!listed) app.agreements.onPositionChange({ pos }); // the option ended: its collateral is released
       return { done: true, eventId: r?.eventId };
     },
     /** User-initiated early exercise of a long American option. */

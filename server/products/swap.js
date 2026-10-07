@@ -23,8 +23,9 @@ import { yearFraction, DAY_COUNTS } from '../quant/daycount.js';
 import { addDays, addMonths, diffDays } from '../quant/dates.js';
 import { cdsDates, generateSchedule } from '../quant/schedule.js';
 import { CCY_RE, ISO_DATE_RE, isZero, money, need, num, sign } from '../core/util.js';
+import { normalizeBasis } from '../core/agreements.js';
 import { bookSecurityFill, fmtQty } from './common.js';
-import { calendarFor } from './security.js';
+import { calendarFor, paymentCalendarFor, standardSettleDate } from './security.js';
 
 const LEG_TYPES = ['fixed', 'float', 'ois', 'return', 'price', 'cap', 'floor'];
 const pct = (x, dp = 3) => `${(x * 100).toFixed(dp)}%`;
@@ -48,7 +49,7 @@ export function describeLeg(leg, app) {
 
 function legSchedule(inst, leg) {
   const t = inst.terms;
-  return generateSchedule({ start: t.effective, end: t.maturity, months: leg.months || 0, calendar: calendarFor(inst), convention: 'modified-following' });
+  return generateSchedule({ start: t.effective, end: t.maturity, months: leg.months || 0, calendar: paymentCalendarFor(inst), convention: 'modified-following' });
 }
 
 const scheduleFactor = (leg, date) => {
@@ -162,7 +163,7 @@ function scheduleLegTasks(app, { book, unit, inst, pos }) {
     if (idx >= 0) app.tasks.schedule({ ...common, type: 'swap.payment', dueDate: sched[idx].payDate, data: { key: `${leg.id}:${sched[idx].end}`, legId: leg.id, periodEnd: sched[idx].end } });
   }
   if (inst.terms.legs.some((l) => l.exchangeNotional) && today < inst.terms.effective) app.tasks.schedule({ ...common, type: 'swap.notional', dueDate: inst.terms.effective, data: { key: 'start' } });
-  app.tasks.schedule({ ...common, type: 'swap.maturity', dueDate: adjust(inst.terms.maturity, 'modified-following', calendarFor(inst)) });
+  app.tasks.schedule({ ...common, type: 'swap.maturity', dueDate: adjust(inst.terms.maturity, 'modified-following', paymentCalendarFor(inst)) });
 }
 
 export const swap = {
@@ -222,7 +223,10 @@ export const swap = {
       return l;
     });
     const ccy = t.legs[0]?.ccy || draft.trading_ccy;
-    // Independent amount: cash collateral posted at trade as a share of notional, returned when the swap ends.
+    // Collateral follows the basis stated on the contract (an agreement, position-level terms, or an explicit
+    // uncollateralized assumption). The older initialMarginPct field is still read as position-level terms.
+    t.collateralBasis = normalizeBasis(t.collateralBasis, errors);
+    if (!t.collateralBasis) delete t.collateralBasis;
     t.initialMarginPct = num(t.initialMarginPct);
     if (t.initialMarginPct !== null && !(t.initialMarginPct >= 0 && t.initialMarginPct < 1)) errors.push('The independent amount is a share of notional between 0 and 1 (0.10 = 10%).');
     return { terms: t, multiplier: 0.01, errors, tradingCcy: ccy, settleCcy: ccy };
@@ -235,26 +239,21 @@ export const swap = {
     rows.push(['Currencies', ccys.join(', ')]);
     if (t.legs.some((l) => l.exchangeNotional)) rows.push(['Notional exchange', 'At start and maturity']);
     rows.push(['Counterparty', t.counterparty || 'Simulated counterparty']);
-    rows.push(['Collateral terms', t.initialMarginPct ? `Independent amount of ${(t.initialMarginPct * 100).toFixed(2)}% of notional, posted in cash at trade and returned when the swap ends${t.collateral ? `. ${t.collateral}` : ''}` : t.collateral || 'None stated: no collateral is posted']);
+    rows.push(...collateralRows(inst, app));
     return rows;
   },
   qtyStep: () => 1,
-  settleDate(app, inst, tradeDate, book) {
-    return addBusinessDays(tradeDate, inst.terms?.settleDays ?? book.settings.settlement.swap ?? 2, calendarFor(inst));
-  },
-  economics(app, { inst, action, qty, price, unit, strategyId }) {
+  settleDate: (app, inst, tradeDate, book) => standardSettleDate(inst, tradeDate, book),
+  /** Notional on which a percentage independent amount is worked out. */
+  collateralNotional: (app, inst, { pos, qtyAfter }) => Math.abs(qtyAfter) * (pos?.data?.notionalScale ?? 1),
+  economics(app, { inst, action, qty, price, unit, strategyId, book }) {
     const upfront = (qty * price) / 100;
     const buy = action === 'buy';
     const notes = ['Notional is not paid. Only the upfront amount (if any) settles at trade; each leg then pays on its schedule.'];
     for (const l of inst.terms.legs) notes.push(`Leg ${l.id}: ${buy ? describeLeg(l, app) : describeLeg({ ...l, side: l.side === 'pay' ? 'receive' : 'pay' }, app)}`);
-    // Collateral to post (or get back) for the position this trade leaves.
-    const pct = inst.terms.initialMarginPct || 0;
-    const pos = unit && !inst.draft ? app.positions.find(unit.id, inst.id, strategyId || '') : null;
-    const after = Math.abs((pos?.qty || 0) + (buy ? qty : -qty));
-    const held = pos ? app.ledger.positionBalance(pos.id, 'cash.margin', inst.trading_ccy) : 0;
-    const initialMargin = money(after * pct - held, inst.trading_ccy);
-    if (pct) notes.push(`Independent amount: ${(pct * 100).toFixed(2)}% of notional is posted as cash collateral and returned when the swap ends.`);
-    return { ccy: inst.trading_ccy, principal: upfront, cash: buy ? -upfront : upfront, accrued: 0, notional: qty, exposure: null, initialMargin, notes };
+    // Collateral to post (or get back) for the position this trade leaves, under the basis the contract states.
+    const coll = app.agreements.tradeRequirement({ book, unit, inst, action, qty, price, strategyId, cashOut: Math.max(0, buy ? upfront : -upfront) });
+    return { ccy: inst.trading_ccy, principal: upfront, cash: buy ? -upfront : upfront, accrued: 0, notional: qty, exposure: null, initialMargin: coll.initialMargin, collateral: coll, notes: [...notes, ...coll.notes] };
   },
   fill(app, c) {
     const r = bookSecurityFill(app, c, { unitCost: c.price / 100 });
@@ -269,7 +268,7 @@ export const swap = {
   },
   onPositionChange(app, { book, unit, inst, pos }) {
     trueUpNotionalExchange(app, { book, unit, inst, pos, date: app.clock.today() });
-    trueUpCollateral(app, { book, unit, inst, pos: app.positions.get(pos.id) });
+    app.agreements.onPositionChange({ book, unit, inst, pos });
     if (isZero(pos.qty)) return app.tasks.cancelFor(pos.id);
     scheduleLegTasks(app, { book, unit, inst, pos: app.positions.get(pos.id) });
   },
@@ -337,6 +336,8 @@ export const swap = {
         if (leg.resetNotional) patch.notionalScale = (pos.data.notionalScale ?? 1) * r.ratio;
       }
       const updated = app.positions.change(pos, { data: patch });
+      // A notional reset changes the independent amount the terms call for.
+      if (patch.notionalScale !== undefined) app.agreements.onPositionChange({ book, unit, inst, pos: updated });
       const nextIdx = sched.findIndex((p) => p.end === period.end) + 1;
       if (nextIdx < sched.length) app.tasks.schedule({ ...base, type: 'swap.payment', dueDate: sched[nextIdx].payDate, data: { key: `${leg.id}:${sched[nextIdx].end}`, legId: leg.id, periodEnd: sched[nextIdx].end } });
       void updated;
@@ -352,7 +353,7 @@ export const swap = {
         eventType: 'swap.matured', actor: 'engine', summary: `Swap matured: ${inst.name} (notional ${fmtQty(Math.abs(fresh.qty))})`,
       }, { unitCost: 0 });
       trueUpNotionalExchange(app, { book, unit, inst, pos: app.positions.get(pos.id), date: app.clock.today() });
-      trueUpCollateral(app, { book, unit, inst, pos: app.positions.get(pos.id) });
+      app.agreements.onPositionChange({ book, unit, inst, pos });
       return { done: true, eventId: r.eventId };
     }
     return { failed: `Unknown task ${task.type}` };
@@ -380,24 +381,10 @@ export const swap = {
   },
 };
 
-/**
- * Keep the cash collateral posted on a swap equal to its independent amount: post when the
- * position opens or grows, release when it shrinks or ends. Collateral stays the unit's own asset
- * (margin posted); it is not an expense.
- */
-function trueUpCollateral(app, { book, unit, inst, pos }) {
-  if (!pos) return null;
-  const ccy = inst.trading_ccy;
-  const target = money(Math.abs(pos.qty) * (inst.terms.initialMarginPct || 0), ccy);
-  const held = app.ledger.positionBalance(pos.id, 'cash.margin', ccy);
-  const delta = money(target - held, ccy);
-  if (delta === 0) return null;
-  return app.ledger.post({
-    bookId: book.id, unitId: unit.id, type: 'swap.collateral', instrumentId: inst.id, strategyId: pos.strategy_id, positionId: pos.id, actor: 'engine',
-    summary: `Collateral ${delta > 0 ? 'posted' : 'returned'} on ${inst.name}: ${fmt(Math.abs(delta), ccy)} (independent amount ${((inst.terms.initialMarginPct || 0) * 100).toFixed(2)}% of ${fmtQty(Math.abs(pos.qty))} notional)`,
-    data: { target, held, delta },
-    entries: [{ account: 'cash.margin', ccy, amount: delta, positionId: pos.id }, { account: 'cash', ccy, amount: -delta, positionId: pos.id }],
-  });
+/** The "Collateral terms" rows of an OTC contract: the basis it states, and any free-text terms kept on record. */
+function collateralRows(inst, app) {
+  if (app?.agreements) return app.agreements.describeRows(inst);
+  return [['Collateral terms', inst.terms?.collateral || 'None stated']];
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -410,7 +397,7 @@ function cdsPeriods(inst, from) {
   const out = [];
   let start = t.effective;
   for (const d of dates) {
-    out.push({ start, end: d, payDate: adjust(d, 'following', calendarFor(inst)) });
+    out.push({ start, end: d, payDate: adjust(d, 'following', paymentCalendarFor(inst)) });
     start = d;
   }
   return out.filter((p) => p.end > from);
@@ -438,27 +425,31 @@ export const cds = {
     t.recovery = num(t.recovery) ?? 0.4;
     t.indexFactor = num(t.indexFactor) ?? 1;
     t.dayCount = 'ACT/360';
+    t.collateralBasis = normalizeBasis(t.collateralBasis, errors);
+    if (!t.collateralBasis) delete t.collateralBasis;
     return { terms: t, multiplier: 0.01, errors };
   },
-  describe(inst) {
+  describe(inst, app) {
     const t = inst.terms;
     const rows = [['Reference', t.referenceEntity], ['Running coupon', `${(t.coupon * 1e4).toFixed(0)} bp, quarterly, ACT/360`], ['Effective', t.effective], ['Maturity', t.maturity], ['Recovery assumption', `${(t.recovery * 100).toFixed(0)}% (used only until a credit event states the real recovery)`]];
     if (t.indexFactor !== 1) rows.push(['Index factor', t.indexFactor]);
     if (t.seniority) rows.push(['Seniority', t.seniority]);
-    rows.push(['Counterparty', t.counterparty || 'Simulated counterparty'], ['Collateral terms', t.collateral || 'None stated']);
+    rows.push(['Counterparty', t.counterparty || 'Simulated counterparty'], ...collateralRows(inst, app));
     return rows;
   },
   qtyStep: () => 1,
-  settleDate(app, inst, tradeDate, book) {
-    return addBusinessDays(tradeDate, inst.terms?.settleDays ?? book.settings.settlement.cds ?? 1, calendarFor(inst));
-  },
-  economics(app, { inst, action, qty, price }) {
+  settleDate: (app, inst, tradeDate, book) => standardSettleDate(inst, tradeDate, book),
+  /** Notional on which a percentage independent amount is worked out. */
+  collateralNotional: (app, inst, { qtyAfter }) => Math.abs(qtyAfter) * (inst.terms.indexFactor ?? 1),
+  economics(app, { inst, action, qty, price, unit, strategyId, book }) {
     const upfront = (qty * price) / 100;
     const buy = action === 'buy';
     const annual = qty * inst.terms.indexFactor * inst.terms.coupon;
+    // Collateral under the basis the contract states. Nothing is assumed from the product.
+    const coll = app.agreements.tradeRequirement({ book, unit, inst, action, qty, price, strategyId, cashOut: Math.max(0, buy ? upfront : -upfront) });
     return {
-      ccy: inst.trading_ccy, principal: upfront, cash: buy ? -upfront : upfront, accrued: 0, notional: qty * inst.terms.indexFactor, exposure: null, initialMargin: 0,
-      notes: [`${buy ? 'Pays' : 'Receives'} a running premium of about ${fmt(annual, inst.trading_ccy)} a year, quarterly, until ${inst.terms.maturity} or a credit event.`, 'Premium accrues from the trade date; accrued premium is not exchanged at trade.'],
+      ccy: inst.trading_ccy, principal: upfront, cash: buy ? -upfront : upfront, accrued: 0, notional: qty * inst.terms.indexFactor, exposure: null, initialMargin: coll.initialMargin, collateral: coll,
+      notes: [`${buy ? 'Pays' : 'Receives'} a running premium of about ${fmt(annual, inst.trading_ccy)} a year, quarterly, until ${inst.terms.maturity} or a credit event.`, 'Premium accrues from the trade date; accrued premium is not exchanged at trade.', ...coll.notes],
     };
   },
   fill(app, c) {
@@ -473,12 +464,13 @@ export const cds = {
     return { price: known ? mark : null, mv, cost: pos.cost, unrealized: known ? money(mv - pos.cost, ccy) : null, accrued: 0, notional: Math.abs(pos.qty) * inst.terms.indexFactor, exposure: null };
   },
   onPositionChange(app, { book, unit, inst, pos }) {
+    app.agreements.onPositionChange({ book, unit, inst, pos });
     if (isZero(pos.qty)) return app.tasks.cancelFor(pos.id);
     const common = { bookId: book.id, unitId: unit.id, positionId: pos.id, instrumentId: inst.id, strategyId: pos.strategy_id };
     const from = pos.data.premiumPaidThrough || pos.data.premiumFrom || app.clock.today();
     const next = cdsPeriods(inst, from)[0];
     if (next) app.tasks.schedule({ ...common, type: 'cds.premium', dueDate: next.payDate, data: { key: next.end, periodEnd: next.end } });
-    app.tasks.schedule({ ...common, type: 'cds.maturity', dueDate: adjust(inst.terms.maturity, 'following', calendarFor(inst)) });
+    app.tasks.schedule({ ...common, type: 'cds.maturity', dueDate: adjust(inst.terms.maturity, 'following', paymentCalendarFor(inst)) });
   },
   runTask(app, task, { book, unit, inst, pos }) {
     if (!pos || isZero(pos.qty)) return 'done';
@@ -510,6 +502,7 @@ export const cds = {
       if (open) return { blocked: 'Waiting for the final premium payment first.', needs: [] };
       const fresh = app.positions.get(pos.id);
       const r = bookSecurityFill(app, { book, unit, inst, action: fresh.qty > 0 ? 'sell' : 'buy', qty: Math.abs(fresh.qty), price: 0, fees: [], strategyId: fresh.strategy_id, tradeDate: inst.terms.maturity, settleDate: app.clock.today(), eventType: 'cds.matured', actor: 'engine', summary: `CDS matured without a credit event: ${inst.name}` }, { unitCost: 0 });
+      app.agreements.onPositionChange({ book, unit, inst, pos }); // collateral goes back when the contract ends
       return { done: true, eventId: r.eventId };
     }
     return { failed: `Unknown task ${task.type}` };
@@ -544,9 +537,14 @@ export const cds = {
       if (w >= 1 - 1e-12) {
         bookSecurityFill(app, { book, unit, inst, action: p.qty > 0 ? 'sell' : 'buy', qty: Math.abs(p.qty), price: 0, fees: [], strategyId: p.strategy_id, tradeDate: when, settleDate: when, eventType: 'cds.terminated', actor: 'user', summary: `CDS terminated by credit event: ${inst.name}` }, { unitCost: 0 });
         app.tasks.cancelFor(p.id);
+        app.agreements.onPositionChange({ book, unit, inst, pos: p }); // termination releases its collateral
       }
     }
-    if (w < 1 - 1e-12) app.instruments.update(inst.id, { terms: { ...inst.terms, indexFactor: inst.terms.indexFactor * (1 - w) } }, { system: true });
+    if (w < 1 - 1e-12) {
+      app.instruments.update(inst.id, { terms: { ...inst.terms, indexFactor: inst.terms.indexFactor * (1 - w) } }, { system: true });
+      // The surviving notional is smaller, so a percentage independent amount is trued up.
+      for (const p of app.positions.heldAround(inst.id)) if (!isZero(p.qty)) app.agreements.onPositionChange({ pos: p });
+    }
     return { eventIds: out };
   },
 };

@@ -55,7 +55,9 @@ export default function Markets({ args, book, status }) {
     return html`<div title="Fundamental">${isNum(a[f1]) ? draw(a[f1]) : html`<${Missing} reason="Not supplied" />`}</div><div class="sub" title="Realistic">${isNum(a[f2]) ? draw(a[f2]) : html`<${Missing} reason="Not supplied" />`}</div>`;
   };
   const columns = [
-    { label: 'Instrument', render: (i) => html`<div class="sym">${i.symbol || i.name}</div><div class="sub clip" style="max-width:200px" title=${i.name}>${i.symbol ? i.name : i.id}</div>` },
+    // A calendar that is weekends only or approximate is flagged on the row itself: a badge and a short sentence (the full one on hover and on the instrument).
+    { label: 'Instrument', render: (i) => html`<div class="sym">${i.symbol || i.name}</div><div class="sub clip" style="max-width:200px" title=${i.name}>${i.symbol ? i.name : i.id}</div>
+      ${i.calendar?.flag ? html`<div class="calflag" style="max-width:230px" title=${i.calendar.flagText}><span class="pill warn">${i.calendar.flag === 'weekends-only' ? 'weekends-only calendar' : 'approximate calendar'}</span> ${i.calendar.flag === 'weekends-only' ? 'Its dates ignore local holidays.' : 'Some closing days are missing from its dates.'}</div>` : null}` },
     { label: 'Product', render: (i) => html`<div class="clip" style="max-width:150px" title=${i.support.productName}>${i.support.productName.replace(/ \(.*\)$/, '')}</div><div class="sub">${[i.venue || (i.venueType === 'otc' ? 'OTC' : ''), i.tradingCcy].filter(Boolean).join(', ')}</div>` },
     { label: 'Held in this Book', align: 'r', title: 'Gross long and short holdings in this Book, with the net. Hover for the owning Accounts.', render: (i) => html`<${Holdings} h=${i.holdings} />` },
     { label: 'Current market price', align: 'r', render: (i) => html`<${Price} obs=${qt[i.id]?.observation} reason=${marketAwaiting ? status.data.awaitingMessage : 'No price available'} />` },

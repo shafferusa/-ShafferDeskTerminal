@@ -405,4 +405,138 @@ CREATE INDEX idx_hedge_book ON hedge_requests(book_id, status);
 ALTER TABLE instruments ADD COLUMN venue_country TEXT;
 `,
   },
+  {
+    id: 4,
+    name: 'protection allocations',
+    sql: `
+-- What protects what. One row allocates capacity of one hedge position to one protected position.
+-- A hedge counts as protection for a position only through an active row here: an explicit link
+-- (legs executed from that position's hedge request), protection built into the execution
+-- template, or an allocation returned by the service (Analytics Lab). The Terminal validates and
+-- stores these; it does not decide applicability or sizing for anything not explicitly linked.
+CREATE TABLE protection_allocations (
+  id TEXT PRIMARY KEY,
+  book_id TEXT NOT NULL,
+  unit_id TEXT NOT NULL,
+  hedge_position_id TEXT NOT NULL,
+  protected_position_id TEXT NOT NULL,
+  strategy_id TEXT,                      -- strategy instance of the protected position
+  units REAL,                            -- units of the protected instrument covered; NULL = linked, no unit measure
+  capacity REAL,                         -- hedge capacity in the same units: the Terminal's rule, or stated by the service
+  basis TEXT NOT NULL,                   -- explicit_link | template | service
+  source TEXT,                           -- JSON { kind, label, version, receivedAt } of whoever identified it
+  request_id TEXT,                       -- hedge request the link or the assessment came from
+  status TEXT NOT NULL,                  -- active | released | expired | rejected
+  reason TEXT,                           -- why it was released, expired or rejected
+  note TEXT,
+  hedge_qty REAL,                        -- quantities when the allocation was recorded
+  protected_qty REAL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  ended_at TEXT
+);
+CREATE INDEX idx_protalloc_hedge ON protection_allocations(hedge_position_id, status);
+CREATE INDEX idx_protalloc_protected ON protection_allocations(protected_position_id, status);
+CREATE INDEX idx_protalloc_unit ON protection_allocations(unit_id, status);
+-- A hedge the service looked at and judged unrelated to a position. Kept so the position can say
+-- "unrelated" (assessed) rather than "assessment unavailable" (never assessed).
+CREATE TABLE protection_verdicts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  book_id TEXT NOT NULL,
+  unit_id TEXT NOT NULL,
+  hedge_position_id TEXT NOT NULL,
+  protected_position_id TEXT NOT NULL,
+  verdict TEXT NOT NULL,                 -- unrelated
+  note TEXT,
+  source TEXT,
+  request_id TEXT,
+  hedge_qty REAL,
+  created_at TEXT NOT NULL,
+  UNIQUE (hedge_position_id, protected_position_id)
+);
+`,
+  },
+  {
+    id: 5,
+    name: 'collateral agreements',
+    sql: `
+-- A paper collateral agreement (bilateral CSA-style, cleared, or an explicit uncollateralized
+-- assumption). It belongs to exactly one Book and covers units of that Book only.
+CREATE TABLE agreements (
+  id TEXT PRIMARY KEY,
+  book_id TEXT NOT NULL REFERENCES books(id),
+  name TEXT NOT NULL,
+  counterparty TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('bilateral','cleared','uncollateralized')),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','closed')),
+  posting_unit_id TEXT REFERENCES units(id),   -- set only for a shared arrangement: the unit that posts and receives
+  terms TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  closed_at TEXT,
+  UNIQUE (book_id, name)
+);
+CREATE TABLE agreement_units (
+  agreement_id TEXT NOT NULL REFERENCES agreements(id),
+  unit_id TEXT NOT NULL REFERENCES units(id),
+  PRIMARY KEY (agreement_id, unit_id)
+);
+
+-- Register of OTC collateral movements. One row per ledger event and Account the amount is
+-- allocated to; the rows of an event add up to what the ledger moved.
+-- amount: change in the signed balance (+ posted by us, - held from the counterparty).
+CREATE TABLE collateral_movements (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id INTEGER NOT NULL,
+  ts TEXT NOT NULL,
+  business_date TEXT NOT NULL,
+  book_id TEXT NOT NULL,
+  agreement_id TEXT,                     -- NULL for position-level terms
+  set_key TEXT NOT NULL,                 -- netting set: P:<position> | A:<agreement>:<unit> | S:<agreement>
+  kind TEXT NOT NULL,                    -- independent | variation
+  holder_unit_id TEXT NOT NULL,          -- the unit whose ledger moved
+  allocated_unit_id TEXT NOT NULL,       -- the Account whose positions the amount collateralises
+  position_id TEXT,
+  ccy TEXT NOT NULL,
+  amount REAL NOT NULL
+);
+CREATE INDEX idx_collmov_set ON collateral_movements(set_key, kind);
+CREATE INDEX idx_collmov_book ON collateral_movements(book_id, id);
+CREATE INDEX idx_collmov_position ON collateral_movements(position_id);
+CREATE INDEX idx_collmov_agreement ON collateral_movements(agreement_id);
+
+-- Latest valuation of each requirement: IA:<position> or VM:<netting set>.
+CREATE TABLE collateral_state (
+  key TEXT PRIMARY KEY,
+  book_id TEXT NOT NULL,
+  agreement_id TEXT,
+  kind TEXT NOT NULL,                    -- independent | variation
+  holder_unit_id TEXT,
+  ccy TEXT,
+  status TEXT NOT NULL,                  -- ok | failed | cannot_value | closed
+  required REAL,
+  held REAL,
+  pending REAL,
+  reason TEXT,
+  as_of TEXT,
+  updated_at TEXT NOT NULL,
+  data TEXT NOT NULL DEFAULT '{}',
+  last_event_id INTEGER
+);
+CREATE INDEX idx_collstate_book ON collateral_state(book_id, status);
+`,
+  },
+  {
+    id: 6,
+    name: 'instrument conventions and fill reconciliation',
+    sql: `
+-- Calendars and settlement convention set on the instrument itself (JSON):
+-- { tradingCalendar, settlementCalendar, paymentCalendar, settleLag }. NULL: nothing set, so the
+-- venue country, the currency and the Book's settlement lags decide, as before.
+ALTER TABLE instruments ADD COLUMN conventions TEXT;
+-- How a fill compares with the figures confirmed for its order (JSON):
+-- { confirmed, actual, variance, exact, within, tolerances, reason }. NULL for fills booked before this.
+ALTER TABLE fills ADD COLUMN confirm TEXT;
+`,
+  },
 ];

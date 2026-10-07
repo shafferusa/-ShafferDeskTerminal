@@ -30,7 +30,7 @@ export const BOOK_DEFAULTS = {
     participation: 1, // share of the displayed bid/ask size that one matching cycle may take
     allowEndOfDayFills: false, // fill against end-of-day observations (off: orders wait for a fresh price)
     maxQuoteAgeSec: 120, // an executable quote older than this cannot fill an order
-    maxPreviewDriftPct: 0.5, // a confirmation is refused if the cash required moved more than this since the preview shown
+    maxPreviewDriftPct: 0.5, // superseded by confirmation.packageCashPct; still read for a Book that changed it before the confirmation tolerances existed
   },
   // Settlement lag in business days after trade date.
   settlement: { equity: 1, fund: 1, option: 1, bond: 1, crypto: 0, spot: 2, fx: 2, manual: 2, otcoption: 2, swap: 2, cds: 1, forward: 0, future: 0, foreignCash: 2 },
@@ -44,6 +44,17 @@ export const BOOK_DEFAULTS = {
     nakedCallPct: 0.2, // share of underlying value reserved per uncovered short call unit
   },
   dividends: { withholdingPct: 0 },
+  // Confirmation tolerances. A confirmation carries the figures that were displayed; the same legs
+  // are priced again at that moment and each tolerance below decides whether the difference is
+  // small enough to execute. Anything larger, and any change of a non-numeric term (settlement
+  // date, quote status, financing terms, borrow availability), is refused and shown as was / now.
+  confirmation: {
+    legPricePct: 0.5, // a leg's estimated fill price may move this much, in percent of the price displayed
+    legAmountPct: 0.5, // a leg's cash, fees, margin, collateral, notional or financing amount, in percent of the amount displayed
+    packageCashPct: 0.5, // each package total per currency (cash required, net cash, fees, margin, collateral, financing, shortfall)
+    grossCashPct: 0.5, // gross cash and gross notional per currency: the sum of the legs' absolute amounts, so offsetting moves cannot hide
+    maxPreviewAgeSec: 300, // a displayed preview older than this must be priced again before it can be confirmed (0: no limit)
+  },
 };
 
 export function mergeSettings(base, over) {

@@ -314,3 +314,212 @@ table.ledger.fit td.nowrap, table.ledger.fit td .btn { white-space: nowrap; }
 table.ledger tbody tr.detail > td table.ledger th:first-child, table.ledger tbody tr.detail > td table.ledger td:first-child { border-left: 2px solid transparent; }
 table.ledger tbody tr.detail > td table.ledger th { position: static; background: none; }
 table.ledger tbody tr.detail > td table.ledger tbody tr td { background: none; height: auto; }
+
+/* ---- balance sheet ---- */
+/* Consolidation worksheet: the Line column pinned left, the total pinned right, the heading held at the
+   top of the page while it scrolls. The heading and the body are two tables on the same columns. */
+.bs { --bs-label: 240px; --bs-gut: 21px; }
+/* top: the page's own top padding (.main), so the heading sits flush under the top bar when held */
+.bs-head { position: sticky; top: -16px; z-index: 4; overflow-x: auto; scrollbar-width: none; background: var(--sheet); }
+.bs-head::-webkit-scrollbar { display: none; }
+.bs-body { overflow-x: auto; }
+table.ledger.bs-grid { table-layout: fixed; border-collapse: separate; border-spacing: 0; }
+table.ledger.bs-grid th, table.ledger.bs-grid td { padding-left: calc((var(--bs-gut) - 1px) / 2); padding-right: calc((var(--bs-gut) - 1px) / 2); }
+table.ledger.bs-grid th { white-space: normal; overflow-wrap: anywhere; vertical-align: bottom; }
+table.ledger.bs-grid td { border-bottom: 0; border-top: 1px solid var(--rule); }
+table.ledger.bs-grid tbody tr:first-child td, table.ledger.bs-grid tr.group + tr td { border-top: 0; }
+table.ledger.bs-grid tr.group td { border-bottom: 1.5px solid var(--rule-strong); }
+table.ledger.bs-grid td.bs-rule { border-top: 1.5px solid var(--rule-strong); }
+table.ledger.bs-grid .bs-l { position: sticky; left: 0; z-index: 2; }
+table.ledger.bs-grid .bs-r { position: sticky; right: 0; z-index: 2; border-left: 1px solid var(--rule); }
+table.ledger.bs-grid th.bs-l, table.ledger.bs-grid th.bs-r { z-index: 3; }
+table.ledger.bs-grid tbody tr:nth-child(odd) td.bs-l, table.ledger.bs-grid tbody tr:nth-child(odd) td.bs-r { background: var(--sheet); }
+.bs.scrolls table.ledger.bs-grid .bs-l { box-shadow: inset -1px 0 0 var(--rule-strong); }
+.bs.scrolls table.ledger.bs-grid .bs-r { border-left-color: var(--rule-strong); }
+/* A soft edge on a pinned column while columns lie out of view under it. */
+.bs.more-left table.ledger.bs-grid .bs-l { box-shadow: inset -1px 0 0 var(--rule-strong), 3px 0 5px -2px var(--rule-strong); clip-path: inset(0 -9px 0 0); }
+.bs.more-right table.ledger.bs-grid .bs-r { box-shadow: -3px 0 5px -2px var(--rule-strong); clip-path: inset(0 0 0 -9px); }
+/* A line's note is kept to three lines (the whole note is its hover text). While the worksheet scrolls
+   sideways the notes are left to the hover text altogether, to keep rows short. */
+.bs-note { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.bs.scrolls .bs-note { display: none; }
+.bs-stick { position: sticky; left: 12px; display: inline-block; }
+/* Column groups: Treasury, the Accounts, eliminations, total. */
+table.ledger.bs-grid .bs-edge { border-left: 1px solid var(--rule); }
+table.ledger.bs-grid th.bs-group { text-align: left; border-bottom: 1px solid var(--rule); border-left: 1px solid var(--rule); }
+table.ledger.bs-grid th.bs-group.r { text-align: right; }
+table.ledger.bs-grid th.bs-group .bs-stick { left: calc(var(--bs-label) + 12px); }
+table.ledger.bs-grid th.bs-group .btn.link { display: inline; font-family: var(--ui); font-size: 12px; margin-left: 6px; white-space: normal; text-align: inherit; }
+table.ledger.bs-grid th.bs-group.r .btn.link { display: block; margin-left: 0; }
+table.ledger.bs-grid.margin tr.bs-sub th:first-child { border-left: 1px solid var(--rule); }
+table.ledger.bs-grid th.bs-comb, table.ledger.bs-grid td.bs-comb { border-left: 1px solid var(--rule); }
+/* Column filters above the worksheet. */
+.bs-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 12px; border-bottom: 1px solid var(--rule); }
+.bs-tools .grow { flex: 1; }
+.bs-find { width: 200px; }
+.bs-on { width: 230px; }
+.bs-choose { display: flex; flex-direction: column; gap: 8px; padding: 8px 12px 10px; border-bottom: 1px solid var(--rule); background: var(--sheet-2); }
+.bs-chooselist { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 5px 14px; }
+.bs-status { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; padding: 6px 12px; font-size: 12.5px; color: var(--ink-2); border-bottom: 1px solid var(--rule); }
+.bs-status .grow { flex: 1 1 320px; }
+.bs-status b { color: var(--ink); font-weight: 600; }
+.bs-status .btn.link { font-size: 12.5px; }
+@media (max-width: 1100px) { .bs { --bs-label: 190px; --bs-gut: 17px; } }
+@media (max-width: 820px) {
+  /* The worksheet keeps to the width of the screen, so its pinned columns stay in view. */
+  .bs-fit { max-width: calc(100vw - 24px); }
+  .bs { --bs-label: 150px; }
+  .bs-head { top: -12px; }
+}
+@media (max-width: 480px) {
+  .bs { --bs-label: 112px; --bs-gut: 13px; }
+  table.ledger.bs-grid { font-size: 12px; }
+  .bs-note { display: none; }
+  .bs-find, .bs-on { width: 100%; }
+}
+
+/* ---- confirmation, settlement and calendars (preview, tickets, instrument and order tables) ---- */
+/* What a figure was before a refused confirmation. */
+.was { font-size: 11.5px; color: var(--amber); white-space: normal; }
+td.r .was { white-space: nowrap; }
+table.ledger.pv-legs td.wrap[data-label="What"] { min-width: 190px; }
+table.ledger.pv-legs tr.moved > td:first-child { border-left-color: var(--amber); box-shadow: inset 3px 0 0 var(--amber); }
+.panel.changed { border-color: var(--amber); }
+.panel.changed > header { background: var(--amber-soft); }
+table.ledger.changes td { height: auto; }
+/* A calendar that is approximate or weekends-only: a badge and its sentence, in the flow of the page. */
+.calflag { margin-top: 4px; font-size: 12px; color: var(--ink-2); white-space: normal; line-height: 1.4; }
+.calflag .pill { margin-right: 4px; }
+.calrow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+/* Package totals in the footer of the preview: always in view, with the confirmation controls. */
+.modal > footer:has(.pv-totals) { flex-wrap: wrap; row-gap: 6px; }
+.pv-totals { display: flex; flex-wrap: wrap; gap: 2px 14px; align-items: baseline; font-size: 12.5px; min-width: 0; flex: 1 1 260px; }
+.pv-totals .note { flex-basis: 100%; }
+table.ledger.pv-legs td.fillcell { min-width: 190px; }
+/* Every column of the leg table stays inside the dialog: the main figure of a cell does not break, its notes wrap under it. */
+table.ledger.pv-legs td.settlecell { min-width: 112px; max-width: 170px; white-space: normal; }
+table.ledger.pv-legs td.amt { white-space: normal; min-width: 118px; }
+table.ledger.pv-legs td.amt .sub, table.ledger.pv-legs td.amt .was { white-space: normal; }
+.legs .settle-edit { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; align-items: flex-start; }
+.legs .settle-edit label { display: flex; align-items: center; gap: 6px; }
+.legs .settle-edit input[type="date"] { width: 132px; }
+/* Confirmed against filled, in the order table of a strategy. */
+.recon { font-size: 12px; color: var(--ink-2); white-space: normal; line-height: 1.4; max-width: 46ch; }
+.recon b { color: var(--ink); font-weight: 600; }
+.set-conv { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px 12px; }
+@media (max-width: 1100px) {
+  /* The leg table becomes one block per leg, each figure under its own label: nothing is clipped or scrolled away. */
+  table.ledger.pv-legs, table.ledger.pv-legs > tbody { display: block; width: 100%; }
+  table.ledger.pv-legs > thead { display: none; }
+  table.ledger.pv-legs > tbody > tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 16px; padding: 10px 12px; border-bottom: 1.5px solid var(--rule-strong); border-left: 2px solid var(--margin-rule); }
+  table.ledger.pv-legs > tbody > tr.group { display: block; padding: 0; border-bottom: 0; }
+  table.ledger.pv-legs > tbody > tr.group > td { display: block; padding: 10px 12px 5px; }
+  table.ledger.pv-legs > tbody > tr > td { display: block; border: 0; padding: 0; height: auto; text-align: left; white-space: normal; min-width: 0; background: transparent; }
+  table.ledger.pv-legs > tbody > tr:nth-child(even) > td { background: transparent; }
+  table.ledger.pv-legs > tbody > tr > td[data-label]::before { content: attr(data-label); display: block; font-size: 11px; color: var(--muted); margin-bottom: 1px; }
+  table.ledger.pv-legs > tbody > tr > td[data-label="Leg"] { grid-column: 1; grid-row: 1; }
+  table.ledger.pv-legs > tbody > tr > td[data-label="Leg"]::before { display: none; }
+  table.ledger.pv-legs > tbody > tr > td[data-label="What"] { grid-column: 1 / -1; grid-row: 1; padding-left: 30px; }
+  table.ledger.pv-legs > tbody > tr > td[data-label="What"]::before { display: none; }
+  table.ledger.pv-legs > tbody > tr > td.rm { grid-column: 3; grid-row: 1; justify-self: end; z-index: 1; }
+  table.ledger.pv-legs > tbody > tr > td.rm:empty { display: none; }
+  table.ledger.pv-legs.margin > tbody > tr > td:first-child, table.ledger.pv-legs.margin > tbody > tr.group > td:first-child { border-left: 0; }
+  table.ledger.pv-legs > tbody > tr.moved > td:first-child { box-shadow: none; }
+  table.ledger.pv-legs > tbody > tr.moved { border-left-color: var(--amber); }
+  table.ledger.pv-legs td.fillcell, .legs .settlecell, table.ledger.pv-legs td.wrap, table.ledger.pv-legs td.wrap[data-label="What"] { min-width: 0; }
+  table.ledger.pv-legs td[data-label="Quantity"] .sub:first-of-type { display: inline; margin-left: 6px; }
+}
+@media (max-width: 620px) {
+  table.ledger.pv-legs > tbody > tr { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  table.ledger.pv-legs > tbody > tr > td.fillcell { grid-column: 1 / -1; }
+  table.ledger.pv-legs > tbody > tr > td.rm { grid-column: 2; }
+  .scrim:has(.pv-totals) { padding: 0; }
+  .modal:has(.pv-totals) { max-height: 100vh; height: 100vh; border-radius: 0; }
+  .modal:has(.pv-totals) > .body { flex: 1; padding: 10px; }
+  .modal > footer:has(.pv-totals) { padding: 8px 10px; }
+  .modal > footer:has(.pv-totals) .grow { display: none; }
+  .modal > footer:has(.pv-totals) .btn { flex: 1 1 auto; }
+  /* What changed: one block per figure, was and now side by side, so nothing has to be scrolled sideways. */
+  table.ledger.changes, table.ledger.changes > tbody { display: block; width: 100%; }
+  table.ledger.changes > thead { display: none; }
+  table.ledger.changes > tbody > tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px 12px; padding: 6px 10px; border-bottom: 1px solid var(--rule); }
+  table.ledger.changes > tbody > tr.group { display: block; padding: 0; border-bottom: 0; }
+  table.ledger.changes > tbody > tr.group > td { display: block; padding: 8px 10px 4px; }
+  table.ledger.changes > tbody > tr > td { display: block; border: 0; padding: 0; height: auto; text-align: left; white-space: normal; background: transparent; min-width: 0; }
+  table.ledger.changes > tbody > tr:nth-child(even) > td { background: transparent; }
+  table.ledger.changes > tbody > tr > td:first-child { grid-column: 1 / -1; font-weight: 600; }
+  table.ledger.changes > tbody > tr > td[data-label]::before { content: attr(data-label); display: block; font-size: 11px; font-weight: 400; color: var(--muted); }
+  table.ledger.changes > tbody > tr > td[data-label]:empty { display: none; }
+}
+
+/* ---- hedge and protection ---- */
+/* The hedge popup: state strip and totals stay in view; only the middle scrolls. */
+.hedge-modal > .hedge-status { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 7px 16px; border-bottom: 1px solid var(--rule); background: var(--sheet-2); font-size: 12.5px; color: var(--ink-2); }
+.hedge-modal > .hedge-status .hs-fact b { color: var(--ink); }
+.hedge-modal > .hedge-status .hs-src { flex-basis: 100%; }
+.hedge-modal > .body { flex: 1 1 auto; min-height: 0; }
+.hedge-split { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
+.hedge-split > * { min-width: 0; }
+.hedge-modal > .hedge-totals { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 18px; padding: 7px 16px; border-top: 1px solid var(--rule-strong); background: var(--sheet); font-size: 12.5px; }
+.hedge-totals .ht-row { display: flex; flex-wrap: wrap; gap: 2px 18px; }
+.hedge-totals .ht { display: inline-flex; gap: 6px; align-items: baseline; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.hedge-totals .ht .k { color: var(--muted); }
+.hedge-totals .ht-note { margin-left: auto; color: var(--muted); font-size: 12px; }
+.hedge-modal > footer { flex-wrap: wrap; }
+.hsrc .pill { vertical-align: baseline; }
+/* Package choice. */
+.hpkg { display: block; width: 100%; text-align: left; padding: 8px 10px; border: 1px solid var(--rule-strong); border-radius: 4px; background: var(--sheet); color: var(--ink); cursor: pointer; font: inherit; }
+.hpkg.on { border-color: var(--pen); border-left-width: 4px; }
+/* A leg as labelled figures that wrap to the width available: no column is ever cut off. */
+.hlegs { display: flex; flex-direction: column; gap: 8px; }
+.hleg { border: 1px solid var(--rule); border-left: 3px solid var(--margin-rule); border-radius: 4px; padding: 8px 10px; background: var(--sheet); min-width: 0; }
+.hleg-head { display: flex; gap: 8px; align-items: flex-start; }
+.hleg-head .grow { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.hleg-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 8px 14px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--rule); }
+.hf { display: flex; flex-direction: column; min-width: 0; }
+.hf .k { font-size: 11.5px; color: var(--muted); }
+.hf .v { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.hf .s { font-size: 11.5px; color: var(--ink-2); overflow-wrap: anywhere; }
+.hleg details { margin-top: 6px; }
+/* Completing a request. */
+.hcomplete { display: flex; flex-direction: column; gap: 10px; }
+.hcomplete.main { border: 1px solid var(--rule-strong); border-left: 3px solid var(--amber); border-radius: 4px; padding: 12px 14px; background: var(--sheet); }
+.hcomplete.main h3 { margin: 0; }
+.stratref .pill { vertical-align: baseline; }
+/* Protection of a position. */
+.prot { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
+.prot-row { display: flex; gap: 8px; align-items: baseline; }
+.prot-row > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.prot-rem { color: var(--ink-2); margin-top: 2px; }
+.rel-line { font-size: 11.5px; color: var(--ink-2); white-space: normal; overflow-wrap: anywhere; }
+.conn.st-fixture i { background: var(--amber); }
+@media (max-width: 1100px) { .hedge-split { grid-template-columns: 1fr; } }
+@media (max-width: 820px) {
+  .scrim:has(> .hedge-modal) { padding: 8px; }
+  .hedge-modal { max-height: calc(100vh - 16px); }
+  .hedge-modal > header, .hedge-modal > .hedge-status, .hedge-modal > .hedge-totals, .hedge-modal > footer { padding-left: 10px; padding-right: 10px; }
+  .hedge-modal > .body { padding: 10px; }
+  .hedge-modal > footer .hedge-foot-note { display: none; }
+  .hedge-modal > footer .btn { flex: 1 1 auto; }
+  .hedge-totals .ht-note { margin-left: 0; flex-basis: 100%; }
+  .hleg-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* ---- collateral agreements ---- */
+.coll-terms { border-top: 1px solid var(--rule); padding-top: 10px; margin-top: 2px; display: flex; flex-direction: column; gap: 8px; }
+.coll-terms > .row { align-items: baseline; }
+.coll-sentence { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; max-width: 46ch; white-space: normal; }
+.coll-list { margin: 4px 0 0; padding-left: 18px; }
+.coll-list li { margin: 2px 0; }
+.coll-sentence.two { -webkit-line-clamp: 2; max-width: 40ch; }
+/* ---- hedge and protection: top bar chip and toasts ---- */
+/* The top bar carries one more chip when a fixture answers hedge requests: keep it inside a 1024 screen. */
+.topbar select { min-width: 116px; }
+@media (max-width: 1500px) { .topbar .brand small { display: none; } }
+@media (max-width: 1280px) { .topbar { gap: 8px; } }
+@media (max-width: 1100px) { .topbar .clock { display: none; } .topbar .conn { padding: 3px 7px; } }
+@media (max-width: 1100px) { .topbar > .small.muted { display: none; } .topbar select { min-width: 104px; } .topbar { gap: 7px; padding: 0 10px; } }
+/* On a narrow screen a toast must not sit on the hedge popup's totals and Execute controls. */
+@media (max-width: 820px) { body:has(.hedge-modal) .toasts { top: 8px; bottom: auto; } }
+/* When the chips do not fit one line (a narrow screen with items to review), the top bar takes a second line instead of pushing controls off screen. */
+@media (max-width: 1100px) { .topbar { flex-wrap: wrap; height: auto; min-height: 46px; row-gap: 4px; padding-top: 5px; padding-bottom: 5px; } }

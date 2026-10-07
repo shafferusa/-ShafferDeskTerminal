@@ -7,12 +7,42 @@
 
 import { j, pj } from '../db/db.js';
 import { FAMILIES, MARKET_VIEWS, PRICING_BASIS, PRICING_LABEL, getProduct } from './catalog.js';
-import { AppError, CCY_RE, need, newId } from './util.js';
-import { calendarInfo } from '../products/security.js';
+import { AppError, CCY_RE, need, newId, num } from './util.js';
+import { calendarInfo, FIXED_SETTLEMENT, MAX_SETTLE_LAG, settlementConvention } from '../products/security.js';
+import { CALENDARS, unknownCalendars } from '../quant/calendar.js';
 
 const PREFIX = { equity: 'EQ', fund: 'FD', spot: 'SP', crypto: 'CR', manual: 'MN', option: 'OP', otcoption: 'OO', future: 'FU', fx: 'FX', forward: 'FW', bond: 'BD', loan: 'LN', repo: 'RP', secloan: 'SL', swap: 'SW', cds: 'CD' };
 const ARRANGEMENT_FAMILIES = new Set(['loan', 'repo', 'secloan']);
-const DESCRIPTIVE_FIELDS = new Set(['name', 'symbol', 'tags', 'issuer', 'domicile', 'venue', 'venueCountry', 'underlyingGeo', 'externalIds', 'marketView']);
+// Fields that stay editable after an instrument has been traded. Calendars and the settlement lag are
+// conventions, not contract terms: changing them affects dates worked out from then on, never what is booked.
+const DESCRIPTIVE_FIELDS = new Set(['name', 'symbol', 'tags', 'issuer', 'domicile', 'venue', 'venueCountry', 'underlyingGeo', 'externalIds', 'marketView', 'conventions']);
+const CALENDAR_ROLES = [['tradingCalendar', 'Trading calendar'], ['settlementCalendar', 'Settlement calendar'], ['paymentCalendar', 'Payment calendar']];
+
+/**
+ * Validate the calendars and settlement lag set on an instrument. Returns the stored object (null
+ * when nothing is set) or throws with a message that names the field.
+ *   { tradingCalendar, settlementCalendar, paymentCalendar: a calendar id, or several joined with '+';
+ *     settleLag: business days from trade date to settlement, 0 for same-day }
+ */
+export function normalizeConventions(raw, family) {
+  if (raw === null || raw === undefined) return null;
+  const out = {};
+  for (const [key, label] of CALENDAR_ROLES) {
+    const v = String(raw[key] ?? '').trim().toUpperCase().replace(/\s+/g, '');
+    if (!v) continue;
+    const bad = unknownCalendars(v);
+    need(!bad.length, `${label}: "${bad.join('", "')}" is not a calendar the Terminal has. Use ${Object.keys(CALENDARS).join(', ')}, or several joined with + for a joint calendar.`);
+    need(family !== 'crypto', 'A digital asset trades and settles on every calendar day, so no calendar can be set on it.');
+    out[key] = v.split('+').filter((x, i, a) => a.indexOf(x) === i).join('+');
+  }
+  if (raw.settleLag !== null && raw.settleLag !== undefined && raw.settleLag !== '') {
+    const lag = num(raw.settleLag);
+    need(!FIXED_SETTLEMENT[family], `A settlement lag cannot be set on this instrument. ${FIXED_SETTLEMENT[family] || ''}`.trim());
+    need(lag !== null && Number.isInteger(lag) && lag >= 0 && lag <= MAX_SETTLE_LAG, `Settlement lag must be a whole number of business days from 0 (same day) to ${MAX_SETTLE_LAG}.`);
+    out.settleLag = lag;
+  }
+  return Object.keys(out).length ? out : null;
+}
 
 export function createInstruments(app) {
   const { db, clock } = app;
@@ -23,6 +53,7 @@ export function createInstruments(app) {
     tags: pj(r.tags, []),
     terms: pj(r.terms, {}),
     external_ids: pj(r.external_ids, {}),
+    conventions: pj(r.conventions, null),
   };
 
   function get(id) {
@@ -44,6 +75,8 @@ export function createInstruments(app) {
     const product = getProduct(draft.productId);
     need(product, 'Choose a product type from the catalog.');
     need(product.family !== 'cash', 'Currency balances are held as ledger cash, not as registry instruments. Use an FX pair to convert between currencies.');
+    // The registration form already refuses this; the API says the same instead of quietly accepting it.
+    need(existing || product.id !== 'short_sale', 'A short sale is placed from the trade ticket of the security itself (Sell short), always with its securities borrow leg. Register the security, not the sale.');
     need(product.support !== 'planned', `${product.name} is not implemented yet and cannot be created.`);
     const plugin = app.products.get(product.family);
     const name = String(draft.name || '').trim();
@@ -69,7 +102,8 @@ export function createInstruments(app) {
     if (errors.length) throw new AppError(errors[0], { details: { errors } });
     const venueCountry = draft.venueCountry ? String(draft.venueCountry).trim().toUpperCase() : null;
     if (venueCountry && !/^[A-Z]{2}$/.test(venueCountry)) throw new AppError('Venue country is a two-letter country code, for example US, GB or JP.');
-    return { product, plugin, name, view, venueType, venueCountry, terms: norm.terms, multiplier: norm.multiplier ?? 1, tradingCcy, settleCcy };
+    const conventions = normalizeConventions(draft.conventions, product.family);
+    return { product, plugin, name, view, venueType, venueCountry, terms: norm.terms, multiplier: norm.multiplier ?? 1, tradingCcy, settleCcy, conventions };
   }
 
   function create(draft, { actor = 'user' } = {}) {
@@ -78,11 +112,11 @@ export function createInstruments(app) {
     const id = draft.id || newId(PREFIX[v.product.family] || 'INS');
     need(!get(id), 'An instrument with that ID already exists.', { status: 409 });
     db.run(
-      `INSERT INTO instruments (id, product_id, family, name, symbol, market_view, tags, issuer, domicile, venue, venue_type, venue_country, underlying_id, underlying_geo, trading_ccy, settle_ccy, multiplier, terms, external_ids, ref_source, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+      `INSERT INTO instruments (id, product_id, family, name, symbol, market_view, tags, issuer, domicile, venue, venue_type, venue_country, underlying_id, underlying_geo, trading_ccy, settle_ccy, multiplier, terms, external_ids, ref_source, status, created_at, updated_at, conventions)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
       id, v.product.id, v.product.family, v.name, draft.symbol ? String(draft.symbol).trim() : null, v.view.id, j(draft.tags || []), draft.issuer || null, draft.domicile || null,
       draft.venue || null, v.venueType, v.venueCountry, draft.underlyingId || null, draft.underlyingGeo || null, v.tradingCcy, v.settleCcy, v.multiplier, j(v.terms), j(draft.externalIds || {}),
-      draft.refSource || (actor === 'user' ? 'manual' : actor), now, now,
+      draft.refSource || (actor === 'user' ? 'manual' : actor), now, now, v.conventions ? j(v.conventions) : null,
     );
     return get(id);
   }
@@ -94,6 +128,7 @@ export function createInstruments(app) {
       id, draft: true, product_id: v.product.id, family: v.product.family, name: v.name, symbol: d.symbol || null, market_view: v.view.id, tags: d.tags || [],
       issuer: d.issuer || null, domicile: d.domicile || null, venue: d.venue || null, venue_type: v.venueType, venue_country: v.venueCountry, underlying_id: d.underlyingId || null,
       underlying_geo: d.underlyingGeo || null, trading_ccy: v.tradingCcy, settle_ccy: v.settleCcy, multiplier: v.multiplier, terms: v.terms, external_ids: d.externalIds || {}, ref_source: 'draft',
+      conventions: v.conventions,
     };
   }
 
@@ -117,12 +152,14 @@ export function createInstruments(app) {
       issuer: patch.issuer ?? cur.issuer, domicile: patch.domicile ?? cur.domicile, venue: patch.venue ?? cur.venue, venueType: patch.venueType ?? cur.venue_type, venueCountry: patch.venueCountry !== undefined ? patch.venueCountry : cur.venue_country,
       underlyingId: patch.underlyingId ?? cur.underlying_id, underlyingGeo: patch.underlyingGeo ?? cur.underlying_geo, tradingCcy: patch.tradingCcy ?? cur.trading_ccy,
       settleCcy: patch.settleCcy ?? cur.settle_ccy, multiplier: patch.multiplier ?? cur.multiplier, terms: patch.terms ?? cur.terms, externalIds: { ...cur.external_ids, ...(patch.externalIds || {}) },
+      // `conventions` replaces what is set: send the whole object, or null to clear every calendar and the lag.
+      conventions: patch.conventions !== undefined ? patch.conventions : cur.conventions,
     };
     const v = validate(draft, { existing: cur });
     db.run(
-      `UPDATE instruments SET name = ?, symbol = ?, market_view = ?, tags = ?, issuer = ?, domicile = ?, venue = ?, venue_type = ?, venue_country = ?, underlying_id = ?, underlying_geo = ?, trading_ccy = ?, settle_ccy = ?, multiplier = ?, terms = ?, external_ids = ?, updated_at = ? WHERE id = ?`,
+      `UPDATE instruments SET name = ?, symbol = ?, market_view = ?, tags = ?, issuer = ?, domicile = ?, venue = ?, venue_type = ?, venue_country = ?, underlying_id = ?, underlying_geo = ?, trading_ccy = ?, settle_ccy = ?, multiplier = ?, terms = ?, external_ids = ?, conventions = ?, updated_at = ? WHERE id = ?`,
       v.name, draft.symbol || null, v.view.id, j(draft.tags || []), draft.issuer || null, draft.domicile || null, draft.venue || null, v.venueType, v.venueCountry, draft.underlyingId || null,
-      draft.underlyingGeo || null, v.tradingCcy, v.settleCcy, v.multiplier, j(locked ? cur.terms : v.terms), j(draft.externalIds), clock.now().toISOString(), id,
+      draft.underlyingGeo || null, v.tradingCcy, v.settleCcy, v.multiplier, j(locked ? cur.terms : v.terms), j(draft.externalIds), v.conventions ? j(v.conventions) : null, clock.now().toISOString(), id,
     );
     cache.delete(id);
     return get(id);
@@ -198,7 +235,9 @@ export function createInstruments(app) {
     return {
       id: inst.id, productId: inst.product_id, family: inst.family, familyLabel: fam.label || inst.family, name: inst.name, symbol: inst.symbol,
       marketView: inst.market_view, tags: inst.tags, issuer: inst.issuer, domicile: inst.domicile, venue: inst.venue, venueType: inst.venue_type, venueCountry: inst.venue_country || null,
-      calendar: plugin.calendarInfo ? plugin.calendarInfo(inst) : calendarInfo(inst), pricing: pricingOf(inst),
+      // `calendar` describes the settlement calendar at its top level (as before) and carries all three roles
+      // in .trading / .settlement / .payment, with .flag ('weekends-only' | 'approximate' | null) and .flagText.
+      calendar: calendarInfo(inst), conventions: inst.conventions || null, settlement: settlementConvention(inst), pricing: pricingOf(inst),
       underlyingId: inst.underlying_id, underlying: und ? { id: und.id, symbol: und.symbol, name: und.name, family: und.family } : null, underlyingGeo: inst.underlying_geo,
       tradingCcy: inst.trading_ccy, settleCcy: inst.settle_ccy, multiplier: inst.multiplier, terms: inst.terms, externalIds: inst.external_ids, refSource: inst.ref_source,
       support: support(inst), qtyLabel: plugin.qtyLabel || fam.qty, priceUnits: plugin.priceUnits ? plugin.priceUnits(inst) : fam.price,

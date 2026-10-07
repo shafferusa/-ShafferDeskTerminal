@@ -1,0 +1,2837 @@
+{
+ "level": "engine",
+ "results": {
+  "E:common_stock:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 62,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "setup",
+   "covers": []
+  },
+  "E:common_stock:open": {
+   "status": "passed",
+   "message": "",
+   "ms": 42,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "open",
+   "covers": [
+    "open"
+   ]
+  },
+  "E:common_stock:settle-open": {
+   "status": "passed",
+   "message": "",
+   "ms": 16,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "settle-open",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:common_stock:quote-up": {
+   "status": "passed",
+   "message": "",
+   "ms": 14,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "quote-up",
+   "covers": []
+  },
+  "E:common_stock:increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 21,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "increase",
+   "covers": [
+    "increase"
+   ]
+  },
+  "E:common_stock:settle-increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 21,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "settle-increase",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:common_stock:oversell": {
+   "status": "blocked",
+   "message": "The Account holds 300 and cannot sell 500; going short needs a securities borrow. Terminal: \"That position is 300; 500 is more than it holds.\"",
+   "ms": 21,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "oversell",
+   "covers": [
+    "reduce"
+   ]
+  },
+  "E:common_stock:dividend-recorded": {
+   "status": "passed",
+   "message": "",
+   "ms": 13,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "dividend-recorded",
+   "covers": [
+    "dividend"
+   ]
+  },
+  "E:common_stock:dividend-paid": {
+   "status": "passed",
+   "message": "",
+   "ms": 13,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "dividend-paid",
+   "covers": [
+    "dividend"
+   ]
+  },
+  "E:common_stock:quote-up-2": {
+   "status": "passed",
+   "message": "",
+   "ms": 11,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "quote-up-2",
+   "covers": []
+  },
+  "E:common_stock:reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 33,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "reduce",
+   "covers": [
+    "reduce"
+   ]
+  },
+  "E:common_stock:settle-reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 13,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "settle-reduce",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:common_stock:split-recorded": {
+   "status": "passed",
+   "message": "",
+   "ms": 11,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "split-recorded",
+   "covers": [
+    "split"
+   ]
+  },
+  "E:common_stock:split-applied": {
+   "status": "passed",
+   "message": "",
+   "ms": 16,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "split-applied",
+   "covers": [
+    "split"
+   ]
+  },
+  "E:common_stock:quote-post-split": {
+   "status": "passed",
+   "message": "",
+   "ms": 11,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "quote-post-split",
+   "covers": []
+  },
+  "E:common_stock:close": {
+   "status": "passed",
+   "message": "",
+   "ms": 17,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "close",
+   "covers": [
+    "close"
+   ]
+  },
+  "E:common_stock:settle-close": {
+   "status": "passed",
+   "message": "",
+   "ms": 10,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "settle-close",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:common_stock:restart": {
+   "status": "passed",
+   "message": "",
+   "ms": 27,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "restart",
+   "covers": [
+    "restart"
+   ]
+  },
+  "E:preferred_stock:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 19,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "preferred_stock",
+   "template": null,
+   "family": "equity",
+   "step": "setup",
+   "covers": []
+  },
+  "E:preferred_stock:open": {
+   "status": "passed",
+   "message": "",
+   "ms": 18,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "preferred_stock",
+   "template": null,
+   "family": "equity",
+   "step": "open",
+   "covers": [
+    "open"
+   ]
+  },
+  "E:preferred_stock:settle-open": {
+   "status": "passed",
+   "message": "",
+   "ms": 13,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "preferred_stock",
+   "template": null,
+   "family": "equity",
+   "step": "settle-open",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:preferred_stock:increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 18,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "preferred_stock",
+   "template": null,
+   "family": "equity",
+   "step": "increase",
+   "covers": [
+    "increase"
+   ]
+  },
+  "E:preferred_stock:settle-increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 13,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "preferred_stock",
+   "template": null,
+   "family": "equity",
+   "step": "settle-increase",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:preferred_stock:dividend-recorded": {
+   "status": "passed",
+   "message": "",
+   "ms": 11,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "preferred_stock",
+   "template": null,
+   "family": "equity",
+   "step": "dividend-recorded",
+   "covers": [
+    "dividend"
+   ]
+  },
+  "E:preferred_stock:dividend-paid": {
+   "status": "passed",
+   "message": "",
+   "ms": 14,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "preferred_stock",
+   "template": null,
+   "family": "equity",
+   "step": "dividend-paid",
+   "covers": [
+    "dividend"
+   ]
+  },
+  "E:preferred_stock:quote-up": {
+   "status": "passed",
+   "message": "",
+   "ms": 14,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "preferred_stock",
+   "template": null,
+   "family": "equity",
+   "step": "quote-up",
+   "covers": []
+  },
+  "E:preferred_stock:reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 19,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "preferred_stock",
+   "template": null,
+   "family": "equity",
+   "step": "reduce",
+   "covers": [
+    "reduce"
+   ]
+  },
+  "E:preferred_stock:settle-reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 14,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "preferred_stock",
+   "template": null,
+   "family": "equity",
+   "step": "settle-reduce",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:preferred_stock:close-first": {
+   "status": "passed",
+   "message": "",
+   "ms": 18,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "preferred_stock",
+   "template": null,
+   "family": "equity",
+   "step": "close-first",
+   "covers": [
+    "close"
+   ]
+  },
+  "E:preferred_stock:close-second": {
+   "status": "passed",
+   "message": "",
+   "ms": 17,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "preferred_stock",
+   "template": null,
+   "family": "equity",
+   "step": "close-second",
+   "covers": [
+    "close"
+   ]
+  },
+  "E:preferred_stock:settle-close": {
+   "status": "passed",
+   "message": "",
+   "ms": 9,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "preferred_stock",
+   "template": null,
+   "family": "equity",
+   "step": "settle-close",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:preferred_stock:restart": {
+   "status": "passed",
+   "message": "",
+   "ms": 33,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "preferred_stock",
+   "template": null,
+   "family": "equity",
+   "step": "restart",
+   "covers": [
+    "restart"
+   ]
+  },
+  "E:adr:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 24,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "adr",
+   "template": null,
+   "family": "equity",
+   "step": "setup",
+   "covers": []
+  },
+  "E:adr:open": {
+   "status": "passed",
+   "message": "",
+   "ms": 21,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "adr",
+   "template": null,
+   "family": "equity",
+   "step": "open",
+   "covers": [
+    "open"
+   ]
+  },
+  "E:adr:settle-open": {
+   "status": "passed",
+   "message": "",
+   "ms": 12,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "adr",
+   "template": null,
+   "family": "equity",
+   "step": "settle-open",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:adr:increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 16,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "adr",
+   "template": null,
+   "family": "equity",
+   "step": "increase",
+   "covers": [
+    "increase"
+   ]
+  },
+  "E:adr:settle-increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 12,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "adr",
+   "template": null,
+   "family": "equity",
+   "step": "settle-increase",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:adr:dividend-recorded": {
+   "status": "passed",
+   "message": "",
+   "ms": 10,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "adr",
+   "template": null,
+   "family": "equity",
+   "step": "dividend-recorded",
+   "covers": [
+    "dividend"
+   ]
+  },
+  "E:adr:dividend-paid": {
+   "status": "passed",
+   "message": "",
+   "ms": 13,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "adr",
+   "template": null,
+   "family": "equity",
+   "step": "dividend-paid",
+   "covers": [
+    "dividend"
+   ]
+  },
+  "E:adr:depositary-fee": {
+   "status": "passed",
+   "message": "",
+   "ms": 19,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "adr",
+   "template": null,
+   "family": "equity",
+   "step": "depositary-fee",
+   "covers": [
+    "depositary fee"
+   ]
+  },
+  "E:adr:quote-up": {
+   "status": "passed",
+   "message": "",
+   "ms": 11,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "adr",
+   "template": null,
+   "family": "equity",
+   "step": "quote-up",
+   "covers": []
+  },
+  "E:adr:reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 18,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "adr",
+   "template": null,
+   "family": "equity",
+   "step": "reduce",
+   "covers": [
+    "reduce"
+   ]
+  },
+  "E:adr:settle-reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 13,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "adr",
+   "template": null,
+   "family": "equity",
+   "step": "settle-reduce",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:adr:close": {
+   "status": "passed",
+   "message": "",
+   "ms": 15,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "adr",
+   "template": null,
+   "family": "equity",
+   "step": "close",
+   "covers": [
+    "close"
+   ]
+  },
+  "E:adr:settle-close": {
+   "status": "passed",
+   "message": "",
+   "ms": 9,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "adr",
+   "template": null,
+   "family": "equity",
+   "step": "settle-close",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:adr:restart": {
+   "status": "passed",
+   "message": "",
+   "ms": 33,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "adr",
+   "template": null,
+   "family": "equity",
+   "step": "restart",
+   "covers": [
+    "restart"
+   ]
+  },
+  "E:gdr:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 24,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "gdr",
+   "template": null,
+   "family": "equity",
+   "step": "setup",
+   "covers": []
+  },
+  "E:gdr:to-april": {
+   "status": "passed",
+   "message": "",
+   "ms": 9,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "gdr",
+   "template": null,
+   "family": "equity",
+   "step": "to-april",
+   "covers": []
+  },
+  "E:gdr:open": {
+   "status": "passed",
+   "message": "",
+   "ms": 23,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "gdr",
+   "template": null,
+   "family": "equity",
+   "step": "open",
+   "covers": [
+    "open"
+   ]
+  },
+  "E:gdr:holiday-not-settled": {
+   "status": "passed",
+   "message": "",
+   "ms": 13,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "gdr",
+   "template": null,
+   "family": "equity",
+   "step": "holiday-not-settled",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:gdr:settle-open": {
+   "status": "passed",
+   "message": "",
+   "ms": 12,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "gdr",
+   "template": null,
+   "family": "equity",
+   "step": "settle-open",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:gdr:increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 16,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "gdr",
+   "template": null,
+   "family": "equity",
+   "step": "increase",
+   "covers": [
+    "increase"
+   ]
+  },
+  "E:gdr:settle-increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 14,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "gdr",
+   "template": null,
+   "family": "equity",
+   "step": "settle-increase",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:gdr:dividend-recorded": {
+   "status": "passed",
+   "message": "",
+   "ms": 9,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "gdr",
+   "template": null,
+   "family": "equity",
+   "step": "dividend-recorded",
+   "covers": [
+    "dividend"
+   ]
+  },
+  "E:gdr:dividend-paid": {
+   "status": "passed",
+   "message": "",
+   "ms": 12,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "gdr",
+   "template": null,
+   "family": "equity",
+   "step": "dividend-paid",
+   "covers": [
+    "dividend"
+   ]
+  },
+  "E:gdr:depositary-fee": {
+   "status": "passed",
+   "message": "",
+   "ms": 15,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "gdr",
+   "template": null,
+   "family": "equity",
+   "step": "depositary-fee",
+   "covers": [
+    "depositary fee"
+   ]
+  },
+  "E:gdr:quote-up": {
+   "status": "passed",
+   "message": "",
+   "ms": 10,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "gdr",
+   "template": null,
+   "family": "equity",
+   "step": "quote-up",
+   "covers": []
+  },
+  "E:gdr:reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 17,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "gdr",
+   "template": null,
+   "family": "equity",
+   "step": "reduce",
+   "covers": [
+    "reduce"
+   ]
+  },
+  "E:gdr:settle-reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 12,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "gdr",
+   "template": null,
+   "family": "equity",
+   "step": "settle-reduce",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:gdr:close": {
+   "status": "passed",
+   "message": "",
+   "ms": 16,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "gdr",
+   "template": null,
+   "family": "equity",
+   "step": "close",
+   "covers": [
+    "close"
+   ]
+  },
+  "E:gdr:settle-close": {
+   "status": "passed",
+   "message": "",
+   "ms": 8,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "gdr",
+   "template": null,
+   "family": "equity",
+   "step": "settle-close",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:gdr:restart": {
+   "status": "passed",
+   "message": "",
+   "ms": 32,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "gdr",
+   "template": null,
+   "family": "equity",
+   "step": "restart",
+   "covers": [
+    "restart"
+   ]
+  },
+  "E:etf:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 18,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "etf",
+   "template": null,
+   "family": "equity",
+   "step": "setup",
+   "covers": []
+  },
+  "E:etf:limit-order-works": {
+   "status": "passed",
+   "message": "",
+   "ms": 12,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "etf",
+   "template": null,
+   "family": "equity",
+   "step": "limit-order-works",
+   "covers": [
+    "open"
+   ]
+  },
+  "E:etf:limit-order-fills": {
+   "status": "passed",
+   "message": "",
+   "ms": 21,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "etf",
+   "template": null,
+   "family": "equity",
+   "step": "limit-order-fills",
+   "covers": [
+    "open"
+   ]
+  },
+  "E:etf:settle-open": {
+   "status": "passed",
+   "message": "",
+   "ms": 16,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "etf",
+   "template": null,
+   "family": "equity",
+   "step": "settle-open",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:etf:increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 17,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "etf",
+   "template": null,
+   "family": "equity",
+   "step": "increase",
+   "covers": [
+    "increase"
+   ]
+  },
+  "E:etf:settle-increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 12,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "etf",
+   "template": null,
+   "family": "equity",
+   "step": "settle-increase",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:etf:distribution-recorded": {
+   "status": "passed",
+   "message": "",
+   "ms": 11,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "etf",
+   "template": null,
+   "family": "equity",
+   "step": "distribution-recorded",
+   "covers": [
+    "dividend"
+   ]
+  },
+  "E:etf:distribution-paid": {
+   "status": "passed",
+   "message": "",
+   "ms": 14,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "etf",
+   "template": null,
+   "family": "equity",
+   "step": "distribution-paid",
+   "covers": [
+    "dividend"
+   ]
+  },
+  "E:etf:quote-up": {
+   "status": "passed",
+   "message": "",
+   "ms": 13,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "etf",
+   "template": null,
+   "family": "equity",
+   "step": "quote-up",
+   "covers": []
+  },
+  "E:etf:sell-more-than-the-position": {
+   "status": "blocked",
+   "message": "The position chosen on the ticket holds 150. The other 250 are a different position and are not sold by this ticket. Terminal: \"That position is 150; 200 is more than it holds.\"",
+   "ms": 15,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "etf",
+   "template": null,
+   "family": "equity",
+   "step": "sell-more-than-the-position",
+   "covers": [
+    "reduce"
+   ]
+  },
+  "E:etf:reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 18,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "etf",
+   "template": null,
+   "family": "equity",
+   "step": "reduce",
+   "covers": [
+    "reduce"
+   ]
+  },
+  "E:etf:settle-reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 13,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "etf",
+   "template": null,
+   "family": "equity",
+   "step": "settle-reduce",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:etf:close-first": {
+   "status": "passed",
+   "message": "",
+   "ms": 35,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "etf",
+   "template": null,
+   "family": "equity",
+   "step": "close-first",
+   "covers": [
+    "close"
+   ]
+  },
+  "E:etf:close-second": {
+   "status": "passed",
+   "message": "",
+   "ms": 15,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "etf",
+   "template": null,
+   "family": "equity",
+   "step": "close-second",
+   "covers": [
+    "close"
+   ]
+  },
+  "E:etf:settle-close": {
+   "status": "passed",
+   "message": "",
+   "ms": 29,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "etf",
+   "template": null,
+   "family": "equity",
+   "step": "settle-close",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:etf:restart": {
+   "status": "passed",
+   "message": "",
+   "ms": 42,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "etf",
+   "template": null,
+   "family": "equity",
+   "step": "restart",
+   "covers": [
+    "restart"
+   ]
+  },
+  "E:etn:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 17,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "etn",
+   "template": null,
+   "family": "equity",
+   "step": "setup",
+   "covers": []
+  },
+  "E:etn:open": {
+   "status": "passed",
+   "message": "",
+   "ms": 21,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "etn",
+   "template": null,
+   "family": "equity",
+   "step": "open",
+   "covers": [
+    "open"
+   ]
+  },
+  "E:etn:settle-open": {
+   "status": "passed",
+   "message": "",
+   "ms": 23,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "etn",
+   "template": null,
+   "family": "equity",
+   "step": "settle-open",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:etn:increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 17,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "etn",
+   "template": null,
+   "family": "equity",
+   "step": "increase",
+   "covers": [
+    "increase"
+   ]
+  },
+  "E:etn:settle-increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 11,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "etn",
+   "template": null,
+   "family": "equity",
+   "step": "settle-increase",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:etn:reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 16,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "etn",
+   "template": null,
+   "family": "equity",
+   "step": "reduce",
+   "covers": [
+    "reduce"
+   ]
+  },
+  "E:etn:settle-reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 11,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "etn",
+   "template": null,
+   "family": "equity",
+   "step": "settle-reduce",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:etn:issuer-redemption-not-automated": {
+   "status": "unsupported",
+   "message": "An issuer redemption or credit-event settlement of an ETN is not simulated. It is recorded by hand as a sale at a stated price. Terminal: \"Early redemption does not apply to this position.\"",
+   "ms": 14,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "etn",
+   "template": null,
+   "family": "equity",
+   "step": "issuer-redemption-not-automated",
+   "covers": [
+    "issuer credit event"
+   ]
+  },
+  "E:etn:quotes-stop": {
+   "status": "passed",
+   "message": "",
+   "ms": 13,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "etn",
+   "template": null,
+   "family": "equity",
+   "step": "quotes-stop",
+   "covers": [
+    "issuer credit event"
+   ]
+  },
+  "E:etn:manual-mark": {
+   "status": "passed",
+   "message": "",
+   "ms": 14,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "etn",
+   "template": null,
+   "family": "equity",
+   "step": "manual-mark",
+   "covers": [
+    "issuer credit event"
+   ]
+  },
+  "E:etn:recovery-by-hand": {
+   "status": "passed",
+   "message": "",
+   "ms": 14,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "etn",
+   "template": null,
+   "family": "equity",
+   "step": "recovery-by-hand",
+   "covers": [
+    "issuer credit event",
+    "close"
+   ]
+  },
+  "E:etn:settle-recovery": {
+   "status": "passed",
+   "message": "",
+   "ms": 8,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "etn",
+   "template": null,
+   "family": "equity",
+   "step": "settle-recovery",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:etn:restart": {
+   "status": "passed",
+   "message": "",
+   "ms": 24,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "etn",
+   "template": null,
+   "family": "equity",
+   "step": "restart",
+   "covers": [
+    "restart"
+   ]
+  },
+  "E:closed_end_fund:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 17,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "closed_end_fund",
+   "template": null,
+   "family": "equity",
+   "step": "setup",
+   "covers": []
+  },
+  "E:closed_end_fund:open-part-filled": {
+   "status": "passed",
+   "message": "",
+   "ms": 18,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "closed_end_fund",
+   "template": null,
+   "family": "equity",
+   "step": "open-part-filled",
+   "covers": [
+    "open"
+   ]
+  },
+  "E:closed_end_fund:open-filled": {
+   "status": "passed",
+   "message": "",
+   "ms": 12,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "closed_end_fund",
+   "template": null,
+   "family": "equity",
+   "step": "open-filled",
+   "covers": [
+    "open"
+   ]
+  },
+  "E:closed_end_fund:settle-open": {
+   "status": "passed",
+   "message": "",
+   "ms": 12,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "closed_end_fund",
+   "template": null,
+   "family": "equity",
+   "step": "settle-open",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:closed_end_fund:increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 15,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "closed_end_fund",
+   "template": null,
+   "family": "equity",
+   "step": "increase",
+   "covers": [
+    "increase"
+   ]
+  },
+  "E:closed_end_fund:settle-increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 12,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "closed_end_fund",
+   "template": null,
+   "family": "equity",
+   "step": "settle-increase",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:closed_end_fund:distribution-recorded": {
+   "status": "passed",
+   "message": "",
+   "ms": 11,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "closed_end_fund",
+   "template": null,
+   "family": "equity",
+   "step": "distribution-recorded",
+   "covers": [
+    "dividend"
+   ]
+  },
+  "E:closed_end_fund:distribution-paid": {
+   "status": "passed",
+   "message": "",
+   "ms": 16,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "closed_end_fund",
+   "template": null,
+   "family": "equity",
+   "step": "distribution-paid",
+   "covers": [
+    "dividend"
+   ]
+  },
+  "E:closed_end_fund:return-of-capital": {
+   "status": "passed",
+   "message": "",
+   "ms": 14,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "closed_end_fund",
+   "template": null,
+   "family": "equity",
+   "step": "return-of-capital",
+   "covers": [
+    "return of capital"
+   ]
+  },
+  "E:closed_end_fund:reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 17,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "closed_end_fund",
+   "template": null,
+   "family": "equity",
+   "step": "reduce",
+   "covers": [
+    "reduce"
+   ]
+  },
+  "E:closed_end_fund:settle-reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 11,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "closed_end_fund",
+   "template": null,
+   "family": "equity",
+   "step": "settle-reduce",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:closed_end_fund:close": {
+   "status": "passed",
+   "message": "",
+   "ms": 14,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "closed_end_fund",
+   "template": null,
+   "family": "equity",
+   "step": "close",
+   "covers": [
+    "close"
+   ]
+  },
+  "E:closed_end_fund:settle-close": {
+   "status": "passed",
+   "message": "",
+   "ms": 10,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "closed_end_fund",
+   "template": null,
+   "family": "equity",
+   "step": "settle-close",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:closed_end_fund:restart": {
+   "status": "passed",
+   "message": "",
+   "ms": 26,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "closed_end_fund",
+   "template": null,
+   "family": "equity",
+   "step": "restart",
+   "covers": [
+    "restart"
+   ]
+  },
+  "E:reit:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 23,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "reit",
+   "template": null,
+   "family": "equity",
+   "step": "setup",
+   "covers": []
+  },
+  "E:reit:to-trade-week": {
+   "status": "passed",
+   "message": "",
+   "ms": 8,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "reit",
+   "template": null,
+   "family": "equity",
+   "step": "to-trade-week",
+   "covers": []
+  },
+  "E:reit:open": {
+   "status": "passed",
+   "message": "",
+   "ms": 21,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "reit",
+   "template": null,
+   "family": "equity",
+   "step": "open",
+   "covers": [
+    "open"
+   ]
+  },
+  "E:reit:holiday-not-settled": {
+   "status": "passed",
+   "message": "",
+   "ms": 12,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "reit",
+   "template": null,
+   "family": "equity",
+   "step": "holiday-not-settled",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:reit:settle-open": {
+   "status": "passed",
+   "message": "",
+   "ms": 15,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "reit",
+   "template": null,
+   "family": "equity",
+   "step": "settle-open",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:reit:increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 18,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "reit",
+   "template": null,
+   "family": "equity",
+   "step": "increase",
+   "covers": [
+    "increase"
+   ]
+  },
+  "E:reit:settle-increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 14,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "reit",
+   "template": null,
+   "family": "equity",
+   "step": "settle-increase",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:reit:distribution-recorded": {
+   "status": "passed",
+   "message": "",
+   "ms": 12,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "reit",
+   "template": null,
+   "family": "equity",
+   "step": "distribution-recorded",
+   "covers": [
+    "dividend"
+   ]
+  },
+  "E:reit:distribution-paid": {
+   "status": "passed",
+   "message": "",
+   "ms": 14,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "reit",
+   "template": null,
+   "family": "equity",
+   "step": "distribution-paid",
+   "covers": [
+    "dividend"
+   ]
+  },
+  "E:reit:quote-up": {
+   "status": "passed",
+   "message": "",
+   "ms": 13,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "reit",
+   "template": null,
+   "family": "equity",
+   "step": "quote-up",
+   "covers": []
+  },
+  "E:reit:yen-weakens": {
+   "status": "passed",
+   "message": "",
+   "ms": 13,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "reit",
+   "template": null,
+   "family": "equity",
+   "step": "yen-weakens",
+   "covers": [
+    "fx translation"
+   ]
+  },
+  "E:reit:reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 19,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "reit",
+   "template": null,
+   "family": "equity",
+   "step": "reduce",
+   "covers": [
+    "reduce"
+   ]
+  },
+  "E:reit:settle-reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 18,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "reit",
+   "template": null,
+   "family": "equity",
+   "step": "settle-reduce",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:reit:quote-up-2": {
+   "status": "passed",
+   "message": "",
+   "ms": 16,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "reit",
+   "template": null,
+   "family": "equity",
+   "step": "quote-up-2",
+   "covers": []
+  },
+  "E:reit:close": {
+   "status": "passed",
+   "message": "",
+   "ms": 17,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "reit",
+   "template": null,
+   "family": "equity",
+   "step": "close",
+   "covers": [
+    "close"
+   ]
+  },
+  "E:reit:settle-close": {
+   "status": "passed",
+   "message": "",
+   "ms": 16,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "reit",
+   "template": null,
+   "family": "equity",
+   "step": "settle-close",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:reit:restart": {
+   "status": "passed",
+   "message": "",
+   "ms": 36,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "reit",
+   "template": null,
+   "family": "equity",
+   "step": "restart",
+   "covers": [
+    "restart"
+   ]
+  },
+  "E:short_sale:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 22,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "short_sale",
+   "template": null,
+   "family": "equity",
+   "step": "setup",
+   "covers": []
+  },
+  "E:short_sale:register-a-short-sale": {
+   "status": "unsupported",
+   "message": "A short sale is not an instrument. It is the Sell short action on the security, with its borrow leg. Terminal: \"A short sale is placed from the trade ticket of the security itself (Sell short), always with its securities borrow leg. Register the security, not the sale.\"",
+   "ms": 7,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "short_sale",
+   "template": null,
+   "family": "equity",
+   "step": "register-a-short-sale",
+   "covers": [
+    "registration"
+   ]
+  },
+  "E:short_sale:short-without-borrow-data": {
+   "status": "blocked",
+   "message": "No borrow availability or fee is supplied for CWFL and none was stated: a short sale cannot proceed without a securities borrow. Terminal: \"Leg 1: no borrow availability data for CWFL. None is supplied for this instrument. State a borrow assumption (availability and fee) to proceed.\"",
+   "ms": 7,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "short_sale",
+   "template": null,
+   "family": "equity",
+   "step": "short-without-borrow-data",
+   "covers": [
+    "short"
+   ]
+  },
+  "E:short_sale:short": {
+   "status": "passed",
+   "message": "",
+   "ms": 27,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "short_sale",
+   "template": null,
+   "family": "equity",
+   "step": "short",
+   "covers": [
+    "borrow",
+    "short"
+   ]
+  },
+  "E:short_sale:settle-short": {
+   "status": "passed",
+   "message": "",
+   "ms": 23,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "short_sale",
+   "template": null,
+   "family": "equity",
+   "step": "settle-short",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:short_sale:fee-day-1": {
+   "status": "passed",
+   "message": "",
+   "ms": 17,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "short_sale",
+   "template": null,
+   "family": "equity",
+   "step": "fee-day-1",
+   "covers": [
+    "borrow fee"
+   ]
+  },
+  "E:short_sale:next-morning": {
+   "status": "passed",
+   "message": "",
+   "ms": 17,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "short_sale",
+   "template": null,
+   "family": "equity",
+   "step": "next-morning",
+   "covers": []
+  },
+  "E:short_sale:price-up": {
+   "status": "passed",
+   "message": "",
+   "ms": 16,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "short_sale",
+   "template": null,
+   "family": "equity",
+   "step": "price-up",
+   "covers": []
+  },
+  "E:short_sale:dividend-recorded": {
+   "status": "passed",
+   "message": "",
+   "ms": 15,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "short_sale",
+   "template": null,
+   "family": "equity",
+   "step": "dividend-recorded",
+   "covers": [
+    "dividend compensation"
+   ]
+  },
+  "E:short_sale:fee-day-2": {
+   "status": "passed",
+   "message": "",
+   "ms": 17,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "short_sale",
+   "template": null,
+   "family": "equity",
+   "step": "fee-day-2",
+   "covers": [
+    "borrow fee",
+    "collateral mark"
+   ]
+  },
+  "E:short_sale:dividend-compensation": {
+   "status": "passed",
+   "message": "",
+   "ms": 16,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "short_sale",
+   "template": null,
+   "family": "equity",
+   "step": "dividend-compensation",
+   "covers": [
+    "dividend compensation"
+   ]
+  },
+  "E:short_sale:buy-with-restricted-cash": {
+   "status": "blocked",
+   "message": "Short-sale proceeds and the margin reserve are not buying power. Terminal: \"Alpha is short 28,796.40 USD: the package needs 500,125.00 USD (purchases 500,100.00 USD, fees 25.00 USD, margin and collateral 0.00 USD, reserved 0.00 USD) and 471,328.60 USD is available. Add Treasury funding or a borrowing leg, convert currency, or reduce the size.\"",
+   "ms": 16,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "short_sale",
+   "template": null,
+   "family": "equity",
+   "step": "buy-with-restricted-cash",
+   "covers": [
+    "restricted proceeds"
+   ]
+  },
+  "E:short_sale:withdraw-restricted-cash": {
+   "status": "blocked",
+   "message": "Restricted collateral and the margin reserve cannot leave the Account. Terminal: \"Alpha has 471,328.60 USD of settled USD available; 480,000.00 USD requested.\"",
+   "ms": 15,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "short_sale",
+   "template": null,
+   "family": "equity",
+   "step": "withdraw-restricted-cash",
+   "covers": [
+    "restricted proceeds"
+   ]
+  },
+  "E:short_sale:price-down": {
+   "status": "passed",
+   "message": "",
+   "ms": 14,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "short_sale",
+   "template": null,
+   "family": "equity",
+   "step": "price-down",
+   "covers": []
+  },
+  "E:short_sale:cover-part": {
+   "status": "passed",
+   "message": "",
+   "ms": 24,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "short_sale",
+   "template": null,
+   "family": "equity",
+   "step": "cover-part",
+   "covers": [
+    "cover",
+    "return"
+   ]
+  },
+  "E:short_sale:settle-cover-part": {
+   "status": "passed",
+   "message": "",
+   "ms": 17,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "short_sale",
+   "template": null,
+   "family": "equity",
+   "step": "settle-cover-part",
+   "covers": [
+    "settlement",
+    "collateral mark"
+   ]
+  },
+  "E:short_sale:cover-rest": {
+   "status": "passed",
+   "message": "",
+   "ms": 19,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "short_sale",
+   "template": null,
+   "family": "equity",
+   "step": "cover-rest",
+   "covers": [
+    "cover",
+    "return",
+    "close",
+    "borrow fee"
+   ]
+  },
+  "E:short_sale:settle-cover-rest": {
+   "status": "passed",
+   "message": "",
+   "ms": 10,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "short_sale",
+   "template": null,
+   "family": "equity",
+   "step": "settle-cover-rest",
+   "covers": [
+    "settlement",
+    "collateral release"
+   ]
+  },
+  "E:short_sale:restart": {
+   "status": "passed",
+   "message": "",
+   "ms": 27,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "short_sale",
+   "template": null,
+   "family": "equity",
+   "step": "restart",
+   "covers": [
+    "restart"
+   ]
+  },
+  "E:warrant:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 18,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "warrant",
+   "template": null,
+   "family": "equity",
+   "step": "setup",
+   "covers": []
+  },
+  "E:warrant:open": {
+   "status": "passed",
+   "message": "",
+   "ms": 16,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "warrant",
+   "template": null,
+   "family": "equity",
+   "step": "open",
+   "covers": [
+    "open"
+   ]
+  },
+  "E:warrant:settle-open": {
+   "status": "passed",
+   "message": "",
+   "ms": 13,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "warrant",
+   "template": null,
+   "family": "equity",
+   "step": "settle-open",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:warrant:increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 19,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "warrant",
+   "template": null,
+   "family": "equity",
+   "step": "increase",
+   "covers": [
+    "increase"
+   ]
+  },
+  "E:warrant:settle-increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 16,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "warrant",
+   "template": null,
+   "family": "equity",
+   "step": "settle-increase",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:warrant:shares-rally": {
+   "status": "passed",
+   "message": "",
+   "ms": 12,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "warrant",
+   "template": null,
+   "family": "equity",
+   "step": "shares-rally",
+   "covers": []
+  },
+  "E:warrant:warrants-rally": {
+   "status": "passed",
+   "message": "",
+   "ms": 9,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "warrant",
+   "template": null,
+   "family": "equity",
+   "step": "warrants-rally",
+   "covers": []
+  },
+  "E:warrant:reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 16,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "warrant",
+   "template": null,
+   "family": "equity",
+   "step": "reduce",
+   "covers": [
+    "reduce"
+   ]
+  },
+  "E:warrant:automatic-exercise": {
+   "status": "unsupported",
+   "message": "Warrant exercise is not simulated; the catalog says it is recorded by hand. Terminal: \"This position cannot be exercised.\"",
+   "ms": 12,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "warrant",
+   "template": null,
+   "family": "equity",
+   "step": "automatic-exercise",
+   "covers": [
+    "exercise"
+   ]
+  },
+  "E:warrant:settle-reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 13,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "warrant",
+   "template": null,
+   "family": "equity",
+   "step": "settle-reduce",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:warrant:exercise-warrants-given-up": {
+   "status": "passed",
+   "message": "",
+   "ms": 22,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "warrant",
+   "template": null,
+   "family": "equity",
+   "step": "exercise-warrants-given-up",
+   "covers": [
+    "exercise"
+   ]
+  },
+  "E:warrant:exercise-shares-received": {
+   "status": "passed",
+   "message": "",
+   "ms": 26,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "warrant",
+   "template": null,
+   "family": "equity",
+   "step": "exercise-shares-received",
+   "covers": [
+    "exercise"
+   ]
+  },
+  "E:warrant:settle-exercise": {
+   "status": "passed",
+   "message": "",
+   "ms": 21,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "warrant",
+   "template": null,
+   "family": "equity",
+   "step": "settle-exercise",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:warrant:lapse": {
+   "status": "passed",
+   "message": "",
+   "ms": 22,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "warrant",
+   "template": null,
+   "family": "equity",
+   "step": "lapse",
+   "covers": [
+    "lapse"
+   ]
+  },
+  "E:warrant:close": {
+   "status": "passed",
+   "message": "",
+   "ms": 15,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "warrant",
+   "template": null,
+   "family": "equity",
+   "step": "close",
+   "covers": [
+    "close"
+   ]
+  },
+  "E:warrant:settle-close": {
+   "status": "passed",
+   "message": "",
+   "ms": 9,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "warrant",
+   "template": null,
+   "family": "equity",
+   "step": "settle-close",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:warrant:restart": {
+   "status": "passed",
+   "message": "",
+   "ms": 26,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "warrant",
+   "template": null,
+   "family": "equity",
+   "step": "restart",
+   "covers": [
+    "restart"
+   ]
+  },
+  "E:subscription_right:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 18,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "subscription_right",
+   "template": null,
+   "family": "equity",
+   "step": "setup",
+   "covers": []
+  },
+  "E:subscription_right:open": {
+   "status": "passed",
+   "message": "",
+   "ms": 16,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "subscription_right",
+   "template": null,
+   "family": "equity",
+   "step": "open",
+   "covers": [
+    "open"
+   ]
+  },
+  "E:subscription_right:settle-open": {
+   "status": "passed",
+   "message": "",
+   "ms": 10,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "subscription_right",
+   "template": null,
+   "family": "equity",
+   "step": "settle-open",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:subscription_right:increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 16,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "subscription_right",
+   "template": null,
+   "family": "equity",
+   "step": "increase",
+   "covers": [
+    "increase"
+   ]
+  },
+  "E:subscription_right:settle-increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 13,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "subscription_right",
+   "template": null,
+   "family": "equity",
+   "step": "settle-increase",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:subscription_right:reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 17,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "subscription_right",
+   "template": null,
+   "family": "equity",
+   "step": "reduce",
+   "covers": [
+    "reduce"
+   ]
+  },
+  "E:subscription_right:settle-reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 13,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "subscription_right",
+   "template": null,
+   "family": "equity",
+   "step": "settle-reduce",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:subscription_right:automatic-exercise": {
+   "status": "unsupported",
+   "message": "Exercise of a subscription right is not simulated; the catalog says it is recorded by hand. Terminal: \"This position cannot be exercised.\"",
+   "ms": 14,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "subscription_right",
+   "template": null,
+   "family": "equity",
+   "step": "automatic-exercise",
+   "covers": [
+    "exercise"
+   ]
+  },
+  "E:subscription_right:exercise-rights-given-up": {
+   "status": "passed",
+   "message": "",
+   "ms": 15,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "subscription_right",
+   "template": null,
+   "family": "equity",
+   "step": "exercise-rights-given-up",
+   "covers": [
+    "exercise"
+   ]
+  },
+  "E:subscription_right:exercise-shares-received": {
+   "status": "passed",
+   "message": "",
+   "ms": 21,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "subscription_right",
+   "template": null,
+   "family": "equity",
+   "step": "exercise-shares-received",
+   "covers": [
+    "exercise"
+   ]
+  },
+  "E:subscription_right:settle-exercise": {
+   "status": "passed",
+   "message": "",
+   "ms": 13,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "subscription_right",
+   "template": null,
+   "family": "equity",
+   "step": "settle-exercise",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:subscription_right:lapse": {
+   "status": "passed",
+   "message": "",
+   "ms": 17,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "subscription_right",
+   "template": null,
+   "family": "equity",
+   "step": "lapse",
+   "covers": [
+    "lapse"
+   ]
+  },
+  "E:subscription_right:close": {
+   "status": "passed",
+   "message": "",
+   "ms": 14,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "subscription_right",
+   "template": null,
+   "family": "equity",
+   "step": "close",
+   "covers": [
+    "close"
+   ]
+  },
+  "E:subscription_right:settle-close": {
+   "status": "passed",
+   "message": "",
+   "ms": 9,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "subscription_right",
+   "template": null,
+   "family": "equity",
+   "step": "settle-close",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:subscription_right:restart": {
+   "status": "passed",
+   "message": "",
+   "ms": 30,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "subscription_right",
+   "template": null,
+   "family": "equity",
+   "step": "restart",
+   "covers": [
+    "restart"
+   ]
+  },
+  "E:convertible_preferred:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 18,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "convertible_preferred",
+   "template": null,
+   "family": "equity",
+   "step": "setup",
+   "covers": []
+  },
+  "E:convertible_preferred:open": {
+   "status": "passed",
+   "message": "",
+   "ms": 16,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "convertible_preferred",
+   "template": null,
+   "family": "equity",
+   "step": "open",
+   "covers": [
+    "open"
+   ]
+  },
+  "E:convertible_preferred:settle-open": {
+   "status": "passed",
+   "message": "",
+   "ms": 14,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "convertible_preferred",
+   "template": null,
+   "family": "equity",
+   "step": "settle-open",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:convertible_preferred:increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 15,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "convertible_preferred",
+   "template": null,
+   "family": "equity",
+   "step": "increase",
+   "covers": [
+    "increase"
+   ]
+  },
+  "E:convertible_preferred:settle-increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 13,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "convertible_preferred",
+   "template": null,
+   "family": "equity",
+   "step": "settle-increase",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:convertible_preferred:dividend-recorded": {
+   "status": "passed",
+   "message": "",
+   "ms": 10,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "convertible_preferred",
+   "template": null,
+   "family": "equity",
+   "step": "dividend-recorded",
+   "covers": [
+    "dividend"
+   ]
+  },
+  "E:convertible_preferred:dividend-paid": {
+   "status": "passed",
+   "message": "",
+   "ms": 11,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "convertible_preferred",
+   "template": null,
+   "family": "equity",
+   "step": "dividend-paid",
+   "covers": [
+    "dividend"
+   ]
+  },
+  "E:convertible_preferred:shares-rally": {
+   "status": "passed",
+   "message": "",
+   "ms": 10,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "convertible_preferred",
+   "template": null,
+   "family": "equity",
+   "step": "shares-rally",
+   "covers": []
+  },
+  "E:convertible_preferred:preferred-rallies": {
+   "status": "passed",
+   "message": "",
+   "ms": 10,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "convertible_preferred",
+   "template": null,
+   "family": "equity",
+   "step": "preferred-rallies",
+   "covers": []
+  },
+  "E:convertible_preferred:reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 16,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "convertible_preferred",
+   "template": null,
+   "family": "equity",
+   "step": "reduce",
+   "covers": [
+    "reduce"
+   ]
+  },
+  "E:convertible_preferred:automatic-conversion": {
+   "status": "unsupported",
+   "message": "Conversion into common shares is not simulated; the catalog says it is recorded by hand. Terminal: \"Unknown lifecycle action \"convert\".\"",
+   "ms": 11,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "convertible_preferred",
+   "template": null,
+   "family": "equity",
+   "step": "automatic-conversion",
+   "covers": [
+    "conversion"
+   ]
+  },
+  "E:convertible_preferred:settle-reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 13,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "convertible_preferred",
+   "template": null,
+   "family": "equity",
+   "step": "settle-reduce",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:convertible_preferred:conversion-preferred-given-up": {
+   "status": "passed",
+   "message": "",
+   "ms": 20,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "convertible_preferred",
+   "template": null,
+   "family": "equity",
+   "step": "conversion-preferred-given-up",
+   "covers": [
+    "conversion"
+   ]
+  },
+  "E:convertible_preferred:conversion-shares-received": {
+   "status": "passed",
+   "message": "",
+   "ms": 17,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "convertible_preferred",
+   "template": null,
+   "family": "equity",
+   "step": "conversion-shares-received",
+   "covers": [
+    "conversion"
+   ]
+  },
+  "E:convertible_preferred:settle-conversion": {
+   "status": "passed",
+   "message": "",
+   "ms": 18,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "convertible_preferred",
+   "template": null,
+   "family": "equity",
+   "step": "settle-conversion",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:convertible_preferred:close-preferred": {
+   "status": "passed",
+   "message": "",
+   "ms": 24,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "convertible_preferred",
+   "template": null,
+   "family": "equity",
+   "step": "close-preferred",
+   "covers": [
+    "close"
+   ]
+  },
+  "E:convertible_preferred:close-shares": {
+   "status": "passed",
+   "message": "",
+   "ms": 15,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "convertible_preferred",
+   "template": null,
+   "family": "equity",
+   "step": "close-shares",
+   "covers": [
+    "close"
+   ]
+  },
+  "E:convertible_preferred:settle-close": {
+   "status": "passed",
+   "message": "",
+   "ms": 11,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "convertible_preferred",
+   "template": null,
+   "family": "equity",
+   "step": "settle-close",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:convertible_preferred:restart": {
+   "status": "passed",
+   "message": "",
+   "ms": 30,
+   "commit": "7e39c59+changes",
+   "at": "2026-10-07T01:30:08.434Z",
+   "product": "convertible_preferred",
+   "template": null,
+   "family": "equity",
+   "step": "restart",
+   "covers": [
+    "restart"
+   ]
+  }
+ },
+ "runs": {
+  "common_stock": {
+   "at": "2026-10-07T01:30:08.434Z",
+   "commit": "7e39c59+changes",
+   "ms": 374,
+   "family": "equity",
+   "steps": 18,
+   "ran": 18,
+   "passed": 17,
+   "failed": 0,
+   "blocked": 1,
+   "unsupported": 0,
+   "environment": {
+    "node": "v22.22.0",
+    "platform": "linux"
+   }
+  },
+  "adr": {
+   "at": "2026-10-07T01:30:08.434Z",
+   "commit": "7e39c59+changes",
+   "ms": 226,
+   "family": "equity",
+   "steps": 14,
+   "ran": 14,
+   "passed": 14,
+   "failed": 0,
+   "blocked": 0,
+   "unsupported": 0,
+   "environment": {
+    "node": "v22.22.0",
+    "platform": "linux"
+   }
+  },
+  "short_sale": {
+   "at": "2026-10-07T01:30:08.434Z",
+   "commit": "7e39c59+changes",
+   "ms": 326,
+   "family": "equity",
+   "steps": 19,
+   "ran": 19,
+   "passed": 15,
+   "failed": 0,
+   "blocked": 3,
+   "unsupported": 1,
+   "environment": {
+    "node": "v22.22.0",
+    "platform": "linux"
+   }
+  },
+  "preferred_stock": {
+   "at": "2026-10-07T01:30:08.434Z",
+   "commit": "7e39c59+changes",
+   "ms": 230,
+   "family": "equity",
+   "steps": 14,
+   "ran": 14,
+   "passed": 14,
+   "failed": 0,
+   "blocked": 0,
+   "unsupported": 0,
+   "environment": {
+    "node": "v22.22.0",
+    "platform": "linux"
+   }
+  },
+  "gdr": {
+   "at": "2026-10-07T01:30:08.434Z",
+   "commit": "7e39c59+changes",
+   "ms": 242,
+   "family": "equity",
+   "steps": 16,
+   "ran": 16,
+   "passed": 16,
+   "failed": 0,
+   "blocked": 0,
+   "unsupported": 0,
+   "environment": {
+    "node": "v22.22.0",
+    "platform": "linux"
+   }
+  },
+  "etf": {
+   "at": "2026-10-07T01:30:08.434Z",
+   "commit": "7e39c59+changes",
+   "ms": 301,
+   "family": "equity",
+   "steps": 16,
+   "ran": 16,
+   "passed": 15,
+   "failed": 0,
+   "blocked": 1,
+   "unsupported": 0,
+   "environment": {
+    "node": "v22.22.0",
+    "platform": "linux"
+   }
+  },
+  "etn": {
+   "at": "2026-10-07T01:30:08.434Z",
+   "commit": "7e39c59+changes",
+   "ms": 204,
+   "family": "equity",
+   "steps": 13,
+   "ran": 13,
+   "passed": 12,
+   "failed": 0,
+   "blocked": 0,
+   "unsupported": 1,
+   "environment": {
+    "node": "v22.22.0",
+    "platform": "linux"
+   }
+  },
+  "closed_end_fund": {
+   "at": "2026-10-07T01:30:08.434Z",
+   "commit": "7e39c59+changes",
+   "ms": 205,
+   "family": "equity",
+   "steps": 14,
+   "ran": 14,
+   "passed": 14,
+   "failed": 0,
+   "blocked": 0,
+   "unsupported": 0,
+   "environment": {
+    "node": "v22.22.0",
+    "platform": "linux"
+   }
+  },
+  "reit": {
+   "at": "2026-10-07T01:30:08.434Z",
+   "commit": "7e39c59+changes",
+   "ms": 285,
+   "family": "equity",
+   "steps": 17,
+   "ran": 17,
+   "passed": 17,
+   "failed": 0,
+   "blocked": 0,
+   "unsupported": 0,
+   "environment": {
+    "node": "v22.22.0",
+    "platform": "linux"
+   }
+  },
+  "warrant": {
+   "at": "2026-10-07T01:30:08.434Z",
+   "commit": "7e39c59+changes",
+   "ms": 286,
+   "family": "equity",
+   "steps": 17,
+   "ran": 17,
+   "passed": 16,
+   "failed": 0,
+   "blocked": 0,
+   "unsupported": 1,
+   "environment": {
+    "node": "v22.22.0",
+    "platform": "linux"
+   }
+  },
+  "subscription_right": {
+   "at": "2026-10-07T01:30:08.434Z",
+   "commit": "7e39c59+changes",
+   "ms": 236,
+   "family": "equity",
+   "steps": 15,
+   "ran": 15,
+   "passed": 14,
+   "failed": 0,
+   "blocked": 0,
+   "unsupported": 1,
+   "environment": {
+    "node": "v22.22.0",
+    "platform": "linux"
+   }
+  },
+  "convertible_preferred": {
+   "at": "2026-10-07T01:30:08.434Z",
+   "commit": "7e39c59+changes",
+   "ms": 292,
+   "family": "equity",
+   "steps": 19,
+   "ran": 19,
+   "passed": 18,
+   "failed": 0,
+   "blocked": 0,
+   "unsupported": 1,
+   "environment": {
+    "node": "v22.22.0",
+    "platform": "linux"
+   }
+  }
+ },
+ "updatedAt": "2026-10-07T01:30:08.434Z"
+}

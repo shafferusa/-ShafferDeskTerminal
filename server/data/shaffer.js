@@ -155,6 +155,8 @@ export function createShafferAnalyticsPort({ getConnection, credentials, clock }
   return {
     id: 'shaffer-analytics',
     state: () => baseState({ address: getConnection().analyticsUrl, contract: C, names: ANALYTICS_DATASETS, transport, datasetInfo }),
+    /** Whether an operation can be called at all: an address is configured and the contract maps it. */
+    supports: (op) => ready(op),
     async testConnection() {
       const probe = await transport.probe();
       if (probe.reachable && typeof C.health === 'function') {

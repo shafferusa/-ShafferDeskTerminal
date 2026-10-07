@@ -8,12 +8,12 @@
 // Shaffer Analytics Lab: a signal may fill in this form, but the package still passes every
 // borrow, funding, collateral and per-leg check before it can be confirmed.
 import { html, useEffect, useMemo, useRef, useState } from '../vendor/preact-htm.js';
-import { fmtMoney, fmtNum, fmtPrice, fmtQty, fmtTime, get, isNum, openOverlay, post, useLive, useStore } from '../lib/core.js';
+import { bump, fmtMoney, fmtNum, fmtPrice, fmtQty, fmtTime, get, isNum, openOverlay, post, toast, toastError, useLive, useStore } from '../lib/core.js';
 import { Awaiting, Button, Check, Empty, ErrorNote, Field, Missing, Modal, Notice, Num, Panel, Pill, Price, Prov, Seg, Select, Signed, StrategyStatus, Table, Text } from '../lib/ui.js';
 import { ContractFields, draftToContract, InstrumentPicker, newDraft, PositionPicker } from '../lib/contracts.js';
-import { defaultUnit, HedgeContext, hedgeContextInput, OrderFields, UnitSelect } from './instrument.js';
+import { defaultUnit, OrderFields, UnitSelect } from './instrument.js';
 import { PreviewModal } from './preview.js';
-import { HedgeQueue, PackageDetail, PackageList, RequestState, RequestSummary, SCOPES, usePackagePreview } from './hedge.js';
+import { HedgeQueue, OBJECTIVES, PackageDetail, PackageList, RequestState, RequestSummary, SCOPES, SourceFacts, sourceWords, StatePill, strategyInput, StrategyPicker, StrategyRef, usePackagePreview } from './hedge.js';
 
 const STOCK = 'stock', OPT = 'options', FUT = 'futures';
 const SECURITIES = ['equity', 'fund', 'spot', 'crypto', 'bond', 'manual'];
@@ -239,44 +239,85 @@ function useHedgeRequest(key, body) {
 function PackageModal({ r, packageId, onClose }) {
   const pkg = r.response.packages.find((p) => p.id === packageId);
   const box = usePackagePreview(r.id, packageId);
-  return html`<${Modal} size="wide" title=${`Hedge package: ${pkg.label}`} sub=${`${r.response.source}${r.response.asOf ? `, ${fmtTime(r.response.asOf)}` : ''}. Shown on its own here; in the package preview its legs follow the primary trade.`} onClose=${onClose}
+  return html`<${Modal} size="wide" title=${`Hedge package: ${pkg.label}`} sub=${`From ${sourceWords(r.source)}, received ${fmtTime(r.source?.receivedAt)}. Shown on its own here; in the package preview its legs follow the primary trade.`} onClose=${onClose}
     footer=${html`<span class="grow"></span><${Button} onClick=${onClose}>Close<//>`}><${PackageDetail} pkg=${pkg} pv=${box.pv} loading=${box.loading} error=${box.error} /><//>`;
 }
 
-/** Protection the request already told Shaffer Hedge about: legs of the template, and hedges already held. */
+/** Protection the request states for this exposure: legs of the template, and hedges linked to the position being hedged. Other hedges in the Account are context, not protection. */
 export function knownProtection(r) {
   if (!r) return [];
   const q = r.request;
   const name = (i) => (i?.underlying ? `${i.underlying.symbol || i.underlying.name} ${i.terms?.expiration || ''} ${i.terms?.strike ?? ''} ${i.terms?.right === 'P' ? 'put' : i.terms?.right === 'C' ? 'call' : ''}`.trim() : i?.symbol || i?.name || 'a hedge leg');
   return [
     ...(q.proposedLegs || []).filter((l) => l.isProtection).map((l) => `${l.action === 'buy' ? 'buys' : 'sells'} ${fmtQty(l.quantity)} ${name(l.instrument)} (in the template)`),
-    ...(q.existingHedges || []).map((h) => `${fmtQty(Math.abs(h.quantity))} ${h.instrument.symbol || h.instrument.name} (already held)`),
+    ...(q.linkedProtection || []).filter((h) => h.allocatedUnits > 0 || h.capacity?.units === null).map((h) => `${fmtQty(Math.abs(h.quantity))} ${h.instrument.symbol || h.instrument.name} (linked to the position${h.allocatedUnits ? `, ${fmtQty(h.allocatedUnits)} units` : ''})`),
   ];
 }
 
-function HedgePanel({ hedge, ready, waitingFor, sel, setSel }) {
+function HedgePanel({ hedge, ready, waitingFor, sel, setSel, onAgain }) {
   const [sent, setSent] = useState(false);
   const r = hedge.r;
   const packages = r?.response?.packages || [];
   const prot = knownProtection(r);
+  const stale = r?.freshness?.status === 'stale';
+  const context = (r?.request?.hedgesHeld || []).filter((h) => h.relation !== 'linked');
   return html`<${Panel} title="Hedge" note="From Shaffer Hedge in Analytics Lab">
-    <div class="stack">
-      ${!ready ? html`<p class="note">A hedge request is sent automatically once the ${waitingFor.join(' and ')} ${waitingFor.length > 1 ? 'are' : 'is'} set. It carries the Book, Account, investment Strategy, holding period, objective, existing position, hedges already held and the Account's exposures.</p>` : null}
-      ${ready && hedge.loading && !r ? html`<p class="note">Requesting the hedge package…</p>` : null}
+    <div class="stack" data-testid="strategy-hedge-panel">
+      ${!ready ? html`<p class="note">A hedge request is built automatically once the ${waitingFor.join(' and ')} ${waitingFor.length > 1 ? 'are' : 'is'} set. It carries the Book, Account, investment Strategy, holding period, objective, the template's own protection, hedges linked to the position, and the Account's positions and hedges as context.</p>` : null}
+      ${ready && hedge.loading && !r ? html`<p class="note">Building the hedge request…</p>` : null}
       <${ErrorNote} error=${hedge.error} />
-      ${r && prot.length ? html`<${Notice}><b>This package already has protection.</b> ${prot.join('; ')}. It was sent with the request as existing protection, so no further hedge is added unless you choose one below on purpose.<//>` : null}
+      ${r ? html`<div class="row" style="flex-wrap:wrap;gap:4px 10px"><${StatePill} r=${r} />${r.source ? html`<span class="small"><${SourceFacts} r=${r} /></span>` : null}</div>` : null}
+      ${r && stale ? html`<${Notice} tone="warn"><b>This recommendation is stale.</b> ${r.freshness.changes.join(' ')} <${Button} small onClick=${onAgain}>Request it again<//><//>` : null}
+      ${r && prot.length ? html`<${Notice}><b>This package already has protection.</b> ${prot.join('; ')}. It was sent with the request, so no further hedge is added unless you choose one below on purpose.<//>` : null}
+      ${r && context.length ? html`<div class="note">${context.length} other hedge${context.length > 1 ? 's' : ''} held in the Account ${context.length > 1 ? 'were' : 'was'} sent as context and ${context.length > 1 ? 'are' : 'is'} not counted as protection for this trade.</div>` : null}
       ${r ? html`
         ${packages.length ? html`
           <${PackageList} response=${r.response} selected=${sel} onSelect=${setSel} allowNone />
-          ${sel && prot.length ? html`<${Notice} tone="warn">You are adding a hedge on top of protection already in place. The preview measures it against the exposure that is still unprotected and asks you to confirm it is deliberate.<//>` : null}
+          ${sel && prot.length ? html`<${Notice} tone="warn">You are adding a hedge on top of protection already in place. The preview measures it against the exposure that is still unprotected and asks you to confirm anything beyond it as deliberate.<//>` : null}
           ${sel ? html`<div class="row"><${Button} small onClick=${() => openOverlay((close) => html`<${PackageModal} r=${r} packageId=${sel} onClose=${close} />`)}>Legs, quotes and costs<//>
             <span class="note">Its legs are added to the preview, after the primary and financing legs.</span></div>` : null}
           <p class="note">Hedge legs depend on the primary trade: if it fills only in part, the protection is scaled to what filled.</p>` : html`<${RequestState} r=${r} />`}
+        ${r.state === 'incomplete' ? html`<div class="note">Set what is missing under "Account and intent". The request is rebuilt as you type and is sent once it is complete.</div>` : null}
         ${r.request.templateNote ? html`<div class="note">${r.request.templateNote}</div>` : null}
-        ${r.missing?.length && packages.length ? html`<div class="note">Not yet in the request: ${r.missing.join(', ')}.</div>` : null}
-        <button class="btn link small" style="align-self:flex-start" onClick=${() => setSent(!sent)}>${sent ? 'Hide' : 'Show'} what was sent${hedge.loading ? ' (updating…)' : ''}</button>
+        <button class="btn link small" style="align-self:flex-start" onClick=${() => setSent(!sent)}>${sent ? 'Hide' : 'Show'} what ${r.response ? 'was sent' : 'is stored to send'}${hedge.loading ? ' (updating…)' : ''}</button>
         ${sent ? html`<${RequestSummary} r=${r} />` : null}` : null}
     </div>
+  <//>`;
+}
+
+/**
+ * Investment Strategies in use in this Book. A Strategy chosen from Analytics Lab's list is held by
+ * its ID. A name typed while the list was unavailable stays an unresolved name until someone
+ * confirms which listed Strategy it is; a match by exact name is suggested, never applied.
+ */
+function StrategiesInUse({ book, reloadKey }) {
+  const res = useLive(() => get('/api/analytics/strategies', { bookId: book.id }), [book.id, reloadKey], { interval: false });
+  const [pick, setPick] = useState({});
+  const [busy, setBusy] = useState('');
+  const d = res.data;
+  if (!d || !d.inUse.length) return null;
+  const resolve = async (name, id) => {
+    setBusy(name);
+    try {
+      const out = await post('/api/analytics/strategies/resolve', { bookId: book.id, name, id });
+      toast(`"${name}" resolved to ${out.resolved.name} (${out.resolved.id}) on ${out.strategies} strategy instance${out.strategies === 1 ? '' : 's'} and ${out.requests} open hedge request${out.requests === 1 ? '' : 's'}.`);
+      bump(); res.reload();
+    } catch (err) { toastError(err); }
+    setBusy('');
+  };
+  return html`<${Panel} title="Investment Strategies in this Book" note=${d.available ? `List supplied by ${d.source.label}` : `Strategy list: ${d.awaitingMessage}`} flush>
+    <div data-testid="strategies-in-use"><${Table} margin rows=${d.inUse} rowKey=${(x) => (x.resolved ? x.id : `n:${x.name}`)} columns=${[
+      { label: 'Investment Strategy', render: (x) => html`<${StrategyRef} s=${x} />` },
+      { label: 'Identified by', cls: 'wrap', render: (x) => (x.resolved ? html`ID ${x.id}${x.source ? html`<div class="sub">${x.source}${x.version ? `, version ${x.version}` : ''}</div>` : null}` : html`A typed name. No ID.${x.note ? html`<div class="sub">${x.note}</div>` : null}`) },
+      { label: 'Used by', render: (x) => `${x.strategyInstances} strategy instance${x.strategyInstances === 1 ? '' : 's'}, ${x.hedgeRequests} open hedge request${x.hedgeRequests === 1 ? '' : 's'}` },
+      { label: 'Resolve', cls: 'wrap', render: (x) => (x.resolved ? html`<span class="muted">Resolved</span>`
+        : !d.available ? html`<span class="muted">Stays unresolved until the Strategy list is available.</span>`
+          : html`<div class="row" style="flex-wrap:wrap;gap:6px">
+              <div style="min-width:200px"><${Select} value=${pick[x.name] ?? x.suggestion?.id ?? ''} placeholder="Choose the listed Strategy" onChange=${(v) => setPick({ ...pick, [x.name]: v })} options=${d.items.map((s) => ({ value: s.id, label: `${s.name} (${s.id})` }))} /></div>
+              <${Button} small busy=${busy === x.name} disabled=${!(pick[x.name] ?? x.suggestion?.id)} onClick=${() => resolve(x.name, pick[x.name] ?? x.suggestion?.id)}>Confirm match<//>
+              ${x.suggestion && !pick[x.name] ? html`<span class="note">Suggested by exact name. It is applied only when you confirm.</span>` : null}</div>`) },
+    ]} /></div>
+    <div class="small muted" style="padding:8px 12px">${d.note}</div>
   <//>`;
 }
 
@@ -308,7 +349,7 @@ function Instances({ book, reloadKey }) {
       { label: 'Status', render: (s) => html`<${StrategyStatus} status=${s.status} />${s.hedgeReview ? html` <${Pill} tone="warn" title="The hedged exposure changed. Request updated hedge instructions.">hedge review<//>` : null}` },
       { label: 'Legs', align: 'r', render: (s) => `${s.legs}${s.working ? `, ${s.working} working` : ''}${s.failedLegs ? `, ${s.failedLegs} failed` : ''}` },
       { label: 'Open positions', align: 'r', render: (s) => s.positions },
-      { label: 'Investment Strategy', render: (s) => s.investmentStrategy?.name || html`<${Missing} reason="Not set" />` },
+      { label: 'Investment Strategy', render: (s) => html`<${StrategyRef} s=${s.investmentStrategy} />` },
       { label: 'Submitted', render: (s) => fmtTime(s.createdAt) },
     ]} empty=${{ title: which === 'active' ? 'No active strategy instances' : 'No strategy instances yet', children: 'Confirm a package above and it appears here with every leg, fill and position linked under one ID.' }} />
   <//>`;
@@ -341,7 +382,8 @@ export default function Strategy({ args, book, status }) {
   const [order, setOrder] = useState(EMPTY_ORDER);
   const [netLimit, setNetLimit] = useState(null);
   const [fin, setFin] = useState({ mode: 'none', rate: null });
-  const [ctx, setCtx] = useState({ strategy: '', days: null, objective: '', scope: 'trade' });
+  // ctx.strategy is a Strategy reference: { id, name, resolved: true } from the list, or { id: null, name, resolved: false } when typed.
+  const [ctx, setCtx] = useState({ strategy: null, days: null, objective: '', scope: 'trade' });
   const [legs, setLegs] = useState([]);
   const [signalRef, setSignalRef] = useState(null);
   const [hedgeSel, setHedgeSel] = useState('');
@@ -368,7 +410,7 @@ export default function Strategy({ args, book, status }) {
 
   // ---- the package input, shared by the preview and the hedge request -------------------------------------
   const input = useMemo(() => {
-    const base = { bookId: book.id, unitId, template: tpl.id, underlyingId: undId || undefined, origin: 'strategy_page', signalRef: signalRef || undefined, ...hedgeContextInput(ctx) };
+    const base = { bookId: book.id, unitId, template: tpl.id, underlyingId: undId || undefined, origin: 'strategy_page', signalRef: signalRef || undefined, investmentStrategy: strategyInput(ctx.strategy), holdingPeriod: ctx.days ? { days: ctx.days } : null, hedgeObjective: ctx.objective ? { type: ctx.objective } : null };
     if (attachId) return { ...base, attachTo: attachId, intent: 'adjust', origin: undefined, legs: customToSpecs(legs) };
     if (custom) return { ...base, legs: customToSpecs(legs), financing: fin.mode === 'none' ? null : fin.mode === 'treasury' ? { mode: 'treasury' } : { mode: 'loan', rateType: 'fixed', rate: fin.rate } };
     return {
@@ -391,10 +433,11 @@ export default function Strategy({ args, book, status }) {
   const hedgeReady = !attachId && Boolean(unitId) && haveInstrument && haveAmount;
   const hedgeBody = hedgeReady ? {
     bookId: book.id, unitId, scope: { type: ctx.scope }, trigger: 'strategy_page', instrumentId: undId || undefined, notional: sizeBy === 'notional' && !existing ? notional : undefined,
-    investmentStrategy: ctx.strategy ? { name: ctx.strategy } : null, holdingPeriod: ctx.days ? { days: ctx.days } : null, objective: ctx.objective ? { type: ctx.objective } : null,
+    investmentStrategy: strategyInput(ctx.strategy), holdingPeriod: ctx.days ? { days: ctx.days } : null, objective: ctx.objective ? { type: ctx.objective } : null,
     package: { ...input, financing: null },
   } : null;
-  const hedgeKey = hedgeBody ? JSON.stringify([hedgeBody, submitted]) : '';
+  const [asked, setAsked] = useState(0);
+  const hedgeKey = hedgeBody ? JSON.stringify([hedgeBody, submitted, asked]) : '';
   const hedge = useHedgeRequest(hedgeKey, hedgeBody);
   // The recommended package is added by default, unless the template or the position already carries
   // protection: then nothing more is added unless it is chosen on purpose.
@@ -414,7 +457,8 @@ export default function Strategy({ args, book, status }) {
     if (s.instrumentId) setUndId(s.instrumentId);
     setTplId(templates.some((t) => t.id === s.template) ? s.template : s.direction === 'short' ? 'short' : 'long');
     if (s.sizing?.quantity > 0) { setSizeBy('quantity'); setQty(s.sizing.quantity); } else if (s.sizing?.notional > 0) { setSizeBy('notional'); setNotional(s.sizing.notional); }
-    setCtx((c) => ({ ...c, strategy: s.strategy || c.strategy }));
+    // A signal names its Strategy; without an ID from the list it is carried as an unresolved name.
+    setCtx((c) => ({ ...c, strategy: s.strategyId ? { id: s.strategyId, name: s.strategy || s.strategyId, resolved: true } : s.strategy ? { id: null, name: s.strategy, resolved: false } : c.strategy }));
     setSignalRef(s.id || null);
   };
 
@@ -432,7 +476,9 @@ export default function Strategy({ args, book, status }) {
         ${!attachId ? html`<${Panel} title="Account and intent">
           <div class="grid-form">
             <${Field} label="Account" hint=${`Book: ${book.name}`}><${UnitSelect} value=${unitId} onChange=${setUnitId} book=${book} /><//>
-            <${HedgeContext} c=${ctx} set=${(p) => setCtx({ ...ctx, ...p })} />
+            <${Field} label="Investment Strategy" span=${2}><${StrategyPicker} value=${ctx.strategy} onChange=${(v) => setCtx({ ...ctx, strategy: v })} /><//>
+            <${Field} label="Intended holding period (days)"><${Num} value=${ctx.days} onInput=${(v) => setCtx({ ...ctx, days: v })} /><//>
+            <${Field} label="Hedge objective"><${Select} value=${ctx.objective} onChange=${(v) => setCtx({ ...ctx, objective: v })} options=${OBJECTIVES} placeholder="Choose an objective" /><//>
             <${Field} label="Hedge scope"><${Select} value=${ctx.scope} onChange=${(v) => setCtx({ ...ctx, scope: v })} options=${SCOPES} /><//>
           </div><//>` : null}
 
@@ -508,12 +554,12 @@ export default function Strategy({ args, book, status }) {
       </div>
 
       <div class="stack">
-        ${!attachId ? html`<${HedgePanel} hedge=${hedge} ready=${hedgeReady} waitingFor=${waitingFor} sel=${hedgeSel} setSel=${setHedgeSel} />` : null}
+        ${!attachId ? html`<${HedgePanel} hedge=${hedge} ready=${hedgeReady} waitingFor=${waitingFor} sel=${hedgeSel} setSel=${setHedgeSel} onAgain=${() => setAsked((n) => n + 1)} />` : null}
         ${!attachId ? html`<${SignalsPanel} book=${book} onUse=${useSignal} />` : null}
         ${attachId && attach.data ? html`<${Panel} title="Positions in this strategy" flush>
           <${Table} rows=${attach.data.positions} rowKey=${(p) => p.positionId} columns=${[{ label: 'Position', render: (p) => p.instrument.symbol || p.instrument.name }, { label: 'Quantity', align: 'r', render: (p) => fmtQty(p.qty) }, { label: 'Role', render: (p) => ({ primary: 'Primary', hedge: 'Hedge', financing: 'Financing' }[p.purpose] || p.purpose) }]} empty="No open positions" /><//>` : null}
       </div>
     </div>
-    <div class="stack" style="margin-top:16px"><${HedgeQueue} book=${book} compact /><${Instances} book=${book} reloadKey=${submitted} /></div>
+    <div class="stack" style="margin-top:16px"><${HedgeQueue} book=${book} compact /><${Instances} book=${book} reloadKey=${submitted} /><${StrategiesInUse} book=${book} reloadKey=${submitted} /></div>
   </div>`;
 }

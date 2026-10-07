@@ -15,6 +15,7 @@ import { Awaiting, Button, Empty, ErrorNote, Holdings, Missing, Money, NavAffect
 import { openInstrument } from './instrument.js';
 import { openStrategy } from './strategy-detail.js';
 import { ArrangementDialog, BorrowConvertDialog, BorrowingTable, CashBuckets, ConvertDialog, TransferDialog } from './treasury.js';
+import { CollateralDesk } from './agreements.js';
 
 const FINANCING = ['loan', 'repo', 'secloan'];
 const NOTIONAL = ['future', 'forward', 'swap', 'cds'];
@@ -195,6 +196,8 @@ export default function Account({ args, book, status }) {
         <${HoldingsPanel} d=${positions} />
       </div>
       <${Positions} unit=${unit} d=${positions} rc=${rc} />
+      <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;padding:6px 0 5px;border-bottom:1.5px solid var(--rule-strong)"><h2>OTC collateral</h2><span class="note">Agreements that cover ${unit.name}, and the collateral its swaps, credit default swaps, forwards and OTC options post and receive. The whole Book is under <a href="#/treasury/collateral">Treasury, Collateral</a>.</span></div>
+      <${CollateralDesk} book=${book} unit=${unit} />
     </div>
   </div>`;
 }

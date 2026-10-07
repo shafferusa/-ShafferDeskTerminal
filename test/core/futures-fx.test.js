@@ -180,3 +180,168 @@ test('a borrowed currency can be converted at spot at once; the conversion still
   const naked = await app.packages.preview({ bookId: book.id, unitId: acct.id, template: 'custom', legs: [{ kind: 'trade', action: 'buy', instrumentId: jpy.id, qty: 50_000 }] });
   assert.ok(naked.blocking > 0);
 });
+
+// ---- borrowing plus immediate spot FX, followed from execution to repayment ------------------------------------------
+//
+// One "borrow and convert", reconciled at each date. All figures are worked out by hand:
+//   Wed 18 Mar 2026  borrow 15,000,000 JPY at 1.46% ACT/365 (600 JPY a day: 15,000,000 x 0.0146 / 365) and sell it for
+//                    100,000 USD at 150.00 in the same package. Spot T+2 on business days of both currencies:
+//                    Thu 19, (Fri 20 is Vernal Equinox Day, a Tokyo holiday), so the value date is Mon 23 Mar.
+//   Mon 23 Mar       the conversion settles: 15,000,000 JPY out, 100,000 USD in.
+//   Thu 26 Mar       buy 15,007,800 JPY back with 100,052 USD at 150.00 (value Mon 30 Mar) to repay with interest.
+//   Tue 31 Mar       repay: 13 days of interest = 13 x 600 = 7,800 JPY. 15,007,800 JPY leaves; nothing is owed.
+//                    (The loan is open-ended, so its interest would otherwise be paid on the first business day of
+//                    each month: that payment, scheduled for Wed 1 Apr, must disappear with the repayment.)
+// The Account starts with 100,000 USD. With USD/JPY held at 150.00 the only P&L is the interest: 7,800 JPY = 52.00 USD.
+
+const JPY_LOAN = { kind: 'loan', action: 'borrow_cash', qty: 15_000_000, purpose: 'financing', contract: { productId: 'unsecured_loan', name: 'JPY loan 1.46%', marketView: 'FOREIGN_CASH', venueType: 'otc', tradingCcy: 'JPY', terms: { loanType: 'unsecured', rateType: 'fixed', rate: 0.0146, dayCount: 'ACT/365' } } };
+function pinYen(app, inst) {
+  app.data.market.set(inst['USD/JPY'].id, { bid: 150, ask: 150, value: 150 });
+  app.data.market.set('USD/JPY', { value: 150 });
+  app.data.market.set('JPY/USD', { value: 1 / 150 });
+}
+const near = (a, b, eps = 0.005) => assert.ok(Math.abs(a - b) <= eps, `${a} is not within ${eps} of ${b}`);
+
+test('borrow and convert, execution day: one liability, interest from the trade date, cash committed but not yet moved, value date on the joint calendar', async () => {
+  const { app, inst } = makeApp({ at: '2026-03-18T15:00:00.000Z' });
+  const { book, acct, treasury } = makeBook(app, { cash: 1_000_000, account: 100_000 });
+  pinYen(app, inst);
+  const pv = await app.packages.preview({ bookId: book.id, unitId: acct.id, template: 'custom', name: 'Borrow yen, convert to dollars', legs: [JPY_LOAN, { kind: 'trade', action: 'buy', instrumentId: inst['USD/JPY'].id, qty: 100_000, dependsOn: [1] }] });
+  assert.equal(pv.blocking, 0);
+  // Displayed and confirmed: 15,000,000 JPY received at 1.46% (600 JPY a day shown on ACT/360 as 608: 15,000,000 x 0.0146 / 360 = 608.33 -> 608),
+  // then 100,000 USD bought for 15,000,000 JPY, value 23 March.
+  const [cl, cf] = pv.confirmation.legs;
+  assert.deepEqual([cl.financing.amount, cl.financing.rate, cl.financing.rateType, cl.cash], [15_000_000, 0.0146, 'fixed', 15_000_000]);
+  assert.deepEqual([cf.price, cf.cash, cf.otherCash, cf.settleDate], [150, -15_000_000, [{ ccy: 'USD', amount: 100_000 }], '2026-03-23']);
+  assert.equal(pv.legs[1].settlement.calendarId, 'USD+JP');
+  assert.deepEqual([pv.confirmation.totals.JPY.financingIn, pv.confirmation.totals.JPY.purchases, pv.confirmation.totals.JPY.shortfall], [15_000_000, 15_000_000, 0]);
+  const s = (await app.packages.submit({ ...pv.input, legs: pv.legs, clientToken: pv.token, confirm: true, expected: pv.confirmation })).strategy;
+  const [lo, fx] = s.orders;
+  assert.deepEqual([lo.status, fx.status, lo.fills[0].confirm.exact, fx.fills[0].confirm.exact], ['filled', 'filled', true, true]);
+
+  // The liability, and when its interest starts.
+  assert.equal(app.ledger.balance(acct.id, 'loan.liab', 'JPY'), -15_000_000);
+  const reg = app.accounting.borrowings(book.id, 'book');
+  assert.equal(reg.length, 1, 'one borrowing record in the Book');
+  assert.deepEqual([reg[0].owner.id, reg[0].ccy, reg[0].principal, reg[0].startDate, reg[0].accrued, reg[0].rate.dayCount], [acct.id, 'JPY', 15_000_000, '2026-03-18', 0, 'ACT/365']);
+  // The conversion executed at once but has not settled: both sides are pending obligations with the same value date.
+  assert.equal(fx.fills[0].settleDate, '2026-03-23', 'T+2 skips the Tokyo holiday on Friday 20 March');
+  const pending = app.settle.pending([acct.id]).map((p) => [p.due_date, p.ccy, p.amount, p.kind]);
+  assert.deepEqual(pending.sort((a, b) => (a[1] < b[1] ? -1 : 1)), [['2026-03-23', 'JPY', -15_000_000, 'fx'], ['2026-03-23', 'USD', 100_000, 'fx']]);
+  // A euro conversion dealt the same day is not held up by Tokyo: Thu 19, Fri 20.
+  assert.equal(app.products.get('fx').settleDate(app, inst['EUR/USD'], '2026-03-18', book), '2026-03-20');
+  // Cash before the conversion settles.
+  //   JPY: 15,000,000 settled (the loan proceeds), all of it owed to the conversion: nothing to trade, nothing to withdraw.
+  //   USD: 100,000 settled + 100,000 owed to the Account: 200,000 to trade, but only the settled 100,000 can leave.
+  const y = app.ledger.cash(acct.id, 'JPY'), u = app.ledger.cash(acct.id, 'USD');
+  assert.deepEqual([y.settled, y.payable, y.receivable, y.availableToTrade, y.availableToWithdraw], [15_000_000, 15_000_000, 0, 0, 0]);
+  assert.deepEqual([u.settled, u.payable, u.receivable, u.availableToTrade, u.availableToWithdraw], [100_000, 0, 100_000, 200_000, 100_000]);
+  // The committed yen cannot be moved away, and the dollars that have not arrived cannot be withdrawn.
+  assert.throws(() => app.books.transfer({ bookId: book.id, fromUnitId: acct.id, toUnitId: treasury.id, ccy: 'JPY', amount: 1_000_000 }), /0 JPY of settled JPY available/);
+  assert.throws(() => app.books.transfer({ bookId: book.id, fromUnitId: acct.id, toUnitId: treasury.id, ccy: 'USD', amount: 150_000 }), /100,000\.00 USD of settled USD available/);
+  // The yen cannot be spent twice: a second conversion of the same yen is refused.
+  const twice = await app.packages.preview({ bookId: book.id, unitId: acct.id, template: 'custom', legs: [{ kind: 'trade', action: 'buy', instrumentId: inst['USD/JPY'].id, qty: 10_000 }] });
+  assert.ok(twice.blocking > 0);
+  // Balance sheet of the Account, counted once. Assets: 100,000 USD cash + 15,000,000 JPY cash + 100,000 USD receivable.
+  // Liabilities: 15,000,000 JPY loan + 15,000,000 JPY payable. In USD at 150: 100,000 + 100,000 + 100,000 - 100,000 - 100,000 = 100,000.
+  await app.data.refresh({ pairs: ['JPY/USD'] });
+  const bs = app.accounting.balanceSheet(book.id, acct.id);
+  near(bs.assets.total.rc, 300_000);
+  near(bs.liabilities.total.rc, 200_000);
+  near(bs.netAssets.total.rc, 100_000);
+  const whole = app.accounting.balanceSheet(book.id, 'book');
+  near(whole.netAssets.total.rc, 1_000_000, 0.01);
+  assert.equal(whole.borrowings.length, 1);
+  assert.deepEqual(ledgerImbalance(app), []);
+});
+
+test('borrow and convert, settlement to repayment: balances after the value date, interest by day count, repayment of principal plus interest leaves nothing owed', async () => {
+  const { app, clock, inst } = makeApp({ at: '2026-03-18T15:00:00.000Z' });
+  const { book, acct } = makeBook(app, { cash: 1_000_000, account: 100_000 });
+  pinYen(app, inst);
+  const s = await trade(app, { bookId: book.id, unitId: acct.id, template: 'custom', legs: [JPY_LOAN, { kind: 'trade', action: 'buy', instrumentId: inst['USD/JPY'].id, qty: 100_000, dependsOn: [1] }] });
+  const loanPos = s.positions.find((p) => p.family === 'loan');
+  const accrued = () => 0 - app.ledger.balance(acct.id, 'accrued.liab', 'JPY');
+  const eod = async (date) => { pinYen(app, inst); await goTo(app, clock, `${date}T21:30:00.000Z`); }; // 17:30 New York, after the end-of-day run
+  const noon = async (date) => { pinYen(app, inst); await goTo(app, clock, `${date}T15:00:00.000Z`); };
+
+  // Interest: ACT/365 from the trade date, the day of repayment excluded.
+  await eod('2026-03-18');
+  assert.equal(accrued(), 0, 'no interest for the day the loan was drawn until a night has passed');
+  await eod('2026-03-19');
+  assert.equal(accrued(), 600, 'one day: 15,000,000 x 0.0146 x 1 / 365 = 600');
+  // Friday 20 March: Tokyo is closed, New York is open. Nothing settles; interest keeps running.
+  await eod('2026-03-20');
+  assert.equal(accrued(), 1200);
+  let y = app.ledger.cash(acct.id, 'JPY'), u = app.ledger.cash(acct.id, 'USD');
+  assert.deepEqual([y.settled, y.payable, u.settled, u.receivable], [15_000_000, 15_000_000, 100_000, 100_000], 'the conversion has not settled on the Tokyo holiday');
+  assert.equal(app.settle.pending([acct.id]).length, 2);
+
+  // Monday 23 March, the value date: both sides settle.
+  await noon('2026-03-23');
+  y = app.ledger.cash(acct.id, 'JPY'); u = app.ledger.cash(acct.id, 'USD');
+  assert.deepEqual([y.settled, y.payable, y.availableToTrade, y.availableToWithdraw], [0, 0, 0, 0]);
+  assert.deepEqual([u.settled, u.receivable, u.availableToTrade, u.availableToWithdraw], [200_000, 0, 200_000, 200_000]);
+  assert.equal(app.settle.pending([acct.id]).length, 0);
+  assert.equal(app.settle.failed([acct.id]).length, 0);
+  assert.equal(app.ledger.balance(acct.id, 'loan.liab', 'JPY'), -15_000_000, 'the liability is untouched by the conversion settling');
+  await eod('2026-03-23');
+  assert.equal(accrued(), 3000, 'five days, the weekend included: 5 x 600');
+
+  // Thursday 26 March: repayment cannot be confirmed yet, because the Account holds no yen.
+  await noon('2026-03-26');
+  const repay = () => app.packages.preview({ bookId: book.id, unitId: acct.id, template: 'custom', attachTo: s.id, intent: 'close', reducing: true, legs: [{ kind: 'repay', action: 'repay_cash', targetPositionId: loanPos.positionId, qty: 15_000_000, purpose: 'financing' }] });
+  let rp = await repay();
+  assert.ok(rp.blocking > 0);
+  // The preview states principal plus the interest that is settled with it: 8 days to 26 March = 4,800 JPY.
+  assert.deepEqual([rp.legs[0].financing.principal, rp.legs[0].financing.interest, rp.legs[0].cash], [15_000_000, 4800, -15_004_800]);
+  // Buy the yen for a repayment on 31 March: 15,000,000 + 13 x 600 = 15,007,800 JPY = 100,052 USD at 150.00. Value Mon 30 March.
+  const back = await trade(app, { bookId: book.id, unitId: acct.id, template: 'custom', legs: [{ kind: 'trade', action: 'sell', instrumentId: inst['USD/JPY'].id, qty: 100_052 }] });
+  assert.equal(back.orders[0].fills[0].settleDate, '2026-03-30');
+  // The yen bought is owed to the Account but not settled: the repayment still has to wait for it.
+  y = app.ledger.cash(acct.id, 'JPY');
+  assert.deepEqual([y.settled, y.receivable, y.availableToTrade, y.availableToWithdraw], [0, 15_007_800, 15_007_800, 0]);
+  rp = await repay();
+  assert.ok(rp.blocking > 0, 'a repayment needs settled cash, not cash still in settlement');
+  assert.match(rp.checks.find((c) => c.level === 'error').message, /0 JPY of settled JPY available; 15,004,800 JPY is needed \(principal plus accrued interest\)/);
+
+  // The interest payment the open-ended loan has scheduled: first business day of April on the yen payment calendar.
+  assert.deepEqual(app.db.all(`SELECT type, due_date, status FROM tasks WHERE position_id = ?`, loanPos.positionId).map((t) => [t.type, t.due_date, t.status]), [['loan.interest', '2026-04-01', 'pending']]);
+
+  // Tuesday 31 March: 13 days after 18 March.
+  await noon('2026-03-31');
+  y = app.ledger.cash(acct.id, 'JPY'); u = app.ledger.cash(acct.id, 'USD');
+  assert.deepEqual([y.settled, y.receivable, u.settled, u.payable], [15_007_800, 0, 99_948, 0]);
+  rp = await repay();
+  assert.equal(rp.blocking, 0);
+  assert.deepEqual([rp.legs[0].financing.principal, rp.legs[0].financing.interest, rp.legs[0].cash, rp.confirmation.totals.JPY.financingOut, rp.confirmation.totals.JPY.required], [15_000_000, 7800, -15_007_800, 15_007_800, 15_007_800]);
+  const done = (await app.packages.submit({ ...rp.input, legs: rp.legs, clientToken: rp.token, confirm: true, expected: rp.confirmation })).strategy;
+  const ro = done.orders.find((o) => o.kind === 'repay');
+  assert.equal(ro.status, 'filled');
+  // Confirmed -> fill -> ledger: 15,007,800 JPY confirmed, 15,007,800 JPY paid (15,000,000 principal + 7,800 interest).
+  assert.deepEqual([ro.confirmed.cash, ro.fills[0].confirm.actual.cash, ro.fills[0].confirm.exact], [-15_007_800, -15_007_800, true]);
+  // Nothing is owed and nothing is left over in yen.
+  assert.equal(app.ledger.balance(acct.id, 'loan.liab', 'JPY'), 0);
+  assert.equal(app.ledger.balance(acct.id, 'accrued.liab', 'JPY'), 0);
+  y = app.ledger.cash(acct.id, 'JPY');
+  assert.deepEqual([y.settled, y.payable, y.receivable], [0, 0, 0]);
+  assert.equal(app.accounting.borrowings(book.id, 'book').length, 0, 'the borrowing is closed');
+  assert.equal(app.db.get(`SELECT COUNT(*) AS n FROM tasks WHERE position_id = ? AND status = 'pending'`, loanPos.positionId).n, 0, 'no interest payment is left scheduled');
+  // Interest paid once: 7,800 JPY of funding cost in the ledger, in one payment.
+  assert.equal(app.ledger.balance(acct.id, 'pnl.funding', 'JPY'), 7800);
+  const paid = app.db.all(`SELECT e.amount FROM entries e JOIN events v ON v.id = e.event_id WHERE v.type = 'interest.payment' AND e.account = 'cash' AND e.unit_id = ?`, acct.id);
+  assert.deepEqual(paid.map((r) => r.amount), [-7800]);
+  // Dollars: 100,000 + 100,000 - 100,052 = 99,948. The whole episode cost 52.00 USD, the interest at 150.00.
+  u = app.ledger.cash(acct.id, 'USD');
+  assert.deepEqual([u.settled, u.payable, u.receivable], [99_948, 0, 0]);
+  await app.data.refresh({ pairs: ['JPY/USD'] });
+  const bs = app.accounting.balanceSheet(book.id, acct.id);
+  near(bs.netAssets.total.rc, 99_948, 0.01);
+  near(bs.liabilities.total.rc, 0, 0.01);
+  // The next day, the date the monthly interest had been scheduled for: nothing more is paid or accrued.
+  await noon('2026-04-01');
+  await eod('2026-04-01');
+  assert.equal(app.ledger.balance(acct.id, 'pnl.funding', 'JPY'), 7800);
+  assert.deepEqual([app.ledger.cash(acct.id, 'JPY').settled, app.ledger.cash(acct.id, 'USD').settled], [0, 99_948]);
+  assert.deepEqual(ledgerImbalance(app), []);
+});

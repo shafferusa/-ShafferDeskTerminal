@@ -11,7 +11,7 @@ import { html, useEffect, useState } from '../vendor/preact-htm.js';
 import { bump, currentBook, fmtMoney, fmtNum, fmtPrice, fmtQty, fmtTime, get, isNum, openOverlay, post, toast, toastError, useLive } from '../lib/core.js';
 import { Button, Check, Drawer, Empty, ErrorNote, Field, KV, Missing, Modal, Money, Notice, Num, OrderStatus, Panel, Pill, Price, Prov, PURPOSE_LABEL, Select, StrategyStatus, Table, Text } from '../lib/ui.js';
 import { openInstrument, openPreviewAction } from './instrument.js';
-import { openHedgeFor, openHedgeRequest } from './hedge.js';
+import { openHedgeFor, openHedgeRequest, ProtectionDetail, SourceFacts, StatePill, StrategyRef } from './hedge.js';
 
 const NOTIONAL_FAMILIES = ['future', 'forward', 'swap', 'cds'];
 const FINANCING_FAMILIES = ['loan', 'repo', 'secloan'];
@@ -53,6 +53,42 @@ function ObsUsed({ obs, none }) {
     ${obs.kind !== 'price' && obs.kind !== 'fx' && obs.units ? html`<div class="sub">${obs.units}</div>` : null}
     <div class="sub">${obs.kind === 'fx' ? `${obs.subject}, ` : ''}${obs.source}</div><div class="sub">${when(obs.asOf).join(', ')}</div>`;
 }
+// ---- confirmed figures against fills ---------------------------------------------------------------------------
+// Each order keeps the figures it was confirmed on; each fill records how its own figures differ from
+// them and why. A difference the Book's tolerances allowed is stated, never implied.
+const signedPrice = (d) => `${d > 0 ? '+' : '−'}${fmtPrice(Math.abs(d))}`;
+/** One fill against what was confirmed for its order. */
+function FillRecon({ f }) {
+  const c = f.confirm;
+  if (!c) return html`<span class="muted" title="This fill was booked before confirmed figures were kept, or the engine created its order itself">not recorded</span>`;
+  if (c.exact) return html`<div class="recon"><${Pill} tone="ok">as confirmed<//> ${c.reason}</div>`;
+  const v = c.variance;
+  return html`<div><${Pill} tone=${c.within ? 'warn' : 'bad'}>${c.within ? 'differs, within tolerance' : 'differs, outside tolerance'}<//></div>
+    <div class="recon" style="max-width:none">
+      ${isNum(v.price) && v.price !== 0 ? html`<div>Price <b>${signedPrice(v.price)}</b>${isNum(v.pricePct) ? ` (${fmtNum(Math.abs(v.pricePct), 2)}%)` : ''}: ${fmtPrice(c.actual.price)} against ${fmtPrice(c.confirmed.price)} confirmed</div>` : null}
+      ${isNum(v.cash) && v.cash !== 0 ? html`<div>Cash <b>${fmtMoney(v.cash, f.ccy, { sign: true })}</b>: ${fmtMoney(c.actual.cash, f.ccy)} against ${fmtMoney(c.confirmed.cash, f.ccy)} confirmed${c.confirmed.share < 1 ? ' for this share of the order' : ''}</div>` : null}
+      ${isNum(v.fees) && v.fees !== 0 ? html`<div>Fees <b>${fmtMoney(v.fees, f.ccy, { sign: true })}</b>: ${fmtMoney(c.actual.fees, f.ccy)} against ${fmtMoney(c.confirmed.fees, f.ccy)}</div>` : null}
+      ${v.settleDate ? html`<div>Settles <b>${v.settleDate.actual}</b>, confirmed ${v.settleDate.confirmed}</div>` : null}
+      <div>${c.reason}</div></div>`;
+}
+/** What the order was confirmed on, in one or two lines. */
+function ConfirmedLine({ o }) {
+  const c = o.confirmed;
+  if (!c) return html`<div class="sub muted">Order ${o.id}, submitted ${fmtTime(o.createdAt)}. No confirmed figures are recorded for it.</div>`;
+  const ccy = c.ccy || o.instrument?.ccy;
+  const parts = [isNum(c.price) ? `price ${fmtPrice(c.price)}` : o.kind === 'trade' ? 'no executable price at the time' : null, isNum(c.cash) ? `cash ${fmtMoney(c.cash, ccy, { sign: true })}` : null, isNum(c.fees) && c.fees ? `fees ${fmtMoney(c.fees, ccy)}` : null,
+    isNum(c.margin) ? `margin ${fmtMoney(c.margin, ccy)}` : null, c.financing && isNum(c.financing.rate) ? `rate ${fmtNum(c.financing.rate * 100, 3)}%` : null, c.settleDate ? `settling ${c.settleDate}${o.settle ? ' (stated for this trade)' : ''}` : null].filter(Boolean);
+  return html`<div class="sub" data-testid="confirmed"><b>Confirmed:</b> ${parts.join(', ') || 'no cash figures'}. ${c.basis === 'displayed' ? `These are the figures displayed in the preview priced at ${fmtTime(c.snapshotAt, { seconds: true })}.` : 'No displayed figures came with the confirmation, so these are the figures priced at confirmation.'}
+    ${c.permitted?.length ? html` At confirmation the package was priced again and these differences were inside the Book's tolerances: ${c.permitted.map((p, i) => html`${i ? '; ' : ''}${p.fieldLabel.toLowerCase()} ${p.unit === 'money' ? fmtMoney(p.was, p.ccy) : p.unit === 'price' ? fmtPrice(p.was) : p.was} to ${p.unit === 'money' ? fmtMoney(p.now, p.ccy) : p.unit === 'price' ? fmtPrice(p.now) : p.now}${isNum(p.changePct) ? ` (${fmtNum(Math.abs(p.changePct), 2)}%)` : ''}`)}.` : ''}
+    ${' '}Order ${o.id}, submitted ${fmtTime(o.createdAt)}.</div>`;
+}
+/** Summary for the legs table: how the fills of an order compare with what was confirmed. */
+function reconOf(o) {
+  const recs = o.fills.map((f) => f.confirm).filter(Boolean);
+  if (!recs.length) return null;
+  if (recs.every((r) => r.exact)) return { tone: 'ok', label: 'as confirmed' };
+  return recs.every((r) => r.within) ? { tone: 'warn', label: 'within tolerance' } : { tone: 'bad', label: 'outside tolerance' };
+}
 function Fills({ o, rc }) {
   const cell = 'white-space:normal;vertical-align:top';
   return html`<div class="stack" style="gap:6px">
@@ -63,9 +99,10 @@ function Fills({ o, rc }) {
         <td style=${`${cell};min-width:170px`}><div>${sentence(String(f.model || '').replace(/-/g, ' '))}</div>${f.note ? html`<div class="sub">${f.note}</div>` : null}</td>
         <td style=${cell}><${ObsUsed} obs=${f.priceObservation} none=${html`<span class="muted" title="No market observation was used: the price was stated, contractual, or the leg has no price">none used</span>`} /></td>
         <td style=${cell}><${ObsUsed} obs=${f.fxObservation} none=${!isNum(f.price) || !f.ccy ? html`<span class="muted">not applicable</span>` : f.ccy === rc ? html`<span class="muted">not needed: ${f.ccy} is the reporting currency</span>` : html`<${Missing} reason=${`No FX observation from ${f.ccy} to ${rc} was stored with this fill`} />`} /></td>
-      </tr>`)}</tbody></table>` : html`<div class="note">${o.kind === 'trade' ? 'Nothing has filled on this leg.' : 'No fill is recorded for this leg.'}</div>`}
+      </tr>
+      <tr data-testid="fill-recon"><td colspan="6" style="white-space:normal;height:auto;padding-top:2px"><div class="row" style="align-items:flex-start;gap:8px;flex-wrap:nowrap"><span class="sub nowrap" style="padding-top:2px">Against the confirmed figures</span><div style="min-width:0"><${FillRecon} f=${f} /></div></div></td></tr>`)}</tbody></table>` : html`<div class="note">${o.kind === 'trade' ? 'Nothing has filled on this leg.' : 'No fill is recorded for this leg.'}</div>`}
     ${o.settlements.length ? html`<div class="sub">Awaiting settlement: ${o.settlements.map((s, i) => html`${i ? '; ' : ''}${fmtMoney(s.amount, s.ccy, { sign: true })} due ${s.dueDate}${s.status !== 'pending' ? html` <span class="loss">(${s.status}${s.error ? `: ${s.error}` : ''})</span>` : ''}`)}</div>` : null}
-    ${o.estimate && isNum(o.estimate.price) ? html`<div class="sub muted">Estimate at preview: ${fmtPrice(o.estimate.price)} (${String(o.estimate.model || '').replace(/-/g, ' ')}). Order ${o.id}, submitted ${fmtTime(o.createdAt)}.</div>` : html`<div class="sub muted">Order ${o.id}, submitted ${fmtTime(o.createdAt)}.</div>`}
+    <${ConfirmedLine} o=${o} />
   </div>`;
 }
 function Legs({ s, rc, after }) {
@@ -91,7 +128,9 @@ function Legs({ s, rc, after }) {
       <td class="wrap" style="min-width:170px"><${OrderStatus} status=${o.status} />${o.resolved ? html` <span class="sub">dealt with</span>` : null}${o.statusReason ? html`<div class="sub">${o.statusReason}</div>` : null}
         ${o.reserved.filter((h) => h.amount).map((h) => html`<div class="sub">reserved ${fmtMoney(h.amount, h.ccy)}</div>`)}</td>
       <td class="r">${fmtQty(o.filledQty)} of ${fmtQty(o.qty)}${o.remainingQty > 0 ? html`<div class=${`sub ${ACTIVE.includes(o.status) ? '' : 'loss'}`}>${fmtQty(o.remainingQty)} ${ACTIVE.includes(o.status) ? 'remaining' : 'never traded'}</div>` : null}</td>
-      <td class="r">${isNum(o.avgPrice) ? fmtPrice(o.avgPrice) : o.kind === 'trade' ? html`<${Missing} reason="Nothing has filled" />` : ''}</td>
+      <td class="r">${isNum(o.avgPrice) ? fmtPrice(o.avgPrice) : o.kind === 'trade' ? html`<${Missing} reason="Nothing has filled" />` : ''}
+        ${isNum(o.confirmed?.price) ? html`<div class="sub">confirmed ${fmtPrice(o.confirmed.price)}</div>` : o.confirmed && isNum(o.confirmed.cash) && o.kind !== 'trade' ? html`<div class="sub">confirmed ${fmtMoney(o.confirmed.cash, o.confirmed.ccy, { sign: true })}</div>` : null}
+        ${reconOf(o) ? html`<div><${Pill} tone=${reconOf(o).tone} title="How the fills compare with the figures that were confirmed. Open Fills for each difference and its reason.">${reconOf(o).label}<//></div>` : null}</td>
       <td class="r">${ACTIVE.includes(o.status) ? html`<${Button} small kind="danger" busy=${busy === o.id} onClick=${() => cancel(o)}>Cancel leg<//> ` : null}
         <${Button} small onClick=${() => setOpen({ ...open, [o.id]: !open[o.id] })}>${open[o.id] ? 'Hide fills' : `Fills (${o.fills.length})`}<//></td>
     </tr>${open[o.id] ? html`<tr class="detail" key=${`f${o.id}`}><td colspan="6" style="background:var(--paper);padding:10px 12px 12px 30px;white-space:normal"><${Fills} o=${o} rc=${rc} /></td></tr>` : null}`;
@@ -287,6 +326,31 @@ function Holds({ s }) {
     <${Table} rows=${rows} columns=${[{ label: 'Held for', render: (h) => html`${h.what}${h.note ? html`<div class="sub">${h.note}</div>` : null}` }, { label: 'Amount', align: 'r', render: (h) => html`<span class="strong">${fmtMoney(h.amount, h.ccy)}</span>` }]}
       empty=${{ children: 'Nothing is reserved against this strategy instance. Cash is held here when it writes options or carries a short position.' }} /><//>`;
 }
+/**
+ * Linked to: what this strategy instance is tied to, read from stored identifiers only (the strategy
+ * instance id, the hedge request id carried by a hedge leg, the legs a financing leg funds) and from
+ * protection allocations. A hedge that merely sits in the same Account is not shown as protection.
+ */
+function LinkedTo({ s }) {
+  const h = s.hedge;
+  if (!h?.links) return null;
+  const rel = h.links.positions.filter((p) => p.relations.length);
+  const prot = (h.protection || []).filter((x) => x.protection);
+  const tone = { primary: '', hedge: 'pen', financing: 'warn' };
+  return html`<${Panel} title="Linked to" note="From stored identifiers and protection allocations">
+    <div class="stack" data-testid="strategy-linked-to">
+      <${KV} rows=${[
+        ['Strategy instance', s.id],
+        ['Investment Strategy', html`<${StrategyRef} s=${h.investmentStrategy || s.investmentStrategy} />`],
+        ['Execution template', html`${s.templateName} <span class="muted small">(how the legs were assembled; not the investment Strategy)</span>`],
+        h.requests.length ? ['Hedge requests', h.requests.map((r) => r.id).join(', ')] : null,
+      ]} />
+      ${rel.length ? html`<div><h4>Positions</h4>${rel.map((p) => html`<div class="prot-row" style="margin-top:4px"><${Pill} tone=${tone[p.purpose] || ''}>${PURPOSE_LABEL[p.purpose] || p.purpose}<//><span><b>${p.label}</b>${p.relations.map((r) => html`<div class="rel-line" data-relation=${r.kind}>${r.text}</div>`)}</span></div>`)}</div>` : null}
+      ${h.links.legs.length ? html`<div><h4>Legs</h4>${h.links.legs.map((l) => html`<div class="rel-line" style="margin-top:2px">Leg ${l.legNo}: ${l.text}</div>`)}</div>` : null}
+      ${prot.map((x) => html`<div><h4>Protection of ${x.label}</h4><div style="margin-top:4px"><${ProtectionDetail} p=${x.protection} /></div></div>`)}
+      ${!rel.length && !h.links.legs.length && !prot.length ? html`<p class="note" style="margin:0">No hedge leg or financing leg is tied to this strategy instance.</p>` : null}
+    </div><//>`;
+}
 function Hedge({ s, after }) {
   if (!s.hedge) return null;
   const { review, requests } = s.hedge;
@@ -302,7 +366,8 @@ function Hedge({ s, after }) {
       ${requests.length ? html`<${Table} rows=${requests} rowKey=${(r) => r.id} columns=${[
         { label: 'Earlier requests', render: (r) => html`${fmtTime(r.createdAt)}<div class="sub">${r.id}</div>` },
         { label: 'Why', render: (r) => TRIGGER[r.trigger] || sentence(r.trigger) },
-        { label: 'Outcome', cls: 'wrap', render: (r) => html`<${Pill} tone=${REQUEST_TONE[r.status] || ''}>${r.status === 'awaiting' ? 'awaiting connection' : r.status}<//>${r.selectedPackage ? html`<div class="sub">package ${r.selectedPackage}</div>` : r.message ? html`<div class="sub">${r.message}</div>` : null}` },
+        { label: 'State', cls: 'wrap', render: (r) => html`<${StatePill} r=${r} />${r.state === 'incomplete' ? html`<div class="sub">Needs ${r.missing.join(', ')}. Not sent.</div>` : r.selectedPackage ? html`<div class="sub">package ${r.selectedPackage}</div>` : r.message && r.state !== 'recommendation_ready' ? html`<div class="sub">${r.message}</div>` : null}
+          ${r.source ? html`<div class="sub" style="white-space:normal"><${SourceFacts} r=${r} /></div>` : null}` },
         { label: 'Packages', align: 'r', render: (r) => r.packages },
         { label: '', align: 'r', render: (r) => html`<${Button} small onClick=${() => openHedgeRequest(r.id, { onDone: after })}>Open request<//>` },
       ]} />` : null}
@@ -339,7 +404,7 @@ function StrategyDrawer({ id, onClose }) {
       <div class="cols-2">
         <${KV} rows=${[['Strategy instance', s.id], ['Template', s.templateName], ['Account', unitLabel(s.unit)], ['Status', html`<${StrategyStatus} status=${s.status} /> <span class="sub muted">${state}</span>`],
           s.underlying ? ['Underlying', link(instName(s.underlying), () => openInstrument(s.underlying.id), s.underlying.name)] : null]} />
-        <${KV} rows=${[['Investment Strategy', s.investmentStrategy?.name || missing('Not set for this strategy instance')],
+        <${KV} rows=${[['Investment Strategy', s.investmentStrategy?.name || s.investmentStrategy?.id ? html`<${StrategyRef} s=${s.hedge?.investmentStrategy || s.investmentStrategy} />` : missing('Not set for this strategy instance')],
           ['Holding period', hp?.days ? `${hp.days} days` : hp?.until ? `until ${hp.until}` : hp?.label || missing('Not set for this strategy instance')],
           ['Created', fmtTime(s.createdAt)], ['Closed', s.closedAt ? fmtTime(s.closedAt) : html`<span class="muted">${s.status === 'failed' ? 'Never opened' : 'Still open'}</span>`], s.signalRef ? ['Signal', s.signalRef] : null]} />
       </div>
@@ -349,6 +414,7 @@ function StrategyDrawer({ id, onClose }) {
       <${Positions} s=${s} rc=${rc} after=${after} />
       <${Manage} s=${s} after=${after} onClose=${onClose} />
       <${Holds} s=${s} />
+      <${LinkedTo} s=${s} />
       <${Hedge} s=${s} after=${after} />
       <${History} s=${s} onClose=${onClose} />
     </div><//>`;

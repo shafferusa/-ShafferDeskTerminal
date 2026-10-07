@@ -14,7 +14,7 @@
 import { html, useEffect, useRef, useState } from '../vendor/preact-htm.js';
 import { bump, fmtMoney, fmtNum, fmtPrice, fmtQty, fmtTime, get, isNum, openOverlay, post, toast, toastError, useLive } from '../lib/core.js';
 import { Awaiting, Button, Check, Empty, ErrorNote, Field, Holdings, LineChart, Missing, Modal, Money, NavAffected, NavValue, Notice, Num, OrderStatus, Pill, Price, Prov, PURPOSE_LABEL, Seg, Select, StrategyStatus, Table, Tabs, Text } from '../lib/ui.js';
-import { openHedgeRequest } from './hedge.js';
+import { openHedgeRequest, protectionText, protectionWords, sourceWords, StrategyRef } from './hedge.js';
 import { openInstrument } from './instrument.js';
 import { openStrategy } from './strategy-detail.js';
 
@@ -201,38 +201,170 @@ function Borrowings({ items, rc, empty }) {
     { label: 'Interest and fees', align: 'r', title: 'Interest accrued and not yet paid, then interest and fees charged since the borrowing began', render: (b) => html`${amt('accrued', b.accrued, b.ccy)}${amt('interest to date', b.interestToDate, b.ccy)}${amt('fees to date', b.feesToDate, b.ccy)}` },
   ]} empty=${{ children: empty }} />`;
 }
+// The worksheet grid. With many Accounts the columns outgrow the page, so the Line column is pinned on
+// the left and the total on the right, the heading stays in view while the page scrolls, the Accounts
+// form one column group that folds into "Accounts, combined", and filters choose which Accounts are
+// drawn as columns. The combined column is the server's own figure for those Accounts together
+// (`accountsCombined`: what an Accounts-only scope reports as its total); nothing is added up here.
+// A filter changes what is drawn only: every Account stays inside the combined column and the total.
+const BS_GROUP_FROM = 3; // from this many Accounts in scope, they form a column group with filters
+const BS_COMBINE_OVER = 6; // with more Accounts than this beside Treasury, the group starts combined
+const BS_COMBINED = { id: 'accounts-combined', kind: 'combined', name: 'Accounts, combined' };
+/** The column choice is kept for the session, per Book: an Account id means nothing in another Book. */
+function bsLoad(bookId) {
+  let v = {};
+  try { v = JSON.parse(sessionStorage.getItem(`sdt.balance.${bookId}`) || '{}') || {}; } catch { /* nothing kept */ }
+  return { combined: typeof v.combined === 'boolean' ? v.combined : null, q: typeof v.q === 'string' ? v.q : '', off: Array.isArray(v.off) ? v.off.map(String) : [], on: typeof v.on === 'string' ? v.on : '', borrow: v.borrow === true, hideZero: v.hideZero === true };
+}
+function bsSave(bookId, v) { try { sessionStorage.setItem(`sdt.balance.${bookId}`, JSON.stringify(v)); } catch { /* no storage: the choice lasts until the page is left */ } }
+const hasBalance = (c) => Boolean(c) && c.byCurrency.length > 0;
+function Worksheet({ bs, book, whole, allOpen, cell, elimCell, elimCh, rates }) {
+  const rc = book.reportingCcy;
+  const [view, setView] = useState(() => bsLoad(book.id));
+  const [open, setOpen] = useState({});
+  const [choosing, setChoosing] = useState(false);
+  const [scrolls, setScrolls] = useState('');
+  const headRef = useRef(null), bodyRef = useRef(null);
+  const set = (patch) => { const next = { ...view, ...patch }; bsSave(book.id, next); setView(next); };
+  // The heading is its own table so it can stay at the top of the page; it follows the body sideways.
+  useEffect(() => {
+    const h = headRef.current, b = bodyRef.current;
+    if (!h || !b) return undefined;
+    const follow = (from, to) => () => { if (Math.abs(to.scrollLeft - from.scrollLeft) > 0.5) to.scrollLeft = from.scrollLeft; };
+    // Which sides have columns out of view, so the pinned columns can show that more lies under them.
+    const mark = () => setScrolls(b.scrollWidth > b.clientWidth + 1 ? ` scrolls${b.scrollLeft > 1 ? ' more-left' : ''}${b.scrollLeft + b.clientWidth < b.scrollWidth - 1 ? ' more-right' : ''}` : '');
+    const toHead = follow(b, h), onHead = follow(h, b);
+    const onBody = () => { toHead(); mark(); };
+    const measure = () => { mark(); toHead(); };
+    b.addEventListener('scroll', onBody, { passive: true });
+    h.addEventListener('scroll', onHead, { passive: true });
+    const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null;
+    if (ro) { ro.observe(b); if (b.firstElementChild) ro.observe(b.firstElementChild); }
+    measure();
+    return () => { b.removeEventListener('scroll', onBody); h.removeEventListener('scroll', onHead); if (ro) ro.disconnect(); };
+  }, []);
+
+  const cols = bs.columns, elim = bs.consolidated, showTotal = cols.length > 1;
+  const g = bs.accountsCombined || null;
+  const treasury = cols.find((c) => c.kind === 'treasury') || null;
+  const accts = cols.filter((c) => c.kind === 'account');
+  const grouped = Boolean(g) && accts.length >= BS_GROUP_FROM;
+  const combined = grouped && (view.combined ?? (Boolean(treasury) && accts.length > BS_COMBINE_OVER));
+  const showComb = grouped && Boolean(treasury); // without Treasury in scope the total already is the Accounts together
+  const totalName = whole ? 'Whole Book' : 'Total';
+  // Column filters. They apply to the Account columns only, and only to what is drawn.
+  const q = view.q.trim().toLowerCase();
+  const off = new Set(view.off);
+  const offN = accts.filter((c) => off.has(c.id)).length;
+  const onCells = view.on === 'assets' ? bs.assets.cells : view.on === 'liabilities' ? bs.liabilities.cells : bs.lines.find((l) => l.key === view.on)?.cells || null;
+  const on = onCells ? view.on : '';
+  const borrowers = new Set(bs.borrowings.map((b) => b.owner.id));
+  const match = (c) => (!q || c.name.toLowerCase().includes(q)) && !off.has(c.id) && (!onCells || hasBalance(onCells[c.id])) && (!view.borrow || borrowers.has(c.id));
+  const shown = !grouped ? accts : combined ? [] : accts.filter(match);
+  const hiddenN = grouped && !combined ? accts.length - shown.length : 0;
+  const dataCols = [treasury, ...shown, showComb ? BS_COMBINED : null].filter(Boolean);
+  const at = (r, c) => (c.kind === 'combined' ? r.comb : r.cells[c.id]);
+  // A rule on the left of the Accounts group and of the eliminations, once the columns are grouped.
+  const groupStart = grouped ? dataCols.find((c) => c.kind !== 'treasury') : null;
+  const colCls = (c) => `${c.kind === 'combined' ? ' bs-comb' : ''}${c === groupStart ? ' bs-edge' : ''}`;
+  const elimCls = grouped ? ' bs-edge' : '';
+  const span = 1 + dataCols.length + (elim ? 1 : 0) + (showTotal ? 1 : 0);
+  // Lines with no balance for the owners drawn (Treasury and the Account columns shown, or the Accounts together when combined).
+  const ownerCells = (r) => [treasury ? r.cells[treasury.id] : null, ...(combined ? [showComb ? r.comb : r.total] : shown.map((c) => r.cells[c.id]))];
+  const hiddenLines = grouped && view.hideZero ? bs.lines.filter((l) => !ownerCells({ ...l, comb: g.lines[l.key] }).some(hasBalance)) : [];
+  // Column widths, in digit widths, from the longest text a column can show (local-currency amounts
+  // included), so no amount is clipped and the heading table and the body table agree exactly.
+  const len = (c) => (!c ? 0 : Math.max(fmtMoney(c.rc, rc, { bare: true }).length, ...c.byCurrency.map((x) => fmtMoney(x.amount, x.ccy, { bare: true }).length),
+    c.complete ? 0 : Math.max(Math.ceil(0.75 * (17 + 5 * c.byCurrency.length)) + 2, ...c.byCurrency.map((x) => fmtMoney(x.amount, x.ccy).length)))); // a cell with no rate shows a pill and its local amounts
+  const everyRow = [...bs.lines, bs.assets, bs.liabilities, bs.netAssets, ...bs.representedBy];
+  const headCh = (name, wraps) => Math.ceil(0.85 * (wraps ? Math.max(...name.split(/\s+/).map((w) => w.length)) : name.length));
+  const unitCh = (c) => Math.max(9, headCh(c.name, grouped && c.kind !== 'treasury'), ...everyRow.map((r) => len(r.cells[c.id])));
+  const acctCh = grouped ? Math.max(...accts.map(unitCh)) : 0; // one width for every Account column of a group
+  const combCh = showComb ? Math.max(9, ...[...Object.values(g.lines), g.assets, g.liabilities, g.netAssets, ...Object.values(g.representedBy)].map(len)) + 1 : 0;
+  const chOf = (c) => (c.kind === 'combined' ? combCh : grouped && c.kind === 'account' ? acctCh : unitCh(c));
+  const totalCh = Math.max(headCh(totalName), ...everyRow.map((r) => len(r.total))) + 1;
+  const widths = [...dataCols.map(chOf), ...(elim ? [Math.max(12, Math.ceil(0.9 * elimCh))] : []), ...(showTotal ? [totalCh] : [])]; // the elimination note is in smaller type
+  const tableStyle = `min-width:calc(var(--bs-label) + ${widths.reduce((a, b) => a + b, 0)}ch + ${widths.length} * var(--bs-gut))`;
+  const colgroup = () => html`<colgroup><col />${widths.map((w) => html`<col style=${`width:calc(${w}ch + var(--bs-gut))`} />`)}</colgroup>`;
+
+  const row = (r, { strong = false, elimination = '' } = {}) => {
+    const drawn = [...dataCols.map((c) => at(r, c)), r.total];
+    const fx = drawn.some((c) => foreign(c, rc)), shownFx = fx && (allOpen || open[r.key]);
+    const ccys = [...new Set(drawn.flatMap((c) => c.byCurrency.map((x) => x.ccy)))].sort((a, b) => (a === rc ? -1 : b === rc ? 1 : a < b ? -1 : 1));
+    const loc = (c, ccy) => { const x = c?.byCurrency.find((y) => y.ccy === ccy); return x ? fmtMoney(x.amount, ccy, { bare: true }) : ''; }; // the row is labelled with its currency
+    const rule = strong ? ' bs-rule' : '';
+    return html`<tr><td class=${`wrap bs-l${strong ? ' strong' : ''}${rule}`} title=${r.note || undefined}>${r.label}${fx && !allOpen ? html` <span class="sub" style="font-weight:400">${link(shownFx ? 'hide currencies' : 'show currencies', () => setOpen((o) => ({ ...o, [r.key]: !o[r.key] })), 'The local-currency amounts behind this line')}</span>` : null}${r.note ? html`<div class="sub bs-note" style="font-weight:400">${r.note}</div>` : null}</td>
+      ${dataCols.map((c) => html`<td class=${`r${colCls(c)}${rule}`}>${cell(at(r, c))}</td>`)}${elim ? html`<td class=${`r${elimCls}${rule}`}>${elimination}</td>` : null}${showTotal ? html`<td class=${`r bs-r${strong ? ' strong' : ''}${rule}`}>${cell(r.total)}</td>` : null}</tr>
+      ${shownFx ? ccys.map((ccy) => html`<tr><td class="wrap muted bs-l" style="padding-left:26px">in ${ccy}${ccy !== rc ? html` <span class="sub">${isNum(rates.get(ccy)) ? `at ${fxText(rates.get(ccy))} ${rc}` : `no FX rate to ${rc}`}</span>` : null}</td>${dataCols.map((c) => html`<td class=${`r muted${colCls(c)}`}>${loc(at(r, c), ccy)}</td>`)}${elim ? html`<td class=${elimCls}></td>` : null}${showTotal ? html`<td class="r muted bs-r">${loc(r.total, ccy)}</td>` : null}</tr>`) : null}`;
+  };
+  const group = (label, note) => html`<tr class="group"><td colspan=${span}><span class="bs-stick">${label}${note ? html` <span class="sub" style="font-weight:400">${note}</span>` : null}</span></td></tr>`;
+  const section = (id) => bs.lines.filter((l) => l.section === id && !hiddenLines.includes(l)).map((l) => row({ ...l, comb: g?.lines[l.key] }));
+
+  // Heading: one row, or two when the Accounts are a group (the group over its columns).
+  const acctCols = shown.length + (showComb ? 1 : 0);
+  const two = grouped && acctCols > 0;
+  const rs = two ? 2 : undefined;
+  const thUnit = (c, rowspan) => html`<th class="r" rowspan=${rowspan} title=${c.kind === 'treasury' ? 'Treasury\'s own balances. Balances of the Accounts are in their own columns, never here.' : `Balances of the Account ${c.name}`}>${c.name}</th>`;
+  const fold = (to) => html`<button type="button" class="btn link" title=${to ? 'Draw the Accounts as one column, added together' : 'Draw one column for each Account'} onClick=${() => set({ combined: to })}>${to ? 'Combine into one column' : 'Show each Account'}</button>`;
+  const heading = html`<tr><th class="bs-l" rowspan=${rs}>Line</th>${treasury ? thUnit(treasury, rs) : null}
+      ${two ? html`<th class=${`bs-group${combined ? ' r' : ''}`} colspan=${acctCols}><span class="bs-stick">${hiddenN ? `${shown.length} of ${accts.length} Accounts shown` : plural(accts.length, 'Account')} ${fold(!combined)}</span></th>` : shown.map((c) => thUnit(c))}
+      ${elim ? html`<th class=${`r${elimCls}`} rowspan=${rs} title="Balances inside the Book that are removed so they are not counted in the Book total">Eliminations</th>` : null}
+      ${showTotal ? html`<th class="r bs-r" rowspan=${rs}>${totalName}${grouped && !two ? html`<div class="sub" style="font-weight:400">${plural(accts.length, 'Account')} together</div>` : null}</th>` : null}</tr>
+    ${two ? html`<tr class="bs-sub">${shown.map((c) => thUnit(c))}${showComb ? html`<th class="r bs-comb" title=${`The ${accts.length} Accounts together: each line is the sum of their own balances. Transfers between these Accounts cancel in the funding line; funding from Treasury does not.`}>${BS_COMBINED.name}</th>` : null}</tr>` : null}`;
+
+  // Filters and the count of what they hide.
+  const filter = (patch) => set({ ...patch, combined: false });
+  const filtering = Boolean(q) || offN > 0 || Boolean(on) || view.borrow;
+  const inScope = (id) => accts.some((c) => c.id === id);
+  const onOptions = [{ value: '', label: 'With or without balances' }, { value: 'assets', label: 'Any asset', group: 'Only with a balance under' }, { value: 'liabilities', label: 'Any liability', group: 'Only with a balance under' },
+    ...bs.lines.map((l) => ({ value: l.key, label: l.label, group: l.section === 'assets' ? 'Only with a balance on the asset line' : 'Only with a balance on the liability line' }))];
+  const tools = grouped ? html`<div class="bs-tools">
+      <span class="note">Account columns</span>
+      <${Seg} value=${combined ? 'one' : 'each'} onChange=${(v) => set({ combined: v === 'one' })} options=${[{ value: 'one', label: 'Combined', title: 'One column for the Accounts added together' }, { value: 'each', label: 'One each', title: 'One column for each Account' }]} />
+      <div class="bs-find"><${Text} type="search" value=${view.q} placeholder="Find Accounts by name" onInput=${(v) => filter({ q: v })} /></div>
+      <div class="bs-on"><${Select} value=${on} onChange=${(v) => filter({ on: v })} options=${onOptions} /></div>
+      <span title="Accounts that owe a cash loan, a repo or borrowed securities"><${Check} checked=${view.borrow} onChange=${(v) => filter({ borrow: v })}>Only with borrowings<//></span>
+      <${Button} small onClick=${() => setChoosing(!choosing)}>${choosing ? 'Close the list' : offN ? `Choose Accounts, ${accts.length - offN} of ${accts.length} ticked` : 'Choose Accounts'}<//>
+    </div>
+    ${choosing ? html`<div class="bs-choose"><div class="row"><span class="note">Tick the Accounts to draw as columns. An unticked Account stays in the totals.</span>
+        <${Button} small disabled=${!offN} onClick=${() => filter({ off: view.off.filter((id) => !inScope(id)) })}>Tick all<//><${Button} small disabled=${offN === accts.length} onClick=${() => filter({ off: [...new Set([...view.off, ...accts.map((c) => c.id)])] })}>Untick all<//></div>
+      <div class="bs-chooselist">${accts.map((c) => html`<${Check} checked=${!off.has(c.id)} onChange=${(v) => filter({ off: v ? view.off.filter((id) => id !== c.id) : [...view.off, c.id] })}>${c.name}<//>`)}</div></div>` : null}
+    <div class="bs-status"><div class="grow">${combined ? (showComb ? `The ${accts.length} Accounts are drawn as one column, their own balances added together. Transfers between them cancel in it.` : `The ${accts.length} Account columns are folded away. The Total column is these Accounts together.`)
+      : hiddenN ? html`Showing ${shown.length} of ${accts.length} Accounts as columns. <b>${plural(hiddenN, 'Account')} ${hiddenN === 1 ? 'is' : 'are'} hidden</b> and still counted in ${showComb ? 'the combined column and in ' : ''}the ${totalName} column.` : `Showing all ${accts.length} Accounts, one column each.`}
+      ${hiddenLines.length ? html` <b>${plural(hiddenLines.length, 'line')} with no balance in the columns shown ${hiddenLines.length === 1 ? 'is' : 'are'} hidden</b>; the totals still include every line.` : null}
+      ${filtering && !combined ? html` <button type="button" class="btn link" onClick=${() => set({ q: '', on: '', borrow: false, off: view.off.filter((id) => !inScope(id)) })}>Show all ${accts.length} Accounts</button>` : null}</div>
+      <${Check} checked=${view.hideZero} onChange=${(v) => set({ hideZero: v })}>Hide lines with no balance in the columns shown<//></div>` : null;
+
+  return html`<div class=${`bs${scrolls}`}>${tools}
+    <div class="bs-head" ref=${headRef}><table class="ledger margin bs-grid" style=${tableStyle}>${colgroup()}<thead>${heading}</thead></table></div>
+    <div class="bs-body" ref=${bodyRef} tabindex="0" role="region" aria-label="Balance sheet lines. Scrolls sideways when the columns do not fit."><table class="ledger margin bs-grid" style=${tableStyle}>${colgroup()}<tbody>
+      ${group('Assets')}${section('assets')}${row({ key: 'assets', label: 'Total assets', ...bs.assets, comb: g?.assets }, { strong: true })}
+      ${group('Liabilities', 'amounts owed, shown as positive numbers')}${section('liabilities')}${row({ key: 'liabilities', label: 'Total liabilities', ...bs.liabilities, comb: g?.liabilities }, { strong: true })}
+      ${row({ key: 'net', label: 'Net assets', ...bs.netAssets, comb: g?.netAssets }, { strong: true })}
+      ${group('Represented by')}${bs.representedBy.map((r) => row({ ...r, comb: g?.representedBy[r.key] }, r.key === 'internal' ? { elimination: elimCell } : {}))}
+      ${row({ key: 'net2', label: 'Net assets, as above', ...bs.netAssets, comb: g?.netAssets }, { strong: true })}
+    </tbody></table></div>
+  </div>`;
+}
 function BalanceTab({ book, scope, whole, multi, scopeName, openBalance }) {
   const rc = book.reportingCcy;
   const res = useLive(async () => ({ ...(await get(`/api/books/${book.id}/accounting/balance`, { scope })), key: scope }), [book.id, scope]);
-  const [open, setOpen] = useState({});
   const [allOpen, setAllOpen] = useState(false);
   const bs = res.data?.key === scope ? res.data : null;
   if (!bs) return html`<div class="stack"><${ErrorNote} error=${res.error} />${res.error ? null : html`<${Empty}>Loading the balance sheet…<//>`}</div>`;
-  const cols = bs.columns, elim = bs.consolidated, showTotal = cols.length > 1;
-  const span = 1 + cols.length + (elim ? 1 : 0) + (showTotal ? 1 : 0);
+  const cols = bs.columns, elim = bs.consolidated;
   const rates = new Map([[rc, 1], ...bs.fxRates.map((r) => [r.ccy, r.rate])]);
   const cellsOf = (r) => [...cols.map((c) => r.cells[c.id]), r.total];
   const internal = bs.representedBy.find((x) => x.key === 'internal');
   const anyForeign = [...bs.lines, bs.assets, bs.liabilities, bs.netAssets, ...bs.representedBy].some((r) => cellsOf(r).some((c) => foreign(c, rc)));
   const cell = (c) => html`<${Cell} c=${c} rc=${rc} rates=${rates} />`;
-  const rule = 'border-top:1.5px solid var(--rule-strong)';
-  const row = (r, { key = r.key, label = r.label, strong = false, elimCell = '' } = {}) => {
-    const fx = cellsOf(r).some((c) => foreign(c, rc)), shown = fx && (allOpen || open[key]);
-    const ccys = [...new Set(cellsOf(r).flatMap((c) => c.byCurrency.map((x) => x.ccy)))].sort((a, b) => (a === rc ? -1 : b === rc ? 1 : a < b ? -1 : 1));
-    const loc = (c, ccy) => { const x = c?.byCurrency.find((y) => y.ccy === ccy); return x ? fmtMoney(x.amount, ccy) : ''; };
-    const st = strong ? rule : '';
-    return html`<tr><td class=${`wrap ${strong ? 'strong' : ''}`} style=${st}>${label}${fx && !allOpen ? html` <span class="sub" style="font-weight:400">${link(shown ? 'hide currencies' : 'show currencies', () => setOpen((o) => ({ ...o, [key]: !o[key] })), 'The local-currency amounts behind this line')}</span>` : null}${r.note ? html`<div class="sub" style="font-weight:400">${r.note}</div>` : null}</td>
-      ${cols.map((c) => html`<td class="r" style=${st}>${cell(r.cells[c.id])}</td>`)}${elim ? html`<td class="r" style=${st}>${elimCell}</td>` : null}${showTotal ? html`<td class=${`r ${strong ? 'strong' : ''}`} style=${`${st};border-left:1px solid var(--rule)`}>${cell(r.total)}</td>` : null}</tr>
-      ${shown ? ccys.map((ccy) => html`<tr><td class="muted" style="padding-left:26px">in ${ccy}${ccy !== rc ? html` <span class="sub">${isNum(rates.get(ccy)) ? `at ${fxText(rates.get(ccy))} ${rc}` : `no FX rate to ${rc}`}</span>` : null}</td>${cols.map((c) => html`<td class="r muted">${loc(r.cells[c.id], ccy)}</td>`)}${elim ? html`<td></td>` : null}${showTotal ? html`<td class="r muted" style="border-left:1px solid var(--rule)">${loc(r.total, ccy)}</td>` : null}</tr>`) : null}`;
-  };
-  const group = (label, note) => html`<tr class="group"><td colspan=${span}>${label}${note ? html` <span class="sub" style="font-weight:400">${note}</span>` : null}</td></tr>`;
-  const section = (id) => bs.lines.filter((l) => l.section === id).map((l) => row(l));
   // Internal funding: what was advanced and what was received, shown so the elimination can be checked.
-  const side = (sign) => Math.round(Object.values(internal.cells).reduce((a, c) => a + (Math.sign(c.rc) === sign ? Math.abs(c.rc) : 0), 0) * 100) / 100;
+  // The server reports both sides; the sum over the cells is the same figure, kept for an older response.
+  const side = (sign) => (internal.gross ? (sign > 0 ? internal.gross.received : internal.gross.advanced) : Math.round(Object.values(internal.cells).reduce((a, c) => a + (Math.sign(c.rc) === sign ? Math.abs(c.rc) : 0), 0) * 100) / 100);
   const unbalanced = internal.residual.length > 0;
   const elimCell = elim ? html`<${Pill} tone=${unbalanced ? 'bad' : 'ok'}>${unbalanced ? 'does not cancel' : 'eliminated'}<//>
     <div class="sub">${fmtMoney(side(-1), rc, { bare: true })} advanced</div><div class="sub">${fmtMoney(side(1), rc, { bare: true })} received</div>
-    ${unbalanced ? html`<div class="sub loss">left over ${internal.residual.map((x) => fmtMoney(x.amount, x.ccy)).join(', ')}</div>` : null}` : '';
+    ${unbalanced ? html`<div class="sub loss" style="white-space:normal">left over ${internal.residual.map((x) => fmtMoney(x.amount, x.ccy)).join(', ')}</div>` : null}` : '';
   const cash = bs.borrowings.filter((b) => !b.securities).length;
   const over = bs.oversight && (bs.oversight.accounts.length || bs.oversight.accountBorrowings.length) ? bs.oversight : null;
   return html`<div class="stack">
@@ -240,19 +372,11 @@ function BalanceTab({ book, scope, whole, multi, scopeName, openBalance }) {
       <span class="grow"></span>${anyForeign ? html`<${Check} checked=${allOpen} onChange=${setAllOpen}>Show local-currency amounts<//>` : null}</div>
     ${unbalanced ? html`<${Notice} tone="err"><b>Internal funding does not cancel.</b> ${internal.residual.map((x) => fmtMoney(x.amount, x.ccy)).join(', ')} is left over between Treasury and the Accounts, which should net to zero inside the Book. Find the transfer recorded on one side only under Full history, filtered to transfer events, and reverse it.<//>` : null}
     <${NavAffected} nav=${bs.nav} />
-    <${Section} title=${`Balance sheet of ${scopeName}`} note=${elim ? 'Consolidation worksheet: each owner\'s own balances, the eliminations, and the Book total.' : multi ? 'Each owner\'s own balances, and their total.' : 'Its own balances only.'}
+    <div class="bs-fit"><${Section} title=${`Balance sheet of ${scopeName}`} note=${elim ? 'Consolidation worksheet: each owner\'s own balances, the eliminations, and the Book total.' : multi ? 'Each owner\'s own balances, and their total.' : 'Its own balances only.'}
       actions=${html`<span class="nowrap" style="white-space:nowrap"><span class="note">Net assets</span> <${NavValue} nav=${bs.nav} ccy=${rc} cls="strong" /></span>`}>
-      ${!bs.lines.length ? html`<${Empty} title="Nothing on this balance sheet yet">Deposit capital into Treasury, then fund the Accounts. Cash, positions and borrowings appear here as they are recorded.<//>` : html`<div class="tablewrap"><table class="ledger margin">
-        <thead><tr><th>Line</th>${cols.map((c) => html`<th class="r" title=${c.kind === 'treasury' ? 'Treasury\'s own balances. Balances of the Accounts are in their own columns, never here.' : `Balances of the Account ${c.name}`}>${c.name}</th>`)}
-          ${elim ? html`<th class="r" title="Balances inside the Book that are removed so they are not counted in the Book total">Eliminations</th>` : null}${showTotal ? html`<th class="r" style="border-left:1px solid var(--rule)">${whole ? 'Whole Book' : 'Total'}</th>` : null}</tr></thead>
-        <tbody>
-          ${group('Assets')}${section('assets')}${row(bs.assets, { key: 'assets', label: 'Total assets', strong: true })}
-          ${group('Liabilities', 'amounts owed, shown as positive numbers')}${section('liabilities')}${row(bs.liabilities, { key: 'liabilities', label: 'Total liabilities', strong: true })}
-          ${row(bs.netAssets, { key: 'net', label: 'Net assets', strong: true })}
-          ${group('Represented by')}${bs.representedBy.map((r) => row(r, r.key === 'internal' ? { elimCell } : {}))}
-          ${row(bs.netAssets, { key: 'net2', label: 'Net assets, as above', strong: true })}
-        </tbody></table></div>`}
-    <//>
+      ${!bs.lines.length ? html`<${Empty} title="Nothing on this balance sheet yet">Deposit capital into Treasury, then fund the Accounts. Cash, positions and borrowings appear here as they are recorded.<//>`
+        : html`<${Worksheet} bs=${bs} book=${book} whole=${whole} allOpen=${allOpen} cell=${cell} elimCell=${elimCell} elimCh=${Math.max(...[-1, 1].map((s) => `${fmtMoney(side(s), rc, { bare: true })} advanced`.length))} rates=${rates} />`}
+    <//></div>
     ${elim ? html`<${Notice}><b>What consolidation did.</b> Internal funding between Treasury and the Accounts (${fmtMoney(side(-1), rc)} advanced, ${fmtMoney(side(1), rc)} received) is eliminated, so it is not in the Book total. External borrowing is counted once: ${cash ? `each of the ${plural(cash, 'cash borrowing')} below sits in the column of the Treasury or Account that owes it, and Treasury's column does not include an Account's borrowing` : 'no cash is borrowed at present'}. Interest and fees on a borrowing are charged once, to its owner.<//>` : null}
     <${Section} title="Borrowings" note=${`Each row is one record, however many views show it. Its ID is the same on its owner's balance sheet, in Treasury's oversight and in the Book total, where it is counted once.`}>
       <${Borrowings} items=${bs.borrowings} rc=${rc} empty=${over ? 'Treasury has no borrowing of its own. Borrowings originated by Accounts are listed under oversight below; they are not Treasury\'s liabilities.' : `Nothing is borrowed by ${scopeName}. A loan, repo or securities borrow appears here once its financing leg fills.`} />
@@ -293,10 +417,28 @@ function holdCell(p) {
   return out.length ? html`<div style="white-space:normal;min-width:125px;max-width:150px">${out.map((x) => html`<div class="sub">${x}</div>`)}</div>` : '';
 }
 // A hedge request still open for the position's strategy instance stays visible on the row.
-const HEDGE = { awaiting: ['warn', 'hedge requested, awaiting Shaffer Hedge'], received: ['pen', 'hedge recommendation ready'], error: ['bad', 'hedge request failed'] };
+// The pill says the request's one state; for a recommendation it also shows where it came from, when it was
+// received, its version and whether it is still current, so the row never claims more than is available.
+const HEDGE = {
+  incomplete: ['warn', 'hedge request incomplete'], awaiting_connection: ['', 'hedge request awaiting connection'], ready_for_analysis: ['pen', 'hedge request ready for analysis'],
+  recommendation_ready: ['pen', 'hedge recommendation ready'], executing: ['pen', 'hedge executing'], error: ['bad', 'hedge request failed'],
+};
 function HedgePill({ r, onDone }) {
-  const [tone, label] = HEDGE[r.status] || ['', `hedge request ${words(r.status)}`];
-  return link(html`<span class=${`pill ${tone}`} style="white-space:normal;max-width:190px">${label}</span>`, () => openHedgeRequest(r.id, { onDone }), `${r.status === 'received' ? `${plural(r.packages, 'package')} to review. ` : r.message ? `${r.message} ` : ''}Open hedge request ${r.id}.`);
+  const stale = r.freshness?.status === 'stale';
+  const [tone, label] = stale ? ['warn', 'hedge recommendation stale'] : HEDGE[r.state] || ['', `hedge request ${words(r.state || r.status)}`];
+  const s = r.source;
+  return html`${link(html`<span class=${`pill ${tone}`} style="white-space:normal;max-width:190px" data-hedge-state=${r.state}>${label}</span>`, () => openHedgeRequest(r.id, { onDone }), `${r.state === 'recommendation_ready' ? `${plural(r.packages, 'package')} to review. ` : r.message ? `${r.message} ` : ''}Open hedge request ${r.id}.`)}
+    ${r.state === 'incomplete' ? html`<div class="rel-line" style="max-width:190px">Needs ${r.missing.join(', ')}. Not sent.</div>` : null}
+    ${s ? html`<div class="rel-line" style="max-width:190px">From ${sourceWords(s)}, received ${fmtTime(s.receivedAt)}, version ${s.version || 'not supplied'}, ${stale ? `stale: ${r.freshness.changes.join(' ')}` : 'current'}${r.freshness?.cached ? `. ${r.freshness.cachedNote}` : ''}</div>` : null}`;
+}
+// Relationships of a position row, from stored identifiers: its hedge request (on the position the request is for),
+// what protects it or what it protects, and what a financing leg funds. A hedge counts only through an allocation.
+function PositionLinks({ p, reload }) {
+  const mine = p.hedgeRequest && p.purpose === 'primary' && (!p.hedgeRequest.primary?.positionId || p.hedgeRequest.primary.positionId === p.positionId);
+  const w = protectionWords(p.protection);
+  return html`${mine ? html`<div style="margin-top:2px"><${HedgePill} r=${p.hedgeRequest} onDone=${reload} /></div>` : null}
+    ${w ? html`<div style="margin-top:2px"><span class=${`pill ${w.tone}`} style="white-space:normal;max-width:190px" data-protection=${p.protection.assessment} title=${protectionText(p.protection)}>${w.text}</span>${p.protection.protectedUnits > 0 || p.protection.assessment === 'unavailable' ? html`<div class="rel-line" style="max-width:190px">Remaining exposure ${fmtQty(p.protection.remainingUnits)} of ${fmtQty(p.protection.exposureUnits)} units</div>` : null}</div>` : null}
+    ${(p.relationships || []).map((r) => html`<div class="rel-line" style="max-width:190px" data-relation=${r.kind}>${r.text}</div>`)}`;
 }
 // Pricing coverage (is there a price now?) and lifecycle support (what the paper engine simulates) are separate facts.
 const LIFECYCLE = { full: ['ok', 'full'], partial: ['warn', 'partly manual'], manual: ['warn', 'manual inputs'], planned: ['', 'not yet'] };
@@ -317,7 +459,7 @@ function PositionsTab({ book, d, units, multi, owner, setOwner, reload }) {
   let last = null;
   for (const p of sorted) {
     const key = `${p.owner.id}|${p.strategyId}`;
-    if (key !== last) rows.push({ _group: html`${unitLabel(p.owner)}: <${StratLink} s=${p.strategy} /> ${p.strategy ? html`<span class="sub" style="font-weight:400">${sentence(p.strategy.template)}${p.strategy.investmentStrategy?.name ? `, ${p.strategy.investmentStrategy.name}` : ''}</span> <${StrategyStatus} status=${p.strategy.status} />` : ''}` });
+    if (key !== last) rows.push({ _group: html`${unitLabel(p.owner)}: <${StratLink} s=${p.strategy} /> ${p.strategy ? html`<span class="sub" style="font-weight:400">${sentence(p.strategy.template)}${p.strategy.investmentStrategy?.name ? html`, <${StrategyRef} s=${p.strategy.investmentStrategy} />` : ''}</span> <${StrategyStatus} status=${p.strategy.status} />` : ''}` });
     last = key;
     rows.push(p);
   }
@@ -343,7 +485,7 @@ function PositionsTab({ book, d, units, multi, owner, setOwner, reload }) {
         OWNER((p) => unitLabel(p.owner)),
         { label: 'Instrument and role', render: (p) => html`<div class="sym clip" style="max-width:190px"><${InstLink} i=${p.instrument} /></div>
           <div class="sub clip" style="max-width:190px" title=${p.instrument.name}><${Pill} tone=${p.purpose === 'hedge' ? 'pen' : p.purpose === 'financing' ? 'warn' : ''}>${PURPOSE_LABEL[p.purpose] || p.purpose}<//> ${p.instrument.symbol ? p.instrument.name : p.support?.productName || p.family}</div>
-          ${p.hedgeRequest && p.purpose !== 'financing' ? html`<div style="margin-top:2px"><${HedgePill} r=${p.hedgeRequest} onDone=${reload} /></div>` : null}` },
+          <${PositionLinks} p=${p} reload=${reload} />` },
         { label: 'Quantity', align: 'r', render: (p) => html`${fmtQty(p.qty)}<div class=${`sub ${p.direction === 'long' ? 'gain' : p.direction === 'short' ? 'loss' : ''}`} style="white-space:normal;max-width:84px;margin-left:auto">${p.direction}</div>` },
         { label: 'Average cost', align: 'r', render: (p) => (p.ledgerCarried ? '' : html`${isNum(p.avgCost) ? fmtPrice(p.avgCost) : html`<${Missing} reason="No cost basis" />`}${p.family === 'future' ? html`<div class="sub">last settlement</div>` : p.family === 'forward' ? html`<div class="sub">dealt price</div>` : null}`) },
         { label: 'Current market price', align: 'r', title: 'Hover a price for its units and currency', render: (p) => (p.ledgerCarried ? '' : html`<span title=${`${p.priceUnits || 'price'}, ${p.ccy}`}><${Price} obs=${p.priceObs} value=${p.price} reason=${p.missingReason || 'No price available'} /></span>`) },

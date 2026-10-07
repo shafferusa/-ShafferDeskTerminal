@@ -10,12 +10,15 @@
 import { j, pj } from '../db/db.js';
 import { makeObservation, markOf } from '../data/observation.js';
 import { fmt } from './books.js';
+import { compare, compareLegacyCash, confirmedLeg, refusalMessage, snapshotOf, tolerancesOf } from './confirmation.js';
 import { computeFees, estimateFill } from './fillmodel.js';
 import { analyzePackage, optionRequirement } from './payoff.js';
 import { TEMPLATES, buildLegs, getTemplate } from './templates.js';
 import { AppError, isZero, money, need, newId, num, round, uuid } from './util.js';
 import { fmtQty } from '../products/common.js';
 import { calendarInfo } from '../products/security.js';
+import { closedReason, isBusinessDay } from '../quant/calendar.js';
+import { resolveSettlement } from './settlement.js';
 
 const BUY = new Set(['buy', 'buy_to_cover']);
 const ARR_OPEN = new Set(['loan', 'repo_open', 'lend_sec']);
@@ -206,7 +209,7 @@ export function createPackages(app) {
 
     const token = input.clientToken || uuid();
     const name = input.name || attach?.name || defaultName(tpl, und, legs);
-    return {
+    const result = {
       token,
       bookId: book.id, unitId: unit.id, unit: { id: unit.id, name: unit.name, kind: unit.kind }, book: { id: book.id, name: book.name, reportingCcy: book.reporting_ccy },
       template: tpl.id, templateName: tpl.name, name, edited, attachTo: attach?.id || null, intent: input.intent || (attach ? 'adjust' : 'open'),
@@ -222,6 +225,10 @@ export function createPackages(app) {
       data: { market: app.data.market.state().connection, message: app.data.market.state().message },
       input: sanitizeInput(input),
     };
+    // What a confirmation of this preview confirms: the displayed figures of every leg and of the
+    // package, with the Book's tolerances. The confirmation sends it back as `expected`.
+    result.confirmation = snapshotOf(result, book);
+    return result;
   }
 
   const needsCash = (l) => l.kind === 'trade' && (BUY.has(l.action) || l.action === 'sell_short' || l.action === 'sell');
@@ -262,6 +269,7 @@ export function createPackages(app) {
     const out = [];
     const cashEffect = {}; // ccy -> signed cash the package nets to (excluding restricted proceeds)
     const needs = {}; // ccy -> components
+    const collateralCalls = new Map(); // posting unit and currency -> independent amount this package calls for at once
     const bump = (ccy, key, x) => { needs[ccy] = needs[ccy] || { purchases: 0, proceeds: 0, restrictedProceeds: 0, fees: 0, margin: 0, collateral: 0, reserved: 0, financingIn: 0, financingOut: 0 }; needs[ccy][key] += x; };
     let anyUnknownCash = false;
     const payoffLegs = [];
@@ -287,13 +295,20 @@ export function createPackages(app) {
           waitingOnLimit: Boolean(fe.waitingOnLimit), waitingOnStop: Boolean(fe.waitingOnStop), observation: obs ? app.data.present(obs) : null,
           missing: refPrice === null,
         };
-        const settleDate = plugin.settleDate(app, inst, today, book);
+        // Settlement: the instrument's convention, or the date / lag stated for this trade (l.settle),
+        // validated against the instrument's settlement calendar. A calendar conflict blocks the preview.
+        const stl = resolveSettlement(app, { inst, book, tradeDate: today, stated: l.settle || null });
+        const settleDate = stl.date;
         row.settleDate = settleDate;
+        row.settle = stl.stated;
+        row.settlement = { date: stl.date, lag: stl.lag, basis: stl.basis, label: stl.label, stated: stl.stated, standard: stl.standard, calendarId: stl.calendar.id, conflict: stl.conflicts[0]?.message || null };
+        for (const cf of stl.conflicts) check('error', cf.code, `Leg ${l.n}: ${cf.message}`, l.n);
         row.currency = inst.trading_ccy;
-        const cal = plugin.calendarInfo ? plugin.calendarInfo(inst) : calendarInfo(inst);
+        const cal = calendarInfo(inst);
         row.calendar = cal;
-        if (cal.fallback) check('warning', 'calendar-fallback', `Leg ${l.n}: the settlement date ${settleDate} for ${inst.symbol || inst.name} was worked out on weekends only. ${cal.note || 'No holiday calendar exists for its market.'}`, l.n);
-        else if (cal.note) check('info', 'calendar-approximate', `Leg ${l.n}: settlement calendar for ${inst.symbol || inst.name}: ${cal.label}. ${cal.note}`, l.n);
+        if (!isBusinessDay(today, cal.trading.id)) check('warning', 'not-trading-day', `Leg ${l.n}: today, ${today}, is ${closedReason(today, cal.trading.id)}, not a trading day on the trading calendar of ${inst.symbol || inst.name} (${cal.trading.id}). ${app.data.session(inst.id)?.state === 'open' || stated !== null ? 'The price source reports the market open (or a fill price is stated), so the order can still fill today; its settlement date is counted from the day it fills.' : 'The order waits for the market\'s next session; its settlement date is then counted from the day it fills.'}`, l.n);
+        if (cal.settlement.fallback) check('warning', 'calendar-fallback', `Leg ${l.n}: the settlement date ${settleDate} for ${inst.symbol || inst.name} was worked out on weekends only. ${cal.settlement.note || 'No holiday calendar exists for its market.'}`, l.n);
+        else if (cal.settlement.note) check('info', 'calendar-approximate', `Leg ${l.n}: settlement calendar for ${inst.symbol || inst.name}: ${cal.settlement.label}. ${cal.settlement.note}`, l.n);
         if (refPrice === null) {
           // Notional of a swap, CDS or forward does not depend on a price, so it can still be shown.
           if (['swap', 'cds', 'forward'].includes(inst.family)) {
@@ -302,6 +317,12 @@ export function createPackages(app) {
             row.econNotes = e0.notes || [];
             // Collateral is a share of notional, so it is known without a price.
             if (e0.initialMargin > 0) { row.initialMargin = e0.initialMargin; bump(inst.trading_ccy, 'margin', e0.initialMargin); }
+            // The collateral basis the contract states, and what it calls for, do not wait for a price either.
+            app.agreements.addToPreview(e0.collateral, { row, leg: l.n, check, bump, calls: collateralCalls });
+          } else if (inst.family === 'otcoption') {
+            const e0 = plugin.economics(app, { inst, action: l.action, qty: l.qty, price: 0, unit, strategyId: attach?.id || '', tradeDate: today, settleDate, book });
+            if (e0.initialMargin > 0) { row.initialMargin = e0.initialMargin; bump(inst.trading_ccy, 'margin', e0.initialMargin); }
+            app.agreements.addToPreview(e0.collateral, { row, leg: l.n, check, bump, calls: collateralCalls });
           }
           anyUnknownCash = true;
           check('warning', 'no-price', `Leg ${l.n}: no price for ${inst.symbol || inst.name}. ${connected ? 'No observation is available.' : `${awaiting}.`} The leg would wait as a working order; enter a manual price or state a fill price to execute it.`, l.n);
@@ -313,6 +334,8 @@ export function createPackages(app) {
           Object.assign(row, { gross: money(econ.principal, econ.ccy), cash: money(econ.cash, econ.ccy), accrued: money(econ.accrued || 0, econ.ccy), notional: econ.notional !== null && econ.notional !== undefined ? money(econ.notional, econ.ccy) : null, notionalBasis: econ.notionalBasis || null, exposure: econ.exposure ?? null, initialMargin: econ.initialMargin ?? 0, fees, feeTotal: money(feeTotal, econ.ccy), econNotes: econ.notes || [], otherCash: econ.otherCash || [] });
           const ccy = econ.ccy;
           bump(ccy, 'fees', feeTotal);
+          // OTC collateral: the basis that applies, its requirement, and any check that blocks (no basis stated, agreement of another Book, independent amount not covered).
+          app.agreements.addToPreview(econ.collateral, { row, leg: l.n, check, bump, calls: collateralCalls });
           if (inst.family === 'future') bump(ccy, 'margin', Math.max(econ.initialMargin || 0, 0));
           else if (econ.initialMargin > 0) { bump(ccy, 'margin', econ.initialMargin); if (econ.cash < 0) bump(ccy, 'purchases', -econ.cash); else if (econ.cash > 0) bump(ccy, 'proceeds', econ.cash); }
           else if (l.action === 'sell_short') {
@@ -384,6 +407,11 @@ export function createPackages(app) {
           if (!ro) check('warning', 'no-rate', `Leg ${l.n}: no fixing for ${inst.terms.referenceRate}. ${connected ? '' : `${awaiting}. `}Interest will not accrue until a rate is supplied or entered.`, l.n);
           else row.dailyCost = money((l.qty * (ro.value / 100 + (inst.terms.spread || 0))) / 360, ccy);
         }
+        // The financing terms as displayed and confirmed: amount, rate and maturity of this leg.
+        if (l.kind !== 'lend_sec') {
+          const fx0 = inst.terms.rateType === 'floating' ? app.data.rate(inst.terms.referenceRate) : null;
+          row.financing = { amount: row.cash ?? null, ccy, rateType: inst.terms.rateType || null, rate: inst.terms.rateType === 'fixed' ? inst.terms.rate ?? null : null, referenceRate: inst.terms.rateType === 'floating' ? inst.terms.referenceRate || null : null, spread: inst.terms.rateType === 'floating' ? inst.terms.spread ?? 0 : null, fixing: fx0 ? fx0.value : null, maturity: inst.terms.maturity || inst.terms.endDate || null, dailyCost: row.dailyCost ?? null, interestFrom: inst.terms.startDate || today };
+        }
       } else if (ARR_CLOSE.has(l.kind)) {
         const p = l.targetPosition;
         const problems = plugin.checkClose ? plugin.checkClose(app, { unit, inst, pos: p, qty: Math.min(l.qty, Math.abs(p.qty)) }) : [];
@@ -392,7 +420,13 @@ export function createPackages(app) {
         for (const msg of problems) check(coveredHere ? 'info' : l.required === false ? 'warning' : 'error', 'arrangement', `Leg ${l.n}: ${msg}`, l.n);
         row.currency = inst.trading_ccy;
         if (l.kind === 'repay' || l.kind === 'repo_close') {
-          if (p.qty < 0) { bump(inst.trading_ccy, 'financingOut', Math.min(l.qty, Math.abs(p.qty))); row.cash = -Math.min(l.qty, Math.abs(p.qty)); } else { bump(inst.trading_ccy, 'financingIn', Math.min(l.qty, Math.abs(p.qty))); row.cash = Math.min(l.qty, Math.abs(p.qty)); }
+          // The cash a repayment moves is principal plus the interest that is settled with it, so that
+          // what is displayed and confirmed is what leaves (or reaches) the unit when the leg executes.
+          const amt = plugin.closeAmounts ? plugin.closeAmounts(app, { inst, pos: p, qty: l.qty }) : { principal: Math.min(l.qty, Math.abs(p.qty)), interest: 0, full: false };
+          const total = money(amt.principal + amt.interest, inst.trading_ccy);
+          if (p.qty < 0) { bump(inst.trading_ccy, 'financingOut', total); row.cash = -total; } else { bump(inst.trading_ccy, 'financingIn', total); row.cash = total; }
+          row.financing = { amount: row.cash, ccy: inst.trading_ccy, principal: amt.principal, interest: amt.interest, full: amt.full, interestThrough: amt.accruedThrough || null, rateType: inst.terms.rateType || null, rate: inst.terms.rateType === 'fixed' ? inst.terms.rate ?? null : null, referenceRate: inst.terms.rateType === 'floating' ? inst.terms.referenceRate || null : null, spread: inst.terms.rateType === 'floating' ? inst.terms.spread ?? 0 : null, maturity: inst.terms.maturity || inst.terms.endDate || null };
+          if (amt.rateMissing) check('warning', 'no-rate', `Leg ${l.n}: interest on ${inst.name} has not accrued since ${amt.rateMissing} because no ${inst.terms.referenceRate} fixing is available. The interest shown is what has accrued so far.`, l.n);
         }
       } else if (l.kind === 'reserve') {
         const r = l.reserve || {};
@@ -421,6 +455,7 @@ export function createPackages(app) {
         row.currency = f.ccy;
         row.cash = f.amount;
         row.fundingInfo = { from: from ? { id: from.id, name: from.name } : null, available: have };
+        row.financing = { amount: f.amount, ccy: f.ccy, from: from ? from.name : null };
       }
       row.dependsOn = l.dependsOn || [];
       out.push(row);
@@ -497,9 +532,17 @@ export function createPackages(app) {
 
     // ---- protection already in place ------------------------------------------------------------------------
     // A hedge package from Shaffer Hedge must not silently double protection that the template or
-    // the position already carries. Extra protection has to be asked for on purpose.
+    // the position already carries. Extra protection has to be asked for on purpose. Protection
+    // "already carried" means allocated to the position (explicit link, template, or the service's
+    // allocation): a hedge that merely sits in the same Account is not counted.
     const protection = analyzeProtection({ legs, attach, unit });
     protection.acknowledged = input.extraProtection === true;
+    // A recommendation computed against exposure that has since changed cannot be executed until it is refreshed.
+    if (input.hedgeLinkId && app.hedge?.executionGuard) {
+      const blocked = app.hedge.executionGuard(input.hedgeLinkId, { legs });
+      if (blocked) check('error', 'hedge-stale', blocked);
+    }
+    if (protection.topUp) check('info', 'protection-topup', `Protection is added to what is already in place, within the exposure still unprotected. ${protection.explain}`);
     if (protection.needsAcknowledgement) {
       const what = `Protection is already in place: ${protection.prior.map((x) => x.label).join('; ')}. The hedge package adds ${protection.added.map((x) => x.label).join('; ')}. ${protection.explain}`;
       if (protection.acknowledged) check('warning', 'extra-protection', `Additional protection, added deliberately. ${what}`);
@@ -546,8 +589,14 @@ export function createPackages(app) {
 
   /**
    * What protects what in a package. Exposure is the underlying held or bought (in underlying
-   * units); protection is bought puts (for a long) or bought calls (for a short), plus any other
-   * leg or position marked as a hedge. `added` are the legs that came from a hedge package.
+   * units). Protection already in place ("prior") is
+   *   - the template's own hedge legs (bought puts for a long, bought calls for a short, or another
+   *     leg marked as a hedge), and
+   *   - what is ALLOCATED to the positions of the strategy instance being added to: an explicit
+   *     link, template protection, or an allocation returned by the service (core/protection.js).
+   * A hedge that only sits in the same Account, unassessed, is not protection and is not counted.
+   * `added` are the legs that came from a hedge package. Adding more than the exposure still
+   * unprotected has to be acknowledged; a top-up within it is explained and allowed.
    * This measures overlap only. It does not choose or size a hedge.
    */
   function analyzeProtection({ legs, attach, unit }) {
@@ -567,8 +616,13 @@ export function createPackages(app) {
       for (const p of positions.list({ unitIds: [unit.id], strategyId: attach.id })) {
         if (isZero(p.qty)) continue;
         const inst = instruments.get(p.instrument_id);
-        if (SEC.has(inst.family)) expose(inst, p.qty * inst.multiplier);
-        else if ((p.data.purpose || 'primary') === 'hedge') protect(inst, p.qty, `${fmtQty(Math.abs(p.qty))} ${name(inst)} already held as a hedge`, false);
+        if (!SEC.has(inst.family)) continue;
+        expose(inst, p.qty * inst.multiplier);
+        if (!app.protection || (p.data.purpose || 'primary') !== 'primary') continue;
+        for (const c of app.protection.coverOf(p.id).items) {
+          const how = c.basis === 'service' ? `shared protection identified by ${c.source?.label || 'the service'}` : c.basis === 'template' ? 'from the execution template' : 'linked to this position';
+          items.push({ underlyingId: c.kind === 'other' ? c.underlyingId : inst.id, kind: c.kind, units: c.units, label: `${c.label}, ${how}${c.units !== null ? ` (${fmtQty(c.units)} units)` : ''}`, added: false, basis: c.basis });
+        }
       }
     }
     for (const l of legs) {
@@ -582,7 +636,7 @@ export function createPackages(app) {
     }
     const prior = items.filter((x) => !x.added), added = items.filter((x) => x.added);
     const parts = [];
-    let oversized = null;
+    let oversized = null, beyond = false, within = false;
     for (const kind of ['put', 'call']) {
       for (const und of new Set(added.filter((x) => x.kind === kind).map((x) => x.underlyingId))) {
         const u = und ? instruments.get(und) : null;
@@ -592,13 +646,18 @@ export function createPackages(app) {
         const adding = added.filter((x) => x.kind === kind && x.underlyingId === und).reduce((a, x) => a + x.units, 0);
         const remaining = Math.max(0, side - covered);
         parts.push(`The ${kind === 'put' ? 'long' : 'short'} exposure in ${u ? name(u) : 'the underlying'} is ${fmtQty(side)} units, of which ${fmtQty(Math.min(covered, side))} ${covered ? 'are' : 'is'} already protected, leaving ${fmtQty(remaining)}; the package adds ${kind}s on ${fmtQty(adding)}.`);
+        if (covered > 0 && adding > remaining + 1e-9) beyond = true;
+        else if (covered > 0) within = true;
         if (!prior.length && adding > side + 1e-9) oversized = `The hedge package buys ${kind}s on ${fmtQty(adding)} units of ${u ? name(u) : 'the underlying'}, more than the ${fmtQty(side)} units of exposure. Hedge legs are scaled to what the primary leg fills, but not below that.`;
       }
     }
-    if (added.some((x) => x.kind === 'other') && prior.length) parts.push('The added hedge is of a different kind, so the overlap cannot be measured in units here.');
+    // Where either side has no unit measure, the overlap cannot be shown to fit: it has to be deliberate.
+    const unmeasured = prior.length > 0 && added.length > 0 && (added.some((x) => x.kind === 'other') || prior.some((x) => x.kind === 'other'));
+    if (unmeasured) parts.push('Part of the protection has no unit measure in the Terminal, so the overlap cannot be measured in units here.');
+    const needsAcknowledgement = prior.length > 0 && added.length > 0 && (beyond || unmeasured);
     return {
       exposure: [...exposure].map(([id, units]) => ({ instrumentId: id, symbol: name(instruments.get(id) || { name: id }), units })),
-      prior, added, explain: parts.join(' '), needsAcknowledgement: prior.length > 0 && added.length > 0, oversized,
+      prior, added, explain: parts.join(' '), needsAcknowledgement, topUp: prior.length > 0 && added.length > 0 && within && !needsAcknowledgement, oversized,
     };
   }
 
@@ -614,6 +673,7 @@ export function createPackages(app) {
       qty: l.qty, qtyLabel: inst ? app.products.get(inst.family).qtyLabel : l.kind === 'reserve' ? 'Contracts secured' : 'Amount',
       strike: t.strike ?? null, expiration: t.expiration ?? null, right: t.right ?? null, multiplier: inst?.multiplier ?? null, deliverableUnits: t.deliverable?.units ?? null,
       orderType: l.orderType || 'market', limitPrice: num(l.limitPrice), stopPrice: num(l.stopPrice), tif: l.tif || 'day', statedPrice: num(l.statedPrice),
+      settle: l.settle && (l.settle.date || (l.settle.lag !== null && l.settle.lag !== undefined && l.settle.lag !== '')) ? l.settle : null,
       required: l.required !== false, note: l.note || null,
       borrow: l.borrow || null, reserve: l.reserve || null, funding: l.funding ? { fromUnitId: l.funding.fromUnitId, ccy: l.funding.ccy, amount: l.funding.amount } : null,
       sourcePositionId: l.sourcePositionId || null, targetPositionId: l.targetPositionId || null, collateralPositionId: l.collateralPositionId || null,
@@ -654,19 +714,20 @@ export function createPackages(app) {
     if (dupe) return { duplicate: true, strategy: strategyView(dupe.strategy_id) };
 
     const pv = await preview(input);
-    if (pv.blocking) throw new AppError(pv.checks.find((c) => c.level === 'error').message, { status: 422, code: 'preview_failed', details: { preview: pv } });
-    // Preview-to-execution reconciliation: the confirmation carries the cash requirement that was
-    // on screen. If re-pricing the same legs now gives a materially different figure, nothing is
-    // submitted and the fresh preview goes back for another look.
-    if (input.expected?.cash) {
-      const tolPct = books.requireBook(input.bookId).settings.fill.maxPreviewDriftPct ?? 0.5;
-      for (const ccy of new Set([...Object.keys(input.expected.cash), ...Object.keys(pv.totals.cash)])) {
-        const shown = num(input.expected.cash[ccy]) ?? 0, now = pv.totals.cash[ccy]?.required ?? 0;
-        if (Math.abs(now - shown) > Math.max((Math.abs(shown) * tolPct) / 100, 0.01)) {
-          throw new AppError(`Prices have moved since this package was shown: it now needs ${fmt(now, ccy)} against ${fmt(shown, ccy)} displayed. Nothing was submitted. Check the updated figures and confirm again.`, { status: 409, code: 'preview_changed', details: { preview: pv } });
-        }
-      }
-    }
+    // Preview-to-execution reconciliation. The confirmation carries the figures that were on
+    // screen (`expected`: the preview's `confirmation` snapshot). The same legs have just been
+    // priced again as one snapshot; every leg and every package total is compared with what was
+    // displayed, under the Book's tolerances. A figure beyond its tolerance, or a changed
+    // non-numeric term, refuses the confirmation: nothing is submitted, and the new preview goes
+    // back with the list of changes (was / now) for a new confirmation.
+    const tol = tolerancesOf(books.requireBook(input.bookId));
+    const shown = input.expected && Array.isArray(input.expected.legs) && input.expected.totals ? input.expected : null;
+    // Displayed figures that cannot be read are refused outright: they must never count as "nothing to check".
+    need(!input.expected || shown || (input.expected.cash && typeof input.expected.cash === 'object'), 'The confirmation carried displayed figures in a form the Terminal cannot read. Preview the package again and confirm from that preview.', { status: 400, code: 'expected_invalid' });
+    const diffs = shown ? compare(shown, pv.confirmation, tol, { nowMs: clock.ms(), all: true }) : [];
+    const changes = [...diffs.filter((c) => !c.within), ...(!shown && input.expected?.cash ? compareLegacyCash(input.expected.cash, pv, tol) : [])];
+    if (pv.blocking) throw new AppError(pv.checks.find((c) => c.level === 'error').message, { status: 422, code: 'preview_failed', details: { preview: pv, changes, tolerances: tol } });
+    if (changes.length) throw new AppError(refusalMessage(changes), { status: 409, code: 'preview_changed', details: { preview: pv, changes, tolerances: tol } });
 
     const book = books.requireBook(input.bookId);
     const unit = books.requireUnit(input.unitId, book.id);
@@ -695,7 +756,10 @@ export function createPackages(app) {
       const eventId = ledger.post({
         bookId: book.id, unitId: unit.id, type: input.attachTo ? 'strategy.legs_added' : 'strategy.submitted', strategyId: sid, instrumentId: input.underlyingId || null,
         summary: `${input.attachTo ? 'Legs added to' : 'Package submitted:'} ${pv.name} (${pv.legs.length} leg${pv.legs.length > 1 ? 's' : ''}; ${pv.intent})`,
-        data: { template: pv.template, submission, intent: pv.intent, legs: pv.legs.map((l) => ({ n: l.n, label: l.label, purpose: l.purpose, estimate: l.price?.estimate ?? null, model: l.price?.model ?? null })), totals: pv.totals.cash, checks: pv.checks },
+        data: { template: pv.template, submission, intent: pv.intent, legs: pv.legs.map((l) => ({ n: l.n, label: l.label, purpose: l.purpose, estimate: l.price?.estimate ?? null, model: l.price?.model ?? null })), totals: pv.totals.cash, checks: pv.checks,
+          // What was confirmed: the displayed snapshot when the confirmation carried one, the pricing at confirmation,
+          // and every difference between the two that the Book's tolerances allowed.
+          confirmation: { basis: shown ? 'displayed' : 'priced-at-confirmation', displayedAt: shown ? shown.snapshotAt : null, pricedAt: pv.generatedAt, tolerances: tol, displayedTotals: shown ? shown.totals : null, pricedTotals: pv.confirmation.totals, permitted: diffs.filter((c) => c.within) } },
       });
       for (const l of pv.legs) {
         let instrumentId = l.instrumentId;
@@ -707,8 +771,20 @@ export function createPackages(app) {
           orderType: l.orderType, limitPrice: l.limitPrice, stopPrice: l.stopPrice, tif: l.tif, dependsOn: (l.dependsOn || []).map((d) => baseLeg + d), required: l.required,
           data: {
             purpose: l.purpose, group: l.group, statedPrice: l.statedPrice, borrow: l.borrow, reserve: l.reserve, funding: l.funding,
-            sourcePositionId: l.sourcePositionId, targetPositionId: l.targetPositionId, collateralPositionId: l.collateralPositionId, hedgeLinkId: l.hedgeLinkId || input.hedgeLinkId || null,
+            sourcePositionId: l.sourcePositionId, targetPositionId: l.targetPositionId, collateralPositionId: l.collateralPositionId,
+            // The hedge request id belongs to the legs that came from that request. A primary or financing leg of the same
+            // confirmation (the Strategy page adds a hedge package to a primary trade) never carries it.
+            hedgeLinkId: l.hedgeLinkId || (pv.intent === 'hedge' && l.purpose !== 'primary' ? input.hedgeLinkId : null) || null,
+            // Stored identifiers: the legs a financing leg funds and the legs a hedge leg protects (leg numbers within this strategy instance).
+            fundsLegs: l.purpose === 'financing' ? linkedLegs(pv.legs, l, baseLeg) : undefined, protectsLegs: l.purpose === 'hedge' ? linkedLegs(pv.legs, l, baseLeg) : undefined,
             intent: pv.intent, estimate: l.price ? { price: l.price.estimate, model: l.price.model, reference: l.price.reference } : null, note: l.note, submitEventId: eventId,
+            // The figures this leg was confirmed on (displayed, when the confirmation carried them), kept for
+            // reconciliation with its fills. `settle` is a settlement date or lag stated for this trade.
+            confirmed: confirmedLeg({
+              shown: shown ? shown.legs.find((x) => x.n === l.n) || null : null, priced: pv.confirmation.legs.find((x) => x.n === l.n), tol,
+              snapshotAt: shown ? shown.snapshotAt : null, confirmedAt: now, permitted: diffs.filter((c) => c.scope === 'leg' && c.n === l.n && c.within),
+            }),
+            settle: l.settle || null,
           },
         });
       }
@@ -719,6 +795,17 @@ export function createPackages(app) {
 
     await runMatching(strategyId);
     return { duplicate: false, strategy: strategyView(strategyId) };
+  }
+
+  /**
+   * The legs of a package that a financing leg funds, or that a hedge leg protects: the primary legs
+   * that wait on the financing leg, the primary leg a hedge leg waits on, and otherwise the
+   * package's primary trade legs. Returned as leg numbers of the strategy instance.
+   */
+  function linkedLegs(all, l, baseLeg) {
+    const primary = all.filter((x) => x.purpose === 'primary' && ['trade', 'link'].includes(x.kind));
+    const tied = l.purpose === 'financing' ? primary.filter((x) => (x.dependsOn || []).includes(l.n)) : primary.filter((x) => (l.dependsOn || []).includes(x.n));
+    return (tied.length ? tied : primary).map((x) => baseLeg + x.n);
   }
 
   function snapshotPreview(pv) {
@@ -816,6 +903,8 @@ export function createPackages(app) {
     const fills = app.orders.fillsFor(o.id).map((f) => ({
       id: f.id, ts: f.ts, businessDate: f.business_date, qty: f.qty, price: f.price, gross: f.gross, ccy: f.ccy, fees: f.fees, model: f.fill_model, note: f.fill_note, settleDate: f.settle_date,
       priceObservation: f.price_obs_id ? app.data.getObservation(f.price_obs_id) : null, fxObservation: f.fx_obs_id ? app.data.getObservation(f.fx_obs_id) : null,
+      // Reconciliation with the confirmed figures: { confirmed, actual, variance, exact, within, reason } or null.
+      confirm: f.confirm || null,
     }));
     const pending = db.all(`SELECT * FROM settlements WHERE order_id = ? AND status <> 'settled' ORDER BY due_date`, o.id);
     return {
@@ -824,7 +913,7 @@ export function createPackages(app) {
       qty: o.qty, filledQty: o.filled_qty, remainingQty: Math.max(0, round(o.qty - o.filled_qty, 8)), avgPrice: o.avg_price,
       orderType: o.order_type, limitPrice: o.limit_price, stopPrice: o.stop_price, tif: o.tif, statedPrice: o.data.statedPrice ?? null,
       status: o.status, statusReason: o.status_reason, dependsOn: o.depends_on, required: o.required, resolved: Boolean(o.data.resolved), intent: o.data.intent || null,
-      resizedFrom: o.data.resizedFrom ?? null, estimate: o.data.estimate || null, fills,
+      resizedFrom: o.data.resizedFrom ?? null, estimate: o.data.estimate || null, confirmed: o.data.confirmed || null, settle: o.data.settle || null, fills,
       settlements: pending.map((p) => ({ id: p.id, dueDate: p.due_date, ccy: p.ccy, amount: p.amount, status: p.status, error: p.last_error })),
       reserved: ledger.listHolds([o.unit_id]).filter((h) => h.ref_type === 'order' && h.ref_id === o.id).map((h) => ({ ccy: h.ccy, amount: h.amount, kind: h.kind })),
       createdAt: o.created_at, updatedAt: o.updated_at, unitId: o.unit_id, bookId: o.book_id,
@@ -1002,16 +1091,20 @@ export function createPackages(app) {
     const base = { bookId: s.book_id, unitId: s.unit_id, template: 'custom', attachTo: s.id, underlyingId: s.underlying_id, name: s.name, orderType: args.orderType, tif: args.tif, netLimit: args.netLimit };
     if (action === 'close' || action === 'unwind') {
       let legs = closingLegs(strategyId, { fraction: num(args.fraction) ?? 1, positionIds: args.positionIds, qty: args.qty });
-      // Reducing a short by an exact quantity also returns that much of its borrow.
-      if (num(args.qty) !== null) {
-        const pos = positions.get(args.positionIds[0]);
-        const inst = pos ? instruments.get(pos.instrument_id) : null;
-        const loan = pos && pos.qty < 0 ? positions.list({ unitIds: [s.unit_id], strategyId }).find((p) => p.qty > 0 && instruments.get(p.instrument_id).family === 'secloan' && instruments.get(p.instrument_id).underlying_id === inst.id) : null;
-        if (loan) legs = [...legs, { purpose: 'financing', role: `return_${loan.id}`, kind: 'return_sec', action: 'return_sec', targetPositionId: loan.id, qty: Math.min(num(args.qty), loan.qty), dependsOn: [1], note: 'Borrowed securities go back once the short is covered.' }];
+      // Covering one chosen short (by an exact quantity, or with that position's own Close button) also returns that
+      // much of its borrow. Without this the cover leaves the borrowed securities out, still accruing their fee.
+      if (args.positionIds?.length) {
+        const returns = [];
+        legs.forEach((l, i) => {
+          if (l.kind !== 'trade' || l.action !== 'buy_to_cover') return;
+          const loan = positions.list({ unitIds: [s.unit_id], strategyId }).find((p) => p.qty > 0 && instruments.get(p.instrument_id).family === 'secloan' && instruments.get(p.instrument_id).underlying_id === l.instrumentId);
+          if (loan && ![...legs, ...returns].some((x) => x.kind === 'return_sec' && x.targetPositionId === loan.id)) returns.push({ purpose: 'financing', role: `return_${loan.id}`, kind: 'return_sec', action: 'return_sec', targetPositionId: loan.id, qty: Math.min(l.qty, loan.qty), dependsOn: [i + 1], note: 'Borrowed securities go back once the short is covered.' });
+        });
+        legs = [...legs, ...returns];
       }
       // Order instructions from a ticket apply to the trade legs; the preview still lets each be edited.
       const o = args.order;
-      if (o) legs = legs.map((l) => (l.kind === 'trade' ? { ...l, orderType: o.orderType || 'market', limitPrice: num(o.limitPrice), stopPrice: num(o.stopPrice), tif: o.tif || 'day', statedPrice: num(o.statedPrice) } : l));
+      if (o) legs = legs.map((l) => (l.kind === 'trade' ? { ...l, orderType: o.orderType || 'market', limitPrice: num(o.limitPrice), stopPrice: num(o.stopPrice), tif: o.tif || 'day', statedPrice: num(o.statedPrice), settle: o.settle || null } : l));
       return preview({ ...base, intent: action, reducing: true, legs });
     }
     if (action === 'resize') {
@@ -1034,7 +1127,7 @@ export function createPackages(app) {
   }
 
   function retryLeg(o) {
-    const leg = { purpose: o.data.purpose || 'primary', role: o.role, kind: o.kind, action: o.action, qty: round(o.qty - o.filled_qty, 8), orderType: o.order_type, limitPrice: o.limit_price, stopPrice: o.stop_price, tif: o.tif, group: o.data.group || null, dependsOn: [] };
+    const leg = { purpose: o.data.purpose || 'primary', role: o.role, kind: o.kind, action: o.action, qty: round(o.qty - o.filled_qty, 8), orderType: o.order_type, limitPrice: o.limit_price, stopPrice: o.stop_price, tif: o.tif, group: o.data.group || null, dependsOn: [], hedgeLinkId: o.data.hedgeLinkId || undefined };
     if (o.kind === 'trade' || o.kind === 'borrow_sec' || o.kind === 'link') leg.instrumentId = o.instrument_id;
     if (o.kind === 'borrow_sec') leg.borrow = o.data.borrow || null;
     if (o.kind === 'reserve') leg.reserve = o.data.reserve;

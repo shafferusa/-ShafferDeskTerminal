@@ -132,8 +132,9 @@ function DemoPanel({ d, reload }) {
       <div class="stack" style="gap:6px">
         <h4>Demo hedge fixture</h4>
         ${on === undefined || on === null ? html`<span class="note">The fixture setting is not reported by this server.</span>`
-          : html`<${Check} checked=${on} disabled=${busy} onChange=${flip}>Answer hedge requests with the canned demo packages<//>`}
-        <p class="note" style="margin:0"><b>Canned demo data, not Shaffer Hedge output.</b> The fixture returns a few fixed, illustrative packages for the fictional equities so the hedge screens can be exercised before Analytics Lab is connected. Turn it off to see the waiting state those screens show in real use. It applies to hedge requests made from now on.</p>
+          : html`<${Check} checked=${on} disabled=${busy} onChange=${flip}>Answer complete hedge requests with the canned demo packages<//>`}
+        <p class="note" style="margin:0"><b>Demo fixture, not Shaffer Hedge.</b> Analytics Lab stays awaiting in demo mode. While this is on, the fixture answers hedge requests that are complete (investment Strategy, holding period and objective set) with a few fixed, illustrative packages for the fictional equities, an illustrative protection assessment, and a small fictional list of investment Strategies with IDs. Everything it returns is labelled "demo fixture, not Shaffer Hedge" on the queue row, in the popup and on the position. An incomplete request is stored and is not answered. Turning it on refreshes the requests that were waiting, in place and without trading; turning it off shows the waiting state of real use, and recommendations already received are then marked as cached.</p>
+        ${d.hedgeService ? html`<p class="note" style="margin:0" data-testid="hedge-service-note">Hedge requests are answered now by: <b>${d.hedgeService.reachable ? d.hedgeService.label : 'nothing (awaiting connection)'}</b>${d.hedgeService.script?.loaded ? `. A scripted test fixture is loaded (${d.hedgeService.script.used} of ${d.hedgeService.script.responses} scripted responses used) and takes the place of the demo fixture until it is cleared` : ''}.</p>` : null}
       </div>
     </div>
   <//>`;

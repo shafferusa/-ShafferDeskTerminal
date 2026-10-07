@@ -10,6 +10,9 @@ import assert from 'node:assert/strict';
 import { makeApp, makeBook, trade, ledgerImbalance, advance, goTo, DAY } from '../helpers.js';
 import { fxValueDate, holidaysOf, isBusinessDay } from '../../server/quant/calendar.js';
 
+// A direct Marketplace trade whose hedge context is complete. An incomplete request is stored but never sent to
+// Shaffer Hedge or answered by the demo fixture, so tests that go on to use a recommendation supply the context.
+const HEDGE_CTX = { investmentStrategy: { name: 'Core Equity' }, holdingPeriod: { days: 60 }, hedgeObjective: { type: 'downside_protection' } };
 const pin = (app, id, px, size = 1e6) => app.data.market.set(id, { bid: px, ask: px, value: px, bidSize: size, askSize: size });
 const near = (a, b, tol = 0.011) => assert.ok(Math.abs(a - b) <= tol, `${a} is not within ${tol} of ${b}`);
 const line = (bs, key) => bs.lines.find((l) => l.key === key);
@@ -208,7 +211,7 @@ test('a hedge preview is one snapshot: totals are the sum of its legs, and what 
   const { app, clock, inst } = makeApp();
   const { book, acct } = makeBook(app);
   pin(app, inst.ALFA.id, 160);
-  await trade(app, { bookId: book.id, unitId: acct.id, template: 'long', underlyingId: inst.ALFA.id, quantity: 300, origin: 'marketplace' });
+  await trade(app, { bookId: book.id, unitId: acct.id, template: 'long', underlyingId: inst.ALFA.id, quantity: 300, origin: 'marketplace', ...HEDGE_CTX });
   await advance(app, clock, 1000);
   const h = app.hedge.prompts(book.id)[0];
   const pkg = h.response.packages.find((p) => p.id === 'demo-protective');
@@ -296,20 +299,26 @@ test('protection already in the template or the position is recognised; more mus
   assert.ok(!clean.checks.some((c) => c.code === 'extra-protection'));
 
   // A position half protected: the fixture sizes the next proposal on the unprotected remainder only.
-  const s = await trade(app, { bookId: book.id, unitId: acct.id, template: 'long', underlyingId: inst.ALFA.id, quantity: 1000, origin: 'marketplace' });
+  const s = await trade(app, { bookId: book.id, unitId: acct.id, template: 'long', underlyingId: inst.ALFA.id, quantity: 1000, origin: 'marketplace', ...HEDGE_CTX });
   await advance(app, clock, 1000);
   const first = app.hedge.prompts(book.id)[0];
   const pv = await app.hedge.previewPackage(first.id, 'demo-protective');
   const half = pv.legs.map((l) => ({ ...l, qty: 5 }));
   await app.packages.submit({ ...pv.input, legs: half, clientToken: pv.token, confirm: true });
   const again = await app.hedge.request({ bookId: book.id, unitId: acct.id, strategyId: s.id, scope: { type: 'trade' }, trigger: 'manual', ...ctx });
-  assert.equal(again.request.existingHedges.length, 1);
+  assert.equal(again.request.linkedProtection.length, 1, 'the put executed from this position\'s request is linked to it');
+  assert.equal(again.request.linkedProtection[0].allocations[0].units, 500);
   const next = again.response.packages.find((p) => p.id === 'demo-protective');
   assert.equal(next.legs[0].quantity, 5, '1,000 held, 500 already protected, 5 contracts for the remaining 500');
   assert.match(next.notes.join(' '), /unprotected remainder: 500 of 1000/);
   const more = await app.hedge.previewPackage(again.id, next.id);
-  assert.equal(more.checks.find((c) => c.code === 'extra-protection').level, 'error', 'even a correctly sized top-up has to be confirmed as deliberate');
-  assert.match(more.checks.find((c) => c.code === 'extra-protection').message, /of which 500 are already protected, leaving 500; the package adds puts on 500/);
+  // A top-up sized to the exposure still unprotected is explained and allowed; only protection beyond it must be deliberate.
+  assert.equal(more.blocking, 0);
+  assert.ok(!more.checks.some((c) => c.code === 'extra-protection'));
+  assert.match(more.checks.find((c) => c.code === 'protection-topup').message, /of which 500 are already protected, leaving 500; the package adds puts on 500/);
+  const tooMuch = await app.hedge.previewPackage(again.id, next.id, { legs: more.legs.map((l) => ({ ...l, qty: 6 })) });
+  assert.equal(tooMuch.checks.find((c) => c.code === 'extra-protection').level, 'error', 'six contracts on a remaining 500 units is more than is left');
+  assert.match(tooMuch.checks.find((c) => c.code === 'extra-protection').message, /leaving 500; the package adds puts on 600/);
 });
 
 // ---- holdings -------------------------------------------------------------------------------------------------------------
@@ -388,7 +397,7 @@ test('a hedge request made while Analytics Lab is away waits, then refreshes in 
   const { book, acct } = makeBook(app);
   app.data.setSetting('demo.hedgeFixture', false); // the service is unavailable
   pin(app, inst.ALFA.id, 100);
-  const s = await trade(app, { bookId: book.id, unitId: acct.id, template: 'long', underlyingId: inst.ALFA.id, quantity: 300, origin: 'marketplace' });
+  const s = await trade(app, { bookId: book.id, unitId: acct.id, template: 'long', underlyingId: inst.ALFA.id, quantity: 300, origin: 'marketplace', ...HEDGE_CTX });
   await advance(app, clock, 1000);
   const prompts = app.hedge.prompts(book.id);
   assert.equal(prompts.length, 1, 'the popup is prompted even though there is nothing to recommend yet');
@@ -428,7 +437,7 @@ test('the TRS alternative is a complete swap: both legs, posted collateral, rese
   const { app, clock, inst } = makeApp();
   const { book, acct } = makeBook(app);
   pin(app, inst.ALFA.id, 200);
-  const s = await trade(app, { bookId: book.id, unitId: acct.id, template: 'long', underlyingId: inst.ALFA.id, quantity: 500, origin: 'marketplace' });
+  const s = await trade(app, { bookId: book.id, unitId: acct.id, template: 'long', underlyingId: inst.ALFA.id, quantity: 500, origin: 'marketplace', ...HEDGE_CTX });
   await advance(app, clock, 1000);
   const h = app.hedge.prompts(book.id)[0];
   const pv = await app.hedge.previewPackage(h.id, 'demo-trs');

@@ -268,3 +268,54 @@ export function onOrBefore(iso, cal = 'US') {
 
 /** Third Friday of a month (standard monthly listed-option expiration). */
 export const thirdFriday = (y, m) => nthWeekday(y, m, 5, 3);
+
+// ---- calendar ids, joint calendars and what to say about them -------------------------------------------
+
+/** The member calendars of an id ('US' -> ['US'], 'JP+USD' -> ['JP', 'USD']). */
+export const calendarParts = (id) => String(id || '').split('+').map((p) => p.trim().toUpperCase()).filter(Boolean);
+
+/** Members of an id that are not calendars the Terminal has. An unknown member is never treated as "weekends only" silently. */
+export const unknownCalendars = (id) => calendarParts(id).filter((p) => !CALENDARS[p]);
+export const isKnownCalendar = (id) => calendarParts(id).length > 0 && unknownCalendars(id).length === 0;
+
+/**
+ * Join calendars into one id: open only when every member is open. Members are de-duplicated and
+ * kept in the order given. ALLDAYS adds nothing to a joint calendar, so it is dropped when another
+ * member exists. WEEKEND is kept: it carries the holidays entered by hand for markets with no
+ * calendar, and it keeps the joint calendar flagged as approximate.
+ */
+export function joinCalendars(...ids) {
+  const parts = [];
+  for (const id of ids) for (const p of calendarParts(id)) if (!parts.includes(p)) parts.push(p);
+  const real = parts.filter((p) => p !== 'ALLDAYS');
+  return (real.length ? real : parts).join('+');
+}
+
+/** Label and quality of a calendar id, joint or single. */
+export function describeCalendar(id) {
+  const parts = calendarParts(id);
+  const weekendsOnly = parts.length > 0 && parts.every((p) => p === 'WEEKEND');
+  const partlyWeekends = !weekendsOnly && parts.includes('WEEKEND');
+  const label = parts.length === 1 ? CALENDARS[parts[0]]?.label || parts[0] : `Joint calendar ${parts.join(' + ')}: a business day in every one of them`;
+  return { id: parts.join('+'), parts, label, joint: parts.length > 1, weekendsOnly, partlyWeekends };
+}
+
+/** Why a date is not a business day on a calendar: 'a Saturday', 'a holiday on JP', or null when it is one. */
+export function closedReason(iso, cal = 'US') {
+  if (isBusinessDay(iso, cal)) return null;
+  const parts = calendarParts(cal);
+  if (!parts.includes('ALLDAYS') || parts.length > 1) {
+    const w = weekday(iso);
+    if (w === 6) return 'a Saturday';
+    if (w === 0) return 'a Sunday';
+  }
+  const shut = parts.filter((p) => !isBusinessDay(iso, p));
+  return `a holiday on ${shut.join(' and ')}`;
+}
+
+/** Business days from `from` (exclusive) to `to` (inclusive) on a calendar; 0 when to <= from. */
+export function businessDaysBetween(from, to, cal = 'US') {
+  let n = 0;
+  for (let d = addDays(from, 1); d <= to; d = addDays(d, 1)) if (isBusinessDay(d, cal)) n++;
+  return n;
+}

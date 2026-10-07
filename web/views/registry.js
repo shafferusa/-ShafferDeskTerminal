@@ -3,8 +3,9 @@
 // A product appearing in the catalog is not a claim of support. Two separate things are stated for
 // every product and instrument, and never merged: lifecycle support (what the paper engine
 // simulates, and what is entered by hand) and pricing coverage (where its price comes from, and
-// whether one is on hand now). Each instrument also names the settlement calendar it uses and how
-// that calendar was chosen; a market with no calendar says it falls back to weekends only.
+// whether one is on hand now). Each instrument also names its trading, settlement and payment
+// calendars and how each was chosen, and its settlement convention; all four can be set on the
+// instrument here. A market with no calendar says it falls back to weekends only.
 import { html, useEffect, useMemo, useRef, useState } from '../vendor/preact-htm.js';
 import { bump, fmtNum, get, isNum, openOverlay, post, put, titleCase, toast, useLive, VIEW_LABEL } from '../lib/core.js';
 import { Awaiting, Button, Check, Empty, ErrorNote, Field, Holdings, Missing, Modal, Notice, Num, Panel, Pill, Prov, Select, Seg, Support, Table, Tabs, Text } from '../lib/ui.js';
@@ -104,7 +105,8 @@ function expectedCalendar(d, cals) {
   }
   if (us) return done(bond ? 'USBOND' : 'US', 'venue');
   const trading = String(d.tradingCcy || '').toUpperCase(), settle = String(d.settleCcy || '').toUpperCase() || trading;
-  if (byCcy[settle] || byCcy[trading]) return done(byCcy[settle] || byCcy[trading], 'currency', `No venue country is recorded, so the ${settle} payment calendar is used. Enter the venue country to use its market calendar.`);
+  // An OTC contract has no listing venue: the payment calendar of its currency is its calendar, not a stand-in.
+  if (byCcy[settle] || byCcy[trading]) return done(byCcy[settle] || byCcy[trading], 'currency', d.venueType === 'otc' ? null : `No venue country is recorded, so the ${settle} payment calendar is used. Enter the venue country to use its market calendar.`);
   return done('WEEKEND', 'fallback', `No venue country is recorded and no payment calendar is built in for ${trading || 'the trading currency'}. Dates use weekends only.`);
 }
 /** How a calendar was chosen, in words. `d` carries family, venueCountry and tradingCcy (an instrument view or a draft). */
@@ -113,7 +115,7 @@ function calendarBasis(cal, d) {
   if (d.family === 'fx') return 'A spot FX value date is a business day for both currencies and a US dollar banking day.';
   if (cal.basis === 'explicit') return 'Set on the instrument itself.';
   if (cal.basis === 'venue') return d.venueCountry ? `Chosen from the venue country, ${d.venueCountry}.` : 'Chosen from its US market view; no venue country is recorded.';
-  if (cal.basis === 'currency') return 'Inferred from the trading currency, because no venue country is recorded.';
+  if (cal.basis === 'currency') return d.venueType === 'otc' ? 'An OTC contract uses the payment calendar of its currency.' : 'Inferred from the trading currency, because no venue country is recorded.';
   return 'Weekends-only fallback: no holiday calendar exists for this market.';
 }
 
@@ -213,8 +215,10 @@ function RegistryTab({ book, status, create }) {
   const calendar = (i) => {
     const c = i.calendar;
     if (!c) return null;
-    const tip = [`Settlement calendar: ${c.label}`, c.basis === 'currency' && c.note && i.family !== 'fx' ? '' : calendarBasis(c, i), c.note, c.fallback ? 'Add local holidays under Settings, Market calendars.' : ''].filter(Boolean).join('\n');
-    return html`<div class="sub" title=${tip}>${c.fallback ? html`<${Pill} tone="warn">weekends only<//>` : c.id}</div>`;
+    const tip = [`Settlement calendar: ${c.label}`, c.basis === 'currency' && c.note && i.family !== 'fx' ? '' : calendarBasis(c, i), c.note,
+      c.trading && c.trading.id !== c.id ? `Trading calendar: ${c.trading.label}` : '', c.payment && c.payment.id !== c.id ? `Payment calendar: ${c.payment.label}` : '',
+      i.settlement?.basis === 'instrument' ? `Settlement lag set on the instrument: ${i.settlement.label}` : '', c.flagText, c.fallback ? 'Add local holidays under Settings, Market calendars.' : ''].filter(Boolean).join('\n');
+    return html`<div class="sub" title=${tip}>${c.fallback ? html`<${Pill} tone="warn">weekends only<//>` : html`${c.id}${c.flag ? html` <${Pill} tone="warn">${c.flag === 'weekends-only' ? 'weekends only' : 'approximate'}<//>` : null}`}${i.settlement?.basis === 'instrument' ? ` ${i.settlement.label}` : ''}</div>`;
   };
   const columns = [
     { label: 'Instrument', title: 'Symbol and Terminal ID, then the name', render: (i) => (i.symbol
@@ -247,7 +251,7 @@ function RegistryTab({ book, status, create }) {
         ${res.error && !res.data ? html`<div style="padding:12px"><${ErrorNote} error=${res.error} /></div>` : !res.data ? html`<${Empty}>Loading the registry…<//>` : html`<${Table} margin cls="tight" columns=${columns} rows=${rows} rowKey=${(i) => i.id} onRowClick=${(i) => openInstrument(i.id, { tab: 'overview' })}
           empty=${{ title: filtered ? 'Nothing matches these filters' : 'No instruments registered yet', children: filtered ? 'Clear a filter, or register the instrument with New instrument.' : marketAwaiting ? 'Reference data arrives with the Shaffer MarketData connection. Until then, register instruments by hand with New instrument.' : 'Register one with New instrument.' }} />`}
       </div></div>
-      <p class="note" style="margin-top:8px">Lifecycle and Pricing are separate: Lifecycle is what the paper engine simulates for the product, Pricing is whether a price is on hand for the instrument now. Each is explained on the <a href="#/instruments/coverage">Coverage</a> tab. The calendar under the currency is the one settlement dates are worked out on; the built-in calendars are listed under <a href="#/settings">Settings</a>.</p>
+      <p class="note" style="margin-top:8px">Lifecycle and Pricing are separate: Lifecycle is what the paper engine simulates for the product, Pricing is whether a price is on hand for the instrument now. Each is explained on the <a href="#/instruments/coverage">Coverage</a> tab. The calendar under the currency is the one settlement dates are worked out on, with the instrument's own settlement lag where it has one; a badge marks a calendar that is approximate or weekends only. Trading and payment calendars are on the instrument's Overview. The built-in calendars are listed under <a href="#/settings">Settings</a>.</p>
       <p class="note" style="margin-top:4px">A row opens the instrument. Financing arrangements are left out unless included above or chosen as a family: each loan, repo or securities loan registers itself when its ticket is confirmed in Treasury or on the Account.</p>
     </div>
   </div>`;
@@ -347,7 +351,72 @@ const fromInst = (i) => ({
   productId: i.productId, family: i.family, name: i.name, symbol: i.symbol || '', marketView: i.marketView, tags: [...(i.tags || [])], issuer: i.issuer || '', domicile: i.domicile || '',
   underlyingGeo: i.underlyingGeo || '', venue: i.venue || '', venueType: i.venueType, venueCountry: i.venueCountry || '', tradingCcy: i.tradingCcy, settleCcy: i.settleCcy && i.settleCcy !== i.tradingCcy ? i.settleCcy : '',
   underlyingId: i.underlyingId || '', multiplier: i.multiplier, terms: JSON.parse(JSON.stringify(i.terms || {})),
+  conventions: conventionsOf(i),
 });
+// ---- calendars and settlement convention set on the instrument ----------------------------------------------------
+const NO_CONVENTIONS = { tradingCalendar: '', settlementCalendar: '', paymentCalendar: '', settleLag: null };
+const conventionsOf = (i) => ({ ...NO_CONVENTIONS, ...(i?.conventions || {}) });
+/** What is stored: only the fields that are set; null when none is. */
+function conventionsPayload(c) {
+  const out = {};
+  for (const k of ['tradingCalendar', 'settlementCalendar', 'paymentCalendar']) if (String(c?.[k] || '').trim()) out[k] = String(c[k]).trim().toUpperCase();
+  if (isNum(c?.settleLag)) out.settleLag = c.settleLag;
+  return Object.keys(out).length ? out : null;
+}
+// Mirrors FIXED_SETTLEMENT and MAX_SETTLE_LAG in server/products/security.js: products whose settlement the product fixes.
+const FIXED_SETTLEMENT = {
+  future: 'A future settles through daily variation margin from the trade date, so it has no settlement lag to set.',
+  forward: 'A forward settles on its value date, which is one of its contract terms.',
+  loan: 'A loan or deposit takes effect when it is executed.', repo: 'A repo takes effect when it is executed.', secloan: 'A securities loan takes effect when it is executed.',
+};
+const MAX_SETTLE_LAG = 30;
+const badParts = (value, cals) => String(value || '').split('+').map((x) => x.trim()).filter((x) => x && cals && !cals.calendars.some((c) => c.id === x));
+
+/** One calendar role: not set (the venue or currency decides), one built-in calendar, or a joint calendar typed as A+B. */
+function CalendarField({ label, hint, value, onChange, cals, inherit }) {
+  const ids = (cals?.calendars || []).map((c) => c.id);
+  const [joint, setJoint] = useState(Boolean(value) && !ids.includes(value));
+  const bad = badParts(value, cals);
+  const options = [{ value: '', label: `Not set: ${inherit}` }, ...(cals?.calendars || []).filter((c) => c.id !== 'ALLDAYS').map((c) => ({ value: c.id, label: `${c.id}: ${c.label}` })), { value: '+', label: 'A joint calendar…' }];
+  return html`<${Field} label=${label} span=${2} hint=${hint} error=${bad.length ? `"${bad.join('", "')}" is not a calendar here. Use ${ids.filter((x) => x !== 'ALLDAYS').join(', ')}, joined with +.` : null}>
+    <${Select} value=${joint ? '+' : value} onChange=${(v) => { if (v === '+') setJoint(true); else { setJoint(false); onChange(v); } }} options=${options} />
+    ${joint ? html`<div style="margin-top:4px"><${Text} value=${value} onInput=${(v) => onChange(v.toUpperCase().replace(/\s+/g, ''))} placeholder="For example US+JP: open only when both are" /></div>` : null}<//>`;
+}
+
+/**
+ * Calendars and settlement convention of the instrument. Each calendar is optional: left unset, the
+ * venue country or the currency decides, as shown above. Editable after the instrument has traded:
+ * these are conventions for dates worked out from then on, not terms that positions were booked on.
+ */
+function ConventionFields({ draft, set, cals, product, saved }) {
+  const c = draft.conventions || NO_CONVENTIONS;
+  const on = (patch) => set({ conventions: { ...c, ...patch } });
+  const base = cals ? expectedCalendar(draft, cals) : null;
+  const inherit = base ? `${base.id}, from the ${base.basis === 'venue' ? 'venue' : base.basis === 'currency' ? 'currency' : base.basis === 'explicit' ? 'instrument terms' : 'weekends-only fallback'}` : 'the venue or the currency decides';
+  const fixed = FIXED_SETTLEMENT[draft.family];
+  const lagBad = isNum(c.settleLag) && (!Number.isInteger(c.settleLag) || c.settleLag < 0 || c.settleLag > MAX_SETTLE_LAG);
+  const byCcy = cals?.currencyCalendars || {};
+  const ccys = [...new Set([draft.settleCcy, draft.tradingCcy, draft.terms?.base, draft.terms?.quote].map((x) => String(x || '').toUpperCase()).filter((x) => /^[A-Z]{3}$/.test(x)))];
+  const missing = ccys.filter((x) => !byCcy[x]);
+  const settleId = c.settlementCalendar || base?.id || '';
+  const weekends = [c.tradingCalendar || base?.id, settleId, c.paymentCalendar || settleId].some((id) => String(id || '').split('+').every((x) => x === 'WEEKEND') && id);
+  if (draft.family === 'crypto') return html`<div><h4 style="margin-bottom:6px">Calendars and settlement</h4><p class="note" style="margin:0">A digital asset trades and settles on every calendar day, so it has no calendar to set. ${isNum(c.settleLag) ? '' : 'Its settlement lag comes from the Book (same day unless changed) or can be set here.'}</p>
+    <div class="grid-form" style=${`${GRID};margin-top:8px`}><${Field} label="Settlement convention: lag in business days" hint="Leave empty for the Book's assumption. 0 is same-day." error=${lagBad ? `A whole number from 0 to ${MAX_SETTLE_LAG}.` : null}><${Num} value=${c.settleLag} onInput=${(v) => on({ settleLag: v })} placeholder="Book default" /><//></div></div>`;
+  return html`<div data-testid="conventions"><h4 style="margin-bottom:6px">Calendars and settlement</h4>
+    <div class="grid-form" style=${GRID}>
+      <${CalendarField} label="Trading calendar" hint="The days its market is open. A trade date that is closed on it is flagged in the preview." value=${c.tradingCalendar} onChange=${(v) => on({ tradingCalendar: v })} cals=${cals} inherit=${inherit} />
+      <${CalendarField} label="Settlement calendar" hint=${draft.family === 'fx' ? 'Added to the payment calendars of the two currencies, which always apply to a value date.' : 'Settlement lags count business days on it, and a settlement date stated on a trade must be one.'} value=${c.settlementCalendar} onChange=${(v) => on({ settlementCalendar: v })} cals=${cals} inherit=${inherit} />
+      <${CalendarField} label="Payment calendar" hint="Coupons, interest, maturities and resets are paid on it. The payment calendar of each currency paid is always added." value=${c.paymentCalendar} onChange=${(v) => on({ paymentCalendar: v })} cals=${cals} inherit=${c.settlementCalendar ? `the settlement calendar, ${c.settlementCalendar}` : 'the settlement calendar'} />
+      <${Field} label="Settlement convention: lag in business days" span=${2} hint=${fixed || (draft.family === 'fx' ? 'Leave empty to use the spot lag in the contract terms (T+2 unless changed). 0 is same-day.' : 'Used ahead of any lag in the contract terms and of the Book\'s assumption for this product; leave empty to fall back to those. 0 is same-day.')} error=${lagBad ? `A whole number from 0 to ${MAX_SETTLE_LAG}.` : null}>
+        <${Num} value=${fixed ? null : c.settleLag} disabled=${Boolean(fixed)} onInput=${(v) => on({ settleLag: v })} placeholder=${fixed ? 'Fixed by the product' : 'Book default'} /><//>
+    </div>
+    <p class="note" style="margin:8px 0 0">${ccys.length ? `Payments in ${ccys.join(' and ')} also follow ${ccys.filter((x) => byCcy[x]).map((x) => `the ${x} payment calendar (${byCcy[x]})`).join(' and ') || 'no further calendar'}.` : ''}
+      ${' '}A settlement date or lag can still be stated for a single trade on its ticket; it is checked against the settlement calendar.${saved?.locked ? ' These can be changed although the instrument has traded: they apply to dates worked out from then on, and nothing already booked moves.' : ''}</p>
+    ${weekends ? html`<div style="margin-top:8px"><${Notice} tone="warn"><b>Weekends-only calendar.</b> At least one of these calendars is weekends only, so local holidays are not recognised in the dates worked out on it. This is shown on the instrument, its ticket, the Marketplaces row and every trade preview.<//></div>` : null}
+    ${missing.length ? html`<div style="margin-top:8px"><${Notice} tone="warn"><b>Approximate payment calendar.</b> No payment calendar is built in for ${missing.join(' and ')}, so ${missing.length > 1 ? 'their' : 'its'} bank holidays are not recognised on payment dates. Add them as extra holidays of the calendar you choose under Settings, Market calendars.<//></div>` : null}
+  </div>`;
+}
+
 const otherIds = (i) => Object.entries(i?.externalIds || {}).filter(([k, v]) => k !== 'shaffer' && v).map(([k, v]) => ({ k, v: String(v) }));
 
 /**
@@ -359,8 +428,10 @@ function CalendarHint({ draft, saved, cals, countryOk }) {
   const same = (a, b) => String(a || '').toUpperCase() === String(b || '').toUpperCase();
   const unchanged = saved?.calendar && same(draft.venueCountry, saved.venueCountry) && draft.venueType === saved.venueType && draft.marketView === saved.marketView
     && same(draft.tradingCcy, saved.tradingCcy) && same(draft.settleCcy || draft.tradingCcy, saved.settleCcy || saved.tradingCcy) && (draft.family !== 'fx' || (same(draft.terms?.base, saved.terms?.base) && same(draft.terms?.quote, saved.terms?.quote)));
-  const cal = unchanged ? saved.calendar : cals && countryOk ? expectedCalendar(draft, cals) : null;
-  const row = (body) => html`<div class="field" style="grid-column:1 / -1"><span class="lbl">Settlement calendar${saved && !unchanged && cal ? ' after saving' : ''}</span>${body}</div>`;
+  // With calendars set on the instrument, this line states what the venue and currency alone would give.
+  const own = String(draft.conventions?.settlementCalendar || '').trim();
+  const cal = unchanged && !saved.conventions && !own ? saved.calendar : cals && countryOk ? expectedCalendar(draft, cals) : null;
+  const row = (body) => html`<div class="field" style="grid-column:1 / -1"><span class="lbl">${own ? 'Calendar the venue and currency would select (a settlement calendar is set below)' : `Settlement calendar${saved && !unchanged && cal ? ' after saving' : ''}`}</span>${body}</div>`;
   if (!cal) return row(html`<div class="small muted">${cals === false && !unchanged ? 'The calendar list could not be loaded, so the calendar these fields select cannot be shown here. It is stated on the instrument once saved.' : !countryOk ? 'Enter a two-letter venue country to see the calendar it selects.' : draft.family === 'fx' ? 'Enter both currencies of the pair to see the calendars its value dates use.' : 'Loading the calendars…'}</div>`);
   // The note of a calendar inferred from the currency already says how it was chosen.
   const how = cal.basis === 'currency' && cal.note && draft.family !== 'fx' ? '' : calendarBasis(cal, draft);
@@ -433,17 +504,19 @@ function InstrumentForm({ inst: given, view, preset, onDone, onClose }) {
   const save = async () => {
     setTried(true); setError(null);
     if (!draft || !draft.name.trim() || !draft.marketView || (country && !/^[A-Z]{2}$/.test(country))) { top.current?.scrollIntoView({ block: 'start' }); return; }
+    const conv = conventionsPayload(draft.conventions);
     setBusy(true);
     const d = { ...draft, name: draft.name.trim(), symbol: draft.symbol.trim(), venueCountry: country, tradingCcy: pairCcy ? draft.terms.quote || draft.tradingCcy : draft.tradingCcy, externalIds: externalIds() };
     try {
       let out;
       if (editing) {
         // The venue country is a descriptive field: it stays editable after trading, and an empty value clears it.
-        const patch = { name: d.name, symbol: d.symbol, marketView: d.marketView, tags: d.tags, issuer: d.issuer.trim(), domicile: d.domicile.trim(), venue: d.venue.trim(), venueCountry: d.venueCountry, underlyingGeo: d.underlyingGeo.trim(), externalIds: d.externalIds };
+        // Calendars and the settlement lag are conventions: like the venue country they stay editable after trading (null clears them).
+        const patch = { name: d.name, symbol: d.symbol, marketView: d.marketView, tags: d.tags, issuer: d.issuer.trim(), domicile: d.domicile.trim(), venue: d.venue.trim(), venueCountry: d.venueCountry, underlyingGeo: d.underlyingGeo.trim(), externalIds: d.externalIds, conventions: conv };
         // Once traded, the server accepts descriptive fields only.
         if (!locked) Object.assign(patch, { venueType: d.venueType, underlyingId: d.underlyingId || '', tradingCcy: d.tradingCcy, settleCcy: pairCcy ? undefined : d.settleCcy.trim().toUpperCase(), multiplier: d.multiplier ?? undefined, terms: d.terms });
         out = await put(`/api/instruments/${inst.id}`, patch);
-      } else out = await post('/api/instruments', draftToContract({ ...d, settleCcy: pairCcy ? '' : d.settleCcy }));
+      } else out = await post('/api/instruments', { ...draftToContract({ ...d, settleCcy: pairCcy ? '' : d.settleCcy }), conventions: conv });
       toast(editing ? 'Changes saved.' : `Instrument registered: ${out.symbol || out.name}.`);
       bump(); onDone?.(out); onClose();
     } catch (err) { setError(err); setBusy(false); requestAnimationFrame(() => top.current?.scrollIntoView({ block: 'start' })); }
@@ -468,7 +541,7 @@ function InstrumentForm({ inst: given, view, preset, onDone, onClose }) {
     <div class="stack">
       <div ref=${top} style="margin-bottom:-12px"></div>
       ${problems.length ? html`<${Notice} tone="err"><b>The instrument was not saved.</b> ${problems.length === 1 ? problems[0] : html`Correct these and save again:<ul style="margin:4px 0 0;padding-left:18px">${problems.map((p) => html`<li>${p}</li>`)}</ul>`}<//>` : null}
-      ${locked ? html`<${Notice} tone="warn"><b>Contract terms are locked.</b> This instrument has been traded, so its venue type, currencies, underlying, multiplier and contract terms can no longer change: positions and past cash flows were booked on them. Name, symbol, issuer, issuer domicile, underlying geography, venue name, venue country (which selects the settlement calendar), market view, cross-market tags and external IDs can still be edited. For different terms, register a new instrument.<//>` : null}
+      ${locked ? html`<${Notice} tone="warn"><b>Contract terms are locked.</b> This instrument has been traded, so its venue type, currencies, underlying, multiplier and contract terms can no longer change: positions and past cash flows were booked on them. Name, symbol, issuer, issuer domicile, underlying geography, venue name, venue country, the calendars and settlement lag under Calendars and settlement, market view, cross-market tags and external IDs can still be edited. For different terms, register a new instrument.<//>` : null}
 
       <div><h4 style="margin-bottom:6px">Product</h4>
         <div class="grid-form" style=${GRID}>
@@ -500,6 +573,7 @@ function InstrumentForm({ inst: given, view, preset, onDone, onClose }) {
           <${CalendarHint} draft=${{ ...draft, venueCountry: country, tradingCcy: pairCcy ? draft.terms.quote || '' : draft.tradingCcy }} saved=${editing ? inst : null} cals=${cals} countryOk=${!country || /^[A-Z]{2}$/.test(country)} />
         </div>
       </div>
+      <${ConventionFields} draft=${{ ...draft, venueCountry: country, tradingCcy: pairCcy ? draft.terms.quote || '' : draft.tradingCcy }} set=${set} cals=${cals} product=${product} saved=${editing ? inst : null} />
       <div><h4 style="margin-bottom:6px">Market view</h4>
         <div class="grid-form" style=${GRID}>
           <${Field} label=${html`Primary view <span class="muted">(required)</span>`} span=${2} error=${viewError}><div><${Seg} value=${draft.marketView} onChange=${(v) => set({ marketView: v, tags: draft.tags.filter((t) => t !== v) })} options=${pair.map((v) => ({ value: v, label: VIEW_LABEL[v], disabled: Boolean(decided && decided !== v), title: decided && decided !== v ? 'The listing venue decides the view' : undefined }))} /></div><//>

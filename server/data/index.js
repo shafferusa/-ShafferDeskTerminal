@@ -17,6 +17,7 @@ import { dateInTz } from '../core/clock.js';
 import { AppError, num } from '../core/util.js';
 import { j, pj } from '../db/db.js';
 import { createDemoMarketPort } from './demo.js';
+import { DEMO_INVESTMENT_STRATEGIES } from './demo-hedge.js';
 import { AWAITING_MESSAGE, makeObservation, midOf, withFreshness } from './observation.js';
 import { createAwaitingAnalyticsPort } from './ports.js';
 import { createShafferAnalyticsPort, createShafferMarketPort } from './shaffer.js';
@@ -91,8 +92,26 @@ export function createDataAdapter({ db, config, clock }) {
     ? createDemoMarketPort({ clock, resolveInstrument: (id) => resolveInstrument(id) })
     : createShafferMarketPort({ getConnection, credentials: config.credentials, clock });
   const analytics = config.demo
-    ? createAwaitingAnalyticsPort({ message: `${AWAITING_MESSAGE} (analytics are not simulated in demo mode)` })
+    ? demoAnalyticsPort()
     : createShafferAnalyticsPort({ getConnection, credentials: config.credentials, clock });
+
+  /**
+   * Demo mode: Analytics Lab stays "awaiting" (analytics are not simulated). The one thing the
+   * labelled fixtures supply through this port is a small fictional list of investment Strategies
+   * with IDs, so choosing a Strategy by ID can be exercised. Hedge requests are answered by the
+   * same fixtures in core/hedge.js. With the fixtures off, the list is awaiting like everything else.
+   */
+  function demoAnalyticsPort() {
+    const port = createAwaitingAnalyticsPort({ message: `${AWAITING_MESSAGE} (analytics are not simulated in demo mode)` });
+    const awaitingStrategies = port.strategies;
+    port.strategies = async () => {
+      const script = getSetting('demo.hedgeScript', null);
+      if (script) return script.available !== false && Array.isArray(script.strategies) ? { available: true, items: script.strategies, fixture: 'test-fixture' } : awaitingStrategies();
+      if (getSetting('demo.hedgeFixture', true)) return { available: true, items: DEMO_INVESTMENT_STRATEGIES, fixture: 'demo-fixture' };
+      return awaitingStrategies();
+    };
+    return port;
+  }
 
   // ---- refreshable cache ------------------------------------------------------------------
   const cache = new Map(); // `${kind}|${subject}` -> value
@@ -190,7 +209,9 @@ export function createDataAdapter({ db, config, clock }) {
     const v = num(value), b = num(bid), a = num(ask);
     if (v === null && (b === null || a === null) && kind !== 'borrow') throw new AppError('Enter a value, or both a bid and an ask.');
     if (b !== null && a !== null && b > a) throw new AppError('Bid cannot be above ask.');
-    if (kind !== 'rate' && kind !== 'borrow' && [v, b, a].some((x) => x !== null && x < 0)) throw new AppError('Prices cannot be negative.');
+    // A swap is marked at its net present value and a CDS at its upfront: either can be against us, so it can be negative.
+    const signedMark = kind === 'price' && ['swap', 'cds'].includes(resolveInstrument(subject)?.family);
+    if (kind !== 'rate' && kind !== 'borrow' && !signedMark && [v, b, a].some((x) => x !== null && x < 0)) throw new AppError('Prices cannot be negative.');
     const nowIso = clock.now().toISOString();
     const value2 = v !== null ? v : b !== null && a !== null ? (b + a) / 2 : null;
     return db.tx(() => {
