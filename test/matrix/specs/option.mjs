@@ -847,4 +847,313 @@ const etfOption = {
   ],
 };
 
-export default [equityOption, etfOption];
+// ---------------------------------------------------------------------------------------------
+// option_on_future
+// ---------------------------------------------------------------------------------------------
+// American options on a NYMEX-listed crude oil future. One option contract delivers ONE futures
+// contract, and the future is 1,000 barrels: the premium is quoted per barrel and one option costs
+// premium x 1,000. Exercise opens a futures position at the strike, which posts the future's initial
+// margin and then settles variation every day like any future. A written put is cash-secured on the
+// full contract value: contracts x 1,000 barrels x strike.
+const FOP_CALL = 'BLCM6C70', FOP_PUT = 'BLCM6P66';
+const futureOptionDraft = (name, symbol, right, strike) => ({
+  productId: 'option_on_future', name, symbol, marketView: 'US_DERIV', venue: 'NYMEX', venueType: 'exchange', venueCountry: 'US', underlyingGeo: 'US', tradingCcy: 'USD', underlying: 'fut',
+  multiplier: 1000, // premium multiplier: the future's 1,000 barrels
+  terms: { right, strike, expiration: '2026-05-14', exercise: 'american', settlement: 'physical', deliverable: { units: 1 } }, // one futures contract per option
+});
+const optionOnFuture = {
+  productId: 'option_on_future',
+  title: 'Brennock Light Crude June 2026 options on the future (70 call, 66 put), NYMEX-listed, American, one 1,000-barrel future per contract',
+  matrix: {
+    ticket: 'The contract in its Marketplace (US Derivatives), Trade tab (option ticket), then the trade preview. Exercise is on the position Lifecycle menu; the futures position delivered is closed with Close on the strategy instance',
+    requiredFields: OPTION_TICKET.requiredFields,
+    automaticInputs: [...OPTION_TICKET.automaticInputs, 'initial margin per futures contract from the contract terms', 'daily settlement price of the future (close fixture)'],
+    manualInputs: ['contract data at registration: premium multiplier (the future\'s multiplier), deliverable (1 future)', 'early exercise of a long American option (contracts), recorded by hand from the position Lifecycle menu'],
+    settlement: 'Premium T+1 on the US calendar; the futures position delivered on exercise takes effect the same day and posts its initial margin at once',
+    lifecycle: 'Expiry item on the option expiration date against the close of the future; in the money: exercised automatically into a futures position at the strike (simulated delivery) with initial margin posted; out of the money: lapses; the future then settles variation margin daily',
+    accounting: 'Average premium; premium realized on sale, exercise and lapse; the future delivered is carried at the strike as its first settlement price, so the intrinsic value arrives as variation margin',
+    collateral: 'A written put reserves contracts x 1,000 barrels x strike (cash-secured); initial margin of 6,500 a futures contract is posted from settled cash on exercise and released when the future is closed',
+  },
+  start: MAY(4),
+  settlementCheck: { lag: 1, holidays: [] }, // US: no market holiday between 4 and 15 May 2026 (Memorial Day is 25 May)
+  book: book('Matrix option on a future', { fees: { option: { perUnit: 1.50, minimum: 0, bps: 0 } } }), // 1.50 an option contract, 2.25 a futures contract
+  instruments: {
+    fut: { productId: 'commodity_future', name: 'Brennock Light Crude June 2026 future', symbol: 'BLCM6', marketView: 'US_DERIV', venue: 'NYMEX', venueType: 'exchange', venueCountry: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 1000,
+      terms: { root: 'BLC', expiration: '2026-05-19', tickSize: 0.01, initialMargin: 6500, settlement: 'physical' } },
+    main: futureOptionDraft('BLC June 2026 70 call', FOP_CALL, 'C', 70),
+    put: futureOptionDraft('BLC June 2026 66 put', FOP_PUT, 'P', 66),
+  },
+  quotes: {
+    fut: { bid: 71.20, ask: 71.22, last: 71.21, bidSize: 200, askSize: 200 },
+    main: { bid: 2.10, ask: 2.14, last: 2.12, bidSize: 200, askSize: 200 },
+    put: { bid: 0.80, ask: 0.84, last: 0.82, bidSize: 200, askSize: 200 },
+  },
+  expectAtStart: START_STATE,
+  steps: [
+    optionTicket({
+      id: 'buy-to-open', covers: 'open', instrument: 'main', side: 'buy', qty: 4, symbol: FOP_CALL, as: 'calls',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 4, estimate: 2.14, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2026-05-05', calendar: 'US',
+            cash: -8_560, // 4 contracts x 2.14 (the ask) x 1,000 barrels
+            fees: 6, // 4 x 1.50
+            notional: 284_840 }], // 4 contracts x 1 future x 1,000 barrels x 71.21 (the future's last price)
+          cash: { USD: { purchases: 8_560, fees: 6, reserved: 0, required: 8_566, available: 500_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 4, avgPrice: 2.14, fills: [{ qty: 4, price: 2.14, model: 'quoted-bid-ask', settleDate: '2026-05-05', source: 'Test fixture', status: 'simulated' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 4 BLCM6C70 @ 2.14 USD', owner: 'account', date: '2026-05-04' }],
+        cash: { account: { USD: { settled: 500_000, unsettled: -8_566, availableToTrade: 491_434, availableToWithdraw: 491_434 } } },
+        positions: [{ instrument: 'main', lot: 'calls', owner: 'account', direction: 'long', qty: 4, avgCost: 2.14, cost: 8_560, price: 2.12,
+          value: 8_480, // 4 x 2.12 (last) x 1,000
+          unrealized: -80, priceSource: 'Test fixture' }],
+        holdings: { main: { long: 4, short: 0, net: 4 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-05-05', amount: -8_566, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'option.expiry', instrument: 'main', dueDate: '2026-05-14', status: 'pending' }],
+        pnl: { account: { realized: 0, dividends: 0, commissions: -6, fees: 0, borrowFunding: 0, unrealized: -80, total: -86 } },
+        nav: { account: 499_914, book: 999_914 },
+        balance: { account: { cash: 500_000, positions: 8_480, payable: 8_566, assets: 508_480, liabilities: 8_566, netAssets: 499_914 } },
+      },
+    }),
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: MAY(5),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 8,566.00 USD from settled cash', cash: { USD: -8_566 }, date: '2026-05-05' }],
+        cash: { account: { USD: { settled: 491_434, unsettled: 0, availableToTrade: 491_434, availableToWithdraw: 491_434 } } },
+        pending: [],
+        balance: { account: { cash: 491_434, payable: null, assets: 499_914, liabilities: 0 } },
+      },
+    },
+    optionTicket({
+      // Writing 2 puts struck at 66. One contract stands for 1,000 barrels, so the cash-secured reserve is
+      // 2 contracts x 1 future x 1,000 barrels x 66 = 132,000.
+      id: 'write-puts', covers: ['write', 'reserve'], instrument: 'put', side: 'sell', qty: 2, symbol: FOP_PUT, as: 'puts',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'put', qty: 2, estimate: 0.80, model: 'quoted-bid-ask', settleDate: '2026-05-06', cash: 1_600, fees: 3, // 2 x 0.80 (the bid) x 1,000; 2 x 1.50
+            notional: 142_420 }], // 2 x 1,000 x 71.21
+          cash: { USD: { purchases: 0, proceeds: 1_600, fees: 3, reserved: 132_000, required: 132_003, available: 491_434, shortfall: 0, netCash: 1_597 } },
+          optionRequirement: [{ ccy: 'USD', amount: 132_000, finite: 132_000, naked: 0, uncoveredCallUnits: 0 }],
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 2, avgPrice: 0.80 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: /^Sold 2 BLCM6P66 @ 0\.80 USD$/, owner: 'account', date: '2026-05-05' }],
+        cash: { account: { USD: { settled: 491_434, unsettled: 1_597, reserved: 132_000, availableToTrade: 361_031, availableToWithdraw: 359_434 } } }, // 491,434 + 1,597 - 132,000; 491,434 - 132,000
+        positions: [
+          { instrument: 'main', lot: 'calls', qty: 4, cost: 8_560, value: 8_480, unrealized: -80 },
+          { instrument: 'put', lot: 'puts', owner: 'account', direction: 'short', qty: -2, cost: -1_600, avgCost: 0.80, price: 0.82, value: -1_640, unrealized: -40 }, // -2 x 0.82 x 1,000
+        ],
+        holdings: { main: { long: 4, short: 0, net: 4 }, put: { long: 0, short: 2, net: -2 } },
+        pending: [{ instrument: 'put', lot: 'puts', dueDate: '2026-05-06', amount: 1_597, into: 'cash' }],
+        lifecycle: [{ type: 'option.expiry', instrument: 'main', dueDate: '2026-05-14', status: 'pending' }, { type: 'option.expiry', instrument: 'put', dueDate: '2026-05-14', status: 'pending' }],
+        pnl: { account: { commissions: -9, unrealized: -120, total: -129 } },
+        nav: { account: 499_871, book: 999_871 },
+        balance: { account: { cash: 491_434, receivable: 1_597, positions: 6_840, assets: 499_871, liabilities: 0, netAssets: 499_871 } }, // 8,480 - 1,640
+      },
+    }),
+    {
+      id: 'settle-put-premium', covers: 'settlement', action: 'clock', to: MAY(6),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 1,597.00 USD into settled cash', cash: { USD: 1_597 } }],
+        cash: { account: { USD: { settled: 493_031, unsettled: 0, reserved: 132_000, availableToTrade: 361_031, availableToWithdraw: 361_031 } } },
+        pending: [],
+        balance: { account: { cash: 493_031, receivable: null } },
+      },
+    },
+    { id: 'future-up', action: 'quote', instrument: 'fut', quote: { bid: 73.40, ask: 73.42, last: 73.41, bidSize: 200, askSize: 200 }, expect: {} }, // no future is held yet
+    {
+      id: 'call-premium-up', action: 'quote', instrument: 'main', quote: { bid: 3.70, ask: 3.76, last: 3.73, bidSize: 200, askSize: 200 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'calls', qty: 4, price: 3.73, value: 14_920, unrealized: 6_360 }, { instrument: 'put', qty: -2 }], // 4 x 3.73 x 1,000 - 8,560
+        pnl: { account: { unrealized: 6_320, total: 6_311 } },
+        nav: { account: 506_311, book: 1_006_311 },
+        balance: { account: { positions: 13_280, assets: 506_311, netAssets: 506_311 } },
+      },
+    },
+    {
+      id: 'put-premium-down', action: 'quote', instrument: 'put', quote: { bid: 0.40, ask: 0.44, last: 0.42, bidSize: 200, askSize: 200 },
+      expect: {
+        positions: [{ instrument: 'main', qty: 4 }, { instrument: 'put', lot: 'puts', qty: -2, price: 0.42, value: -840, unrealized: 760 }], // -840 + 1,600
+        pnl: { account: { unrealized: 7_120, total: 7_111 } },
+        nav: { account: 507_111, book: 1_007_111 },
+        balance: { account: { positions: 14_080, assets: 507_111, netAssets: 507_111 } },
+      },
+    },
+    {
+      // Early exercise of 1 call by hand. Its premium, 2.14 x 1,000 = 2,140, is realized as a loss. One futures
+      // contract is delivered at the strike: long 1 at 70. No purchase price is paid for a future; its initial
+      // margin, 6,500, is posted from settled cash at once. Against a last price of 73.41 it shows
+      // (73.41 - 70) x 1,000 = 3,410 of open profit.
+      id: 'exercise-early', covers: ['exercise', 'margin'], action: 'lifecycle', lot: 'calls', body: { action: 'exercise', contracts: 1 },
+      expect: {
+        events: [
+          { type: 'option.exercised', summary: 'Exercised: 1 BLCM6C70 at strike 70', owner: 'account', date: '2026-05-06' },
+          { type: 'option.delivery', summary: /^Simulated delivery: received 1 BLCM6 at strike 70 on exercise of BLCM6C70/, owner: 'account', cash: { USD: -6_500 } },
+        ],
+        cash: { account: { USD: { settled: 486_531, unsettled: 0, margin: 6_500, reserved: 132_000, availableToTrade: 354_531, availableToWithdraw: 354_531 } } }, // 493,031 - 6,500; less the 132,000 reserve
+        positions: [
+          { instrument: 'fut', lot: 'calls', owner: 'account', direction: 'long', qty: 1, avgCost: 70, price: 73.41, value: 3_410, unrealized: 3_410 },
+          { instrument: 'main', lot: 'calls', qty: 3, cost: 6_420, avgCost: 2.14, price: 3.73, value: 11_190, unrealized: 4_770 }, // 3 x 3.73 x 1,000 - 6,420
+          { instrument: 'put', lot: 'puts', qty: -2, value: -840, unrealized: 760 },
+        ],
+        holdings: { fut: { long: 1, short: 0, net: 1 }, main: { long: 3, short: 0, net: 3 } },
+        lifecycle: [{ type: 'option.expiry', instrument: 'main', dueDate: '2026-05-14', status: 'pending' }, { type: 'option.expiry', instrument: 'put', dueDate: '2026-05-14', status: 'pending' }, { type: 'future.expiry', instrument: 'fut', dueDate: '2026-05-19', status: 'pending' }],
+        pnl: { account: { realized: -2_140, unrealized: 8_940, total: 6_791 } }, // 4,770 + 760 + 3,410
+        nav: { account: 506_791, book: 1_006_791 }, // 320 lower: the time value of the exercised call (3,730 against 3,410 of intrinsic value)
+        balance: { account: { cash: 486_531, margin: 6_500, positions: 13_760, assets: 506_791, liabilities: 0, netAssets: 506_791 } }, // 11,190 - 840 + 3,410
+      },
+    },
+    { id: 'settlement-price-known-later', action: 'close_price', instrument: 'fut', date: '2026-05-06', value: 73.50, expect: {} },
+    {
+      // End of day: the future settles at 73.50 against the 70 it was delivered at. Variation margin received:
+      // (73.50 - 70) x 1,000 = 3,500. From here it is measured from 73.50: against a last price of 73.41 it shows -90.
+      id: 'variation-margin', covers: 'variation margin', action: 'clock', to: MAY(6, '17:30'),
+      expect: {
+        events: [{ type: 'future.variation', summary: 'Variation margin received on 1 BLCM6: 3,500.00 USD (settlement 73.50 vs 70.00)', cash: { USD: 3_500 }, owner: 'account', date: '2026-05-06' }],
+        cash: { account: { USD: { settled: 490_031, margin: 6_500, availableToTrade: 358_031, availableToWithdraw: 358_031 } } },
+        positions: [{ instrument: 'fut', lot: 'calls', qty: 1, avgCost: 73.5, price: 73.41, value: -90, unrealized: -90 }, { instrument: 'main', qty: 3 }, { instrument: 'put', qty: -2 }],
+        pnl: { account: { realized: 1_360, unrealized: 5_440, total: 6_791 } }, // -2,140 + 3,500; 4,770 + 760 - 90
+        balance: { account: { cash: 490_031, positions: 10_260, assets: 506_791, netAssets: 506_791 } },
+      },
+    },
+    { id: 'thursday-morning', action: 'clock', to: MAY(7), expect: {} },
+    {
+      id: 'future-up-2', action: 'quote', instrument: 'fut', quote: { bid: 74.00, ask: 74.02, last: 74.01, bidSize: 200, askSize: 200 },
+      expect: {
+        positions: [{ instrument: 'fut', lot: 'calls', qty: 1, price: 74.01, value: 510, unrealized: 510 }, { instrument: 'main', qty: 3 }, { instrument: 'put', qty: -2 }], // (74.01 - 73.50) x 1,000
+        pnl: { account: { unrealized: 6_040, total: 7_391 } },
+        nav: { account: 507_391, book: 1_007_391 },
+        balance: { account: { positions: 10_860, assets: 507_391, netAssets: 507_391 } },
+      },
+    },
+    {
+      id: 'call-premium-up-2', action: 'quote', instrument: 'main', quote: { bid: 4.20, ask: 4.26, last: 4.23, bidSize: 200, askSize: 200 },
+      expect: {
+        positions: [{ instrument: 'fut', qty: 1 }, { instrument: 'main', lot: 'calls', qty: 3, price: 4.23, value: 12_690, unrealized: 6_270 }, { instrument: 'put', qty: -2 }], // 3 x 4.23 x 1,000 - 6,420
+        pnl: { account: { unrealized: 7_540, total: 8_891 } }, // 6,270 + 760 + 510
+        nav: { account: 508_891, book: 1_008_891 },
+        balance: { account: { positions: 12_360, assets: 508_891, netAssets: 508_891 } },
+      },
+    },
+    {
+      // The futures position delivered by the exercise is closed with its own Close button: sell 1 at the bid, 74.00.
+      // Realized against the last settlement price: (74.00 - 73.50) x 1,000 = 500. The 6,500 margin comes back.
+      id: 'close-future', covers: ['close', 'margin release'], action: 'close', lot: 'calls', instrument: 'fut', scope: 'position', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'fut', qty: 1, estimate: 74.00, model: 'quoted-bid-ask', fees: 2.25, notional: 74_000, initialMargin: -6_500 }] }, // 1 x 74.00 x 1,000
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', instrument: 'fut', status: 'filled', filledQty: 1, avgPrice: 74.00 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 1 BLCM6 @ 74.00 (notional 74,000.00 USD; margin released 6,500.00 USD; realized 500.00 USD)', cash: { USD: 6_997.75 } }], // 500 - 2.25 + 6,500
+        cash: { account: { USD: { settled: 497_028.75, margin: 0, availableToTrade: 365_028.75, availableToWithdraw: 365_028.75 } } },
+        positions: [{ instrument: 'main', lot: 'calls', qty: 3, value: 12_690, unrealized: 6_270 }, { instrument: 'put', lot: 'puts', qty: -2, value: -840, unrealized: 760 }],
+        holdings: { fut: null },
+        lifecycle: [{ type: 'option.expiry', instrument: 'main', dueDate: '2026-05-14', status: 'pending' }, { type: 'option.expiry', instrument: 'put', dueDate: '2026-05-14', status: 'pending' }],
+        pnl: { account: { realized: 1_860, commissions: -11.25, unrealized: 7_030, total: 8_878.75 } },
+        nav: { account: 508_878.75, book: 1_008_878.75 },
+        balance: { account: { cash: 497_028.75, margin: null, positions: 11_850, assets: 508_878.75, netAssets: 508_878.75 } },
+      },
+    },
+    {
+      id: 'sell-to-close-one', covers: 'reduce', action: 'close', lot: 'calls', scope: 'strategy', percent: 34, // 34% of 3 contracts, in whole contracts: sells 1
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'sell', qty: 1, estimate: 4.20, model: 'quoted-bid-ask', settleDate: '2026-05-08', cash: 4_200, fees: 1.50 }] }, // 1 x 4.20 (the bid) x 1,000
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 1, avgPrice: 4.20 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 1 BLCM6C70 @ 4.20 USD (realized 2,060.00 USD)' }], // 4,200 - 2,140
+        cash: { account: { USD: { settled: 497_028.75, unsettled: 4_198.50, reserved: 132_000, availableToTrade: 369_227.25, availableToWithdraw: 365_028.75 } } },
+        positions: [{ instrument: 'main', lot: 'calls', qty: 2, cost: 4_280, avgCost: 2.14, price: 4.23, value: 8_460, unrealized: 4_180 }, { instrument: 'put', qty: -2 }],
+        holdings: { main: { long: 2, short: 0, net: 2 } },
+        pending: [{ instrument: 'main', dueDate: '2026-05-08', amount: 4_198.50, into: 'cash' }],
+        pnl: { account: { realized: 3_920, commissions: -12.75, unrealized: 4_940, total: 8_847.25 } },
+        nav: { account: 508_847.25, book: 1_008_847.25 },
+        balance: { account: { cash: 497_028.75, receivable: 4_198.50, positions: 7_620, assets: 508_847.25, netAssets: 508_847.25 } },
+      },
+    },
+    {
+      id: 'settle-reduce', covers: 'settlement', action: 'clock', to: MAY(8),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 4,198.50 USD into settled cash' }],
+        cash: { account: { USD: { settled: 501_227.25, unsettled: 0, availableToTrade: 369_227.25, availableToWithdraw: 369_227.25 } } },
+        pending: [],
+        balance: { account: { cash: 501_227.25, receivable: null } },
+      },
+    },
+    { id: 'expiry-close-known-later', action: 'close_price', instrument: 'fut', date: '2026-05-14', value: 74.10, expect: {} },
+    {
+      id: 'expiry-morning', covers: 'expiry', action: 'clock', to: MAY(14),
+      expect: { lifecycle: [{ type: 'option.expiry', instrument: 'main', dueDate: '2026-05-14', status: 'blocked' }, { type: 'option.expiry', instrument: 'put', dueDate: '2026-05-14', status: 'blocked' }] },
+    },
+    { id: 'future-on-expiry-morning', action: 'quote', instrument: 'fut', quote: { bid: 74.06, ask: 74.08, last: 74.07, bidSize: 200, askSize: 200 }, expect: {} },
+    {
+      id: 'call-on-expiry-morning', action: 'quote', instrument: 'main', quote: { bid: 4.04, ask: 4.10, last: 4.07, bidSize: 200, askSize: 200 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'calls', qty: 2, price: 4.07, value: 8_140, unrealized: 3_860 }, { instrument: 'put', qty: -2 }],
+        pnl: { account: { unrealized: 4_620, total: 8_527.25 } },
+        nav: { account: 508_527.25, book: 1_008_527.25 },
+        balance: { account: { positions: 7_300, assets: 508_527.25, netAssets: 508_527.25 } },
+      },
+    },
+    {
+      id: 'put-on-expiry-morning', action: 'quote', instrument: 'put', quote: { bid: 0.01, ask: 0.03, last: 0.02, bidSize: 200, askSize: 200 },
+      expect: {
+        positions: [{ instrument: 'main', qty: 2 }, { instrument: 'put', lot: 'puts', qty: -2, price: 0.02, value: -40, unrealized: 1_560 }],
+        pnl: { account: { unrealized: 5_420, total: 9_327.25 } },
+        nav: { account: 509_327.25, book: 1_009_327.25 },
+        balance: { account: { positions: 8_100, assets: 509_327.25, netAssets: 509_327.25 } },
+      },
+    },
+    {
+      // 17:30 on the expiration date. The future closed at 74.10.
+      //   Calls (strike 70), in the money: exercised automatically. Premium of 2 x 2.14 x 1,000 = 4,280 realized as a
+      //   loss; 2 futures delivered at 70, posting 2 x 6,500 = 13,000 of initial margin.
+      //   Puts (strike 66), out of the money: lapse. Their premium, 1,600, is realized and the 132,000 reserve released.
+      //   End of day: the 2 futures settle at 74.10 against 70: (74.10 - 70) x 1,000 x 2 = 8,200 received.
+      //   Against a last price of 74.07 they then show (74.07 - 74.10) x 1,000 x 2 = -60.
+      id: 'expiry', covers: ['expiry', 'exercise', 'lapse', 'margin', 'variation margin', 'reserve release'], action: 'clock', to: MAY(14, '17:30'),
+      expect: {
+        events: [
+          { type: 'option.exercised', summary: 'Exercised: 2 BLCM6C70 at strike 70', owner: 'account', date: '2026-05-14' },
+          { type: 'option.delivery', summary: /^Simulated delivery: received 2 BLCM6 at strike 70 on exercise of BLCM6C70/, owner: 'account', cash: { USD: -13_000 }, date: '2026-05-14' },
+          { type: 'option.expired', summary: 'Expired worthless: 2 BLCM6P66 (fixing 74.1)', owner: 'account', date: '2026-05-14' },
+          { type: 'future.variation', summary: 'Variation margin received on 2 BLCM6: 8,200.00 USD (settlement 74.10 vs 70.00)', cash: { USD: 8_200 }, owner: 'account', date: '2026-05-14' },
+        ],
+        cash: { account: { USD: { settled: 496_427.25, unsettled: 0, margin: 13_000, reserved: 0, availableToTrade: 496_427.25, availableToWithdraw: 496_427.25 } } }, // 501,227.25 - 13,000 + 8,200
+        positions: [{ instrument: 'fut', lot: 'calls', owner: 'account', direction: 'long', qty: 2, avgCost: 74.1, price: 74.07, value: -60, unrealized: -60 }],
+        holdings: { fut: { long: 2, short: 0, net: 2 }, main: null, put: null },
+        lifecycle: [{ type: 'future.expiry', instrument: 'fut', dueDate: '2026-05-19', status: 'pending' }],
+        pnl: { account: { realized: 9_440, unrealized: -60, total: 9_367.25 } }, // 3,920 - 4,280 + 1,600 + 8,200
+        nav: { account: 509_367.25, book: 1_009_367.25 },
+        balance: { account: { cash: 496_427.25, margin: 13_000, positions: -60, assets: 509_367.25, liabilities: 0, netAssets: 509_367.25 } },
+      },
+    },
+    { id: 'friday-morning', action: 'clock', to: MAY(15), expect: {} },
+    {
+      id: 'future-up-3', action: 'quote', instrument: 'fut', quote: { bid: 74.60, ask: 74.62, last: 74.61, bidSize: 200, askSize: 200 },
+      expect: {
+        positions: [{ instrument: 'fut', lot: 'calls', qty: 2, price: 74.61, value: 1_020, unrealized: 1_020 }], // (74.61 - 74.10) x 1,000 x 2
+        pnl: { account: { unrealized: 1_020, total: 10_447.25 } },
+        nav: { account: 510_447.25, book: 1_010_447.25 },
+        balance: { account: { positions: 1_020, assets: 510_447.25, netAssets: 510_447.25 } },
+      },
+    },
+    {
+      id: 'close-futures', covers: ['close', 'margin release'], action: 'close', lot: 'calls', instrument: 'fut', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'fut', qty: 2, estimate: 74.60, model: 'quoted-bid-ask', fees: 4.50, notional: 149_200, initialMargin: -13_000 }] }, // 2 x 74.60 x 1,000; 2 x 2.25
+        result: { status: 'closed', orders: [{ kind: 'trade', action: 'sell', instrument: 'fut', status: 'filled', filledQty: 2, avgPrice: 74.60 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 2 BLCM6 @ 74.60 (notional 149,200.00 USD; margin released 13,000.00 USD; realized 1,000.00 USD)', cash: { USD: 13_995.50 } }], // (74.60 - 74.10) x 2,000 = 1,000; 1,000 - 4.50 + 13,000
+        cash: { account: { USD: { settled: 510_422.75, unsettled: 0, margin: 0, reserved: 0, availableToTrade: 510_422.75, availableToWithdraw: 510_422.75 } }, treasury: { USD: { settled: 500_000 } } },
+        positions: [],
+        holdings: { fut: null },
+        pending: [],
+        lifecycle: [],
+        // Whole scenario: calls bought for 8,560, one sold for 4,200; futures from the three exercised calls:
+        // 3,500 + 500 and 8,200 + 1,000; puts +1,600; commissions 6 + 3 + 2.25 + 1.50 + 4.50 = 17.25.
+        // -8,560 + 4,200 + 4,000 + 9,200 + 1,600 - 17.25 = 10,422.75.
+        pnl: { account: { realized: 10_440, commissions: -17.25, unrealized: 0, total: 10_422.75 } },
+        nav: { account: 510_422.75, book: 1_010_422.75 },
+        balance: { account: { cash: 510_422.75, margin: null, positions: null, assets: 510_422.75, liabilities: 0, netAssets: 510_422.75 } },
+      },
+    },
+  ],
+};
+
+export default [equityOption, etfOption, optionOnFuture];

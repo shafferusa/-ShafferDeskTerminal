@@ -29,7 +29,10 @@ function normalizeOption(app, draft, listed) {
   if (listed) {
     if (!(multiplier > 0)) errors.push('Contract multiplier is required for a listed option (premium multiplier per contract).');
     const d = { ...(t.deliverable || {}) };
-    d.units = num(d.units) ?? multiplier;
+    // Units of the underlying INSTRUMENT one contract delivers: shares for an equity option (the multiplier unless
+    // stated), but one futures contract for an option on a future, whose premium multiplier is the future's own.
+    const onFuture = draft.underlying_id ? app.instruments.get(draft.underlying_id)?.family === 'future' : false;
+    d.units = num(d.units) ?? (onFuture ? 1 : multiplier);
     if (!(d.units > 0)) errors.push('Deliverable units per contract must be positive.');
     d.cash = num(d.cash) ?? 0;
     t.deliverable = d;
@@ -54,6 +57,17 @@ function normalizeOption(app, draft, listed) {
   if (!draft.underlying_id && !t.fixingRate && !t.underlyingDescription) errors.push('Choose the underlying instrument (or name the underlying rate / reference).');
   if (t.settlement === 'physical' && !draft.underlying_id) errors.push('Physical settlement needs an underlying instrument in the registry.');
   return { terms: t, multiplier: multiplier > 0 ? multiplier : 1, errors };
+}
+
+/**
+ * Underlying units one LISTED contract stands for: what it delivers, in units of the underlying's own price.
+ * 100 shares for a standard equity option; for an option on a future, the one future it delivers times that
+ * future's multiplier (1,000 barrels, 50 index points ...). Notional, exposure and the cash reserved against a
+ * written option are all measured in these units.
+ */
+export function underlyingUnits(app, inst) {
+  const und = inst.underlying_id ? app.instruments.get(inst.underlying_id) : null;
+  return inst.terms.deliverable.units * (und?.multiplier ?? 1);
 }
 
 /** The fixing an option settles against for a date: an instrument close or a rate observation. */
@@ -169,7 +183,7 @@ function makeOptionPlugin(family, listed) {
       return {
         ccy: inst.trading_ccy, principal: gross, cash: buy ? -gross : gross, accrued: 0,
         // Notional is the value of the deliverable, which is not the premium paid.
-        notional: undPx !== null ? qty * inst.terms.deliverable.units * undPx : qty * inst.terms.deliverable.units * inst.terms.strike,
+        notional: qty * (listed ? underlyingUnits(app, inst) : inst.terms.deliverable.units) * (undPx !== null ? undPx : inst.terms.strike),
         notionalBasis: undPx !== null ? 'underlying price' : 'strike (no underlying price available)',
         exposure: null, initialMargin: coll ? coll.initialMargin : 0, ...(coll ? { collateral: coll } : {}), notes: coll ? [...coll.notes] : [],
       };
@@ -181,7 +195,7 @@ function makeOptionPlugin(family, listed) {
       const v = valueSecurity(inst, pos, obs, mark);
       const und = inst.underlying_id ? app.data.price(inst.underlying_id) : null;
       const px = und?.value ?? null;
-      v.notional = px !== null ? money(Math.abs(pos.qty) * inst.terms.deliverable.units * px, inst.trading_ccy) : null;
+      v.notional = px !== null ? money(Math.abs(pos.qty) * (listed ? underlyingUnits(app, inst) : inst.terms.deliverable.units) * px, inst.trading_ccy) : null;
       v.exposure = null;
       return v;
     },
