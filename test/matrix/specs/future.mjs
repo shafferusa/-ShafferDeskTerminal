@@ -714,4 +714,390 @@ const equityFuture = {
   ],
 };
 
-export default [equityIndexFuture, equityFuture];
+// ---------------------------------------------------------------------------------------------
+// gov_bond_future
+// ---------------------------------------------------------------------------------------------
+// Modelled on the Eurex Euro-Bund future: 100,000 EUR face of a notional 6% German federal bond, quoted
+// in percent of par to two decimals, so one point is 1,000 EUR and the minimum move 0.01 is 10 EUR.
+// Physically delivered (a deliverable Bund on the 10th of the contract month; last trading day two
+// exchange days before, 8 June 2026); this scenario closes the position before then.
+// The contract is in euros and the Book reports in US dollars: every euro amount is checked, and so is
+// its translation at the EUR/USD fixture (1.10, then 1.08). Postings are translated at the rate of the
+// day they are booked; balances and open trade equity at the current rate; the difference is the
+// "FX effects" line.
+// The venue is in Germany, so the contract follows the TARGET calendar: Friday 1 May 2026 is a holiday
+// there and an ordinary business day in New York. The end-of-day pass of that Friday must exchange no
+// variation margin, although the standing quote (130.64) differs from Thursday's settlement (130.70).
+// Commission: 1.50 EUR a contract.
+const govBondFuture = {
+  productId: 'gov_bond_future',
+  title: 'Euro-Bund future (100,000 EUR face, 10 EUR a tick), June 2026, Eurex, held short across 1 May',
+  matrix: {
+    ...FUTURES_TICKET,
+    manualInputs: ['none in this scenario (delivery of a deliverable bond is not simulated: the position is closed before the last trading day)'],
+    settlement: 'No purchase cash; initial margin 2,600 EUR a contract and daily variation margin, both in euros; no variation on a TARGET holiday',
+    lifecycle: 'Daily variation margin on the contract\'s own business days (automatic); none on 1 May 2026 (TARGET holiday, US business day); the first settlement after the holiday is against the last settlement before it',
+    accounting: 'Euro cash, margin and open trade equity translated to USD at the current fixture rate; realized P&L and commission at the rate of their day; the rest is FX effects; commission 1.50 EUR a contract',
+    collateral: 'Initial margin per contract in EUR, posted from the Account\'s EUR cash; released pro rata',
+  },
+  start: AM('2026-04-28'),
+  settlementCheck: { lag: 0, holidays: ['2026-05-01'] }, // TARGET: 1 May 2026; no US holiday between 28 April and 5 May
+  book: book('Matrix government-bond future', {
+    capital: [{ ccy: 'USD', amount: 1_000_000 }, { ccy: 'EUR', amount: 400_000 }],
+    funding: [{ ccy: 'USD', amount: 200_000 }, { ccy: 'EUR', amount: 200_000 }],
+    fee: { perUnit: 1.50, minimum: 0, bps: 0 },
+  }),
+  fx: { 'EUR/USD': 1.10 },
+  instruments: {
+    main: { productId: 'gov_bond_future', name: 'Euro-Bund future, June 2026', symbol: 'FGBLM6', marketView: 'FOREIGN_DERIV', venue: 'Eurex', venueType: 'exchange', venueCountry: 'DE', issuer: 'Federal Republic of Germany', domicile: 'DE', underlyingGeo: 'DE',
+      tradingCcy: 'EUR', multiplier: 1000,
+      terms: { root: 'FGBL', expiration: '2026-06-08', tickSize: 0.01, initialMargin: 2_600, settlement: 'physical', priceUnits: '% of par' } },
+  },
+  quotes: { main: { bid: 130.50, ask: 130.51, last: 130.50, bidSize: 500, askSize: 500 } },
+  closes: { main: { '2026-04-28': 130.42, '2026-04-29': 130.61, '2026-04-30': 130.70, '2026-05-04': 130.25 } }, // none on 1 May: the exchange is closed
+  expectAtStart: {
+    ...NO_STATE,
+    cash: { account: { USD: usd(200_000), EUR: usd(200_000) }, treasury: { USD: usd(800_000), EUR: usd(200_000) } },
+    positions: [], lifecycle: [],
+    nav: { account: 420_000, treasury: 1_020_000, book: 1_440_000 }, // 200,000 EUR x 1.10 = 220,000 USD each
+  },
+  steps: [
+    {
+      id: 'open-short', covers: ['open short', 'initial margin'], action: 'ticket', instrument: 'main', side: 'sell', qty: 10, as: 'hedge',
+      expect: {
+        preview: { blocking: 0, errors: [], notes: ['calendar-approximate'], // TARGET days stand in for the exchange's own calendar, and the preview says so
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 10, estimate: 130.50, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2026-04-28', calendar: 'TARGET',
+            notional: 1_305_000, initialMargin: 26_000, fees: 15 }], // 10 x 130.50 x 1,000; 10 x 2,600; 10 x 1.50 (all EUR)
+          cash: { EUR: { purchases: 0, fees: 15, margin: 26_000, required: 26_015, available: 200_000, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 10, avgPrice: 130.50 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Sold 10 FGBLM6 @ 130.50 (notional 1,305,000.00 EUR; margin posted 26,000.00 EUR)', cash: { EUR: -26_015 }, owner: 'account', date: '2026-04-28' }],
+        cash: { account: { EUR: usd(173_985, 26_000), USD: usd(200_000) } },
+        positions: [{ instrument: 'main', lot: 'hedge', owner: 'account', direction: 'short', qty: -10, avgCost: 130.50, cost: 0, price: 130.50, value: 0, unrealized: 0, notional: 1_305_000, margin: 26_000 }],
+        holdings: { main: { long: 0, short: 10, net: -10 } },
+        lifecycle: [{ type: 'future.expiry', instrument: 'main', dueDate: '2026-06-08', status: 'pending' }],
+        pnl: { account: { realized: 0, dividends: 0, commissions: -16.50, fees: 0, borrowFunding: 0, unrealized: 0, fx: 0, total: -16.50 } }, // 15 EUR x 1.10
+        nav: { account: 419_983.50, book: 1_439_983.50 },
+        // USD 200,000 + EUR 173,985 x 1.10 = 391,383.50; margin 26,000 x 1.10 = 28,600.
+        balance: { account: { cash: 391_383.50, margin: 28_600, positions: null, assets: 419_983.50, liabilities: 0, netAssets: 419_983.50, local: { EUR: { cash: 173_985, margin: 26_000 }, USD: { cash: 200_000 } } } },
+      },
+    },
+    {
+      id: 'day-1-variation', covers: 'variation margin', action: 'clock', to: EOD('2026-04-28'),
+      expect: {
+        // Settlement 130.42, 0.08 below the sale: the short receives 0.08 x 1,000 x 10 = 800.00 EUR (880.00 USD).
+        events: [{ type: 'future.variation', summary: 'Variation margin received on -10 FGBLM6: 800.00 EUR (settlement 130.42 vs 130.50)', cash: { EUR: 800 }, date: '2026-04-28' }],
+        cash: { account: { EUR: usd(174_785, 26_000) } },
+        positions: [{ instrument: 'main', lot: 'hedge', qty: -10, avgCost: 130.42, price: 130.50, value: -800, unrealized: -800 }], // (130.50 - 130.42) x 10,000 against the short
+        pnl: { account: { realized: 880, unrealized: -880, total: -16.50 } },
+        balance: { account: { cash: 392_263.50, positions: -880, assets: 419_983.50, local: { EUR: { cash: 174_785, positions: -800 } } } }, // 200,000 + 174,785 x 1.10
+      },
+    },
+    { id: 'wednesday', action: 'clock', to: AM('2026-04-29'), expect: {} },
+    {
+      id: 'quote-up', action: 'quote', instrument: 'main', quote: { bid: 130.63, ask: 130.64, last: 130.64, bidSize: 500, askSize: 500 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'hedge', qty: -10, avgCost: 130.42, price: 130.64, value: -2_200, unrealized: -2_200, notional: 1_306_400 }], // (130.64 - 130.42) x 10,000
+        pnl: { account: { unrealized: -2_420, total: -1_556.50 } }, // 880 - 16.50 - 2,420
+        nav: { account: 418_443.50, book: 1_438_443.50 },
+        balance: { account: { positions: -2_420, assets: 418_443.50, netAssets: 418_443.50, local: { EUR: { positions: -2_200 } } } },
+      },
+    },
+    {
+      id: 'day-2-variation', covers: 'variation margin', action: 'clock', to: EOD('2026-04-29'),
+      expect: {
+        // Settlement 130.61, 0.19 above the last one: the short pays 1,900.00 EUR (2,090.00 USD).
+        events: [{ type: 'future.variation', summary: 'Variation margin paid on -10 FGBLM6: 1,900.00 EUR (settlement 130.61 vs 130.42)', cash: { EUR: -1_900 }, date: '2026-04-29' }],
+        cash: { account: { EUR: usd(172_885, 26_000) } },
+        positions: [{ instrument: 'main', lot: 'hedge', qty: -10, avgCost: 130.61, price: 130.64, value: -300, unrealized: -300 }],
+        pnl: { account: { realized: -1_210, unrealized: -330, total: -1_556.50 } },
+        balance: { account: { cash: 390_173.50, positions: -330, local: { EUR: { cash: 172_885, positions: -300 } } } }, // 200,000 + 172,885 x 1.10
+      },
+    },
+    { id: 'thursday', action: 'clock', to: AM('2026-04-30'), expect: {} },
+    {
+      id: 'increase', covers: 'increase', action: 'resize', lot: 'hedge', factor: 1.5, // 10 -> 15 short: sells 5 more
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 5, estimate: 130.63, model: 'quoted-bid-ask', settleDate: '2026-04-30',
+          notional: 653_150, initialMargin: 13_000, fees: 7.50 }], // 5 x 130.63 (the bid) x 1,000
+          cash: { EUR: { purchases: 0, fees: 7.50, margin: 13_000, required: 13_007.50, available: 172_885, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 5, avgPrice: 130.63 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 5 FGBLM6 @ 130.63 (notional 653,150.00 EUR; margin posted 13,000.00 EUR)', cash: { EUR: -13_007.50 } }],
+        cash: { account: { EUR: usd(159_877.50, 39_000) } },
+        // Reference: (10 x 130.61 + 5 x 130.63) / 15 = 130.616667. Value: 10 x -0.03 x 1,000 + 5 x -0.01 x 1,000 = -350 EUR (-385 USD).
+        positions: [{ instrument: 'main', lot: 'hedge', qty: -15, avgCost: 130.616667, price: 130.64, value: -350, unrealized: -350, notional: 1_959_600, margin: 39_000 }], // 15 x 130.64 x 1,000
+        holdings: { main: { long: 0, short: 15, net: -15 } },
+        pnl: { account: { commissions: -24.75, unrealized: -385, total: -1_619.75 } }, // 22.50 EUR x 1.10
+        nav: { account: 418_380.25, book: 1_438_380.25 },
+        balance: { account: { cash: 375_865.25, margin: 42_900, positions: -385, assets: 418_380.25, netAssets: 418_380.25, local: { EUR: { cash: 159_877.50, margin: 39_000, positions: -350 } } } }, // 200,000 + 159,877.50 x 1.10
+      },
+    },
+    {
+      id: 'day-3-variation', covers: 'variation margin', action: 'clock', to: EOD('2026-04-30'),
+      expect: {
+        // 15 x 130.70 x 1,000 = 1,960,500 against 10 x 130.61 x 1,000 + 5 x 130.63 x 1,000 = 1,959,250: the short pays 1,250.00 EUR (1,375.00 USD).
+        events: [{ type: 'future.variation', summary: 'Variation margin paid on -15 FGBLM6: 1,250.00 EUR (settlement 130.70 vs 130.616667)', cash: { EUR: -1_250 }, date: '2026-04-30' }],
+        cash: { account: { EUR: usd(158_627.50, 39_000) } },
+        positions: [{ instrument: 'main', lot: 'hedge', qty: -15, avgCost: 130.70, price: 130.64, value: 900, unrealized: 900 }], // (130.70 - 130.64) x 15,000
+        pnl: { account: { realized: -2_585, unrealized: 990, total: -1_619.75 } },
+        balance: { account: { cash: 374_490.25, positions: 990, local: { EUR: { cash: 158_627.50, positions: 900 } } } }, // 200,000 + 158,627.50 x 1.10
+      },
+    },
+    {
+      // Friday 1 May 2026: Eurex and TARGET are closed, New York is open and the Terminal runs its end-of-day pass.
+      // The quote still stands at 130.64 against Thursday's settlement of 130.70. Nothing may be exchanged.
+      id: 'exchange-holiday', covers: ['exchange holiday', 'variation margin'], action: 'clock', to: EOD('2026-05-01'),
+      expect: { events: [] },
+    },
+    { id: 'monday', action: 'clock', to: AM('2026-05-04'), expect: {} },
+    {
+      // The euro falls from 1.10 to 1.08 USD. Euro balances are unchanged; their USD translation moves.
+      id: 'euro-falls', covers: 'FX translation', action: 'fx_rate', pair: 'EUR/USD', rate: 1.08,
+      expect: {
+        // EUR cash 158,627.50 and margin 39,000 lose 0.02 USD each: 197,627.50 x -0.02 = -3,952.55 (FX effects).
+        // Open trade equity 900 EUR is now 972 USD. Realized P&L and commission keep the rate of their day.
+        pnl: { account: { realized: -2_585, commissions: -24.75, unrealized: 972, fx: -3_952.55, total: -5_590.30 } },
+        nav: { account: 414_409.70, treasury: 1_016_000, book: 1_430_409.70 }, // 200,000 + (158,627.50 + 39,000 + 900) x 1.08; 800,000 + 200,000 x 1.08
+        balance: { account: { cash: 371_317.70, margin: 42_120, positions: 972, assets: 414_409.70, netAssets: 414_409.70 } }, // 200,000 + 158,627.50 x 1.08
+      },
+    },
+    {
+      id: 'quote-down', action: 'quote', instrument: 'main', quote: { bid: 130.20, ask: 130.21, last: 130.20, bidSize: 500, askSize: 500 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'hedge', qty: -15, avgCost: 130.70, price: 130.20, value: 7_500, unrealized: 7_500, notional: 1_953_000 }], // (130.70 - 130.20) x 15,000
+        pnl: { account: { unrealized: 8_100, total: 1_537.70 } }, // -2,585 - 24.75 + 8,100 - 3,952.55
+        nav: { account: 421_537.70, book: 1_437_537.70 },
+        balance: { account: { positions: 8_100, assets: 421_537.70, netAssets: 421_537.70, local: { EUR: { positions: 7_500 } } } },
+      },
+    },
+    {
+      id: 'reduce', covers: ['reduce', 'margin release'], action: 'close', lot: 'hedge', scope: 'strategy', percent: 40, // buys back 6 of the 15
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 6, estimate: 130.21, model: 'quoted-bid-ask', settleDate: '2026-05-04',
+          notional: 781_260, initialMargin: -15_600, fees: 9 }], // 6 x 130.21 (the ask) x 1,000
+          cash: { EUR: { purchases: 0, fees: 9, margin: 0, required: 9, available: 158_627.50, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 6, avgPrice: 130.21 }] },
+        // Realized: (130.70 - 130.21) x 1,000 x 6 = 2,940.00 EUR, 3,175.20 USD at 1.08. Cash: 2,940 - 9 + 15,600 = 18,531.00 EUR.
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Bought 6 FGBLM6 @ 130.21 (notional 781,260.00 EUR; margin released 15,600.00 EUR; realized 2,940.00 EUR)', cash: { EUR: 18_531 } }],
+        cash: { account: { EUR: usd(177_158.50, 23_400) } },
+        positions: [{ instrument: 'main', lot: 'hedge', qty: -9, avgCost: 130.70, price: 130.20, value: 4_500, unrealized: 4_500, notional: 1_171_800, margin: 23_400 }],
+        holdings: { main: { long: 0, short: 9, net: -9 } },
+        pnl: { account: { realized: 590.20, commissions: -34.47, unrealized: 4_860, fx: -3_952.55, total: 1_463.18 } }, // -2,585 + 3,175.20; -24.75 - 9 x 1.08
+        nav: { account: 421_463.18, book: 1_437_463.18 },
+        balance: { account: { cash: 391_331.18, margin: 25_272, positions: 4_860, assets: 421_463.18, netAssets: 421_463.18, local: { EUR: { cash: 177_158.50, margin: 23_400, positions: 4_500 } } } }, // 200,000 + 177,158.50 x 1.08
+      },
+    },
+    {
+      id: 'day-after-holiday-variation', covers: ['variation margin', 'exchange holiday'], action: 'clock', to: EOD('2026-05-04'),
+      expect: {
+        // The first settlement after the holiday, against Thursday's 130.70: (130.70 - 130.25) x 1,000 x 9 = 4,050.00 EUR received (4,374.00 USD).
+        events: [{ type: 'future.variation', summary: 'Variation margin received on -9 FGBLM6: 4,050.00 EUR (settlement 130.25 vs 130.70)', cash: { EUR: 4_050 }, date: '2026-05-04' }],
+        cash: { account: { EUR: usd(181_208.50, 23_400) } },
+        positions: [{ instrument: 'main', lot: 'hedge', qty: -9, avgCost: 130.25, price: 130.20, value: 450, unrealized: 450 }], // (130.25 - 130.20) x 9,000
+        pnl: { account: { realized: 4_964.20, unrealized: 486, total: 1_463.18 } },
+        balance: { account: { cash: 395_705.18, positions: 486, local: { EUR: { cash: 181_208.50, positions: 450 } } } }, // 200,000 + 181,208.50 x 1.08
+      },
+    },
+    { id: 'tuesday', action: 'clock', to: AM('2026-05-05'), expect: {} },
+    {
+      id: 'close', covers: ['close', 'margin release'], action: 'close', lot: 'hedge', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 9, estimate: 130.21, model: 'quoted-bid-ask', settleDate: '2026-05-05',
+          notional: 1_171_890, initialMargin: -23_400, fees: 13.50 }],
+          cash: { EUR: { purchases: 0, fees: 13.50, margin: 0, required: 13.50, available: 181_208.50, shortfall: 0 } } },
+        result: { status: 'closed', orders: [{ action: 'buy', status: 'filled', filledQty: 9, avgPrice: 130.21 }] },
+        // Realized: (130.25 - 130.21) x 1,000 x 9 = 360.00 EUR (388.80 USD). Cash: 360 - 13.50 + 23,400 = 23,746.50 EUR.
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Bought 9 FGBLM6 @ 130.21 (notional 1,171,890.00 EUR; margin released 23,400.00 EUR; realized 360.00 EUR)', cash: { EUR: 23_746.50 } }],
+        // In euros, by hand: sold 10 at 130.50 and 5 at 130.63, bought 15 at 130.21: (1,305.00 + 653.15 - 1,953.15) x 1,000 = 5,000.00;
+        // commission 30 contracts x 1.50 = 45.00. EUR cash 200,000 + 5,000 - 45 = 204,955.00.
+        cash: { account: { EUR: usd(204_955, 0), USD: usd(200_000) }, treasury: { USD: usd(800_000), EUR: usd(200_000) } },
+        positions: [],
+        holdings: { main: null },
+        lifecycle: [],
+        pnl: { account: { realized: 5_353, commissions: -49.05, unrealized: 0, fx: -3_952.55, total: 1_351.40 } }, // 4,964.20 + 388.80; -34.47 - 13.50 x 1.08
+        nav: { account: 421_351.40, treasury: 1_016_000, book: 1_437_351.40 }, // 200,000 + 204,955 x 1.08
+        balance: { account: { cash: 421_351.40, margin: null, positions: null, assets: 421_351.40, liabilities: 0, netAssets: 421_351.40, local: { EUR: { cash: 204_955, margin: null, positions: null }, USD: { cash: 200_000 } } } },
+      },
+    },
+  ],
+};
+
+// ---------------------------------------------------------------------------------------------
+// treasury_future
+// ---------------------------------------------------------------------------------------------
+// Modelled on the CBOT 10-Year US Treasury Note future: 100,000 USD face, quoted in points of par
+// and halves of a thirty-second, so one point is 1,000 USD and the minimum move, 1/64 of a point
+// (0.015625), is 15.625 USD a contract. 112-16 is 112.50; 112-08+ is 112.265625.
+// Physically delivered (a Treasury note with 6.5 to 10 years left); last trading day the seventh
+// business day before the last business day of the month: Friday 20 March 2026 for the March contract.
+// Held to that day here: the Terminal closes it in cash at the final settlement price and states that
+// delivery is not simulated. Initial margin 2,200 USD a contract; commission 0.85 USD a contract.
+const treasuryFuture = {
+  productId: 'treasury_future',
+  title: '10-Year US Treasury Note future (100,000 USD face, 1/64 tick), March 2026, CBOT, held to its last trading day',
+  matrix: {
+    ...FUTURES_TICKET,
+    manualInputs: ['none in this scenario; delivery of a Treasury note against the invoice amount is not simulated and would be recorded by hand on the note\'s own ticket'],
+    settlement: 'No purchase cash; initial margin 2,200 USD a contract; daily variation margin at 15.625 USD a sixty-fourth; closed out in cash on the last trading day',
+    lifecycle: 'Daily variation margin (automatic); on the last trading day closed in cash at the final settlement price, labelled "physical delivery is not simulated" (automatic); a contract past that day refuses trades',
+    accounting: 'Nil cost; prices in sixty-fourths carried exactly; variation margin and closes are realized P&L; commission 0.85 USD a contract',
+    collateral: 'Initial margin per contract, released pro rata on reduction and at final settlement',
+  },
+  start: AM('2026-03-16'),
+  settlementCheck: { lag: 0, holidays: [] }, // US: no holiday between 16 and 23 March 2026
+  book: book('Matrix Treasury future', { funding: [{ ccy: 'USD', amount: 250_000 }], fee: { perUnit: 0.85, minimum: 0, bps: 0 } }),
+  instruments: {
+    main: { productId: 'treasury_future', name: '10-Year US Treasury Note future, March 2026', symbol: 'TYH6', marketView: 'US_DERIV', venue: 'CBOT', venueType: 'exchange', venueCountry: 'US', issuer: 'United States Treasury', domicile: 'US', underlyingGeo: 'US',
+      tradingCcy: 'USD', multiplier: 1000,
+      terms: { root: 'TY', expiration: '2026-03-20', tickSize: 0.015625, initialMargin: 2_200, settlement: 'physical', priceUnits: 'points of par (halves of 1/32)' } },
+  },
+  quotes: { main: { bid: 112.484375, ask: 112.5, last: 112.5, bidSize: 500, askSize: 500 } }, // 112-15+ bid, 112-16 offered
+  // 112-08+, 112-23, 112-20+, 112-18+
+  closes: { main: { '2026-03-16': 112.265625, '2026-03-17': 112.71875, '2026-03-18': 112.640625, '2026-03-19': 112.578125 } },
+  expectAtStart: {
+    ...NO_STATE,
+    cash: { account: { USD: usd(250_000) }, treasury: { USD: usd(750_000) } },
+    positions: [], lifecycle: [],
+    nav: { account: 250_000, treasury: 750_000, book: 1_000_000 },
+  },
+  steps: [
+    {
+      id: 'open', covers: ['open', 'initial margin'], action: 'ticket', instrument: 'main', side: 'buy', qty: 8, as: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 8, estimate: 112.5, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2026-03-16', calendar: 'US',
+            notional: 900_000, initialMargin: 17_600, fees: 6.80 }], // 8 x 112.50 x 1,000; 8 x 2,200; 8 x 0.85
+          cash: { USD: { purchases: 0, fees: 6.80, margin: 17_600, required: 17_606.80, available: 250_000, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 8, avgPrice: 112.5 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 8 TYH6 @ 112.50 (notional 900,000.00 USD; margin posted 17,600.00 USD)', cash: { USD: -17_606.80 }, owner: 'account', date: '2026-03-16' }],
+        cash: { account: { USD: usd(232_393.20, 17_600) } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 8, avgCost: 112.5, cost: 0, price: 112.5, value: 0, unrealized: 0, notional: 900_000, margin: 17_600 }],
+        holdings: { main: { long: 8, short: 0, net: 8 } },
+        lifecycle: [{ type: 'future.expiry', instrument: 'main', dueDate: '2026-03-20', status: 'pending' }],
+        pnl: { account: { realized: 0, dividends: 0, commissions: -6.80, fees: 0, borrowFunding: 0, unrealized: 0, fx: 0, total: -6.80 } },
+        nav: { account: 249_993.20, book: 999_993.20 },
+        balance: { account: { cash: 232_393.20, margin: 17_600, positions: null, assets: 249_993.20, liabilities: 0, netAssets: 249_993.20 } },
+      },
+    },
+    {
+      id: 'day-1-variation', covers: 'variation margin', action: 'clock', to: EOD('2026-03-16'),
+      expect: {
+        // 112-08+ against 112-16: 15 sixty-fourths down. 15 x 15.625 x 8 = 1,875.00 paid.
+        events: [{ type: 'future.variation', summary: 'Variation margin paid on 8 TYH6: 1,875.00 USD (settlement 112.265625 vs 112.50)', cash: { USD: -1_875 }, date: '2026-03-16' }],
+        cash: { account: { USD: usd(230_518.20, 17_600) } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 8, avgCost: 112.265625, price: 112.5, value: 1_875, unrealized: 1_875 }], // the quote still stands 15 sixty-fourths above the settlement
+        pnl: { account: { realized: -1_875, unrealized: 1_875, total: -6.80 } },
+        balance: { account: { cash: 230_518.20, positions: 1_875 } },
+      },
+    },
+    { id: 'tuesday', action: 'clock', to: AM('2026-03-17'), expect: {} },
+    {
+      id: 'quote-tuesday', action: 'quote', instrument: 'main', quote: { bid: 112.28125, ask: 112.296875, last: 112.28125, bidSize: 500, askSize: 500 }, // 112-09 bid, 112-09+ offered
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 8, avgCost: 112.265625, price: 112.28125, value: 125, unrealized: 125, notional: 898_250 }], // one sixty-fourth x 15.625 x 8; 8 x 112.28125 x 1,000
+        pnl: { account: { unrealized: 125, total: -1_756.80 } }, // -1,875 - 6.80 + 125
+        nav: { account: 248_243.20, book: 998_243.20 },
+        balance: { account: { positions: 125, assets: 248_243.20, netAssets: 248_243.20 } },
+      },
+    },
+    {
+      id: 'day-2-variation', covers: 'variation margin', action: 'clock', to: EOD('2026-03-17'),
+      expect: {
+        // 112-23 against 112-08+: 29 sixty-fourths up. 29 x 15.625 x 8 = 3,625.00 received.
+        events: [{ type: 'future.variation', summary: 'Variation margin received on 8 TYH6: 3,625.00 USD (settlement 112.71875 vs 112.265625)', cash: { USD: 3_625 }, date: '2026-03-17' }],
+        cash: { account: { USD: usd(234_143.20, 17_600) } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 8, avgCost: 112.71875, price: 112.28125, value: -3_500, unrealized: -3_500 }], // 28 sixty-fourths x 15.625 x 8
+        pnl: { account: { realized: 1_750, unrealized: -3_500, total: -1_756.80 } },
+        balance: { account: { cash: 234_143.20, positions: -3_500 } },
+      },
+    },
+    { id: 'wednesday', action: 'clock', to: AM('2026-03-18'), expect: {} },
+    {
+      id: 'quote-wednesday', action: 'quote', instrument: 'main', quote: { bid: 112.796875, ask: 112.8125, last: 112.8125, bidSize: 500, askSize: 500 }, // 112-25+ bid, 112-26 offered
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 8, avgCost: 112.71875, price: 112.8125, value: 750, unrealized: 750, notional: 902_500 }], // 6 sixty-fourths x 15.625 x 8
+        pnl: { account: { unrealized: 750, total: 2_493.20 } }, // 1,750 - 6.80 + 750
+        nav: { account: 252_493.20, book: 1_002_493.20 },
+        balance: { account: { positions: 750, assets: 252_493.20, netAssets: 252_493.20 } },
+      },
+    },
+    {
+      id: 'reduce', covers: ['reduce', 'margin release'], action: 'close', lot: 'lot', scope: 'strategy', percent: 25, // sells 2 of the 8
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 2, estimate: 112.796875, model: 'quoted-bid-ask', settleDate: '2026-03-18',
+          notional: 225_593.75, initialMargin: -4_400, fees: 1.70 }], // 2 x 112.796875 x 1,000
+          cash: { USD: { purchases: 0, fees: 1.70, margin: 0, required: 1.70, available: 234_143.20, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 2, avgPrice: 112.796875 }] },
+        // Realized: 5 sixty-fourths (112-25+ against 112-23) x 15.625 x 2 = 156.25. Cash: 156.25 - 1.70 + 4,400 = 4,554.55.
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 2 TYH6 @ 112.796875 (notional 225,593.75 USD; margin released 4,400.00 USD; realized 156.25 USD)', cash: { USD: 4_554.55 } }],
+        cash: { account: { USD: usd(238_697.75, 13_200) } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 6, avgCost: 112.71875, price: 112.8125, value: 562.50, unrealized: 562.50, notional: 676_875, margin: 13_200 }], // 6 sixty-fourths x 15.625 x 6
+        holdings: { main: { long: 6, short: 0, net: 6 } },
+        pnl: { account: { realized: 1_906.25, commissions: -8.50, unrealized: 562.50, total: 2_460.25 } },
+        nav: { account: 252_460.25, book: 1_002_460.25 },
+        balance: { account: { cash: 238_697.75, margin: 13_200, positions: 562.50, assets: 252_460.25, netAssets: 252_460.25 } },
+      },
+    },
+    {
+      id: 'day-3-variation', covers: 'variation margin', action: 'clock', to: EOD('2026-03-18'),
+      expect: {
+        // 112-20+ against 112-23: 5 sixty-fourths down. 5 x 15.625 x 6 = 468.75 paid.
+        events: [{ type: 'future.variation', summary: 'Variation margin paid on 6 TYH6: 468.75 USD (settlement 112.640625 vs 112.71875)', cash: { USD: -468.75 }, date: '2026-03-18' }],
+        cash: { account: { USD: usd(238_229, 13_200) } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 6, avgCost: 112.640625, price: 112.8125, value: 1_031.25, unrealized: 1_031.25 }], // 11 sixty-fourths x 15.625 x 6
+        pnl: { account: { realized: 1_437.50, unrealized: 1_031.25, total: 2_460.25 } },
+        balance: { account: { cash: 238_229, positions: 1_031.25 } },
+      },
+    },
+    { id: 'thursday', action: 'clock', to: AM('2026-03-19'), expect: {} },
+    {
+      id: 'quote-thursday', action: 'quote', instrument: 'main', quote: { bid: 112.59375, ask: 112.609375, last: 112.59375, bidSize: 500, askSize: 500 }, // 112-19 bid, 112-19+ offered
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 6, avgCost: 112.640625, price: 112.59375, value: -281.25, unrealized: -281.25, notional: 675_562.50 }], // 3 sixty-fourths down x 15.625 x 6
+        pnl: { account: { unrealized: -281.25, total: 1_147.75 } }, // 1,437.50 - 8.50 - 281.25
+        nav: { account: 251_147.75, book: 1_001_147.75 },
+        balance: { account: { positions: -281.25, assets: 251_147.75, netAssets: 251_147.75 } },
+      },
+    },
+    {
+      id: 'day-4-variation', covers: 'variation margin', action: 'clock', to: EOD('2026-03-19'),
+      expect: {
+        // 112-18+ against 112-20+: 4 sixty-fourths down. 4 x 15.625 x 6 = 375.00 paid.
+        events: [{ type: 'future.variation', summary: 'Variation margin paid on 6 TYH6: 375.00 USD (settlement 112.578125 vs 112.640625)', cash: { USD: -375 }, date: '2026-03-19' }],
+        cash: { account: { USD: usd(237_854, 13_200) } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 6, avgCost: 112.578125, price: 112.59375, value: 93.75, unrealized: 93.75 }], // one sixty-fourth x 15.625 x 6
+        pnl: { account: { realized: 1_062.50, unrealized: 93.75, total: 1_147.75 } },
+        balance: { account: { cash: 237_854, positions: 93.75 } },
+      },
+    },
+    {
+      id: 'last-trading-day', covers: 'final settlement', action: 'clock', to: AM('2026-03-20'),
+      expect: { lifecycle: [{ type: 'future.expiry', instrument: 'main', dueDate: '2026-03-20', status: 'blocked', reason: /^Awaiting the final settlement price for TYH6 \(2026-03-20\)/ }] },
+    },
+    // The final settlement price, 112-13+.
+    { id: 'final-settlement-price', covers: 'final settlement', action: 'close_price', instrument: 'main', date: '2026-03-20', value: 112.421875, expect: {} },
+    {
+      id: 'expiry-physical-contract', covers: ['final settlement', 'expiry', 'physical delivery', 'margin release'], action: 'clock', to: EOD('2026-03-20'),
+      expect: {
+        // 112-13+ against 112-18+: 10 sixty-fourths down. 10 x 15.625 x 6 = 937.50 lost; margin 13,200 released; no fee.
+        // The contract calls for delivery of notes; the Terminal closes it in cash and says that delivery is not simulated.
+        events: [{ type: 'future.final_settlement', summary: 'Final settlement: 6 TYH6 closed in cash at 112.421875 (physical delivery is not simulated)', cash: { USD: 12_262.50 }, owner: 'account', date: '2026-03-20' }],
+        // By hand: bought 8 at 112-16; sold 2 at 112-25+ (+19 sixty-fourths) and 6 at 112-13+ (-5): (2 x 19 - 6 x 5) x 15.625 = 125.00; commission 10 x 0.85 = 8.50.
+        cash: { account: { USD: usd(250_116.50, 0) }, treasury: { USD: usd(750_000) } },
+        positions: [],
+        holdings: { main: null },
+        lifecycle: [],
+        pnl: { account: { realized: 125, commissions: -8.50, unrealized: 0, total: 116.50 } },
+        nav: { account: 250_116.50, treasury: 750_000, book: 1_000_116.50 },
+        balance: { account: { cash: 250_116.50, margin: null, positions: null, assets: 250_116.50, liabilities: 0, netAssets: 250_116.50 } },
+      },
+    },
+    { id: 'monday', action: 'clock', to: AM('2026-03-23'), expect: {} },
+    {
+      id: 'trade-after-expiry', covers: 'expired contract', action: 'ticket', instrument: 'main', side: 'sell', qty: 1,
+      status: 'blocked', reason: 'The contract\'s last trading day was 20 March 2026.',
+      expect: { refused: 'TYH6 expired on 2026-03-20' },
+    },
+  ],
+};
+
+export default [equityIndexFuture, equityFuture, govBondFuture, treasuryFuture];
