@@ -5,6 +5,10 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
+**Completeness: about 35.0% of the pass** (last milestone 2026-10-07T02:03Z, coord: work resumed; wave 1 starting (bonds, options, futures, loans, rate swaps, failure and recovery, two follow-ups))
+
+`LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
+
 ## Usage guard (owner rule, 2026-10-06): read this before doing anything heavy
 
 Stop all background work when the owner's weekly **Fable** usage reaches 98%.
@@ -30,7 +34,11 @@ started. The all-models figure was reported as 35% at about 9:57 PM ET.
 
 ## State at the last update (2026-10-07 02:10 UTC)
 
-**Holding.** No agents are running and nothing is scheduled. This session is not linked to the owner's computer, so
+**Running again since 2026-10-07 02:05 UTC** on the owner's instruction ("continue running the last 65%, save the
+note every percent it goes up"); the owner will send "pause" for the usage guard. The paragraph below describes
+the hold that preceded it.
+
+No agents were running and nothing was scheduled. This session is not linked to the owner's computer, so
 the usage file cannot be read; under rule 2 the next heavy step waits for the owner's numbers and go-ahead. The
 hedge follow-up agent was stopped by the owner part-way through (its only change on disk is the demo fixture no
 longer stating collateral terms for its swap, which is what makes one test red, see below). The product fan-out
