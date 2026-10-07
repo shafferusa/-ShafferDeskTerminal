@@ -101,7 +101,10 @@ export async function runCase(level, kase, extra = {}) {
   let w = null;
   try {
     w = await openWorld(level, { label: `${kase.area}-${kase.id}`, ...(kase.world || {}), ...extra });
-    await fn(w, c);
+    // A case that hangs is a failed case, not a stuck run.
+    const limit = kase.timeoutMs || (level === 'browser' ? 240_000 : 120_000);
+    let timer;
+    await Promise.race([fn(w, c), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`The case did not finish within ${limit / 1000} seconds.`)), limit); })]).finally(() => clearTimeout(timer));
     for (const e of w.serverErrors) c.fail(`server error: ${e}`);
     if (!c.count) c.fail('The case made no check.');
   } catch (err) {

@@ -577,10 +577,13 @@ export default [
         for (let i = 0; i < 12; i++) stocks.push(await w.stock(`K${String.fromCharCode(65 + i)}C`, { bid: 10 + i, ask: 10.01 + i, last: 10.005 + i, bidSize: 50_000, askSize: 50_000 }));
         const pack = async (book) => w.confirmBody(await w.post('/api/strategies/preview', { bookId: book.id, unitId: book.accountId, template: 'custom', legs: stocks.map((s) => ({ kind: 'trade', action: 'buy', instrumentId: s.id, qty: 100, orderType: 'market', tif: 'gtc' })) }));
         // How long an undisturbed confirmation takes, to spread the kills over it.
-        const probe = await w.book('Kill confirm probe');
-        const t0 = performance.now();
-        await w.must('POST', '/api/strategies', await pack(probe));
-        const took = performance.now() - t0;
+        let took = Infinity;
+        for (const n of [1, 2, 3]) {
+          const body = await pack(await w.book(`Kill confirm probe ${n}`));
+          const t0 = performance.now();
+          await w.must('POST', '/api/strategies', body);
+          took = Math.min(took, performance.now() - t0);
+        }
         c.note(`an undisturbed confirmation takes ${took.toFixed(0)} ms`);
         const seen = { nothing: 0, partly: 0, all: 0 };
         const TRIALS = 12;
@@ -590,7 +593,7 @@ export default [
           const base = w.fingerprint();
           const url = w.t.url;
           const sent = fetch(`${url}/api/strategies`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json()).catch((err) => ({ lost: String(err.cause?.code || err.message) }));
-          await new Promise((r) => setTimeout(r, Math.max(0, (took * 1.3 * i) / (TRIALS - 1))));
+          await new Promise((r) => setTimeout(r, Math.max(0, (took * 1.2 * i) / (TRIALS - 1))));
           await w.t.kill();
           const answer = await sent;
           await w.t.start();
@@ -692,7 +695,8 @@ export default [
         const { createServer } = await import('node:http');
         const { createServer: createTcp } = await import('node:net');
         const book = await w.book('Service stops answering', { settings: null });
-        const inst = await w.instrument({ productId: 'common_stock', name: 'Away Works Inc.', symbol: 'AWAY', marketView: 'US_CASH', venue: 'NYSE', venueType: 'exchange', venueCountry: 'US', tradingCcy: 'USD', terms: {} });
+        // Normal mode runs on the real clock: the instrument trades every day so the case does not depend on the weekday.
+        const inst = await w.instrument({ productId: 'common_stock', name: 'Away Works Inc.', symbol: 'AWAY', marketView: 'US_CASH', venue: 'NYSE', venueType: 'exchange', venueCountry: 'US', tradingCcy: 'USD', terms: {}, conventions: { tradingCalendar: 'ALLDAYS' } });
         const s = await w.trade({ bookId: book.id, unitId: book.accountId, template: 'custom', legs: [{ kind: 'trade', action: 'buy', instrumentId: inst.id, qty: 100, statedPrice: 50 }] });
         c.eq(s.orders[0].status, 'filled', 'setup: 100 shares bought at the stated price');
         await w.post('/api/observations', { kind: 'price', subject: inst.id, value: 51, currency: 'USD', note: 'manual mark' });
@@ -731,9 +735,11 @@ export default [
         w.sameStored(c, fp, w.fingerprint(), 'connection refused: every stored row is as before');
 
         // 2. Accepts the connection and never answers.
-        const hang = createTcp(() => { /* accept and say nothing */ });
+        const held = new Set();
+        const hang = createTcp((socket) => { held.add(socket); socket.on('close', () => held.delete(socket)); socket.on('error', () => {}); /* accept and say nothing */ });
         await new Promise((res) => hang.listen(port, '127.0.0.1', res));
-        w.defer(() => new Promise((res) => hang.close(() => res())));
+        const stopHanging = () => new Promise((res) => { for (const sk of held) sk.destroy(); hang.close(() => res()); });
+        w.defer(() => stopHanging().catch(() => {}));
         r = await test();
         c.eq(r.reachable, false, 'no answer: reported unreachable');
         c.ok(r.ms >= 1400 && r.ms < 3500, 'after the configured 1.5 second timeout, not later', `${r.ms.toFixed(0)} ms`);
@@ -744,7 +750,7 @@ export default [
         const pos = await w.get(`/api/books/${book.id}/accounting/positions`, { scope: 'book' });
         c.eq(pos.positions.length, 1, 'the Accounting page still loads its positions');
         w.sameStored(c, fp, w.fingerprint(), 'no answer: every stored row is as before');
-        await new Promise((res) => hang.close(() => res()));
+        await stopHanging();
 
         // 3. Answering again.
         stub = createServer((req, res) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{"service":"stub"}'); });
