@@ -451,4 +451,251 @@ const interestRateSwap = {
   ],
 };
 
-export default [interestRateSwap];
+
+// ---------------------------------------------------------------------------------------------
+// ois
+// ---------------------------------------------------------------------------------------------
+// A one-month sterling overnight-index swap, entered on the opposite side: the contract is written
+// as "pay 3.80% fixed, receive compounded SONIA", so this Account receives the fixed amount and
+// pays the compounded overnight amount, once, at maturity. Both legs ACT/365, London business days.
+//
+// The Terminal's definition of the compounded leg, checked by hand below: for each business day d
+// of the payment calendar from the effective date up to (not including) the maturity date, the
+// fixing of d applies for the n calendar days to the next business day (or to maturity);
+//     growth = product of (1 + fixing(d) x n / 365)        (365 for an ACT/365 leg, otherwise 360)
+//     amount = notional x (growth - 1)  + notional x spread x day-count fraction
+// Every business day needs its own fixing. A day whose fixing is missing blocks the payment.
+//
+// 5 March to 7 April 2026 (33 days; 3 April is Good Friday and 6 April Easter Monday in London):
+//   3.72% on 5, 9, 10, 11, 12, 16, 17 and 18 March (1 day each) and on 6 and 13 March (Fridays, 3 days each)
+//   3.47% on 19, 23, 24, 25, 26, 30 and 31 March and 1 April (1 day each), on 20 March (3 days) and 2 April (5 days)
+//   27 March (3 days): not supplied by the data service; entered by hand as 3.46% when the payment is blocked
+//   growth = (1 + 0.0372/365)^8 x (1 + 3 x 0.0372/365)^2 x (1 + 0.0347/365)^8 x (1 + 3 x 0.0347/365) x (1 + 3 x 0.0346/365) x (1 + 5 x 0.0347/365)
+//          = 1.0014277325 x 1.0018068797 = 1.0032371920
+//   compounded amount = 40,000,000 x 0.0032371920 = 129,487.68      (simple interest would be 129,293.15)
+//   fixed amount      = 40,000,000 x 3.80% x 33/365 = 137,424.66
+//
+// Collateral: a bilateral agreement in the Book. Independent amount 0.50% of notional, variation margin
+// with no threshold and a 25,000 minimum transfer, base currency GBP, collateral in USD cash at a 2%
+// haircut. One USD of collateral is worth (1 / GBPUSD) x 0.98 in GBP: 0.784 at 1.25, 0.98/1.27 at 1.27.
+// Reporting currency USD: sterling balances at the current GBP/USD fixture; ledger entries keep the
+// rate of the day they were posted, and the difference is the FX effect.
+const OIS_NAME = 'GBP OIS 3.80% v SONIA 7 Apr 2026';
+const OIS_DRAFT = {
+  productId: 'ois', name: OIS_NAME, symbol: 'OIS-SONIA-0426', marketView: 'FOREIGN_DERIV', venueType: 'otc', venueCountry: 'GB', tradingCcy: 'GBP', multiplier: 0.01,
+  conventions: { tradingCalendar: 'UK', settlementCalendar: 'UK', paymentCalendar: 'UK' },
+  terms: {
+    effective: '2026-03-05', maturity: '2026-04-07', counterparty: 'Dealer B',
+    collateralBasis: { type: 'agreement', agreementId: '$agreement:csa' },
+    legs: [
+      { side: 'pay', type: 'fixed', ccy: 'GBP', rate: 0.038, months: 0, dayCount: 'ACT/365' },
+      { side: 'receive', type: 'ois', ccy: 'GBP', index: 'SONIA', spread: 0, months: 0, dayCount: 'ACT/365' },
+    ],
+  },
+};
+const SONIA = Object.fromEntries([
+  ...['2026-03-05', '2026-03-06', '2026-03-09', '2026-03-10', '2026-03-11', '2026-03-12', '2026-03-13', '2026-03-16', '2026-03-17', '2026-03-18'].map((d) => [d, 3.72]),
+  ...['2026-03-19', '2026-03-20', '2026-03-23', '2026-03-24', '2026-03-25', '2026-03-26', /* 27 March is missing */ '2026-03-30', '2026-03-31', '2026-04-01', '2026-04-02'].map((d) => [d, 3.47]),
+]);
+const overnightIndexSwap = {
+  productId: 'ois',
+  title: 'GBP 1-month overnight-index swap, receive 3.80% fixed against compounded SONIA, under a collateral agreement',
+  matrix: {
+    ...OTC_TICKET,
+    ticket: `${OTC_TICKET.ticket}; the agreement is recorded first under Treasury, Collateral`,
+    automaticInputs: ['daily SONIA fixings (rate fixture standing in for Shaffer MarketData)', 'compounding over London business days', 'GBP/USD rate (FX fixture) for reporting-currency figures and for collateral in USD', 'settlement date, T+2 on the UK calendar', 'independent amount and variation margin from the agreement'],
+    manualInputs: ['the agreement itself (counterparty, amounts, currencies, haircut)', 'upfront amount (stated fill price)', 'mark of the contract, entered by hand', 'the one daily fixing the data service did not supply, entered by hand'],
+    settlement: 'Upfront amount settles T+2 on the UK calendar; both legs pay once, at maturity',
+    lifecycle: 'Fixed and compounded overnight amounts at maturity; the compounded payment is blocked while one daily fixing is missing, and maturity waits for it; the position ends at maturity and its collateral is returned',
+    accounting: 'GBP contract in a USD Book: realized P&L at the rate of the payment date, unrealized at the current rate, FX effect on sterling balances; carried at the mark; the upfront amount received is realized at maturity',
+    collateral: 'Agreement "CSA Dealer B": independent amount 0.50% of notional and variation margin (no threshold, minimum transfer 25,000 GBP), posted in USD cash at a 2% haircut; the independent amount is trued up when GBP/USD moves; everything is returned at maturity',
+  },
+  start: at('2026-03-03'),
+  settlementCheck: { lag: 2, holidays: [] }, // London: no holiday between 3 and 5 March 2026
+  book: {
+    name: 'Matrix overnight-index swap', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 3_000_000 }, { ccy: 'GBP', amount: 2_000_000 }],
+    account: { name: 'Sterling', funding: [{ ccy: 'USD', amount: 1_000_000 }, { ccy: 'GBP', amount: 500_000 }] },
+    settings: { fees: { swap: NO_FEE }, fill: FILL, settlement: { swap: 2 } },
+  },
+  instruments: {
+    // The same contract with no collateral basis chosen: the Terminal must refuse to open it.
+    bare: { ...OIS_DRAFT, name: 'GBP OIS 3.80% v SONIA 7 Apr 2026, no collateral terms', symbol: 'OIS-SONIA-BARE', terms: { ...OIS_DRAFT.terms, collateralBasis: undefined } },
+  },
+  fx: { 'GBP/USD': 1.25 },
+  rates: { SONIA: { currency: 'GBP', byDate: SONIA } },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 1_000_000, unsettled: 0, margin: 0, restricted: 0, availableToTrade: 1_000_000 }, GBP: { settled: 500_000, unsettled: 0, margin: 0, restricted: 0, availableToTrade: 500_000 } },
+      treasury: { USD: { settled: 2_000_000 }, GBP: { settled: 1_500_000 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [], otc: [], alerts: [],
+    nav: { account: 1_625_000, treasury: 3_875_000, book: 5_500_000 }, // 500,000 and 1,500,000 GBP at 1.25
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+  },
+  steps: [
+    {
+      id: 'no-collateral-terms', covers: 'collateral', action: 'ticket', instrument: 'bare', side: 'sell', qty: 40_000_000, order: { statedPrice: 0 },
+      status: 'blocked', reason: 'A contract that states no collateral basis cannot be opened: nothing is assumed from the product.',
+      expect: { refused: /OIS-SONIA-BARE states no collateral terms\. Choose a collateral agreement, enter position-level terms, or choose "Uncollateralized \(paper assumption\)"/ },
+    },
+    {
+      id: 'record-agreement', covers: 'collateral', action: 'agreement', as: 'csa',
+      agreement: { name: 'CSA Dealer B', counterparty: 'Dealer B', kind: 'bilateral', covers: ['account'], independentAmount: { type: 'pct', pct: 0.005 }, variationMargin: true, threshold: 0, minimumTransfer: 25_000, baseCcy: 'GBP', postingCcy: 'USD', haircut: 0.02, nettingScope: 'position' },
+      expect: { events: [{ type: 'collateral.agreement', summary: 'Collateral agreement recorded: CSA Dealer B with Dealer B (Bilateral (CSA-style))', owner: 'treasury' }] },
+    },
+    { id: 'register-under-agreement', covers: 'registration', action: 'register_instrument', as: 'main', draft: OIS_DRAFT, expect: {} },
+    {
+      // Opposite side at 0.0125 per 100: the upfront 40,000,000 x 0.0125 / 100 = 5,000 GBP is received.
+      // Independent amount: 0.50% x 40,000,000 = 200,000 GBP of value; in USD at a 2% haircut: 200,000 / 0.784 = 255,102.04.
+      id: 'open', covers: ['open', 'collateral'], action: 'ticket', instrument: 'main', side: 'sell', qty: 40_000_000, as: 'ois', order: { statedPrice: 0.0125 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 40_000_000, estimate: 0.0125, model: 'stated-price', settleDate: '2026-03-05', calendar: 'UK', cash: 5_000, fees: 0 }],
+          cash: { GBP: { proceeds: 5_000, fees: 0, shortfall: 0 }, USD: { margin: 255_102.04, required: 255_102.04, available: 1_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 40_000_000, avgPrice: 0.0125, fills: [{ qty: 40_000_000, price: 0.0125, model: 'stated-price', settleDate: '2026-03-05' }] }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Entered on the opposite side: 40,000,000 notional of OIS-SONIA-0426 at 0.0125 per 100 notional', owner: 'account', date: '2026-03-03' },
+          { type: 'swap.collateral', summary: `Collateral posted on ${OIS_NAME} under "CSA Dealer B" (Dealer B): 255,102.04 USD (independent amount, 0.50% of 40,000,000.00 GBP notional)`, cash: { USD: -255_102.04 }, owner: 'account' },
+        ],
+        cash: { account: { USD: { settled: 744_897.96, margin: 255_102.04, availableToTrade: 744_897.96 }, GBP: { settled: 500_000, unsettled: 5_000, availableToTrade: 505_000 } } },
+        positions: [{ instrument: 'main', lot: 'ois', owner: 'account', direction: 'opposite side', qty: -40_000_000, avgCost: 0.0125, cost: -5_000, price: null, value: null, unrealized: null, provisional: true, notional: 40_000_000 }],
+        holdings: { main: { long: 0, short: 40_000_000, net: -40_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-03-05', amount: 5_000, ccy: 'GBP', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2026-04-07', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-04-07', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-04-07', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', lot: 'ois', owner: 'account', qty: -40_000_000, basis: 'agreement', agreement: 'CSA Dealer B', iaRequired: 255_102.04, iaPosted: 255_102.04, iaCcy: 'USD', vmPosted: 0, vmHeld: 0, vmStatus: 'not_valued_yet' }],
+        pnl: { account: { realized: 0, commissions: 0, unrealized: 0, fx: 0, total: 0 } },
+        nav: { account: 1_625_000, book: 5_500_000 }, // unpriced: carried at cost, the upfront receivable against it
+        provisional: { account: true, book: true },
+        // USD: 744,897.96 cash and 255,102.04 posted. GBP at 1.25: cash 500,000 (625,000), receivable 5,000 (6,250), position at cost -5,000 (-6,250).
+        balance: { account: { cash: 1_369_897.96, margin: 255_102.04, receivable: 6_250, positions: -6_250, assets: 1_625_000, liabilities: 0, netAssets: 1_625_000 } },
+      },
+    },
+    {
+      id: 'no-mark-no-call', covers: 'variation margin', action: 'clock', to: at('2026-03-04'),
+      expect: { otc: [{ instrument: 'main', vmStatus: 'cannot_value', vmPosted: 0 }], alerts: ['collateral.unvalued'] },
+    },
+    {
+      // The mark is of the contract as written. On the opposite side its value is -40,000,000 x 0.10 / 100 = -40,000 GBP;
+      // against the 5,000 received up front, unrealized -35,000 GBP = -43,750 USD at 1.25.
+      id: 'mark-against-us', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 0.10, note: 'Dealer mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'ois', qty: -40_000_000, price: 0.1, value: -40_000, unrealized: -35_000, provisional: false, priceSource: 'Manual entry' }],
+        otc: [{ instrument: 'main', mark: 0.1, markValue: -40_000 }],
+        pnl: { account: { unrealized: -43_750, total: -43_750 } },
+        nav: { account: 1_581_250, book: 5_456_250 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: -50_000, assets: 1_581_250, netAssets: 1_581_250 } }, // (-5,000 - 35,000) x 1.25
+      },
+    },
+    {
+      // -40,000 GBP with no threshold calls for 40,000 GBP of value: 40,000 / 0.784 = 51,020.41 USD.
+      id: 'variation-margin-call', covers: 'variation margin', action: 'clock', to: eod('2026-03-04'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under "CSA Dealer B" (Dealer B): 51,020.41 USD posted. Netting set of 1 position marked at -40,000.00 GBP; threshold 0.00 GBP.', cash: { USD: -51_020.41 }, owner: 'account', date: '2026-03-04' }],
+        cash: { account: { USD: { settled: 693_877.55, margin: 306_122.45, availableToTrade: 693_877.55 } } },
+        otc: [{ instrument: 'main', vmPosted: 51_020.41, vmCcy: 'USD', vmExposure: -40_000, vmStatus: 'ok' }],
+        alerts: [],
+        balance: { account: { cash: 1_318_877.55, margin: 306_122.45 } }, // 693,877.55 + 625,000
+      },
+    },
+    {
+      id: 'settle-upfront', covers: 'settlement', action: 'clock', to: at('2026-03-05'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 5,000.00 GBP into settled cash', cash: { GBP: 5_000 }, date: '2026-03-05' }],
+        cash: { account: { GBP: { settled: 505_000, unsettled: 0, availableToTrade: 505_000 } } },
+        pending: [],
+        balance: { account: { cash: 1_325_127.55, receivable: null } }, // 693,877.55 + 505,000 x 1.25
+      },
+    },
+    {
+      // Sterling rises to 1.27. Sterling net assets of the Account: 505,000 cash - 5,000 position cost - 35,000 unrealized = 465,000.
+      // 1,000,000 + 465,000 x 1.27 = 1,590,550. FX effect on the booked balances: (505,000 - 5,000) x (1.27 - 1.25) = 10,000.
+      id: 'sterling-rises', covers: 'reporting currency', action: 'fx_rate', pair: 'GBP/USD', rate: 1.27,
+      expect: {
+        pnl: { account: { unrealized: -44_450, fx: 10_000, total: -34_450 } }, // -35,000 x 1.27
+        nav: { account: 1_590_550, treasury: 3_905_000, book: 5_495_550 }, // Treasury: 2,000,000 + 1,500,000 x 1.27
+        balance: { account: { cash: 1_335_227.55, positions: -50_800, assets: 1_590_550, netAssets: 1_590_550 } }, // 693,877.55 + 505,000 x 1.27; -40,000 x 1.27
+      },
+    },
+    {
+      // At 1.27 one USD of collateral is worth 0.98 / 1.27 GBP. Independent amount: 200,000 x 1.27 / 0.98 = 259,183.67 USD; 4,081.63 more is posted.
+      // Variation margin: the 51,020.41 held is now worth 39,370.08 GBP against 40,000 required; 629.92 is below the minimum transfer.
+      id: 'independent-amount-trued-up', covers: 'collateral', action: 'clock', to: eod('2026-03-05'),
+      expect: {
+        events: [{ type: 'swap.collateral', summary: `Collateral posted on ${OIS_NAME} under "CSA Dealer B" (Dealer B): 4,081.63 USD (independent amount, 0.50% of 40,000,000.00 GBP notional)`, cash: { USD: -4_081.63 }, owner: 'account' }],
+        cash: { account: { USD: { settled: 689_795.92, margin: 310_204.08, availableToTrade: 689_795.92 } } },
+        otc: [{ instrument: 'main', iaRequired: 259_183.67, iaPosted: 259_183.67, vmPosted: 51_020.41, vmReason: /629\.92 GBP would be due\. It is below the minimum transfer amount of 25,000\.00 GBP/ }],
+        balance: { account: { cash: 1_331_145.92, margin: 310_204.08 } },
+      },
+    },
+    { id: 'friday-morning', action: 'clock', to: at('2026-03-06'), expect: {} },
+    {
+      id: 'mark-improves', action: 'manual_price', instrument: 'main', value: 0.02, note: 'Dealer mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'ois', price: 0.02, value: -8_000, unrealized: -3_000 }], // -40,000,000 x 0.02 / 100, less the -5,000 cost
+        otc: [{ instrument: 'main', mark: 0.02, markValue: -8_000 }],
+        pnl: { account: { unrealized: -3_810, fx: 10_000, total: 6_190 } }, // -3,000 x 1.27
+        nav: { account: 1_631_190, book: 5_536_190 }, // 1,000,000 + (505,000 - 5,000 - 3,000) x 1.27
+        balance: { account: { positions: -10_160, assets: 1_631_190, netAssets: 1_631_190 } }, // -8,000 x 1.27
+      },
+    },
+    {
+      // 8,000 GBP is now required: 8,000 x 1.27 / 0.98 = 10,367.35 USD. 51,020.41 - 10,367.35 = 40,653.06 comes back.
+      id: 'variation-margin-returned', covers: 'variation margin', action: 'clock', to: eod('2026-03-06'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under "CSA Dealer B" (Dealer B): 40,653.06 USD returned to us. Netting set of 1 position marked at -8,000.00 GBP; threshold 0.00 GBP.', cash: { USD: 40_653.06 }, owner: 'account' }],
+        cash: { account: { USD: { settled: 730_448.98, margin: 269_551.02, availableToTrade: 730_448.98 } } }, // 259,183.67 + 10,367.35 stay posted
+        otc: [{ instrument: 'main', vmPosted: 10_367.35, vmExposure: -8_000, vmStatus: 'ok', vmReason: null }],
+        balance: { account: { cash: 1_371_798.98, margin: 269_551.02 } }, // 730,448.98 + 641,350
+      },
+    },
+    {
+      // Maturity, 7 April. The fixed amount is received: 40,000,000 x 3.80% x 33/365 = 137,424.66 GBP (174,529.32 USD at 1.27).
+      // The compounded amount cannot be worked out: the fixing of 27 March is missing. It waits, and so does maturity.
+      id: 'maturity-fixing-missing', covers: ['fixed payment', 'missing fixing'], action: 'clock', to: at('2026-04-07'),
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Swap receipt on ${OIS_NAME}, leg A (fixed), period 2026-03-05 to 2026-04-07: 137,424.66 GBP`, cash: { GBP: 137_424.66 }, owner: 'account', date: '2026-04-07' }],
+        cash: { account: { GBP: { settled: 642_424.66, availableToTrade: 642_424.66 } } },
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2026-04-07', status: 'blocked', reason: /Waiting for the final leg payments/ },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-04-07', status: 'blocked', reason: /Awaiting the SONIA fixing for 2026-03-27/ },
+        ],
+        positions: [{ instrument: 'main', lot: 'ois', qty: -40_000_000, value: -8_000, unrealized: -3_000 }],
+        // FX effect: cash 642,424.66 x 1.27 = 815,879.32 against 631,250 + 174,529.32 booked: 10,100.00; position cost -5,000: -100.00.
+        pnl: { account: { realized: 174_529.32, unrealized: -3_810, fx: 10_000, total: 180_719.32 } },
+        nav: { account: 1_805_719.32, book: 5_710_719.32 }, // 1,000,000 + (642,424.66 - 5,000 - 3,000) x 1.27
+        balance: { account: { cash: 1_546_328.30, positions: -10_160, margin: 269_551.02, assets: 1_805_719.32, netAssets: 1_805_719.32 } }, // 730,448.98 + 815,879.32
+      },
+    },
+    {
+      // 3.46% for 27 March, by hand. The compounded amount is paid: 129,487.68 GBP (164,449.35 USD). Net of the two legs: +7,936.98 GBP.
+      // The contract then matures: the 5,000 received up front is realized (6,350.00 USD at 1.27) and all collateral comes back.
+      id: 'fixing-entered-and-matured', covers: ['missing fixing', 'compounded payment', 'maturity', 'collateral'], action: 'manual_rate', code: 'SONIA', value: 3.46, date: '2026-03-27', note: 'Published fixing, entered by hand',
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap payment on ${OIS_NAME}, leg B (ois), period 2026-03-05 to 2026-04-07: 129,487.68 GBP`, cash: { GBP: -129_487.68 }, owner: 'account', date: '2026-04-07' },
+          { type: 'swap.matured', summary: `Swap matured: ${OIS_NAME} (notional 40,000,000)`, owner: 'account' },
+          { type: 'swap.collateral', summary: `Collateral returned on ${OIS_NAME} under "CSA Dealer B" (Dealer B): 259,183.67 USD (independent amount, the position ended)`, cash: { USD: 259_183.67 } },
+          { type: 'collateral.variation', summary: /Variation margin under "CSA Dealer B" \(Dealer B\): 10,367\.35 USD returned to us\./, cash: { USD: 10_367.35 } },
+        ],
+        cash: { account: { USD: { settled: 1_000_000, margin: 0, restricted: 0, availableToTrade: 1_000_000 }, GBP: { settled: 512_936.98, unsettled: 0, margin: 0, availableToTrade: 512_936.98 } } },
+        positions: [], holdings: { main: null }, lifecycle: [], otc: [], pending: [], alerts: [],
+        // Realized: 174,529.32 - 164,449.35 + 6,350.00. FX effect: 512,936.98 x 1.27 = 651,429.96 against 641,329.97 booked, less 100.00 on the closed position.
+        pnl: { account: { realized: 16_429.97, unrealized: 0, fx: 9_999.99, total: 26_429.96 } },
+        nav: { account: 1_651_429.96, treasury: 3_905_000, book: 5_556_429.96 },
+        balance: { account: { cash: 1_651_429.96, margin: null, positions: null, receivable: null, assets: 1_651_429.96, liabilities: 0, netAssets: 1_651_429.96 } },
+      },
+    },
+  ],
+};
+
+export default [interestRateSwap, overnightIndexSwap];
