@@ -1005,4 +1005,272 @@ const basisSwap = {
   ],
 };
 
-export default [interestRateSwap, overnightIndexSwap, basisSwap];
+
+// ---------------------------------------------------------------------------------------------
+// Shared by the US dollar scenarios below
+// ---------------------------------------------------------------------------------------------
+const USD_CALENDARS = { tradingCalendar: 'USD', settlementCalendar: 'USD', paymentCalendar: 'USD' };
+/** A 1,000,000 USD Book whose Account is funded with `funding`; no commission on swaps unless `fee` is given. */
+const usdBook = (name, accountName, funding, fee = NO_FEE) => ({
+  name, reportingCcy: 'USD',
+  capital: [{ ccy: 'USD', amount: 1_000_000 }],
+  account: { name: accountName, funding: [{ ccy: 'USD', amount: funding }] },
+  settings: { fees: { swap: fee }, fill: FILL, settlement: { swap: 2 } },
+});
+const usdStart = (funding) => ({
+  cash: {
+    account: { USD: { settled: funding, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: funding } },
+    treasury: { USD: { settled: 1_000_000 - funding, unsettled: 0, reserved: 0, restricted: 0, margin: 0 } },
+  },
+  positions: [], pending: [], openOrders: [], lifecycle: [], lifecycleFailures: [], borrowings: [], otc: [], alerts: [],
+  nav: { account: funding, treasury: 1_000_000 - funding, book: 1_000_000 },
+  provisional: { account: false, book: false },
+  failed: { orders: 0, settlements: 0, lifecycle: 0 },
+});
+
+// ---------------------------------------------------------------------------------------------
+// interest_rate_cap
+// ---------------------------------------------------------------------------------------------
+// A one-year cap at 4.25% on 3-month term SOFR, bought: a premium is paid at entry and each quarter
+// the caplet pays notional x max(fixing - 4.25%, 0) x days/360. Uncollateralized: the buyer owes
+// nothing after the premium. The premium is the price: an amount per 100 of notional.
+//
+// Schedule (effective Monday 16 March 2026, maturity Tuesday 16 March 2027), every payment date a business day:
+//   2026-03-16 to 2026-06-16 (92 days)  fixing of 16 March 4.30%      in the money by 0.05%
+//   2026-06-16 to 2026-09-16 (92 days)  fixing of 16 June 4.10%       below the strike: nothing due
+//   2026-09-16 to 2026-12-16 (91 days)  fixing of 16 September 4.75%  in the money by 0.50%
+//   2026-12-16 to 2027-03-16 (90 days)  fixing of 16 December: not supplied; entered by hand as 4.55% (0.30% in the money)
+const CAP_NAME = 'USD cap 4.25% on TSFR3M 16 Mar 2027';
+const interestRateCap = {
+  productId: 'interest_rate_cap',
+  title: 'USD 1-year cap at 4.25% on 3-month term SOFR, bought for a premium, uncollateralized, held to maturity',
+  matrix: {
+    ...OTC_TICKET,
+    automaticInputs: ['caplet schedule from the contract terms and the USD payment calendar', 'TSFR3M fixings (rate fixture standing in for Shaffer MarketData)', 'settlement date of the premium, T+2 on the USD calendar'],
+    manualInputs: ['premium (stated fill price, per 100 notional)', 'mark of the cap, entered by hand', 'settlement amount of a partial termination (stated fill price in the preview)', 'a fixing the data service has not supplied, entered by hand'],
+    settlement: 'Premium and termination amount settle T+2 on the USD calendar; caplet payments are cash on their payment date',
+    lifecycle: 'Each quarter the caplet pays when the fixing is above the strike and is recorded as nothing due when it is not; a caplet whose fixing is missing is blocked until the fixing is supplied, and maturity waits for it; at maturity the cap ends and the premium still carried is written off',
+    accounting: 'Carried at the premium paid until a mark is entered (provisional), then at the mark; caplet receipts are realized P&L; a partial termination realizes the difference from the average premium; at maturity the remaining premium is a realized loss',
+    collateral: 'Uncollateralized (paper assumption): nothing is posted or received, whatever the mark',
+  },
+  start: at('2026-03-12'),
+  settlementCheck: { lag: 2, holidays: [] }, // no Federal Reserve holiday in the settlement windows used (12 to 17 March, 8 to 10 July 2026)
+  book: usdBook('Matrix interest-rate cap', 'Rates', 500_000),
+  instruments: {
+    main: {
+      productId: 'interest_rate_cap', name: CAP_NAME, symbol: 'CAP-TSFR-425', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: USD_CALENDARS,
+      terms: {
+        effective: '2026-03-16', maturity: '2027-03-16', counterparty: 'Dealer A', collateralBasis: { type: 'uncollateralized' },
+        legs: [{ side: 'receive', type: 'cap', ccy: 'USD', index: 'TSFR3M', strike: 0.0425, months: 3, dayCount: 'ACT/360' }],
+      },
+    },
+  },
+  rates: { TSFR3M: { byDate: { '2026-03-16': 4.30, '2026-06-16': 4.10, '2026-09-16': 4.75 } } }, // 16 December is deliberately missing
+  expectAtStart: usdStart(500_000),
+  steps: [
+    {
+      // 200,000,000 at a premium of 0.42 per 100 is 840,000; the Account has 500,000: 340,000 short.
+      id: 'too-large', covers: 'insufficient cash', action: 'ticket', instrument: 'main', side: 'buy', qty: 200_000_000, order: { statedPrice: 0.42 },
+      status: 'blocked', reason: 'The premium must be covered by the Account\'s cash.',
+      expect: { refused: /Rates is short 340,000\.00 USD: the package needs 840,000\.00 USD \(purchases 840,000\.00 USD, fees 0\.00 USD, margin and collateral 0\.00 USD, reserved 0\.00 USD\) and 500,000\.00 USD is available/ },
+    },
+    {
+      // Premium 20,000,000 x 0.42 / 100 = 84,000, settling Monday 16 March (T+2). Until a mark is entered the cap is carried at what was paid.
+      id: 'open', covers: ['open', 'premium'], action: 'ticket', instrument: 'main', side: 'buy', qty: 20_000_000, as: 'cap', order: { statedPrice: 0.42 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 20_000_000, estimate: 0.42, model: 'stated-price', settleDate: '2026-03-16', calendar: 'USD', cash: -84_000, fees: 0 }],
+          cash: { USD: { purchases: 84_000, fees: 0, margin: 0, required: 84_000, available: 500_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 20_000_000, avgPrice: 0.42, fills: [{ qty: 20_000_000, price: 0.42, model: 'stated-price', settleDate: '2026-03-16' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Entered as written: 20,000,000 notional of CAP-TSFR-425 at 0.42 per 100 notional', owner: 'account', date: '2026-03-12' }], // no collateral event
+        cash: { account: { USD: { settled: 500_000, unsettled: -84_000, margin: 0, restricted: 0, availableToTrade: 416_000, availableToWithdraw: 416_000 } } },
+        positions: [{ instrument: 'main', lot: 'cap', owner: 'account', direction: 'as written', qty: 20_000_000, avgCost: 0.42, cost: 84_000, price: null, value: null, unrealized: null, provisional: true, notional: 20_000_000, margin: 0 }],
+        holdings: { main: { long: 20_000_000, short: 0, net: 20_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-03-16', amount: -84_000, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-06-16', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-03-16', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', lot: 'cap', owner: 'account', qty: 20_000_000, basis: 'uncollateralized', agreement: null, iaPosted: 0, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: 0, unrealized: 0, total: 0 } },
+        nav: { account: 500_000, book: 1_000_000 }, // carried at cost, the premium owed against it
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 500_000, payable: 84_000, margin: null, positions: 84_000, accruedIncome: null, accruedExpense: null, assets: 584_000, liabilities: 84_000, netAssets: 500_000 } },
+      },
+    },
+    { id: 'friday', action: 'clock', to: at('2026-03-13'), expect: {} },
+    {
+      // 10,000,000 more at 0.40: 40,000, settling Tuesday 17 March. Average premium (84,000 + 40,000) / 300,000 = 0.4133333 per 100.
+      id: 'increase', covers: ['increase', 'premium'], action: 'resize', lot: 'cap', factor: 1.5, order: { statedPrice: 0.40 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 10_000_000, estimate: 0.4, model: 'stated-price', settleDate: '2026-03-17', cash: -40_000, fees: 0 }],
+          cash: { USD: { purchases: 40_000, required: 40_000, available: 416_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 10_000_000, avgPrice: 0.4 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Increased as written: 10,000,000 notional of CAP-TSFR-425 at 0.40 per 100 notional' }],
+        cash: { account: { USD: { settled: 500_000, unsettled: -124_000, availableToTrade: 376_000, availableToWithdraw: 376_000 } } },
+        positions: [{ instrument: 'main', lot: 'cap', qty: 30_000_000, cost: 124_000, avgCost: 0.4133333, price: null, value: null, notional: 30_000_000 }],
+        holdings: { main: { long: 30_000_000, short: 0, net: 30_000_000 } },
+        pending: [{ instrument: 'main', dueDate: '2026-03-16', amount: -84_000, ccy: 'USD', into: 'cash' }, { instrument: 'main', dueDate: '2026-03-17', amount: -40_000, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: 30_000_000 }],
+        nav: { account: 500_000, book: 1_000_000 },
+        balance: { account: { payable: 124_000, positions: 124_000, assets: 624_000, liabilities: 124_000, netAssets: 500_000 } },
+      },
+    },
+    {
+      id: 'settle-premium', covers: 'settlement', action: 'clock', to: at('2026-03-16'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 84,000.00 USD from settled cash', cash: { USD: -84_000 }, date: '2026-03-16' }],
+        cash: { account: { USD: { settled: 416_000, unsettled: -40_000, availableToTrade: 376_000, availableToWithdraw: 376_000 } } },
+        pending: [{ instrument: 'main', dueDate: '2026-03-17', amount: -40_000, ccy: 'USD', into: 'cash' }],
+        balance: { account: { cash: 416_000, payable: 40_000, assets: 540_000, liabilities: 40_000 } },
+      },
+    },
+    {
+      id: 'settle-increase', covers: 'settlement', action: 'clock', to: at('2026-03-17'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 40,000.00 USD from settled cash', cash: { USD: -40_000 } }],
+        cash: { account: { USD: { settled: 376_000, unsettled: 0, availableToTrade: 376_000, availableToWithdraw: 376_000 } } },
+        pending: [],
+        balance: { account: { cash: 376_000, payable: null, assets: 500_000, liabilities: 0 } },
+      },
+    },
+    {
+      // 30,000,000 x 0.35 / 100 = 105,000 against 124,000 paid: 19,000 down.
+      id: 'mark', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 0.35, note: 'Dealer mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'cap', qty: 30_000_000, price: 0.35, value: 105_000, unrealized: -19_000, provisional: false, priceSource: 'Manual entry', priceStatus: 'manual' }],
+        otc: [{ instrument: 'main', mark: 0.35, markValue: 105_000, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { unrealized: -19_000, total: -19_000 } },
+        nav: { account: 481_000, book: 981_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 105_000, assets: 481_000, netAssets: 481_000 } },
+      },
+    },
+    {
+      // Uncollateralized: the end-of-day pass moves nothing, whatever the mark.
+      id: 'no-collateral-moves', covers: 'collateral', action: 'clock', to: eod('2026-03-17'),
+      expect: { events: [], otc: [{ instrument: 'main', vmPosted: 0, vmHeld: 0, iaPosted: 0 }], alerts: [], cash: { account: { USD: { settled: 376_000, margin: 0, restricted: 0 } } } },
+    },
+    {
+      // First caplet: 30,000,000 x (4.30% - 4.25%) x 92/360 = 3,833.33.
+      id: 'first-caplet', covers: 'caplet payment', action: 'clock', to: at('2026-06-16'),
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Swap receipt on ${CAP_NAME}, leg A (cap), period 2026-03-16 to 2026-06-16: 3,833.33 USD`, cash: { USD: 3_833.33 }, owner: 'account', date: '2026-06-16' }],
+        cash: { account: { USD: { settled: 379_833.33, availableToTrade: 379_833.33, availableToWithdraw: 379_833.33 } } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-09-16', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-03-16', status: 'pending' },
+        ],
+        pnl: { account: { realized: 3_833.33, unrealized: -19_000, total: -15_166.67 } },
+        nav: { account: 484_833.33, book: 984_833.33 },
+        balance: { account: { cash: 379_833.33, accruedIncome: null, assets: 484_833.33, netAssets: 484_833.33 } },
+      },
+    },
+    { id: 'early-july', action: 'clock', to: at('2026-07-08'), expect: {} },
+    {
+      // 40% (12,000,000) is terminated for 0.30 per 100, received: 36,000. Premium carried on it: 124,000 x 12/30 = 49,600. Realized -13,600.
+      // Left: 18,000,000 carrying 74,400, marked 0.35: 63,000, 11,400 down. Settles Friday 10 July.
+      id: 'partial-termination', covers: ['reduce', 'partial termination'], action: 'close', lot: 'cap', scope: 'strategy', percent: 40, order: { statedPrice: 0.30 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 12_000_000, estimate: 0.3, model: 'stated-price', settleDate: '2026-07-10', cash: 36_000, fees: 0 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 12_000_000, avgPrice: 0.3 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Terminated in part: 12,000,000 of 30,000,000 notional of CAP-TSFR-425 at 0.30 per 100 notional (realized -13,600.00 USD)' }],
+        cash: { account: { USD: { settled: 379_833.33, unsettled: 36_000, availableToTrade: 415_833.33, availableToWithdraw: 379_833.33 } } },
+        positions: [{ instrument: 'main', lot: 'cap', qty: 18_000_000, cost: 74_400, avgCost: 0.4133333, price: 0.35, value: 63_000, unrealized: -11_400, notional: 18_000_000 }],
+        holdings: { main: { long: 18_000_000, short: 0, net: 18_000_000 } },
+        pending: [{ instrument: 'main', dueDate: '2026-07-10', amount: 36_000, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: 18_000_000, markValue: 63_000 }],
+        pnl: { account: { realized: -9_766.67, unrealized: -11_400, total: -21_166.67 } }, // 3,833.33 - 13,600
+        nav: { account: 478_833.33, book: 978_833.33 },
+        balance: { account: { cash: 379_833.33, receivable: 36_000, positions: 63_000, assets: 478_833.33, liabilities: 0, netAssets: 478_833.33 } },
+      },
+    },
+    {
+      id: 'settle-partial-termination', covers: 'settlement', action: 'clock', to: at('2026-07-10'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 36,000.00 USD into settled cash', cash: { USD: 36_000 } }],
+        cash: { account: { USD: { settled: 415_833.33, unsettled: 0, availableToTrade: 415_833.33, availableToWithdraw: 415_833.33 } } },
+        pending: [],
+        balance: { account: { cash: 415_833.33, receivable: null } },
+      },
+    },
+    {
+      // Second caplet: the fixing of 16 June, 4.10%, is below the 4.25% strike. Nothing is due, and that is recorded.
+      id: 'caplet-out-of-the-money', covers: 'caplet payment', action: 'clock', to: at('2026-09-16'),
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Nothing due on ${CAP_NAME}, leg A (cap), period 2026-06-16 to 2026-09-16: the TSFR3M fixing 4.100% is not above the strike 4.250%`, owner: 'account', date: '2026-09-16' }],
+        cash: { account: { USD: { settled: 415_833.33, availableToTrade: 415_833.33 } } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-12-16', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-03-16', status: 'pending' },
+        ],
+        pnl: { account: { realized: -9_766.67, total: -21_166.67 } },
+        nav: { account: 478_833.33, book: 978_833.33 },
+      },
+    },
+    {
+      // Third caplet, on the 18,000,000 left: 18,000,000 x (4.75% - 4.25%) x 91/360 = 22,750.00.
+      id: 'third-caplet', covers: 'caplet payment', action: 'clock', to: at('2026-12-16'),
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Swap receipt on ${CAP_NAME}, leg A (cap), period 2026-09-16 to 2026-12-16: 22,750.00 USD`, cash: { USD: 22_750 }, date: '2026-12-16' }],
+        cash: { account: { USD: { settled: 438_583.33, availableToTrade: 438_583.33, availableToWithdraw: 438_583.33 } } },
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-03-16', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-03-16', status: 'pending' },
+        ],
+        pnl: { account: { realized: 12_983.33, total: 1_583.33 } }, // -9,766.67 + 22,750; then - 11,400
+        nav: { account: 501_583.33, book: 1_001_583.33 },
+        balance: { account: { cash: 438_583.33, assets: 501_583.33, netAssets: 501_583.33 } },
+      },
+    },
+    {
+      // Maturity date. The last caplet needs the fixing of 16 December, which was never supplied: it waits, and so does maturity. No rate is assumed.
+      id: 'last-caplet-blocked', covers: 'missing fixing', action: 'clock', to: at('2027-03-16'),
+      expect: {
+        events: [],
+        cash: { account: { USD: { settled: 438_583.33 } } },
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-03-16', status: 'blocked', reason: /Waiting for the final leg payments/ },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-03-16', status: 'blocked', reason: /Awaiting the TSFR3M fixing for 2026-12-16/ },
+        ],
+        positions: [{ instrument: 'main', lot: 'cap', qty: 18_000_000, value: 63_000 }],
+        nav: { account: 501_583.33, book: 1_001_583.33 },
+      },
+    },
+    {
+      // 4.55% for 16 December, by hand: 18,000,000 x (4.55% - 4.25%) x 90/360 = 13,500.00.
+      id: 'fixing-entered-by-hand', covers: ['missing fixing', 'caplet payment'], action: 'manual_rate', code: 'TSFR3M', value: 4.55, date: '2026-12-16', note: 'Published fixing, entered by hand',
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Swap receipt on ${CAP_NAME}, leg A (cap), period 2026-12-16 to 2027-03-16: 13,500.00 USD`, cash: { USD: 13_500 }, owner: 'account', date: '2027-03-16' }],
+        cash: { account: { USD: { settled: 452_083.33, availableToTrade: 452_083.33, availableToWithdraw: 452_083.33 } } },
+        // Maturity was looked at before the payment in this pass, so it is still shown as waiting; the next pass ends the contract.
+        lifecycle: [{ type: 'swap.maturity', instrument: 'main', dueDate: '2027-03-16', status: 'blocked', reason: /Waiting for the final leg payments/ }],
+        pnl: { account: { realized: 26_483.33, total: 15_083.33 } }, // 12,983.33 + 13,500; then - 11,400
+        nav: { account: 515_083.33, book: 1_015_083.33 },
+        balance: { account: { cash: 452_083.33, assets: 515_083.33, netAssets: 515_083.33 } },
+      },
+    },
+    {
+      // The cap ends. The 74,400 of premium still carried is written off; the mark of 63,000 was never cash.
+      // 500,000 - 84,000 - 40,000 + 3,833.33 + 36,000 + 22,750 + 13,500 = 452,083.33.
+      id: 'matured', covers: ['maturity', 'close'], action: 'cycle',
+      expect: {
+        events: [{ type: 'swap.matured', summary: `Swap matured: ${CAP_NAME} (notional 18,000,000)`, owner: 'account' }],
+        cash: { account: { USD: { settled: 452_083.33, unsettled: 0, margin: 0, restricted: 0, reserved: 0, availableToTrade: 452_083.33, availableToWithdraw: 452_083.33 } }, treasury: { USD: { settled: 500_000 } } },
+        positions: [], holdings: { main: null }, lifecycle: [], otc: [], pending: [], alerts: [],
+        pnl: { account: { realized: -47_916.67, commissions: 0, unrealized: 0, total: -47_916.67 } }, // 26,483.33 - 74,400
+        nav: { account: 452_083.33, treasury: 500_000, book: 952_083.33 },
+        provisional: { account: false, book: false },
+        balance: { account: { cash: 452_083.33, positions: null, assets: 452_083.33, liabilities: 0, netAssets: 452_083.33 } },
+      },
+    },
+  ],
+};
+
+export default [interestRateSwap, overnightIndexSwap, basisSwap, interestRateCap];
