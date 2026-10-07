@@ -2655,4 +2655,311 @@ const sovereignSukuk = {
   ],
 };
 
-export default [treasuryNote, treasuryBill, treasuryBond, strips, foreignGovBill, foreignGovBond, emLocalDebt, emHardDebt, agencyDebt, supranationalBond, municipalBond, sovereignSukuk];
+// ---------------------------------------------------------------------------------------------
+// corporate_bond
+// ---------------------------------------------------------------------------------------------
+// A newly issued US corporate note: 5.40%, dated 15 December 2026, coupons 1 March and 1 September,
+// 30/360 (US), T+1 on the US bond calendar, pieces of 1,000. Its first coupon, on 1 March 2027, is a
+// short one: interest runs from the dated date, 76 days of 30/360 (15 Dec to 1 Mar: two months and
+// 16 days), 5.40 x 76/360 = 1.14 per 100 instead of 2.70.
+//
+// The Account holds it in two lots (two strategy instances), each with its own cost. The first is
+// bought before the coupon; the second is bought on Friday 26 February for settlement on Monday
+// 1 March, the coupon date: it pays no accrued interest and is not paid the coupon.
+// 30/360 counts every month as 30 days: from Friday 26 February to Monday 1 March is five days of
+// interest (three by the calendar), and 31 March counts as the 30th, so the day after it earns nothing.
+// A sale on Thursday 25 March settles on Monday 29 March, after Good Friday. On 31 March the issuer's
+// tender offer at 102 takes the second lot: an early redemption recorded by hand, paid with the accrued
+// interest to that day. The first lot is sold in the market.
+//
+// One 30/360 day at 5.40%: 75.00 on 500,000, 45.00 on 300,000, 30.00 on 200,000.
+// Commission: 1 basis point of clean principal.
+const corporateBond = {
+  productId: 'corporate_bond',
+  title: 'Halden Energy 5.40% senior notes due 1 March 2032: a new issue with a short first coupon, two lots, 30/360 across February and the 31st, a tender offer',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount (a multiple of 1,000)', 'Sell from: the lot to reduce, when the Account holds two'],
+    manualInputs: ['Tender offer: redemption price, face amount and label, recorded by hand on the position (Lifecycle, Early redemption)'],
+    settlement: 'T+1 on the US bond calendar; Good Friday is skipped; an early redemption is paid on the day it is recorded',
+    lifecycle: 'Daily accrual on 30/360 (US) from the dated date; a short first coupon to the face settled before the coupon date; a lot bought for settlement on the coupon date starts its schedule with the next coupon; early redemption by hand',
+    accounting: 'Each lot at its own clean average cost; realized P&L on a sale and on the tender; interest income separate, including the accrued interest paid with the tender',
+    collateral: 'None for a long position',
+  },
+  start: EST('2027-02-25'), // Thursday
+  settlementCheck: { lag: 1, holidays: ['2027-03-26'] }, // Good Friday
+  book: {
+    name: 'Matrix corporate bond', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 2_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 1_000_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 1 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'corporate_bond', name: 'Halden Energy Corp 5.40% Senior Notes 1-Mar-2032', symbol: 'HALDEN-5.4-MAR32', marketView: 'US_CASH', venueType: 'otc', issuer: 'Halden Energy Corp', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      terms: { couponType: 'fixed', couponRate: 0.054, frequency: 2, maturity: '2032-03-01', issueDate: '2026-12-15', dayCount: '30/360', redemption: 100, minDenomination: 1_000, seniority: 'Senior unsecured' } },
+  },
+  quotes: { main: { bid: 100.8, ask: 101, last: 100.9, bidSize: 5_000_000, askSize: 5_000_000 } },
+  expectAtStart: { ...startState(1_000_000, 1_000_000), cash: { account: usdCash(1_000_000), treasury: usdCash(1_000_000) } },
+  steps: [
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 500_000, as: 'first',
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 500_000, estimate: 101, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2027-02-26', calendar: 'USBOND',
+            gross: 505_000, // 500,000 x 101 / 100
+            accrued: 5_325, // from the dated date, 15 Dec, to 26 Feb: 71 days of 30/360 x 75.00
+            cash: -510_325, fees: 50.5 }], // 1 bp of 505,000
+          cash: { USD: { purchases: 510_325, fees: 50.5, required: 510_375.50, available: 1_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 500_000, avgPrice: 101, fills: [{ qty: 500_000, price: 101, model: 'quoted-bid-ask', settleDate: '2027-02-26', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 500,000 HALDEN-5.4-MAR32 @ 101.00 USD', owner: 'account', date: '2027-02-25' }],
+        cash: { account: { USD: { settled: 1_000_000, unsettled: -510_375.50, availableToTrade: 489_624.50 } } },
+        positions: [{ instrument: 'main', lot: 'first', owner: 'account', direction: 'long', qty: 500_000, avgCost: 101, cost: 505_000, price: 100.9,
+          value: 504_500, unrealized: -500, accrued: 5_325, priceSource: 'Test fixture' }],
+        holdings: { main: { long: 500_000, short: 0, net: 500_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2027-02-26', amount: -510_375.50, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-03-01', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2032-03-01', status: 'pending' }], // both Mondays
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -50.5, fees: 0, borrowFunding: 0, unrealized: -500, total: -550.50 } },
+        nav: { account: 999_449.50, treasury: 1_000_000, book: 1_999_449.50 },
+        balance: { account: { cash: 1_000_000, accruedIncome: 5_325, positions: 504_500, payable: 510_375.50, assets: 1_509_825, liabilities: 510_375.50, netAssets: 999_449.50 } },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EST('2027-02-26'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 510,375.50 USD from settled cash', cash: { USD: -510_375.50 }, date: '2027-02-26' }],
+        cash: { account: { USD: { settled: 489_624.50, unsettled: 0, availableToTrade: 489_624.50 } } },
+        pending: [],
+        balance: { account: { cash: 489_624.50, payable: null, assets: 999_449.50, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'quote-lower', action: 'quote', instrument: 'main', quote: { bid: 100.5, ask: 100.7, last: 100.6, bidSize: 5_000_000, askSize: 5_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'first', qty: 500_000, price: 100.6, value: 503_000, unrealized: -2_000 }],
+        pnl: { account: { unrealized: -2_000, total: -2_050.50 } },
+        nav: { account: 997_949.50, book: 1_997_949.50 },
+        balance: { account: { positions: 503_000, assets: 997_949.50, netAssets: 997_949.50 } },
+      },
+    },
+    {
+      // A second purchase as a position of its own, on Friday 26 February. It settles on Monday 1 March, the coupon
+      // date: the new coupon period starts that day, so no accrued interest is paid and the 1 March coupon is not this lot's.
+      id: 'second-lot', covers: ['open', 'increase', 'coupon'], action: 'ticket', instrument: 'main', side: 'buy', qty: 300_000, as: 'second',
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: ['already-held'],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 300_000, estimate: 100.7, model: 'quoted-bid-ask', settleDate: '2027-03-01', calendar: 'USBOND',
+            gross: 302_100, // 300,000 x 100.70 / 100
+            accrued: 0, cash: -302_100, fees: 30.21 }],
+          cash: { USD: { purchases: 302_100, fees: 30.21, required: 302_130.21, available: 489_624.50, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 300_000, avgPrice: 100.7, fills: [{ qty: 300_000, price: 100.7, settleDate: '2027-03-01' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 300,000 HALDEN-5.4-MAR32 @ 100.70 USD', owner: 'account', date: '2027-02-26' }],
+        cash: { account: { USD: { settled: 489_624.50, unsettled: -302_130.21, availableToTrade: 187_494.29 } } },
+        positions: [
+          { instrument: 'main', lot: 'first', qty: 500_000, avgCost: 101, cost: 505_000, price: 100.6, value: 503_000, unrealized: -2_000, accrued: 5_325 },
+          { instrument: 'main', lot: 'second', owner: 'account', direction: 'long', qty: 300_000, avgCost: 100.7, cost: 302_100, price: 100.6, value: 301_800, unrealized: -300, accrued: 0, priceSource: 'Test fixture' },
+        ],
+        holdings: { main: { long: 800_000, short: 0, net: 800_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2027-03-01', amount: -302_130.21, ccy: 'USD', into: 'cash' }],
+        // The first lot is due the 1 March coupon; the second lot's first coupon is 1 September (a Wednesday).
+        lifecycle: [
+          { type: 'bond.coupon', instrument: 'main', dueDate: '2027-03-01', status: 'pending' }, { type: 'bond.coupon', instrument: 'main', dueDate: '2027-09-01', status: 'pending' },
+          { type: 'bond.maturity', instrument: 'main', dueDate: '2032-03-01', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2032-03-01', status: 'pending' },
+        ],
+        pnl: { account: { commissions: -80.71, unrealized: -2_300, total: -2_380.71 } },
+        nav: { account: 997_619.29, book: 1_997_619.29 },
+        balance: { account: { cash: 489_624.50, accruedIncome: 5_325, positions: 804_800, payable: 302_130.21, assets: 1_299_749.50, liabilities: 302_130.21, netAssets: 997_619.29 } },
+      },
+    },
+    {
+      // Monday 1 March 2027: the second lot is paid for, and the short first coupon is paid on the 500,000 settled before
+      // today: 500,000 x 5.4% x 76/360 = 5,700.00. 5,325.00 of it was bought; the other 375.00 is the income from
+      // 26 February to 1 March, five 30/360 days (the 26th to the 30th of a 30-day February, then the 1st).
+      id: 'first-coupon', covers: ['coupon', 'settlement', 'accrual'], action: 'clock', to: EST('2027-03-01'),
+      expect: {
+        events: [
+          { type: 'settlement.pay', summary: 'paid 302,130.21 USD from settled cash', cash: { USD: -302_130.21 }, date: '2027-03-01' },
+          { type: 'bond.coupon', summary: 'Coupon received on 500,000 HALDEN-5.4-MAR32: 5,700.00 USD', cash: { USD: 5_700 }, owner: 'account', date: '2027-03-01' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on HALDEN-5.4-MAR32: 375.00 USD' },
+        ],
+        cash: { account: { USD: { settled: 193_194.29, unsettled: 0, availableToTrade: 193_194.29 } } }, // 489,624.50 - 302,130.21 + 5,700
+        positions: [{ instrument: 'main', lot: 'first', qty: 500_000, accrued: 0 }, { instrument: 'main', lot: 'second', qty: 300_000, accrued: 0 }],
+        pending: [],
+        lifecycle: [
+          { type: 'bond.coupon', instrument: 'main', dueDate: '2027-09-01', status: 'pending' }, { type: 'bond.coupon', instrument: 'main', dueDate: '2027-09-01', status: 'pending' },
+          { type: 'bond.maturity', instrument: 'main', dueDate: '2032-03-01', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2032-03-01', status: 'pending' },
+        ],
+        pnl: { account: { couponInterest: 375, total: -2_005.71 } },
+        nav: { account: 997_994.29, book: 1_997_994.29 },
+        balance: { account: { cash: 193_194.29, payable: null, accruedIncome: null, assets: 997_994.29, liabilities: 0, netAssets: 997_994.29 } },
+      },
+    },
+    {
+      // Thursday 25 March. End of day Wednesday 24 March, 23 days into the period: 75.00 x 23 on the first lot, 45.00 x 23 on the second.
+      id: 'before-good-friday', covers: 'accrual', action: 'clock', to: EDT('2027-03-25'),
+      expect: {
+        events: [
+          { type: 'accrual.coupon', summary: 'Interest accrued on HALDEN-5.4-MAR32: 1,725.00 USD' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on HALDEN-5.4-MAR32: 1,035.00 USD' },
+        ],
+        positions: [{ instrument: 'main', lot: 'first', qty: 500_000, accrued: 1_725 }, { instrument: 'main', lot: 'second', qty: 300_000, accrued: 1_035 }],
+        pnl: { account: { couponInterest: 3_135, total: 754.29 } },
+        nav: { account: 1_000_754.29, book: 2_000_754.29 },
+        balance: { account: { accruedIncome: 2_760, assets: 1_000_754.29, netAssets: 1_000_754.29 } },
+      },
+    },
+    {
+      id: 'quote-up', action: 'quote', instrument: 'main', quote: { bid: 101.2, ask: 101.4, last: 101.3, bidSize: 5_000_000, askSize: 5_000_000 },
+      expect: {
+        // The same price gives each lot its own result: +0.30 on the first (cost 101.00), +0.60 on the second (cost 100.70).
+        positions: [
+          { instrument: 'main', lot: 'first', qty: 500_000, price: 101.3, value: 506_500, unrealized: 1_500 },
+          { instrument: 'main', lot: 'second', qty: 300_000, price: 101.3, value: 303_900, unrealized: 1_800 },
+        ],
+        pnl: { account: { unrealized: 3_300, total: 6_354.29 } },
+        nav: { account: 1_006_354.29, book: 2_006_354.29 },
+        balance: { account: { positions: 810_400, assets: 1_006_354.29, netAssets: 1_006_354.29 } },
+      },
+    },
+    {
+      // Sold from the first lot on Thursday 25 March. Friday 26 March is Good Friday: the sale settles on Monday 29 March,
+      // 28 days into the period.
+      id: 'reduce-first', covers: ['reduce', 'market holiday'], action: 'ticket', instrument: 'main', side: 'sell', qty: 200_000, from: 'first',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 200_000, estimate: 101.2, settleDate: '2027-03-29', calendar: 'USBOND',
+          gross: 202_400, // 200,000 x 101.20 / 100
+          accrued: 840, // 30.00 x 28 days
+          cash: 203_240, fees: 20.24 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 200_000, avgPrice: 101.2, fills: [{ qty: 200_000, price: 101.2, settleDate: '2027-03-29' }] }] },
+        // Cost removed at the first lot's own average: 200,000 x 101% = 202,000. Realized 202,400 - 202,000 = 400.00.
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 200,000 HALDEN-5.4-MAR32 @ 101.20 USD (realized 400.00 USD)', date: '2027-03-25' }],
+        cash: { account: { USD: { settled: 193_194.29, unsettled: 203_219.76, availableToTrade: 396_414.05 } } }, // 203,240 - 20.24
+        positions: [
+          { instrument: 'main', lot: 'first', qty: 300_000, cost: 303_000, avgCost: 101, price: 101.3, value: 303_900, unrealized: 900, accrued: 885 }, // 1,725 - 840
+          { instrument: 'main', lot: 'second', qty: 300_000, cost: 302_100, avgCost: 100.7, price: 101.3, value: 303_900, unrealized: 1_800, accrued: 1_035 },
+        ],
+        holdings: { main: { long: 600_000, short: 0, net: 600_000 } },
+        pending: [{ instrument: 'main', dueDate: '2027-03-29', amount: 203_219.76, into: 'cash' }],
+        pnl: { account: { realized: 400, couponInterest: 3_135, commissions: -100.95, unrealized: 2_700, total: 6_134.05 } },
+        nav: { account: 1_006_134.05, book: 2_006_134.05 },
+        balance: { account: { cash: 193_194.29, receivable: 203_219.76, accruedIncome: 1_920, positions: 607_800, assets: 1_006_134.05, liabilities: 0, netAssets: 1_006_134.05 } },
+      },
+    },
+    {
+      // Monday 29 March. The last end of day was Thursday 25 March (Good Friday is no business day), 24 days into the
+      // period. First lot: 75.00 x 24 on the 500,000 still settled, less the 840.00 sold = 960.00. Second lot: 45.00 x 24 = 1,080.00.
+      id: 'after-good-friday', covers: ['settlement', 'accrual', 'market holiday'], action: 'clock', to: EDT('2027-03-29'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 203,219.76 USD into settled cash', cash: { USD: 203_219.76 }, date: '2027-03-29' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on HALDEN-5.4-MAR32: 75.00 USD' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on HALDEN-5.4-MAR32: 45.00 USD' },
+        ],
+        cash: { account: { USD: { settled: 396_414.05, unsettled: 0, availableToTrade: 396_414.05 } } },
+        positions: [{ instrument: 'main', lot: 'first', qty: 300_000, accrued: 960 }, { instrument: 'main', lot: 'second', qty: 300_000, accrued: 1_080 }],
+        pending: [],
+        pnl: { account: { couponInterest: 3_255, total: 6_254.05 } },
+        nav: { account: 1_006_254.05, book: 2_006_254.05 },
+        balance: { account: { cash: 396_414.05, receivable: null, accruedIncome: 2_040, assets: 1_006_254.05, netAssets: 1_006_254.05 } },
+      },
+    },
+    {
+      // Wednesday 31 March. End of day Tuesday 30 March, 29 days: 45.00 x 29 = 1,305.00 on each lot of 300,000.
+      id: 'month-end', covers: 'accrual', action: 'clock', to: EDT('2027-03-31'),
+      expect: {
+        events: [
+          { type: 'accrual.coupon', summary: 'Interest accrued on HALDEN-5.4-MAR32: 345.00 USD' }, // 1,305 - 960
+          { type: 'accrual.coupon', summary: 'Interest accrued on HALDEN-5.4-MAR32: 225.00 USD' }, // 1,305 - 1,080
+        ],
+        positions: [{ instrument: 'main', lot: 'first', qty: 300_000, accrued: 1_305 }, { instrument: 'main', lot: 'second', qty: 300_000, accrued: 1_305 }],
+        pnl: { account: { couponInterest: 3_825, total: 6_824.05 } },
+        nav: { account: 1_006_824.05, book: 2_006_824.05 },
+        balance: { account: { accruedIncome: 2_610, assets: 1_006_824.05, netAssets: 1_006_824.05 } },
+      },
+    },
+    {
+      id: 'tender-more-than-held', covers: 'early redemption', action: 'lifecycle', lot: 'second', body: { action: 'redeem', price: 102, face: 400_000, label: 'Tender offer' },
+      status: 'blocked', reason: 'The second lot is 300,000 face: 400,000 cannot be tendered from it.',
+      expect: { refused: 'The position is 300,000 face; cannot redeem 400,000.' },
+    },
+    {
+      // The issuer buys the notes back at 102.00 and the whole second lot is tendered. Paid today, 31 March, with the
+      // accrued interest to today: on 30/360 (US) the 31st counts as the 30th of a period that began on the 1st, 30 days,
+      // 45.00 x 30 = 1,350.00. Proceeds 306,000.00 + 1,350.00. Realized 306,000 - 302,100 = 3,900.00.
+      // 1,305.00 of the interest was on the books; the other 45.00 is income now.
+      id: 'tender', covers: ['early redemption', 'close'], action: 'lifecycle', lot: 'second', body: { action: 'redeem', price: 102, face: 300_000, label: 'Tender offer' },
+      expect: {
+        events: [
+          { type: 'bond.early_redemption', summary: 'Tender offer: 300,000 HALDEN-5.4-MAR32 at 102.00% of par', owner: 'account', date: '2027-03-31' },
+          { type: 'settlement.receive', summary: 'received 307,350.00 USD into settled cash', cash: { USD: 307_350 } },
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of HALDEN-5.4-MAR32: 45.00 USD' },
+        ],
+        cash: { account: { USD: { settled: 703_764.05, unsettled: 0, availableToTrade: 703_764.05 } } }, // 396,414.05 + 307,350
+        positions: [{ instrument: 'main', lot: 'first', qty: 300_000, cost: 303_000, avgCost: 101, price: 101.3, value: 303_900, unrealized: 900, accrued: 1_305 }],
+        holdings: { main: { long: 300_000, short: 0, net: 300_000 } },
+        pending: [],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-09-01', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2032-03-01', status: 'pending' }],
+        pnl: { account: { realized: 4_300, couponInterest: 3_870, commissions: -100.95, unrealized: 900, total: 8_969.05 } }, // no commission on a redemption
+        nav: { account: 1_008_969.05, book: 2_008_969.05 },
+        balance: { account: { cash: 703_764.05, accruedIncome: 1_305, positions: 303_900, assets: 1_008_969.05, liabilities: 0, netAssets: 1_008_969.05 } },
+      },
+    },
+    {
+      // Thursday 1 April. End of day 31 March: 30 days, 45.00 x 30 = 1,350.00 on the first lot.
+      id: 'day-30', covers: 'accrual', action: 'clock', to: EDT('2027-04-01'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on HALDEN-5.4-MAR32: 45.00 USD' }],
+        positions: [{ instrument: 'main', lot: 'first', qty: 300_000, accrued: 1_350 }],
+        pnl: { account: { couponInterest: 3_915, total: 9_014.05 } },
+        nav: { account: 1_009_014.05, book: 2_009_014.05 },
+        balance: { account: { accruedIncome: 1_350, assets: 1_009_014.05, netAssets: 1_009_014.05 } },
+      },
+    },
+    {
+      // Friday 2 April. End of day 1 April: one month, still 30 days. March has 31 days and 30/360 pays for 30 of them:
+      // nothing is earned for this day and nothing is booked.
+      id: 'no-thirty-first-day', covers: 'accrual', action: 'clock', to: EDT('2027-04-02'),
+      expect: { events: [] },
+    },
+    {
+      id: 'close-first', covers: 'close', action: 'close', lot: 'first', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 300_000, estimate: 101.2, settleDate: '2027-04-05', // Monday
+          gross: 303_600, // 300,000 x 101.20 / 100
+          accrued: 1_530, // 1 March to 5 April: 34 days x 45.00
+          cash: 305_130, fees: 30.36 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 300_000, avgPrice: 101.2 }] },
+        // Realized 303,600 - 303,000 = 600.00. Interest sold 1,530.00 against 1,350.00 on the books: 180.00 of income.
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 300,000 HALDEN-5.4-MAR32 @ 101.20 USD (realized 600.00 USD)' },
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of HALDEN-5.4-MAR32: 180.00 USD' },
+        ],
+        cash: { account: { USD: { settled: 703_764.05, unsettled: 305_099.64, availableToTrade: 1_008_863.69 } } }, // 305,130 - 30.36
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', dueDate: '2027-04-05', amount: 305_099.64, into: 'cash' }],
+        lifecycle: [],
+        // Interest in all: 5,700 coupon + 840 + 1,350 + 1,530 sold - 5,325 bought = 4,095.00, which is 33 days on 500,000
+        // (26 Feb to 29 Mar), 30 days on the second 300,000 and 6 more days on the 300,000 kept: 2,475 + 1,350 + 270.
+        pnl: { account: { realized: 4_900, couponInterest: 4_095, commissions: -131.31, unrealized: 0, total: 8_863.69 } },
+        nav: { account: 1_008_863.69, book: 2_008_863.69 },
+        balance: { account: { cash: 703_764.05, receivable: 305_099.64, positions: null, accruedIncome: null, assets: 1_008_863.69, liabilities: 0, netAssets: 1_008_863.69 } },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: EDT('2027-04-05'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 305,099.64 USD into settled cash', cash: { USD: 305_099.64 } }],
+        cash: { account: { USD: { settled: 1_008_863.69, unsettled: 0, availableToTrade: 1_008_863.69 } }, treasury: { USD: { settled: 1_000_000 } } },
+        pending: [],
+        balance: { account: { cash: 1_008_863.69, receivable: null, assets: 1_008_863.69, liabilities: 0, netAssets: 1_008_863.69 } },
+      },
+    },
+  ],
+};
+
+export default [treasuryNote, treasuryBill, treasuryBond, strips, foreignGovBill, foreignGovBond, emLocalDebt, emHardDebt, agencyDebt, supranationalBond, municipalBond, sovereignSukuk, corporateBond];

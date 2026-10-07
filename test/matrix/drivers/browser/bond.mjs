@@ -27,9 +27,15 @@
 //                   that is not offered or is disabled, a disabled Preview button, a settlement conflict shown on the
 //                   Settlement field).
 //
+//   actions.lifecycle   an early redemption recorded by hand (issuer call, investor put, tender): the position's
+//                   Lifecycle menu in the strategy instance, "Early redemption", then the dialog's Redemption price,
+//                   Face amount redeemed and Label. Spec step: `{ action: 'lifecycle', lot, body: { action: 'redeem',
+//                   price, face, label } }`. A refusal shown in the dialog is returned as the step's refusal.
+//   actions.owner_screens   the Accounting screens read with Treasury in scope (`owner: 'treasury'`).
+//
 // What it does not do (add it here, in `actions`, when a product needs it)
-//   - Lifecycle events recorded by hand that have their own dialog: early redemption (call, put, tender), principal
-//     paydown (pool factor), coupon suspension, conversion. Manual cash flows work through the shared path.
+//   - The other lifecycle events recorded by hand: principal paydown (pool factor), coupon suspension, conversion.
+//     Manual cash flows work through the shared path.
 //   - Editing an instrument after registration (a fixing entered on a floating-rate note, a changed calendar).
 
 export const family = 'bond';
@@ -169,6 +175,34 @@ export async function ticket(ui, t, ctx, step) {
  *   decimals shown. The spec's own figures are compared with the API after every step as always, so the three agree.
  */
 export const actions = {
+  /**
+   * An early redemption recorded by hand from the position's Lifecycle menu. Any other lifecycle event is handed
+   * back to the shared path (which records manual cash flows and names what it does not do yet).
+   */
+  async lifecycle(ui, t, ctx, step, { positionRow }) {
+    if (step.body?.action !== 'redeem') return undefined;
+    const lot = ctx.lot(step.lot);
+    const drawer = await ui.openStrategy(ctx, lot.strategyId);
+    const row = positionRow(drawer, ctx.inst(step.instrument || lot.instrument));
+    const menu = row.locator('select').first();
+    const offered = (await menu.locator('option').allInnerTexts()).map((x) => x.trim()).filter((x) => x && x !== 'Lifecycle');
+    if (!offered.includes('Early redemption')) return { refusal: { message: `The Lifecycle menu of this position offers only: ${offered.join(', ') || 'nothing'}. "Early redemption" is not offered.`, where: 'strategy instance, position Lifecycle menu' } };
+    await menu.selectOption({ label: 'Early redemption' });
+    const dlg = ui.dialog(/^Early redemption/);
+    await ui.input(dlg, 'Redemption price (% of par)').fill(String(step.body.price));
+    // The dialog starts with the whole position as the face redeemed.
+    if (step.body.face !== undefined && step.body.face !== null) await ui.input(dlg, 'Face amount redeemed').fill(String(step.body.face));
+    if (step.body.label) await ui.input(dlg, 'Label').fill(step.body.label);
+    const record = ui.button(dlg, 'Record early redemption');
+    if (await record.isDisabled()) return { refusal: { message: 'The "Record early redemption" button is disabled: the dialog needs a redemption price of zero or more and a face amount above zero.', where: 'Early redemption dialog' } };
+    const r = await ui.respondsTo('POST', /^\/api\/positions\/[^/]+\/lifecycle$/, () => record.click());
+    if (!r.ok) {
+      await dlg.locator('.notice.err', { hasText: r.body?.error || 'no message' }).first().waitFor();
+      return { refusal: { message: r.body?.error, status: r.status, where: 'dialog message' } };
+    }
+    await dlg.waitFor({ state: 'hidden' });
+    return {};
+  },
   async owner_screens(ui, t, ctx, step) {
     if (step.owner !== 'treasury') throw new Error('owner_screens reads the screens of Treasury: state `owner: \'treasury\'`.');
     const { readScreens, screenProblems } = await import('../browser.mjs');

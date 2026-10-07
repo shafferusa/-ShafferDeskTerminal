@@ -41,3 +41,4 @@
 - 2026-10-07T10:05Z | b1 | +0.2 | supranational_bond passes at engine, API and browser (euro, annual coupon, T+2 over the TARGET holiday, FX effects)
 - 2026-10-07T10:09Z | b1 | +0.2 | municipal_bond passes at engine, API and browser
 - 2026-10-07T10:13Z | b1 | +0.2 | sovereign_sukuk passes at engine, API and browser
+- 2026-10-07T10:21Z | b1 | +0.2 | corporate_bond passes at engine, API and browser (all 13 government-group bond products done)

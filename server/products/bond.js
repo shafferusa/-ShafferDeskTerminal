@@ -230,6 +230,9 @@ export const bond = {
     // A trade on a coupon date, after that coupon has been dealt with for this position (paid, or passed with nothing
     // due), must not schedule the same coupon again: it would be paid twice.
     if (next && app.db.get(`SELECT 1 AS x FROM tasks WHERE position_id = ? AND type = 'bond.coupon' AND status = 'done' AND json_extract(data, '$.couponDate') = ?`, pos.id, next)) next = nextCouponDate(t, next);
+    // A position whose every trade settles on or after the coupon date has no face entitled to that coupon (it was
+    // bought ex coupon): its schedule starts with the coupon after, not with one it will never be paid.
+    if (next && isZero(entitledFace(app, pos, next)) && !app.db.get(`SELECT 1 AS x FROM tasks WHERE position_id = ? AND type = 'bond.coupon' AND status IN ('pending','blocked','failed') AND json_extract(data, '$.couponDate') = ?`, pos.id, next)) next = nextCouponDate(t, next);
     if (next && inst.terms.couponType !== 'zero') app.tasks.schedule({ ...common, type: 'bond.coupon', dueDate: adjust(next, 'following', paymentCalendarFor(inst)), data: { key: next, couponDate: next } });
     if (inst.terms.maturity) app.tasks.schedule({ ...common, type: 'bond.maturity', dueDate: adjust(inst.terms.maturity, 'following', paymentCalendarFor(inst)) });
   },

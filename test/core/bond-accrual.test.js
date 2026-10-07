@@ -250,3 +250,17 @@ test('bond coupon: a trade on the coupon date, after the coupon was paid, does n
   assert.equal(app.ledger.cash(acct.id, 'USD').settled, 1_400_696.37);
   assert.deepEqual(ledgerImbalance(app), []);
 });
+
+test('bond coupon: a position bought for settlement on or after the coupon date is not scheduled for that coupon', async () => {
+  const { app, clock } = makeApp({ at: '2026-11-13T15:00:00.000Z' }); // Friday 13 November 2026
+  const { book, acct } = makeBook(app, { cash: 3_000_000, account: 2_000_000 });
+  const b = note(app);
+  await buy(app, book, acct, b, 1_000_000); // settles Monday 16 Nov, after the coupon date of Sunday 15 Nov: bought ex coupon
+  assert.equal(accrued(app, acct), 110.5, 'one day of the new 181-day period was bought: 20,000 x 1/181 = 110.497');
+  const coupons = () => app.accounting.pending(book.id, acct.id).lifecycle.filter((x) => x.type === 'bond.coupon').map((x) => x.dueDate);
+  assert.deepEqual(coupons(), ['2027-05-17'], 'the first coupon listed is the one the position will be paid (15 May 2027 is a Saturday), not the 15 November one');
+  await goTo(app, clock, '2026-11-17T15:00:00.000Z');
+  assert.deepEqual(events(app, book, acct, 'bond.coupon'), [], 'no coupon on 16 November');
+  assert.deepEqual(coupons(), ['2027-05-17']);
+  assert.deepEqual(ledgerImbalance(app), []);
+});
