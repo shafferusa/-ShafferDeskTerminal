@@ -5,7 +5,38 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-## State at the last update (2026-10-07 01:58 UTC)
+## Usage guard (owner rule, 2026-10-06): read this before doing anything heavy
+
+Stop all background work when the owner's weekly **Fable** usage reaches 98%.
+
+- Claude Code exposes only the 5-hour window and the all-models weekly percentage to scripts. The Fable figure
+  exists only in `/usage` and on the claude.ai usage page, so it has to be estimated or reported by the owner.
+- A terminal session on the owner's laptop writes the all-models figure to
+  `C:\Users\logan\.claude\usage_state.json` (`seven_day_used_percentage`, `seven_day_resets_at`, `written_at`
+  in Unix seconds). A cloud session can read it only while it is linked to that computer.
+1. At the start of any long task ask the owner for the two numbers from `/usage` ("Current week (all models)"
+   and "Current week (Fable)") and compute r = Fable% / all-models%. Re-ask whenever new numbers are given.
+2. Before each heavy step, and at least hourly while work runs, read `usage_state.json`:
+   estimated Fable% = r x `seven_day_used_percentage`. If the file cannot be read, or `written_at` is more than
+   2 hours old, usage is unknown: ask the owner before continuing.
+3. At an estimated 95%: refresh this note and tell the owner the estimate.
+4. At an estimated 96%, or as soon as the owner reports Fable at 98% or says "pause": stop all running agents,
+   delete the scheduled check-ins, commit and push, finalise this note, notify the owner, and do nothing until
+   the owner says "resume".
+5. Never estimate in the owner's favour. When unsure, pause.
+
+Last known figures: 5:30 PM ET on 2026-10-06, Fable 14% against 10% for all models (r = 1.4), before this pass
+started. The all-models figure was reported as 35% at about 9:57 PM ET.
+
+## State at the last update (2026-10-07 02:10 UTC)
+
+**Holding.** No agents are running and nothing is scheduled. This session is not linked to the owner's computer, so
+the usage file cannot be read; under rule 2 the next heavy step waits for the owner's numbers and go-ahead. The
+hedge follow-up agent was stopped by the owner part-way through (its only change on disk is the demo fixture no
+longer stating collateral terms for its swap, which is what makes one test red, see below). The product fan-out
+(waves 1 to 3 below) has not started.
+
+## State of the work (written 2026-10-07 01:58 UTC)
 
 **Committed**
 - `27330e8`: hedge request states, source and freshness; Investment Strategy IDs; protection allocations;
