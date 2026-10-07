@@ -2440,4 +2440,219 @@ const municipalBond = {
   ],
 };
 
-export default [treasuryNote, treasuryBill, treasuryBond, strips, foreignGovBill, foreignGovBond, emLocalDebt, emHardDebt, agencyDebt, supranationalBond, municipalBond];
+// ---------------------------------------------------------------------------------------------
+// sovereign_sukuk
+// ---------------------------------------------------------------------------------------------
+// US dollar trust certificates of a sovereign issuer (the Republic of Indonesia's sukuk vehicle), profit
+// rate 4.40% a year, periodic distributions on 20 March and 20 September, 30/360, T+2 on the US dollar
+// payment calendar, minimum piece 200,000. The Terminal books a sukuk on the bond engine: the periodic
+// distribution is the "coupon", the dissolution amount at the scheduled dissolution date is the "redemption".
+// The scenario buys between two distribution dates, takes the 20 September distribution (a Sunday, paid on
+// Monday 21 September), sells part for settlement across Columbus Day, and holds the rest to the scheduled
+// dissolution on 20 March 2027, a Saturday: the final distribution and the face amount are paid on Monday
+// 22 March, and on 30/360 the two days of waiting earn nothing.
+//
+// A periodic distribution is 4.40% / 2 = 2.20 per 100 face. A 30/360 day on 1,000,000 is 122.2222.
+// Days of 30/360 from 20 March 2026: to 11 Sep 171. From 20 Sep 2026: to 8 Oct 18, to 13 Oct 23, to
+// 14 Oct 24, to 18 Mar 2027 178, to 20 Mar 2027 180.
+// Commission: 0.4 basis points of clean principal.
+const sovereignSukuk = {
+  productId: 'sovereign_sukuk',
+  title: 'Republic of Indonesia 4.40% US dollar trust certificates due 20 March 2027: periodic distributions, a sale across Columbus Day, held to dissolution on a weekend date',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount (a multiple of 200,000)'],
+    manualInputs: ['none (the Terminal calls the periodic distribution a coupon and the dissolution a redemption)'],
+    settlement: 'T+2 from the instrument\'s own convention on the US dollar payment calendar; Columbus Day is skipped; a sale that would settle after the dissolution date is refused',
+    lifecycle: 'Daily accrual of the profit rate on 30/360; periodic distribution on the coupon schedule, paid on the next business day when the date is a weekend; final distribution and face amount paid together at dissolution',
+    accounting: 'Clean cost at average; the premium paid over par is a realized loss at dissolution, not amortised; distributions are coupon income, apart from realized P&L',
+    collateral: 'None for a long position',
+  },
+  start: EDT('2026-09-09'), // Wednesday
+  settlementCheck: { lag: 2, holidays: ['2026-10-12'] }, // Columbus Day, a Federal Reserve holiday
+  book: {
+    name: 'Matrix sovereign sukuk', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 3_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 1_500_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.4 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'sovereign_sukuk', name: 'Perusahaan Penerbit SBSN Indonesia III 4.40% Trust Certificates 20-Mar-2027', symbol: 'INDOIS-4.4-MAR27', marketView: 'FOREIGN_CASH', venueType: 'otc', issuer: 'Perusahaan Penerbit SBSN Indonesia III', domicile: 'ID', underlyingGeo: 'ID', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { settleLag: 2 },
+      terms: { couponType: 'fixed', couponRate: 0.044, frequency: 2, maturity: '2027-03-20', issueDate: '2022-03-20', dayCount: '30/360', redemption: 100, minDenomination: 200_000 } },
+  },
+  quotes: { main: { bid: 100.4, ask: 100.5, last: 100.45, bidSize: 10_000_000, askSize: 10_000_000 } },
+  expectAtStart: { ...startState(1_500_000, 1_500_000), cash: { account: usdCash(1_500_000), treasury: usdCash(1_500_000) } },
+  steps: [
+    {
+      id: 'below-minimum', covers: 'minimum denomination', action: 'ticket', instrument: 'main', side: 'buy', qty: 100_000,
+      status: 'blocked', reason: 'The certificates are issued in pieces of 200,000; 100,000 cannot be delivered.',
+      expect: { refused: 'quantity must be a multiple of 200000' },
+    },
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 1_000_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 1_000_000, estimate: 100.5, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2026-09-11', calendar: 'USD', // Friday
+            gross: 1_005_000, // 1,000,000 x 100.50 / 100
+            accrued: 20_900, // settles 11 Sep, 171 days of 30/360: 1,000,000 x 4.4% x 171/360
+            cash: -1_025_900, fees: 40.2 }], // 0.4 bp of 1,005,000
+          cash: { USD: { purchases: 1_025_900, fees: 40.2, required: 1_025_940.20, available: 1_500_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 1_000_000, avgPrice: 100.5, fills: [{ qty: 1_000_000, price: 100.5, model: 'quoted-bid-ask', settleDate: '2026-09-11', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1,000,000 INDOIS-4.4-MAR27 @ 100.50 USD', owner: 'account', date: '2026-09-09' }],
+        cash: { account: { USD: { settled: 1_500_000, unsettled: -1_025_940.20, availableToTrade: 474_059.80 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 1_000_000, avgCost: 100.5, cost: 1_005_000, price: 100.45,
+          value: 1_004_500, unrealized: -500, accrued: 20_900, priceSource: 'Test fixture' }],
+        holdings: { main: { long: 1_000_000, short: 0, net: 1_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-09-11', amount: -1_025_940.20, ccy: 'USD', into: 'cash' }],
+        // 20 September 2026 is a Sunday: paid Monday 21. 20 March 2027 is a Saturday: paid Monday 22.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2026-09-21', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2027-03-22', status: 'pending' }],
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -40.2, fees: 0, borrowFunding: 0, unrealized: -500, total: -540.20 } },
+        nav: { account: 1_499_459.80, treasury: 1_500_000, book: 2_999_459.80 },
+        balance: { account: { cash: 1_500_000, accruedIncome: 20_900, positions: 1_004_500, payable: 1_025_940.20, assets: 2_525_400, liabilities: 1_025_940.20, netAssets: 1_499_459.80 } },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EDT('2026-09-11'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 1,025,940.20 USD from settled cash', cash: { USD: -1_025_940.20 }, date: '2026-09-11' }],
+        cash: { account: { USD: { settled: 474_059.80, unsettled: 0, availableToTrade: 474_059.80 } } },
+        pending: [],
+        balance: { account: { cash: 474_059.80, payable: null, assets: 1_499_459.80, liabilities: 0 } },
+      },
+    },
+    {
+      // Monday 21 September: the distribution of Sunday 20 September on the 1,000,000 settled before it, 2.20 per 100.
+      // 20,900.00 of it was paid for at purchase; the other 1,100.00 is nine 30/360 days of income (11 to 20 September).
+      id: 'periodic-distribution', covers: 'coupon', action: 'clock', to: EDT('2026-09-21'),
+      expect: {
+        events: [
+          { type: 'bond.coupon', summary: 'Coupon received on 1,000,000 INDOIS-4.4-MAR27: 22,000.00 USD', cash: { USD: 22_000 }, owner: 'account', date: '2026-09-21' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on INDOIS-4.4-MAR27: 1,100.00 USD' },
+        ],
+        cash: { account: { USD: { settled: 496_059.80, unsettled: 0, availableToTrade: 496_059.80 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_000_000, accrued: 0 }],
+        // The last distribution and the dissolution fall due on the same day.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-03-22', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2027-03-22', status: 'pending' }],
+        pnl: { account: { couponInterest: 1_100, total: 559.80 } },
+        nav: { account: 1_500_559.80, book: 3_000_559.80 },
+        balance: { account: { cash: 496_059.80, accruedIncome: null, assets: 1_500_559.80, netAssets: 1_500_559.80 } },
+      },
+    },
+    {
+      // Friday 9 October. The last end of day was Thursday 8 October, 18 days into the new period: 1,000,000 x 4.4% x 18/360 = 2,200.00.
+      id: 'three-weeks-on', covers: 'accrual', action: 'clock', to: EDT('2026-10-09'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on INDOIS-4.4-MAR27: 2,200.00 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_000_000, accrued: 2_200 }],
+        pnl: { account: { couponInterest: 3_300, total: 2_759.80 } },
+        nav: { account: 1_502_759.80, book: 3_002_759.80 },
+        balance: { account: { accruedIncome: 2_200, assets: 1_502_759.80, netAssets: 1_502_759.80 } },
+      },
+    },
+    {
+      id: 'quote-lower', action: 'quote', instrument: 'main', quote: { bid: 100.3, ask: 100.4, last: 100.35, bidSize: 10_000_000, askSize: 10_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_000_000, price: 100.35, value: 1_003_500, unrealized: -1_500 }],
+        pnl: { account: { unrealized: -1_500, total: 1_759.80 } },
+        nav: { account: 1_501_759.80, book: 3_001_759.80 },
+        balance: { account: { positions: 1_003_500, assets: 1_501_759.80, netAssets: 1_501_759.80 } },
+      },
+    },
+    {
+      // Sold on Friday 9 October for T+2. Monday 12 October is Columbus Day: the payment system is closed, so the
+      // sale settles on Wednesday 14 October and the seller is paid the profit to that date.
+      id: 'reduce', covers: ['reduce', 'market holiday'], action: 'ticket', instrument: 'main', side: 'sell', qty: 400_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 400_000, estimate: 100.3, settleDate: '2026-10-14', calendar: 'USD',
+          gross: 401_200, // 400,000 x 100.30 / 100
+          accrued: 1_173.33, // 24 days: 400,000 x 4.4% x 24/360 = 1,173.333
+          cash: 402_373.33, fees: 16.05 }] }, // 0.4 bp of 401,200 = 16.048
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 400_000, avgPrice: 100.3, fills: [{ qty: 400_000, price: 100.3, settleDate: '2026-10-14' }] }] },
+        // Cost removed at the average: 400,000 x 100.50% = 402,000. Realized 401,200 - 402,000 = -800.00.
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: /^Sold 400,000 INDOIS-4\.4-MAR27 @ 100\.30 USD \(realized [-−]800\.00 USD\)$/, date: '2026-10-09' }],
+        cash: { account: { USD: { settled: 496_059.80, unsettled: 402_357.28, availableToTrade: 898_417.08 } } }, // 402,373.33 - 16.05
+        positions: [{ instrument: 'main', lot: 'lot', qty: 600_000, cost: 603_000, avgCost: 100.5, price: 100.35, value: 602_100, unrealized: -900,
+          accrued: 1_026.67 }], // 2,200.00 on the books less 1,173.33 sold
+        holdings: { main: { long: 600_000, short: 0, net: 600_000 } },
+        pending: [{ instrument: 'main', dueDate: '2026-10-14', amount: 402_357.28, into: 'cash' }],
+        pnl: { account: { realized: -800, couponInterest: 3_300, commissions: -56.25, unrealized: -900, total: 1_543.75 } },
+        nav: { account: 1_501_543.75, book: 3_001_543.75 },
+        balance: { account: { cash: 496_059.80, receivable: 402_357.28, accruedIncome: 1_026.67, positions: 602_100, assets: 1_501_543.75, liabilities: 0, netAssets: 1_501_543.75 } },
+      },
+    },
+    {
+      // Wednesday 14 October. The last end of day was Tuesday 13 October, with all 1,000,000 still settled in the Account:
+      // 23 days, 1,000,000 x 4.4% x 23/360 = 2,811.11, less the 1,173.33 sold = 1,637.78. Income 1,637.78 - 1,026.67 = 611.11.
+      id: 'settle-reduce', covers: ['settlement', 'accrual', 'market holiday'], action: 'clock', to: EDT('2026-10-14'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 402,357.28 USD into settled cash', cash: { USD: 402_357.28 }, date: '2026-10-14' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on INDOIS-4.4-MAR27: 611.11 USD' },
+        ],
+        cash: { account: { USD: { settled: 898_417.08, unsettled: 0, availableToTrade: 898_417.08 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 600_000, accrued: 1_637.78 }],
+        pending: [],
+        pnl: { account: { couponInterest: 3_911.11, total: 2_154.86 } },
+        nav: { account: 1_502_154.86, book: 3_002_154.86 },
+        balance: { account: { cash: 898_417.08, receivable: null, accruedIncome: 1_637.78, assets: 1_502_154.86, netAssets: 1_502_154.86 } },
+      },
+    },
+    {
+      // Friday 19 March 2027, the last business day before the dissolution date. End of day Thursday 18 March:
+      // 178 days on 600,000 = 600,000 x 4.4% x 178/360 = 13,053.33. Income since October: 13,053.33 - 1,637.78 = 11,415.55.
+      id: 'last-business-day', covers: 'accrual', action: 'clock', to: EDT('2027-03-19'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on INDOIS-4.4-MAR27: 11,415.55 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 600_000, accrued: 13_053.33 }],
+        pnl: { account: { couponInterest: 15_326.66, total: 13_570.41 } },
+        nav: { account: 1_513_570.41, book: 3_013_570.41 },
+        balance: { account: { accruedIncome: 13_053.33, assets: 1_513_570.41, netAssets: 1_513_570.41 } },
+      },
+    },
+    {
+      // A day from dissolution the certificates trade at par: the premium paid is now an unrealized loss of 2,940.00.
+      id: 'quote-at-par', action: 'quote', instrument: 'main', quote: { bid: 100, ask: 100.02, last: 100.01, bidSize: 10_000_000, askSize: 10_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 600_000, price: 100.01, value: 600_060, unrealized: -2_940 }], // 600,000 x 100.01 / 100 against 603,000
+        pnl: { account: { unrealized: -2_940, total: 11_530.41 } },
+        nav: { account: 1_511_530.41, book: 3_011_530.41 },
+        balance: { account: { positions: 600_060, assets: 1_511_530.41, netAssets: 1_511_530.41 } },
+      },
+    },
+    {
+      // A T+2 sale today would settle on Tuesday 23 March, after the certificates are dissolved: there would be nothing to deliver.
+      id: 'too-late-to-sell', covers: ['reduce', 'maturity'], action: 'ticket', instrument: 'main', side: 'sell', qty: 200_000, from: 'lot',
+      status: 'blocked', reason: 'A sale must settle before the dissolution date; the regular settlement date of a sale made today is after it.',
+      expect: { refused: 'matures on 2027-03-20; this trade would settle on 2027-03-23, after it is redeemed' },
+    },
+    {
+      // Monday 22 March 2027. The final distribution: 600,000 x 2.20% = 13,200.00, of which 13,053.33 is on the books;
+      // the other 146.67 is the last two 30/360 days (18 to 20 March). Nothing is earned for the wait from Saturday to Monday.
+      // The face amount is paid at 100: 600,000.00 against a cost of 603,000.00, a realized loss of 3,000.00.
+      id: 'dissolution', covers: ['coupon', 'maturity', 'close'], action: 'clock', to: EDT('2027-03-22'),
+      expect: {
+        events: [
+          { type: 'bond.coupon', summary: 'Coupon received on 600,000 INDOIS-4.4-MAR27: 13,200.00 USD', cash: { USD: 13_200 }, owner: 'account', date: '2027-03-22' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on INDOIS-4.4-MAR27: 146.67 USD' },
+          { type: 'bond.redemption', summary: 'Redeemed at maturity: 600,000 INDOIS-4.4-MAR27 at 100.00% of par', owner: 'account' },
+          { type: 'settlement.receive', summary: 'received 600,000.00 USD into settled cash', cash: { USD: 600_000 } },
+        ],
+        cash: { account: { USD: { settled: 1_511_617.08, unsettled: 0, availableToTrade: 1_511_617.08 } }, treasury: { USD: { settled: 1_500_000 } } }, // 898,417.08 + 13,200 + 600,000
+        positions: [],
+        holdings: { main: null },
+        pending: [],
+        lifecycle: [],
+        // Distributions and profit sold, less profit bought: 22,000 + 13,200 + 1,173.33 - 20,900 = 15,473.33.
+        // Realized: 400,000 sold 0.20 below cost, -800.00, and 600,000 paid at par 0.50 below cost, -3,000.00.
+        pnl: { account: { realized: -3_800, couponInterest: 15_473.33, commissions: -56.25, unrealized: 0, total: 11_617.08 } },
+        nav: { account: 1_511_617.08, treasury: 1_500_000, book: 3_011_617.08 },
+        balance: { account: { cash: 1_511_617.08, positions: null, accruedIncome: null, assets: 1_511_617.08, liabilities: 0, netAssets: 1_511_617.08 } },
+      },
+    },
+  ],
+};
+
+export default [treasuryNote, treasuryBill, treasuryBond, strips, foreignGovBill, foreignGovBond, emLocalDebt, emHardDebt, agencyDebt, supranationalBond, municipalBond, sovereignSukuk];
