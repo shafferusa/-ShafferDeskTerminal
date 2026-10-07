@@ -79,6 +79,10 @@ interface to the ledger: or find out that it does not, and fix it.
 - Before you finish: full `npm test`. A failure inside another family's matrix scenario or spec file is someone
   else's work in progress: mention it, do not touch it. A failure in `test/core` or in your products is yours.
 - Keep `PROGRESS.md` current (BRIEF3): the list of products with their state at each level.
+- Milestone = one product passing at all three levels. At each one run the save script from BRIEF3 with 0.2 points:
+  `/tmp/claude-0/-home-claude--shafferdeskterminal/9fe505c4-25a7-5956-b73b-691c2f93387b/scratchpad/tools/save-note.sh <your id> 0.2 "<product> passes at engine, API and browser" test/matrix/specs/<your file>.mjs [your browser driver]`.
+  If a product passes at engine and API level but the browser level is still open after real effort, save with 0
+  points and say so in the text.
 
 ## Final report (under 80 lines)
 A table: product, steps, and passed / failed / blocked / unsupported at engine, API and browser level. Then:

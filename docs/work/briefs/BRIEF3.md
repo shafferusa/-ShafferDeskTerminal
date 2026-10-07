@@ -55,6 +55,15 @@ by someone else, with only the files on disk and this log; write it so that work
 ten minutes. If `PROGRESS.md` already exists when you start, you are resuming: read it and continue from it
 instead of starting over.
 
+## Saving progress (required: the owner asked for the progress note to be saved as the work advances)
+At each milestone your task or prompt names, first bring your `PROGRESS.md` up to date, then run
+`/tmp/claude-0/-home-claude--shafferdeskterminal/9fe505c4-25a7-5956-b73b-691c2f93387b/scratchpad/tools/save-note.sh <your id> <points> "<one line: what just finished>" [files...]`.
+It copies your notes into the repository's `docs/work/`, commits them and pushes. `<points>` is given in your
+prompt. You may list files after the text to have them committed with the note, but ONLY files that you alone
+own and that are in a working state (your spec file, your browser driver, your own test files); never a shared
+file, never someone else's. This script is the only git operation you ever run. If it prints a failure, carry on
+and try again at the next milestone.
+
 ## Tests
 - Engine tests live in `test/core/*.test.js` (`node:test`, helpers in `test/helpers.js`: in-memory app on the demo
   feed with a frozen clock). `npm test` must pass when you finish. Add tests for everything you build.

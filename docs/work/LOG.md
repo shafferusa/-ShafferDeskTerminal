@@ -1,1 +1,2 @@
 - 2026-10-07T02:03Z | coord | +0 | work resumed; wave 1 starting (bonds, options, futures, loans, rate swaps, failure and recovery, two follow-ups)
+- 2026-10-07T02:10Z | v1b | +0.5 | suite green again (183 of 183): hedge package preview takes a chosen collateral basis and a stated fill price for an OTC leg; TRS test chooses position-level terms through it

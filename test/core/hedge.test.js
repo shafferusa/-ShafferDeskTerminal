@@ -534,3 +534,132 @@ test('normal mode: the Strategy list is awaiting, hedge requests wait, and no fi
   assert.throws(() => app.hedge.setScript({ responses: [] }), /only be loaded in demo mode/);
   assert.equal(app.hedge.serviceStatus().script, null);
 });
+
+// ---- what a recommendation leaves to the desk: collateral basis of an OTC leg, and a fill price ----------------------
+
+// A scripted total-return swap leg on `notional` of ALFA. `terms` adds to the contract terms (for example a collateral basis).
+const svcSwap = (und, notional, terms = {}) => ({
+  role: 'hedge', hedgeFamily: 'Total-return and equity swaps', kind: 'trade', action: 'buy', quantity: notional,
+  contract: {
+    productId: 'equity_trs', name: `TRS on ${und.symbol} (scripted)`, marketView: 'US_DERIV', venueType: 'otc', tradingCcy: 'USD', underlyingId: und.id,
+    terms: {
+      effective: '2026-03-02', maturity: '2026-09-02', counterparty: 'Scripted dealer', initialPrices: { A: 200 },
+      legs: [{ id: 'A', side: 'pay', type: 'return', ccy: 'USD', months: 3, underlyingId: und.id, passDividends: true, resetNotional: false }, { id: 'B', side: 'receive', type: 'float', ccy: 'USD', index: 'SIM-ON', spread: 0.005, months: 3, dayCount: 'ACT/360' }],
+      ...terms,
+    },
+  },
+  indicative: { value: 0, status: 'indicative', source: 'Test fixture' },
+});
+const coll = (pv, n = 1) => pv.hedge.completion.legs.find((l) => l.n === n).collateral;
+const errorCodes = (pv) => pv.checks.filter((c) => c.level === 'error').map((c) => c.code);
+
+test('an OTC hedge leg with no collateral basis stated waits for the desk to choose one; each choice is validated and nothing is assumed', async () => {
+  const { app, clock, inst } = makeApp();
+  const { book, acct, treasury } = makeBook(app);
+  pin(app, inst.ALFA.id, 200);
+  // The "service" proposes a swap on 100,000 (500 ALFA at 200) and a put, and states no collateral terms for the swap.
+  app.hedge.setScript({ responses: [{ version: 'run-7', packages: [svcPackage([svcSwap(inst.ALFA, 100_000), svcPut(inst.ALFA, 180, 1)])] }] });
+  const s = await buy(app, book, acct, inst.ALFA, 500);
+  await advance(app, clock, 1000);
+  const h = app.hedge.prompts(book.id)[0];
+
+  // As received: blocked, with the reason, and the two things only the desk can supply are named.
+  const bare = await app.hedge.previewPackage(h.id, 'scripted-1');
+  assert.deepEqual(errorCodes(bare), ['collateral-basis']);
+  assert.match(bare.checks.find((c) => c.code === 'collateral-basis').message, /states no collateral terms\. Choose a collateral agreement, enter position-level terms, or choose "Uncollateralized \(paper assumption\)"/);
+  assert.deepEqual(bare.hedge.completion.missing.map((m) => [m.leg, m.what]), [[1, 'collateral'], [1, 'price']]);
+  assert.deepEqual([coll(bare).origin, coll(bare).statedByService, coll(bare).needsChoice, coll(bare).canChoose, coll(bare).basis], ['none', false, true, true, null]);
+  assert.equal(bare.hedge.completion.legs[1].collateral, null, 'a listed option has no collateral basis to choose');
+  assert.equal(bare.totals.cash.USD.margin, 0, 'no collateral figure is invented');
+
+  // Explicitly uncollateralized: allowed, nothing is posted.
+  const none = await app.hedge.previewPackage(h.id, 'scripted-1', { collateral: { 1: { type: 'uncollateralized' } } });
+  assert.deepEqual(errorCodes(none), []);
+  assert.deepEqual([coll(none).origin, coll(none).label, coll(none).independent.delta, coll(none).needsChoice], ['chosen', 'Uncollateralized (paper assumption)', 0, false]);
+  assert.equal(none.totals.cash.USD.margin, 0);
+  assert.deepEqual(none.hedge.completion.missing.map((m) => m.what), ['price'], 'the swap still has no executable quote');
+
+  // Position-level terms. 5% of 100,000 = 5,000; a fixed amount is taken as stated.
+  const pct = await app.hedge.previewPackage(h.id, 'scripted-1', { collateral: { 1: { type: 'position', independentAmount: { type: 'pct', pct: 0.05 } } } });
+  assert.deepEqual([coll(pct).label, coll(pct).independent.delta, pct.totals.cash.USD.margin], ['Position-level terms', 5_000, 5_000]);
+  const fixed = await app.hedge.previewPackage(h.id, 'scripted-1', { collateral: { 1: { type: 'position', independentAmount: { type: 'fixed', amount: 2_500 }, variationMargin: true, threshold: 1_000 } } });
+  assert.deepEqual([coll(fixed).independent.delta, coll(fixed).variationMargin, coll(fixed).basis.threshold], [2_500, true, 1_000]);
+
+  // An agreement of this Book that covers the Account. 8% of 100,000 = 8,000.
+  const csa = app.agreements.create(book.id, { name: 'CSA Dealer A', counterparty: 'Dealer A', kind: 'bilateral', unitIds: [acct.id], terms: { independentAmount: { type: 'pct', pct: 0.08 } } });
+  const under = await app.hedge.previewPackage(h.id, 'scripted-1', { collateral: { 1: { type: 'agreement', agreementId: csa.id } } });
+  assert.deepEqual(errorCodes(under), []);
+  assert.deepEqual([coll(under).origin, coll(under).basis, coll(under).independent.delta], ['chosen', { type: 'agreement', agreementId: csa.id }, 8_000]);
+  assert.match(coll(under).label, /^CSA Dealer A \(bilateral/);
+
+  // Agreements that cannot be used are refused by the preview with the reason, and the choice stays open.
+  const tsyOnly = app.agreements.create(book.id, { name: 'CSA Treasury only', counterparty: 'Dealer B', kind: 'bilateral', unitIds: [treasury.id], terms: {} });
+  const uncovered = await app.hedge.previewPackage(h.id, 'scripted-1', { collateral: { 1: { type: 'agreement', agreementId: tsyOnly.id } } });
+  assert.deepEqual(errorCodes(uncovered), ['collateral-not-covered']);
+  assert.deepEqual([coll(uncovered).needsChoice, /does not cover Alpha/.test(coll(uncovered).problem)], [true, true]);
+  const other = makeBook(app, { name: 'Other Book' });
+  const foreign = app.agreements.create(other.book.id, { name: 'CSA elsewhere', counterparty: 'Dealer C', kind: 'bilateral', unitIds: [other.acct.id], terms: {} });
+  const crossed = await app.hedge.previewPackage(h.id, 'scripted-1', { collateral: { 1: { type: 'agreement', agreementId: foreign.id } } });
+  assert.deepEqual(errorCodes(crossed), ['collateral-other-book'], 'collateral never crosses Books');
+  assert.equal(coll(crossed).needsChoice, true);
+  const ghost = await app.hedge.previewPackage(h.id, 'scripted-1', { collateral: { 1: { type: 'agreement', agreementId: 'AGR-NOPE' } } });
+  assert.deepEqual(errorCodes(ghost), ['collateral-basis']);
+  assert.match(coll(ghost).problem, /does not exist/);
+
+  // A choice that is not a basis, or is aimed at the wrong leg, is refused outright.
+  const bad = (collateral, re) => assert.rejects(app.hedge.previewPackage(h.id, 'scripted-1', { collateral }), re);
+  await bad({ 1: { type: 'position', independentAmount: { type: 'pct', pct: 1.5 } } }, /Leg 1: The independent amount is a share of notional between 0 and 1/);
+  await bad({ 1: { type: 'agreement' } }, /Leg 1: Choose the collateral agreement this contract falls under/);
+  await bad({ 1: { type: 'house rules' } }, /Leg 1: Choose the collateral basis/);
+  await bad({ 2: { type: 'uncollateralized' } }, /Leg 2 is not an OTC contract/);
+  await bad({ 3: { type: 'uncollateralized' } }, /this package has no leg 3/);
+  await assert.rejects(app.hedge.previewPackage(h.id, 'scripted-1', { statedPrices: { 1: -1 } }), /Leg 1: a stated fill price is a number, zero or more/);
+
+  // Completed (agreement, swap entered at zero upfront) and executed exactly as displayed.
+  const pv = await app.hedge.previewPackage(h.id, 'scripted-1', { collateral: { 1: { type: 'agreement', agreementId: csa.id } }, statedPrices: { 1: 0 } });
+  assert.deepEqual([pv.blocking, pv.hedge.completion.missing], [0, []]);
+  assert.deepEqual([pv.legs[0].statedPrice, pv.legs[0].price.executable, pv.legs[0].contract.terms.collateralBasis], [0, true, { type: 'agreement', agreementId: csa.id }]);
+  assert.ok(!pv.checks.some((c) => c.code === 'no-price'));
+  const out = await app.packages.submit({ ...pv.input, legs: pv.legs, clientToken: pv.token, confirm: true, expected: pv.confirmation });
+  assert.equal(out.strategy.id, s.id, 'the hedge joins the primary position\'s strategy instance');
+  const swap = out.strategy.positions.find((p) => p.family === 'swap');
+  assert.deepEqual([swap.purpose, swap.marginPosted], ['hedge', 8_000]);
+  assert.equal(app.ledger.balance(acct.id, 'cash.margin', 'USD'), 8_000);
+  assert.deepEqual([app.positions.get(swap.positionId).data.collateralBasis.type, app.positions.get(swap.positionId).data.collateralBasis.agreementId], ['agreement', csa.id], 'the chosen basis is on record for the position');
+  // Linked to the request and the primary through stored identifiers; resets are scheduled for both swap legs.
+  const mine = app.orders.forStrategy(s.id).filter((o) => o.submission === pv.token);
+  assert.deepEqual(mine.map((o) => [o.status, o.data.hedgeLinkId]), [['filled', h.id], ['filled', h.id]]);
+  assert.equal(app.hedge.get(h.id).state, 'executed');
+  assert.ok(app.hedge.forStrategy(s.id).links.legs.some((l) => l.hedgeRequestId === h.id && new RegExp(`^Hedge leg of request ${h.id}`).test(l.text)));
+  const resets = app.tasks.open([acct.id]).filter((t) => t.type === 'swap.payment' && t.position_id === swap.positionId);
+  assert.ok(resets.length >= 2, 'a payment is scheduled for the return leg and for the financing leg');
+  assert.deepEqual(ledgerImbalance(app), []);
+});
+
+test('a collateral basis stated by the service is shown as stated and validated; choosing another replaces it openly', async () => {
+  const { app, clock, inst } = makeApp();
+  const { book, acct } = makeBook(app);
+  pin(app, inst.ALFA.id, 200);
+  // First answer: the service names an agreement the Book does not have. Second: it states "uncollateralized".
+  app.hedge.setScript({ responses: [
+    { packages: [svcPackage([svcSwap(inst.ALFA, 100_000, { collateralBasis: { type: 'agreement', agreementId: 'AGR-SERVICE-1' } })])] },
+    { packages: [svcPackage([svcSwap(inst.ALFA, 100_000, { collateralBasis: { type: 'uncollateralized' } })])] },
+  ] });
+  await buy(app, book, acct, inst.ALFA, 500);
+  await advance(app, clock, 1000);
+  const h = app.hedge.prompts(book.id)[0];
+  const unusable = await app.hedge.previewPackage(h.id, 'scripted-1');
+  assert.deepEqual(errorCodes(unusable), ['collateral-basis']);
+  assert.deepEqual([coll(unusable).origin, coll(unusable).statedByService, coll(unusable).needsChoice, coll(unusable).basis], ['recommendation', true, true, { type: 'agreement', agreementId: 'AGR-SERVICE-1' }]);
+  assert.match(coll(unusable).problem, /The collateral agreement named on this contract does not exist/);
+  // The desk replaces it with its own terms: 10% of 100,000 = 10,000. The origin says so.
+  const replaced = await app.hedge.previewPackage(h.id, 'scripted-1', { collateral: { 1: { type: 'position', independentAmount: { type: 'pct', pct: 0.1 } } } });
+  assert.deepEqual([errorCodes(replaced), coll(replaced).origin, coll(replaced).replacesStated, coll(replaced).independent.delta], [[], 'chosen', true, 10_000]);
+
+  clock.advance(60e3);
+  await app.hedge.refresh(h.id);
+  const stated = await app.hedge.previewPackage(h.id, 'scripted-1');
+  assert.deepEqual(errorCodes(stated), []);
+  assert.deepEqual([coll(stated).origin, coll(stated).statedByService, coll(stated).needsChoice, coll(stated).label, coll(stated).independent.delta], ['recommendation', true, false, 'Uncollateralized (paper assumption)', 0]);
+  assert.deepEqual(stated.hedge.completion.missing.map((m) => m.what), ['price']);
+});
