@@ -59,3 +59,4 @@
 - 2026-10-07T11:29Z | s1 | +0 | test/core/swap-rates.test.js: 7 regression tests for the swap.js fixes; preview counts cross-currency principal for an unpriced leg; npm test 343 of 343; 12 swap products pass at API level together
 - 2026-10-07T11:34Z | s1 | +0 | s1: BUGS.md entries for the swap family; all 12 products re-run at engine, API and browser with the final code
 - 2026-10-07T11:37Z | s1 | +0 | s1 finished: 12 rate-swap products pass at engine, API and browser; npm test 343 of 343; final report delivered
+- 2026-10-07T11:38Z | s8 | +0 | stress and no-duplicate cases at engine and API level; three more Terminal fixes (maturity catch-up, stored hedge queue, client tokens on every mutating route); kill cases written, not yet verified
