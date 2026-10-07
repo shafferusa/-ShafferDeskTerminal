@@ -154,28 +154,71 @@ function legAmount(app, inst, pos, leg, period) {
   }
 }
 
-/** Keep exchanged notionals (cross-currency legs) in line with the open position. */
-function trueUpNotionalExchange(app, { book, unit, inst, pos, date }) {
+/**
+ * Notional on which principal has been exchanged, or is due to be exchanged, by `date`: the position's
+ * notional less the changes whose own settlement date is still ahead. A change agreed after the swap has
+ * started (an increase, a termination) exchanges its principal when it settles, not on the day it is agreed.
+ */
+const exchangedQty = (pos, date) => pos.qty - (pos.data.notionalPending || []).reduce((a, p) => (p.date > date ? a + p.dq : a), 0);
+
+/** What bringing the exchanged principal into line on `date` would move, per leg: + received, - paid. */
+function notionalExchangeDue(app, { inst, pos, date }) {
   const t = inst.terms;
-  const live = !isZero(pos.qty) && date >= t.effective && date < t.maturity;
+  const q = exchangedQty(pos, date);
+  const live = !isZero(q) && date >= t.effective && date < t.maturity;
+  const out = [];
   for (const leg of t.legs) {
     if (!leg.exchangeNotional) continue;
     // Holding the swap as written: a pay leg means we received that currency's notional at the start.
-    const s = sign(pos.qty) * (leg.side === 'pay' ? 1 : -1);
-    const target = live ? money(s * Math.abs(pos.qty) * (leg.notionalFactor ?? 1), leg.ccy) : 0;
+    const s = sign(q) * (leg.side === 'pay' ? 1 : -1);
+    const target = live ? money(s * Math.abs(q) * (leg.notionalFactor ?? 1), leg.ccy) : 0;
     // Position-tagged exchanged notional: + means we hold the cash and owe it back.
     const held = -(app.ledger.positionBalance(pos.id, 'loan.liab', leg.ccy) + app.ledger.positionBalance(pos.id, 'loan.asset', leg.ccy));
     const delta = money(target - held, leg.ccy);
-    if (delta === 0) continue;
+    if (delta !== 0) out.push({ leg, target, held, delta });
+  }
+  return out;
+}
+
+/** The first currency in which the principal to be paid is more than the settled cash of the unit, or null. */
+function notionalShortfall(app, unit, moves) {
+  const net = {};
+  for (const m of moves) net[m.leg.ccy] = (net[m.leg.ccy] || 0) + m.delta;
+  for (const [ccy, amount] of Object.entries(net)) {
+    if (amount >= 0) continue;
+    const have = app.ledger.balance(unit.id, 'cash', ccy);
+    if (have < -amount - 0.004) return { ccy, due: money(-amount, ccy), have: money(Math.max(have, 0), ccy) };
+  }
+  return null;
+}
+const shortfallMessage = (inst, unit, short, what = 'Notional exchange') => `${what} on ${inst.name} could not be made: ${fmt(short.due, short.ccy)} is to be paid and ${unit.name} has ${fmt(short.have, short.ccy)} of settled ${short.ccy} cash. Nothing was exchanged in either currency.`;
+
+/**
+ * Keep exchanged notionals (cross-currency legs) in line with the open position. Principal is exchanged in
+ * every currency or in none: when the cash to be paid is not there, nothing moves, cash never goes below
+ * zero, and the reason is returned as { failed } for the caller to show and to try again.
+ */
+function trueUpNotionalExchange(app, { book, unit, inst, pos, date, what }) {
+  const moves = notionalExchangeDue(app, { inst, pos, date });
+  if (!moves.length) return { moved: 0 };
+  const short = notionalShortfall(app, unit, moves);
+  if (short) return { failed: shortfallMessage(inst, unit, short, what) };
+  let eventId = null;
+  for (const { leg, target, held, delta } of moves) {
     const account = (target || held) > 0 ? 'loan.liab' : 'loan.asset';
-    app.ledger.post({
+    eventId = app.ledger.post({
       bookId: book.id, unitId: unit.id, type: 'swap.notional_exchange', instrumentId: inst.id, strategyId: pos.strategy_id, positionId: pos.id, actor: 'engine',
       summary: `Notional exchange on ${inst.name}: ${delta > 0 ? 'received' : 'paid'} ${fmt(Math.abs(delta), leg.ccy)}`,
       data: { legId: leg.id, target, held },
       entries: [{ account: 'cash', ccy: leg.ccy, amount: delta, positionId: pos.id }, { account, ccy: leg.ccy, amount: -delta, positionId: pos.id }],
     });
   }
+  return { moved: moves.length, eventId };
 }
+
+/** A task that brings the exchanged principal into line on `dueDate`: the effective date, or the settlement date of a later change. */
+const scheduleNotional = (app, { book, unit, inst, pos }, dueDate, key) => app.tasks.schedule({ bookId: book.id, unitId: unit.id, positionId: pos.id, instrumentId: inst.id, strategyId: pos.strategy_id, type: 'swap.notional', dueDate, data: { key } });
+const maturityPayDate = (inst) => adjust(inst.terms.maturity, 'modified-following', paymentCalendarFor(inst));
 
 function scheduleLegTasks(app, { book, unit, inst, pos }) {
   const today = app.clock.today();
@@ -189,7 +232,7 @@ function scheduleLegTasks(app, { book, unit, inst, pos }) {
     if (idx >= 0) app.tasks.schedule({ ...common, type: 'swap.payment', dueDate: sched[idx].payDate, data: { key: `${leg.id}:${sched[idx].end}`, legId: leg.id, periodEnd: sched[idx].end } });
   }
   if (inst.terms.legs.some((l) => l.exchangeNotional) && today < inst.terms.effective) app.tasks.schedule({ ...common, type: 'swap.notional', dueDate: inst.terms.effective, data: { key: 'start' } });
-  app.tasks.schedule({ ...common, type: 'swap.maturity', dueDate: adjust(inst.terms.maturity, 'modified-following', paymentCalendarFor(inst)) });
+  app.tasks.schedule({ ...common, type: 'swap.maturity', dueDate: maturityPayDate(inst) });
 }
 
 export const swap = {
@@ -277,15 +320,42 @@ export const swap = {
     const buy = action === 'buy';
     const notes = ['Notional is not paid. Only the upfront amount (if any) settles at trade; each leg then pays on its schedule.'];
     for (const l of inst.terms.legs) notes.push(`Leg ${l.id}: ${buy ? describeLeg(l, app) : describeLeg({ ...l, side: l.side === 'pay' ? 'receive' : 'pay' }, app)}`);
+    // Principal exchanged (cross-currency legs). A trade that settles while the swap is running exchanges its principal with
+    // that settlement, so the cash to be paid is part of what the trade needs; before the effective date it is only announced.
+    let otherCash;
+    const exch = inst.terms.legs.filter((l) => l.exchangeNotional);
+    if (exch.length) {
+      const t = inst.terms;
+      const settle = standardSettleDate(inst, app.clock.today(), book);
+      const dq = buy ? qty : -qty;
+      const amounts = exch.map((l) => ({ ccy: l.ccy, amount: money((l.side === 'pay' ? 1 : -1) * dq * (l.notionalFactor ?? 1), l.ccy) }));
+      const say = amounts.map((a) => `${a.amount >= 0 ? 'receive' : 'pay'} ${fmt(Math.abs(a.amount), a.ccy)}`).join(', ');
+      if (settle >= t.maturity) notes.push('No principal is exchanged for this trade: the swap matures before it settles.');
+      else if (settle >= t.effective) {
+        otherCash = amounts;
+        notes.push(`Principal is exchanged when this trade settles (${settle}): ${say}. It goes back the other way at maturity or on termination.`);
+      } else {
+        // Not required today, but said plainly when it is not there today either.
+        const lacking = unit ? amounts.filter((a) => a.amount < 0 && app.ledger.balance(unit.id, 'cash', a.ccy) < -a.amount - 0.004).map((a) => `${fmt(Math.max(app.ledger.balance(unit.id, 'cash', a.ccy), 0), a.ccy)} of settled ${a.ccy} cash`) : [];
+        notes.push(`Principal is exchanged on the effective date ${t.effective}: ${say}. The cash to be paid must be in ${unit?.name || 'the owner'} on that date; it is not set aside now.${lacking.length ? ` ${unit.name} has ${lacking.join(' and ')} today: without more, the exchange will fail on that date and wait.` : ''}`);
+      }
+    }
     // Collateral to post (or get back) for the position this trade leaves, under the basis the contract states.
     const coll = app.agreements.tradeRequirement({ book, unit, inst, action, qty, price, strategyId, cashOut: Math.max(0, buy ? upfront : -upfront) });
-    return { ccy: inst.trading_ccy, principal: upfront, cash: buy ? -upfront : upfront, accrued: 0, notional: qty, exposure: null, initialMargin: coll.initialMargin, collateral: coll, notes: [...notes, ...coll.notes] };
+    return { ccy: inst.trading_ccy, principal: upfront, cash: buy ? -upfront : upfront, accrued: 0, notional: qty, exposure: null, initialMargin: coll.initialMargin, collateral: coll, otherCash, notes: [...notes, ...coll.notes] };
   },
   fill(app, c) {
     // The audit trail names what was done to the contract (entered, increased, terminated), never "bought" or "sold".
     const summary = c.summary || swapFillSummary(app, c);
     const r = bookSecurityFill(app, { ...c, summary }, { unitCost: c.price / 100 });
-    if (r.wasFlat && !isZero(r.position.qty)) app.positions.change(r.position, { data: { cashflowsFrom: c.tradeDate, legs: {}, notionalScale: 1 } });
+    let data = null;
+    if (r.wasFlat && !isZero(r.position.qty)) data = { cashflowsFrom: c.tradeDate, legs: {}, notionalScale: 1 };
+    // Principal for this change is exchanged when the change settles: until then it is held back from the exchanged notional.
+    if (c.inst.terms.legs.some((l) => l.exchangeNotional) && c.settleDate && c.tradeDate && c.settleDate > c.tradeDate) {
+      const before = app.positions.get(r.position.id).data.notionalPending || [];
+      data = { ...(data || {}), notionalPending: [...before.filter((p) => p.date > c.tradeDate), { date: c.settleDate, dq: c.action === 'buy' ? c.qty : -c.qty }] };
+    }
+    if (data) app.positions.change(app.positions.get(r.position.id), { data });
     return { ...r, position: app.positions.get(r.position.id) };
   },
   value(app, inst, pos, obs, mark) {
@@ -295,10 +365,18 @@ export const swap = {
     return { price: known ? mark : null, mv, cost: pos.cost, unrealized: known ? money(mv - pos.cost, ccy) : null, accrued: 0, notional: Math.abs(pos.qty) * (pos.data.notionalScale ?? 1), exposure: null };
   },
   onPositionChange(app, { book, unit, inst, pos }) {
-    trueUpNotionalExchange(app, { book, unit, inst, pos, date: app.clock.today() });
+    const today = app.clock.today();
+    const exchanged = trueUpNotionalExchange(app, { book, unit, inst, pos, date: today });
     app.agreements.onPositionChange({ book, unit, inst, pos });
-    if (isZero(pos.qty)) return app.tasks.cancelFor(pos.id);
-    scheduleLegTasks(app, { book, unit, inst, pos: app.positions.get(pos.id) });
+    if (isZero(pos.qty)) app.tasks.cancelFor(pos.id);
+    else scheduleLegTasks(app, { book, unit, inst, pos: app.positions.get(pos.id) });
+    // Principal still to be exchanged: when a change made after the start settles (at the latest on the maturity date,
+    // when everything goes back), and again today if it was due now and the cash to pay it was not there.
+    const last = maturityPayDate(inst);
+    for (const p of pos.data.notionalPending || []) {
+      if (p.date > today && p.date > inst.terms.effective) scheduleNotional(app, { book, unit, inst, pos }, p.date < last ? p.date : last, `settle:${p.date}`);
+    }
+    if (exchanged.failed) scheduleNotional(app, { book, unit, inst, pos }, today, 'retry');
   },
   dataNeeds(app, { inst, task }) {
     const out = { rateCodes: [], closes: [], instruments: [] };
@@ -320,15 +398,27 @@ export const swap = {
     return out;
   },
   runTask(app, task, { book, unit, inst, pos }) {
-    if (!pos || isZero(pos.qty)) return 'done';
+    if (!pos) return 'done';
     const t = inst.terms;
     const base = { bookId: book.id, unitId: unit.id, instrumentId: inst.id, strategyId: pos.strategy_id, positionId: pos.id, actor: 'engine' };
-    const awaiting = app.data.describe().awaitingMessage;
+    const unfunded = (message) => {
+      app.alerts.raise({ bookId: book.id, unitId: unit.id, level: 'error', code: 'funding.failed', refType: 'task', refId: task.id, message });
+      return { failed: message };
+    };
 
+    // The exchange of principal: at the start, and when a later change settles (also the last one, after a full termination).
     if (task.type === 'swap.notional') {
-      trueUpNotionalExchange(app, { book, unit, inst, pos, date: app.clock.today() });
-      return 'done';
+      const today = app.clock.today();
+      const all = pos.data.notionalPending || [];
+      const pending = all.filter((p) => p.date > today);
+      const fresh = pending.length === all.length ? pos : app.positions.change(pos, { data: { notionalPending: pending } });
+      const r = trueUpNotionalExchange(app, { book, unit, inst, pos: fresh, date: today });
+      if (r.failed) return unfunded(r.failed);
+      app.alerts.resolve({ refType: 'task', refId: task.id, code: 'funding.failed' });
+      return { done: true, eventId: r.eventId };
     }
+    if (isZero(pos.qty)) return 'done';
+    const awaiting = app.data.describe().awaitingMessage;
 
     if (task.type === 'swap.payment') {
       const leg = t.legs.find((l) => l.id === task.data.legId);
@@ -380,6 +470,10 @@ export const swap = {
     if (task.type === 'swap.maturity') {
       const open = app.db.get(`SELECT COUNT(*) AS n FROM tasks WHERE position_id = ? AND type = 'swap.payment' AND status IN ('pending','blocked','failed')`, pos.id).n;
       if (open) return { blocked: 'Waiting for the final leg payments to be made first.', needs: [] };
+      // The principal that goes back at maturity must be there before the contract is ended.
+      const short = notionalShortfall(app, unit, notionalExchangeDue(app, { inst, pos, date: app.clock.today() }));
+      if (short) return unfunded(shortfallMessage(inst, unit, short, 'Final notional exchange'));
+      app.alerts.resolve({ refType: 'task', refId: task.id, code: 'funding.failed' });
       const fresh = app.positions.get(pos.id);
       const r = bookSecurityFill(app, {
         book, unit, inst, action: fresh.qty > 0 ? 'sell' : 'buy', qty: Math.abs(fresh.qty), price: 0, fees: [], strategyId: fresh.strategy_id, tradeDate: t.maturity, settleDate: app.clock.today(),

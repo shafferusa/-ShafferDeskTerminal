@@ -147,6 +147,8 @@ export function normalizePreview(pv, ctx) {
       // A margined leg (a future): the contract value the leg stands for (quantity x price x multiplier) and the
       // change in initial margin it causes (positive is posted, negative is released).
       notional: l.notional ?? null, initialMargin: l.initialMargin ?? null,
+      // Cash the leg moves in other currencies at its settlement (an FX conversion's other side, the principal exchanged on a cross-currency swap): + received, - paid.
+      otherCash: Object.fromEntries((l.otherCash || []).map((o) => [o.ccy, o.amount])),
       financing: l.financing ? { amount: l.financing.amount ?? null, principal: l.financing.principal ?? null, interest: l.financing.interest ?? null, full: l.financing.full ?? null, rateType: l.financing.rateType ?? null, rate: l.financing.rate ?? null, referenceRate: l.financing.referenceRate ?? null, spread: l.financing.spread ?? null, fixing: l.financing.fixing ?? null, maturity: l.financing.maturity ?? null, interestFrom: l.financing.interestFrom ?? null, interestThrough: l.financing.interestThrough ?? null } : null,
     })),
     cash: Object.fromEntries(Object.values(pv.totals.cash || {}).map((c) => [c.ccy, {
