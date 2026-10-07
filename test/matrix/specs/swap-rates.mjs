@@ -3351,4 +3351,259 @@ const zcInflationSwap = {
   ],
 };
 
-export default [interestRateSwap, overnightIndexSwap, basisSwap, interestRateCap, interestRateFloor, interestRateCollar, forwardStartingSwap, constantMaturitySwap, crossCurrencySwap, crossCurrencyBasisSwap, zcInflationSwap];
+// ---------------------------------------------------------------------------------------------
+// yoy_inflation_swap
+// ---------------------------------------------------------------------------------------------
+// A two-year euro year-on-year inflation swap in a Book that reports in EUR. The contract is written
+// "pay 2.10% fixed annually (30/360), receive the year-on-year change of the HICP ex tobacco index,
+// annually"; the Account enters the opposite side: each year it receives notional x 2.10% and pays
+// notional x (index at the end of the year / index at its start - 1). The index of one year's end is the
+// next year's start. Position-level collateral terms: independent amount 1.50% of notional, no variation margin.
+//
+// Schedule (effective Wednesday 15 April 2026, maturity Saturday 15 April 2028, TARGET days):
+//   2026-04-15 to 2027-04-15, paid Thursday 15 April 2027   index 128.40 for 15 April 2026 (published), 131.61 for 15 April 2027 (entered by hand): +2.50%
+//   2027-04-15 to 2028-04-15, paid Tuesday 18 April 2028: the 15th is a Saturday and Monday the 17th is Easter Monday
+//                                                           the 15th is not a business day and the 14th is Good Friday: the index of Thursday 13 April 2028, 134.24
+//                                                           134.24 / 131.61 - 1 = 1.99833%
+// The stand-in for the index is described above the zero-coupon inflation swap.
+const HICP_DRAFT = { productId: 'physical_commodity', name: 'Euro area HICP ex tobacco reference index (stand-in)', symbol: 'HICPXT', marketView: 'FOREIGN_CASH', venueType: 'otc', tradingCcy: 'EUR', terms: {} };
+const YOY_NAME = 'EUR year-on-year inflation swap 2.10% v HICPxT 15 Apr 2028';
+const yoyInflationSwap = {
+  productId: 'yoy_inflation_swap',
+  title: 'EUR 2-year year-on-year inflation swap, receive 2.10% fixed and pay the annual change of HICP ex tobacco (opposite side), in a EUR Book',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'inflation leg: Leg type "Return on a reference asset", Reference asset (the index), Reset and payment "Annual"'],
+    automaticInputs: ['annual payment schedule of each leg on the TARGET calendar', 'index fixings supplied for their dates (closing price fixture standing in for Shaffer MarketData); each year starts from the fixing the year before ended on', 'settlement date, T+2 on TARGET', 'commission from the Book fee schedule', 'independent amount from the position-level terms'],
+    manualInputs: ['the reference index itself, registered as a stand-in instrument', 'upfront amount of the increase and settlement amount of the partial termination (stated fill prices)', 'mark of the contract, entered by hand', 'the index fixing the data service did not supply, entered by hand'],
+    settlement: 'Upfront and termination amounts and commission settle T+2 on TARGET; leg payments are cash on their payment date',
+    lifecycle: 'Each year the fixed amount is received and the inflation amount paid, each on its own; the inflation amount waits, visibly, for a missing index fixing; a period end on a Saturday takes the fixing of the last business day before it and is paid after Easter Monday; increase; partial termination; maturity',
+    accounting: 'EUR reporting currency; a negative position (opposite side) carried at the upfront received until marked, then at the mark; leg payments and the termination result are realized P&L; commission expensed',
+    collateral: 'Position-level terms: independent amount 1.50% of notional, posted at entry, trued up on increase and on partial termination, returned at maturity; no variation margin',
+  },
+  start: at('2026-04-13'),
+  settlementCheck: { lag: 2, holidays: [] }, // TARGET: no holiday in the settlement windows used (13 to 15 April, 1 to 5 October 2026, 1 to 3 September 2027)
+  book: {
+    name: 'Matrix year-on-year inflation swap', reportingCcy: 'EUR',
+    capital: [{ ccy: 'EUR', amount: 1_000_000 }],
+    account: { name: 'Inflation', funding: [{ ccy: 'EUR', amount: 500_000 }] },
+    settings: { fees: { swap: { perUnit: 0.00001, minimum: 0, bps: 0 }, spot: NO_FEE }, fill: FILL, settlement: { swap: 2 } }, // 10.00 per million of notional; the index stand-in is never traded
+  },
+  instruments: {
+    hicp: HICP_DRAFT,
+    main: {
+      productId: 'yoy_inflation_swap', name: YOY_NAME, symbol: 'YOYIS-HICP-0428', marketView: 'FOREIGN_DERIV', venueType: 'otc', venueCountry: 'DE', tradingCcy: 'EUR', multiplier: 0.01,
+      conventions: { tradingCalendar: 'TARGET', settlementCalendar: 'TARGET', paymentCalendar: 'TARGET' },
+      terms: {
+        effective: '2026-04-15', maturity: '2028-04-15', counterparty: 'Dealer H',
+        collateralBasis: { type: 'position', independentAmount: { type: 'pct', pct: 0.015 }, variationMargin: false },
+        legs: [
+          { side: 'pay', type: 'fixed', ccy: 'EUR', rate: 0.021, months: 12, dayCount: '30/360' },
+          { side: 'receive', type: 'return', ccy: 'EUR', months: 12, underlyingId: '$inst:hicp' },
+        ],
+      },
+    },
+  },
+  expectAtStart: {
+    cash: { account: { EUR: { settled: 500_000, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 500_000 } }, treasury: { EUR: { settled: 500_000 } } },
+    positions: [], pending: [], openOrders: [], lifecycle: [], lifecycleFailures: [], borrowings: [], otc: [], alerts: [],
+    nav: { account: 500_000, treasury: 500_000, book: 1_000_000 },
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+  },
+  steps: [
+    {
+      // Opposite side, 12,000,000, no upfront amount. Independent amount 1.50% x 12,000,000 = 180,000. Commission 12,000,000 x 0.00001 = 120, settling Wednesday 15 April.
+      id: 'open', covers: ['open', 'collateral'], action: 'ticket', instrument: 'main', side: 'sell', qty: 12_000_000, as: 'yoy', order: { statedPrice: 0 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 12_000_000, estimate: 0, model: 'stated-price', settleDate: '2026-04-15', calendar: 'TARGET', cash: 0, fees: 120 }],
+          cash: { EUR: { fees: 120, margin: 180_000, required: 180_120, available: 500_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 12_000_000, avgPrice: 0, fills: [{ qty: 12_000_000, price: 0, model: 'stated-price', settleDate: '2026-04-15' }] }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Entered on the opposite side: 12,000,000 notional of YOYIS-HICP-0428 at 0.00 per 100 notional', owner: 'account', date: '2026-04-13' },
+          { type: 'swap.collateral', summary: `Collateral posted on ${YOY_NAME} under its position-level terms: 180,000.00 EUR (independent amount, 1.50% of 12,000,000.00 EUR notional)`, cash: { EUR: -180_000 }, owner: 'account' },
+        ],
+        cash: { account: { EUR: { settled: 320_000, unsettled: -120, margin: 180_000, restricted: 0, availableToTrade: 319_880, availableToWithdraw: 319_880 } } },
+        positions: [{ instrument: 'main', lot: 'yoy', owner: 'account', direction: 'opposite side', qty: -12_000_000, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, notional: 12_000_000, margin: 180_000 }],
+        holdings: { main: { long: 0, short: 12_000_000, net: -12_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-04-15', amount: -120, ccy: 'EUR', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-04-15', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-04-15', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2028-04-18', status: 'pending' }, // Saturday 15 April, then Easter Monday
+        ],
+        otc: [{ instrument: 'main', lot: 'yoy', owner: 'account', qty: -12_000_000, basis: 'position', mark: null, iaRequired: 180_000, iaPosted: 180_000, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: -120, unrealized: 0, fx: 0, total: -120 } },
+        nav: { account: 499_880, book: 999_880 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 320_000, margin: 180_000, payable: 120, positions: null, accruedIncome: null, accruedExpense: null, assets: 500_000, liabilities: 120, netAssets: 499_880 } },
+      },
+    },
+    {
+      id: 'settle-commission', covers: 'settlement', action: 'clock', to: at('2026-04-15'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 120.00 EUR from settled cash', cash: { EUR: -120 }, date: '2026-04-15' }],
+        cash: { account: { EUR: { settled: 319_880, unsettled: 0, availableToTrade: 319_880, availableToWithdraw: 319_880 } } },
+        pending: [],
+        balance: { account: { cash: 319_880, payable: null, assets: 499_880, liabilities: 0 } },
+      },
+    },
+    // The index for the effective date is published: 128.40.
+    { id: 'start-index-published', covers: 'index fixing', action: 'close_price', instrument: 'hicp', date: '2026-04-15', value: 128.40, expect: { events: [] } },
+    {
+      // The mark is of the contract as written. On the opposite side: -12,000,000 x 0.20 / 100 = -24,000.
+      id: 'mark', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 0.20, note: 'Dealer mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'yoy', qty: -12_000_000, price: 0.2, value: -24_000, unrealized: -24_000, provisional: false, priceSource: 'Manual entry', priceStatus: 'manual' }],
+        otc: [{ instrument: 'main', mark: 0.2, markValue: -24_000, vmPosted: 0 }],
+        pnl: { account: { unrealized: -24_000, total: -24_120 } },
+        nav: { account: 475_880, book: 975_880 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: -24_000, assets: 475_880, netAssets: 475_880 } },
+      },
+    },
+    { id: 'first-of-october', action: 'clock', to: at('2026-10-01'), expect: { events: [], alerts: [] } }, // no variation margin in the terms: nothing is called on the mark
+    {
+      // 3,000,000 more on the opposite side at 0.10 per 100: 3,000 received, commission 30, settling Monday 5 October. Average upfront 3,000 / 150,000 = 0.02 per 100.
+      // Independent amount 1.50% x 15,000,000 = 225,000: 45,000 more. The added notional takes the whole first year.
+      id: 'increase', covers: ['increase', 'collateral'], action: 'resize', lot: 'yoy', factor: 1.25, order: { statedPrice: 0.10 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 3_000_000, estimate: 0.1, model: 'stated-price', settleDate: '2026-10-05', cash: 3_000, fees: 30 }],
+          cash: { EUR: { proceeds: 3_000, fees: 30, margin: 45_000, required: 45_030, available: 319_880, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 3_000_000, avgPrice: 0.1 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Increased on the opposite side: 3,000,000 notional of YOYIS-HICP-0428 at 0.10 per 100 notional' },
+          { type: 'swap.collateral', summary: `Collateral posted on ${YOY_NAME} under its position-level terms: 45,000.00 EUR (independent amount, 1.50% of 15,000,000.00 EUR notional)`, cash: { EUR: -45_000 } },
+        ],
+        cash: { account: { EUR: { settled: 274_880, unsettled: 2_970, margin: 225_000, availableToTrade: 277_850, availableToWithdraw: 274_880 } } },
+        positions: [{ instrument: 'main', lot: 'yoy', qty: -15_000_000, cost: -3_000, avgCost: 0.02, price: 0.2, value: -30_000, unrealized: -27_000, notional: 15_000_000, margin: 225_000 }],
+        holdings: { main: { long: 0, short: 15_000_000, net: -15_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-10-05', amount: 2_970, ccy: 'EUR', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: -15_000_000, markValue: -30_000, iaRequired: 225_000, iaPosted: 225_000 }],
+        pnl: { account: { commissions: -150, unrealized: -27_000, total: -27_150 } },
+        nav: { account: 472_850, book: 972_850 },
+        balance: { account: { cash: 274_880, margin: 225_000, receivable: 2_970, positions: -30_000, assets: 472_850, liabilities: 0, netAssets: 472_850 } },
+      },
+    },
+    {
+      id: 'settle-increase', covers: 'settlement', action: 'clock', to: at('2026-10-05'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 2,970.00 EUR into settled cash', cash: { EUR: 2_970 } }],
+        cash: { account: { EUR: { settled: 277_850, unsettled: 0, availableToTrade: 277_850, availableToWithdraw: 277_850 } } },
+        pending: [],
+        balance: { account: { cash: 277_850, receivable: null } },
+      },
+    },
+    {
+      // First anniversary. Fixed leg, received: 15,000,000 x 2.10% x 360/360 = 315,000.00.
+      // The inflation leg needs the index for 15 April 2027, which has not been supplied: it waits. No index level is assumed.
+      id: 'fixed-received-index-missing', covers: ['fixed payment', 'missing fixing'], action: 'clock', to: at('2027-04-15'),
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Swap receipt on ${YOY_NAME}, leg A (fixed), period 2026-04-15 to 2027-04-15: 315,000.00 EUR`, cash: { EUR: 315_000 }, owner: 'account', date: '2027-04-15' }],
+        cash: { account: { EUR: { settled: 592_850, availableToTrade: 592_850, availableToWithdraw: 592_850 } } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-04-15', status: 'blocked', reason: /Awaiting the 2027-04-15 fixing for HICPXT/ },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2028-04-18', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2028-04-18', status: 'pending' },
+        ],
+        pnl: { account: { realized: 315_000, commissions: -150, unrealized: -27_000, total: 287_850 } },
+        nav: { account: 787_850, book: 1_287_850 },
+        balance: { account: { cash: 592_850, assets: 787_850, netAssets: 787_850 } },
+      },
+    },
+    {
+      // 131.61 for 15 April 2027, by hand. Inflation leg, paid: 15,000,000 x (131.61 / 128.40 - 1) = 15,000,000 x 2.50% = 375,000.00.
+      id: 'index-entered-by-hand', covers: ['missing fixing', 'inflation payment'], action: 'manual_price', instrument: 'hicp', value: 131.61, forDate: '2027-04-15', note: 'Published index level, entered by hand',
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Swap payment on ${YOY_NAME}, leg B (return), period 2026-04-15 to 2027-04-15: 375,000.00 EUR`, cash: { EUR: -375_000 }, owner: 'account', date: '2027-04-15' }],
+        cash: { account: { EUR: { settled: 217_850, availableToTrade: 217_850, availableToWithdraw: 217_850 } } },
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2028-04-18', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2028-04-18', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2028-04-18', status: 'pending' },
+        ],
+        pnl: { account: { realized: -60_000, total: -87_150 } }, // 315,000 - 375,000; then - 150 - 27,000
+        nav: { account: 412_850, book: 912_850 },
+        balance: { account: { cash: 217_850, assets: 412_850, netAssets: 412_850 } },
+      },
+    },
+    { id: 'first-of-september', action: 'clock', to: at('2027-09-01'), expect: { events: [] } },
+    {
+      // A fifth (3,000,000) is bought back at 0.30 per 100: 9,000 paid, commission 30, settling Friday 3 September. Upfront carried on it: 3,000 / 5 = 600 received. Realized 600 - 9,000 = -8,400.
+      // Left: -12,000,000 carrying -2,400, marked 0.20: -24,000, 21,600 down. Independent amount back to 180,000.
+      id: 'partial-termination', covers: ['reduce', 'partial termination', 'collateral'], action: 'close', lot: 'yoy', scope: 'strategy', percent: 20, order: { statedPrice: 0.30 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 3_000_000, estimate: 0.3, model: 'stated-price', settleDate: '2027-09-03', cash: -9_000, fees: 30 }] },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 3_000_000, avgPrice: 0.3 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Terminated in part: 3,000,000 of 15,000,000 notional of YOYIS-HICP-0428 at 0.30 per 100 notional (realized -8,400.00 EUR)' },
+          { type: 'swap.collateral', summary: `Collateral returned on ${YOY_NAME} under its position-level terms: 45,000.00 EUR (independent amount, 1.50% of 12,000,000.00 EUR notional)`, cash: { EUR: 45_000 } },
+        ],
+        cash: { account: { EUR: { settled: 262_850, unsettled: -9_030, margin: 180_000, availableToTrade: 253_820, availableToWithdraw: 253_820 } } },
+        positions: [{ instrument: 'main', lot: 'yoy', qty: -12_000_000, cost: -2_400, avgCost: 0.02, price: 0.2, value: -24_000, unrealized: -21_600, notional: 12_000_000, margin: 180_000 }],
+        holdings: { main: { long: 0, short: 12_000_000, net: -12_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2027-09-03', amount: -9_030, ccy: 'EUR', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: -12_000_000, markValue: -24_000, iaRequired: 180_000, iaPosted: 180_000 }],
+        pnl: { account: { realized: -68_400, commissions: -180, unrealized: -21_600, total: -90_180 } },
+        nav: { account: 409_820, book: 909_820 },
+        balance: { account: { cash: 262_850, margin: 180_000, positions: -24_000, payable: 9_030, assets: 418_850, liabilities: 9_030, netAssets: 409_820 } },
+      },
+    },
+    {
+      id: 'settle-partial-termination', covers: 'settlement', action: 'clock', to: at('2027-09-03'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 9,030.00 EUR from settled cash', cash: { EUR: -9_030 } }],
+        cash: { account: { EUR: { settled: 253_820, unsettled: 0, availableToTrade: 253_820, availableToWithdraw: 253_820 } } },
+        pending: [],
+        balance: { account: { cash: 253_820, payable: null, assets: 409_820, liabilities: 0 } },
+      },
+    },
+    { id: 'maundy-thursday', action: 'clock', to: at('2028-04-13'), expect: { events: [] } },
+    // The index for Thursday 13 April 2028 is published: 134.24. It is the fixing of the year that ends on Saturday the 15th.
+    { id: 'end-index-published', covers: 'index fixing', action: 'close_price', instrument: 'hicp', date: '2028-04-13', value: 134.24, expect: { events: [] } },
+    {
+      // Easter Monday: TARGET is closed. Nothing is paid, though the swap's own maturity date (Saturday the 15th) has passed.
+      id: 'easter-monday', covers: 'payment across a holiday', action: 'clock', to: at('2028-04-17'),
+      expect: {
+        events: [], cash: { account: { EUR: { settled: 253_820 } } },
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2028-04-18', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2028-04-18', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2028-04-18', status: 'pending' },
+        ],
+      },
+    },
+    {
+      // Tuesday 18 April 2028, on the 12,000,000 left. Fixed leg, received: 12,000,000 x 2.10% = 252,000.00.
+      // Inflation leg, paid: 12,000,000 x (134.24 / 131.61 - 1) = 12,000,000 x 2.63 / 131.61 = 239,799.41.
+      // The swap matures: the 2,400 of upfront still carried is earned, and the 180,000 comes back.
+      // 500,000 - 180 + 3,000 - 9,000 + 315,000 - 375,000 + 252,000 - 239,799.41 = 446,020.59.
+      id: 'final-payments-and-maturity', covers: ['fixed payment', 'inflation payment', 'payment across a holiday', 'maturity', 'close', 'collateral'], action: 'clock', to: at('2028-04-18'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap receipt on ${YOY_NAME}, leg A (fixed), period 2027-04-15 to 2028-04-15: 252,000.00 EUR`, cash: { EUR: 252_000 }, owner: 'account', date: '2028-04-18' },
+          { type: 'swap.payment', summary: `Swap payment on ${YOY_NAME}, leg B (return), period 2027-04-15 to 2028-04-15: 239,799.41 EUR`, cash: { EUR: -239_799.41 }, owner: 'account', date: '2028-04-18' },
+          { type: 'swap.matured', summary: `Swap matured: ${YOY_NAME} (notional 12,000,000)`, owner: 'account' },
+          { type: 'swap.collateral', summary: `Collateral returned on ${YOY_NAME} under its position-level terms: 180,000.00 EUR (independent amount, the position ended)`, cash: { EUR: 180_000 } },
+        ],
+        cash: { account: { EUR: { settled: 446_020.59, unsettled: 0, margin: 0, restricted: 0, reserved: 0, availableToTrade: 446_020.59, availableToWithdraw: 446_020.59 } }, treasury: { EUR: { settled: 500_000 } } },
+        positions: [], holdings: { main: null }, lifecycle: [], otc: [], pending: [], alerts: [],
+        pnl: { account: { realized: -53_799.41, commissions: -180, unrealized: 0, fx: 0, total: -53_979.41 } }, // -68,400 + 252,000 - 239,799.41 + 2,400
+        nav: { account: 446_020.59, treasury: 500_000, book: 946_020.59 },
+        provisional: { account: false, book: false },
+        balance: { account: { cash: 446_020.59, margin: null, positions: null, assets: 446_020.59, liabilities: 0, netAssets: 446_020.59 } },
+      },
+    },
+  ],
+};
+
+export default [interestRateSwap, overnightIndexSwap, basisSwap, interestRateCap, interestRateFloor, interestRateCollar, forwardStartingSwap, constantMaturitySwap, crossCurrencySwap, crossCurrencyBasisSwap, zcInflationSwap, yoyInflationSwap];

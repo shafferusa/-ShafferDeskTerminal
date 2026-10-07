@@ -55,3 +55,4 @@
 - 2026-10-07T11:09Z | s1 | +0 | swap.js: a swap keeps the trading currency stated on the contract when a leg is in it (was silently replaced by the first leg's); npm test 330 of 330
 - 2026-10-07T11:14Z | s1 | +0.2 | cross_currency_basis_swap passes at engine, API and browser (USD/JPY, collateral posted by Treasury)
 - 2026-10-07T11:20Z | s1 | +0.2 | zc_inflation_swap passes at engine, API and browser (annual compounding added to the zero-coupon fixed leg)
+- 2026-10-07T11:24Z | s1 | +0.2 | yoy_inflation_swap passes at engine, API and browser (all 12 rate-swap products now pass at the three levels)

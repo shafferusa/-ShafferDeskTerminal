@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 45.3% of the pass** (last milestone 2026-10-07T11:20Z, s1: zc_inflation_swap passes at engine, API and browser (annual compounding added to the zero-coupon fixed leg))
+**Completeness: about 45.5% of the pass** (last milestone 2026-10-07T11:24Z, s1: yoy_inflation_swap passes at engine, API and browser (all 12 rate-swap products now pass at the three levels))
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 

@@ -131,23 +131,27 @@ function legAmount(app, inst, pos, leg, period) {
       return { amount: N * (growth - 1 + (leg.spread || 0) * yf), detail: { notional: N, compounded: growth - 1, fraction: yf } };
     }
     case 'return': {
+      // The fixing of a period boundary is the close of that day or, when it is not a business day of the payment
+      // calendar (accrual dates are not adjusted), of the last business day before it: the rule of the rate fixings.
+      const d0 = fixingDate(inst, period.start), d1 = fixingDate(inst, period.end);
       let p0 = state.lastFixing ?? inst.terms.initialPrices?.[leg.id] ?? null;
       if (p0 === null) {
-        const o0 = app.data.closeFor(leg.underlyingId, period.start);
-        if (!o0 || o0.value === null) return { missing: { kind: 'price', subject: leg.underlyingId, date: period.start } };
+        const o0 = app.data.closeFor(leg.underlyingId, d0);
+        if (!o0 || o0.value === null) return { missing: { kind: 'price', subject: leg.underlyingId, date: d0 } };
         p0 = o0.value;
         used.push(app.data.recordUsed(o0));
       }
-      const o1 = app.data.closeFor(leg.underlyingId, period.end);
-      if (!o1 || o1.value === null) return { missing: { kind: 'price', subject: leg.underlyingId, date: period.end } };
+      const o1 = app.data.closeFor(leg.underlyingId, d1);
+      if (!o1 || o1.value === null) return { missing: { kind: 'price', subject: leg.underlyingId, date: d1 } };
       used.push(app.data.recordUsed(o1));
       return { amount: N * (o1.value / p0 - 1), detail: { notional: N, start: p0, end: o1.value }, used, fixing: o1.value, ratio: o1.value / p0 };
     }
     case 'price': {
       const units = Math.abs(pos.qty) * (leg.units ?? 1) * scheduleFactor(leg, period.start);
       if (leg.fixedPrice !== null && leg.fixedPrice !== undefined) return { amount: units * leg.fixedPrice, detail: { units, price: leg.fixedPrice } };
-      const o = app.data.closeFor(leg.underlyingId, period.end);
-      if (!o || o.value === null) return { missing: { kind: 'price', subject: leg.underlyingId, date: period.end } };
+      const d = fixingDate(inst, period.end);
+      const o = app.data.closeFor(leg.underlyingId, d);
+      if (!o || o.value === null) return { missing: { kind: 'price', subject: leg.underlyingId, date: d } };
       used.push(app.data.recordUsed(o));
       return { amount: units * o.value, detail: { units, price: o.value }, used };
     }
@@ -401,13 +405,13 @@ export const swap = {
         const u = app.instruments.get(l.underlyingId);
         if (u) {
           out.instruments.push(u);
-          if (task?.data?.periodEnd) out.closes.push({ instrument: u, date: task.data.periodEnd });
+          if (task?.data?.periodEnd) out.closes.push({ instrument: u, date: fixingDate(inst, task.data.periodEnd) });
           // A return leg also needs the fixing its period starts from, unless an earlier reset or the contract already gave it
           // (asking for it again does no harm): without this the first period of an index or return leg could never be paid
           // from supplied data.
           if (l.type === 'return' && l.id === task?.data?.legId && task.data.periodEnd) {
             const period = legSchedule(inst, l).find((x) => x.end === task.data.periodEnd);
-            if (period) out.closes.push({ instrument: u, date: period.start });
+            if (period) out.closes.push({ instrument: u, date: fixingDate(inst, period.start) });
           }
         }
       }
