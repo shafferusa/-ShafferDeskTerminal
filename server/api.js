@@ -124,15 +124,31 @@ export function createApi(app) {
     return (inst) => ({ ...instruments.toView(inst), holdings: bookId ? held.get(inst.id) || null : undefined });
   };
 
+  // A contract written for one Book (a loan, a repo, a securities loan, a swap or other OTC contract under that
+  // Book's collateral terms) is that Book's own record although it sits in the registry. A list, a search or a
+  // page asked for on behalf of another Book does not show it. A contract nobody has traded yet is open to all.
+  const BOOK_CONTRACT_FAMILIES = new Set(['loan', 'repo', 'secloan', 'swap', 'cds', 'forward', 'otcoption']);
+  const ofAnotherBook = (inst, bookId) => {
+    if (!bookId || !BOOK_CONTRACT_FAMILIES.has(inst.family)) return false;
+    const owners = db.all('SELECT book_id FROM orders WHERE instrument_id = ? UNION SELECT book_id FROM positions WHERE instrument_id = ?', inst.id, inst.id).map((x) => x.book_id);
+    return owners.length > 0 && !owners.includes(bookId);
+  };
+  const visibleTo = (bookId) => (inst) => !ofAnotherBook(inst, bookId);
+  const requireVisible = (id, bookId) => {
+    const inst = instruments.require(id);
+    need(!ofAnotherBook(inst, bookId), 'This contract belongs to another Book.', { status: 404 });
+    return inst;
+  };
+
   r.get('/api/instruments', ({ query }) => ({
     items: instruments.list({ view: query.view, family: query.family, productId: query.productId, q: query.q, underlyingId: query.underlyingId, includeArrangements: query.arrangements === '1', limit: query.limit })
-      .filter((i) => !query.tagView || i.market_view === query.tagView || i.tags.includes(query.tagView)).map(withHoldings(query.bookId)),
+      .filter((i) => !query.tagView || i.market_view === query.tagView || i.tags.includes(query.tagView)).filter(visibleTo(query.bookId)).map(withHoldings(query.bookId)),
   }));
   r.post('/api/instruments', ({ body }) => instruments.toView(instruments.create(body)));
-  r.get('/api/instruments/:id', ({ params, query }) => withHoldings(query.bookId)(instruments.require(params.id)));
+  r.get('/api/instruments/:id', ({ params, query }) => withHoldings(query.bookId)(requireVisible(params.id, query.bookId)));
   r.put('/api/instruments/:id', ({ params, body }) => instruments.toView(instruments.update(params.id, body)));
   r.get('/api/instruments/:id/detail', async ({ params, query }) => {
-    const inst = instruments.require(params.id);
+    const inst = requireVisible(params.id, query.bookId);
     await freshQuotes([inst]);
     const an = await analyticsFor([inst]);
     const held = query.bookId ? app.valuation.positionsOf(books.unitsOf(query.bookId).map((u) => u.id), { instrumentId: inst.id }) : [];
@@ -152,7 +168,7 @@ export function createApi(app) {
       session: app.data.session(inst.id), borrow: ['equity', 'bond'].includes(inst.family) ? app.data.borrowInfo(inst.id) : null,
       analytics: an.get(inst.id), analyticsState: app.data.analytics.state(), marketState: app.data.market.state(),
       positions: held.map((p) => ({ ...p, owner: unitName.get(p.unitId), strategy: p.strategyId ? { id: p.strategyId, name: app.packages.getStrategyRow(p.strategyId)?.name } : null })),
-      corporateActions: app.corpactions.list(inst.id), derivatives: instruments.list({ underlyingId: inst.id, limit: 200 }).map(instruments.toView),
+      corporateActions: app.corpactions.list(inst.id), derivatives: instruments.list({ underlyingId: inst.id, limit: 200 }).filter(visibleTo(query.bookId)).map(instruments.toView),
       manualEntries: db.all(`SELECT id, kind, value, bid, ask, as_of, for_date, note, superseded_by FROM observations WHERE subject = ? AND origin = 'manual-entry' ORDER BY id DESC LIMIT 20`, inst.id),
     };
   });
@@ -214,7 +230,7 @@ export function createApi(app) {
 
   r.get('/api/search', async ({ query }) => {
     const q = String(query.q || '').trim();
-    const local = q ? instruments.list({ q, view: query.view, limit: 40 }).map(instruments.toView) : [];
+    const local = q ? instruments.list({ q, view: query.view, limit: 40 }).filter(visibleTo(query.bookId)).map(instruments.toView) : [];
     const ref = q ? await app.data.market.search(q, { limit: 20, marketView: query.view }) : { available: false, reason: 'empty' };
     return { registry: local, reference: ref, awaitingMessage: app.data.describe().awaitingMessage };
   });

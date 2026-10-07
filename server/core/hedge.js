@@ -605,6 +605,11 @@ export function createHedge(app) {
   async function request(input0) {
     let input = input0;
     let packageNote = null;
+    // A request is made inside one Book. A strategy instance or a position of another Book is refused before
+    // anything is looked up for it (its open request would otherwise be found and returned to the caller).
+    const book0 = books.requireBook(input.bookId);
+    if (input.strategyId) need(app.packages.requireStrategy(input.strategyId).book_id === book0.id, 'That strategy instance belongs to a different Book.', { status: 400 });
+    for (const pid of [input.existingPositionId, input.package?.existingPositionId].filter(Boolean)) need(positions.get(pid)?.book_id === book0.id, 'That position was not found in this Book.', { status: 404 });
     // Workflow 1 (Strategy page): the selected execution template is resolved into its legs so the
     // request carries the proposed primary trade and any protection the template already contains.
     if (input.package && !input.proposedLegs) {

@@ -157,3 +157,28 @@ test('the post-trade hedge request owed to a Marketplace trade survives a restar
   await again.engine.tick();
   assert.equal(again.hedge.list(book.id).length, 1, 'and it is made once');
 });
+
+test('a hedge request cannot name a strategy instance of another Book, and a contract written for one Book is not shown to another', async () => {
+  const { app, inst } = makeApp();
+  const a = makeBook(app, { name: 'Book A' });
+  const b = makeBook(app, { name: 'Book B' });
+  pin(app, inst.ALFA, 190);
+  const s = await trade(app, { bookId: a.book.id, unitId: a.acct.id, template: 'long', underlyingId: inst.ALFA.id, quantity: 100, origin: 'marketplace' });
+  await app.engine.tick();
+  assert.equal(app.hedge.list(a.book.id).length, 1);
+  await assert.rejects(app.hedge.request({ bookId: b.book.id, unitId: b.acct.id, strategyId: s.id, trigger: 'manual' }), /belongs to a different Book/);
+  await assert.rejects(app.hedge.request({ bookId: b.book.id, unitId: b.acct.id, existingPositionId: s.positions[0].positionId, trigger: 'manual' }), /not found in this Book/);
+  assert.equal(app.hedge.list(b.book.id).length, 0);
+  // Book A borrows: the loan contract is A's own record.
+  const loan = await trade(app, { bookId: a.book.id, unitId: a.acct.id, template: 'custom', legs: [{ kind: 'loan', action: 'borrow_cash', qty: 10_000, purpose: 'financing', contract: { productId: 'unsecured_loan', name: 'Loan of Book A', marketView: 'US_CASH', venueType: 'otc', tradingCcy: 'USD', terms: { loanType: 'unsecured', rateType: 'fixed', rate: 0.05, maturity: '2026-06-01' } } }] });
+  const loanId = loan.positions[0].instrument.id;
+  const api = createApi(app);
+  const get = (path, query) => api.match('GET', path).handler({ params: api.match('GET', path).params, query, body: {} });
+  const names = (bookId) => get('/api/instruments', { arrangements: '1', bookId, limit: 2000 }).items.map((i) => i.name);
+  assert.ok(names(a.book.id).includes('Loan of Book A'));
+  assert.equal(names(b.book.id).includes('Loan of Book A'), false, 'not in Book B\'s lists');
+  assert.ok(names(undefined).includes('Loan of Book A'), 'the registry without a Book still lists it');
+  assert.throws(() => get(`/api/instruments/${loanId}`, { bookId: b.book.id }), /belongs to another Book/);
+  assert.equal(get(`/api/instruments/${loanId}`, { bookId: a.book.id }).id, loanId);
+  assert.ok(names(b.book.id).includes(inst.ALFA.name), 'a listed security is shared reference data');
+});

@@ -62,3 +62,4 @@
 - 2026-10-07T11:38Z | s8 | +0 | stress and no-duplicate cases at engine and API level; three more Terminal fixes (maturity catch-up, stored hedge queue, client tokens on every mutating route); kill cases written, not yet verified
 - 2026-10-07T11:42Z | s8 | +0 | kill-mid-confirmation, kill-mid-cycle and service-stops-answering pass at API level; stress and no-duplicate areas complete at engine and API
 - 2026-10-07T11:45Z | s8 | +0 | history cases (data refresh, service reconnection, instrument, calendar and settings edits) pass at engine and API level
+- 2026-10-07T11:50Z | s8 | +0 | isolation cases pass at engine and API level (all 89 routes classified and tested; demo and normal databases separate); two more Terminal fixes (cross-Book hedge request, other Books' contracts hidden)
