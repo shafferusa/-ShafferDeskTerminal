@@ -1795,4 +1795,236 @@ const emHardDebt = {
   ],
 };
 
-export default [treasuryNote, treasuryBill, treasuryBond, strips, foreignGovBill, foreignGovBond, emLocalDebt, emHardDebt];
+
+// ---------------------------------------------------------------------------------------------
+// agency_debt
+// ---------------------------------------------------------------------------------------------
+// A US agency note (a government-sponsored enterprise's bullet): 4.25%, coupons 22 January and
+// 22 July, 30/360, T+1 on the US bond calendar, multiples of 1,000. Agencies trade in smaller
+// size than Treasuries, and this scenario is about that: a limit order rests, then fills in four
+// pieces against a displayed offer of 300,000, one piece per matching cycle, and a second day
+// order never fills and expires at the end of the day.
+//   - A fill takes at most the displayed size; the rest keeps working.
+//   - The commission schedule, 10.00 per million face with a minimum of 8.00, applies to the ORDER:
+//     after each fill the order has paid the schedule for everything it has filled so far. So the
+//     pieces pay 8.00, 0.00, 1.00, 1.00: 10.00 in all, what one fill of 1,000,000 would have paid.
+//   - Each piece buys its own accrued interest, rounded to the cent; the end-of-day accrual puts
+//     the balance back on the unrounded total.
+// 30/360 days from the 22 July 2026 coupon date to the 15 January 2027 settlement: 173
+// (one year of 360, less the six months from January to July, less the seven days from the 15th to the 22nd).
+// A full coupon is 2.125 per 100.
+const agencyDebt = {
+  productId: 'agency_debt',
+  title: 'Federal National Mortgage Association 4.25% note due 22 January 2030: a limit order filled in pieces on displayed size, a day order that expires, a coupon',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount', 'Order type Limit with a Limit price', 'Time in force'],
+    manualInputs: ['none'],
+    settlement: 'T+1 on the US bond calendar; each partial fill settles on its own; Martin Luther King Jr. Day is skipped',
+    lifecycle: 'Working and partly filled orders across matching cycles; a Day order expires at the end of the business day; daily accrual on 30/360; semi-annual coupon',
+    accounting: 'Average cost across partial fills; the commission minimum is carried by the order, not by each fill; accrued interest bought fill by fill; each fill is reconciled with the confirmed figures in the history',
+    collateral: 'None for a long position',
+  },
+  start: EST('2027-01-14'), // Thursday
+  settlementCheck: { lag: 1, holidays: ['2027-01-18'] }, // Martin Luther King Jr. Day
+  book: {
+    name: 'Matrix agency note', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 3_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 1_500_000 }] },
+    settings: { fees: { bond: { perUnit: 0.00001, minimum: 8, bps: 0 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'agency_debt', name: 'Federal National Mortgage Association 4.25% 22-Jan-2030', symbol: 'FNMA-4.25-JAN30', marketView: 'US_CASH', venueType: 'otc', issuer: 'Federal National Mortgage Association', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      terms: { couponType: 'fixed', couponRate: 0.0425, frequency: 2, maturity: '2030-01-22', issueDate: '2025-01-22', dayCount: '30/360', redemption: 100, minDenomination: 1_000 } },
+  },
+  quotes: { main: { bid: 99.4, ask: 99.45, last: 99.425, bidSize: 5_000_000, askSize: 5_000_000 } },
+  expectAtStart: { ...startState(1_500_000, 1_500_000), cash: { account: usdCash(1_500_000), treasury: usdCash(1_500_000) } },
+  steps: [
+    {
+      // Buy 1,000,000 at 99.40 or better, good for the day. The offer is 99.45: the order rests. The preview shows what it would cost at the offer.
+      id: 'limit-buy-rests', covers: ['open', 'limit order'], action: 'ticket', instrument: 'main', side: 'buy', qty: 1_000_000, as: 'lot', order: { orderType: 'limit', limitPrice: 99.4, tif: 'day' },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 1_000_000, estimate: 99.45, executable: false, model: 'quoted-bid-ask', settleDate: '2027-01-15', calendar: 'USBOND', orderType: 'limit',
+            gross: 994_500, // 1,000,000 x 99.45 / 100
+            accrued: 20_423.61, // settles 15 Jan, 173 days of 30/360: 1,000,000 x 4.25% x 173/360 = 20,423.611
+            cash: -1_014_923.61, fees: 10 }], // 1,000,000 x 0.00001
+          cash: { USD: { purchases: 1_014_923.61, fees: 10, required: 1_014_933.61, available: 1_500_000, shortfall: 0 } },
+        },
+        result: { orders: [{ kind: 'trade', action: 'buy', status: 'working', filledQty: 0, reason: 'Limit not reached: executable price 99.45 is above the limit 99.4.', fills: [] }] },
+        events: [{ type: 'strategy.submitted' }],
+        openOrders: [{ instrument: 'main', kind: 'trade', action: 'buy', status: 'working', qty: 1_000_000, filledQty: 0 }],
+        cash: { account: { USD: { settled: 1_500_000, unsettled: 0, availableToTrade: 1_500_000 } } },
+        positions: [], pending: [],
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: 0, fees: 0, borrowFunding: 0, unrealized: 0, total: 0 } },
+        nav: { account: 1_500_000, book: 3_000_000 },
+        balance: { account: { cash: 1_500_000, assets: 1_500_000, liabilities: 0, netAssets: 1_500_000 } },
+      },
+    },
+    {
+      // The offer comes down to the limit, 300,000 of it. The next matching cycle takes those 300,000 at 99.40.
+      id: 'offer-arrives', covers: ['open', 'partial fill'], action: 'quote', instrument: 'main', quote: { bid: 99.35, ask: 99.4, last: 99.375, bidSize: 5_000_000, askSize: 300_000 },
+      expect: {
+        // Principal 300,000 x 99.40% = 298,200. Accrued 300,000 x 4.25% x 173/360 = 6,127.083 -> 6,127.08.
+        // Commission: the schedule gives 3.00 for 300,000, raised to the 8.00 minimum. Owed 304,335.08.
+        events: [
+          { type: 'trade.fill', summary: 'Bought 300,000 FNMA-4.25-JAN30 @ 99.40 USD', owner: 'account', date: '2027-01-14' },
+          { type: 'order.fill_variance', summary: /within tolerance.*99\.4 against 99\.45 confirmed.*Partial fill of 30% of the confirmed quantity/s },
+        ],
+        openOrders: [{ instrument: 'main', kind: 'trade', action: 'buy', status: 'partial', qty: 1_000_000, filledQty: 300_000 }],
+        cash: { account: { USD: { settled: 1_500_000, unsettled: -304_335.08, availableToTrade: 1_195_664.92 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 300_000, avgCost: 99.4, cost: 298_200, price: 99.375, value: 298_125, unrealized: -75, accrued: 6_127.08, priceSource: 'Test fixture' }],
+        holdings: { main: { long: 300_000, short: 0, net: 300_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2027-01-15', amount: -304_335.08, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-01-22', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2030-01-22', status: 'pending' }], // a Friday; a Tuesday
+        pnl: { account: { commissions: -8, unrealized: -75, total: -83 } },
+        nav: { account: 1_499_917, book: 2_999_917 },
+        balance: { account: { cash: 1_500_000, accruedIncome: 6_127.08, positions: 298_125, payable: 304_335.08, assets: 1_804_252.08, liabilities: 304_335.08, netAssets: 1_499_917 } },
+      },
+    },
+    {
+      id: 'second-fill', covers: 'partial fill', action: 'cycle',
+      expect: {
+        // Another 300,000. The schedule for 600,000 is 6.00, still under the minimum already paid: this fill pays nothing. Owed 298,200 + 6,127.08.
+        events: [{ type: 'trade.fill', summary: 'Bought 300,000 FNMA-4.25-JAN30 @ 99.40 USD' }, { type: 'order.fill_variance', summary: /Partial fill of 30% of the confirmed quantity/ }],
+        openOrders: [{ instrument: 'main', kind: 'trade', action: 'buy', status: 'partial', qty: 1_000_000, filledQty: 600_000 }],
+        cash: { account: { USD: { settled: 1_500_000, unsettled: -608_662.16, availableToTrade: 891_337.84 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 600_000, avgCost: 99.4, cost: 596_400, price: 99.375, value: 596_250, unrealized: -150, accrued: 12_254.16 }],
+        holdings: { main: { long: 600_000, short: 0, net: 600_000 } },
+        pending: [{ instrument: 'main', dueDate: '2027-01-15', amount: -304_335.08 }, { instrument: 'main', dueDate: '2027-01-15', amount: -304_327.08 }],
+        pnl: { account: { commissions: -8, unrealized: -150, total: -158 } },
+        nav: { account: 1_499_842, book: 2_999_842 },
+        balance: { account: { accruedIncome: 12_254.16, positions: 596_250, payable: 608_662.16, assets: 2_108_504.16, liabilities: 608_662.16, netAssets: 1_499_842 } },
+      },
+    },
+    {
+      id: 'third-fill', covers: 'partial fill', action: 'cycle',
+      expect: {
+        // 900,000 filled: the schedule gives 9.00, so this fill pays the 1.00 beyond the minimum. Owed 298,200 + 6,127.08 + 1.00.
+        events: [{ type: 'trade.fill', summary: 'Bought 300,000 FNMA-4.25-JAN30 @ 99.40 USD' }, { type: 'order.fill_variance', summary: /Partial fill of 30% of the confirmed quantity/ }],
+        openOrders: [{ instrument: 'main', kind: 'trade', action: 'buy', status: 'partial', qty: 1_000_000, filledQty: 900_000 }],
+        cash: { account: { USD: { settled: 1_500_000, unsettled: -912_990.24, availableToTrade: 587_009.76 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 900_000, avgCost: 99.4, cost: 894_600, price: 99.375, value: 894_375, unrealized: -225, accrued: 18_381.24 }],
+        holdings: { main: { long: 900_000, short: 0, net: 900_000 } },
+        pending: [{ instrument: 'main', dueDate: '2027-01-15', amount: -304_335.08 }, { instrument: 'main', dueDate: '2027-01-15', amount: -304_328.08 }, { instrument: 'main', dueDate: '2027-01-15', amount: -304_327.08 }],
+        pnl: { account: { commissions: -9, unrealized: -225, total: -234 } },
+        nav: { account: 1_499_766, book: 2_999_766 },
+        balance: { account: { accruedIncome: 18_381.24, positions: 894_375, payable: 912_990.24, assets: 2_412_756.24, liabilities: 912_990.24, netAssets: 1_499_766 } },
+      },
+    },
+    {
+      id: 'last-fill', covers: ['open', 'partial fill'], action: 'cycle',
+      expect: {
+        // The last 100,000: principal 99,400, accrued 100,000 x 4.25% x 173/360 = 2,042.361 -> 2,042.36, commission 1.00 (the schedule is now 10.00).
+        // The order is done: 1,000,000 at 99.40, 994,000 of principal against the 994,500 previewed at the offer of the time.
+        events: [{ type: 'trade.fill', summary: 'Bought 100,000 FNMA-4.25-JAN30 @ 99.40 USD' }, { type: 'order.fill_variance', summary: /Partial fill of 10% of the confirmed quantity/ }],
+        openOrders: [],
+        cash: { account: { USD: { settled: 1_500_000, unsettled: -1_014_433.60, availableToTrade: 485_566.40 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_000_000, avgCost: 99.4, cost: 994_000, price: 99.375, value: 993_750, unrealized: -250,
+          accrued: 20_423.60 }], // 6,127.08 x 3 + 2,042.36: a cent under the 20,423.61 of a single fill
+        holdings: { main: { long: 1_000_000, short: 0, net: 1_000_000 } },
+        pending: [{ instrument: 'main', dueDate: '2027-01-15', amount: -304_335.08 }, { instrument: 'main', dueDate: '2027-01-15', amount: -304_328.08 }, { instrument: 'main', dueDate: '2027-01-15', amount: -304_327.08 }, { instrument: 'main', dueDate: '2027-01-15', amount: -101_443.36 }],
+        pnl: { account: { commissions: -10, unrealized: -250, total: -260 } },
+        nav: { account: 1_499_740, book: 2_999_740 },
+        balance: { account: { accruedIncome: 20_423.60, positions: 993_750, payable: 1_014_433.60, assets: 2_514_173.60, liabilities: 1_014_433.60, netAssets: 1_499_740 } },
+      },
+    },
+    {
+      // A second order, far below the market: 200,000 at 99.00, good for the day. It will not fill.
+      id: 'day-order-rests', covers: 'limit order', action: 'ticket', instrument: 'main', side: 'buy', qty: 200_000, as: 'second', order: { orderType: 'limit', limitPrice: 99, tif: 'day' },
+      expect: {
+        preview: { blocking: 0, errors: [], warnings: ['already-held'], legs: [{ kind: 'trade', action: 'buy', qty: 200_000, estimate: 99.4, executable: false, settleDate: '2027-01-15', orderType: 'limit',
+          gross: 198_800, accrued: 4_084.72, cash: -202_884.72, fees: 8 }] }, // 200,000 x 4.25% x 173/360 = 4,084.722; 2.00 raised to the minimum
+        result: { orders: [{ kind: 'trade', action: 'buy', status: 'working', filledQty: 0, reason: 'Limit not reached: executable price 99.4 is above the limit 99.', fills: [] }] },
+        events: [{ type: 'strategy.submitted' }],
+        openOrders: [{ instrument: 'main', kind: 'trade', action: 'buy', status: 'working', qty: 200_000, filledQty: 0 }],
+      },
+    },
+    {
+      // 17:30 New York. The day ends: the unfilled Day order expires, visibly. And the accrued balance is put on the unrounded
+      // total of the four pieces, 3 x 6,127.0833 + 2,042.3611 = 20,423.61: one cent of income.
+      id: 'end-of-day', covers: ['order expiry', 'accrual'], action: 'clock', to: EST_1730('2027-01-14'),
+      expect: {
+        events: [
+          { type: 'accrual.coupon', summary: 'Interest accrued on FNMA-4.25-JAN30: 0.01 USD' },
+          { type: 'order.expired', summary: 'Leg 1 expired: buy 200,000 FNMA-4.25-JAN30. Day order did not fill before the end of the business day' },
+        ],
+        openOrders: [],
+        failed: { orders: 1 }, // the expired order is listed with its reason
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_000_000, accrued: 20_423.61 }],
+        pnl: { account: { couponInterest: 0.01, total: -259.99 } },
+        nav: { account: 1_499_740.01, book: 2_999_740.01 },
+        balance: { account: { accruedIncome: 20_423.61, assets: 2_514_173.61, netAssets: 1_499_740.01 } },
+      },
+    },
+    {
+      id: 'settle', covers: 'settlement', action: 'clock', to: EST('2027-01-15'),
+      expect: {
+        // Each piece settles as its own payment, in the order the pieces were filled.
+        events: [
+          { type: 'settlement.pay', summary: 'paid 304,335.08 USD from settled cash', cash: { USD: -304_335.08 } },
+          { type: 'settlement.pay', summary: 'paid 304,327.08 USD from settled cash', cash: { USD: -304_327.08 } },
+          { type: 'settlement.pay', summary: 'paid 304,328.08 USD from settled cash', cash: { USD: -304_328.08 } },
+          { type: 'settlement.pay', summary: 'paid 101,443.36 USD from settled cash', cash: { USD: -101_443.36 } },
+        ],
+        cash: { account: { USD: { settled: 485_566.40, unsettled: 0, availableToTrade: 485_566.40 } } },
+        pending: [],
+        balance: { account: { cash: 485_566.40, payable: null, assets: 1_499_740.01, liabilities: 0 } },
+      },
+    },
+    // Tuesday 19 January, after Martin Luther King Jr. Day. The last end of day was Friday the 15th, the settlement date: interest to it is what was bought.
+    { id: 'after-the-long-weekend', covers: 'market holiday', action: 'clock', to: EST('2027-01-19'), expect: { events: [] } },
+    {
+      id: 'coupon', covers: 'coupon', action: 'clock', to: EST('2027-01-22'), // Friday
+      expect: {
+        // Coupon 1,000,000 x 2.125% = 21,250.00. Accrued on the books 20,423.61: the other 826.39 is seven 30/360 days of income.
+        events: [
+          { type: 'bond.coupon', summary: 'Coupon received on 1,000,000 FNMA-4.25-JAN30: 21,250.00 USD', cash: { USD: 21_250 }, owner: 'account', date: '2027-01-22' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on FNMA-4.25-JAN30: 826.39 USD' },
+        ],
+        cash: { account: { USD: { settled: 506_816.40, availableToTrade: 506_816.40 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_000_000, accrued: 0 }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-07-22', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2030-01-22', status: 'pending' }], // a Thursday
+        pnl: { account: { couponInterest: 826.40, total: 566.40 } },
+        nav: { account: 1_500_566.40, book: 3_000_566.40 },
+        balance: { account: { cash: 506_816.40, accruedIncome: null, assets: 1_500_566.40, netAssets: 1_500_566.40 } },
+      },
+    },
+    {
+      id: 'close', covers: 'close', action: 'close', lot: 'lot', scope: 'strategy', percent: 100, // the bid shows 5,000,000: one fill
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 1_000_000, estimate: 99.35, settleDate: '2027-01-25',
+          gross: 993_500, // 1,000,000 x 99.35 / 100
+          accrued: 354.17, // settles Monday 25 Jan, 3 days: 1,000,000 x 4.25% x 3/360 = 354.167
+          cash: 993_854.17, fees: 10 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 1_000_000, avgPrice: 99.35 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: /^Sold 1,000,000 FNMA-4\.25-JAN30 @ 99\.35 USD \(realized [-−]500\.00 USD\)$/ }, // 993,500 - 994,000
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of FNMA-4.25-JAN30: 354.17 USD' },
+        ],
+        cash: { account: { USD: { settled: 506_816.40, unsettled: 993_844.17, availableToTrade: 1_500_660.57 } } }, // 993,500 + 354.17 - 10
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', dueDate: '2027-01-25', amount: 993_844.17, into: 'cash' }],
+        lifecycle: [],
+        // Interest in all: 21,250 coupon + 354.17 sold - 20,423.60 bought = 1,180.57.
+        pnl: { account: { realized: -500, couponInterest: 1_180.57, commissions: -20, unrealized: 0, total: 660.57 } },
+        nav: { account: 1_500_660.57, book: 3_000_660.57 },
+        balance: { account: { cash: 506_816.40, receivable: 993_844.17, positions: null, accruedIncome: null, assets: 1_500_660.57, liabilities: 0, netAssets: 1_500_660.57 } },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: EST('2027-01-25'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 993,844.17 USD into settled cash', cash: { USD: 993_844.17 } }],
+        cash: { account: { USD: { settled: 1_500_660.57, unsettled: 0, availableToTrade: 1_500_660.57 } }, treasury: { USD: { settled: 1_500_000 } } },
+        pending: [],
+        balance: { account: { cash: 1_500_660.57, receivable: null, assets: 1_500_660.57, liabilities: 0, netAssets: 1_500_660.57 } },
+      },
+    },
+  ],
+};
+
+export default [treasuryNote, treasuryBill, treasuryBond, strips, foreignGovBill, foreignGovBond, emLocalDebt, emHardDebt, agencyDebt];
