@@ -31,3 +31,4 @@
 - 2026-10-07T03:11Z | fu1 | +0.2 | dividend_future passes at engine, API and browser
 - 2026-10-07T03:11Z | fu1 | +0.2 | crypto_future passes at engine, API and browser
 - 2026-10-07T03:11Z | fu1 | +0.2 | perpetual_future passes at engine, API and browser
+- 2026-10-07T09:48Z | coord | +0 | restarting bonds, loans, rate swaps and failure-recovery from their notes; working until the Fable limit

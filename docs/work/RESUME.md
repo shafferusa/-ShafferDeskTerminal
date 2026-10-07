@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 42.1% of the pass** (last milestone 2026-10-07T03:11Z, fu1: perpetual_future passes at engine, API and browser)
+**Completeness: about 42.1% of the pass** (last milestone 2026-10-07T09:48Z, coord: restarting bonds, loans, rate swaps and failure-recovery from their notes; working until the Fable limit)
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 
@@ -32,6 +32,18 @@ Stop all background work when the owner's weekly **Fable** usage reaches 98%.
 Last known figures: 5:30 PM ET on 2026-10-06, Fable 14% against 10% for all models (r = 1.4), before this pass
 started. The all-models figure was reported as 35% at about 9:57 PM ET.
 
+## Owner's instruction at 05:46 AM ET on 2026-10-07
+
+Weekly Fable usage is at about 87%. "Work until it hits its limit. Write notes so you can resume when usage is
+back." So work continues on Fable until the limit ends the session; there will be no chance to tidy up when that
+happens, which is why every milestone pushes a snapshot of the whole tree (`LOG.md` is the record). The owner
+reported the weekly reset as Tuesday 2026-10-13, 11 AM ET. On resuming: read this file, `LOG.md`, `progress/`,
+`BUGS.md` and `tasks/GROUPS.md` (how to restart each group of products), run `npm test`, then continue.
+
+Restarted at 09:50 UTC with four workers continuing from their notes: b1 (bonds, government), l1 (loans), s1 (rate
+swaps), s8 (failure and recovery). If the log's last entries are from these four, they were cut off mid-task: the
+tree is as they left it at their last save, and files they were editing after that save are lost.
+
 ## State at the last update (2026-10-07 09:45 UTC)
 
 **Holding since the 5-hour session limit was hit at about 02:47 UTC (10:47 PM ET).** Six of the eight workers of
@@ -44,8 +56,8 @@ Wave 1, product by product (a product counts only when it passed at engine, API 
   the swap and FX-forward packages executed from it, was / now on a refused "Execute now", routes documented.
 - listed options (`progress/o1.md`): 5 of 5 logged as passing. No final report was delivered.
 - futures (`progress/fu1.md`): 11 of 11 logged as passing. No final report was delivered.
-- bonds, government (`progress/b1.md`): 6 of 13 (treasury_note, treasury_bill, treasury_bond, strips,
-  foreign_gov_bill and one more in progress); the bond browser driver exists.
+- bonds, government (`progress/b1.md`): 5 of 13 (treasury_note, treasury_bill, treasury_bond, strips,
+  foreign_gov_bill); the bond browser driver exists.
 - loans (`progress/l1.md`): 4 of 9 (unsecured_loan, term_deposit, certificate_of_deposit, bank_deposit); the loan
   browser driver exists.
 - rate swaps (`progress/s1.md`): 3 of 12 (interest_rate_swap, ois, basis_swap); the swap browser driver exists.
@@ -54,9 +66,8 @@ Wave 1, product by product (a product counts only when it passed at engine, API 
 - collateral follow-up (task 2 under "Not started or unfinished" below): NOT started; its worker was stopped.
 - The red test mentioned further down is fixed.
 
-To continue: start a fresh worker per unfinished group with the same prompt as before (the prompts are in the
-session transcript; the essentials are `briefs/BRIEF3.md`, `briefs/BRIEF4.md` and the group's product list above)
-and tell it that `progress/<id>.md` exists, so it resumes instead of starting over. Then waves 2 and 3 below.
+To continue: start a worker per unfinished group as `tasks/GROUPS.md` describes, telling it that
+`progress/<id>.md` exists, so it resumes instead of starting over. Then waves 2 and 3 below.
 Findings waiting for an owner are in `BUGS.md`.
 
 ## State of the work (written 2026-10-07 01:58 UTC)
