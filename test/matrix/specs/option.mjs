@@ -34,11 +34,13 @@
 export const family = 'option';
 
 // ---- instants (New York time; US clocks move to daylight time on Sunday 8 March 2026) ----------
-const MAR = (d, t = '10:00') => {
+const at = (month, d, t, offset) => {
   const [h, m] = t.split(':').map(Number);
-  const offset = d < 8 ? 5 : 4; // hours behind UTC
-  return `2026-03-${String(d).padStart(2, '0')}T${String(h + offset).padStart(2, '0')}:${String(m).padStart(2, '0')}:00.000Z`;
+  return `2026-${month}-${String(d).padStart(2, '0')}T${String(h + offset).padStart(2, '0')}:${String(m).padStart(2, '0')}:00.000Z`;
 };
+const MAR = (d, t = '10:00') => at('03', d, t, d < 8 ? 5 : 4); // 5 hours behind UTC up to 7 March, then 4
+const APR = (d, t = '10:00') => at('04', d, t, 4);
+const MAY = (d, t = '10:00') => at('05', d, t, 4);
 
 /** The Book every option scenario starts from, stated in full so no figure rests on a default. */
 const book = (name, over = {}) => ({
@@ -442,4 +444,407 @@ const equityOption = {
   ],
 };
 
-export default [equityOption];
+// ---------------------------------------------------------------------------------------------
+// etf_option
+// ---------------------------------------------------------------------------------------------
+// American options on a NYSE Arca-listed ETF, 100 shares a contract, physical delivery. This
+// scenario is the writer's side: cash-secured puts, a covered call (bought and written in one
+// package on the Strategies page), an early assignment recorded by hand, a roll of the written puts
+// to a later expiry and a lower strike, automatic assignment of the calls at the April expiry, and
+// the rolled puts lapsing in May. The position is carried over Good Friday, 3 April 2026, when US
+// markets are closed.
+const ETF_PUT = 'CVTM260417P80', ETF_CALL = 'CVTM260417C86', ETF_PUT2 = 'CVTM260515P78';
+const etfOptionDraft = (name, symbol, right, strike, expiration) => ({
+  productId: 'etf_option', name, symbol, marketView: 'US_DERIV', venue: 'Cboe Options Exchange', venueType: 'exchange', venueCountry: 'US', underlyingGeo: 'US', tradingCcy: 'USD', underlying: 'etf', multiplier: 100,
+  terms: { right, strike, expiration, exercise: 'american', settlement: 'physical', deliverable: { units: 100 } },
+});
+const etfOption = {
+  productId: 'etf_option',
+  title: 'Corvane Total Market ETF options (17 April 80 put, 17 April 86 call, 15 May 78 put), Cboe-listed, American, 100 shares, physical delivery',
+  matrix: {
+    ticket: `${OPTION_TICKET.ticket}. The covered call is assembled on the Strategies page (execution template Covered Call)`,
+    requiredFields: [...OPTION_TICKET.requiredFields, 'Strategies page: Account, execution template, instrument, shares, expiration, call strike', 'Roll dialog: new expiration, new strike'],
+    automaticInputs: OPTION_TICKET.automaticInputs,
+    manualInputs: ['early assignment of a written American option (contracts), recorded by hand from the position Lifecycle menu'],
+    settlement: 'Premium T+1 on the US calendar: a trade on Thursday 2 April settles Monday 6 April, Good Friday being a market holiday; shares delivered on assignment settle T+1 at the strike',
+    lifecycle: 'Expiry item on each expiration date; written call in the money: assigned automatically, the shares held against it are delivered at the strike (simulated delivery); written put out of the money: lapses; early assignment by hand; roll to a later expiry in one package',
+    accounting: 'Premium received is a negative cost until the option is bought back, assigned or lapses, when it is realized; shares delivered are carried at the strike; a roll realizes the difference on the contract it closes',
+    collateral: 'A written put reserves its full strike value (cash-secured: contracts x 100 x strike), re-sized when contracts are assigned or rolled and released when the put is gone; a call written against shares in the same strategy instance reserves nothing; reserved cash is not buying power',
+  },
+  start: MAR(30),
+  settlementCheck: { lag: 1, holidays: ['2026-04-03'] }, // US markets are closed on Good Friday, 3 April 2026; Memorial Day is 25 May
+  book: book('Matrix ETF option'),
+  instruments: {
+    etf: { productId: 'etf', name: 'Corvane Total Market ETF', symbol: 'CVTM', marketView: 'US_CASH', venue: 'NYSE Arca', venueType: 'exchange', venueCountry: 'US', issuer: 'Corvane Funds Trust', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', terms: {} },
+    put: etfOptionDraft('CVTM 17 April 2026 80 put', ETF_PUT, 'P', 80, '2026-04-17'),
+    call: etfOptionDraft('CVTM 17 April 2026 86 call', ETF_CALL, 'C', 86, '2026-04-17'),
+    put2: etfOptionDraft('CVTM 15 May 2026 78 put', ETF_PUT2, 'P', 78, '2026-05-15'),
+  },
+  quotes: {
+    etf: { bid: 84.00, ask: 84.04, last: 84.02, bidSize: 20000, askSize: 20000 },
+    put: { bid: 1.40, ask: 1.50, last: 1.45, bidSize: 500, askSize: 500 },
+    call: { bid: 1.10, ask: 1.20, last: 1.15, bidSize: 500, askSize: 500 },
+    put2: { bid: 1.60, ask: 1.70, last: 1.65, bidSize: 500, askSize: 500 },
+  },
+  expectAtStart: START_STATE,
+  steps: [
+    optionTicket({
+      // Writing 4 puts. Cash-secured: the whole strike value is reserved, 4 x 100 x 80 = 32,000.
+      id: 'write-puts', covers: ['write', 'reserve'], instrument: 'put', side: 'sell', qty: 4, symbol: ETF_PUT, as: 'puts',
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'put', qty: 4, estimate: 1.40, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2026-03-31', calendar: 'US',
+            cash: 560, // 4 contracts x 1.40 (the bid) x 100
+            fees: 2.60 }], // 4 x 0.65
+          cash: { USD: { purchases: 0, proceeds: 560, fees: 2.60, reserved: 32_000, required: 32_002.60, available: 500_000, shortfall: 0, netCash: 557.40 } },
+          netPremium: { amount: -560, ccy: 'USD', type: 'credit' },
+          optionRequirement: [{ ccy: 'USD', amount: 32_000, finite: 32_000, naked: 0, uncoveredCallUnits: 0 }],
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 4, avgPrice: 1.40, fills: [{ qty: 4, price: 1.40, model: 'quoted-bid-ask', settleDate: '2026-03-31', source: 'Test fixture', status: 'simulated' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: /^Sold 4 CVTM260417P80 @ 1\.40 USD$/, owner: 'account', date: '2026-03-30' }],
+        cash: { account: { USD: { settled: 500_000, unsettled: 557.40, reserved: 32_000, availableToTrade: 468_557.40, availableToWithdraw: 468_000 } } }, // 500,000 + 557.40 - 32,000; 500,000 - 32,000
+        positions: [{ instrument: 'put', lot: 'puts', owner: 'account', direction: 'short', qty: -4, avgCost: 1.40, cost: -560, price: 1.45,
+          value: -580, // -4 x 1.45 (last) x 100
+          unrealized: -20, priceSource: 'Test fixture' }],
+        holdings: { put: { long: 0, short: 4, net: -4 } },
+        pending: [{ instrument: 'put', owner: 'account', dueDate: '2026-03-31', amount: 557.40, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'option.expiry', instrument: 'put', dueDate: '2026-04-17', status: 'pending' }],
+        pnl: { account: { realized: 0, dividends: 0, commissions: -2.60, fees: 0, borrowFunding: 0, unrealized: -20, total: -22.60 } },
+        nav: { account: 499_977.40, book: 999_977.40 },
+        balance: { account: { cash: 500_000, receivable: 557.40, positions: -580, assets: 499_977.40, liabilities: 0, netAssets: 499_977.40 } },
+      },
+    }),
+    {
+      // 500,000 is settled, but 32,000 of it is reserved: 5,600 shares at 84.04 = 470,624.00 plus 28.00 commission
+      // needs 470,652.00 and only 468,557.40 can be committed. Shortfall 2,094.60.
+      id: 'buy-with-reserved-cash', covers: 'reserve', action: 'ticket', ticketOf: 'equity', instrument: 'etf', side: 'buy', qty: 5600,
+      status: 'blocked', reason: 'Cash reserved against the written puts is not buying power.',
+      expect: { refused: /is short 2,094\.60 USD.*468,557\.40 USD is available/s },
+    },
+    {
+      id: 'settle-put-premium', covers: 'settlement', action: 'clock', to: MAR(31),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 557.40 USD into settled cash', cash: { USD: 557.40 }, date: '2026-03-31' }],
+        cash: { account: { USD: { settled: 500_557.40, unsettled: 0, reserved: 32_000, availableToTrade: 468_557.40, availableToWithdraw: 468_557.40 } } },
+        pending: [],
+        balance: { account: { cash: 500_557.40, receivable: null } },
+      },
+    },
+    {
+      // Covered call, as the Strategies page sends it: buy 300 shares and write 3 calls against them (300 / 100 a
+      // contract), in one package. The call leg waits for the share leg. Shares in the same strategy instance cover
+      // the calls unit for unit, so nothing is reserved for them.
+      id: 'covered-call', covers: ['covered write', 'open'], action: 'package', as: 'covered', instrument: 'etf',
+      input: {
+        template: 'covered_call', underlyingId: '$inst:etf', origin: 'strategy_page', investmentStrategy: null, holdingPeriod: null, hedgeObjective: null,
+        mode: 'new', quantity: 300, hedgeRatio: 1, options: { expiration: '2026-04-17', strikes: { call: 86 }, contracts: null },
+        borrow: null, orderType: 'market', limitPrice: null, stopPrice: null, tif: 'day', financing: null,
+      },
+      strategyPage: { template: 'Covered Call', underlying: 'etf', quantity: 300, expiration: '2026-04-17', strikes: { 'Call strike': 86 } },
+      expect: {
+        preview: {
+          blocking: 0, errors: [], template: 'covered_call',
+          legs: [
+            { kind: 'trade', action: 'buy', purpose: 'primary', instrument: 'etf', qty: 300, estimate: 84.04, model: 'quoted-bid-ask', settleDate: '2026-04-01', cash: -25_212, fees: 1.50 }, // 300 x 84.04 (the ask); 300 x 0.005
+            { kind: 'trade', action: 'sell', purpose: 'hedge', instrument: 'call', qty: 3, estimate: 1.10, model: 'quoted-bid-ask', settleDate: '2026-04-01', cash: 330, fees: 1.95, dependsOn: [1] }, // 3 x 1.10 (the bid) x 100; 3 x 0.65
+          ],
+          cash: { USD: { purchases: 25_212, proceeds: 330, fees: 3.45, reserved: 0, required: 25_215.45, available: 468_557.40, shortfall: 0, netCash: -24_885.45 } },
+          netPremium: { amount: -330, ccy: 'USD', type: 'credit' },
+          optionRequirement: [{ ccy: 'USD', amount: 0, finite: 0, naked: 0, uncoveredCallUnits: 0, coveredCallUnits: 300 }],
+        },
+        result: { status: 'open', orders: [
+          { kind: 'trade', action: 'buy', instrument: 'etf', status: 'filled', filledQty: 300, avgPrice: 84.04 },
+          { kind: 'trade', action: 'sell', instrument: 'call', status: 'filled', filledQty: 3, avgPrice: 1.10 },
+        ] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 300 CVTM @ 84.04 USD' }, { type: 'trade.fill', summary: /^Sold 3 CVTM260417C86 @ 1\.10 USD$/ }],
+        // Owed: 25,212 + 1.50 = 25,213.50. Due to the Account: 330 - 1.95 = 328.05. Reserve unchanged at 32,000 (the puts).
+        cash: { account: { USD: { settled: 500_557.40, unsettled: -24_885.45, reserved: 32_000, availableToTrade: 443_671.95, availableToWithdraw: 443_343.90 } } }, // 500,557.40 + 328.05 - 25,213.50 - 32,000; 500,557.40 - 25,213.50 - 32,000
+        positions: [
+          { instrument: 'call', lot: 'covered', owner: 'account', direction: 'short', qty: -3, cost: -330, avgCost: 1.10, price: 1.15, value: -345, unrealized: -15 },
+          { instrument: 'etf', lot: 'covered', owner: 'account', direction: 'long', qty: 300, cost: 25_212, avgCost: 84.04, price: 84.02, value: 25_206, unrealized: -6 }, // 300 x 84.02
+          { instrument: 'put', lot: 'puts', qty: -4, cost: -560, value: -580, unrealized: -20 },
+        ],
+        holdings: { call: { long: 0, short: 3, net: -3 }, etf: { long: 300, short: 0, net: 300 }, put: { long: 0, short: 4, net: -4 } },
+        pending: [{ instrument: 'call', lot: 'covered', dueDate: '2026-04-01', amount: 328.05, into: 'cash' }, { instrument: 'etf', lot: 'covered', dueDate: '2026-04-01', amount: -25_213.50, into: 'cash' }],
+        lifecycle: [{ type: 'option.expiry', instrument: 'call', dueDate: '2026-04-17', status: 'pending' }, { type: 'option.expiry', instrument: 'put', dueDate: '2026-04-17', status: 'pending' }],
+        pnl: { account: { commissions: -6.05, unrealized: -41, total: -47.05 } }, // -15 - 6 - 20
+        nav: { account: 499_952.95, book: 999_952.95 },
+        balance: { account: { cash: 500_557.40, receivable: 328.05, positions: 24_281, payable: 25_213.50, assets: 525_166.45, liabilities: 25_213.50, netAssets: 499_952.95 } }, // -345 + 25,206 - 580
+      },
+    },
+    {
+      id: 'settle-covered-call', covers: 'settlement', action: 'clock', to: APR(1),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 328.05 USD into settled cash' }, { type: 'settlement.pay', summary: 'paid 25,213.50 USD from settled cash' }],
+        cash: { account: { USD: { settled: 475_671.95, unsettled: 0, reserved: 32_000, availableToTrade: 443_671.95, availableToWithdraw: 443_671.95 } } }, // 500,557.40 + 328.05 - 25,213.50
+        pending: [],
+        balance: { account: { cash: 475_671.95, receivable: null, payable: null, assets: 499_952.95, liabilities: 0 } },
+      },
+    },
+    { id: 'thursday-2-april', action: 'clock', to: APR(2), expect: {} },
+    {
+      id: 'etf-dips', action: 'quote', instrument: 'etf', quote: { bid: 79.48, ask: 79.52, last: 79.50, bidSize: 20000, askSize: 20000 },
+      expect: {
+        positions: [{ instrument: 'call', qty: -3 }, { instrument: 'etf', lot: 'covered', qty: 300, price: 79.50, value: 23_850, unrealized: -1_362 }, { instrument: 'put', qty: -4 }], // 300 x 79.50 - 25,212
+        pnl: { account: { unrealized: -1_397, total: -1_403.05 } }, // -15 - 1,362 - 20
+        nav: { account: 498_596.95, book: 998_596.95 },
+        balance: { account: { positions: 22_925, assets: 498_596.95, netAssets: 498_596.95 } },
+      },
+    },
+    {
+      id: 'put-premium-up', action: 'quote', instrument: 'put', quote: { bid: 1.95, ask: 2.05, last: 2.00, bidSize: 500, askSize: 500 },
+      expect: {
+        positions: [{ instrument: 'call', qty: -3 }, { instrument: 'etf', qty: 300 }, { instrument: 'put', lot: 'puts', qty: -4, price: 2.00, value: -800, unrealized: -240 }], // -4 x 2.00 x 100; -800 + 560
+        pnl: { account: { unrealized: -1_617, total: -1_623.05 } },
+        nav: { account: 498_376.95, book: 998_376.95 },
+        balance: { account: { positions: 22_705, assets: 498_376.95, netAssets: 498_376.95 } },
+      },
+    },
+    {
+      id: 'call-premium-down', action: 'quote', instrument: 'call', quote: { bid: 0.20, ask: 0.26, last: 0.23, bidSize: 500, askSize: 500 },
+      expect: {
+        positions: [{ instrument: 'call', lot: 'covered', qty: -3, price: 0.23, value: -69, unrealized: 261 }, { instrument: 'etf', qty: 300 }, { instrument: 'put', qty: -4 }], // -3 x 0.23 x 100; -69 + 330
+        pnl: { account: { unrealized: -1_341, total: -1_347.05 } }, // 261 - 1,362 - 240
+        nav: { account: 498_652.95, book: 998_652.95 },
+        balance: { account: { positions: 22_981, assets: 498_652.95, netAssets: 498_652.95 } },
+      },
+    },
+    {
+      id: 'exercise-a-written-option', covers: 'exercise', action: 'lifecycle', lot: 'puts', body: { action: 'exercise', contracts: 1 },
+      status: 'blocked', reason: 'Exercise belongs to the holder. A written option can only be assigned.',
+      expect: { refused: { engine: 'Only a long option can be exercised', api: 'Only a long option can be exercised', browser: 'offers only: Early assignment, Manual cash flow' } },
+    },
+    {
+      // The holder exercises 1 of the 4 puts early: recorded by hand as an early assignment. That contract is closed
+      // at zero, so its premium, 1.40 x 100 = 140, is realized. 100 shares are delivered to the Account at the strike:
+      // 8,000, due on the next business day, which is Monday 6 April (Friday is Good Friday). The shares are worth
+      // 100 x 79.50 = 7,950. The reserve falls to 3 x 100 x 80 = 24,000.
+      id: 'assigned-early', covers: ['assignment', 'reserve'], action: 'lifecycle', lot: 'puts', body: { action: 'assign', contracts: 1 },
+      expect: {
+        events: [
+          { type: 'option.assigned', summary: 'Assigned: 1 CVTM260417P80 at strike 80', owner: 'account', date: '2026-04-02' },
+          { type: 'option.delivery', summary: /^Simulated delivery: received 100 CVTM at strike 80 on assignment of CVTM260417P80/, owner: 'account' },
+        ],
+        cash: { account: { USD: { settled: 475_671.95, unsettled: -8_000, reserved: 24_000, availableToTrade: 443_671.95, availableToWithdraw: 443_671.95 } } }, // 475,671.95 - 8,000 - 24,000
+        positions: [
+          { instrument: 'call', lot: 'covered', qty: -3, value: -69, unrealized: 261 },
+          { instrument: 'etf', lot: 'covered', qty: 300, value: 23_850, unrealized: -1_362 },
+          { instrument: 'etf', lot: 'puts', owner: 'account', direction: 'long', qty: 100, cost: 8_000, avgCost: 80, price: 79.50, value: 7_950, unrealized: -50 },
+          { instrument: 'put', lot: 'puts', qty: -3, cost: -420, avgCost: 1.40, price: 2.00, value: -600, unrealized: -180 }, // -3 x 2.00 x 100; -600 + 420
+        ],
+        holdings: { etf: { long: 400, short: 0, net: 400 }, put: { long: 0, short: 3, net: -3 } },
+        pending: [{ instrument: 'etf', lot: 'puts', dueDate: '2026-04-06', amount: -8_000, into: 'cash' }],
+        pnl: { account: { realized: 140, unrealized: -1_331, total: -1_197.05 } }, // 261 - 1,362 - 50 - 180; 140 - 6.05 - 1,331
+        nav: { account: 498_802.95, book: 998_802.95 }, // 150 higher: the time value of the assigned put (2.00 x 100 = 200 against 50 of intrinsic value)
+        balance: { account: { cash: 475_671.95, positions: 31_131, payable: 8_000, assets: 506_802.95, liabilities: 8_000, netAssets: 498_802.95 } }, // -69 + 23,850 + 7,950 - 600
+      },
+    },
+    {
+      // Good Friday: the market and the settlement system are closed. Nothing settles and nothing changes.
+      id: 'good-friday', covers: 'holiday', action: 'clock', to: APR(3),
+      expect: {},
+    },
+    {
+      id: 'settle-assignment', covers: ['settlement', 'holiday'], action: 'clock', to: APR(6),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 8,000.00 USD from settled cash', cash: { USD: -8_000 }, date: '2026-04-06' }],
+        cash: { account: { USD: { settled: 467_671.95, unsettled: 0, reserved: 24_000, availableToTrade: 443_671.95, availableToWithdraw: 443_671.95 } } },
+        pending: [],
+        balance: { account: { cash: 467_671.95, payable: null, assets: 498_802.95, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'etf-recovers', action: 'quote', instrument: 'etf', quote: { bid: 82.00, ask: 82.04, last: 82.02, bidSize: 20000, askSize: 20000 },
+      expect: {
+        positions: [
+          { instrument: 'call', qty: -3 },
+          { instrument: 'etf', lot: 'covered', qty: 300, price: 82.02, value: 24_606, unrealized: -606 }, // 300 x 82.02 - 25,212
+          { instrument: 'etf', lot: 'puts', qty: 100, price: 82.02, value: 8_202, unrealized: 202 },
+          { instrument: 'put', qty: -3 },
+        ],
+        pnl: { account: { unrealized: -323, total: -189.05 } }, // 261 - 606 + 202 - 180
+        nav: { account: 499_810.95, book: 999_810.95 },
+        balance: { account: { positions: 32_139, assets: 499_810.95, netAssets: 499_810.95 } },
+      },
+    },
+    {
+      id: 'put-premium-down', action: 'quote', instrument: 'put', quote: { bid: 0.60, ask: 0.70, last: 0.65, bidSize: 500, askSize: 500 },
+      expect: {
+        positions: [{ instrument: 'call', qty: -3 }, { instrument: 'etf', qty: 300 }, { instrument: 'etf', qty: 100 }, { instrument: 'put', lot: 'puts', qty: -3, price: 0.65, value: -195, unrealized: 225 }], // -195 + 420
+        pnl: { account: { unrealized: 82, total: 215.95 } }, // 261 - 606 + 202 + 225
+        nav: { account: 500_215.95, book: 1_000_215.95 },
+        balance: { account: { positions: 32_544, assets: 500_215.95, netAssets: 500_215.95 } },
+      },
+    },
+    { id: 'may-put-quote', action: 'quote', instrument: 'put2', quote: { bid: 0.95, ask: 1.05, last: 1.00, bidSize: 500, askSize: 500 }, expect: {} }, // not held yet
+    {
+      id: 'call-premium', action: 'quote', instrument: 'call', quote: { bid: 0.40, ask: 0.46, last: 0.43, bidSize: 500, askSize: 500 },
+      expect: {
+        positions: [{ instrument: 'call', lot: 'covered', qty: -3, price: 0.43, value: -129, unrealized: 201 }, { instrument: 'etf', qty: 300 }, { instrument: 'etf', qty: 100 }, { instrument: 'put', qty: -3 }],
+        pnl: { account: { unrealized: 22, total: 155.95 } }, // 201 - 606 + 202 + 225
+        nav: { account: 500_155.95, book: 1_000_155.95 },
+        balance: { account: { positions: 32_484, assets: 500_155.95, netAssets: 500_155.95 } },
+      },
+    },
+    {
+      // Roll the 3 written April 80 puts to the May 78 put: buy the April puts back at the ask, 3 x 0.70 x 100 = 210,
+      // and write the May puts at the bid, 3 x 0.95 x 100 = 285. Net credit 75 before 3.90 of commission.
+      // Closing the April puts realizes 420 received - 210 paid = 210. The reserve becomes 3 x 100 x 78 = 23,400.
+      id: 'roll-puts', covers: 'roll', action: 'roll', lot: 'puts', newExpiration: '2026-05-15', newStrike: 78,
+      expect: {
+        preview: {
+          blocking: 0, errors: [], intent: 'roll',
+          legs: [
+            { kind: 'trade', action: 'buy', instrument: 'put', qty: 3, estimate: 0.70, model: 'quoted-bid-ask', settleDate: '2026-04-07', cash: -210, fees: 1.95 },
+            { kind: 'trade', action: 'sell', instrument: 'put2', qty: 3, estimate: 0.95, model: 'quoted-bid-ask', settleDate: '2026-04-07', cash: 285, fees: 1.95 },
+          ],
+          cash: { USD: { purchases: 210, proceeds: 285, fees: 3.90, reserved: 0, required: 213.90, shortfall: 0, netCash: 71.10 } }, // no more is reserved: 23,400 is needed and 24,000 is held
+          netPremium: { amount: -75, ccy: 'USD', type: 'credit', complete: true },
+          optionRequirement: [{ ccy: 'USD', amount: 23_400, finite: 23_400, naked: 0 }],
+        },
+        result: { status: 'open', orders: [
+          { kind: 'trade', action: 'buy', instrument: 'put', status: 'filled', filledQty: 3, avgPrice: 0.70 },
+          { kind: 'trade', action: 'sell', instrument: 'put2', status: 'filled', filledQty: 3, avgPrice: 0.95 },
+        ] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Bought 3 CVTM260417P80 @ 0.70 USD (realized 210.00 USD)' }, { type: 'trade.fill', summary: /^Sold 3 CVTM260515P78 @ 0\.95 USD$/ }],
+        cash: { account: { USD: { settled: 467_671.95, unsettled: 71.10, reserved: 23_400, availableToTrade: 444_343.05, availableToWithdraw: 444_060 } } }, // 467,671.95 + 283.05 - 211.95 - 23,400; 467,671.95 - 211.95 - 23,400
+        positions: [
+          { instrument: 'call', lot: 'covered', qty: -3, value: -129, unrealized: 201 },
+          { instrument: 'etf', lot: 'covered', qty: 300, value: 24_606, unrealized: -606 },
+          { instrument: 'etf', lot: 'puts', qty: 100, value: 8_202, unrealized: 202 },
+          { instrument: 'put2', lot: 'puts', owner: 'account', direction: 'short', qty: -3, cost: -285, avgCost: 0.95, price: 1.00, value: -300, unrealized: -15 },
+        ],
+        holdings: { put: null, put2: { long: 0, short: 3, net: -3 } },
+        pending: [{ instrument: 'put', lot: 'puts', dueDate: '2026-04-07', amount: -211.95, into: 'cash' }, { instrument: 'put2', lot: 'puts', dueDate: '2026-04-07', amount: 283.05, into: 'cash' }],
+        lifecycle: [{ type: 'option.expiry', instrument: 'call', dueDate: '2026-04-17', status: 'pending' }, { type: 'option.expiry', instrument: 'put2', dueDate: '2026-05-15', status: 'pending' }],
+        pnl: { account: { realized: 350, commissions: -9.95, unrealized: -218, total: 122.05 } }, // 140 + 210; 201 - 606 + 202 - 15
+        nav: { account: 500_122.05, book: 1_000_122.05 },
+        balance: { account: { cash: 467_671.95, receivable: 283.05, positions: 32_379, payable: 211.95, assets: 500_334, liabilities: 211.95, netAssets: 500_122.05 } }, // -129 + 24,606 + 8,202 - 300
+      },
+    },
+    {
+      id: 'settle-roll', covers: 'settlement', action: 'clock', to: APR(7),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 283.05 USD into settled cash' }, { type: 'settlement.pay', summary: 'paid 211.95 USD from settled cash' }],
+        cash: { account: { USD: { settled: 467_743.05, unsettled: 0, reserved: 23_400, availableToTrade: 444_343.05, availableToWithdraw: 444_343.05 } } },
+        pending: [],
+        balance: { account: { cash: 467_743.05, receivable: null, payable: null, assets: 500_122.05, liabilities: 0 } },
+      },
+    },
+    { id: 'april-close-known-later', action: 'close_price', instrument: 'etf', date: '2026-04-17', value: 87.20, expect: {} },
+    {
+      id: 'april-expiry-morning', covers: 'expiry', action: 'clock', to: APR(17),
+      expect: { lifecycle: [{ type: 'option.expiry', instrument: 'call', dueDate: '2026-04-17', status: 'blocked' }, { type: 'option.expiry', instrument: 'put2', dueDate: '2026-05-15', status: 'pending' }] },
+    },
+    {
+      id: 'etf-rallies', action: 'quote', instrument: 'etf', quote: { bid: 87.10, ask: 87.14, last: 87.12, bidSize: 20000, askSize: 20000 },
+      expect: {
+        positions: [
+          { instrument: 'call', qty: -3 },
+          { instrument: 'etf', lot: 'covered', qty: 300, price: 87.12, value: 26_136, unrealized: 924 }, // 300 x 87.12 - 25,212
+          { instrument: 'etf', lot: 'puts', qty: 100, price: 87.12, value: 8_712, unrealized: 712 },
+          { instrument: 'put2', qty: -3 },
+        ],
+        pnl: { account: { unrealized: 1_822, total: 2_162.05 } }, // 201 + 924 + 712 - 15; 350 - 9.95 + 1,822
+        nav: { account: 502_162.05, book: 1_002_162.05 },
+        balance: { account: { positions: 34_419, assets: 502_162.05, netAssets: 502_162.05 } },
+      },
+    },
+    {
+      id: 'call-in-the-money', action: 'quote', instrument: 'call', quote: { bid: 1.10, ask: 1.20, last: 1.15, bidSize: 500, askSize: 500 },
+      expect: {
+        positions: [{ instrument: 'call', lot: 'covered', qty: -3, price: 1.15, value: -345, unrealized: -15 }, { instrument: 'etf', qty: 300 }, { instrument: 'etf', qty: 100 }, { instrument: 'put2', qty: -3 }],
+        pnl: { account: { unrealized: 1_606, total: 1_946.05 } },
+        nav: { account: 501_946.05, book: 1_001_946.05 },
+        balance: { account: { positions: 34_203, assets: 501_946.05, netAssets: 501_946.05 } },
+      },
+    },
+    {
+      id: 'may-put-decays', action: 'quote', instrument: 'put2', quote: { bid: 0.10, ask: 0.16, last: 0.13, bidSize: 500, askSize: 500 },
+      expect: {
+        positions: [{ instrument: 'call', qty: -3 }, { instrument: 'etf', qty: 300 }, { instrument: 'etf', qty: 100 }, { instrument: 'put2', lot: 'puts', qty: -3, price: 0.13, value: -39, unrealized: 246 }], // -39 + 285
+        pnl: { account: { unrealized: 1_867, total: 2_207.05 } }, // -15 + 924 + 712 + 246
+        nav: { account: 502_207.05, book: 1_002_207.05 },
+        balance: { account: { positions: 34_464, assets: 502_207.05, netAssets: 502_207.05 } },
+      },
+    },
+    {
+      // April expiry, 17:30: the ETF closed at 87.20, above the call strike of 86. The 3 written calls are assigned
+      // automatically. Their premium, 330, is realized, and the 300 shares held against them are delivered at 86:
+      // 25,800 due Monday, 588 more than their cost of 25,212.
+      id: 'april-expiry-calls-assigned', covers: ['expiry', 'assignment'], action: 'clock', to: APR(17, '17:30'),
+      expect: {
+        events: [
+          { type: 'option.assigned', summary: 'Assigned: 3 CVTM260417C86 at strike 86', owner: 'account', date: '2026-04-17' },
+          { type: 'option.delivery', summary: /^Simulated delivery: delivered 300 CVTM at strike 86 on assignment of CVTM260417C86/, owner: 'account', date: '2026-04-17' },
+        ],
+        cash: { account: { USD: { settled: 467_743.05, unsettled: 25_800, reserved: 23_400, availableToTrade: 470_143.05, availableToWithdraw: 444_343.05 } } },
+        positions: [{ instrument: 'etf', lot: 'puts', qty: 100, value: 8_712, unrealized: 712 }, { instrument: 'put2', lot: 'puts', qty: -3, value: -39, unrealized: 246 }],
+        holdings: { call: null, etf: { long: 100, short: 0, net: 100 } },
+        pending: [{ instrument: 'etf', lot: 'covered', dueDate: '2026-04-20', amount: 25_800, into: 'cash' }],
+        lifecycle: [{ type: 'option.expiry', instrument: 'put2', dueDate: '2026-05-15', status: 'pending' }],
+        pnl: { account: { realized: 1_268, unrealized: 958, total: 2_216.05 } }, // 350 + 330 + 588; 712 + 246
+        nav: { account: 502_216.05, book: 1_002_216.05 },
+        balance: { account: { cash: 467_743.05, receivable: 25_800, positions: 8_673, assets: 502_216.05, liabilities: 0, netAssets: 502_216.05 } },
+      },
+    },
+    {
+      id: 'settle-called-away', covers: 'settlement', action: 'clock', to: APR(20),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 25,800.00 USD into settled cash', cash: { USD: 25_800 } }],
+        cash: { account: { USD: { settled: 493_543.05, unsettled: 0, reserved: 23_400, availableToTrade: 470_143.05, availableToWithdraw: 470_143.05 } } },
+        pending: [],
+        balance: { account: { cash: 493_543.05, receivable: null } },
+      },
+    },
+    {
+      id: 'sell-assigned-shares', covers: 'close', action: 'ticket', ticketOf: 'equity', instrument: 'etf', side: 'sell', qty: 100, from: 'puts',
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'sell', instrument: 'etf', qty: 100, estimate: 87.10, model: 'quoted-bid-ask', settleDate: '2026-04-21', cash: 8_710, fees: 1 }] }, // 100 x 87.10; 0.50 raised to the 1.00 minimum
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 100, avgPrice: 87.10 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 100 CVTM @ 87.10 USD (realized 710.00 USD)' }], // 8,710 - 8,000
+        cash: { account: { USD: { settled: 493_543.05, unsettled: 8_709, reserved: 23_400, availableToTrade: 478_852.05, availableToWithdraw: 470_143.05 } } },
+        positions: [{ instrument: 'put2', lot: 'puts', qty: -3, value: -39, unrealized: 246 }],
+        holdings: { etf: null },
+        pending: [{ instrument: 'etf', lot: 'puts', dueDate: '2026-04-21', amount: 8_709, into: 'cash' }],
+        pnl: { account: { realized: 1_978, commissions: -10.95, unrealized: 246, total: 2_213.05 } },
+        nav: { account: 502_213.05, book: 1_002_213.05 },
+        balance: { account: { cash: 493_543.05, receivable: 8_709, positions: -39, assets: 502_213.05, liabilities: 0, netAssets: 502_213.05 } },
+      },
+    },
+    {
+      id: 'settle-shares', covers: 'settlement', action: 'clock', to: APR(21),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 8,709.00 USD into settled cash' }],
+        cash: { account: { USD: { settled: 502_252.05, unsettled: 0, reserved: 23_400, availableToTrade: 478_852.05, availableToWithdraw: 478_852.05 } } },
+        pending: [],
+        balance: { account: { cash: 502_252.05, receivable: null } },
+      },
+    },
+    { id: 'may-close-known-later', action: 'close_price', instrument: 'etf', date: '2026-05-15', value: 85.60, expect: {} },
+    {
+      id: 'may-expiry-morning', covers: 'expiry', action: 'clock', to: MAY(15),
+      expect: { lifecycle: [{ type: 'option.expiry', instrument: 'put2', dueDate: '2026-05-15', status: 'blocked' }] },
+    },
+    {
+      // May expiry, 17:30: the ETF closed at 85.60, above the put strike of 78. The 3 written puts lapse: their
+      // premium, 285, is realized and the 23,400 reserve is released.
+      id: 'may-expiry-puts-lapse', covers: ['expiry', 'lapse', 'reserve release'], action: 'clock', to: MAY(15, '17:30'),
+      expect: {
+        events: [{ type: 'option.expired', summary: 'Expired worthless: 3 CVTM260515P78 (fixing 85.6)', owner: 'account', date: '2026-05-15' }],
+        cash: { account: { USD: { settled: 502_252.05, unsettled: 0, reserved: 0, availableToTrade: 502_252.05, availableToWithdraw: 502_252.05 } }, treasury: { USD: { settled: 500_000 } } },
+        positions: [],
+        holdings: { put2: null },
+        pending: [],
+        lifecycle: [],
+        // Whole scenario, cash in and out: +557.40 - 25,213.50 + 328.05 - 8,000 - 211.95 + 283.05 + 25,800 + 8,709 = 2,252.05.
+        pnl: { account: { realized: 2_263, commissions: -10.95, unrealized: 0, total: 2_252.05 } }, // 1,978 + 285
+        nav: { account: 502_252.05, book: 1_002_252.05 },
+        balance: { account: { cash: 502_252.05, positions: null, assets: 502_252.05, liabilities: 0, netAssets: 502_252.05 } },
+      },
+    },
+  ],
+};
+
+export default [equityOption, etfOption];

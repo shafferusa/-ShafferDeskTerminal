@@ -137,4 +137,71 @@ export const actions = {
     await dlg.waitFor({ state: 'hidden' });
     return {};
   },
+
+  /**
+   * Roll: the Roll dialog of the strategy instance (Manage, Roll). Every option position of the instance is
+   * selected when the dialog opens; `positions` on the step narrows that. The new expiration is typed (no option
+   * chain is supplied for the fixtures), the new strike only when one option is rolled alone; a futures position
+   * takes the contract month named by `into`.
+   */
+  async roll(ui, t, ctx, step, { previewAndConfirm, expectsRefusal }) {
+    const lot = ctx.lot(step.lot);
+    const drawer = await openStrategy(ui, t, ctx, lot.strategyId);
+    const manage = ui.section(drawer, 'Manage');
+    const roll = ui.button(manage, 'Roll');
+    if (!await roll.count()) return { refusal: { message: 'The strategy instance offers no Roll: it holds no option or futures position.', where: 'strategy instance, Manage' } };
+    await roll.click();
+    const dlg = ui.dialog(/^Roll positions of /);
+    await dlg.waitFor();
+    if (step.positions) {
+      const wanted = step.positions.map((k) => ctx.inst(k).symbol || ctx.inst(k).name);
+      const boxes = dlg.getByRole('checkbox');
+      for (let i = 0; i < await boxes.count(); i++) {
+        const label = (await boxes.nth(i).locator('xpath=..').innerText()).trim();
+        await boxes.nth(i).setChecked(wanted.some((w) => label.includes(w)));
+      }
+    }
+    if (step.newExpiration) await ui.input(dlg, 'New expiration').fill(step.newExpiration);
+    if (step.newStrike !== undefined && step.newStrike !== null) await ui.input(dlg, 'New strike').fill(String(step.newStrike));
+    if (step.into) await ui.select(dlg, 'Contract month to roll into').selectOption(ctx.inst(step.into).id);
+    const go = ui.button(dlg, 'Preview roll');
+    if (await go.isDisabled()) return { refusal: { message: 'Preview roll is disabled: the Roll dialog is not complete.', where: 'Roll dialog' } };
+    return previewAndConfirm(ui, ctx, () => go.click(), { expectsRefusal });
+  },
+
+  /**
+   * A package assembled on the Strategies page from an execution template. The step states what is entered there as
+   * `strategyPage: { template, underlying, quantity, expiration, strikes: { '<field label>': strike }, contracts }`
+   * (the request this produces is the step's `input`, which the engine and API levels send).
+   */
+  async package(ui, t, ctx, step, { previewAndConfirm, expectsRefusal }) {
+    const sp = step.strategyPage;
+    if (!sp) return undefined;
+    const { page } = ui;
+    await ui.closeOverlays();
+    await ui.goto('#/strategy');
+    const main = page.locator('main');
+    const owner = step.owner === 'treasury' ? 'Treasury' : ctx.spec.book.account.name;
+    await ui.select(ui.section(main, 'Account and intent'), 'Account').selectOption({ label: owner });
+    const what = ui.section(main, 'Instrument and template');
+    await ui.select(what, 'Execution template').selectOption({ label: sp.template });
+    const und = ctx.inst(sp.underlying);
+    // Once the underlying, the amount and the contracts are all in place the page asks Shaffer Hedge (here the labelled
+    // demo fixture) what hedge applies. Its answer can add a hedge package to the preview, so the preview is asked for
+    // only after that answer has arrived.
+    const hedgeAnswer = page.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/hedge/requests', { timeout: 12_000 }).catch(() => null);
+    await pickInstrument(ui, what, /^\s*(Ticker or instrument|Underlying of the options)/, und);
+    await what.getByText('Current market price').first().waitFor();
+    if (sp.quantity !== undefined && sp.quantity !== null) await ui.input(what, und.qtyLabel).fill(String(sp.quantity));
+    const contracts = ui.section(main, 'Option contracts');
+    if (sp.expiration) await ui.input(contracts, /^\s*(Expiration|Near expiration)/).fill(sp.expiration);
+    if (sp.farExpiration) await ui.input(contracts, /^\s*Far expiration/).fill(sp.farExpiration);
+    for (const [label, strike] of Object.entries(sp.strikes || {})) await ui.input(contracts, label).fill(String(strike));
+    if (sp.contracts !== undefined && sp.contracts !== null) await ui.input(contracts, 'Contracts').fill(String(sp.contracts));
+    await hedgeAnswer;
+    await ui.drawn();
+    const out = await previewAndConfirm(ui, ctx, () => ui.button(main, 'Preview package').click(), { expectsRefusal });
+    if (out.strategy && step.as && !ctx.lots.has(step.as)) ctx.nameLot(step.as, out.strategy.id, step.instrument);
+    return out;
+  },
 };

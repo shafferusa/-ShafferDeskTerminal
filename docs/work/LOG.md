@@ -4,3 +4,4 @@
 - 2026-10-07T02:31Z | v1b | +0.5 | hedge popup refusal shows was / now and needs a fresh confirmation (verified with a changed fixture quote); hedge, protection and strategy routes documented; npm test 184 of 184
 - 2026-10-07T02:43Z | o1 | +0.2 | equity_option passes at engine, API and browser
 - 2026-10-07T02:50Z | b1 | +0.2 | treasury_note passes at engine, API and browser; bond browser driver built; four bond accrual and coupon entitlement faults fixed with regression tests
+- 2026-10-07T02:51Z | o1 | +0.2 | etf_option passes at engine, API and browser
