@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 45.5% of the pass** (last milestone 2026-10-07T11:42Z, s8: kill-mid-confirmation, kill-mid-cycle and service-stops-answering pass at API level; stress and no-duplicate areas complete at engine and API)
+**Completeness: about 45.5% of the pass** (last milestone 2026-10-07T11:45Z, s8: history cases (data refresh, service reconnection, instrument, calendar and settings edits) pass at engine and API level)
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 

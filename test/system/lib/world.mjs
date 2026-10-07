@@ -221,6 +221,36 @@ export async function openWorld(level, { label = 'case', at = MON, demo = true, 
         }
         return out;
       },
+      /**
+       * The paper history as stored: every row, whole (time stamps included), of the tables that record what happened.
+       * historyIntact() then requires that each of those rows is still byte for byte what it was; rows added since
+       * are listed, and must be of a kind the caller allows.
+       */
+      history() {
+        const tables = { events: null, entries: null, fills: null, settlements: null, position_history: null, collateral_movements: null, orders: null, snapshots: null, corporate_actions: null, observations: `origin = 'used'`, tasks: `status IN ('done','cancelled')` };
+        const out = {};
+        for (const [tb, where] of Object.entries(tables)) {
+          const rows = w.sql(`SELECT rowid AS _rowid, * FROM ${tb} ${where ? `WHERE ${where}` : ''} ORDER BY rowid`);
+          out[tb] = { where, max: rows.length ? rows[rows.length - 1]._rowid : 0, n: rows.length, hash: sha(rows) };
+        }
+        return out;
+      },
+      historyIntact(c, before, label, { newEvents = [], anyNew = false } = {}) {
+        let ok = true;
+        const added = [];
+        for (const [tb, b] of Object.entries(before)) {
+          const cond = [b.where, `rowid <= ${b.max}`].filter(Boolean).join(' AND ');
+          const rows = w.sql(`SELECT rowid AS _rowid, * FROM ${tb} WHERE ${cond} ORDER BY rowid`);
+          if (!c.ok(rows.length === b.n && sha(rows) === b.hash, `${label}: every existing row of ${tb} is unchanged (${b.n} rows)`, `${rows.length} rows now, content ${sha(rows) === b.hash ? 'equal' : 'differs'}`)) ok = false;
+          const more = w.sql(`SELECT ${tb === 'events' ? 'type' : `'${tb}'`} AS what FROM ${tb} WHERE ${[b.where, `rowid > ${b.max}`].filter(Boolean).join(' AND ')}`);
+          for (const r of more) added.push(tb === 'events' ? `event ${r.what}` : r.what);
+        }
+        if (anyNew) return ok;
+        const allowed = new Set(newEvents.map((t) => `event ${t}`));
+        const extra = added.filter((x) => !allowed.has(x));
+        if (!c.ok(extra.length === 0, `${label}: nothing was added to the history${newEvents.length ? ` except ${newEvents.join(', ')}` : ''}`, extra.join(', '))) ok = false;
+        return ok;
+      },
       /** Two fingerprints must be equal; a difference is reported by table. */
       sameStored(c, before, after, label) {
         const diff = Object.keys({ ...before, ...after }).filter((k) => before[k] !== after[k]).map((k) => `${k}: ${before[k]} -> ${after[k]}`);
