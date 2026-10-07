@@ -34,3 +34,4 @@
 - 2026-10-07T09:48Z | coord | +0 | restarting bonds, loans, rate swaps and failure-recovery from their notes; working until the Fable limit
 - 2026-10-07T09:49Z | b1 | +0 | resumed; notes brought up to date (five bond products done, fixed ACT/365 coupon amount)
 - 2026-10-07T09:52Z | b1 | +0.2 | foreign_gov_bond passes at engine, API and browser (JGB in yen: ACT/365 accrual, equal coupons, Tokyo holiday, FX effects)
+- 2026-10-07T09:55Z | b1 | +0 | bond fix: a trade on the coupon date no longer schedules and pays the same coupon twice (regression test); em_local_debt passes at engine level

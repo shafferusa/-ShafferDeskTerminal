@@ -1376,4 +1376,207 @@ const foreignGovBond = {
   ],
 };
 
-export default [treasuryNote, treasuryBill, treasuryBond, strips, foreignGovBill, foreignGovBond];
+
+// ---------------------------------------------------------------------------------------------
+// em_local_debt
+// ---------------------------------------------------------------------------------------------
+// A South African government bond in rand, listed on the JSE, in a Book that reports in US
+// dollars. 8.875%, coupons on the last day of February and on 31 August (a month-end schedule:
+// 28 or 29 February), accrued on ACT/365, each coupon half the annual rate (4.4375 per 100).
+// It settles T+3, set on the instrument itself (the Book's bond default is T+1), and it trades in
+// lots of 1,000,000 rand. The Terminal has no holiday calendar for South Africa: every date for
+// this bond is worked out on weekends only, the instrument and every preview say so, and rand
+// payment dates are flagged as approximate. Local holidays are therefore not tested here.
+// 28 Feb 2026 to 31 Aug 2026 is 184 days. Days from 28 Feb: to 27 Aug 180.
+// USD/ZAR is 16 at the start (one rand is 0.0625 dollars) and 20 after the rand falls (0.05).
+// Commission: 1 bp of principal. Not modelled: the books-closed (ex-coupon) period before a coupon.
+const emLocalDebt = {
+  productId: 'em_local_debt',
+  title: 'South African government bond 8.875% due 28 February 2035 in rand: JSE-listed, T+3 on a weekends-only calendar, month-end coupons, a currency fall',
+  matrix: {
+    ...BOND_TICKET,
+    manualInputs: ['none (local holidays would have to be added by hand in Settings: the calendar is weekends only)'],
+    settlement: 'T+3 from the instrument\'s own settlement convention, counted on weekends only because no South African calendar exists; every preview carries the calendar-fallback warning',
+    lifecycle: 'Daily accrual on ACT/365; month-end semi-annual coupons of half the annual rate; the books-closed period before a coupon is not modelled',
+    accounting: 'Rand position, cash, accrued interest and settlement; US dollar figures at the current rate for balances and unrealized P&L, at the booking rate for income, commission and realized P&L; FX effects reported separately',
+    collateral: 'None for a long position',
+  },
+  start: EDT('2026-08-24'), // Monday
+  settlementCheck: { lag: 3, holidays: [] }, // weekends only: no South African holiday is known to the Terminal
+  book: {
+    name: 'Matrix rand government bond', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 1_000_000 }, { ccy: 'ZAR', amount: 100_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'ZAR', amount: 80_000_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 1 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  fx: { 'USD/ZAR': 16 },
+  instruments: {
+    main: { productId: 'em_local_debt', name: 'Republic of South Africa 8.875% 28-Feb-2035', symbol: 'RSA-8.875-FEB35', marketView: 'FOREIGN_CASH', venueType: 'exchange', venue: 'JSE', venueCountry: 'ZA', issuer: 'Republic of South Africa', domicile: 'ZA', underlyingGeo: 'ZA', tradingCcy: 'ZAR', multiplier: 0.01,
+      conventions: { settleLag: 3 },
+      terms: { couponType: 'fixed', couponRate: 0.08875, frequency: 2, maturity: '2035-02-28', issueDate: '2010-02-28', dayCount: 'ACT/365', redemption: 100, minDenomination: 1_000_000 } },
+  },
+  quotes: { main: { bid: 91.2, ask: 91.3, last: 91.25, bidSize: 500_000_000, askSize: 500_000_000 } },
+  expectAtStart: {
+    ...startState(5_000_000, 2_250_000), // 80,000,000 ZAR / 16; 1,000,000 USD + 20,000,000 ZAR / 16
+    cash: { account: { ZAR: idle(80_000_000) }, treasury: { USD: idle(1_000_000), ZAR: idle(20_000_000) } },
+  },
+  steps: [
+    {
+      id: 'odd-lot', covers: 'minimum denomination', action: 'ticket', instrument: 'main', side: 'buy', qty: 50_500_000,
+      status: 'blocked', reason: 'The bond trades in lots of 1,000,000 rand face; 50,500,000 is not a whole number of them.',
+      expect: { refused: 'quantity must be a multiple of 1000000' },
+    },
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 50_000_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: ['calendar-fallback'], // "the settlement date 2026-08-27 ... was worked out on weekends only"
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 50_000_000, estimate: 91.3, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2026-08-27', calendar: 'WEEKEND', // Monday + 3 days
+            gross: 45_650_000, // 50,000,000 x 91.30 / 100
+            accrued: 2_188_356.16, // settles 27 Aug, 180 days: 50,000,000 x 8.875% x 180/365 = 2,188,356.164
+            cash: -47_838_356.16, fees: 4_565 }], // 1 bp of 45,650,000
+          cash: { ZAR: { purchases: 47_838_356.16, fees: 4_565, required: 47_842_921.16, available: 80_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 50_000_000, avgPrice: 91.3, fills: [{ qty: 50_000_000, price: 91.3, model: 'quoted-bid-ask', settleDate: '2026-08-27', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 50,000,000 RSA-8.875-FEB35 @ 91.30 ZAR', owner: 'account', date: '2026-08-24' }],
+        cash: { account: { ZAR: { settled: 80_000_000, unsettled: -47_842_921.16, availableToTrade: 32_157_078.84 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 50_000_000, avgCost: 91.3, cost: 45_650_000, price: 91.25,
+          value: 45_625_000, unrealized: -25_000, accrued: 2_188_356.16, priceSource: 'Test fixture' }], // rand
+        holdings: { main: { long: 50_000_000, short: 0, net: 50_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-08-27', amount: -47_842_921.16, ccy: 'ZAR', into: 'cash' }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2026-08-31', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2035-02-28', status: 'pending' }], // a Monday; a Wednesday
+        // In dollars at 0.0625: commission 4,565 x 0.0625 = 285.31; unrealized -25,000 x 0.0625 = -1,562.50.
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -285.31, fees: 0, borrowFunding: 0, unrealized: -1_562.50, fx: 0, total: -1_847.81 } },
+        nav: { account: 4_998_152.19, book: 7_248_152.19 }, // (80,000,000 - 47,842,921.16 + 45,625,000 + 2,188,356.16) x 0.0625
+        balance: { account: { cash: 5_000_000, accruedIncome: 136_772.26, positions: 2_851_562.50, payable: 2_990_182.57, assets: 7_988_334.76, liabilities: 2_990_182.57, netAssets: 4_998_152.19, // each rand line x 0.0625
+          local: { ZAR: { cash: 80_000_000, accruedIncome: 2_188_356.16, positions: 45_625_000, payable: 47_842_921.16 } } } },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EDT('2026-08-27'), // Thursday, T+3
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 47,842,921.16 ZAR from settled cash', cash: { ZAR: -47_842_921.16 }, date: '2026-08-27' }],
+        cash: { account: { ZAR: { settled: 32_157_078.84, unsettled: 0, availableToTrade: 32_157_078.84 } } },
+        pending: [],
+        balance: { account: { cash: 2_009_817.43, payable: null, assets: 4_998_152.19, liabilities: 0, local: { ZAR: { cash: 32_157_078.84, payable: null } } } }, // 32,157,078.84 x 0.0625
+      },
+    },
+    {
+      id: 'coupon', covers: 'coupon', action: 'clock', to: EDT('2026-08-31'), // Monday, the coupon date
+      expect: {
+        // Coupon: half of 8.875% on 50,000,000 = 2,218,750.00 rand, to the face settled on the 27th. Accrued on the books
+        // 2,188,356.16; the coupon exceeds it by 30,393.84, the income of the four days held (the period has 184 days, so
+        // ACT/365 accrual would overshoot an equal half-year coupon; the coupon is what is paid). In dollars 30,393.84 x 0.0625 = 1,899.62.
+        events: [
+          { type: 'bond.coupon', summary: 'Coupon received on 50,000,000 RSA-8.875-FEB35: 2,218,750.00 ZAR', cash: { ZAR: 2_218_750 }, owner: 'account', date: '2026-08-31' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on RSA-8.875-FEB35: 30,393.84 ZAR' },
+        ],
+        cash: { account: { ZAR: { settled: 34_375_828.84, availableToTrade: 34_375_828.84 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 50_000_000, accrued: 0 }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-03-01', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2035-02-28', status: 'pending' }], // 28 Feb 2027 is a Sunday
+        // A cent of rounding sits in FX effects: the accrued left the books at 2,188,356.16 x 0.0625 = 136,772.26 + 1,899.62 = 138,671.88
+        // and the coupon arrived as 2,218,750 x 0.0625 = 138,671.875.
+        pnl: { account: { couponInterest: 1_899.62, fx: -0.01, total: 51.80 } },
+        nav: { account: 5_000_051.80, book: 7_250_051.80 }, // (34,375,828.84 + 45,625,000) x 0.0625
+        balance: { account: { cash: 2_148_489.30, accruedIncome: null, assets: 5_000_051.80, netAssets: 5_000_051.80, local: { ZAR: { cash: 34_375_828.84, accruedIncome: null } } } },
+      },
+    },
+    {
+      id: 'rand-falls', covers: 'fx', action: 'fx_rate', pair: 'USD/ZAR', rate: 20, // one rand is now 0.05 dollars
+      expect: {
+        // Net assets 80,000,828.84 rand x 0.05 = 4,000,041.44. Unrealized -25,000 x 0.05 = -1,250.
+        // FX effects: the rand cash and the position at cost, 80,025,828.84 rand, were booked at 5,001,614.31 dollars and are
+        // worth 4,001,291.44 now: -1,000,322.87. A fifth of the dollar value of the rand is gone.
+        pnl: { account: { couponInterest: 1_899.62, commissions: -285.31, unrealized: -1_250, fx: -1_000_322.87, total: -999_958.56 }, book: { fx: -1_250_322.87 } }, // Treasury's 20,000,000 rand: 1,000,000 - 1,250,000
+        nav: { account: 4_000_041.44, treasury: 2_000_000, book: 6_000_041.44 },
+        balance: { account: { cash: 1_718_791.44, positions: 2_281_250, assets: 4_000_041.44, netAssets: 4_000_041.44 } }, // 34,375,828.84 x 0.05; 45,625,000 x 0.05
+      },
+    },
+    {
+      id: 'quote-down', action: 'quote', instrument: 'main', quote: { bid: 90.4, ask: 90.5, last: 90.45, bidSize: 500_000_000, askSize: 500_000_000 }, // yields rise with the currency
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 50_000_000, price: 90.45, value: 45_225_000, unrealized: -425_000 }], // 50,000,000 x 90.45% - 45,650,000
+        pnl: { account: { unrealized: -21_250, total: -1_019_958.56 } }, // -425,000 x 0.05
+        nav: { account: 3_980_041.44, book: 5_980_041.44 },
+        balance: { account: { positions: 2_261_250, assets: 3_980_041.44, netAssets: 3_980_041.44, local: { ZAR: { positions: 45_225_000 } } } },
+      },
+    },
+    {
+      id: 'reduce', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 20_000_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], warnings: ['calendar-fallback'], legs: [{ kind: 'trade', action: 'sell', qty: 20_000_000, estimate: 90.4, settleDate: '2026-09-03', calendar: 'WEEKEND',
+          gross: 18_080_000, // 20,000,000 x 90.40 / 100
+          accrued: 14_589.04, // settles 3 Sep, 3 days into the new period: 20,000,000 x 8.875% x 3/365 = 14,589.041
+          cash: 18_094_589.04, fees: 1_808 }] }, // 1 bp of 18,080,000
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 20_000_000, avgPrice: 90.4 }] },
+        // Realized in rand: 18,080,000 - 20,000,000 x 91.30% = -180,000; in dollars at 0.05: -9,000. Commission 1,808 x 0.05 = 90.40.
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: /^Sold 20,000,000 RSA-8\.875-FEB35 @ 90\.40 ZAR \(realized [-−]180,000\.00 ZAR\)$/ }],
+        cash: { account: { ZAR: { settled: 34_375_828.84, unsettled: 18_092_781.04, availableToTrade: 52_468_609.88 } } }, // 18,080,000 + 14,589.04 - 1,808
+        positions: [{ instrument: 'main', lot: 'lot', qty: 30_000_000, cost: 27_390_000, avgCost: 91.3, price: 90.45, value: 27_135_000, unrealized: -255_000,
+          accrued: -14_589.04 }], // the interest sold, booked ahead of the three days it covers
+        holdings: { main: { long: 30_000_000, short: 0, net: 30_000_000 } },
+        pending: [{ instrument: 'main', dueDate: '2026-09-03', amount: 18_092_781.04, ccy: 'ZAR', into: 'cash' }],
+        pnl: { account: { realized: -9_000, couponInterest: 1_899.62, commissions: -375.71, unrealized: -12_750, fx: -1_000_322.87, total: -1_020_548.96 } }, // 285.31 + 90.40; -255,000 x 0.05
+        nav: { account: 3_979_451.04, book: 5_979_451.04 }, // (34,375,828.84 + 18,092,781.04 + 27,135,000 - 14,589.04) x 0.05
+        balance: { account: { cash: 1_718_791.44, receivable: 904_639.05, accruedIncome: -729.45, positions: 1_356_750, assets: 3_979_451.04, liabilities: 0, netAssets: 3_979_451.04,
+          local: { ZAR: { cash: 34_375_828.84, receivable: 18_092_781.04, accruedIncome: -14_589.04, positions: 27_135_000 } } } },
+      },
+    },
+    {
+      id: 'settle-reduce', covers: ['settlement', 'accrual'], action: 'clock', to: EDT('2026-09-03'), // Thursday
+      expect: {
+        // End of day 2 Sep: all 50,000,000 was still settled, two days: 4,437,500 x 2/365 = 24,315.07; less the 14,589.04 sold: 9,726.03.
+        // On the books -14,589.04: income 24,315.07 rand, 1,215.75 dollars.
+        events: [
+          { type: 'settlement.receive', summary: 'received 18,092,781.04 ZAR into settled cash', cash: { ZAR: 18_092_781.04 } },
+          { type: 'accrual.coupon', summary: 'Interest accrued on RSA-8.875-FEB35: 24,315.07 ZAR' },
+        ],
+        cash: { account: { ZAR: { settled: 52_468_609.88, unsettled: 0, availableToTrade: 52_468_609.88 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 30_000_000, accrued: 9_726.03 }],
+        pending: [],
+        pnl: { account: { couponInterest: 3_115.37, fx: -1_000_322.86, total: -1_019_333.20 }, book: { fx: -1_250_322.86 } }, // a cent of posting rounding moves into FX effects and back out at the next step
+        nav: { account: 3_980_666.80, book: 5_980_666.80 },
+        balance: { account: { cash: 2_623_430.49, receivable: null, accruedIncome: 486.30, assets: 3_980_666.80, netAssets: 3_980_666.80, local: { ZAR: { cash: 52_468_609.88, receivable: null, accruedIncome: 9_726.03 } } } },
+      },
+    },
+    {
+      // Thursday 3 Sep. T+3 is Tuesday 8 Sep: Monday 7 Sep is Labor Day in New York, which means nothing to a rand bond.
+      id: 'close', covers: 'close', action: 'close', lot: 'lot', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], warnings: ['calendar-fallback'], legs: [{ kind: 'trade', action: 'sell', qty: 30_000_000, estimate: 90.4, settleDate: '2026-09-08',
+          gross: 27_120_000, // 30,000,000 x 90.40 / 100
+          accrued: 58_356.16, // settles 8 Sep, 8 days: 30,000,000 x 8.875% x 8/365 = 58,356.164
+          cash: 27_178_356.16, fees: 2_712 }] }, // 1 bp of 27,120,000
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 30_000_000, avgPrice: 90.4 }] },
+        // Realized -270,000 rand (-13,500 dollars). Interest: 58,356.16 sold against 9,726.03 on the books: 48,630.13 more income (2,431.51 dollars).
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: /^Sold 30,000,000 RSA-8\.875-FEB35 @ 90\.40 ZAR \(realized [-−]270,000\.00 ZAR\)$/ },
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of RSA-8.875-FEB35: 48,630.13 ZAR' },
+        ],
+        cash: { account: { ZAR: { settled: 52_468_609.88, unsettled: 27_175_644.16, availableToTrade: 79_644_254.04 } } }, // 27,120,000 + 58,356.16 - 2,712
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', dueDate: '2026-09-08', amount: 27_175_644.16, ccy: 'ZAR', into: 'cash' }],
+        lifecycle: [],
+        // Rand result: interest 30,393.84 + 24,315.07 + 48,630.13 = 103,339.04; realized -450,000; commissions 9,085: -355,745.96.
+        pnl: { account: { realized: -22_500, couponInterest: 5_546.88, commissions: -511.31, unrealized: 0, fx: -1_000_322.87, total: -1_017_787.30 }, book: { fx: -1_250_322.87 } },
+        nav: { account: 3_982_212.70, book: 5_982_212.70 }, // 79,644,254.04 x 0.05
+        balance: { account: { cash: 2_623_430.49, receivable: 1_358_782.21, positions: null, accruedIncome: null, assets: 3_982_212.70, liabilities: 0, netAssets: 3_982_212.70,
+          local: { ZAR: { cash: 52_468_609.88, receivable: 27_175_644.16, positions: null, accruedIncome: null } } } },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: EDT('2026-09-08'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 27,175,644.16 ZAR into settled cash', cash: { ZAR: 27_175_644.16 } }],
+        cash: { account: { ZAR: { settled: 79_644_254.04, unsettled: 0, availableToTrade: 79_644_254.04 } }, treasury: { USD: { settled: 1_000_000 }, ZAR: { settled: 20_000_000 } } },
+        pending: [],
+        nav: { account: 3_982_212.70, treasury: 2_000_000, book: 5_982_212.70 },
+        balance: { account: { cash: 3_982_212.70, receivable: null, assets: 3_982_212.70, liabilities: 0, netAssets: 3_982_212.70, local: { ZAR: { cash: 79_644_254.04, receivable: null } } } },
+      },
+    },
+  ],
+};
+
+export default [treasuryNote, treasuryBill, treasuryBond, strips, foreignGovBill, foreignGovBond, emLocalDebt];

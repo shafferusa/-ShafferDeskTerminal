@@ -228,3 +228,25 @@ test('bond coupon: a fixed coupon on ACT/365 pays the rate divided by the freque
   assert.ok(Math.abs(couponPer100(frn, '2026-12-20') - (1.4 * 183) / 365) < 1e-12);
   assert.ok(Math.abs(couponPer100({ ...jgb, dayCount: 'ACT/360' }, '2026-12-20') - (1.4 * 183) / 360) < 1e-12);
 });
+
+test('bond coupon: a trade on the coupon date, after the coupon was paid, does not schedule and pay it again', async () => {
+  const { app, clock } = makeApp({ at: MON });
+  const { book, acct } = makeBook(app, { cash: 3_000_000, account: 2_000_000 });
+  // Coupons on 16 May and 16 November: 16 November 2026 is a Monday, a business day.
+  const b = app.instruments.create({ productId: 'treasury_note', name: 'Test 4% 16-Nov-2030', symbol: 'TEST16', marketView: 'US_CASH', venueType: 'otc', tradingCcy: 'USD', terms: { couponType: 'fixed', couponRate: 0.04, frequency: 2, maturity: '2030-11-16', issueDate: '2023-11-16', dayCount: 'ACT/ACT' } });
+  pin(app, b.id, 100);
+  const s = await buy(app, book, acct, b, 1_000_000); // settles 10 Nov, 178 days into the 184-day period: 20,000 x 178/184 = 19,347.83
+  await goTo(app, clock, '2026-11-16T15:00:00.000Z');
+  assert.deepEqual(events(app, book, acct, 'bond.coupon').map((e) => e.cash[0].amount), [20_000]);
+  // Part of the position is sold later the same day.
+  const pv = await app.packages.previewAction(s.id, 'close', { positionIds: [s.positions[0].positionId], qty: 400_000 });
+  await app.packages.submit({ ...pv.input, legs: pv.legs, clientToken: pv.token, confirm: true });
+  await app.engine.tick();
+  await goTo(app, clock, '2026-11-17T15:00:00.000Z');
+  assert.deepEqual(events(app, book, acct, 'bond.coupon').map((e) => e.cash[0].amount), [20_000], 'the coupon of 16 November was paid once');
+  const open = app.accounting.pending(book.id, acct.id).lifecycle.filter((x) => x.type === 'bond.coupon');
+  assert.deepEqual(open.map((x) => x.dueDate), ['2027-05-17'], 'the next coupon (16 May 2027, a Sunday) is the one scheduled');
+  // Cash: 2,000,000 - 1,019,347.83 paid + 20,000 coupon + 400,000 x 100% + 400,000 x 2% x 1/181 (one day of the new period) sold.
+  assert.equal(app.ledger.cash(acct.id, 'USD').settled, 1_400_696.37);
+  assert.deepEqual(ledgerImbalance(app), []);
+});
