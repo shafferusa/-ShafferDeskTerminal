@@ -26,3 +26,4 @@
 - 2026-10-07T03:07Z | s1 | +0.2 | basis_swap passes at engine, API and browser
 - 2026-10-07T03:09Z | b1 | +0.2 | strips passes at engine, API and browser (stated price, manual mark, Columbus Day settlement, resting limit order)
 - 2026-10-07T03:10Z | o1 | +0.2 | listed_option passes at engine, API and browser (all five option products now pass at all three levels)
+- 2026-10-07T03:11Z | b1 | +0.2 | foreign_gov_bill passes at engine, API and browser (UK bill in sterling, FX effects in USD, UK holidays, redemption)

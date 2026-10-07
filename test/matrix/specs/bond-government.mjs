@@ -51,7 +51,8 @@ const startState = (account, treasury) => ({
   provisional: { account: false, book: false },
   failed: { orders: 0, settlements: 0, lifecycle: 0 },
 });
-const usdCash = (amount) => ({ USD: { settled: amount, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: amount } });
+const idle = (amount) => ({ settled: amount, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: amount });
+const usdCash = (amount) => ({ USD: idle(amount) });
 
 const BOND_TICKET = {
   ticket: 'Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview',
@@ -993,4 +994,176 @@ const strips = {
   ],
 };
 
-export default [treasuryNote, treasuryBill, treasuryBond, strips];
+
+// ---------------------------------------------------------------------------------------------
+// foreign_gov_bill
+// ---------------------------------------------------------------------------------------------
+// A UK Treasury bill in sterling, in a Book that reports in US dollars. A discount instrument like
+// the US bill, but quoted in its market as a simple yield on ACT/365, converted here by hand:
+//     price = 100 / (1 + yield x days from settlement to maturity / 365).
+// T+1 on the London calendar. Bought on Thursday 24 December 2026, it settles on Tuesday 29
+// December: Christmas Day and the Boxing Day substitute (Monday 28 December) are UK bank holidays,
+// and on that Monday New York is open, so the Terminal's day runs while London is shut.
+// It matures on Monday 18 January 2027, which is a business day in London and a holiday in New
+// York (Martin Luther King Jr. Day): the redemption is paid on the London date all the same.
+//
+// Reporting currency. Balances are translated at the current GBP/USD rate (a fixture). Income,
+// commissions and realized P&L are translated at the rate in force when they were booked;
+// unrealized P&L at the current rate. "FX effects" is the rest: what the change of rate did to
+// the sterling the Account was funded with and has since earned or spent.
+// Commission: 0.1 bp of principal.
+const foreignGovBill = {
+  productId: 'foreign_gov_bill',
+  title: 'UK Treasury bill due 18 January 2027 in sterling, reported in US dollars: UK holidays, a refused settlement date, FX effects, redemption at par',
+  matrix: {
+    ...BOND_TICKET,
+    manualInputs: ['the money-market yield is converted to a price in % of par by hand (the Terminal has no yield quotation)'],
+    settlement: 'T+1 on the London calendar (venue country GB); UK bank holidays are skipped; a settlement date stated on a UK holiday is refused on the ticket',
+    lifecycle: 'No coupon and no accrual; redemption at par on the maturity date by the London payment calendar, on a day New York is closed',
+    accounting: 'Sterling position, cash and settlement; US dollar figures at the current rate for balances and unrealized P&L, at the booking rate for commission and realized P&L; the difference is reported as FX effects',
+    collateral: 'None for a long position',
+  },
+  start: EST('2026-12-24'), // Thursday
+  settlementCheck: { lag: 1, holidays: ['2026-12-25', '2026-12-28'] }, // Christmas Day and the Boxing Day substitute: UK bank holidays
+  book: {
+    name: 'Matrix UK Treasury bill', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 1_000_000 }, { ccy: 'GBP', amount: 2_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'GBP', amount: 1_500_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.1 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  fx: { 'GBP/USD': 1.26 },
+  instruments: {
+    main: { productId: 'foreign_gov_bill', name: 'UK Treasury Bill 18-Jan-2027', symbol: 'UKTB-18JAN27', marketView: 'FOREIGN_CASH', venueType: 'otc', venueCountry: 'GB', issuer: 'HM Treasury', domicile: 'GB', underlyingGeo: 'GB', tradingCcy: 'GBP', multiplier: 0.01,
+      terms: { couponType: 'zero', maturity: '2027-01-18', issueDate: '2026-10-19', dayCount: 'ACT/365', redemption: 100 } },
+  },
+  // Settlement 29 Dec, 20 days to maturity. Ask 99.785 is a yield of 3.93%: 100 / (1 + 0.0393 x 20/365) = 99.785. Bid 99.78 is 4.02%.
+  quotes: { main: { bid: 99.78, ask: 99.785, last: 99.7825, bidSize: 50_000_000, askSize: 50_000_000 } },
+  expectAtStart: {
+    ...startState(1_890_000, 1_630_000), // 1,500,000 GBP x 1.26; 1,000,000 USD + 500,000 GBP x 1.26
+    cash: { account: { GBP: idle(1_500_000) }, treasury: { USD: idle(1_000_000), GBP: idle(500_000) } },
+  },
+  steps: [
+    {
+      // Monday 28 December is the Boxing Day substitute. The ticket checks a stated settlement date against the settlement calendar.
+      id: 'settle-on-uk-holiday', covers: 'stated settlement', action: 'ticket', instrument: 'main', side: 'buy', qty: 1_000_000, order: { settle: { date: '2026-12-28' } },
+      status: 'blocked', reason: 'A stated settlement date must be a business day of the instrument\'s settlement calendar; nothing is moved silently.',
+      expect: { refused: 'the stated settlement date 2026-12-28 (Monday) is a holiday on UK, not a business day on the settlement calendar of UKTB-18JAN27' },
+    },
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 1_000_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 1_000_000, estimate: 99.785, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2026-12-29', calendar: 'UK',
+            gross: 997_850, // 1,000,000 x 99.785 / 100, in sterling
+            accrued: 0, cash: -997_850, fees: 9.98 }], // 0.1 bp of 997,850 = 9.9785
+          cash: { GBP: { purchases: 997_850, fees: 9.98, required: 997_859.98, available: 1_500_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 1_000_000, avgPrice: 99.785, fills: [{ qty: 1_000_000, price: 99.785, model: 'quoted-bid-ask', settleDate: '2026-12-29', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1,000,000 UKTB-18JAN27 @ 99.785 GBP', owner: 'account', date: '2026-12-24' }],
+        cash: { account: { GBP: { settled: 1_500_000, unsettled: -997_859.98, availableToTrade: 502_140.02 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 1_000_000, avgCost: 99.785, cost: 997_850, price: 99.7825,
+          value: 997_825, unrealized: -25, accrued: 0, priceSource: 'Test fixture' }], // sterling
+        holdings: { main: { long: 1_000_000, short: 0, net: 1_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-12-29', amount: -997_859.98, ccy: 'GBP', into: 'cash' }],
+        lifecycle: [{ type: 'bond.maturity', instrument: 'main', dueDate: '2027-01-18', status: 'pending' }],
+        // In US dollars at 1.26: commission 9.98 x 1.26 = 12.57; unrealized -25 x 1.26 = -31.50.
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -12.57, fees: 0, borrowFunding: 0, unrealized: -31.50, fx: 0, total: -44.07 } },
+        nav: { account: 1_889_955.93, book: 3_519_955.93 }, // (1,500,000 - 997,859.98 + 997,825) x 1.26
+        balance: { account: { cash: 1_890_000, positions: 1_257_259.50, payable: 1_257_303.57, assets: 3_147_259.50, liabilities: 1_257_303.57, netAssets: 1_889_955.93, // 997,825 x 1.26; 997,859.98 x 1.26
+          local: { GBP: { cash: 1_500_000, positions: 997_825, payable: 997_859.98 } } } },
+      },
+    },
+    // Monday 28 December: New York is open and the Terminal's day runs; London is closed. The purchase has not settled and is still due on the 29th.
+    { id: 'london-closed', covers: 'market holiday', action: 'clock', to: EST('2026-12-28'), expect: { events: [] } },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EST('2026-12-29'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 997,859.98 GBP from settled cash', cash: { GBP: -997_859.98 }, date: '2026-12-29' }],
+        cash: { account: { GBP: { settled: 502_140.02, unsettled: 0, availableToTrade: 502_140.02 } } },
+        pending: [],
+        balance: { account: { cash: 632_696.43, payable: null, assets: 1_889_955.93, liabilities: 0, local: { GBP: { cash: 502_140.02, payable: null } } } }, // 502,140.02 x 1.26 = 632,696.4252
+      },
+    },
+    {
+      id: 'sterling-rises', covers: 'fx', action: 'fx_rate', pair: 'GBP/USD', rate: 1.28,
+      expect: {
+        // Net assets 1,499,965.02 GBP x 1.28 = 1,919,955.23. Unrealized -25 x 1.28 = -32.00. Commission stays at its booking rate.
+        // FX effects: the 1,500,000 GBP funded gained 0.02 each, 30,000.00; the 9.98 GBP spent gave 0.20 of that back: 29,999.80.
+        pnl: { account: { commissions: -12.57, unrealized: -32, fx: 29_999.80, total: 29_955.23 }, book: { fx: 39_999.80 } }, // Treasury's 500,000 GBP gained 10,000.00
+        nav: { account: 1_919_955.23, treasury: 1_640_000, book: 3_559_955.23 },
+        balance: { account: { cash: 642_739.23, positions: 1_277_216, assets: 1_919_955.23, netAssets: 1_919_955.23 } }, // 502,140.02 x 1.28; 997,825 x 1.28
+      },
+    },
+    {
+      // Yields fall. Settlement 30 Dec, 19 days: bid 99.80 is a yield of 3.85%: 100 / (1 + 0.0385 x 19/365) = 99.80.
+      id: 'quote-up', action: 'quote', instrument: 'main', quote: { bid: 99.80, ask: 99.805, last: 99.8025, bidSize: 50_000_000, askSize: 50_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_000_000, price: 99.8025, value: 998_025, unrealized: 175 }], // sterling
+        pnl: { account: { unrealized: 224, fx: 29_999.80, total: 30_211.23 } }, // 175 x 1.28; -12.57 + 224 + 29,999.80
+        nav: { account: 1_920_211.23, book: 3_560_211.23 }, // (502,140.02 + 998,025) x 1.28
+        balance: { account: { positions: 1_277_472, assets: 1_920_211.23, netAssets: 1_920_211.23, local: { GBP: { positions: 998_025 } } } },
+      },
+    },
+    {
+      id: 'reduce', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 400_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 400_000, estimate: 99.80, settleDate: '2026-12-30', calendar: 'UK',
+          gross: 399_200, accrued: 0, cash: 399_200, fees: 3.99 }] }, // 400,000 x 99.80 / 100; 0.1 bp = 3.992
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 400_000, avgPrice: 99.80 }] },
+        // Realized in sterling: 399,200 - 400,000 x 99.785% = 60.00. In dollars at today's 1.28: 76.80. Commission 3.99 x 1.28 = 5.11.
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 400,000 UKTB-18JAN27 @ 99.80 GBP (realized 60.00 GBP)' }],
+        cash: { account: { GBP: { settled: 502_140.02, unsettled: 399_196.01, availableToTrade: 901_336.03 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 600_000, cost: 598_710, avgCost: 99.785, price: 99.8025, value: 598_815, unrealized: 105 }], // 600,000 x 99.8025%; less 600,000 x 99.785%
+        holdings: { main: { long: 600_000, short: 0, net: 600_000 } },
+        pending: [{ instrument: 'main', dueDate: '2026-12-30', amount: 399_196.01, ccy: 'GBP', into: 'cash' }],
+        pnl: { account: { realized: 76.80, commissions: -17.68, unrealized: 134.40, fx: 29_999.80, total: 30_193.32 } }, // 12.57 + 5.11; 105 x 1.28
+        nav: { account: 1_920_193.32, book: 3_560_193.32 }, // (502,140.02 + 399,196.01 + 598,815) x 1.28
+        balance: { account: { cash: 642_739.23, receivable: 510_970.89, positions: 766_483.20, assets: 1_920_193.32, liabilities: 0, netAssets: 1_920_193.32, // 399,196.01 x 1.28; 598,815 x 1.28
+          local: { GBP: { cash: 502_140.02, receivable: 399_196.01, positions: 598_815 } } } },
+      },
+    },
+    {
+      id: 'settle-reduce', covers: 'settlement', action: 'clock', to: EST('2026-12-30'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 399,196.01 GBP into settled cash', cash: { GBP: 399_196.01 } }],
+        cash: { account: { GBP: { settled: 901_336.03, unsettled: 0, availableToTrade: 901_336.03 } } },
+        pending: [],
+        balance: { account: { cash: 1_153_710.12, receivable: null, assets: 1_920_193.32, local: { GBP: { cash: 901_336.03, receivable: null } } } }, // 901,336.03 x 1.28
+      },
+    },
+    {
+      id: 'sterling-falls', covers: 'fx', action: 'fx_rate', pair: 'GBP/USD', rate: 1.24,
+      expect: {
+        // Net assets 1,500,151.03 GBP x 1.24 = 1,860,187.28. Unrealized 105 x 1.24 = 130.20.
+        // FX effects: 1,500,000 funded at 1.26 lost 0.02, -30,000.00; the 60.00 realized at 1.28 lost 0.04, -2.40; the
+        // commissions spent, 9.98 at 1.26 and 3.99 at 1.28, are worth less too, +0.20 and +0.16: -30,002.04.
+        pnl: { account: { realized: 76.80, commissions: -17.68, unrealized: 130.20, fx: -30_002.04, total: -29_812.72 }, book: { fx: -40_002.04 } }, // Treasury's 500,000 GBP lost 10,000.00
+        nav: { account: 1_860_187.28, treasury: 1_620_000, book: 3_480_187.28 },
+        balance: { account: { cash: 1_117_656.68, positions: 742_530.60, assets: 1_860_187.28, netAssets: 1_860_187.28 } }, // 901,336.03 x 1.24; 598,815 x 1.24
+      },
+    },
+    {
+      // Monday 18 January 2027: Martin Luther King Jr. Day in New York, a business day in London. The bill is redeemed.
+      id: 'maturity', covers: ['maturity', 'close'], action: 'clock', to: EST('2027-01-18'),
+      expect: {
+        // Realized in sterling: 600,000 - 598,710 = 1,290.00; in dollars at 1.24: 1,599.60.
+        events: [
+          { type: 'bond.redemption', summary: 'Redeemed at maturity: 600,000 UKTB-18JAN27 at 100.00% of par', owner: 'account', date: '2027-01-18' },
+          { type: 'settlement.receive', summary: 'received 600,000.00 GBP into settled cash', cash: { GBP: 600_000 } },
+        ],
+        cash: { account: { GBP: { settled: 1_501_336.03, unsettled: 0, availableToTrade: 1_501_336.03 } }, treasury: { USD: { settled: 1_000_000 }, GBP: { settled: 500_000 } } },
+        positions: [],
+        holdings: { main: null },
+        pending: [],
+        lifecycle: [],
+        // Sterling result: 60.00 + 1,290.00 realized - 13.97 commission = 1,336.03. In dollars: 76.80 + 1,599.60 - 17.68, and the FX effect.
+        pnl: { account: { realized: 1_676.40, couponInterest: 0, commissions: -17.68, unrealized: 0, fx: -30_002.04, total: -28_343.32 } },
+        nav: { account: 1_861_656.68, treasury: 1_620_000, book: 3_481_656.68 }, // 1,501,336.03 x 1.24
+        balance: { account: { cash: 1_861_656.68, positions: null, assets: 1_861_656.68, liabilities: 0, netAssets: 1_861_656.68, local: { GBP: { cash: 1_501_336.03, positions: null } } } },
+      },
+    },
+  ],
+};
+
+export default [treasuryNote, treasuryBill, treasuryBond, strips, foreignGovBill];
