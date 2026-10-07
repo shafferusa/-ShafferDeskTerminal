@@ -18,3 +18,4 @@
 - 2026-10-07T03:01Z | fu1 | +0.2 | treasury_future passes at engine, API and browser
 - 2026-10-07T03:02Z | o1 | +0.2 | index_option passes at engine, API and browser
 - 2026-10-07T03:03Z | b1 | +0.2 | treasury_bond passes at engine, API and browser (short sale with borrow across a coupon); bond short collateral now includes accrued interest
+- 2026-10-07T03:05Z | fu1 | +0.2 | stir_future passes at engine, API and browser
