@@ -52,3 +52,58 @@
    exists for its expiration date; if the settlement value is not entered by hand before that day's close of the
    reference instrument is supplied, the engine settles on the close. Reproduce: Instruments, New instrument, Index
    option: "Underlying (required)" lists registry instruments only.
+
+## s1 (swap family, rate products), 2026-10-07: findings outside my files or left as they are, not fixed
+
+(Fixed in my own file and covered by test/core/swap-rates.test.js, so not listed below: v1b's item 2 above, the half
+cent on a floating payment; the 7-day fixing look-back; OIS on a 360 basis whatever the day count; cross-currency
+principal paid from cash that was not there; a swap's stated trading currency replaced by leg A's; a return leg's
+start fixing never asked of the data service; a return or price fixing asked for a weekend date.)
+
+1. **Preview and strategy leg labels say "Buy 10,000,000 IRS-..." / "Sell ..." for a swap** (`server/core/packages.js`
+   `legLabel`, `describeOrder`; the preview table and the strategy instance's order rows). Every swap product, every
+   trade step. The ticket itself says "Enter as written" / "Enter the opposite side" and the history now says
+   "Entered as written", "Increased", "Terminated in part", "Terminated" (swap.js), but the leg rows between the two
+   still say Buy and Sell. Right: the same words as the ticket. Not fixed: shared core, and the browser harness
+   matches trade rows with `/^(Buy|Sell)/` (drivers/browser.mjs `previewDisplayProblems`), so both change together.
+2. **No catalog product for a published index, so an inflation leg's index is a stand-in** (same gap as o1's item
+   above). zc_inflation_swap and yoy_inflation_swap register the CPI as a "Physical / spot commodity" that is never
+   traded, and supply its fixings as instrument prices "for a date". The Terminal lists it as a tradable asset.
+   Right: a reference index of its own kind (not tradable), or an index code on the leg served like a rate fixing.
+   The Terminal also applies no publication lag and no interpolation: the fixing asked for is the index for the
+   period's first and last day (last business day before, when that is not one).
+3. **The OTC ticket of the Strategies page has no market view, calendar or symbol fields** (`web/views/strategy.js`,
+   "New OTC contract"). constant_maturity_swap, step open. A contract entered there is always US Derivatives on the
+   US market calendar (payments on it joined with each leg currency's calendar) and has no symbol, so it is shown by
+   its full name everywhere. A euro contract entered there would settle on New York days. Right: the same
+   "Calendars and settlement" group and Primary view as the registry form. Reproduce: Strategies, Custom, Add a leg.
+4. **A swap whose last payment was released late matures one engine pass later** (`server/core/engine.js` runs due
+   tasks once, in due-date then creation order; the maturity task is older than the last payment's). interest_rate_cap
+   step fixing-entered-by-hand, constant_maturity_swap step cms-fixing-entered-by-hand: after the fixing is entered
+   the payment is made and the maturity row still reads "blocked: Waiting for the final leg payments" until the next
+   pass (a few seconds with the engine timer on; the scenarios use a `cycle` step). Right: blocked tasks of a
+   position looked at again in the pass in which another of its tasks completed.
+5. **"Close share %" cannot state an exact notional** (strategy instance, Close). 33.3333% of 30,000,000 gives
+   9,999,999. The scenarios use exact percentages. Right: a notional field beside the percentage for contracts.
+6. **A position's own margin figure is its independent amount only**; variation margin posted for it shows in the
+   cash "margin" bucket and on Treasury, Collateral, not on the position row (interest_rate_collar, step
+   variation-margin-call: position margin 0 while 30,000 is posted). By design (variation margin belongs to the
+   netting set), but the row gives no hint. `server/core/agreements.js` area.
+7. **Marks: nothing on the manual price form says what a swap's mark must contain.** The Terminal accrues nothing in
+   the ledger between payment dates, so the mark has to include interest accrued; and for a cross-currency swap the
+   principal exchanged is on the balance sheet (lent / owed, at the current rate), so the mark has to exclude it or it
+   is counted twice. Both are stated in the spec header and asserted; a hint on the form (web/views/data.js) is due.
+8. **Two rules for a notional that changes inside a period** (swap.js, left as it was and documented): an increase
+   takes the whole current period on the added notional, while a position first opened inside a period pays from its
+   trade date. Either is defensible with an all-in price; they are not the same rule.
+9. **Balance sheet lines in a foreign currency can foot one cent off net assets** (`server/core/accounting.js`):
+   each line is converted and rounded on its own, the NAV converts the currency's net total once.
+   cross_currency_basis_swap, step second-quarter: cash 10,394,382.69 + lent 9,615,384.62 - 10,000 = 19,999,767.31,
+   assets shown 19,999,767.30. Cosmetic; the totals are right.
+10. **Fixing dates follow the contract's joint payment calendar, not each index's own** (swap.js `fixingDate`, a
+    convention, documented): on the USD/JPY swap the term SOFR fixing for the period starting 23 September 2026 (a
+    holiday in Tokyo, like the 21st and 22nd) is Friday 18 September's, though New York was open on all three days.
+11. **Principal a forward-starting cross-currency swap will exchange is announced, not reserved.** The preview says
+    what is due on the effective date and whether the cash is there today; nothing sets it aside, so if it is spent
+    the exchange fails visibly on the day and waits (cross_currency_swap, step initial-exchange-unfunded). And the
+    shortfall message of a trade that cannot pay its principal calls it "purchases" (generic text in packages.js).
