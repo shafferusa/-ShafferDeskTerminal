@@ -1579,4 +1579,220 @@ const emLocalDebt = {
   ],
 };
 
-export default [treasuryNote, treasuryBill, treasuryBond, strips, foreignGovBill, foreignGovBond, emLocalDebt];
+
+// ---------------------------------------------------------------------------------------------
+// em_hard_debt
+// ---------------------------------------------------------------------------------------------
+// A US dollar bond of an emerging-market sovereign (a "hard-currency" Eurobond): 6.25%, coupons 15
+// March and 15 September, 30/360, T+2 set on the instrument, traded over the counter and settled on
+// US dollar payment days (Federal Reserve holidays). It sits in the Foreign Based view although it is
+// in dollars. Pieces are multiples of 1,000 (the usual 200,000 minimum piece is not modelled: the
+// Terminal has one quantity step, not a minimum and an increment).
+//
+// 30/360 counts every month as 30 days. From the 15 March coupon date: to 31 August 166 days
+// (5 x 30 + 16; the 31st counts as the 31st because the period did not start on a 30th or 31st),
+// to 2 September 167 (so 31 August to 2 September is ONE day of interest), to 4 September 169,
+// to 8 September 173. A full coupon is 3.125 per 100.
+// The Account has 500,000 and buys 1,008,868.44 worth: without funding the trade is refused; with
+// "Fund the shortfall from Treasury" on the ticket, Treasury funds exactly the shortfall as part of
+// the same package. That is an internal transfer: no Book P&L and no borrowing. It is returned at the end.
+// Commission: 0.5 bp of principal.
+const emHardDebt = {
+  productId: 'em_hard_debt',
+  title: 'Republic of Colombia 6.25% US dollar bond due 15 March 2034: 30/360, T+2 over Labor Day, a cash shortfall funded by Treasury from the ticket',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount', '"If cash is short": Fund the shortfall from Treasury, when the Account cannot pay'],
+    manualInputs: ['none'],
+    settlement: 'T+2 from the instrument\'s own convention on the US dollar payment calendar (OTC, no venue country); Labor Day is skipped',
+    lifecycle: 'Daily accrual on 30/360; semi-annual coupon to the face settled before the coupon date; next coupon and maturity scheduled',
+    accounting: 'Clean cost at average; accrued interest bought and sold through Accrued income; Treasury funding of the shortfall is an internal transfer (no P&L in the Book, no borrowing), returned by a transfer at the end',
+    collateral: 'None for a long position',
+  },
+  start: EDT('2026-08-27'), // Thursday
+  settlementCheck: { lag: 2, holidays: ['2026-09-07'] }, // Labor Day, a Federal Reserve holiday
+  book: {
+    name: 'Matrix hard-currency sovereign', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 3_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 500_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.5 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'em_hard_debt', name: 'Republic of Colombia 6.25% 15-Mar-2034 USD', symbol: 'COLOM-6.25-MAR34', marketView: 'FOREIGN_CASH', venueType: 'otc', issuer: 'Republic of Colombia', domicile: 'CO', underlyingGeo: 'CO', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { settleLag: 2 },
+      terms: { couponType: 'fixed', couponRate: 0.0625, frequency: 2, maturity: '2034-03-15', issueDate: '2024-03-15', dayCount: '30/360', redemption: 100, minDenomination: 1_000 } },
+  },
+  quotes: { main: { bid: 97.75, ask: 98, last: 97.875, bidSize: 20_000_000, askSize: 20_000_000 } },
+  expectAtStart: { ...startState(500_000, 2_500_000), cash: { account: usdCash(500_000), treasury: usdCash(2_500_000) } },
+  steps: [
+    {
+      // 980,000.00 principal + 28,819.44 accrued + 49.00 commission = 1,008,868.44 against 500,000.00 of cash.
+      id: 'short-of-cash', covers: 'insufficient cash', action: 'ticket', instrument: 'main', side: 'buy', qty: 1_000_000,
+      status: 'blocked', reason: 'The Account cannot pay for the purchase and no funding was chosen: nothing is funded silently.',
+      expect: { refused: /Alpha is short 508,868\.44 USD: the package needs 1,008,868\.44 USD.*500,000\.00 USD is available/s },
+    },
+    {
+      id: 'open-funded-by-treasury', covers: ['open', 'Treasury funding'], action: 'ticket', instrument: 'main', side: 'buy', qty: 1_000_000, as: 'lot', financing: { mode: 'treasury' },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [
+            { kind: 'funding', action: 'treasury_funding', qty: 508_868.44, cash: 508_868.44 }, // exactly the shortfall
+            { kind: 'trade', action: 'buy', instrument: 'main', qty: 1_000_000, estimate: 98, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2026-08-31', calendar: 'USD', dependsOn: [1], // Friday, Monday
+              gross: 980_000, // 1,000,000 x 98 / 100
+              accrued: 28_819.44, // settles 31 Aug, 166 days of 30/360: 1,000,000 x 6.25% x 166/360 = 28,819.444
+              cash: -1_008_819.44, fees: 49 }, // 0.5 bp of 980,000
+          ],
+          cash: { USD: { purchases: 1_008_819.44, fees: 49, financingIn: 508_868.44, required: 1_008_868.44, available: 500_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [
+          { kind: 'funding', action: 'treasury_funding', status: 'filled', filledQty: 508_868.44 },
+          { kind: 'trade', action: 'buy', status: 'filled', filledQty: 1_000_000, avgPrice: 98, fills: [{ qty: 1_000_000, price: 98, model: 'quoted-bid-ask', settleDate: '2026-08-31', source: 'Test fixture' }] },
+        ] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'transfer.funding', summary: 'Treasury funding: 508,868.44 USD from Treasury to Alpha', owner: 'treasury', date: '2026-08-27' },
+          { type: 'trade.fill', summary: 'Bought 1,000,000 COLOM-6.25-MAR34 @ 98.00 USD', owner: 'account', date: '2026-08-27' },
+        ],
+        cash: {
+          account: { USD: { settled: 1_008_868.44, unsettled: -1_008_868.44, availableToTrade: 0 } }, // all of it is owed for the purchase
+          treasury: { USD: { settled: 1_991_131.56, availableToTrade: 1_991_131.56 } }, // 2,500,000 - 508,868.44
+        },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 1_000_000, avgCost: 98, cost: 980_000, price: 97.875,
+          value: 978_750, unrealized: -1_250, accrued: 28_819.44, priceSource: 'Test fixture' }],
+        holdings: { main: { long: 1_000_000, short: 0, net: 1_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-08-31', amount: -1_008_868.44, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2026-09-15', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2034-03-15', status: 'pending' }], // a Tuesday; a Wednesday
+        borrowings: [], // funding from Treasury is not a borrowing
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -49, fees: 0, borrowFunding: 0, unrealized: -1_250, total: -1_299 } },
+        // The funding moved net assets from Treasury to the Account; the Book changed only by the commission and the mark.
+        nav: { account: 1_007_569.44, treasury: 1_991_131.56, book: 2_998_701 }, // 500,000 + 508,868.44 - 49 - 1,250
+        balance: { account: { cash: 1_008_868.44, accruedIncome: 28_819.44, positions: 978_750, payable: 1_008_868.44, assets: 2_016_437.88, liabilities: 1_008_868.44, netAssets: 1_007_569.44 } },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EDT('2026-08-31'), // Monday
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 1,008,868.44 USD from settled cash', cash: { USD: -1_008_868.44 }, date: '2026-08-31' }],
+        cash: { account: null }, // every dollar is in the bond: the Account has no cash balance in any currency, and none is listed
+        pending: [],
+        balance: { account: { cash: null, payable: null, assets: 1_007_569.44, liabilities: 0 } },
+      },
+    },
+    {
+      // Thursday 3 Sep. End of day 2 Sep: 167 days, 1,000,000 x 6.25% x 167/360 = 28,993.06. One day of interest since the 31st.
+      id: 'one-day-of-interest', covers: 'accrual', action: 'clock', to: EDT('2026-09-03'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on COLOM-6.25-MAR34: 173.62 USD' }], // 28,993.06 - 28,819.44
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_000_000, accrued: 28_993.06 }],
+        pnl: { account: { couponInterest: 173.62, total: -1_125.38 } },
+        nav: { account: 1_007_743.06, book: 2_998_874.62 },
+        balance: { account: { accruedIncome: 28_993.06, assets: 1_007_743.06, netAssets: 1_007_743.06 } },
+      },
+    },
+    {
+      // T+2 from Thursday 3 Sep: Friday 4, then Monday 7 is Labor Day, so Tuesday 8 Sep.
+      id: 'reduce', covers: ['reduce', 'market holiday'], action: 'ticket', instrument: 'main', side: 'sell', qty: 400_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 400_000, estimate: 97.75, settleDate: '2026-09-08', calendar: 'USD',
+          gross: 391_000, // 400,000 x 97.75 / 100
+          accrued: 12_013.89, // settles 8 Sep, 173 days: 400,000 x 6.25% x 173/360 = 12,013.889
+          cash: 403_013.89, fees: 19.55 }] }, // 0.5 bp of 391,000
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 400_000, avgPrice: 97.75 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: /^Sold 400,000 COLOM-6\.25-MAR34 @ 97\.75 USD \(realized [-−]1,000\.00 USD\)$/ }], // 391,000 - 400,000 x 98%
+        cash: { account: { USD: { settled: 0, unsettled: 402_994.34, reserved: 0, restricted: 0, margin: 0, availableToTrade: 402_994.34 } } }, // 391,000 + 12,013.89 - 19.55
+        positions: [{ instrument: 'main', lot: 'lot', qty: 600_000, cost: 588_000, avgCost: 98, price: 97.875, value: 587_250, unrealized: -750,
+          accrued: 16_979.17 }], // 28,993.06 - 12,013.89
+        holdings: { main: { long: 600_000, short: 0, net: 600_000 } },
+        pending: [{ instrument: 'main', dueDate: '2026-09-08', amount: 402_994.34, into: 'cash' }],
+        pnl: { account: { realized: -1_000, couponInterest: 173.62, commissions: -68.55, unrealized: -750, total: -1_644.93 } },
+        nav: { account: 1_007_223.51, book: 2_998_355.07 },
+        balance: { account: { receivable: 402_994.34, accruedIncome: 16_979.17, positions: 587_250, assets: 1_007_223.51, liabilities: 0, netAssets: 1_007_223.51 } },
+      },
+    },
+    {
+      // Labor Day, Monday 7 Sep: no dollar payments, so the sale does not settle. The last end of day was Friday 4 Sep: 1,000,000 still
+      // settled, 169 days = 29,340.28, less the 12,013.89 sold: 17,326.39. Income 347.22: two 30/360 days on 1,000,000.
+      id: 'labor-day', covers: ['market holiday', 'accrual'], action: 'clock', to: EDT('2026-09-07'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on COLOM-6.25-MAR34: 347.22 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 600_000, accrued: 17_326.39 }],
+        pnl: { account: { couponInterest: 520.84, total: -1_297.71 } },
+        nav: { account: 1_007_570.73, book: 2_998_702.29 },
+        balance: { account: { accruedIncome: 17_326.39, assets: 1_007_570.73, netAssets: 1_007_570.73 } },
+      },
+    },
+    {
+      id: 'settle-reduce', covers: 'settlement', action: 'clock', to: EDT('2026-09-08'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 402,994.34 USD into settled cash', cash: { USD: 402_994.34 } }],
+        cash: { account: { USD: { settled: 402_994.34, unsettled: 0, availableToTrade: 402_994.34 } } },
+        pending: [],
+        balance: { account: { cash: 402_994.34, receivable: null } },
+      },
+    },
+    {
+      id: 'coupon', covers: 'coupon', action: 'clock', to: EDT('2026-09-15'), // Tuesday
+      expect: {
+        // Coupon on the 600,000 settled before the 15th: 600,000 x 3.125% = 18,750.00. Accrued on the books 17,326.39;
+        // the rest, 1,423.61, is the income since 4 Sep (11 days on 600,000 = 1,145.83, and the four days to 8 Sep on the 400,000 sold = 277.78).
+        events: [
+          { type: 'bond.coupon', summary: 'Coupon received on 600,000 COLOM-6.25-MAR34: 18,750.00 USD', cash: { USD: 18_750 }, owner: 'account', date: '2026-09-15' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on COLOM-6.25-MAR34: 1,423.61 USD' },
+        ],
+        cash: { account: { USD: { settled: 421_744.34, availableToTrade: 421_744.34 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 600_000, accrued: 0 }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-03-15', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2034-03-15', status: 'pending' }], // a Monday
+        pnl: { account: { couponInterest: 1_944.45, total: 125.90 } },
+        nav: { account: 1_008_994.34, book: 3_000_125.90 },
+        balance: { account: { cash: 421_744.34, accruedIncome: null, assets: 1_008_994.34, netAssets: 1_008_994.34 } },
+      },
+    },
+    {
+      id: 'close', covers: 'close', action: 'close', lot: 'lot', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 600_000, estimate: 97.75, settleDate: '2026-09-17',
+          gross: 586_500, // 600,000 x 97.75 / 100
+          accrued: 208.33, // settles 17 Sep, 2 days: 600,000 x 6.25% x 2/360 = 208.333
+          cash: 586_708.33, fees: 29.33 }] }, // 0.5 bp of 586,500 = 29.325
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 600_000, avgPrice: 97.75 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: /^Sold 600,000 COLOM-6\.25-MAR34 @ 97\.75 USD \(realized [-−]1,500\.00 USD\)$/ }, // 586,500 - 588,000
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of COLOM-6.25-MAR34: 208.33 USD' },
+        ],
+        cash: { account: { USD: { settled: 421_744.34, unsettled: 586_679, availableToTrade: 1_008_423.34 } } }, // 586,500 + 208.33 - 29.33
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', dueDate: '2026-09-17', amount: 586_679, into: 'cash' }],
+        lifecycle: [],
+        // Interest in all: 18,750 coupon + 12,013.89 + 208.33 sold - 28,819.44 bought = 2,152.78.
+        pnl: { account: { realized: -2_500, couponInterest: 2_152.78, commissions: -97.88, unrealized: 0, total: -445.10 } }, // 49 + 19.55 + 29.33
+        nav: { account: 1_008_423.34, book: 2_999_554.90 },
+        balance: { account: { cash: 421_744.34, receivable: 586_679, positions: null, accruedIncome: null, assets: 1_008_423.34, liabilities: 0, netAssets: 1_008_423.34 } },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: EDT('2026-09-17'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 586,679.00 USD into settled cash', cash: { USD: 586_679 } }],
+        cash: { account: { USD: { settled: 1_008_423.34, unsettled: 0, availableToTrade: 1_008_423.34 } } },
+        pending: [],
+        balance: { account: { cash: 1_008_423.34, receivable: null, assets: 1_008_423.34, liabilities: 0, netAssets: 1_008_423.34 } },
+      },
+    },
+    {
+      // The funding goes back to Treasury, in the Transfer cash dialog. The Account keeps its 500,000 less the 445.10 it lost.
+      id: 'return-funding', covers: 'Treasury funding', action: 'transfer', from: 'account', to: 'treasury', ccy: 'USD', amount: 508_868.44,
+      expect: {
+        events: [{ type: 'transfer.return', summary: 'Return to Treasury: 508,868.44 USD from Alpha to Treasury', owner: 'account' }],
+        cash: { account: { USD: { settled: 499_554.90, availableToTrade: 499_554.90 } }, treasury: { USD: { settled: 2_500_000, availableToTrade: 2_500_000 } } },
+        pnl: { account: { total: -445.10 }, book: { total: -445.10 } }, // a transfer is not P&L
+        nav: { account: 499_554.90, treasury: 2_500_000, book: 2_999_554.90 },
+        balance: { account: { cash: 499_554.90, assets: 499_554.90, liabilities: 0, netAssets: 499_554.90 } },
+      },
+    },
+  ],
+};
+
+export default [treasuryNote, treasuryBill, treasuryBond, strips, foreignGovBill, foreignGovBond, emLocalDebt, emHardDebt];

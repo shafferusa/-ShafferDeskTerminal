@@ -515,7 +515,8 @@ export function screenProblems(ctx, screen, { expected, state, events }) {
 
   // The spec's own figures against what is displayed (only the parts a screen shows).
   const asState = {
-    cash: { account: screen.cash }, nav: screen.nav, provisional: screen.provisional,
+    // An owner with no cash in any currency has no cash rows: that is "missing" (a spec states `cash: { account: null }`).
+    cash: { account: Object.keys(screen.cash).length ? screen.cash : null }, nav: screen.nav, provisional: screen.provisional,
     pnl: { account: screen.pnl }, balance: { account: screen.balance },
     positions: mine.map((p, i) => (matched[i] ? { qty: matched[i].qty, avgCost: matched[i].avgCost, price: matched[i].price, unrealized: matched[i].unrealized, accrued: matched[i].accrued,
       // The value cell of a loan, deposit or repo shows its signed principal: it answers the spec's `carrying`, not its `value`.

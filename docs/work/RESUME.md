@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 42.5% of the pass** (last milestone 2026-10-07T09:55Z, b1: em_local_debt passes at engine, API and browser (rand bond, T+3 on a weekends-only calendar, FX fall))
+**Completeness: about 42.7% of the pass** (last milestone 2026-10-07T09:59Z, b1: em_hard_debt passes at engine, API and browser (USD sovereign, 30/360, T+2, shortfall funded by Treasury from the ticket))
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 

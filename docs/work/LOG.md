@@ -36,3 +36,4 @@
 - 2026-10-07T09:52Z | b1 | +0.2 | foreign_gov_bond passes at engine, API and browser (JGB in yen: ACT/365 accrual, equal coupons, Tokyo holiday, FX effects)
 - 2026-10-07T09:55Z | b1 | +0 | bond fix: a trade on the coupon date no longer schedules and pays the same coupon twice (regression test); em_local_debt passes at engine level
 - 2026-10-07T09:55Z | b1 | +0.2 | em_local_debt passes at engine, API and browser (rand bond, T+3 on a weekends-only calendar, FX fall)
+- 2026-10-07T09:59Z | b1 | +0.2 | em_hard_debt passes at engine, API and browser (USD sovereign, 30/360, T+2, shortfall funded by Treasury from the ticket)
