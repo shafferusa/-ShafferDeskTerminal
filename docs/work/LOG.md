@@ -43,3 +43,4 @@
 - 2026-10-07T10:13Z | b1 | +0.2 | sovereign_sukuk passes at engine, API and browser
 - 2026-10-07T10:21Z | b1 | +0.2 | corporate_bond passes at engine, API and browser (all 13 government-group bond products done)
 - 2026-10-07T10:32Z | b1 | +0 | bond browser check tells two equal-sized lots apart; all 13 bond products pass at three levels, npm test 318 of 318
+- 2026-10-07T10:32Z | b1 | +0 | b1 progress note corrected; final report follows

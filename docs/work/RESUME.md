@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 43.7% of the pass** (last milestone 2026-10-07T10:32Z, b1: bond browser check tells two equal-sized lots apart; all 13 bond products pass at three levels, npm test 318 of 318)
+**Completeness: about 43.7% of the pass** (last milestone 2026-10-07T10:32Z, b1: b1 progress note corrected; final report follows)
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 
