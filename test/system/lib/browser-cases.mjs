@@ -27,11 +27,24 @@ export async function enter(b, book, hash = '#/accounting') {
   await selector.locator('option:checked', { hasText: exactly(book.name) }).waitFor({ state: 'attached' });
   await ui.goto(hash);
   await ui.drawn();
+  b.entered = book;
 }
-/** Close the post-trade hedge popup if the engine has produced one. */
+/**
+ * Close the post-trade hedge popup whenever the engine has produced one (after a Marketplace fill), so that it never
+ * sits on top of the next step. While the Book entered still has a prompt the page has not shown, wait for it.
+ */
 export async function closeHedgePopup(b) {
-  const popup = b.page.getByRole('dialog', { name: /^Hedge/ });
-  if (await popup.count()) { await popup.locator('header').getByRole('button', { name: 'Close' }).click(); await popup.waitFor({ state: 'hidden' }); }
+  const { page } = b;
+  const popup = page.getByRole('dialog', { name: /^Hedge/ });
+  for (let i = 0; i < 12; i++) {
+    if (await popup.count()) { await popup.locator('header').getByRole('button', { name: 'Close' }).click(); await popup.waitFor({ state: 'hidden' }); continue; }
+    if (!b.entered || await page.getByRole('dialog').count()) return;
+    const waiting = (await b.get('/api/hedge/prompts', { bookId: b.entered.id })).items;
+    if (!waiting.length) return;
+    await popup.waitFor({ timeout: 8000 }).catch(() => {});
+    if (!await popup.count()) { await page.reload(); await page.locator('.shell .topbar').waitFor(); }
+  }
+  throw new Error('Hedge prompts kept appearing.');
 }
 /** The text of every error notice inside a dialog or panel. */
 const errorsIn = async (scope) => (await scope.locator('.notice.err').allInnerTexts()).map((x) => x.trim().replace(/\s+/g, ' '));
@@ -355,10 +368,12 @@ export async function ticketBlocks(b, c) {
 // A failed dependent leg, and cancellations, from the strategy instance
 // ---------------------------------------------------------------------------------------------
 
-async function openStrategyDrawer(b, book, strategyId) {
+async function openStrategyDrawer(b, book, strategyId, unitId = book.accountId) {
   const { page, ui } = b;
+  await closeHedgePopup(b);
   await ui.closeOverlays();
-  await ui.reloadAt(`#/accounting/positions/${book.accountId}`);
+  await ui.reloadAt(`#/accounting/positions/${unitId}`);
+  await closeHedgePopup(b);
   await page.locator(`main a[title="Strategy instance ${strategyId}"]`).first().click();
   const drawer = page.getByRole('dialog').filter({ has: page.locator('header h3', { hasText: /^Positions/ }) });
   await drawer.waitFor();
@@ -787,5 +802,364 @@ export async function doubleClickRecords(b, c) {
   await b.tick();
   c.near(Math.abs(await b.balance(book.id, book.accountId, 'pnl.dividend')), 125 + 50, 'dividend income is 125.00 (by hand) + 50.00 (100 x 0.50), each once');
   b.takePageErrors().forEach((e) => { if (!/400|Bad Request/.test(e)) c.fail(`browser console error: ${e}`); });
+  await b.clean(c, book.id);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Missing and stale prices and conversion rates, on the ticket and on the valuation screens
+// ---------------------------------------------------------------------------------------------
+
+/** The Accounting header of the whole Book: the net asset value as displayed, whether it is marked provisional, and why. */
+async function navShown(b, book) {
+  const { page, ui } = b;
+  await closeHedgePopup(b);
+  await ui.closeOverlays();
+  await ui.reloadAt('#/accounting/positions/book');
+  await closeHedgePopup(b);
+  const stat = page.locator('main .stat').filter({ hasText: 'Net asset value' }).first();
+  await stat.waitFor();
+  const shown = flat(await stat.locator('.v').innerText());
+  const value = shown.replace(/\s*provisional$/, '');
+  const reasons = (await page.locator('main .notice.warn', { hasText: 'Provisional.' }).first().locator('li').allInnerTexts().catch(() => [])).map(flat);
+  void book;
+  return { value, provisional: /provisional$/.test(shown), brief: flat(await stat.locator('.s').innerText()), reasons };
+}
+/** The Books page row of this Book. */
+async function booksRow(b, book) {
+  await b.ui.reloadAt('#/books');
+  const row = b.page.locator('main table tbody tr').filter({ hasText: book.name }).first();
+  await row.getByText(/\d,\d{3}\.\d\d/).first().waitFor(); // its net asset value is loaded after the list
+  return flat(await row.innerText());
+}
+const SEK_STOCK = { productId: 'common_stock', name: 'Nordholm Verkstad AB', symbol: 'NORD', marketView: 'FOREIGN_CASH', venue: 'XSTO', venueType: 'exchange', venueCountry: 'SE', issuer: 'Nordholm Verkstad AB', domicile: 'SE', underlyingGeo: 'SE', tradingCcy: 'SEK', terms: {} };
+
+/** SB:refusals:quote-missing, quote-stale, fx-missing, fx-stale. */
+export async function provisionalNav(b, c, kind) {
+  const { page, ui } = b;
+  const book = await b.book(`Browser ${kind}`);
+  const pendingOpen = async () => {
+    await ui.closeOverlays();
+    await ui.reloadAt(`#/accounting/pending/${book.accountId}`);
+    await page.locator('main').getByText('Executed trades awaiting settlement').first().waitFor();
+    return ui.section(page.locator('main'), 'Open orders');
+  };
+
+  if (kind === 'quote-missing' || kind === 'quote-stale') {
+    const missing = kind === 'quote-missing';
+    const inst = missing ? await b.stock('BQM', null) : await b.stock('BQS', { bid: 20.00, ask: 20.02, last: 20.01, bidSize: 5000, askSize: 5000, asOf: '2026-03-02T14:00:00.000Z' });
+    await enter(b, book, '#/markets/US_CASH');
+    const before = await b.books(book.id);
+    const drawer = await fillTicket(b, inst, { qty: 100, order: { tif: 'gtc' } });
+    const { modal, confirm, pv } = await openPreviewFrom(b, drawer);
+    const warnings = (await modal.locator('.checks .notice.warn').allInnerTexts()).map(flat).join(' | ');
+    c.match(warnings, missing ? /no price for BQM/ : /36\d\d seconds old/, missing ? 'the preview dialog warns that there is no price for BQM' : 'the preview dialog warns how old the quote is');
+    c.match(flat(await modal.locator('table').first().innerText()), /no executable price/, 'the leg shows "no executable price" where the estimated fill would be');
+    c.eq(pv.legs[0].price.estimate, null, 'the preview carries no estimated fill');
+    await confirm.click();
+    await modal.waitFor({ state: 'hidden' });
+    let open = await pendingOpen();
+    const row = flat(await open.locator('tbody tr').first().innerText());
+    c.match(row, missing ? /No price is available/ : /BQS/, missing ? 'the Pending tab shows the order waiting, with the reason: no price' : 'the Pending tab shows the order waiting');
+    c.note(`Pending tab row: "${row.slice(0, 200)}"`);
+    await b.tick(); await b.tick(); await b.tick();
+    let now = await b.books(book.id);
+    c.eq([now.counts.fills, now.counts.entries - before.counts.entries], [0, 0], 'three cycles: no fill and no ledger entry');
+    if (missing) {
+      open = await pendingOpen();
+      await ui.button(open.locator('tbody tr').first(), 'Cancel order').click();
+      await ui.toast(/Order cancelled/);
+      now = await b.books(book.id);
+      c.eq([now.counts.fills, now.ledger.positions.length], [0, 0], 'cancelled from the Pending tab: no fill, no position');
+    } else {
+      await b.fixture('quote', { instrumentId: inst.id, bid: 20.08, ask: 20.10, last: 20.10, bidSize: 5000, askSize: 5000 });
+      await b.tick();
+      c.eq(b.sql('SELECT qty, price FROM fills').map((f) => [f.qty, f.price]), [[100, 20.1]], 'a fresh quote: one fill of 100 at the fresh ask 20.10');
+      await b.tick();
+      c.eq((await b.books(book.id)).counts.fills, 1, 'another cycle does not fill again');
+    }
+    await closeHedgePopup(b);
+
+    // Valuation.
+    const held = await b.stock(missing ? 'BQH' : 'BQT');
+    await b.buy(book, held, 100);
+    const commissions = missing ? 1 : 2;
+    let nav = await navShown(b, book);
+    await closeHedgePopup(b);
+    c.eq([nav.value, nav.provisional], [`${(1_000_000 - commissions - 1).toLocaleString('en-US')}.00`, false], `priced and current: the net asset value shows ${(1_000_000 - commissions - 1).toLocaleString('en-US')}.00, not provisional`);
+    if (missing) await b.fixture('quote', { instrumentId: held.id, clear: true });
+    else await b.fixture('quote', { instrumentId: held.id, bid: 50.00, ask: 50.02, last: 50.01, bidSize: 5000, askSize: 5000, asOf: '2026-03-02T13:00:00.000Z' });
+    nav = await navShown(b, book);
+    // missing: carried at cost, 1,000,000 - 1.00 commission; stale: still valued at 50.01
+    const expected = missing ? '999,999.00' : '999,997.00';
+    c.eq([nav.value, nav.provisional], [expected, true], `the net asset value shows ${expected} marked provisional`);
+    c.match(nav.brief, missing ? /Provisional: BQH has no price/ : /Provisional: BQT is on a stale mark/, 'under it: which holding and why');
+    c.ok(nav.reasons.some((x) => new RegExp(missing ? 'BQH' : 'BQT').test(x) && /Alpha/.test(x)), 'the list of reasons names the holding and its owner', nav.reasons.join(' | '));
+    const rowText = (await page.locator('main table tbody tr').filter({ hasText: missing ? 'BQH' : 'BQT' }).allInnerTexts()).map(flat).join(' || ');
+    if (missing) c.match(rowText, /no price/, 'the position row says "no price" where the price would be');
+    else c.match(rowText, /50\.01/, 'the position row still shows the stale mark 50.01');
+    c.match(await booksRow(b, book), /provisional/, 'the Books page marks this Book\'s net asset value provisional too');
+    await b.fixture('quote', { instrumentId: held.id, bid: 50.00, ask: 50.02, last: 50.01, bidSize: 5000, askSize: 5000 });
+    nav = await navShown(b, book);
+    c.eq(nav.provisional, false, 'with a current quote again the figure is final');
+    await b.clean(c, book.id);
+    return;
+  }
+
+  // Conversion rates. The SEK arrives through the Deposit dialog.
+  const missing = kind === 'fx-missing';
+  if (!missing) await b.fixture('fx', { pair: 'SEK/USD', rate: 0.10 });
+  await enter(b, book, '#/treasury');
+  const dlg = await openCapital(b, { type: 'deposit', amount: 1_000_000, ccy: 'SEK' });
+  const dep = await ui.respondsTo('POST', /\/capital$/, () => ui.button(dlg, 'Record deposit').click());
+  c.ok(dep.ok, 'the deposit of 1,000,000 SEK is recorded', dep.body?.error);
+  await dlg.waitFor({ state: 'hidden' });
+  let nav = await navShown(b, book);
+  if (missing) {
+    c.eq([nav.value, nav.provisional], ['1,000,000.00', true], 'no SEK/USD rate: the net asset value shows the USD balances only, 1,000,000.00, marked provisional');
+    c.match(nav.brief, /Provisional: SEK has no conversion rate/, 'and says SEK has no conversion rate');
+    c.ok(b.sql(`SELECT amount_rc FROM entries WHERE book_id = ? AND ccy = 'SEK'`, book.id).every((e) => e.amount_rc === null), 'the SEK entries carry no USD equivalent (NULL, not zero)');
+  } else {
+    c.eq([nav.value, nav.provisional], ['1,100,000.00', false], 'current rate 0.10: 1,100,000.00, not provisional');
+    await b.fixture('fx', { pair: 'SEK/USD', rate: 0.10, asOf: '2026-03-02T13:00:00.000Z' });
+    nav = await navShown(b, book);
+    c.eq([nav.value, nav.provisional], ['1,100,000.00', true], 'the rate two hours old: the same 1,100,000.00, marked provisional');
+    c.match(nav.brief, /Provisional: SEK is on a stale conversion rate/, 'and says SEK is on a stale conversion rate');
+  }
+  c.match(await booksRow(b, book), /provisional/, 'the Books page marks the net asset value provisional too');
+  // A SEK purchase from Treasury's SEK, from the ticket.
+  const se = await b.instrument(SEK_STOCK);
+  await b.fixture('quote', { instrumentId: se.id, bid: 100.00, ask: 100.20, last: 100.10, bidSize: 5000, askSize: 5000 });
+  const drawer = await fillTicket(b, se, { account: 'Treasury', qty: 100 });
+  const { modal, confirm, pv } = await openPreviewFrom(b, drawer);
+  const warnings = (await modal.locator('.checks .notice').allInnerTexts()).map(flat).join(' | ');
+  c.match(warnings, missing ? /SEK\/USD|SEK.*conversion rate|conversion rate.*SEK/i : /SEK.*(not current|stale|old)|(not current|stale|old).*SEK/i, `the preview dialog names the ${missing ? 'missing' : 'stale'} SEK/USD rate`);
+  c.eq(pv.blocking, 0, 'the purchase itself, paid in SEK, is not blocked');
+  if (missing) {
+    await confirm.click();
+    await modal.waitFor({ state: 'hidden' });
+    await b.tick();
+    await closeHedgePopup(b);
+    c.eq(b.sql('SELECT qty, price FROM fills').map((f) => [f.qty, f.price]), [[100, 100.2]], 'it executes in SEK: 100 at 100.20');
+    await b.fixture('fx', { pair: 'SEK/USD', rate: 0.10 });
+    nav = await navShown(b, book);
+    // 1,000,000.00 USD + 0.10 x (1,000,000 - 10,021.00 owed + 10,010.00 holding) SEK
+    c.eq([nav.value, nav.provisional], ['1,099,998.90', false], 'with a rate of 0.10 the net asset value is final: 1,099,998.90');
+  } else {
+    await ui.button(modal, 'Cancel').click();
+    await modal.waitFor({ state: 'hidden' });
+    await b.fixture('fx', { pair: 'SEK/USD', rate: 0.10 });
+    nav = await navShown(b, book);
+    c.eq([nav.value, nav.provisional], ['1,100,000.00', false], 'with a current rate the figure is final again');
+  }
+  await b.clean(c, book.id);
+}
+
+/** SB:refusals:incomplete-terms. The registry form with a term left out. */
+export async function incompleteTerms(b, c) {
+  const { page, ui } = b;
+  const book = await b.book('Browser incomplete terms');
+  await enter(b, book, '#/instruments');
+  const count = () => b.sql('SELECT COUNT(*) AS n FROM instruments')[0].n;
+  const n0 = count();
+  let first = true;
+  const attempt = async (label, productId, name, text, otc = false) => {
+    await ui.closeOverlays();
+    await ui.goto('#/instruments');
+    await ui.button(page.locator('main'), 'New instrument').first().click();
+    const dlg = ui.dialog('New instrument');
+    await ui.select(dlg, 'Product type').selectOption(productId);
+    await ui.drawn();
+    await ui.input(dlg, 'Name').fill(name);
+    if (first) {
+      // Nothing but a name: the form itself stops, before anything is sent.
+      first = false;
+      const sent = watchRequests(page, 'POST', /^\/api\/instruments$/);
+      await ui.button(dlg, 'Register instrument').click();
+      await dlg.getByText('Choose the primary market view.').waitFor();
+      sent.stop();
+      c.eq(sent.seen.length, 0, `${label}: with no market view the form sends nothing`);
+      c.match(flat(await dlg.locator('footer, .foot, .modal-foot').last().innerText().catch(() => dlg.innerText())), /Not saved\./, `${label}: and says "Not saved"`);
+    }
+    await ui.input(dlg, 'Venue country').fill('US');
+    const view = ui.option(dlg, 'Primary view', 'US Based'); // an OTC product is not placed by its venue: the view is chosen
+    if (otc && await view.count()) await view.click();
+    const reg = await ui.respondsTo('POST', /^\/api\/instruments$/, () => ui.button(dlg, 'Register instrument').click());
+    c.eq([reg.ok, reg.status], [false, 400], `${label}: the server refuses the registration`);
+    await dlg.locator('.notice.err').first().waitFor();
+    const shown = (await errorsIn(dlg)).join(' | ');
+    c.match(shown, /The instrument was not saved\./, `${label}: the form says the instrument was not saved`);
+    c.match(shown, text, `${label}: and names what is missing`);
+    c.eq(await ui.input(dlg, 'Name').inputValue(), name, `${label}: the form stays open with what was typed`);
+    c.note(`${label}: "${shown.slice(0, 240)}"`);
+    await ui.button(dlg, 'Cancel').click();
+    await dlg.waitFor({ state: 'hidden' });
+  };
+  await attempt('an option with no strike', 'equity_option', 'Option without a strike', /strike/i);
+  await attempt('a bond with no maturity', 'treasury_note', 'Bond without a maturity', /maturity/i, true);
+  await attempt('a future with no expiration', 'equity_index_future', 'Future without terms', /expiration|multiplier/i);
+  c.eq(count(), n0, 'nothing was registered');
+}
+
+// ---------------------------------------------------------------------------------------------
+// Collateral: the repo ticket, the sale of a pledged holding, an OTC independent amount
+// ---------------------------------------------------------------------------------------------
+
+const NOTE = { productId: 'treasury_note', name: 'Test Treasury 4% 15-Mar-2031', symbol: 'TTSY31', marketView: 'US_CASH', venueType: 'otc', issuer: 'Test Treasury', domicile: 'US', tradingCcy: 'USD', terms: { couponType: 'fixed', couponRate: 0.04, frequency: 2, maturity: '2031-03-15', issueDate: '2021-03-15', dayCount: 'ACT/ACT', redemption: 100 } };
+/** Treasury holding 1,000,000 face of a note at 100.00, on Tuesday. */
+async function treasuryWithNote(b, name) {
+  const book = await b.book(name, { capital: 3_000_000, funding: 0 });
+  const bond = await b.instrument(NOTE);
+  await b.fixture('quote', { instrumentId: bond.id, bid: 99.98, ask: 100.00, last: 100.00, bidSize: 5e6, askSize: 5e6 });
+  const hold = await b.trade({ bookId: book.id, unitId: book.treasuryId, template: 'custom', legs: [{ kind: 'trade', action: 'buy', instrumentId: bond.id, qty: 1_000_000 }] });
+  await b.clock(TUE);
+  return { book, bond, hold };
+}
+/** The blocking reasons a preview dialog shows, whether Confirm can be pressed, and the totals line. */
+async function previewState(modal) {
+  return {
+    blocks: (await modal.locator('.checks .notice.err').allInnerTexts()).map(flat),
+    confirmDisabled: await modal.getByRole('button', { name: /^Confirm/ }).isDisabled(),
+    totals: flat(await modal.locator('.pv-totals').innerText()),
+  };
+}
+/** "New repo or reverse repo" on Treasury's Borrowings page, filled for a repo by Treasury against the note; Preview pressed. */
+async function previewRepo(b, { cash, face }) {
+  const { page, ui } = b;
+  await ui.closeOverlays();
+  await ui.reloadAt('#/treasury/borrowings');
+  await ui.button(page.locator('main'), 'New repo or reverse repo').click();
+  const dlg = ui.dialog('Repo or reverse repo');
+  await dlg.waitFor();
+  await ui.select(dlg, 'Borrower').selectOption({ label: 'Treasury' });
+  const picker = ui.field(dlg, 'Collateral position').locator('select').first();
+  await picker.locator('option', { hasText: 'TTSY31' }).first().waitFor({ state: 'attached' });
+  const label = (await picker.locator('option').allInnerTexts()).map((x) => x.trim()).find((x) => x.startsWith('TTSY31:'));
+  await picker.selectOption({ label });
+  await ui.drawn();
+  await ui.input(dlg, 'Cash principal').fill(String(cash));
+  await ui.input(dlg, 'Collateral quantity').fill(String(face));
+  await ui.input(dlg, 'Haircut (decimal)').fill('0.02');
+  await ui.input(dlg, 'Rate (decimal a year)').fill('0.045');
+  await ui.input(dlg, 'End date').fill('2026-03-10');
+  const guide = flat(await dlg.locator('p.note', { hasText: 'Collateral:' }).innerText().catch(() => ''));
+  const asked = await ui.respondsTo('POST', /^\/api\/strategies\/preview$/, () => ui.button(dlg, 'Preview repo').click());
+  if (!asked.ok) { await dlg.locator('.notice.err').first().waitFor(); return { asked, dlg, modal: null, guide, refusal: (await errorsIn(dlg)).join(' | ') }; }
+  const modal = ui.dialog(/^Preview: /);
+  await modal.waitFor();
+  return { asked, dlg, modal, guide };
+}
+
+/** SB:refusals:collateral-repo. */
+export async function collateralRepo(b, c) {
+  const { ui } = b;
+  const { book } = await treasuryWithNote(b, 'Browser collateral repo');
+  await enter(b, book, '#/treasury/borrowings');
+  const before = await b.books(book.id);
+  const cashBefore = (await b.cash(book.id, book.treasuryId)).settled;
+  const refusedRepo = async (label, spec, text) => {
+    const r = await previewRepo(b, spec);
+    if (!r.modal) { c.match(r.refusal, text, `${label}: the ticket shows the reason`); return; }
+    const st = await previewState(r.modal);
+    c.match(st.blocks.join(' | '), text, `${label}: the preview dialog shows the blocking reason`);
+    c.eq(st.confirmDisabled, true, `${label}: it cannot be confirmed`);
+    c.note(`${label}: "${st.blocks.join(' | ').slice(0, 200)}"`);
+    await ui.button(r.modal, 'Cancel').click();
+    await r.modal.waitFor({ state: 'hidden' });
+  };
+  await refusedRepo('(a) pledging 2,000,000 face of the 1,000,000 held', { cash: 980_000, face: 2_000_000 }, /Only 1,000,000 of the collateral is unencumbered; 2,000,000 is needed/);
+  await refusedRepo('(b) 2,000,000.00 of cash against 1,000,000 face', { cash: 2_000_000, face: 1_000_000 }, /collateral|haircut/i);
+  w_same(b, c, before, await b.books(book.id), 'after the refused repos');
+  const ok = await previewRepo(b, { cash: 900_000, face: 1_000_000 });
+  c.match(ok.guide, /after the haircut/, '(c) the ticket shows what the collateral is worth after the haircut');
+  c.note(`repo ticket guide: "${ok.guide.slice(0, 260)}"`);
+  const st = await previewState(ok.modal);
+  c.eq([st.blocks, st.confirmDisabled], [[], false], '(c) 900,000.00 against 1,000,000 face previews without a block');
+  await ok.modal.getByRole('button', { name: /^Confirm/ }).click();
+  await ok.modal.waitFor({ state: 'hidden' });
+  await b.tick();
+  c.near((await b.cash(book.id, book.treasuryId)).settled, cashBefore + 900_000, '(c) confirmed: Treasury cash is up by 900,000.00');
+  await refusedRepo('(d) pledging the same holding again', { cash: 50_000, face: 100_000 }, /Only 0 of the collateral is unencumbered; 100,000 is needed/);
+  await b.clean(c, book.id);
+}
+
+/** SB:refusals:collateral-pledged-position. */
+export async function pledgedSale(b, c) {
+  const { page, ui } = b;
+  const { book, bond, hold } = await treasuryWithNote(b, 'Browser pledged position');
+  await b.trade({ bookId: book.id, unitId: book.treasuryId, template: 'custom', legs: [{ kind: 'repo_open', action: 'repo', qty: 900_000, purpose: 'financing', collateralPositionId: hold.positions[0].positionId, contract: { productId: 'term_repo', name: 'Repo TTSY31', marketView: 'US_CASH', venueType: 'otc', tradingCcy: 'USD', terms: { collateralInstrumentId: bond.id, collateralQty: 1_000_000, haircut: 0.02, rateType: 'fixed', rate: 0.045, term: 'term', endDate: '2026-03-10' } } }] });
+  await enter(b, book);
+  const before = await b.books(book.id);
+  const status0 = (await b.strategy(hold.id)).status;
+  const closeFromDrawer = async () => {
+    const drawer = await openStrategyDrawer(b, book, hold.id, book.treasuryId);
+    const row = ui.section(drawer, 'Positions').locator('tbody tr').filter({ hasText: 'TTSY31' }).first();
+    c.match(flat(await row.innerText()), /pledged 1,000,000|TTSY31/, 'the drawer lists the note');
+    await ui.button(row, 'Close').click();
+    const modal = ui.dialog(/^Preview: /);
+    await modal.waitFor();
+    return modal;
+  };
+  let modal = await closeFromDrawer();
+  let st = await previewState(modal);
+  c.match(st.blocks.join(' | '), /unencumbered|pledged/i, 'selling the pledged note: the preview dialog shows the blocking reason');
+  c.eq(st.confirmDisabled, true, 'it cannot be confirmed');
+  c.note(`pledged sale: "${st.blocks.join(' | ').slice(0, 200)}"`);
+  await ui.button(modal, 'Cancel').click();
+  await modal.waitFor({ state: 'hidden' });
+  w_same(b, c, before, await b.books(book.id), 'after the refused sale');
+  c.eq((await b.strategy(hold.id)).status, status0, 'the holding\'s strategy instance keeps its status');
+  // The repo is repurchased from the Borrowings page; the note is free again.
+  await ui.closeOverlays();
+  await ui.reloadAt('#/treasury/borrowings');
+  await ui.button(ui.section(page.locator('main'), 'Treasury\'s own borrowings'), 'Repurchase').first().click();
+  modal = ui.dialog(/^Preview: /);
+  await modal.waitFor();
+  await ui.button(modal, 'Confirm repurchase').click();
+  await modal.waitFor({ state: 'hidden' });
+  await b.tick();
+  modal = await closeFromDrawer();
+  st = await previewState(modal);
+  c.eq([st.blocks, st.confirmDisabled], [[], false], 'after the repurchase the same sale previews without a block');
+  await ui.button(modal, 'Cancel').click();
+  await modal.waitFor({ state: 'hidden' });
+  await b.clean(c, book.id);
+}
+
+/** SB:refusals:collateral-independent-amount. */
+export async function independentAmount(b, c) {
+  const { ui } = b;
+  const book = await b.book('Browser independent amount', { funding: 30_000 });
+  const agr = await b.post(`/api/books/${book.id}/agreements`, { name: 'CSA Dealer A', counterparty: 'Dealer A', kind: 'bilateral', unitIds: [book.accountId], terms: { independentAmount: { type: 'pct', pct: 0.05 } } });
+  const cds = await b.instrument({ productId: 'cds_single_name', name: 'CDS Acme 2031', symbol: 'CDSACME', marketView: 'US_DERIV', venueType: 'otc', tradingCcy: 'USD', terms: { referenceEntity: 'Acme Corp', coupon: 0.01, effective: '2026-03-02', maturity: '2031-03-20', recovery: 0.4, counterparty: 'Dealer A', collateralBasis: { type: 'agreement', agreementId: agr.id } } });
+  await enter(b, book, '#/markets/US_DERIV');
+  const before = await b.books(book.id);
+  const ticket = async (notional) => {
+    const drawer = await ui.openInstrument(cds);
+    await ui.tab(drawer, 'Trade');
+    await ui.select(drawer, 'Account').selectOption({ label: 'Alpha' });
+    const label = cds.actionLabels?.buy;
+    if (label) await ui.option(drawer, 'Action', label).click();
+    await ui.input(drawer, cds.qtyLabel || 'Notional').fill(String(notional));
+    await ui.input(drawer, 'State a fill price').fill('0');
+    return openPreviewFrom(b, drawer);
+  };
+  let p = await ticket(1_000_000);
+  let st = await previewState(p.modal);
+  c.match(st.blocks.join(' | '), /independent amount of 50,000\.00 USD .* cannot be posted: Alpha has 30,000\.00 USD/, '1,000,000 notional: the preview dialog names the 50,000.00 independent amount and the 30,000.00 there');
+  c.match(st.totals, /short 20,000\.00 USD/, 'the totals line shows the 20,000.00 shortfall');
+  c.eq(st.confirmDisabled, true, 'it cannot be confirmed');
+  await ui.button(p.modal, 'Cancel').click();
+  await p.modal.waitFor({ state: 'hidden' });
+  w_same(b, c, before, await b.books(book.id), 'after the refusal');
+  p = await ticket(600_000);
+  st = await previewState(p.modal);
+  c.eq([st.blocks, st.confirmDisabled], [[], false], '600,000 notional (30,000.00 needed) previews without a block');
+  await p.confirm.click();
+  await p.modal.waitFor({ state: 'hidden' });
+  await b.tick();
+  const cash = await b.cash(book.id, book.accountId);
+  c.near(cash.margin, 30_000, 'confirmed: 30,000.00 is posted as margin');
+  c.near(cash.settled, 0, 'and has left settled cash');
+  await closeHedgePopup(b);
   await b.clean(c, book.id);
 }

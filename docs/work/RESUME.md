@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 45.5% of the pass** (last milestone 2026-10-07T12:06Z, s8: browser cases: repayment refused, failed tab, closed day, confirm-changed, double-click-records pass)
+**Completeness: about 45.5% of the pass** (last milestone 2026-10-07T12:14Z, coord: PAUSED on the owner's instruction, Fable at 99 percent; state written to RESUME.md)
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 
@@ -32,43 +32,40 @@ Stop all background work when the owner's weekly **Fable** usage reaches 98%.
 Last known figures: 5:30 PM ET on 2026-10-06, Fable 14% against 10% for all models (r = 1.4), before this pass
 started. The all-models figure was reported as 35% at about 9:57 PM ET.
 
-## Owner's instruction at 05:46 AM ET on 2026-10-07
+## PAUSED at 2026-10-07 12:15 UTC (08:15 AM ET) on the owner's instruction: weekly Fable usage at 99%
 
-Weekly Fable usage is at about 87%. "Work until it hits its limit. Write notes so you can resume when usage is
-back." So work continues on Fable until the limit ends the session; there will be no chance to tidy up when that
-happens, which is why every milestone pushes a snapshot of the whole tree (`LOG.md` is the record). The owner
-reported the weekly reset as Tuesday 2026-10-13, 11 AM ET. On resuming: read this file, `LOG.md`, `progress/`,
-`BUGS.md` and `tasks/GROUPS.md` (how to restart each group of products), run `npm test`, then continue.
+Nothing is running and nothing is scheduled. Do nothing until the owner says "resume" (the owner reported the
+weekly reset as Tuesday 2026-10-13, 11 AM ET). Everything on disk at the pause is committed and pushed.
 
-Restarted at 09:50 UTC with four workers continuing from their notes: b1 (bonds, government), l1 (loans), s1 (rate
-swaps), s8 (failure and recovery). If the log's last entries are from these four, they were cut off mid-task: the
-tree is as they left it at their last save, and files they were editing after that save are lost.
+**Engine suite at the pause:** `npm test` -> # tests 350 # pass 350 # fail 0
 
-## State at the last update (2026-10-07 09:45 UTC)
+**Where each piece stopped** (a product counts only when it passed at engine, API and browser level in its
+worker's own runs; the coordinator has re-run only the engine level; `LOG.md` has every milestone):
+- Equity 12 of 12, listed options 5 of 5, futures 11 of 11, government bonds 13 of 13, rate swaps 12 of 12:
+  57 of 205 products. Final reports exist for bonds (b1) and rate swaps (s1); options (o1) and futures (fu1) were
+  cut off before reporting, so their "not covered" lists are only in `progress/o1.md` and `progress/fu1.md`.
+- Loans and deposits (l1): 4 of 9 (unsecured_loan, term_deposit, certificate_of_deposit, bank_deposit). NOT
+  resumed after the first cut-off (the restart message went to the wrong worker). Continue from `progress/l1.md`.
+- Failure and recovery (s8): all six areas pass at engine and API level (refusals, stress, no duplicates, history,
+  isolation over all 89 routes, hedge reconnection with the timer on), with Terminal fixes (client tokens on every
+  mutating route, `server/http/once.js`, migration 7; maturity catch-up; stored hedge queue; previews warn on
+  missing or stale FX and block the sale of a pledged or on-loan holding). Browser level was in progress: refusal
+  dialogs, double clicks, connection loss, ticket refusals, recovery actions, cancellations, repayment refused,
+  failed tab, closed day, confirm-changed pass. It was stopped mid-edit: `test/system/cases/refusals.mjs` and
+  `test/system/lib/browser-cases.mjs` are committed as they were at that instant and may be half-finished. Start by
+  running the system suite at all three levels and reading `progress/s8.md`. No final report was delivered.
+- Hedge follow-up: finished. Collateral follow-up (id v2b in `tasks/GROUPS.md`): not started.
+- Waves 2 and 3 in `tasks/GROUPS.md`: not started (148 products, 28 templates, accounting verification,
+  whole-application check). Then the final run and the evidence report.
+- `BUGS.md` lists findings that still need an owner (bond prices shown to 3 decimals; swap legs labelled
+  Buy / Sell in previews; a forward's notional labelled in the wrong currency before a rate; and others).
+- Not yet done by the coordinator: `npm run matrix` to regenerate `docs/TEST-MATRIX.md` (it still shows only the
+  equity family), and an independent re-run of the API and browser levels for the 57 products.
 
-**Holding since the 5-hour session limit was hit at about 02:47 UTC (10:47 PM ET).** Six of the eight workers of
-wave 1 were cut off by it mid-task; their finished work is committed, their notes are in `progress/`, and none
-left a half-edited file. The engine suite passes 299 of 299 on the tree as committed. No agents are running and
-no check-in is scheduled. Under the usage guard the next heavy step waits for the owner's `/usage` numbers.
-
-Wave 1, product by product (a product counts only when it passed at engine, API and browser level; see `LOG.md`):
-- hedge follow-up (`progress/v1b.md`): finished. Collateral basis and stated fill price chosen in the hedge popup,
-  the swap and FX-forward packages executed from it, was / now on a refused "Execute now", routes documented.
-- listed options (`progress/o1.md`): 5 of 5 logged as passing. No final report was delivered.
-- futures (`progress/fu1.md`): 11 of 11 logged as passing. No final report was delivered.
-- bonds, government (`progress/b1.md`): 5 of 13 (treasury_note, treasury_bill, treasury_bond, strips,
-  foreign_gov_bill); the bond browser driver exists.
-- loans (`progress/l1.md`): 4 of 9 (unsecured_loan, term_deposit, certificate_of_deposit, bank_deposit); the loan
-  browser driver exists.
-- rate swaps (`progress/s1.md`): 3 of 12 (interest_rate_swap, ois, basis_swap); the swap browser driver exists.
-- failure and recovery (`progress/s8.md`): refusal cases (21) pass at engine and API level with five Terminal
-  fixes; stress, no-duplicates, history, isolation and hedge-reconnection areas and the whole browser level are open.
-- collateral follow-up (task 2 under "Not started or unfinished" below): NOT started; its worker was stopped.
-- The red test mentioned further down is fixed.
-
-To continue: start a worker per unfinished group as `tasks/GROUPS.md` describes, telling it that
-`progress/<id>.md` exists, so it resumes instead of starting over. Then waves 2 and 3 below.
-Findings waiting for an owner are in `BUGS.md`.
+**On "resume":** ask the owner for the two `/usage` figures first (usage guard below). Then: `npm test`; re-run
+`npm run test:api` and `npm run test:browser` for the finished families to confirm the workers' results;
+`npm run matrix`; restart l1 and s8 from their notes; then waves 2 and 3. Workers can run on Opus 5.5 to spare the
+Fable allowance (the owner has not decided).
 
 ## State of the work (written 2026-10-07 01:58 UTC)
 

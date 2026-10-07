@@ -67,3 +67,4 @@
 - 2026-10-07T11:57Z | s8 | +0 | browser level started: runner, refusal dialogs, double clicks and connection loss pass; the web client now sends a token with every mutating request, coalesces identical requests in flight, and shows when the server is not reachable
 - 2026-10-07T12:00Z | s8 | +0 | browser cases for ticket refusals, the four recovery actions and cancellations pass
 - 2026-10-07T12:06Z | s8 | +0 | browser cases: repayment refused, failed tab, closed day, confirm-changed, double-click-records pass
+- 2026-10-07T12:14Z | coord | +0 | PAUSED on the owner's instruction, Fable at 99 percent; state written to RESUME.md

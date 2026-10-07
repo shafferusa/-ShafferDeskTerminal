@@ -415,7 +415,7 @@ export default [
         blocked(c, res, /Only 0 of the collateral is unencumbered; 100,000 is needed/, '(d) pledging the same holding again');
         await w.clean(c, book.id);
       }),
-      browser: 'the repo ticket and its block are exercised by the loans and repo product scenarios at browser level; this case adds no interface path of its own',
+      browser: (b, c) => b.cases.collateralRepo(b, c),
     },
   },
 
@@ -448,7 +448,7 @@ export default [
         c.ok(again.ok && again.body.blocking === 0, 'after the repo is repaid the sale previews without a block', again.ok ? errorText(again.body) : again.error);
         await w.clean(c, book.id);
       }),
-      browser: 'covered at browser level by SB:refusals:ticket-blocks only for securities tickets; a pledged bond is reached through the bond and repo product scenarios',
+      browser: (b, c) => b.cases.pledgedSale(b, c),
     },
   },
 
@@ -480,7 +480,7 @@ export default [
         c.near(cash.settled, 0, 'and has left settled cash');
         await w.clean(c, book.id);
       }),
-      browser: 'the OTC contract ticket is exercised by the swaps product scenarios at browser level; the block itself is the same preview read in SB:refusals:ticket-blocks',
+      browser: (b, c) => b.cases.independentAmount(b, c),
     },
   },
 
@@ -583,7 +583,7 @@ export default [
         c.eq([pos.nav.provisional, pos.nav.value], [false, 999_998], 'the quote returns: final again at 999,998.00');
         await w.clean(c, book.id);
       }),
-      browser: async (b, c) => b.cases.provisionalNav(b, c),
+      browser: async (b, c) => b.cases.provisionalNav(b, c, 'quote-missing'),
     },
   },
 
@@ -626,7 +626,7 @@ export default [
         c.near(pos.nav.value, 999_997, 'net asset value');
         await w.clean(c, book.id);
       }),
-      browser: async (b, c) => b.cases.provisionalNav(b, c),
+      browser: async (b, c) => b.cases.provisionalNav(b, c, 'quote-stale'),
     },
   },
 
@@ -665,7 +665,7 @@ export default [
         c.near(pos.nav.value, 1_099_998.90, 'and converts the SEK balances at 0.10');
         await w.clean(c, book.id);
       }),
-      browser: async (b, c) => b.cases.provisionalNav(b, c),
+      browser: async (b, c) => b.cases.provisionalNav(b, c, 'fx-missing'),
     },
   },
 
@@ -698,7 +698,7 @@ export default [
         c.eq(pos.nav.provisional, false, 'a current rate: final again');
         await w.clean(c, book.id);
       }),
-      browser: async (b, c) => b.cases.provisionalNav(b, c),
+      browser: async (b, c) => b.cases.provisionalNav(b, c, 'fx-stale'),
     },
   },
 
@@ -743,6 +743,7 @@ export default [
       }),
       browser: async (b, c) => b.cases.incompleteTerms(b, c),
     },
+    expectedBrowser: 'In the registry form (New instrument): with nothing but a name the form sends nothing and says "Not saved", asking for the primary market view. An equity option with no strike, a US Treasury note with no maturity and an index future with no expiration are each refused by the server: the form says "The instrument was not saved." and names the missing term, stays open with what was typed, and nothing is registered. (Loans, repos and swaps are not registered in this form; their incomplete terms are the engine and API cases.)',
   },
 
   // ---------------------------------------------------------------------------------------------------
