@@ -10,28 +10,33 @@
 - Harness (additive): lib/normalize.mjs preview legs carry `notional` and `initialMargin`; drivers/browser.mjs reads
   the "notional" / "margin" lines of the Positions value cell (valueIsNotional, marginShown) and compares them with the
   API's and the spec's `notional` and `margin` instead of a market value.
-- test/matrix/specs/future.mjs: header, helpers, equity_index_future (28 steps incl. 3 blocked).
-- test/matrix/drivers/browser/future.mjs: contractTerms (incl. underlying picker, calendars, Quoted in), ticket,
+- test/matrix/specs/future.mjs: all 11 products (equity_future, equity_index_future, gov_bond_future, treasury_future,
+  stir_future, fx_future, commodity_future, volatility_future, dividend_future, crypto_future, perpetual_future).
+- test/matrix/drivers/browser/future.mjs: contractTerms (underlying picker, calendars, Quoted in), ticket,
   actions.roll, actions.close / resize for Treasury-owned positions.
-- equity_index_future, equity_future (27 steps), gov_bond_future (18, EUR, 1 May holiday, FX 1.10 -> 1.08) and
-  treasury_future (19, 1/64 tick, physical -> cash close-out), stir_future (17, Treasury-owned), fx_future (17, JPY,
-  USD/JPY 150 -> 160) and commodity_future (19, roll, Good Friday, delivery refused) pass at engine, API and browser level.
+- ALL 11 products pass at engine, API and browser level (results in fu1/results/*.json).
 
 ## In progress
 - Nothing half-edited.
 
-## Next (designs are worked out; write each into specs/future.mjs, run engine, API, browser)
-7. volatility_future: VIX-like, short, spike -> cash deficit alert -> funded from Treasury by hand.
-8. dividend_future, 9. crypto_future, 10. perpetual_future (funding by hand, 24/7 calendar, bps fee).
-11. Engine regression tests in test/core/futures-lifecycle.test.js for the two Terminal fixes.
-12. Full npm test; final report. Exploration scripts are in fu1/x (not tests).
+## Next
+1. Engine regression tests in test/core/futures-lifecycle.test.js for the two Terminal fixes (holiday variation,
+   deficit alert clearing).
+2. Look at the registration form with the new "Quoted in" field and the futures ticket, light and dark.
+3. Append findings left open to $SP/BUGS.md (translated balance-sheet lines vs total by a cent; roll preview needs
+   the new contract's margin in free cash; end-of-day pass on US business days only; gross margin across instances).
+4. Optional: a limit order step for one future.
+5. Full npm test; rerun the 11 at all three levels; final report. Exploration scripts are in fu1/x (not tests).
 
 ## Product state (engine / API / browser)
-equity_index_future: passed / passed / passed
 equity_future: passed / passed / passed
+equity_index_future: passed / passed / passed
 gov_bond_future: passed / passed / passed
 treasury_future: passed / passed / passed
 stir_future: passed / passed / passed
 fx_future: passed / passed / passed
 commodity_future: passed / passed / passed
-others: not written yet
+volatility_future: passed / passed / passed
+dividend_future: passed / passed / passed
+crypto_future: passed / passed / passed
+perpetual_future: passed / passed / passed

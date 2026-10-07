@@ -1642,4 +1642,794 @@ const commodityFuture = {
   ],
 };
 
-export default [equityIndexFuture, equityFuture, govBondFuture, treasuryFuture, stirFuture, fxFuture, commodityFuture];
+// ---------------------------------------------------------------------------------------------
+// volatility_future
+// ---------------------------------------------------------------------------------------------
+// Modelled on the Cboe VIX future: 1,000 USD an index point, minimum move 0.05 (50 USD), cash settled
+// on a Wednesday morning (30 days before the third Friday of the following month: 18 March 2026 for
+// the March contract) at a special opening quotation computed to two decimals. Initial margin 8,000
+// USD a contract; commission 1.80 USD a contract.
+// A short volatility position through a spike: the variation margin of the spike day is more than the
+// Account's free cash. The Terminal pays it, leaves the Account's settled cash negative and raises a
+// cash-deficit alert; it does not fund the Account by itself. A further order is refused while the
+// deficit stands. The user then funds the Account from Treasury and the alert clears.
+const volatilityFuture = {
+  productId: 'volatility_future',
+  title: 'Volatility index future (1,000 USD a point), March 2026, Cboe Futures Exchange, short through a spike',
+  matrix: {
+    ...FUTURES_TICKET,
+    manualInputs: ['funding of a cash deficit after variation margin: a Treasury transfer made by the user (the Terminal never funds it by itself)'],
+    settlement: 'No purchase cash; initial margin 8,000 USD a contract; daily variation margin at 1,000 USD a point; cash final settlement on the Wednesday',
+    lifecycle: 'Daily variation margin (automatic), paid even when it exceeds free cash: settled cash goes negative and a cash-deficit alert is raised; cash final settlement at the special opening quotation (automatic)',
+    accounting: 'Nil cost; variation margin and closes are realized P&L; a deficit is shown as negative settled cash, never as a silent loan or transfer; commission 1.80 USD a contract',
+    collateral: 'Initial margin per contract; a variation call beyond free cash is a visible deficit; new orders are refused while it stands; the funding transfer creates no P&L',
+  },
+  start: AM('2026-03-12'),
+  settlementCheck: { lag: 0, holidays: [] }, // US: no holiday between 12 and 19 March 2026
+  book: book('Matrix volatility future', { funding: [{ ccy: 'USD', amount: 60_000 }], fee: { perUnit: 1.80, minimum: 0, bps: 0 } }),
+  instruments: {
+    main: { productId: 'volatility_future', name: 'Meridian Volatility Index future, March 2026', symbol: 'VXH6', marketView: 'US_DERIV', venue: 'Cboe Futures Exchange', venueType: 'exchange', venueCountry: 'US', underlyingGeo: 'US',
+      tradingCcy: 'USD', multiplier: 1000,
+      terms: { root: 'VX', expiration: '2026-03-18', tickSize: 0.05, initialMargin: 8_000, settlement: 'cash', priceUnits: 'volatility index points' } },
+  },
+  quotes: { main: { bid: 17.45, ask: 17.50, last: 17.45, bidSize: 300, askSize: 300 } },
+  closes: { main: { '2026-03-12': 17.10, '2026-03-13': 21.95, '2026-03-16': 19.40, '2026-03-17': 18.85 } },
+  expectAtStart: {
+    ...NO_STATE,
+    cash: { account: { USD: usd(60_000) }, treasury: { USD: usd(940_000) } },
+    positions: [], lifecycle: [],
+    nav: { account: 60_000, treasury: 940_000, book: 1_000_000 },
+  },
+  steps: [
+    {
+      id: 'open-short', covers: ['open short', 'initial margin'], action: 'ticket', instrument: 'main', side: 'sell', qty: 6, as: 'short',
+      expect: {
+        preview: { blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 6, estimate: 17.45, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2026-03-12', calendar: 'US',
+            notional: 104_700, initialMargin: 48_000, fees: 10.80 }], // 6 x 17.45 x 1,000; 6 x 8,000; 6 x 1.80
+          cash: { USD: { purchases: 0, fees: 10.80, margin: 48_000, required: 48_010.80, available: 60_000, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 6, avgPrice: 17.45 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Sold 6 VXH6 @ 17.45 (notional 104,700.00 USD; margin posted 48,000.00 USD)', cash: { USD: -48_010.80 }, owner: 'account', date: '2026-03-12' }],
+        cash: { account: { USD: usd(11_989.20, 48_000) } },
+        positions: [{ instrument: 'main', lot: 'short', owner: 'account', direction: 'short', qty: -6, avgCost: 17.45, cost: 0, price: 17.45, value: 0, unrealized: 0, notional: 104_700, margin: 48_000 }],
+        holdings: { main: { long: 0, short: 6, net: -6 } },
+        lifecycle: [{ type: 'future.expiry', instrument: 'main', dueDate: '2026-03-18', status: 'pending' }],
+        pnl: { account: { realized: 0, dividends: 0, commissions: -10.80, fees: 0, borrowFunding: 0, unrealized: 0, fx: 0, total: -10.80 } },
+        nav: { account: 59_989.20, book: 999_989.20 },
+        balance: { account: { cash: 11_989.20, margin: 48_000, positions: null, assets: 59_989.20, liabilities: 0, netAssets: 59_989.20 } },
+      },
+    },
+    {
+      id: 'day-1-variation', covers: 'variation margin', action: 'clock', to: EOD('2026-03-12'),
+      expect: {
+        events: [{ type: 'future.variation', summary: 'Variation margin received on -6 VXH6: 2,100.00 USD (settlement 17.10 vs 17.45)', cash: { USD: 2_100 }, date: '2026-03-12' }], // 0.35 x 1,000 x 6
+        cash: { account: { USD: usd(14_089.20, 48_000) } },
+        positions: [{ instrument: 'main', lot: 'short', qty: -6, avgCost: 17.10, price: 17.45, value: -2_100, unrealized: -2_100 }],
+        pnl: { account: { realized: 2_100, unrealized: -2_100, total: -10.80 } },
+        balance: { account: { cash: 14_089.20, positions: -2_100 } },
+      },
+    },
+    { id: 'friday', action: 'clock', to: AM('2026-03-13'), expect: {} },
+    {
+      id: 'spike', action: 'quote', instrument: 'main', quote: { bid: 21.80, ask: 21.90, last: 21.85, bidSize: 300, askSize: 300 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'short', qty: -6, avgCost: 17.10, price: 21.85, value: -28_500, unrealized: -28_500, notional: 131_100 }], // (21.85 - 17.10) x 6,000 against the short
+        pnl: { account: { unrealized: -28_500, total: -26_410.80 } }, // 2,100 - 10.80 - 28,500
+        nav: { account: 33_589.20, book: 973_589.20 },
+        balance: { account: { positions: -28_500, assets: 33_589.20, netAssets: 33_589.20 } },
+      },
+    },
+    {
+      id: 'variation-beyond-cash', covers: ['variation margin', 'margin shortfall'], action: 'clock', to: EOD('2026-03-13'),
+      expect: {
+        // Settlement 21.95 against 17.10: 4.85 x 1,000 x 6 = 29,100.00 to pay, with 14,089.20 of free cash.
+        // The call is paid in full; settled cash is -15,010.80 and the deficit is reported. The 48,000 of margin stays posted.
+        events: [{ type: 'future.variation', summary: 'Variation margin paid on -6 VXH6: 29,100.00 USD (settlement 21.95 vs 17.10)', cash: { USD: -29_100 }, date: '2026-03-13' }],
+        cash: { account: { USD: usd(-15_010.80, 48_000) }, treasury: { USD: usd(940_000) } }, // Treasury is not touched
+        positions: [{ instrument: 'main', lot: 'short', qty: -6, avgCost: 21.95, price: 21.85, value: 600, unrealized: 600 }], // (21.95 - 21.85) x 6,000
+        alerts: ['margin.deficit'],
+        borrowings: [], // no loan was created to cover it
+        pnl: { account: { realized: -27_000, unrealized: 600, total: -26_410.80 } },
+        balance: { account: { cash: -15_010.80, margin: 48_000, positions: 600, assets: 33_589.20, liabilities: 0, netAssets: 33_589.20 } },
+      },
+    },
+    {
+      // One more contract would need 8,000 of margin and 1.80 of commission, and the Account has -15,010.80: shortfall 23,012.60.
+      id: 'order-while-in-deficit', covers: 'margin shortfall', action: 'ticket', instrument: 'main', side: 'sell', qty: 1,
+      status: 'blocked', reason: 'The Account has a cash deficit: no further margin can be posted.',
+      expect: { refused: /Alpha is short 23,012\.60 USD.*margin and collateral 8,000\.00 USD.*-15,010\.80 USD is available/s },
+    },
+    {
+      id: 'fund-the-deficit', covers: ['margin shortfall', 'Treasury funding'], action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 40_000,
+      expect: {
+        events: [{ type: 'transfer.funding', summary: 'Treasury funding: 40,000.00 USD from Treasury to Alpha', owner: 'treasury' }],
+        cash: { account: { USD: usd(24_989.20, 48_000) }, treasury: { USD: usd(900_000) } },
+        alerts: [], // the deficit is covered: the alert is gone at the next cycle
+        nav: { account: 73_589.20, treasury: 900_000, book: 973_589.20 }, // funding moves net assets between owners; the Book is unchanged
+        pnl: { account: { realized: -27_000, unrealized: 600, total: -26_410.80 } }, // a transfer is not P&L
+        balance: { account: { cash: 24_989.20, assets: 73_589.20, netAssets: 73_589.20 } },
+      },
+    },
+    { id: 'monday', action: 'clock', to: AM('2026-03-16'), expect: {} },
+    {
+      id: 'spike-fades', action: 'quote', instrument: 'main', quote: { bid: 19.60, ask: 19.70, last: 19.65, bidSize: 300, askSize: 300 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'short', qty: -6, avgCost: 21.95, price: 19.65, value: 13_800, unrealized: 13_800, notional: 117_900 }], // (21.95 - 19.65) x 6,000
+        pnl: { account: { unrealized: 13_800, total: -13_210.80 } }, // -27,000 - 10.80 + 13,800
+        nav: { account: 86_789.20, book: 986_789.20 },
+        balance: { account: { positions: 13_800, assets: 86_789.20, netAssets: 86_789.20 } },
+      },
+    },
+    {
+      id: 'reduce', covers: ['reduce', 'margin release'], action: 'close', lot: 'short', scope: 'strategy', percent: 50, // buys back 3 of the 6
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 3, estimate: 19.70, model: 'quoted-bid-ask', settleDate: '2026-03-16',
+          notional: 59_100, initialMargin: -24_000, fees: 5.40 }], // 3 x 19.70 (the ask) x 1,000
+          cash: { USD: { purchases: 0, fees: 5.40, margin: 0, required: 5.40, available: 24_989.20, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 3, avgPrice: 19.70 }] },
+        // Realized: (21.95 - 19.70) x 1,000 x 3 = 6,750.00. Cash: 6,750 - 5.40 + 24,000 = 30,744.60.
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Bought 3 VXH6 @ 19.70 (notional 59,100.00 USD; margin released 24,000.00 USD; realized 6,750.00 USD)', cash: { USD: 30_744.60 } }],
+        cash: { account: { USD: usd(55_733.80, 24_000) } },
+        positions: [{ instrument: 'main', lot: 'short', qty: -3, avgCost: 21.95, price: 19.65, value: 6_900, unrealized: 6_900, notional: 58_950, margin: 24_000 }],
+        holdings: { main: { long: 0, short: 3, net: -3 } },
+        pnl: { account: { realized: -20_250, commissions: -16.20, unrealized: 6_900, total: -13_366.20 } },
+        nav: { account: 86_633.80, book: 986_633.80 },
+        balance: { account: { cash: 55_733.80, margin: 24_000, positions: 6_900, assets: 86_633.80, netAssets: 86_633.80 } },
+      },
+    },
+    {
+      id: 'day-3-variation', covers: 'variation margin', action: 'clock', to: EOD('2026-03-16'),
+      expect: {
+        events: [{ type: 'future.variation', summary: 'Variation margin received on -3 VXH6: 7,650.00 USD (settlement 19.40 vs 21.95)', cash: { USD: 7_650 }, date: '2026-03-16' }], // 2.55 x 3,000
+        cash: { account: { USD: usd(63_383.80, 24_000) } },
+        positions: [{ instrument: 'main', lot: 'short', qty: -3, avgCost: 19.40, price: 19.65, value: -750, unrealized: -750 }],
+        pnl: { account: { realized: -12_600, unrealized: -750, total: -13_366.20 } },
+        balance: { account: { cash: 63_383.80, positions: -750 } },
+      },
+    },
+    { id: 'tuesday', action: 'clock', to: AM('2026-03-17'), expect: {} },
+    {
+      id: 'quote-tuesday', action: 'quote', instrument: 'main', quote: { bid: 18.90, ask: 19.00, last: 18.95, bidSize: 300, askSize: 300 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'short', qty: -3, avgCost: 19.40, price: 18.95, value: 1_350, unrealized: 1_350, notional: 56_850 }], // (19.40 - 18.95) x 3,000
+        pnl: { account: { unrealized: 1_350, total: -11_266.20 } }, // -12,600 - 16.20 + 1,350
+        nav: { account: 88_733.80, book: 988_733.80 },
+        balance: { account: { positions: 1_350, assets: 88_733.80, netAssets: 88_733.80 } },
+      },
+    },
+    {
+      id: 'day-4-variation', covers: 'variation margin', action: 'clock', to: EOD('2026-03-17'),
+      expect: {
+        events: [{ type: 'future.variation', summary: 'Variation margin received on -3 VXH6: 1,650.00 USD (settlement 18.85 vs 19.40)', cash: { USD: 1_650 }, date: '2026-03-17' }], // 0.55 x 3,000
+        cash: { account: { USD: usd(65_033.80, 24_000) } },
+        positions: [{ instrument: 'main', lot: 'short', qty: -3, avgCost: 18.85, price: 18.95, value: -300, unrealized: -300 }],
+        pnl: { account: { realized: -10_950, unrealized: -300, total: -11_266.20 } },
+        balance: { account: { cash: 65_033.80, positions: -300 } },
+      },
+    },
+    {
+      id: 'settlement-day', covers: 'final settlement', action: 'clock', to: AM('2026-03-18'),
+      expect: { lifecycle: [{ type: 'future.expiry', instrument: 'main', dueDate: '2026-03-18', status: 'blocked', reason: /^Awaiting the final settlement price for VXH6 \(2026-03-18\)/ }] },
+    },
+    // The final settlement value, a special opening quotation: 18.62 (not a multiple of the 0.05 tick).
+    { id: 'final-settlement-value', covers: 'final settlement', action: 'close_price', instrument: 'main', date: '2026-03-18', value: 18.62, expect: {} },
+    {
+      id: 'expiry-cash-settlement', covers: ['final settlement', 'expiry', 'margin release'], action: 'clock', to: EOD('2026-03-18'),
+      expect: {
+        // Closed at 18.62 against the reference 18.85: 0.23 x 1,000 x 3 = 690.00 for the short; margin 24,000 released; no fee.
+        events: [{ type: 'future.final_settlement', summary: /^Final settlement: 3 VXH6 closed in cash at 18\.62$/, cash: { USD: 24_690 }, owner: 'account', date: '2026-03-18' }],
+        // By hand: sold 6 at 17.45; bought 3 at 19.70 and 3 at 18.62: (104.70 - 59.10 - 55.86) x 1,000 = -10,260.00. Commission 9 x 1.80 = 16.20.
+        // Funded 60,000 + 40,000: 100,000 - 10,260 - 16.20 = 89,723.80.
+        cash: { account: { USD: usd(89_723.80, 0) }, treasury: { USD: usd(900_000) } },
+        positions: [],
+        holdings: { main: null },
+        lifecycle: [],
+        pnl: { account: { realized: -10_260, commissions: -16.20, unrealized: 0, total: -10_276.20 } },
+        nav: { account: 89_723.80, treasury: 900_000, book: 989_723.80 },
+        balance: { account: { cash: 89_723.80, margin: null, positions: null, assets: 89_723.80, liabilities: 0, netAssets: 89_723.80 } },
+      },
+    },
+    { id: 'thursday', action: 'clock', to: AM('2026-03-19'), expect: {} },
+    {
+      id: 'trade-after-expiry', covers: 'expired contract', action: 'ticket', instrument: 'main', side: 'buy', qty: 1,
+      status: 'blocked', reason: 'The contract was settled on 18 March 2026.',
+      expect: { refused: 'VXH6 expired on 2026-03-18' },
+    },
+  ],
+};
+
+// ---------------------------------------------------------------------------------------------
+// dividend_future
+// ---------------------------------------------------------------------------------------------
+// Modelled on the CME S&P 500 Annual Dividend Index future: 250 USD an index point, minimum move
+// 0.05 (12.50 USD). Its price is the dividends the index will have paid over the year, in index
+// points; it is cash settled on the third Friday of December (18 December 2026) at the final value
+// of the dividend index, which is not a tick price. Initial margin 1,100 USD a contract; commission
+// 1.10 USD a contract. December 2026 is on standard time: 10:00 New York is 15:00 UTC.
+const dividendFuture = {
+  productId: 'dividend_future',
+  title: 'Meridian 500 Annual Dividend Index future (250 USD a point), December 2026, CME',
+  matrix: {
+    ...FUTURES_TICKET,
+    manualInputs: ['none: the final value of the dividend index is supplied as the close of the last trading day'],
+    settlement: 'No purchase cash; initial margin 1,100 USD a contract; daily variation margin at 250 USD a dividend point; cash final settlement at the realized dividend index',
+    lifecycle: 'Daily variation margin (automatic); cash final settlement on the third Friday of December (automatic); a contract past that day refuses trades',
+    accounting: 'Nil cost; no dividend income is booked (the dividends are the price); variation margin and closes are realized P&L; commission 1.10 USD a contract',
+    collateral: 'Initial margin per contract; released pro rata on reduction and at final settlement',
+  },
+  start: AM('2026-12-14', false),
+  settlementCheck: { lag: 0, holidays: [] }, // US: no holiday between 14 and 21 December 2026
+  book: book('Matrix dividend future', { funding: [{ ccy: 'USD', amount: 100_000 }], fee: { perUnit: 1.10, minimum: 0, bps: 0 } }),
+  instruments: {
+    main: { productId: 'dividend_future', name: 'Meridian 500 Annual Dividend Index future, December 2026', symbol: 'MDZ6', marketView: 'US_DERIV', venue: 'CME', venueType: 'exchange', venueCountry: 'US', underlyingGeo: 'US',
+      tradingCcy: 'USD', multiplier: 250,
+      terms: { root: 'MD', expiration: '2026-12-18', tickSize: 0.05, initialMargin: 1_100, settlement: 'cash', priceUnits: 'index points of dividends' } },
+  },
+  quotes: { main: { bid: 78.40, ask: 78.45, last: 78.40, bidSize: 500, askSize: 500 } },
+  closes: { main: { '2026-12-14': 78.50, '2026-12-15': 78.65, '2026-12-16': 78.70, '2026-12-17': 78.75 } },
+  expectAtStart: {
+    ...NO_STATE,
+    cash: { account: { USD: usd(100_000) }, treasury: { USD: usd(900_000) } },
+    positions: [], lifecycle: [],
+    nav: { account: 100_000, treasury: 900_000, book: 1_000_000 },
+  },
+  steps: [
+    {
+      id: 'open', covers: ['open', 'initial margin'], action: 'ticket', instrument: 'main', side: 'buy', qty: 20, as: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 20, estimate: 78.45, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2026-12-14', calendar: 'US',
+            notional: 392_250, initialMargin: 22_000, fees: 22 }], // 20 x 78.45 x 250; 20 x 1,100; 20 x 1.10
+          cash: { USD: { purchases: 0, fees: 22, margin: 22_000, required: 22_022, available: 100_000, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 20, avgPrice: 78.45 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 20 MDZ6 @ 78.45 (notional 392,250.00 USD; margin posted 22,000.00 USD)', cash: { USD: -22_022 }, owner: 'account', date: '2026-12-14' }],
+        cash: { account: { USD: usd(77_978, 22_000) } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 20, avgCost: 78.45, cost: 0, price: 78.40, value: -250, unrealized: -250, notional: 392_000, margin: 22_000 }], // -0.05 x 250 x 20; 20 x 78.40 x 250
+        holdings: { main: { long: 20, short: 0, net: 20 } },
+        lifecycle: [{ type: 'future.expiry', instrument: 'main', dueDate: '2026-12-18', status: 'pending' }],
+        pnl: { account: { realized: 0, dividends: 0, commissions: -22, fees: 0, borrowFunding: 0, unrealized: -250, fx: 0, total: -272 } },
+        nav: { account: 99_728, book: 999_728 },
+        balance: { account: { cash: 77_978, margin: 22_000, positions: -250, assets: 99_728, liabilities: 0, netAssets: 99_728 } },
+      },
+    },
+    {
+      id: 'day-1-variation', covers: 'variation margin', action: 'clock', to: EOD('2026-12-14', false),
+      expect: {
+        events: [{ type: 'future.variation', summary: 'Variation margin received on 20 MDZ6: 250.00 USD (settlement 78.50 vs 78.45)', cash: { USD: 250 }, date: '2026-12-14' }], // 0.05 x 250 x 20
+        cash: { account: { USD: usd(78_228, 22_000) } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 20, avgCost: 78.50, price: 78.40, value: -500, unrealized: -500 }],
+        pnl: { account: { realized: 250, unrealized: -500, total: -272 } },
+        balance: { account: { cash: 78_228, positions: -500 } },
+      },
+    },
+    { id: 'tuesday', action: 'clock', to: AM('2026-12-15', false), expect: {} },
+    {
+      id: 'quote-tuesday', action: 'quote', instrument: 'main', quote: { bid: 78.55, ask: 78.60, last: 78.60, bidSize: 500, askSize: 500 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 20, avgCost: 78.50, price: 78.60, value: 500, unrealized: 500, notional: 393_000 }], // 0.10 x 5,000
+        pnl: { account: { unrealized: 500, total: 728 } }, // 250 - 22 + 500
+        nav: { account: 100_728, book: 1_000_728 },
+        balance: { account: { positions: 500, assets: 100_728, netAssets: 100_728 } },
+      },
+    },
+    {
+      id: 'increase', covers: 'increase', action: 'resize', lot: 'lot', factor: 1.5, // 20 -> 30
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 10, estimate: 78.60, model: 'quoted-bid-ask', settleDate: '2026-12-15',
+          notional: 196_500, initialMargin: 11_000, fees: 11 }], // 10 x 78.60 x 250
+          cash: { USD: { purchases: 0, fees: 11, margin: 11_000, required: 11_011, available: 78_228, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 10, avgPrice: 78.60 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Bought 10 MDZ6 @ 78.60 (notional 196,500.00 USD; margin posted 11,000.00 USD)', cash: { USD: -11_011 } }],
+        cash: { account: { USD: usd(67_217, 33_000) } },
+        // Reference: (20 x 78.50 + 10 x 78.60) / 30 = 78.533333. Value: 20 x 0.10 x 250 = 500 (the 10 new ones are at their reference).
+        positions: [{ instrument: 'main', lot: 'lot', qty: 30, avgCost: 78.533333, price: 78.60, value: 500, unrealized: 500, notional: 589_500, margin: 33_000 }],
+        holdings: { main: { long: 30, short: 0, net: 30 } },
+        pnl: { account: { commissions: -33, total: 717 } },
+        nav: { account: 100_717, book: 1_000_717 },
+        balance: { account: { cash: 67_217, margin: 33_000, assets: 100_717, netAssets: 100_717 } },
+      },
+    },
+    {
+      id: 'day-2-variation', covers: 'variation margin', action: 'clock', to: EOD('2026-12-15', false),
+      expect: {
+        // 30 x 78.65 x 250 = 589,875 against 20 x 78.50 x 250 + 10 x 78.60 x 250 = 589,000: 875.00 received.
+        events: [{ type: 'future.variation', summary: 'Variation margin received on 30 MDZ6: 875.00 USD (settlement 78.65 vs 78.533333)', cash: { USD: 875 }, date: '2026-12-15' }],
+        cash: { account: { USD: usd(68_092, 33_000) } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 30, avgCost: 78.65, price: 78.60, value: -375, unrealized: -375 }], // -0.05 x 7,500
+        pnl: { account: { realized: 1_125, unrealized: -375, total: 717 } },
+        balance: { account: { cash: 68_092, positions: -375 } },
+      },
+    },
+    { id: 'wednesday', action: 'clock', to: AM('2026-12-16', false), expect: {} },
+    {
+      id: 'quote-wednesday', action: 'quote', instrument: 'main', quote: { bid: 78.70, ask: 78.75, last: 78.70, bidSize: 500, askSize: 500 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 30, avgCost: 78.65, price: 78.70, value: 375, unrealized: 375, notional: 590_250 }],
+        pnl: { account: { unrealized: 375, total: 1_467 } }, // 1,125 - 33 + 375
+        nav: { account: 101_467, book: 1_001_467 },
+        balance: { account: { positions: 375, assets: 101_467, netAssets: 101_467 } },
+      },
+    },
+    {
+      id: 'reduce', covers: ['reduce', 'margin release'], action: 'close', lot: 'lot', scope: 'strategy', percent: 40, // sells 12 of the 30
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 12, estimate: 78.70, model: 'quoted-bid-ask', settleDate: '2026-12-16',
+          notional: 236_100, initialMargin: -13_200, fees: 13.20 }], // 12 x 78.70 x 250
+          cash: { USD: { purchases: 0, fees: 13.20, margin: 0, required: 13.20, available: 68_092, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 12, avgPrice: 78.70 }] },
+        // Realized: (78.70 - 78.65) x 250 x 12 = 150.00. Cash: 150 - 13.20 + 13,200 = 13,336.80.
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 12 MDZ6 @ 78.70 (notional 236,100.00 USD; margin released 13,200.00 USD; realized 150.00 USD)', cash: { USD: 13_336.80 } }],
+        cash: { account: { USD: usd(81_428.80, 19_800) } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 18, avgCost: 78.65, price: 78.70, value: 225, unrealized: 225, notional: 354_150, margin: 19_800 }], // 0.05 x 250 x 18
+        holdings: { main: { long: 18, short: 0, net: 18 } },
+        pnl: { account: { realized: 1_275, commissions: -46.20, unrealized: 225, total: 1_453.80 } },
+        nav: { account: 101_453.80, book: 1_001_453.80 },
+        balance: { account: { cash: 81_428.80, margin: 19_800, positions: 225, assets: 101_453.80, netAssets: 101_453.80 } },
+      },
+    },
+    {
+      id: 'day-3-variation', covers: 'variation margin', action: 'clock', to: EOD('2026-12-16', false),
+      expect: {
+        events: [{ type: 'future.variation', summary: 'Variation margin received on 18 MDZ6: 225.00 USD (settlement 78.70 vs 78.65)', cash: { USD: 225 }, date: '2026-12-16' }],
+        cash: { account: { USD: usd(81_653.80, 19_800) } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 18, avgCost: 78.70, price: 78.70, value: 0, unrealized: 0 }],
+        pnl: { account: { realized: 1_500, unrealized: 0, total: 1_453.80 } },
+        balance: { account: { cash: 81_653.80, positions: null } },
+      },
+    },
+    { id: 'thursday', action: 'clock', to: AM('2026-12-17', false), expect: {} },
+    {
+      id: 'quote-thursday', action: 'quote', instrument: 'main', quote: { bid: 78.75, ask: 78.80, last: 78.75, bidSize: 500, askSize: 500 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 18, avgCost: 78.70, price: 78.75, value: 225, unrealized: 225, notional: 354_375 }],
+        pnl: { account: { unrealized: 225, total: 1_678.80 } },
+        nav: { account: 101_678.80, book: 1_001_678.80 },
+        balance: { account: { positions: 225, assets: 101_678.80, netAssets: 101_678.80 } },
+      },
+    },
+    {
+      id: 'day-4-variation', covers: 'variation margin', action: 'clock', to: EOD('2026-12-17', false),
+      expect: {
+        events: [{ type: 'future.variation', summary: 'Variation margin received on 18 MDZ6: 225.00 USD (settlement 78.75 vs 78.70)', cash: { USD: 225 }, date: '2026-12-17' }],
+        cash: { account: { USD: usd(81_878.80, 19_800) } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 18, avgCost: 78.75, price: 78.75, value: 0, unrealized: 0 }],
+        pnl: { account: { realized: 1_725, unrealized: 0, total: 1_678.80 } },
+        balance: { account: { cash: 81_878.80, positions: null } },
+      },
+    },
+    {
+      id: 'last-trading-day', covers: 'final settlement', action: 'clock', to: AM('2026-12-18', false),
+      expect: { lifecycle: [{ type: 'future.expiry', instrument: 'main', dueDate: '2026-12-18', status: 'blocked', reason: /^Awaiting the final settlement price for MDZ6 \(2026-12-18\)/ }] },
+    },
+    // The dividend index for the year ends at 78.82 points.
+    { id: 'final-dividend-index', covers: 'final settlement', action: 'close_price', instrument: 'main', date: '2026-12-18', value: 78.82, expect: {} },
+    {
+      id: 'expiry-cash-settlement', covers: ['final settlement', 'expiry', 'margin release'], action: 'clock', to: EOD('2026-12-18', false),
+      expect: {
+        // Closed at 78.82 against the reference 78.75: 0.07 x 250 x 18 = 315.00; margin 19,800 released; no fee.
+        events: [{ type: 'future.final_settlement', summary: /^Final settlement: 18 MDZ6 closed in cash at 78\.82$/, cash: { USD: 20_115 }, owner: 'account', date: '2026-12-18' }],
+        // By hand: bought 20 at 78.45 and 10 at 78.60; sold 12 at 78.70, 18 settled at 78.82: (944.40 + 1,418.76 - 1,569.00 - 786.00) x 250 = 2,040.00.
+        // Commission 42 contracts x 1.10 = 46.20. 100,000 + 2,040 - 46.20 = 101,993.80.
+        cash: { account: { USD: usd(101_993.80, 0) }, treasury: { USD: usd(900_000) } },
+        positions: [],
+        holdings: { main: null },
+        lifecycle: [],
+        pnl: { account: { realized: 2_040, dividends: 0, commissions: -46.20, unrealized: 0, total: 1_993.80 } },
+        nav: { account: 101_993.80, treasury: 900_000, book: 1_001_993.80 },
+        balance: { account: { cash: 101_993.80, margin: null, positions: null, assets: 101_993.80, liabilities: 0, netAssets: 101_993.80 } },
+      },
+    },
+    { id: 'monday', action: 'clock', to: AM('2026-12-21', false), expect: {} },
+    {
+      id: 'trade-after-expiry', covers: 'expired contract', action: 'ticket', instrument: 'main', side: 'buy', qty: 1,
+      status: 'blocked', reason: 'The contract was settled on 18 December 2026.',
+      expect: { refused: 'MDZ6 expired on 2026-12-18' },
+    },
+  ],
+};
+
+// ---------------------------------------------------------------------------------------------
+// crypto_future
+// ---------------------------------------------------------------------------------------------
+// Modelled on the CME Bitcoin future: 5 bitcoin a contract, quoted in USD a bitcoin, minimum move
+// 5.00 (25 USD a contract), cash settled on the last Friday of the month (27 March 2026) at a
+// reference rate computed to the cent, which is not a tick price. One contract is about a third of a
+// million dollars and its initial margin is 95,000 USD: the margin check is what limits the size.
+// Commission 6.00 USD a contract.
+const cryptoFuture = {
+  productId: 'crypto_future',
+  title: 'Bitcoin future (5 BTC, cash settled to a reference rate), March 2026, CME',
+  matrix: {
+    ...FUTURES_TICKET,
+    manualInputs: ['none: the final reference rate is supplied as the close of the last trading day'],
+    settlement: 'No purchase cash and no bitcoin: initial margin 95,000 USD a contract; daily variation margin at 5 USD a dollar of price; cash final settlement at the reference rate',
+    lifecycle: 'Daily variation margin on exchange business days (automatic); cash final settlement on the last Friday of the month (automatic); a contract past that day refuses trades',
+    accounting: 'Nil cost; no digital asset is held; variation margin and closes are realized P&L; commission 6.00 USD a contract',
+    collateral: 'Initial margin per contract; an order whose margin is not covered by free cash is refused',
+  },
+  start: AM('2026-03-23'),
+  settlementCheck: { lag: 0, holidays: [] }, // US: no holiday between 23 and 30 March 2026
+  book: book('Matrix cryptocurrency future', { funding: [{ ccy: 'USD', amount: 400_000 }], fee: { perUnit: 6, minimum: 0, bps: 0 } }),
+  instruments: {
+    main: { productId: 'crypto_future', name: 'Bitcoin future, March 2026', symbol: 'BTCH6', marketView: 'US_DERIV', venue: 'CME', venueType: 'exchange', venueCountry: 'US', underlyingGeo: 'Global',
+      tradingCcy: 'USD', multiplier: 5,
+      terms: { root: 'BTC', expiration: '2026-03-27', tickSize: 5, initialMargin: 95_000, settlement: 'cash', priceUnits: 'USD per bitcoin' } },
+  },
+  quotes: { main: { bid: 68_250, ask: 68_255, last: 68_250, bidSize: 50, askSize: 50 } },
+  closes: { main: { '2026-03-23': 67_480, '2026-03-24': 69_120, '2026-03-25': 70_150, '2026-03-26': 69_790 } },
+  expectAtStart: {
+    ...NO_STATE,
+    cash: { account: { USD: usd(400_000) }, treasury: { USD: usd(600_000) } },
+    positions: [], lifecycle: [],
+    nav: { account: 400_000, treasury: 600_000, book: 1_000_000 },
+  },
+  steps: [
+    {
+      id: 'open', covers: ['open', 'initial margin'], action: 'ticket', instrument: 'main', side: 'buy', qty: 1, as: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 1, estimate: 68_255, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2026-03-23', calendar: 'US',
+            notional: 341_275, initialMargin: 95_000, fees: 6 }], // 1 x 68,255 x 5 bitcoin
+          cash: { USD: { purchases: 0, fees: 6, margin: 95_000, required: 95_006, available: 400_000, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 1, avgPrice: 68_255 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1 BTCH6 @ 68,255.00 (notional 341,275.00 USD; margin posted 95,000.00 USD)', cash: { USD: -95_006 }, owner: 'account', date: '2026-03-23' }],
+        cash: { account: { USD: usd(304_994, 95_000) } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 1, avgCost: 68_255, cost: 0, price: 68_250, value: -25, unrealized: -25, notional: 341_250, margin: 95_000 }], // -5 x 5
+        holdings: { main: { long: 1, short: 0, net: 1 } },
+        lifecycle: [{ type: 'future.expiry', instrument: 'main', dueDate: '2026-03-27', status: 'pending' }],
+        pnl: { account: { realized: 0, dividends: 0, commissions: -6, fees: 0, borrowFunding: 0, unrealized: -25, fx: 0, total: -31 } },
+        nav: { account: 399_969, book: 999_969 },
+        balance: { account: { cash: 304_994, margin: 95_000, positions: -25, assets: 399_969, liabilities: 0, netAssets: 399_969 } },
+      },
+    },
+    {
+      id: 'day-1-variation', covers: 'variation margin', action: 'clock', to: EOD('2026-03-23'),
+      expect: {
+        events: [{ type: 'future.variation', summary: 'Variation margin paid on 1 BTCH6: 3,875.00 USD (settlement 67,480.00 vs 68,255.00)', cash: { USD: -3_875 }, date: '2026-03-23' }], // -775 x 5
+        cash: { account: { USD: usd(301_119, 95_000) } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1, avgCost: 67_480, price: 68_250, value: 3_850, unrealized: 3_850 }], // 770 x 5
+        pnl: { account: { realized: -3_875, unrealized: 3_850, total: -31 } },
+        balance: { account: { cash: 301_119, positions: 3_850 } },
+      },
+    },
+    { id: 'tuesday', action: 'clock', to: AM('2026-03-24'), expect: {} },
+    {
+      id: 'quote-tuesday', action: 'quote', instrument: 'main', quote: { bid: 66_900, ask: 66_905, last: 66_900, bidSize: 50, askSize: 50 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1, avgCost: 67_480, price: 66_900, value: -2_900, unrealized: -2_900, notional: 334_500 }], // -580 x 5
+        pnl: { account: { unrealized: -2_900, total: -6_781 } }, // -3,875 - 6 - 2,900
+        nav: { account: 393_219, book: 993_219 },
+        balance: { account: { positions: -2_900, assets: 393_219, netAssets: 393_219 } },
+      },
+    },
+    {
+      id: 'increase', covers: 'increase', action: 'resize', lot: 'lot', factor: 2, // 1 -> 2
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 1, estimate: 66_905, model: 'quoted-bid-ask', settleDate: '2026-03-24',
+          notional: 334_525, initialMargin: 95_000, fees: 6 }],
+          cash: { USD: { purchases: 0, fees: 6, margin: 95_000, required: 95_006, available: 301_119, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 1, avgPrice: 66_905 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Bought 1 BTCH6 @ 66,905.00 (notional 334,525.00 USD; margin posted 95,000.00 USD)', cash: { USD: -95_006 } }],
+        cash: { account: { USD: usd(206_113, 190_000) } },
+        // Reference: (67,480 + 66,905) / 2 = 67,192.50. Value: (66,900 - 67,192.50) x 5 x 2 = -2,925.
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2, avgCost: 67_192.50, price: 66_900, value: -2_925, unrealized: -2_925, notional: 669_000, margin: 190_000 }],
+        holdings: { main: { long: 2, short: 0, net: 2 } },
+        pnl: { account: { commissions: -12, unrealized: -2_925, total: -6_812 } },
+        nav: { account: 393_188, book: 993_188 },
+        balance: { account: { cash: 206_113, margin: 190_000, positions: -2_925, assets: 393_188, netAssets: 393_188 } },
+      },
+    },
+    {
+      id: 'day-2-variation', covers: 'variation margin', action: 'clock', to: EOD('2026-03-24'),
+      expect: {
+        events: [{ type: 'future.variation', summary: 'Variation margin received on 2 BTCH6: 19,275.00 USD (settlement 69,120.00 vs 67,192.50)', cash: { USD: 19_275 }, date: '2026-03-24' }], // 1,927.50 x 5 x 2
+        cash: { account: { USD: usd(225_388, 190_000) } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2, avgCost: 69_120, price: 66_900, value: -22_200, unrealized: -22_200 }], // -2,220 x 10
+        pnl: { account: { realized: 15_400, unrealized: -22_200, total: -6_812 } },
+        balance: { account: { cash: 225_388, positions: -22_200 } },
+      },
+    },
+    { id: 'wednesday', action: 'clock', to: AM('2026-03-25'), expect: {} },
+    {
+      id: 'quote-wednesday', action: 'quote', instrument: 'main', quote: { bid: 70_400, ask: 70_405, last: 70_400, bidSize: 50, askSize: 50 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2, avgCost: 69_120, price: 70_400, value: 12_800, unrealized: 12_800, notional: 704_000 }], // 1,280 x 10
+        pnl: { account: { unrealized: 12_800, total: 28_188 } }, // 15,400 - 12 + 12,800
+        nav: { account: 428_188, book: 1_028_188 },
+        balance: { account: { positions: 12_800, assets: 428_188, netAssets: 428_188 } },
+      },
+    },
+    {
+      // 3 more would need 285,000 of margin and 18.00 of commission; 225,388 is free although net assets are 428,188. Shortfall 59,630.
+      id: 'order-beyond-margin', covers: 'margin shortfall', action: 'ticket', instrument: 'main', side: 'buy', qty: 3,
+      status: 'blocked', reason: 'Margin already posted and open trade equity are not free cash: the order is refused, not funded.',
+      expect: { refused: /Alpha is short 59,630\.00 USD.*margin and collateral 285,000\.00 USD.*225,388\.00 USD is available/s },
+    },
+    {
+      id: 'reduce', covers: ['reduce', 'margin release'], action: 'close', lot: 'lot', scope: 'strategy', percent: 50, // sells 1 of the 2
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 1, estimate: 70_400, model: 'quoted-bid-ask', settleDate: '2026-03-25',
+          notional: 352_000, initialMargin: -95_000, fees: 6 }],
+          cash: { USD: { purchases: 0, fees: 6, margin: 0, required: 6, available: 225_388, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 1, avgPrice: 70_400 }] },
+        // Realized: (70,400 - 69,120) x 5 = 6,400.00. Cash: 6,400 - 6 + 95,000 = 101,394.
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 1 BTCH6 @ 70,400.00 (notional 352,000.00 USD; margin released 95,000.00 USD; realized 6,400.00 USD)', cash: { USD: 101_394 } }],
+        cash: { account: { USD: usd(326_782, 95_000) } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1, avgCost: 69_120, price: 70_400, value: 6_400, unrealized: 6_400, notional: 352_000, margin: 95_000 }],
+        holdings: { main: { long: 1, short: 0, net: 1 } },
+        pnl: { account: { realized: 21_800, commissions: -18, unrealized: 6_400, total: 28_182 } },
+        nav: { account: 428_182, book: 1_028_182 },
+        balance: { account: { cash: 326_782, margin: 95_000, positions: 6_400, assets: 428_182, netAssets: 428_182 } },
+      },
+    },
+    {
+      id: 'day-3-variation', covers: 'variation margin', action: 'clock', to: EOD('2026-03-25'),
+      expect: {
+        events: [{ type: 'future.variation', summary: 'Variation margin received on 1 BTCH6: 5,150.00 USD (settlement 70,150.00 vs 69,120.00)', cash: { USD: 5_150 }, date: '2026-03-25' }], // 1,030 x 5
+        cash: { account: { USD: usd(331_932, 95_000) } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1, avgCost: 70_150, price: 70_400, value: 1_250, unrealized: 1_250 }],
+        pnl: { account: { realized: 26_950, unrealized: 1_250, total: 28_182 } },
+        balance: { account: { cash: 331_932, positions: 1_250 } },
+      },
+    },
+    { id: 'thursday', action: 'clock', to: AM('2026-03-26'), expect: {} },
+    {
+      id: 'quote-thursday', action: 'quote', instrument: 'main', quote: { bid: 69_800, ask: 69_805, last: 69_800, bidSize: 50, askSize: 50 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1, avgCost: 70_150, price: 69_800, value: -1_750, unrealized: -1_750, notional: 349_000 }], // -350 x 5
+        pnl: { account: { unrealized: -1_750, total: 25_182 } }, // 26,950 - 18 - 1,750
+        nav: { account: 425_182, book: 1_025_182 },
+        balance: { account: { positions: -1_750, assets: 425_182, netAssets: 425_182 } },
+      },
+    },
+    {
+      id: 'day-4-variation', covers: 'variation margin', action: 'clock', to: EOD('2026-03-26'),
+      expect: {
+        events: [{ type: 'future.variation', summary: 'Variation margin paid on 1 BTCH6: 1,800.00 USD (settlement 69,790.00 vs 70,150.00)', cash: { USD: -1_800 }, date: '2026-03-26' }], // -360 x 5
+        cash: { account: { USD: usd(330_132, 95_000) } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1, avgCost: 69_790, price: 69_800, value: 50, unrealized: 50 }],
+        pnl: { account: { realized: 25_150, unrealized: 50, total: 25_182 } },
+        balance: { account: { cash: 330_132, positions: 50 } },
+      },
+    },
+    {
+      id: 'last-trading-day', covers: 'final settlement', action: 'clock', to: AM('2026-03-27'),
+      expect: { lifecycle: [{ type: 'future.expiry', instrument: 'main', dueDate: '2026-03-27', status: 'blocked', reason: /^Awaiting the final settlement price for BTCH6 \(2026-03-27\)/ }] },
+    },
+    // The reference rate at 4 p.m. London on the last Friday of March: 69,512.37 USD.
+    { id: 'final-reference-rate', covers: 'final settlement', action: 'close_price', instrument: 'main', date: '2026-03-27', value: 69_512.37, expect: {} },
+    {
+      id: 'expiry-cash-settlement', covers: ['final settlement', 'expiry', 'margin release'], action: 'clock', to: EOD('2026-03-27'),
+      expect: {
+        // Closed at 69,512.37 against the reference 69,790: -277.63 x 5 = -1,388.15; margin 95,000 released; no fee.
+        events: [{ type: 'future.final_settlement', summary: /^Final settlement: 1 BTCH6 closed in cash at 69,512\.37$/, cash: { USD: 93_611.85 }, owner: 'account', date: '2026-03-27' }],
+        // By hand: bought at 68,255 and 66,905; sold at 70,400 and settled at 69,512.37: 4,752.37 x 5 = 23,761.85. Commission 3 x 6 = 18.
+        cash: { account: { USD: usd(423_743.85, 0) }, treasury: { USD: usd(600_000) } },
+        positions: [],
+        holdings: { main: null },
+        lifecycle: [],
+        pnl: { account: { realized: 23_761.85, commissions: -18, unrealized: 0, total: 23_743.85 } },
+        nav: { account: 423_743.85, treasury: 600_000, book: 1_023_743.85 },
+        balance: { account: { cash: 423_743.85, margin: null, positions: null, assets: 423_743.85, liabilities: 0, netAssets: 423_743.85 } },
+      },
+    },
+    { id: 'monday', action: 'clock', to: AM('2026-03-30'), expect: {} },
+    {
+      id: 'trade-after-expiry', covers: 'expired contract', action: 'ticket', instrument: 'main', side: 'buy', qty: 1,
+      status: 'blocked', reason: 'The contract was settled on 27 March 2026.',
+      expect: { refused: 'BTCH6 expired on 2026-03-27' },
+    },
+  ],
+};
+
+// ---------------------------------------------------------------------------------------------
+// perpetual_future
+// ---------------------------------------------------------------------------------------------
+// A linear bitcoin perpetual on an offshore venue: 0.1 bitcoin a contract, quoted in USD a bitcoin,
+// minimum move 0.50 (0.05 USD a contract). It never expires. Longs and shorts exchange a funding
+// payment every eight hours (00:00, 08:00 and 16:00 UTC): the funding rate times the position's
+// notional; with a positive rate longs pay shorts. The catalog says funding is recorded by hand:
+// each payment here is entered as a manual cash flow of kind "Funding expense" on the position.
+// The venue trades every day, so the contract's trading and settlement calendars are set to the
+// every-day calendar and the scenario starts on a Saturday. The Terminal's end-of-day pass still runs
+// on US business days only: nothing is settled over the weekend, and Monday's variation margin is
+// against the fill. Initial margin 700 USD a contract (ten times leverage); commission 5 basis points
+// of the contract value, the venue's taker fee, rather than an amount per contract.
+const perpetualFuture = {
+  productId: 'perpetual_future',
+  title: 'Bitcoin / US dollar perpetual future (0.1 BTC, funding recorded by hand), traded every day',
+  matrix: {
+    ...FUTURES_TICKET,
+    manualInputs: ['each funding payment, recorded by hand: strategy instance, the position\'s Lifecycle menu, Manual cash flow, kind "Funding expense" (negative when paid, positive when received)'],
+    settlement: 'No purchase cash; initial margin 700 USD a contract; variation margin at each end-of-day pass (US business days); no expiry and no final settlement',
+    lifecycle: 'Variation margin (automatic, not on weekends); funding payments are not generated and are recorded by hand; no expiry item exists; closes like any future',
+    accounting: 'Nil cost; variation margin and closes are realized P&L; funding paid and received under borrowing and funding expenses; commission 5 basis points of contract value',
+    collateral: 'Initial margin per contract; released pro rata on reduction and close',
+  },
+  start: '2026-03-14T15:00:00.000Z', // Saturday 14 March 2026, 11:00 New York
+  settlementCheck: { lag: 0, holidays: [] },
+  book: book('Matrix perpetual future', { funding: [{ ccy: 'USD', amount: 100_000 }], fee: { perUnit: 0, minimum: 0, bps: 5 } }),
+  instruments: {
+    main: { productId: 'perpetual_future', name: 'Bitcoin / US dollar perpetual future', symbol: 'BTCP', marketView: 'FOREIGN_DERIV', venue: 'Meridian Digital Derivatives', venueType: 'exchange', venueCountry: 'SC', underlyingGeo: 'Global',
+      tradingCcy: 'USD', multiplier: 0.1, conventions: { tradingCalendar: 'ALLDAYS', settlementCalendar: 'ALLDAYS' },
+      terms: { root: 'BTCP', perpetual: true, tickSize: 0.5, initialMargin: 700, settlement: 'cash', priceUnits: 'USD per bitcoin' } },
+  },
+  quotes: { main: { bid: 69_000, ask: 69_000.5, last: 69_000, bidSize: 5000, askSize: 5000 } },
+  closes: { main: { '2026-03-16': 70_150, '2026-03-17': 70_420 } },
+  expectAtStart: {
+    ...NO_STATE,
+    cash: { account: { USD: usd(100_000) }, treasury: { USD: usd(900_000) } },
+    positions: [], lifecycle: [],
+    nav: { account: 100_000, treasury: 900_000, book: 1_000_000 },
+  },
+  steps: [
+    {
+      id: 'open-on-saturday', covers: ['open', 'initial margin', 'weekend trading'], action: 'ticket', instrument: 'main', side: 'buy', qty: 50, as: 'long',
+      expect: {
+        preview: { blocking: 0, errors: [], notes: ['support'], // the preview states that funding payments are recorded by hand and that there is no expiry
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 50, estimate: 69_000.5, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2026-03-14', calendar: 'ALLDAYS',
+            notional: 345_002.50, initialMargin: 35_000, fees: 172.50 }], // 50 x 69,000.50 x 0.1; 50 x 700; 5 bp of 345,002.50 = 172.50125
+          cash: { USD: { purchases: 0, fees: 172.50, margin: 35_000, required: 35_172.50, available: 100_000, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 50, avgPrice: 69_000.5 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 50 BTCP @ 69,000.50 (notional 345,002.50 USD; margin posted 35,000.00 USD)', cash: { USD: -35_172.50 }, owner: 'account', date: '2026-03-14' }],
+        cash: { account: { USD: usd(64_827.50, 35_000) } },
+        positions: [{ instrument: 'main', lot: 'long', owner: 'account', direction: 'long', qty: 50, avgCost: 69_000.5, cost: 0, price: 69_000, value: -2.50, unrealized: -2.50, notional: 345_000, margin: 35_000 }], // -0.50 x 0.1 x 50
+        holdings: { main: { long: 50, short: 0, net: 50 } },
+        lifecycle: [], // a perpetual has no expiry item
+        pnl: { account: { realized: 0, dividends: 0, commissions: -172.50, fees: 0, borrowFunding: 0, unrealized: -2.50, fx: 0, total: -175 } },
+        nav: { account: 99_825, book: 999_825 },
+        balance: { account: { cash: 64_827.50, margin: 35_000, positions: -2.50, assets: 99_825, liabilities: 0, netAssets: 99_825 } },
+      },
+    },
+    { id: 'saturday-funding-time', action: 'clock', to: '2026-03-14T16:05:00.000Z', expect: {} },
+    {
+      // 16:00 UTC funding at +0.0100%: the long pays 0.0001 x 345,000 (50 x 0.1 x 69,000) = 34.50.
+      id: 'funding-paid', covers: 'funding payment', action: 'cashflow', lot: 'long', category: 'funding', amount: -34.50, note: 'Funding at 16:00 UTC: 0.0100% of 345,000.00 notional, longs pay',
+      expect: {
+        events: [{ type: 'manual.cashflow', summary: 'Manual funding on BTCP: paid 34.50 USD. Funding at 16:00 UTC: 0.0100% of 345,000.00 notional, longs pay', cash: { USD: -34.50 }, owner: 'account', date: '2026-03-14' }],
+        cash: { account: { USD: usd(64_793, 35_000) } },
+        pnl: { account: { borrowFunding: -34.50, total: -209.50 } },
+        nav: { account: 99_790.50, book: 999_790.50 },
+        balance: { account: { cash: 64_793, assets: 99_790.50, netAssets: 99_790.50 } },
+      },
+    },
+    {
+      // Sunday. No end-of-day pass has run since Friday: nothing is settled over the weekend.
+      id: 'sunday', covers: 'weekend, no end-of-day pass', action: 'clock', to: '2026-03-15T22:00:00.000Z',
+      expect: { events: [] },
+    },
+    {
+      id: 'sunday-quote', action: 'quote', instrument: 'main', quote: { bid: 70_200, ask: 70_200.5, last: 70_200, bidSize: 5000, askSize: 5000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'long', qty: 50, avgCost: 69_000.5, price: 70_200, value: 5_997.50, unrealized: 5_997.50, notional: 351_000 }], // 1,199.50 x 0.1 x 50; 50 x 0.1 x 70,200
+        pnl: { account: { unrealized: 5_997.50, total: 5_790.50 } }, // -172.50 - 34.50 + 5,997.50
+        nav: { account: 105_790.50, book: 1_005_790.50 },
+        balance: { account: { positions: 5_997.50, assets: 105_790.50, netAssets: 105_790.50 } },
+      },
+    },
+    {
+      // A negative funding rate, -0.0050%: shorts pay longs. The long receives 0.00005 x 351,000 = 17.55.
+      id: 'funding-received', covers: 'funding payment', action: 'cashflow', lot: 'long', category: 'funding', amount: 17.55, note: 'Funding at 16:00 UTC: -0.0050% of 351,000.00 notional, shorts pay',
+      expect: {
+        events: [{ type: 'manual.cashflow', summary: 'Manual funding on BTCP: received 17.55 USD. Funding at 16:00 UTC: -0.0050% of 351,000.00 notional, shorts pay', cash: { USD: 17.55 }, date: '2026-03-15' }],
+        cash: { account: { USD: usd(64_810.55, 35_000) } },
+        pnl: { account: { borrowFunding: -16.95, total: 5_808.05 } }, // -34.50 + 17.55
+        nav: { account: 105_808.05, book: 1_005_808.05 },
+        balance: { account: { cash: 64_810.55, assets: 105_808.05, netAssets: 105_808.05 } },
+      },
+    },
+    {
+      id: 'monday-variation', covers: 'variation margin', action: 'clock', to: EOD('2026-03-16'),
+      expect: {
+        // The first pass since the Saturday fill: (70,150 - 69,000.50) x 0.1 x 50 = 5,747.50 received. No funding is generated.
+        events: [{ type: 'future.variation', summary: 'Variation margin received on 50 BTCP: 5,747.50 USD (settlement 70,150.00 vs 69,000.50)', cash: { USD: 5_747.50 }, date: '2026-03-16' }],
+        cash: { account: { USD: usd(70_558.05, 35_000) } },
+        positions: [{ instrument: 'main', lot: 'long', qty: 50, avgCost: 70_150, price: 70_200, value: 250, unrealized: 250 }], // 50 x 0.1 x 50
+        pnl: { account: { realized: 5_747.50, unrealized: 250, total: 5_808.05 } },
+        balance: { account: { cash: 70_558.05, positions: 250 } },
+      },
+    },
+    { id: 'tuesday', action: 'clock', to: AM('2026-03-17'), expect: {} },
+    {
+      id: 'reduce', covers: ['reduce', 'margin release'], action: 'close', lot: 'long', scope: 'strategy', percent: 40, // sells 20 of the 50
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 20, estimate: 70_200, model: 'quoted-bid-ask', settleDate: '2026-03-17',
+          notional: 140_400, initialMargin: -14_000, fees: 70.20 }], // 20 x 70,200 x 0.1; 5 bp of 140,400
+          cash: { USD: { purchases: 0, fees: 70.20, margin: 0, required: 70.20, available: 70_558.05, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 20, avgPrice: 70_200 }] },
+        // Realized: (70,200 - 70,150) x 0.1 x 20 = 100.00. Cash: 100 - 70.20 + 14,000 = 14,029.80.
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 20 BTCP @ 70,200.00 (notional 140,400.00 USD; margin released 14,000.00 USD; realized 100.00 USD)', cash: { USD: 14_029.80 } }],
+        cash: { account: { USD: usd(84_587.85, 21_000) } },
+        positions: [{ instrument: 'main', lot: 'long', qty: 30, avgCost: 70_150, price: 70_200, value: 150, unrealized: 150, notional: 210_600, margin: 21_000 }],
+        holdings: { main: { long: 30, short: 0, net: 30 } },
+        pnl: { account: { realized: 5_847.50, commissions: -242.70, unrealized: 150, total: 5_737.85 } }, // 5,847.50 - 242.70 - 16.95 + 150
+        nav: { account: 105_737.85, book: 1_005_737.85 },
+        balance: { account: { cash: 84_587.85, margin: 21_000, positions: 150, assets: 105_737.85, netAssets: 105_737.85 } },
+      },
+    },
+    {
+      id: 'close-long', covers: ['close', 'margin release'], action: 'close', lot: 'long', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 30, estimate: 70_200, model: 'quoted-bid-ask', settleDate: '2026-03-17',
+          notional: 210_600, initialMargin: -21_000, fees: 105.30 }], // 5 bp of 210,600
+          cash: { USD: { purchases: 0, fees: 105.30, margin: 0, required: 105.30, available: 84_587.85, shortfall: 0 } } },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 30, avgPrice: 70_200 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 30 BTCP @ 70,200.00 (notional 210,600.00 USD; margin released 21,000.00 USD; realized 150.00 USD)', cash: { USD: 21_044.70 } }], // 150 - 105.30 + 21,000
+        cash: { account: { USD: usd(105_632.55, 0) } },
+        positions: [],
+        holdings: { main: null },
+        pnl: { account: { realized: 5_997.50, commissions: -348, unrealized: 0, total: 5_632.55 } }, // the long: (70,200 - 69,000.50) x 0.1 x 50 = 5,997.50
+        nav: { account: 105_632.55, book: 1_005_632.55 },
+        balance: { account: { cash: 105_632.55, margin: null, positions: null, assets: 105_632.55, netAssets: 105_632.55 } },
+      },
+    },
+    {
+      id: 'open-short', covers: ['open short', 'initial margin'], action: 'ticket', instrument: 'main', side: 'sell', qty: 40, as: 'short',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 40, estimate: 70_200, model: 'quoted-bid-ask', settleDate: '2026-03-17',
+          notional: 280_800, initialMargin: 28_000, fees: 140.40 }], // 40 x 70,200 x 0.1; 5 bp
+          cash: { USD: { purchases: 0, fees: 140.40, margin: 28_000, required: 28_140.40, available: 105_632.55, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 40, avgPrice: 70_200 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Sold 40 BTCP @ 70,200.00 (notional 280,800.00 USD; margin posted 28,000.00 USD)', cash: { USD: -28_140.40 } }],
+        cash: { account: { USD: usd(77_492.15, 28_000) } },
+        positions: [{ instrument: 'main', lot: 'short', owner: 'account', direction: 'short', qty: -40, avgCost: 70_200, cost: 0, price: 70_200, value: 0, unrealized: 0, notional: 280_800, margin: 28_000 }],
+        holdings: { main: { long: 0, short: 40, net: -40 } },
+        pnl: { account: { commissions: -488.40, total: 5_492.15 } },
+        nav: { account: 105_492.15, book: 1_005_492.15 },
+        balance: { account: { cash: 77_492.15, margin: 28_000, assets: 105_492.15, netAssets: 105_492.15 } },
+      },
+    },
+    {
+      // Funding at +0.0100% again: this time the Account is short and receives 0.0001 x 280,800 = 28.08.
+      id: 'funding-received-short', covers: 'funding payment', action: 'cashflow', lot: 'short', category: 'funding', amount: 28.08, note: 'Funding at 16:00 UTC: 0.0100% of 280,800.00 notional, longs pay',
+      expect: {
+        events: [{ type: 'manual.cashflow', summary: 'Manual funding on BTCP: received 28.08 USD. Funding at 16:00 UTC: 0.0100% of 280,800.00 notional, longs pay', cash: { USD: 28.08 } }],
+        cash: { account: { USD: usd(77_520.23, 28_000) } },
+        pnl: { account: { borrowFunding: 11.13, total: 5_520.23 } }, // -34.50 + 17.55 + 28.08: net funding received
+        nav: { account: 105_520.23, book: 1_005_520.23 },
+        balance: { account: { cash: 77_520.23, assets: 105_520.23, netAssets: 105_520.23 } },
+      },
+    },
+    {
+      id: 'tuesday-variation', covers: 'variation margin', action: 'clock', to: EOD('2026-03-17'),
+      expect: {
+        events: [{ type: 'future.variation', summary: 'Variation margin paid on -40 BTCP: 880.00 USD (settlement 70,420.00 vs 70,200.00)', cash: { USD: -880 }, date: '2026-03-17' }], // 220 x 0.1 x 40 against the short
+        cash: { account: { USD: usd(76_640.23, 28_000) } },
+        positions: [{ instrument: 'main', lot: 'short', qty: -40, avgCost: 70_420, price: 70_200, value: 880, unrealized: 880 }],
+        pnl: { account: { realized: 5_117.50, unrealized: 880, total: 5_520.23 } },
+        balance: { account: { cash: 76_640.23, positions: 880 } },
+      },
+    },
+    { id: 'wednesday', action: 'clock', to: AM('2026-03-18'), expect: {} },
+    {
+      id: 'quote-wednesday', action: 'quote', instrument: 'main', quote: { bid: 69_700, ask: 69_700.5, last: 69_700.5, bidSize: 5000, askSize: 5000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'short', qty: -40, avgCost: 70_420, price: 69_700.5, value: 2_878, unrealized: 2_878, notional: 278_802 }], // (70,420 - 69,700.50) x 0.1 x 40
+        pnl: { account: { unrealized: 2_878, total: 7_518.23 } }, // 5,117.50 - 488.40 + 11.13 + 2,878
+        nav: { account: 107_518.23, book: 1_007_518.23 },
+        balance: { account: { positions: 2_878, assets: 107_518.23, netAssets: 107_518.23 } },
+      },
+    },
+    {
+      id: 'close-short', covers: ['close short', 'margin release'], action: 'close', lot: 'short', scope: 'position', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 40, estimate: 69_700.5, model: 'quoted-bid-ask', settleDate: '2026-03-18',
+          notional: 278_802, initialMargin: -28_000, fees: 139.40 }], // 40 x 69,700.50 x 0.1; 5 bp of 278,802 = 139.401
+          cash: { USD: { purchases: 0, fees: 139.40, margin: 0, required: 139.40, available: 76_640.23, shortfall: 0 } } },
+        result: { status: 'closed', orders: [{ action: 'buy', status: 'filled', filledQty: 40, avgPrice: 69_700.5 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Bought 40 BTCP @ 69,700.50 (notional 278,802.00 USD; margin released 28,000.00 USD; realized 2,878.00 USD)', cash: { USD: 30_738.60 } }], // 2,878 - 139.40 + 28,000
+        // By hand: long 50 from 69,000.50 to 70,200: 5,997.50. Short 40 from 70,200 to 69,700.50: 1,998.00. Total 7,995.50.
+        // Commission 172.50 + 70.20 + 105.30 + 140.40 + 139.40 = 627.80. Funding -34.50 + 17.55 + 28.08 = 11.13.
+        cash: { account: { USD: usd(107_378.83, 0) }, treasury: { USD: usd(900_000) } }, // 100,000 + 7,995.50 - 627.80 + 11.13
+        positions: [],
+        holdings: { main: null },
+        lifecycle: [],
+        pnl: { account: { realized: 7_995.50, commissions: -627.80, borrowFunding: 11.13, unrealized: 0, total: 7_378.83 } },
+        nav: { account: 107_378.83, treasury: 900_000, book: 1_007_378.83 },
+        balance: { account: { cash: 107_378.83, margin: null, positions: null, assets: 107_378.83, liabilities: 0, netAssets: 107_378.83 } },
+      },
+    },
+  ],
+};
+
+export default [equityFuture, equityIndexFuture, govBondFuture, treasuryFuture, stirFuture, fxFuture, commodityFuture, volatilityFuture, dividendFuture, cryptoFuture, perpetualFuture];
