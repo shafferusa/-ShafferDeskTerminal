@@ -1360,4 +1360,180 @@ const cdsTranche = {
   ],
 };
 
-export default [cdsSingleName, cdsSovereign, cdsIndex, cdsBasket, cdsTranche];
+// ---------------------------------------------------------------------------------------------
+// loan_cds
+// ---------------------------------------------------------------------------------------------
+// A bespoke US loan CDS on the syndicated secured first-lien term loan of Tamarind Foods Holdings LLC, 500 bp, effective
+// Thursday 28 May 2026, maturity 20 June 2029; credit events bankruptcy and failure to pay; settled at the loan auction's
+// final price; cancellable: if the reference loans are repaid and not replaced, the contract is cancelled with no
+// protection payment (recorded by hand). The first roll date, 20 June, is only 23 days after the effective date, so the
+// contract takes a LONG first stub, to 20 September. Bespoke convention: accrual dates not adjusted, premium from the
+// effective date for a trade dealt the day before, nothing exchanged at trade, terminations at an all-in amount.
+// Explicitly uncollateralized (paper assumption). Commission 20.00 per million; T+3 (USD calendar).
+//   bought 8,000,000 on Wed 27 May at 1.00: 80,000.00; settles Mon 1 June
+//   long first stub, 28 May to 20 September, 115 days: 8,000,000 x 5% x 115/360 = 127,777.78, paid Mon 21 September
+//   2,000,000 terminated on Wed 14 October at 0.75 all-in: 15,000.00 received against 20,000.00 of cost: realized -5,000
+//   cancelled on refinancing on Mon 16 November (recorded Wed 18 November): premium 20 September to 16 November (excluded),
+//     57 days on 6,000,000: 47,500.00 paid; no protection; the 60,000.00 of cost left realized
+const LCDS_NAME = 'Tamarind Foods 1L term loan LCDS 500bp 20 Jun 2029';
+const loanCds = {
+  productId: 'loan_cds',
+  title: 'Bespoke cancellable loan CDS with a long first stub, uncollateralized: premium, partial termination, cancelled on refinancing',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'First period (long stub)', 'Cancellable on refinancing'],
+    automaticInputs: ['premium schedule from the effective date with a long first stub, on the USD calendar', 'premium from the effective date for a trade dealt the day before', 'settlement date T+3', 'commission', 'premium accrued to the cancellation date'],
+    manualInputs: ['the long first stub and cancellability (contract terms)', 'upfront and the all-in termination amount (stated fill prices)', 'marks per 100 entered by hand', 'the cancellation on refinancing: date and note'],
+    settlement: 'Upfront and termination amounts T+3 on the USD calendar; premium on the next business day after each roll date; the accrued premium of the cancellation in cash on the day it is recorded',
+    lifecycle: 'Buy protection; long first stub; partial termination; cancellation on refinancing recorded by hand ends the contract with no protection payment; a credit event afterwards refused',
+    accounting: 'Carried at the mark less the upfront; premiums realized; on cancellation the accrued premium is paid and the cost left is realized; commission expensed',
+    collateral: 'Uncollateralized, stated on the contract as an explicit paper assumption: nothing posted or received',
+  },
+  start: at('2026-05-27'),
+  settlementCheck: { lag: 3, holidays: [] },
+  book: {
+    name: 'Matrix loan CDS', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 3_000_000 }],
+    account: { name: 'Leveraged loans', funding: [{ ccy: 'USD', amount: 1_000_000 }] },
+    settings: { fees: { cds: { perUnit: 0.00002, minimum: 0, bps: 0 } }, fill: FILL, settlement: { cds: 3 } },
+  },
+  instruments: {
+    main: {
+      productId: 'loan_cds', name: LCDS_NAME, symbol: 'TMRND-LCDS-0629', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { tradingCalendar: 'USD', settlementCalendar: 'USD', paymentCalendar: 'USD' },
+      terms: {
+        referenceEntity: 'Tamarind Foods Holdings LLC', seniority: 'Syndicated secured first-lien term loan', coupon: 0.05, effective: '2026-05-28', maturity: '2029-06-20', recovery: 0.7,
+        convention: 'bespoke', firstStub: 'long', creditEventSet: 'corporate_xr', settlement: 'auction', cancellable: true, counterparty: 'Dealer L',
+        collateralBasis: { type: 'uncollateralized' },
+      },
+    },
+  },
+  expectAtStart: {
+    cash: { account: { USD: { settled: 1_000_000, unsettled: 0, margin: 0, restricted: 0, availableToTrade: 1_000_000, availableToWithdraw: 1_000_000 } }, treasury: { USD: { settled: 2_000_000 } } },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [], otc: [], alerts: [],
+    nav: { account: 1_000_000, treasury: 2_000_000, book: 3_000_000 },
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+  },
+  steps: [
+    otcTicket({
+      id: 'buy-loan-protection', covers: ['open', 'buy protection'], instrument: 'main', side: 'buy', qty: 8_000_000, upfront: 1.00, as: 'lcds',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 8_000_000, estimate: 1, model: 'stated-price', settleDate: '2026-06-01', calendar: 'USD', cash: -80_000, accrued: 0, fees: 160 }],
+          cash: { USD: { fees: 160, margin: 0, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 8_000_000, avgPrice: 1 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 8,000,000 TMRND-LCDS-0629 @ 1.00 USD', owner: 'account', date: '2026-05-27' }],
+        cash: { account: { USD: { settled: 1_000_000, unsettled: -80_160, availableToTrade: 919_840, availableToWithdraw: 919_840 } } },
+        positions: [{ instrument: 'main', lot: 'lcds', owner: 'account', direction: 'protection bought', qty: 8_000_000, avgCost: 1, cost: 80_000, price: null, value: null, unrealized: null, provisional: true, notional: 8_000_000, margin: 0, accrued: 0 }],
+        holdings: { main: { long: 8_000_000, short: 0, net: 8_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-06-01', amount: -80_160, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'cds.premium', instrument: 'main', dueDate: '2026-09-21', status: 'pending' }, // the long first stub: no payment on 22 June
+          { type: 'cds.maturity', instrument: 'main', dueDate: '2029-06-20', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', lot: 'lcds', owner: 'account', qty: 8_000_000, basis: 'uncollateralized', iaRequired: null, iaPosted: 0, vmPosted: 0, vmHeld: 0 }], // nothing is required under the paper assumption
+        pnl: { account: { realized: 0, commissions: -160, unrealized: 0, total: -160 } },
+        nav: { account: 999_840, book: 2_999_840 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 1_000_000, positions: 80_000, payable: 80_160, assets: 1_080_000, liabilities: 80_160, netAssets: 999_840 } },
+      },
+    }),
+    {
+      id: 'mark-at-trade', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 1.00, note: 'Dealer L upfront per 100, by hand',
+      expect: { positions: [{ instrument: 'main', lot: 'lcds', price: 1, value: 80_000, unrealized: 0, provisional: false }], otc: [{ instrument: 'main', mark: 1, markValue: 80_000 }], provisional: { account: false, book: false } },
+    },
+    {
+      id: 'settle-upfront', covers: 'settlement', action: 'clock', to: at('2026-06-01'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 80,160.00 USD from settled cash', cash: { USD: -80_160 } }],
+        cash: { account: { USD: { settled: 919_840, unsettled: 0, availableToTrade: 919_840, availableToWithdraw: 919_840 } } },
+        pending: [],
+        balance: { account: { cash: 919_840, payable: null, assets: 999_840, liabilities: 0 } },
+      },
+    },
+    { id: 'no-payment-on-the-first-roll-date', covers: 'long first stub', action: 'clock', to: at('2026-06-23'), expect: {} },
+    {
+      // 28 May to 20 September, 115 days: 8,000,000 x 5% x 115/360 = 127,777.78, paid Mon 21 September (20th a Sunday).
+      id: 'first-premium-long-stub', covers: ['premium', 'long first stub'], action: 'clock', to: at('2026-09-21'),
+      expect: {
+        events: [{ type: 'cds.premium', summary: `CDS premium paid on ${LCDS_NAME} for 2026-05-28 to 2026-09-20: 127,777.78 USD`, cash: { USD: -127_777.78 }, owner: 'account', date: '2026-09-21' }],
+        cash: { account: { USD: { settled: 792_062.22, availableToTrade: 792_062.22, availableToWithdraw: 792_062.22 } } },
+        lifecycle: [
+          { type: 'cds.premium', instrument: 'main', dueDate: '2026-12-21', status: 'pending' },
+          { type: 'cds.maturity', instrument: 'main', dueDate: '2029-06-20', status: 'pending' },
+        ],
+        pnl: { account: { realized: -127_777.78, total: -127_937.78 } },
+        nav: { account: 872_062.22, book: 2_872_062.22 },
+        balance: { account: { cash: 792_062.22, assets: 872_062.22, netAssets: 872_062.22 } },
+      },
+    },
+    { id: 'mid-october', action: 'clock', to: at('2026-10-14'), expect: {} },
+    {
+      id: 'mark-tighter', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 0.75, note: 'Dealer L upfront per 100, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lcds', price: 0.75, value: 60_000, unrealized: -20_000 }],
+        otc: [{ instrument: 'main', mark: 0.75, markValue: 60_000 }],
+        pnl: { account: { unrealized: -20_000, total: -147_937.78 } },
+        nav: { account: 852_062.22, book: 2_852_062.22 },
+        balance: { account: { positions: 60_000, assets: 852_062.22, netAssets: 852_062.22 } },
+      },
+    },
+    {
+      id: 'partial-termination', covers: ['reduce', 'partial termination'], action: 'close', lot: 'lcds', scope: 'strategy', percent: 25, order: { statedPrice: 0.75 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 2_000_000, estimate: 0.75, model: 'stated-price', settleDate: '2026-10-19', cash: 15_000, accrued: 0, fees: 40 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 2_000_000, avgPrice: 0.75 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 2,000,000 TMRND-LCDS-0629 @ 0.75 USD (realized -5,000.00 USD)' }],
+        cash: { account: { USD: { settled: 792_062.22, unsettled: 14_960, availableToTrade: 807_022.22, availableToWithdraw: 792_062.22 } } },
+        positions: [{ instrument: 'main', lot: 'lcds', qty: 6_000_000, cost: 60_000, avgCost: 1, price: 0.75, value: 45_000, unrealized: -15_000, notional: 6_000_000 }],
+        holdings: { main: { long: 6_000_000, short: 0, net: 6_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-10-19', amount: 14_960, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: 6_000_000, markValue: 45_000 }],
+        pnl: { account: { realized: -132_777.78, commissions: -200, unrealized: -15_000, total: -147_977.78 } },
+        nav: { account: 852_022.22, book: 2_852_022.22 },
+        balance: { account: { cash: 792_062.22, receivable: 14_960, positions: 45_000, assets: 852_022.22, netAssets: 852_022.22 } },
+      },
+    },
+    {
+      id: 'settle-termination', covers: 'settlement', action: 'clock', to: at('2026-10-19'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 14,960.00 USD into settled cash', cash: { USD: 14_960 } }],
+        cash: { account: { USD: { settled: 807_022.22, unsettled: 0, availableToTrade: 807_022.22, availableToWithdraw: 807_022.22 } } },
+        pending: [],
+        balance: { account: { cash: 807_022.22, receivable: null } },
+      },
+    },
+    { id: 'refinancing-known', action: 'clock', to: at('2026-11-18'), expect: {} },
+    {
+      // 20 September to 16 November, 57 days, on 6,000,000: 47,500.00 paid; no protection; 60,000.00 of cost realized.
+      id: 'cancelled-on-refinancing', covers: ['cancellation on refinancing', 'close'], action: 'instrument_lifecycle', instrument: 'main',
+      body: { action: 'cancel', date: '2026-11-16', note: 'Refinanced by a new term loan B arranged by Dealer L' },
+      expect: {
+        events: [
+          { type: 'cds.cancelled', summary: `TMRND-LCDS-0629 cancelled on 2026-11-16, recorded by hand: the reference loans of Tamarind Foods Holdings LLC were repaid and not replaced (Refinanced by a new term loan B arranged by Dealer L). No protection is paid; accrued premium 47,500.00 USD to the cancellation date; paid 47,500.00 USD`, cash: { USD: -47_500 }, owner: 'account', date: '2026-11-18' },
+          { type: 'cds.terminated', summary: 'TMRND-LCDS-0629 ended for this position: cancelled on refinancing: the reference loans of Tamarind Foods Holdings LLC were repaid and not replaced' },
+        ],
+        cash: { account: { USD: { settled: 759_522.22, availableToTrade: 759_522.22, availableToWithdraw: 759_522.22 } } },
+        positions: [], holdings: { main: null }, lifecycle: [], otc: [],
+        pnl: { account: { realized: -240_277.78, unrealized: 0, total: -240_477.78 } }, // -132,777.78 - 47,500 - 60,000
+        nav: { account: 759_522.22, book: 2_759_522.22 },
+        balance: { account: { cash: 759_522.22, positions: null, assets: 759_522.22, liabilities: 0, netAssets: 759_522.22 } },
+      },
+    },
+    {
+      id: 'credit-event-after-cancellation', covers: 'credit event', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'credit_event', eventType: 'bankruptcy', recovery: 0.6 },
+      status: 'blocked', reason: 'A cancelled loan CDS gives no further protection.',
+      expect: { refused: { engine: 'TMRND-LCDS-0629 has ended (2026-11-16: cancelled on refinancing: the reference loans of Tamarind Foods Holdings LLC were repaid and not replaced (Refinanced by a new term loan B arranged by Dealer L)). No further credit event is recorded on it.', api: 'TMRND-LCDS-0629 has ended', browser: 'TMRND-LCDS-0629 ended on 2026-11-16: cancelled on refinancing' } },
+    },
+    {
+      // 1,000,000 - 80,160 - 127,777.78 + 14,960 - 47,500 = 759,522.22.
+      id: 'nothing-left', covers: 'close', action: 'clock', to: at('2026-12-21'),
+      expect: { events: [], positions: [], pending: [], lifecycle: [], otc: [], alerts: [] },
+    },
+  ],
+};
+
+export default [cdsSingleName, cdsSovereign, cdsIndex, cdsBasket, cdsTranche, loanCds];

@@ -1886,4 +1886,259 @@ const structuredNoteSpec = {
   ],
 };
 
-export default [specifiedPool, absSpec, cmoSpec, cloSpec, cdoSpec, clnSpec, structuredNoteSpec];
+// ---------------------------------------------------------------------------------------------
+// catastrophe_bond
+// ---------------------------------------------------------------------------------------------
+// A catastrophe bond: Gulfstream Re 2026-1 Ltd Class A Principal At-Risk Variable Rate Notes (Cayman SPV, 144A, USD), sponsored
+// by Harbor Mutual Insurance Company, covering US named-storm losses on an industry-index trigger (PCS losses of 40 billion
+// attach, 65 billion exhaust). The 150,000,000 issue's principal is held in a collateral trust account invested in US Treasury
+// money-market funds; the coupon passes through the collateral return (3-month T-bill yield, rate code UST3M, from the fixture)
+// plus a risk spread of 7.75%, quarterly on 7 January, April, July and October, ACT/360. T+2, pieces of 250,000. When a covered
+// event triggers a principal loss (determined by the calculation agent, recorded by hand), principal is reduced from the start
+// of the interest period in which it is determined, and that much collateral is released to the sponsor.
+//   - Bought on Tuesday 3 August 2027 at 101.00 (settling Thursday 5 August). A hurricane makes landfall: the price falls.
+//   - Labor Day passes; the 7 October coupon is paid at 11.65% (3.90% + 7.75%); the next period takes the October T-bill fixing
+//     (3.70%: 11.45%).
+//   - Monday 18 October: the calculation agent's loss report: 40% of principal is lost (factor 1 to 0.60 from 7 October),
+//     60,000,000 of collateral released to the sponsor. The interest accrued since 7 October on the lost principal is cancelled.
+//   - The remaining principal is re-priced at 95.50; 1,000,000 original face sold, then the rest.
+// Commission: 0.5 basis point of clean principal. Days (ACT/360) from 7 Jul: to 5 Aug 29, 1 Sep 56, 7 Sep 62, 4 Oct 89, 7 Oct 92;
+// from 7 Oct: to 15 Oct 8, 19 Oct 12, 20 Oct 13, 22 Oct 15.
+const catBondSpec = {
+  productId: 'catastrophe_bond',
+  title: 'Gulfstream Re 2026-1 Class A cat bond (T-bill collateral return + 7.75%): collateral account term, hurricane price fall, Labor Day, coupon and T-bill reset, covered event by hand cuts principal 40% and releases collateral to the sponsor, partial sale, close',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount (a multiple of 250,000)'],
+    automaticInputs: [...BOND_TICKET.automaticInputs, 'UST3M collateral-return fixing of each period (rate fixture standing in for Shaffer MarketData)'],
+    manualInputs: ['Registration: Collateral account (required), Issue size, Sponsor, Trigger, Coupon Floating UST3M + spread, Current coupon', 'Covered event recorded by hand on the instrument form (Principal written down to, Kind: Covered event, Write-down effective from)'],
+    settlement: 'T+2 on the US bond calendar',
+    lifecycle: 'Automatic: daily accrual, quarterly coupon at the collateral return plus the risk spread, reset from the fixing. Manual: the covered event and its principal loss (no catastrophe-loss feed), which releases collateral to the sponsor. Not modelled: the collateral fund\'s own valuation (the account is described with its outstanding balance)',
+    accounting: 'Cost per 100 of outstanding principal; principal lost to the covered event written off as a realized loss with the interest accrued on it; coupon and interest income; commission expensed',
+    collateral: 'Held by the issuer in its collateral trust account, not by the holder: the account\'s balance and the collateral released to the sponsor are shown on the instrument',
+  },
+  start: EDT('2027-08-03'), // Tuesday
+  settlementCheck: { lag: 2, holidays: ['2027-09-06'] }, // Labor Day
+  book: {
+    name: 'Matrix cat bond', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 4_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 3_000_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.5 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'catastrophe_bond', name: 'Gulfstream Re 2026-1 Ltd Class A Principal At-Risk Variable Rate Notes due 2029', symbol: 'GULF-26-1-A', marketView: 'US_CASH', venueType: 'otc', issuer: 'Gulfstream Re 2026-1 Ltd', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { settleLag: 2 },
+      terms: { couponType: 'float', referenceRate: 'UST3M', spread: 0.0775, currentCoupon: 0.1165, frequency: 4, maturity: '2029-04-07', issueDate: '2026-04-07', dayCount: 'ACT/360', redemption: 100, minDenomination: 250_000, seniority: 'Principal at risk (Class A)',
+        collateralAccount: 'Collateral trust account at Calloway Trust Company, invested in US Treasury money-market funds', issueSize: 150_000_000, sponsor: 'Harbor Mutual Insurance Company', trigger: 'Industry index (PCS) US named-storm losses: 40 billion attachment, 65 billion exhaustion' } },
+  },
+  quotes: { main: { bid: 100.5, ask: 101, last: 100.75, bidSize: 10_000_000, askSize: 10_000_000 } },
+  expectAtStart: { ...startState(3_000_000, 1_000_000), cash: { account: usdCash(3_000_000), treasury: usdCash(1_000_000) } },
+  steps: [
+    {
+      id: 'register-without-collateral-account', covers: 'registration', action: 'register_instrument',
+      draft: { productId: 'catastrophe_bond', name: 'Gulfstream Re 2026-2 Ltd Class A Notes', symbol: 'GULF-26-2-A', marketView: 'US_CASH', venueType: 'otc', issuer: 'Gulfstream Re 2026-2 Ltd', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+        terms: { couponType: 'float', referenceRate: 'UST3M', spread: 0.08, currentCoupon: 0.119, frequency: 4, maturity: '2029-10-07', issueDate: '2026-10-07', dayCount: 'ACT/360', redemption: 100, minDenomination: 250_000 } },
+      status: 'blocked', reason: 'A catastrophe bond cannot be registered without the collateral account its principal is held in.',
+      expect: { refused: 'needs its collateral account' },
+    },
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 2_000_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 2_000_000, estimate: 101, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2027-08-05', calendar: 'USBOND',
+            gross: 2_020_000, accrued: 18_769.44, // 29 days at 11.65%: 2,000,000 x 11.65% x 29/360 = 18,769.444
+            cash: -2_038_769.44, fees: 101 }], // 0.5 bp of 2,020,000
+          cash: { USD: { purchases: 2_038_769.44, fees: 101, required: 2_038_870.44, available: 3_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 2_000_000, avgPrice: 101, fills: [{ qty: 2_000_000, price: 101, model: 'quoted-bid-ask', settleDate: '2027-08-05', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 2,000,000 GULF-26-1-A @ 101.00 USD', owner: 'account', date: '2027-08-03' }],
+        cash: { account: { USD: { settled: 3_000_000, unsettled: -2_038_870.44, availableToTrade: 961_129.56 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 2_000_000, avgCost: 101, cost: 2_020_000, price: 100.75, value: 2_015_000, unrealized: -5_000, accrued: 18_769.44, priceSource: 'Test fixture' }],
+        holdings: { main: { long: 2_000_000, short: 0, net: 2_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2027-08-05', amount: -2_038_870.44, ccy: 'USD', into: 'cash' }],
+        // 7 October 2027 is a Thursday. 7 April 2029 is a Saturday: redemption Monday 9 April 2029.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-10-07', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2029-04-09', status: 'pending' }],
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -101, fees: 0, borrowFunding: 0, unrealized: -5_000, total: -5_101 } },
+        nav: { account: 2_994_899, book: 3_994_899 },
+        balance: { account: { cash: 3_000_000, accruedIncome: 18_769.44, positions: 2_015_000, payable: 2_038_870.44, assets: 5_033_769.44, liabilities: 2_038_870.44, netAssets: 2_994_899 } },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EDT('2027-08-05'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 2,038,870.44 USD from settled cash', cash: { USD: -2_038_870.44 }, date: '2027-08-05' }],
+        cash: { account: { USD: { settled: 961_129.56, unsettled: 0, availableToTrade: 961_129.56 } } },
+        pending: [],
+        balance: { account: { cash: 961_129.56, payable: null, assets: 2_994_899, liabilities: 0 } },
+      },
+    },
+    {
+      // Thursday 2 September. End of day 1 Sep: 2,000,000 x 11.65% x 56/360 = 36,244.44; 17,475.00 more.
+      id: 'accrue', covers: 'accrual', action: 'clock', to: EDT('2027-09-02'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on GULF-26-1-A: 17,475.00 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_000_000, accrued: 36_244.44 }],
+        pnl: { account: { couponInterest: 17_475, total: 12_374 } },
+        nav: { account: 3_012_374, book: 4_012_374 },
+        balance: { account: { accruedIncome: 36_244.44, assets: 3_012_374, netAssets: 3_012_374 } },
+      },
+    },
+    {
+      // A hurricane makes landfall in the covered area: the bond trades down on the risk of a loss ("live cat").
+      id: 'hurricane-landfall', action: 'quote', instrument: 'main', quote: { bid: 70, ask: 75, last: 72.5, bidSize: 5_000_000, askSize: 5_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_000_000, price: 72.5, value: 1_450_000, unrealized: -570_000 }],
+        pnl: { account: { unrealized: -570_000, total: -552_626 } },
+        nav: { account: 2_447_374, book: 3_447_374 },
+        balance: { account: { positions: 1_450_000, assets: 2_447_374, netAssets: 2_447_374 } },
+      },
+    },
+    {
+      // Wednesday 8 September, after Labor Day. End of day 7 Sep: 62 days = 40,127.78; 3,883.34 more.
+      id: 'after-labor-day', covers: ['accrual', 'market holiday'], action: 'clock', to: EDT('2027-09-08'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on GULF-26-1-A: 3,883.34 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_000_000, accrued: 40_127.78 }],
+        pnl: { account: { couponInterest: 21_358.34, total: -548_742.66 } },
+        nav: { account: 2_451_257.34, book: 3_451_257.34 },
+        balance: { account: { accruedIncome: 40_127.78, assets: 2_451_257.34, netAssets: 2_451_257.34 } },
+      },
+    },
+    {
+      // Tuesday 5 October. End of day 4 Oct: 89 days = 57,602.78; 17,475.00 more.
+      id: 'accrue-october', covers: 'accrual', action: 'clock', to: EDT('2027-10-05'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on GULF-26-1-A: 17,475.00 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_000_000, accrued: 57_602.78 }],
+        pnl: { account: { couponInterest: 38_833.34, total: -531_267.66 } },
+        nav: { account: 2_468_732.34, book: 3_468_732.34 },
+        balance: { account: { accruedIncome: 57_602.78, assets: 2_468_732.34, netAssets: 2_468_732.34 } },
+      },
+    },
+    // The 3-month T-bill fixing for the period from 7 October, 3.70%, from the fixture.
+    { id: 'october-tbill-fixing', covers: 'reset', action: 'rate', code: 'UST3M', value: 3.7, date: '2027-10-05', expect: { events: [] } },
+    {
+      // Thursday 7 October: the coupon, 92 days at 11.65%: 2,000,000 x 11.65% x 92/360 = 59,544.44. The balance stands at 7 October:
+      // 0, so 59,544.44 - 57,602.78 = 1,941.66 more. The next period runs at 3.70% + 7.75% = 11.45%.
+      id: 'coupon', covers: ['coupon', 'reset'], action: 'clock', to: EDT('2027-10-07'),
+      expect: {
+        events: [
+          { type: 'bond.coupon', summary: 'Coupon received on 2,000,000 GULF-26-1-A: 59,544.44 USD', cash: { USD: 59_544.44 }, owner: 'account', date: '2027-10-07' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on GULF-26-1-A: 1,941.66 USD' },
+        ],
+        cash: { account: { USD: { settled: 1_020_674, availableToTrade: 1_020_674 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_000_000, accrued: 0 }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2028-01-07', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2029-04-09', status: 'pending' }],
+        pnl: { account: { couponInterest: 40_775, total: -529_326 } },
+        nav: { account: 2_470_674, book: 3_470_674 },
+        balance: { account: { cash: 1_020_674, accruedIncome: null, assets: 2_470_674, netAssets: 2_470_674 } },
+      },
+    },
+    {
+      // Monday 18 October. End of day Friday 15 Oct: 8 days at 11.45% on 2,000,000 = 5,088.89.
+      id: 'loss-report-day', covers: 'accrual', action: 'clock', to: EDT('2027-10-18'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on GULF-26-1-A: 5,088.89 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_000_000, accrued: 5_088.89 }],
+        pnl: { account: { couponInterest: 45_863.89, total: -524_237.11 } },
+        nav: { account: 2_475_762.89, book: 3_475_762.89 },
+        balance: { account: { accruedIncome: 5_088.89, assets: 2_475_762.89, netAssets: 2_475_762.89 } },
+      },
+    },
+    {
+      // The calculation agent's loss report: PCS losses put the class at a 40% principal loss. Recorded by hand: factor 1 to 0.60
+      // from 7 October. 2,000,000 x 0.40 = 800,000 of principal lost; cost out 2,020,000 x 0.40 = 808,000: realized loss. The
+      // collateral account releases 150,000,000 x 0.40 = 60,000,000 to the sponsor. Interest since 7 October on the lost principal is
+      // cancelled: 8 days on 1,200,000 at 11.45% = 3,053.33, 2,035.56 down.
+      id: 'covered-event', covers: 'trigger event (by hand)', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'writedown', newFactor: 0.6, kind: 'trigger', effective: '2027-10-07' },
+      expect: {
+        events: [
+          { type: 'bond.trigger', summary: 'Covered event recorded by hand on GULF-26-1-A: factor 1 to 0.6 from 2027-10-07, 800,000 of principal written off with no payment (2,000,000 original face); cost 808,000.00 USD written off as realized loss; 60,000,000.00 USD of collateral released from the collateral account to Harbor Mutual Insurance Company', owner: 'account', date: '2027-10-18' },
+          { type: 'accrual.coupon', summary: 'Accrued interest cancelled with the principal written off on GULF-26-1-A: 2,035.56 USD' },
+        ],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_000_000, cost: 1_212_000, avgCost: 101, price: 72.5, value: 870_000, unrealized: -342_000, accrued: 3_053.33 }], // 1,200,000 x 72.50 / 100
+        pnl: { account: { realized: -808_000, couponInterest: 43_828.33, unrealized: -342_000, total: -1_106_272.67 } },
+        nav: { account: 1_893_727.33, book: 2_893_727.33 },
+        balance: { account: { accruedIncome: 3_053.33, positions: 870_000, assets: 1_893_727.33, netAssets: 1_893_727.33 } },
+      },
+    },
+    {
+      // With the loss known and the season ending, the remaining principal is re-priced at 95.50.
+      id: 'repriced', action: 'quote', instrument: 'main', quote: { bid: 95, ask: 96, last: 95.5, bidSize: 5_000_000, askSize: 5_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_000_000, price: 95.5, value: 1_146_000, unrealized: -66_000 }], // 1,200,000 x 95.50 / 100
+        pnl: { account: { unrealized: -66_000, total: -830_272.67 } },
+        nav: { account: 2_169_727.33, book: 3_169_727.33 },
+        balance: { account: { positions: 1_146_000, assets: 2_169_727.33, netAssets: 2_169_727.33 } },
+      },
+    },
+    {
+      // 1,000,000 original face (600,000 outstanding) sold at 95.00 = 570,000, settling Wednesday 20 October; 13 days at 11.45% on
+      // 600,000 = 2,480.83; 0.5 bp = 28.50. Cost out 1,212,000 / 2 = 606,000: realized -36,000.
+      id: 'reduce', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 1_000_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 1_000_000, estimate: 95, settleDate: '2027-10-20', notional: 600_000, gross: 570_000, accrued: 2_480.83, cash: 572_480.83, fees: 28.5 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 1_000_000, avgPrice: 95 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: /^Sold 1,000,000 GULF-26-1-A @ 95\.00 USD \(realized [-−]36,000\.00 USD\)$/ }],
+        cash: { account: { USD: { settled: 1_020_674, unsettled: 572_452.33, availableToTrade: 1_593_126.33 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_000_000, cost: 606_000, avgCost: 101, price: 95.5, value: 573_000, unrealized: -33_000, accrued: 572.5 }],
+        holdings: { main: { long: 1_000_000, short: 0, net: 1_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2027-10-20', amount: 572_452.33, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: -844_000, commissions: -129.5, unrealized: -33_000, total: -833_301.17 } },
+        nav: { account: 2_166_698.83, book: 3_166_698.83 },
+        balance: { account: { receivable: 572_452.33, accruedIncome: 572.5, positions: 573_000, assets: 2_166_698.83, netAssets: 2_166_698.83 } },
+      },
+    },
+    {
+      // Wednesday 20 October. End of day 19 Oct: 1,200,000 x 11.45% x 12/360 = 4,580.00, less the 13 days sold 2,480.83: 2,099.17.
+      // 1,526.67 more.
+      id: 'settle-reduce', covers: ['settlement', 'accrual'], action: 'clock', to: EDT('2027-10-20'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 572,452.33 USD into settled cash', cash: { USD: 572_452.33 } },
+          { type: 'accrual.coupon', summary: 'Interest accrued on GULF-26-1-A: 1,526.67 USD' },
+        ],
+        cash: { account: { USD: { settled: 1_593_126.33, unsettled: 0, availableToTrade: 1_593_126.33 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_000_000, accrued: 2_099.17 }],
+        pending: [],
+        pnl: { account: { couponInterest: 45_355, total: -831_774.5 } },
+        nav: { account: 2_168_225.5, book: 3_168_225.5 },
+        balance: { account: { cash: 1_593_126.33, receivable: null, accruedIncome: 2_099.17, assets: 2_168_225.5, netAssets: 2_168_225.5 } },
+      },
+    },
+    {
+      // The rest sold at 95.00 for Friday 22 October: 570,000; 15 days on 600,000 at 11.45% = 2,862.50 (763.33 more than on the
+      // books); 0.5 bp = 28.50. Realized 570,000 - 606,000 = -36,000.
+      id: 'close', covers: 'close', action: 'close', lot: 'lot', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 1_000_000, estimate: 95, settleDate: '2027-10-22', notional: 600_000, gross: 570_000, accrued: 2_862.5, cash: 572_862.5, fees: 28.5 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 1_000_000, avgPrice: 95 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: /^Sold 1,000,000 GULF-26-1-A @ 95\.00 USD \(realized [-−]36,000\.00 USD\)$/ },
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of GULF-26-1-A: 763.33 USD' },
+        ],
+        cash: { account: { USD: { settled: 1_593_126.33, unsettled: 572_834, availableToTrade: 2_165_960.33 } } },
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2027-10-22', amount: 572_834, ccy: 'USD', into: 'cash' }],
+        lifecycle: [],
+        pnl: { account: { realized: -880_000, couponInterest: 46_118.33, commissions: -158, unrealized: 0, total: -834_039.67 } },
+        nav: { account: 2_165_960.33, book: 3_165_960.33 },
+        balance: { account: { cash: 1_593_126.33, receivable: 572_834, positions: null, accruedIncome: null, assets: 2_165_960.33, liabilities: 0, netAssets: 2_165_960.33 } },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: EDT('2027-10-22'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 572,834.00 USD into settled cash', cash: { USD: 572_834 } }],
+        cash: { account: { USD: { settled: 2_165_960.33, unsettled: 0, availableToTrade: 2_165_960.33 } }, treasury: usdCash(1_000_000) },
+        pending: [],
+        balance: { account: { cash: 2_165_960.33, receivable: null, assets: 2_165_960.33, liabilities: 0 } },
+      },
+    },
+  ],
+};
+
+export default [specifiedPool, absSpec, cmoSpec, cloSpec, cdoSpec, clnSpec, structuredNoteSpec, catBondSpec];

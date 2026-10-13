@@ -2309,4 +2309,187 @@ const commodityBasisSwap = {
   ],
 };
 
-export default [amortizingSwap, accretingSwap, equitySwap, equityIndexSwap, equityTrs, bondTrs, indexTrs, commoditySwap, commodityBasisSwap];
+// ---------------------------------------------------------------------------------------------
+// commodity_index_swap
+// ---------------------------------------------------------------------------------------------
+// A three-month commodity-index swap: receive the return of the Northwind Commodity Index (excess return), pay the 3-month
+// Treasury bill rate + 0.15% ACT/360 (the index fee), resetting monthly with the notional reset each month, both legs paid
+// 2 business days after each reset date on the US+USD calendar. Uncollateralized (paper assumption).
+//
+// The catalog has no index product: the index level is carried by a reference instrument registered as a physical commodity
+// (never traded); its closes for the reset dates are the index fixings.
+//   period 1  2027-02-01 to 2027-03-01  28 days  index 400.00 to 410.00 (+2.5%)    UST3M 3.60%  paid Wednesday 3 March
+//   period 2  2027-03-01 to 2027-04-01  31 days  index 410.00 to 401.80 (-2.0%)    UST3M 3.50%  paid Monday 5 April (Good Friday 26 March is in the period)
+//   the 30 April index level is not supplied: entered by hand when the last payment waits for it
+//   period 3  2027-04-01 to 2027-05-01  30 days  index 401.80 to 413.854 (+3.0%)   UST3M 3.40%  1 May is a Saturday: Friday 30 April's close; paid Tuesday 4 May
+const NWCI = { productId: 'physical_commodity', name: 'Northwind Commodity Index, excess return (reference level)', symbol: 'NWCI', marketView: 'US_CASH', venue: 'Northwind Indices', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', terms: { quantityUnit: 'index units', priceUnits: 'index points' } };
+const CIS_NAME = 'Commodity index swap NWCI v UST3M + 0.15% May 2027';
+const commodityIndexSwap = {
+  productId: 'commodity_index_swap',
+  title: 'Three-month commodity-index swap: receive the index return, pay the bill rate + 0.15%, monthly resets with the notional reset, uncollateralized',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'index leg: Leg type "Return on a reference asset", Reference asset (the index level), Reset and payment monthly, Options "Notional resets"', 'fee leg: Index (UST3M), Spread 0.0015, Payment monthly', 'both legs: Payment lag (business days) 2'],
+    automaticInputs: ['monthly resets and payment dates on the US+USD calendar', 'index closes for the reset dates (close fixture standing in for Shaffer MarketData)', 'UST3M fixings (rate fixture)', 'the notional reset each month, and the fee leg on it', 'settlement date, T+2', 'commission from the Book fee schedule'],
+    manualInputs: ['the index level, registered as a reference instrument because the catalog has no index product', 'an index fixing the data service did not supply, entered by hand', 'mark of the contract, entered by hand'],
+    settlement: 'Commission settles T+2; leg payments are cash 2 business days after each reset date',
+    lifecycle: 'Index return and fee each month on a notional reset monthly; the last reset falls on a Saturday and takes Friday\'s close, which is missing: the index payment and the maturity wait visibly (the fee is paid) until it is entered by hand; held to maturity; nothing left afterwards',
+    accounting: 'Carried at the mark; index and fee payments are realized P&L; commission expensed',
+    collateral: 'Uncollateralized (paper assumption): nothing is posted or received, whatever the mark',
+  },
+  start: at('2027-01-28'),
+  settlementCheck: { lag: 2, holidays: [] }, // no NASDAQ or Federal Reserve holiday between 28 January and 1 February 2027
+  book: bookOf('Matrix commodity index swap', 'Commodity index', 'USD', 3_000_000, 1_000_000, { perUnit: 0.0001, minimum: 0, bps: 0 }, { spot: NO_FEE }), // 100.00 per million of notional
+  instruments: {
+    index: NWCI,
+    main: {
+      productId: 'commodity_index_swap', name: CIS_NAME, symbol: 'CIS-NWCI-0527', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { tradingCalendar: 'US', settlementCalendar: 'US+USD', paymentCalendar: 'US+USD' },
+      terms: {
+        effective: '2027-02-01', maturity: '2027-05-01', counterparty: 'Dealer W', collateralBasis: { type: 'uncollateralized' },
+        legs: [
+          { side: 'receive', type: 'return', ccy: 'USD', months: 1, underlyingId: '$inst:index', passDividends: false, resetNotional: true, paymentLag: 2 },
+          { side: 'pay', type: 'float', ccy: 'USD', index: 'UST3M', spread: 0.0015, months: 1, dayCount: 'ACT/360', paymentLag: 2 },
+        ],
+      },
+    },
+  },
+  rates: { UST3M: { byDate: { '2027-02-01': 3.60, '2027-03-01': 3.50, '2027-04-01': 3.40 } } },
+  expectAtStart: startOf('USD', 3_000_000, 1_000_000),
+  steps: [
+    {
+      // 8,000,000 as written, no upfront. Commission 8,000,000 x 0.0001 = 800, settling Monday 1 February.
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 8_000_000, as: 'cis', order: { statedPrice: 0 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 8_000_000, estimate: 0, model: 'stated-price', settleDate: '2027-02-01', cash: 0, fees: 800 }],
+          cash: { USD: { purchases: 0, fees: 800, margin: 0, required: 800, available: 1_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 8_000_000, avgPrice: 0, fills: [{ qty: 8_000_000, price: 0, model: 'stated-price', settleDate: '2027-02-01' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Entered as written: 8,000,000 notional of CIS-NWCI-0527 at 0.00 per 100 notional', owner: 'account', date: '2027-01-28' }],
+        cash: { account: { USD: { settled: 1_000_000, unsettled: -800, margin: 0, restricted: 0, availableToTrade: 999_200, availableToWithdraw: 999_200 } } },
+        positions: [{ instrument: 'main', lot: 'cis', owner: 'account', direction: 'as written', qty: 8_000_000, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, notional: 8_000_000, margin: 0 }],
+        holdings: { main: { long: 8_000_000, short: 0, net: 8_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2027-02-01', amount: -800, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-03-03', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-03-03', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-05-04', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', lot: 'cis', owner: 'account', qty: 8_000_000, basis: 'uncollateralized', agreement: null, iaPosted: 0, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: -800, unrealized: 0, total: -800 } },
+        nav: { account: 999_200, book: 2_999_200 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 1_000_000, payable: 800, positions: null, assets: 1_000_000, liabilities: 800, netAssets: 999_200 } },
+      },
+    },
+    {
+      id: 'settle-commission', covers: 'settlement', action: 'clock', to: at('2027-02-01'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 800.00 USD from settled cash', cash: { USD: -800 }, date: '2027-02-01' }],
+        cash: { account: { USD: { settled: 999_200, unsettled: 0, availableToTrade: 999_200, availableToWithdraw: 999_200 } } },
+        pending: [],
+        balance: { account: { cash: 999_200, payable: null, assets: 999_200, liabilities: 0 } },
+      },
+    },
+    { id: 'start-level', covers: 'reset fixing', action: 'close_price', instrument: 'index', date: '2027-02-01', value: 400, expect: {} },
+    {
+      // 8,000,000 x 0.40 / 100 = 32,000.
+      id: 'mark', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 0.40, note: 'Dealer mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'cis', price: 0.4, value: 32_000, unrealized: 32_000, provisional: false, priceSource: 'Manual entry', priceStatus: 'manual' }],
+        otc: [{ instrument: 'main', mark: 0.4, markValue: 32_000 }],
+        pnl: { account: { unrealized: 32_000, total: 31_200 } },
+        nav: { account: 1_031_200, book: 3_031_200 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 32_000, assets: 1_031_200, netAssets: 1_031_200 } },
+      },
+    },
+    { id: 'first-reset-level', covers: 'reset fixing', action: 'close_price', instrument: 'index', date: '2027-03-01', value: 410, expect: {} },
+    {
+      // February, 8,000,000: index, received: 8,000,000 x (410 / 400 - 1) = 200,000.00; fee, paid: 8,000,000 x (3.60% + 0.15%) x 28/360 = 23,333.33.
+      // The notional resets to 8,000,000 x 410 / 400 = 8,200,000.
+      id: 'first-month', covers: ['index return payment', 'fee payment', 'notional reset'], action: 'clock', to: at('2027-03-03'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap receipt on ${CIS_NAME}, leg A (return), period 2027-02-01 to 2027-03-01: 200,000.00 USD`, cash: { USD: 200_000 }, owner: 'account', date: '2027-03-03' },
+          { type: 'swap.payment', summary: `Swap payment on ${CIS_NAME}, leg B (float), period 2027-02-01 to 2027-03-01: 23,333.33 USD`, cash: { USD: -23_333.33 }, owner: 'account', date: '2027-03-03' },
+        ],
+        cash: { account: { USD: { settled: 1_175_866.67, availableToTrade: 1_175_866.67, availableToWithdraw: 1_175_866.67 } } },
+        positions: [{ instrument: 'main', lot: 'cis', notional: 8_200_000 }],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-04-05', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-04-05', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-05-04', status: 'pending' },
+        ],
+        pnl: { account: { realized: 176_666.67, total: 207_866.67 } },
+        nav: { account: 1_207_866.67, book: 3_207_866.67 },
+        balance: { account: { cash: 1_175_866.67, assets: 1_207_866.67, netAssets: 1_207_866.67 } },
+      },
+    },
+    { id: 'second-reset-level', covers: 'reset fixing', action: 'close_price', instrument: 'index', date: '2027-04-01', value: 401.80, expect: {} },
+    {
+      // March, on the reset 8,000,000 x 410 / 400 = 8,200,000:
+      //   index, paid: 8,200,000 x (401.80 / 410 - 1) = 8,200,000 x -2% = 164,000.00
+      //   fee, paid:   8,200,000 x (3.50% + 0.15%) x 31/360 = 9,278,300 / 360 = 25,773.06
+      // The notional resets to 8,200,000 x 0.98 = 8,036,000.
+      id: 'second-month', covers: ['index return payment', 'fee payment', 'notional reset'], action: 'clock', to: at('2027-04-05'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap payment on ${CIS_NAME}, leg A (return), period 2027-03-01 to 2027-04-01: 164,000.00 USD`, cash: { USD: -164_000 }, owner: 'account', date: '2027-04-05' },
+          { type: 'swap.payment', summary: `Swap payment on ${CIS_NAME}, leg B (float), period 2027-03-01 to 2027-04-01: 25,773.06 USD`, cash: { USD: -25_773.06 }, owner: 'account', date: '2027-04-05' },
+        ],
+        cash: { account: { USD: { settled: 986_093.61, availableToTrade: 986_093.61, availableToWithdraw: 986_093.61 } } },
+        positions: [{ instrument: 'main', lot: 'cis', notional: 8_036_000 }],
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-05-04', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-05-04', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-05-04', status: 'pending' },
+        ],
+        pnl: { account: { realized: -13_106.39, total: 18_093.61 } }, // 176,666.67 - 164,000 - 25,773.06; then - 800 + 32,000
+        nav: { account: 1_018_093.61, book: 3_018_093.61 },
+        balance: { account: { cash: 986_093.61, assets: 1_018_093.61, netAssets: 1_018_093.61 } },
+      },
+    },
+    {
+      // April, on 8,036,000. Fee, paid: 8,036,000 x (3.40% + 0.15%) x 30/360 = 23,773.17.
+      // Saturday 1 May ends the period: its fixing is Friday 30 April's close, which has not been supplied. The index payment waits, and so does the maturity.
+      id: 'last-month-index-missing', covers: ['fee payment', 'missing fixing'], action: 'clock', to: at('2027-05-04'),
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Swap payment on ${CIS_NAME}, leg B (float), period 2027-04-01 to 2027-05-01: 23,773.17 USD`, cash: { USD: -23_773.17 }, owner: 'account', date: '2027-05-04' }],
+        cash: { account: { USD: { settled: 962_320.44, availableToTrade: 962_320.44, availableToWithdraw: 962_320.44 } } },
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-05-04', status: 'blocked', reason: /Waiting for the final leg payments/ },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-05-04', status: 'blocked', reason: /Awaiting the 2027-04-30 fixing for NWCI/ },
+        ],
+        pnl: { account: { realized: -36_879.56, total: -5_679.56 } }, // -13,106.39 - 23,773.17; then - 800 + 32,000
+        nav: { account: 994_320.44, book: 2_994_320.44 },
+        balance: { account: { cash: 962_320.44, assets: 994_320.44, netAssets: 994_320.44 } },
+      },
+    },
+    {
+      // 413.854 for 30 April, by hand. Index, received: 8,036,000 x (413.854 / 401.80 - 1) = 8,036,000 x 3% = 241,080.00. The swap then matures.
+      // 1,000,000 - 800 + 200,000 - 23,333.33 - 164,000 - 25,773.06 + 241,080 - 23,773.17 = 1,203,400.44.
+      id: 'index-entered-and-maturity', covers: ['missing fixing', 'index return payment', 'maturity', 'close'], action: 'manual_price', instrument: 'index', value: 413.854, forDate: '2027-04-30', note: 'Published index level, entered by hand',
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap receipt on ${CIS_NAME}, leg A (return), period 2027-04-01 to 2027-05-01: 241,080.00 USD`, cash: { USD: 241_080 }, owner: 'account', date: '2027-05-04' },
+          { type: 'swap.matured', summary: `Swap matured: ${CIS_NAME} (notional 8,000,000)`, owner: 'account' },
+        ],
+        cash: { account: { USD: { settled: 1_203_400.44, unsettled: 0, margin: 0, restricted: 0, reserved: 0, availableToTrade: 1_203_400.44, availableToWithdraw: 1_203_400.44 } }, treasury: { USD: { settled: 2_000_000 } } },
+        positions: [], holdings: { main: null }, lifecycle: [], otc: [], pending: [], alerts: [],
+        pnl: { account: { realized: 204_200.44, commissions: -800, unrealized: 0, total: 203_400.44 } },
+        nav: { account: 1_203_400.44, treasury: 2_000_000, book: 3_203_400.44 },
+        provisional: { account: false, book: false },
+        balance: { account: { cash: 1_203_400.44, positions: null, assets: 1_203_400.44, liabilities: 0, netAssets: 1_203_400.44 } },
+      },
+    },
+    {
+      id: 'nothing-left', action: 'clock', to: at('2027-05-05'),
+      expect: { events: [], lifecycle: [], positions: [], pending: [], otc: [], alerts: [], cash: { account: { USD: { settled: 1_203_400.44, margin: 0, restricted: 0 } } } },
+    },
+  ],
+};
+
+export default [amortizingSwap, accretingSwap, equitySwap, equityIndexSwap, equityTrs, bondTrs, indexTrs, commoditySwap, commodityBasisSwap, commodityIndexSwap];

@@ -482,7 +482,8 @@ export function cancelOnRefinancing(app, inst, body, deps) {
   need(!t.ended, `${name} has ended (${t.ended?.date}: ${t.ended?.reason}).`);
   const when = checkDate(app, body.date, 'The cancellation date');
   need(when >= t.effective || t.convention === 'standard', `The cancellation date ${when} is before the effective date ${t.effective}.`);
-  const reason = `cancelled: the reference loans of ${t.referenceEntity} were repaid and not replaced${body.note ? ` (${body.note})` : ''}`;
+  const why = `the reference loans of ${t.referenceEntity} were repaid and not replaced${body.note ? ` (${body.note})` : ''}`;
+  const reason = `cancelled on refinancing: ${why}`;
   const ccy = inst.trading_ccy;
   app.instruments.update(inst.id, { terms: { ...t, ended: { date: when, reason } } }, { system: true });
   const fresh = app.instruments.get(inst.id);
@@ -492,7 +493,7 @@ export function cancelOnRefinancing(app, inst, body, deps) {
     eventIds.push(settleHolder(app, deps, {
       inst: fresh, p, when, affected: q, protection: 0, endShare: 1, close: true, settleDate: null, type: 'cds.cancelled',
       data: { endReason: reason },
-      summary: ({ accrued, net, later }) => `${name} cancelled on ${when}, recorded by hand: ${reason}. No protection is paid; accrued premium ${fmt(Math.abs(accrued), ccy)} to the cancellation date; ${net === 0 ? 'nothing to settle' : `${net > 0 ? 'received' : later ? 'payable (not enough settled cash today: it settles when the cash is there)' : 'paid'} ${fmt(Math.abs(net), ccy)}`}`,
+      summary: ({ accrued, net, later }) => `${name} cancelled on ${when}, recorded by hand: ${why}. No protection is paid; accrued premium ${fmt(Math.abs(accrued), ccy)} to the cancellation date; ${net === 0 ? 'nothing to settle' : `${net > 0 ? 'received' : later ? 'payable (not enough settled cash today: it settles when the cash is there)' : 'paid'} ${fmt(Math.abs(net), ccy)}`}`,
     }));
   }
   return { eventIds, outcome: { ended: true } };
