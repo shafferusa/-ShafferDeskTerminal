@@ -638,3 +638,7 @@ table.ledger.pv-legs td.amt .sub, table.ledger.pv-legs td.amt .was { white-space
 @container mk (max-width: 520px) {
   .mk-table tr { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 10px; }
 }
+/* ---- instrument page (ui1): a holding's financing and close buttons wrap instead of widening the table ---- */
+table.ledger td.acts { white-space: normal; }
+.pos-acts { display: flex; flex-wrap: wrap; gap: 4px 8px; justify-content: flex-end; }
+@media (max-width: 600px) { .drawer table.ledger td, .drawer table.ledger th { padding-left: 6px; padding-right: 6px; } }

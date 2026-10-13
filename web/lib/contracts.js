@@ -142,7 +142,7 @@ const F = {
     { path: 'terms.base', label: 'Base currency', type: 'text', show: (d) => ['fx', 'ndf'].includes(d.terms.forwardType) },
     { path: 'terms.quote', label: 'Quote currency', type: 'text', show: (d) => ['fx', 'ndf'].includes(d.terms.forwardType) },
     { path: 'terms.valueDate', label: 'Value date', type: 'date', show: (d) => d.terms.forwardType !== 'fra', required: true },
-    { path: 'terms.fixingDate', label: 'Fixing date', type: 'date', show: (d) => d.terms.forwardType === 'ndf' },
+    { path: 'terms.fixingDate', label: 'Fixing date', type: 'date', show: (d) => ['ndf', 'fra'].includes(d.terms.forwardType), hint: 'An FRA: the reference rate\'s fixing for the period, usually two business days before it starts. Defaults to the value date (NDF) or the period start (FRA).' },
     { path: 'terms.settleCcy', label: 'Settlement currency', type: 'text', show: (d) => d.terms.forwardType === 'ndf' },
     { path: 'underlyingId', label: (d) => (d.terms.forwardType === 'ndf' ? 'Fixing source (currency pair)' : 'Underlying'), type: 'instrument', span: 2, show: (d) => ['ndf', 'asset'].includes(d.terms.forwardType) },
     { path: 'terms.settlement', label: 'Settlement', type: 'select', options: opt([['cash', 'Cash against a fixing'], ['physical', 'Physical delivery']]), show: (d) => d.terms.forwardType === 'asset' },

@@ -655,6 +655,56 @@ export const bond = {
     }
     return { eventId, shares, wholeShares: whole, cashPaid, realized, forfeited };
   },
+  /**
+   * Principal written down by hand without payment: a contingent convertible's trigger event (kind 'writedown') or a
+   * realized loss allocated to a securitisation tranche (kind 'loss'). The factor falls from its current value to
+   * `newFactor` for every holder, in every Book, from `effective` (default today; for a monthly pool, the first day of the
+   * accrual period the loss applies to). Each position's cost falls in proportion and the cost written off is a realized
+   * loss; no cash moves. Interest accrued on the principal written off is cancelled (the accrued balance is trued up on the
+   * reduced principal). A loss cannot be allocated to a pool whose principal is guaranteed (an agency pool). A full
+   * write-down (factor 0) is recorded on each position as an early redemption at 0 instead.
+   */
+  writeDown(app, { inst, newFactor, effective, kind, note }) {
+    const name = inst.symbol || inst.name;
+    const loss = kind === 'loss';
+    need(!(loss && inst.terms.guarantor), `${name} is guaranteed by ${inst.terms.guarantor}: losses on the underlying loans are not passed to holders. A defaulted loan's principal reaches the pool as a paydown (principal paid at par), recorded as a paydown.`);
+    const nf = num(newFactor);
+    const old = factorOf(inst);
+    need(nf !== 0, `A full write-down of ${name} (factor 0) is recorded on each position as an early redemption at 0 (Lifecycle, Early redemption).`);
+    need(nf !== null && nf > 0 && nf < old, `The principal outstanding after the ${loss ? 'loss' : 'write-down'} must be a factor above 0 and below the current factor ${old}.`);
+    const today = app.clock.today();
+    const from = effective ? String(effective) : today;
+    need(ISO_DATE_RE.test(from) && from <= today, 'The effective date must be YYYY-MM-DD and not later than today.');
+    const ccy = inst.trading_ccy;
+    const history = [...(inst.terms.factorHistory || []), { from, factor: nf, prior: old }];
+    app.instruments.update(inst.id, { terms: { ...inst.terms, factor: nf, factorHistory: history, writtenDown: { kind: loss ? 'loss' : 'writedown', date: today, from } } }, { system: true });
+    const fresh = app.instruments.get(inst.id);
+    const eventIds = [];
+    for (const p of app.positions.heldAround(inst.id)) {
+      if (isZero(p.qty)) continue;
+      const book = app.books.getBook(p.book_id), unit = app.books.getUnit(p.unit_id);
+      const costOut = money((p.cost * (old - nf)) / old, ccy);
+      const faceOff = money(Math.abs(p.qty) * (old - nf), ccy);
+      eventIds.push(app.ledger.post({
+        bookId: book.id, unitId: unit.id, type: loss ? 'bond.loss' : 'bond.writedown', instrumentId: inst.id, strategyId: p.strategy_id, positionId: p.id, actor: 'user',
+        summary: `${loss ? 'Realized loss allocated by hand to' : 'Principal written down by hand on'} ${name}${note ? ` (${note})` : ''}: factor ${old} to ${nf}${from !== today ? ` from ${from}` : ''}, ${fmtQty(faceOff)} of ${fmtQty(Math.abs(p.qty))} face written off with no payment; cost ${fmt(Math.abs(costOut), ccy)} written off as realized ${p.qty > 0 ? 'loss' : 'gain'}`,
+        data: { kind: loss ? 'loss' : 'writedown', oldFactor: old, newFactor: nf, effective: from, costOut, manual: true },
+        entries: [{ account: 'pos', ccy, amount: -costOut, positionId: p.id }, { account: 'pnl.realized', ccy, amount: costOut, positionId: p.id }],
+      }));
+      const after = app.positions.change(p, { dCost: -costOut });
+      // Interest accrued on the principal written off is cancelled: the balance is trued up on the reduced principal, as of
+      // the last date it stands at.
+      if (!fresh.terms.couponSuspended) {
+        const asOf = after.data?.accruedThrough && after.data.accruedThrough <= today ? after.data.accruedThrough : today;
+        const target = accrualTarget(app, fresh, after, asOf);
+        if (target !== null) {
+          const id = trueUpAccrual(app, { book, unit, pos: after, inst: fresh, account: 'accrued.asset', pnlAccount: 'pnl.coupon', ccy, target: money(target, ccy), summary: `Accrued interest cancelled with the principal written off on ${name}`, type: 'accrual.coupon' });
+          if (id) eventIds.push(id);
+        }
+      }
+    }
+    return { factor: nf, eventIds };
+  },
   /** Principal paydown by hand: the pool factor falls and the paid-down face is redeemed at par. */
   paydown(app, { book, unit, inst, newFactor }) {
     const nf = num(newFactor);

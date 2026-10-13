@@ -229,9 +229,10 @@ function Ticket({ inst, detail, book, onDone }) {
         { label: 'Quantity', align: 'r', render: (p) => fmtQty(p.qty) },
         { label: 'Average cost', align: 'r', render: (p) => fmtPriceUnits(p.avgCost, inst.priceUnits) },
         { label: 'Unrealized', align: 'r', render: (p) => html`<${Money} value=${p.unrealized} ccy=${p.ccy} signed reason=${p.missingReason} />` },
-        FINANCEABLE.has(inst.family) ? { label: 'Financing', align: 'r', title: 'Repo, lend or pledge this holding: opens the Treasury or Account dialog with it filled in', render: (p) => html`<${HoldingFinancing} inst=${inst} book=${book} p=${{ ...p, owner: book.units.find((u) => u.id === p.unitId)?.name }} onDone=${onDone} />` } : null,
-        { label: '', align: 'r', render: (p) => html`<${Button} small onClick=${() => closePos(p, 0.5)}>Close half<//> <${Button} small onClick=${() => closePos(p)}>Close<//>` },
-      ].filter(Boolean)} rows=${mine} rowKey=${(p) => p.positionId} /><//>` : null}
+        { label: FINANCEABLE.has(inst.family) ? 'Financing and close' : '', align: 'r', cls: 'acts', title: FINANCEABLE.has(inst.family) ? 'Repo, lend or pledge this holding (opens the Treasury or Account dialog with it filled in), or close it' : undefined,
+          render: (p) => html`<div class="pos-acts">${FINANCEABLE.has(inst.family) ? html`<${HoldingFinancing} inst=${inst} book=${book} p=${{ ...p, owner: book.units.find((u) => u.id === p.unitId)?.name }} onDone=${onDone} />` : null}
+            <span class="row nowrap" style="gap:4px;justify-content:flex-end"><${Button} small onClick=${() => closePos(p, 0.5)}>Close half<//><${Button} small onClick=${() => closePos(p)}>Close<//></span></div>` },
+      ]} rows=${mine} rowKey=${(p) => p.positionId} /><//>` : null}
     <${FinancingLinks} inst=${inst} book=${book} unitId=${unitId} longs=${longs} onShort=${() => setAction('sell_short')} canShort=${actions.includes('sell_short')} onDone=${onDone} />
   </div>`;
 }
@@ -381,7 +382,7 @@ function Overview({ inst, detail, reload, onClose }) {
         ['Listing venue country', inst.venueCountry || html`<${Missing} reason="Not recorded. It selects the calendars unless they are set on the instrument." />`],
         // ui1: where the instrument sits in the Marketplaces and what placed it there (catalog.js routing convention).
         ['Market view', html`${inst.arrangement ? html`Not a Marketplace row: a financing arrangement, arranged on the Treasury and Account pages` : html`<a href=${`#/markets/${inst.marketView}/${inst.classification?.tab || ''}/show/${encodeURIComponent(inst.id)}`} onClick=${() => onClose?.()} title="Open the Marketplace tab this instrument is in, with its row picked out">${VIEW_LABEL[inst.marketView]}${inst.classification?.tabLabel ? `, ${inst.classification.tabLabel}` : ''}</a>`}
-          ${inst.classification?.routing ? html`<div class="sub">${inst.classification.routing.basisLabel}: ${inst.classification.routing.text}.${inst.classification.routing.basis === 'convention' ? ' No US listing or US jurisdiction is recorded; state a jurisdiction or set the view by hand under Edit.' : ''}</div>` : null}`],
+          ${inst.classification?.routing ? html`<div class="sub">${inst.classification.routing.text.toLowerCase().startsWith(inst.classification.routing.basisLabel.toLowerCase()) ? '' : `${inst.classification.routing.basisLabel}: `}${inst.classification.routing.text}.${inst.classification.routing.basis === 'convention' ? ' No US listing or US jurisdiction is recorded; state a jurisdiction or set the view by hand under Edit.' : ''}</div>` : null}`],
         ['Jurisdiction', inst.jurisdiction || html`<${Missing} reason="Not stated. For an instrument that is not listed it decides US or Foreign." />`],
         ['Venue', inst.venue ? `${inst.venue} (${inst.venueType === 'otc' ? 'OTC' : inst.venueType === 'global' ? 'global platform' : 'exchange'})` : inst.venueType === 'otc' ? 'OTC' : inst.venueType === 'global' ? 'Global, no listing venue' : null],
         ['Issuer', inst.issuer], ['Issuer domicile', inst.domicile], ['Underlying geography', inst.underlyingGeo],

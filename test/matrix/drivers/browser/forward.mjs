@@ -29,6 +29,8 @@
 
 export const family = 'forward';
 
+import { actions as swapActions } from './swap.mjs';
+
 const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const exactly = (s) => new RegExp(`^\\s*${esc(s)}\\s*$`);
 const ACTION = { buy: 'Buy', sell: 'Sell' };
@@ -102,7 +104,7 @@ export async function contractTerms(ui, dialog, draft, ctx) {
   if (t.base) await ui.input(dialog, 'Base currency').fill(t.base);
   if (t.quote) await ui.input(dialog, 'Quote currency').fill(t.quote);
   if (t.forwardType !== 'fra') await ui.input(dialog, 'Value date').fill(t.valueDate || '');
-  if (t.fixingDate && t.forwardType === 'ndf') await ui.input(dialog, 'Fixing date').fill(t.fixingDate);
+  if (t.fixingDate && ['ndf', 'fra'].includes(t.forwardType)) await ui.input(dialog, 'Fixing date').fill(t.fixingDate);
   if (t.settleCcy) await ui.input(dialog, 'Settlement currency').fill(t.settleCcy);
   if (draft.underlying) await pickInstrument(ui, ui.field(dialog, t.forwardType === 'ndf' ? 'Fixing source (currency pair)' : exactly('Underlying')), ctx.inst(draft.underlying));
   if (t.settlement) await ui.select(dialog, exactly('Settlement')).selectOption(t.settlement);
@@ -154,6 +156,8 @@ async function openStrategy(ui, ctx, lot, owner) {
 }
 
 export const actions = {
+  /** A paper collateral agreement of the Book (Treasury, Collateral, New agreement): the same dialog the swap scenarios drive. */
+  agreement: (...args) => swapActions.agreement(...args),
   /** Early termination at a stated amount: the position's Lifecycle menu, "Early termination", amount, notional, settlement date. */
   async lifecycle(ui, t, ctx, step, tools) {
     if (step.body?.action !== 'terminate') return undefined;
