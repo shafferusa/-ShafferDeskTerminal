@@ -456,7 +456,20 @@ export function conventionRoute({ product, venueType, venueCountry, jurisdiction
   return null;
 }
 
-/** Short text for the row and the instrument page: what decided the view. */
+/** A few words for a Marketplace row: what placed the instrument (the full sentence is routingText). */
+export function routingShort({ basis, venue, venueCountry, jurisdiction, domicile, underlying, family, venueType }) {
+  switch (basis) {
+    case 'listed': return `Listed in ${upper2(venueCountry)}${venue ? ` (${venue})` : ''}`;
+    case 'financing': return 'Financing arrangement';
+    case 'underlying': return `Follows its underlying${underlying ? `, ${underlying.symbol || underlying.name}` : ''}`;
+    case 'jurisdiction': return upper2(jurisdiction) ? `${upper2(jurisdiction)} jurisdiction, not listed` : `Issuer in ${upper2(domicile)}, not listed`;
+    case 'convention': return `${GLOBAL_FAMILIES.has(family) || venueType === 'global' ? 'Global' : 'OTC'}, routed by convention`;
+    case 'manual': return 'Set by hand';
+    default: return '';
+  }
+}
+
+/** The sentence for the instrument page and the row's hover: what decided the view. */
 export function routingText({ basis, view, venue, venueCountry, jurisdiction, domicile, underlying, family, venueType, convention }) {
   const label = MARKET_VIEWS[view]?.label || view;
   const vc = upper2(venueCountry);

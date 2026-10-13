@@ -473,4 +473,237 @@ const highYieldBond = {
   ],
 };
 
-export default [corporateBondIg, highYieldBond];
+// ---------------------------------------------------------------------------------------------
+// eurobond
+// ---------------------------------------------------------------------------------------------
+// A euro-denominated Eurobond of a Swedish telecom issuer, listed in Luxembourg and settled through the
+// international central securities depositories: 3.625% paid ANNUALLY on 15 March, accrued on 30E/360
+// (the Eurobond basis: every 31st counts as the 30th), T+2 on the TARGET calendar, pieces of 100,000.
+// In a Book that reports in US dollars.
+//
+// What sets it apart from a US corporate: one coupon a year (3.625 per 100), the 30E/360 basis, the euro
+// payment calendar and settlement two TARGET days after the trade. A sale on Thursday 25 March 2027 settles
+// on Wednesday 31 March: Good Friday (26 March) and Easter Monday (29 March) are TARGET closing days. On
+// Easter Monday New York is open, so the Terminal's end of day runs while the euro market is shut. The
+// settlement date is the 31st: 30E/360 counts 15 days from 15 March (30 - 15); 30/360 US would count 16.
+//
+// Days of 30E/360: 15 Mar 2026 to 12 Mar 2027 357; from 15 Mar 2027: to 24 Mar 9, to 29 Mar 14, to 30 Mar 15,
+// to 31 Mar 15, to 2 Apr 17. One day at 3.625% on 2,000,000 is 201.3889.
+//
+// Reporting currency (as in bond-government.mjs, foreign_gov_bill): every posting is translated at the
+// EUR/USD rate in force when it is booked and rounded to the cent; balances and unrealized P&L at the
+// current rate; "FX effects" is what the change of rate did to the euro balances as booked. EUR/USD is 1.08
+// at the start and 1.10 after the coupon. Commission: 0.5 bp of principal.
+const eurobond = {
+  productId: 'eurobond',
+  title: 'Brennvik Telecom 3.625% euro notes due 15 March 2033 (Eurobond, Luxembourg-listed): annual coupon, 30E/360, T+2 on TARGET across Easter, reported in US dollars',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount (a multiple of 100,000)'],
+    manualInputs: ['none: annual coupon, 30E/360 accrued interest and T+2 TARGET settlement follow from the registered terms and conventions'],
+    settlement: 'T+2 on the TARGET calendar (instrument convention, settlement lag 2); Good Friday and Easter Monday are skipped; amounts in euro',
+    lifecycle: 'Daily accrual on 30E/360 (a 31st counts as the 30th); one coupon a year on 15 March; next coupon and maturity scheduled',
+    accounting: 'Euro position, cash, accrued interest and settlement; US dollar figures at the current rate for balances and unrealized P&L, at the booking rate for income, commission and realized P&L; FX effects reported separately',
+    collateral: 'None for a long position',
+  },
+  start: EST('2027-03-10'), // Wednesday
+  settlementCheck: { lag: 2, holidays: ['2027-03-26', '2027-03-29'] }, // Good Friday and Easter Monday, TARGET closing days
+  book: {
+    name: 'Matrix Eurobond', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 1_000_000 }, { ccy: 'EUR', amount: 3_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'EUR', amount: 2_500_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.5 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  fx: { 'EUR/USD': 1.08 },
+  instruments: {
+    main: { productId: 'eurobond', name: 'Brennvik Telecom AB 3.625% Notes 15-Mar-2033 EUR', symbol: 'BRENNVIK-3.625-33', marketView: 'FOREIGN_CASH', venueType: 'exchange', venue: 'Luxembourg Stock Exchange', venueCountry: 'LU', issuer: 'Brennvik Telecom AB', domicile: 'SE', underlyingGeo: 'SE', tradingCcy: 'EUR', multiplier: 0.01,
+      conventions: { settleLag: 2 },
+      terms: { couponType: 'fixed', couponRate: 0.03625, frequency: 1, maturity: '2033-03-15', issueDate: '2023-03-15', dayCount: '30E/360', redemption: 100, minDenomination: 100_000, seniority: 'Senior unsecured' } },
+  },
+  quotes: { main: { bid: 99.3, ask: 99.4, last: 99.35, bidSize: 20_000_000, askSize: 20_000_000 } },
+  expectAtStart: {
+    ...startState(2_700_000, 1_540_000), // 2,500,000 EUR x 1.08; 1,000,000 USD + 500,000 EUR x 1.08
+    cash: { account: { EUR: idle(2_500_000) }, treasury: { USD: idle(1_000_000), EUR: idle(500_000) } },
+  },
+  steps: [
+    {
+      id: 'below-denomination', covers: 'minimum denomination', action: 'ticket', instrument: 'main', side: 'buy', qty: 150_000,
+      status: 'blocked', reason: 'The notes are issued in pieces of 100,000; 150,000 cannot be delivered.',
+      expect: { refused: 'quantity must be a multiple of 100000' },
+    },
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 2_000_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 2_000_000, estimate: 99.4, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2027-03-12', calendar: 'TARGET',
+            gross: 1_988_000, // 2,000,000 x 99.40 / 100
+            accrued: 71_895.83, // settles Friday 12 Mar, 357 days of 30E/360: 2,000,000 x 3.625% x 357/360 = 71,895.833
+            cash: -2_059_895.83, fees: 99.4 }], // 0.5 bp of 1,988,000
+          cash: { EUR: { purchases: 2_059_895.83, fees: 99.4, required: 2_059_995.23, available: 2_500_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 2_000_000, avgPrice: 99.4, fills: [{ qty: 2_000_000, price: 99.4, model: 'quoted-bid-ask', settleDate: '2027-03-12', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 2,000,000 BRENNVIK-3.625-33 @ 99.40 EUR', owner: 'account', date: '2027-03-10' }],
+        cash: { account: { EUR: { settled: 2_500_000, unsettled: -2_059_995.23, availableToTrade: 440_004.77 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 2_000_000, avgCost: 99.4, cost: 1_988_000, price: 99.35,
+          value: 1_987_000, unrealized: -1_000, accrued: 71_895.83, priceSource: 'Test fixture' }], // euro
+        holdings: { main: { long: 2_000_000, short: 0, net: 2_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2027-03-12', amount: -2_059_995.23, ccy: 'EUR', into: 'cash' }],
+        // 15 Mar 2027 is a Monday; 15 Mar 2033 is a Tuesday. One coupon a year.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-03-15', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2033-03-15', status: 'pending' }],
+        // In dollars at 1.08: commission 99.40 x 1.08 = 107.35; unrealized -1,000 x 1.08 = -1,080.
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -107.35, fees: 0, borrowFunding: 0, unrealized: -1_080, fx: 0, total: -1_187.35 } },
+        nav: { account: 2_698_812.65, book: 4_238_812.65 }, // (2,500,000 - 2,059,995.23 + 1,987,000 + 71,895.83) x 1.08 = 2,498,900.60 x 1.08
+        balance: { account: { cash: 2_700_000, accruedIncome: 77_647.50, positions: 2_145_960, payable: 2_224_794.85, assets: 4_923_607.50, liabilities: 2_224_794.85, netAssets: 2_698_812.65, // 71,895.83 x 1.08 = 77,647.496; 2,059,995.23 x 1.08 = 2,224,794.848; 4,558,895.83 x 1.08 = 4,923,607.496
+          local: { EUR: { cash: 2_500_000, accruedIncome: 71_895.83, positions: 1_987_000, payable: 2_059_995.23 } } } },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EST('2027-03-12'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 2,059,995.23 EUR from settled cash', cash: { EUR: -2_059_995.23 }, date: '2027-03-12' }],
+        cash: { account: { EUR: { settled: 440_004.77, unsettled: 0, availableToTrade: 440_004.77 } } },
+        pending: [],
+        balance: { account: { cash: 475_205.15, payable: null, assets: 2_698_812.65, liabilities: 0, local: { EUR: { cash: 440_004.77, payable: null } } } }, // 440,004.77 x 1.08 = 475,205.152
+      },
+    },
+    {
+      // Monday 15 March (daylight time in New York from 14 March). The annual coupon on the 2,000,000 settled before it:
+      // 2,000,000 x 3.625% = 72,500 euro. Accrued on the books 71,895.83; the coupon exceeds it by 604.17, three 30E/360 days
+      // (12 to 15 March); in dollars 604.17 x 1.08 = 652.50. The end-of-day run of Friday 12 March is older than the coupon: skipped.
+      id: 'coupon', covers: 'coupon', action: 'clock', to: EDT('2027-03-15'),
+      expect: {
+        events: [
+          { type: 'bond.coupon', summary: 'Coupon received on 2,000,000 BRENNVIK-3.625-33: 72,500.00 EUR', cash: { EUR: 72_500 }, owner: 'account', date: '2027-03-15' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on BRENNVIK-3.625-33: 604.17 EUR' },
+        ],
+        cash: { account: { EUR: { settled: 512_504.77, availableToTrade: 512_504.77 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_000_000, accrued: 0 }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2028-03-15', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2033-03-15', status: 'pending' }], // a Wednesday
+        pnl: { account: { couponInterest: 652.50, total: -534.85 } },
+        nav: { account: 2_699_465.15, book: 4_239_465.15 }, // (512,504.77 + 1,987,000) x 1.08 = 2,699,465.152
+        balance: { account: { cash: 553_505.15, accruedIncome: null, assets: 2_699_465.15, netAssets: 2_699_465.15, local: { EUR: { cash: 512_504.77, accruedIncome: null } } } },
+      },
+    },
+    {
+      id: 'euro-rises', covers: 'fx', action: 'fx_rate', pair: 'EUR/USD', rate: 1.1,
+      expect: {
+        // Net assets 2,499,504.77 euro x 1.10 = 2,749,455.25. Unrealized -1,000 x 1.10 = -1,100.
+        // FX effects: cash and the position at cost stand at 553,505.15 + 2,147,040 = 2,700,545.15 dollars as booked; at 1.10 the same
+        // 2,500,504.77 euro are 2,750,555.25 (2,750,555.247): +50,010.10. Treasury's 500,000 euro: 550,000 - 540,000 = +10,000.
+        pnl: { account: { unrealized: -1_100, fx: 50_010.10, total: 49_455.25 }, book: { fx: 60_010.10 } },
+        nav: { account: 2_749_455.25, treasury: 1_550_000, book: 4_299_455.25 },
+        balance: { account: { cash: 563_755.25, positions: 2_185_700, assets: 2_749_455.25, netAssets: 2_749_455.25 } }, // 512,504.77 x 1.10 = 563,755.247; 1,987,000 x 1.10
+      },
+    },
+    {
+      // Thursday 25 March. End of day 24 March: nine 30E/360 days on 2,000,000: 72,500 x 9/360 = 1,812.50 euro, 1,993.75 dollars.
+      id: 'accrue', covers: 'accrual', action: 'clock', to: EDT('2027-03-25'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on BRENNVIK-3.625-33: 1,812.50 EUR' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_000_000, accrued: 1_812.50 }],
+        pnl: { account: { couponInterest: 2_646.25, total: 51_449 } }, // 652.50 + 1,993.75
+        nav: { account: 2_751_449, book: 4_301_449 }, // 2,501,317.27 euro x 1.10
+        balance: { account: { accruedIncome: 1_993.75, assets: 2_751_449, netAssets: 2_751_449, local: { EUR: { accruedIncome: 1_812.50 } } } },
+      },
+    },
+    {
+      id: 'quote-up', action: 'quote', instrument: 'main', quote: { bid: 99.8, ask: 99.9, last: 99.85, bidSize: 20_000_000, askSize: 20_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_000_000, price: 99.85, value: 1_997_000, unrealized: 9_000 }], // 2,000,000 x 99.85% - 1,988,000
+        pnl: { account: { unrealized: 9_900, total: 62_449 } }, // 9,000 x 1.10
+        nav: { account: 2_762_449, book: 4_312_449 },
+        balance: { account: { positions: 2_196_700, assets: 2_762_449, netAssets: 2_762_449, local: { EUR: { positions: 1_997_000 } } } },
+      },
+    },
+    {
+      // Thursday 25 March: T+2 on TARGET skips Good Friday and Easter Monday and lands on Wednesday 31 March.
+      id: 'reduce', covers: ['reduce', 'market holiday'], action: 'ticket', instrument: 'main', side: 'sell', qty: 800_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 800_000, estimate: 99.8, settleDate: '2027-03-31', calendar: 'TARGET',
+          gross: 798_400, // 800,000 x 99.80 / 100
+          accrued: 1_208.33, // to 31 Mar, 15 days of 30E/360 (the 31st is the 30th): 800,000 x 3.625% x 15/360 = 1,208.333 (30/360 US: 16 days, 1,288.89)
+          cash: 799_608.33, fees: 39.92 }] }, // 0.5 bp of 798,400
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 800_000, avgPrice: 99.8 }] },
+        // Realized 798,400 - 800,000 x 99.40% = 3,200 euro, 3,520 dollars. Commission 39.92 x 1.10 = 43.91.
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 800,000 BRENNVIK-3.625-33 @ 99.80 EUR (realized 3,200.00 EUR)' }],
+        cash: { account: { EUR: { settled: 512_504.77, unsettled: 799_568.41, availableToTrade: 1_312_073.18 } } }, // 799,608.33 - 39.92
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_200_000, cost: 1_192_800, avgCost: 99.4, price: 99.85, value: 1_198_200, unrealized: 5_400,
+          accrued: 604.17 }], // 1,812.50 - 1,208.33
+        holdings: { main: { long: 1_200_000, short: 0, net: 1_200_000 } },
+        pending: [{ instrument: 'main', dueDate: '2027-03-31', amount: 799_568.41, ccy: 'EUR', into: 'cash' }],
+        pnl: { account: { realized: 3_520, commissions: -151.26, unrealized: 5_940, total: 61_965.09 } }, // 107.35 + 43.91; 5,400 x 1.10
+        nav: { account: 2_761_965.09, book: 4_311_965.09 }, // (512,504.77 + 799,568.41 + 1,198,200 + 604.17) x 1.10 = 2,510,877.35 x 1.10
+        balance: { account: { cash: 563_755.25, receivable: 879_525.25, accruedIncome: 664.59, positions: 1_318_020, assets: 2_761_965.09, liabilities: 0, netAssets: 2_761_965.09,
+          local: { EUR: { cash: 512_504.77, receivable: 799_568.41, accruedIncome: 604.17, positions: 1_198_200 } } } },
+      },
+    },
+    {
+      // Tuesday 30 March. Good Friday: New York closed too, no end of day. Easter Monday: TARGET closed, New York open, so the end of day
+      // of 29 March runs: settled 2,000,000 to 29 March, 14 days, 2,819.4444; less the 1,208.3333 sold to 31 March: 1,611.11.
+      // On the books 604.17: income 1,006.94 euro (five days on 2,000,000), 1,107.63 dollars. Nothing settles.
+      id: 'easter', covers: ['market holiday', 'accrual'], action: 'clock', to: EDT('2027-03-30'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on BRENNVIK-3.625-33: 1,006.94 EUR', date: '2027-03-30' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_200_000, accrued: 1_611.11 }],
+        pnl: { account: { couponInterest: 3_753.88, total: 63_072.72 } },
+        nav: { account: 2_763_072.72, book: 4_313_072.72 },
+        balance: { account: { accruedIncome: 1_772.22, assets: 2_763_072.72, netAssets: 2_763_072.72, local: { EUR: { accruedIncome: 1_611.11 } } } },
+      },
+    },
+    {
+      // Wednesday 31 March: the sale settles. End of day 30 March: 15 days on 2,000,000 = 3,020.8333, less 1,208.3333 = 1,812.50; income 201.39.
+      id: 'settle-reduce', covers: ['settlement', 'accrual'], action: 'clock', to: EDT('2027-03-31'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 799,568.41 EUR into settled cash', cash: { EUR: 799_568.41 } },
+          { type: 'accrual.coupon', summary: 'Interest accrued on BRENNVIK-3.625-33: 201.39 EUR' },
+        ],
+        cash: { account: { EUR: { settled: 1_312_073.18, unsettled: 0, availableToTrade: 1_312_073.18 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_200_000, accrued: 1_812.50 }],
+        pending: [],
+        pnl: { account: { couponInterest: 3_975.41, total: 63_294.25 } },
+        nav: { account: 2_763_294.25, book: 4_313_294.25 },
+        balance: { account: { cash: 1_443_280.50, receivable: null, accruedIncome: 1_993.75, assets: 2_763_294.25, netAssets: 2_763_294.25, local: { EUR: { cash: 1_312_073.18, receivable: null, accruedIncome: 1_812.50 } } } },
+      },
+    },
+    {
+      id: 'close', covers: 'close', action: 'close', lot: 'lot', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 1_200_000, estimate: 99.8, settleDate: '2027-04-02',
+          gross: 1_197_600, // 1,200,000 x 99.80 / 100
+          accrued: 2_054.17, // to Friday 2 April, 17 days of 30E/360: 1,200,000 x 3.625% x 17/360 = 2,054.1667
+          cash: 1_199_654.17, fees: 59.88 }] }, // 0.5 bp of 1,197,600
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 1_200_000, avgPrice: 99.8 }] },
+        // Realized 1,197,600 - 1,192,800 = 4,800 euro, 5,280 dollars. Interest sold 2,054.17 against 1,812.50 on the books: 241.67 more
+        // income (30E/360 from 30 March to 2 April is 2 days on 1,200,000; the 800,000 earned nothing for the 31st). 265.84 dollars.
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 1,200,000 BRENNVIK-3.625-33 @ 99.80 EUR (realized 4,800.00 EUR)' },
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of BRENNVIK-3.625-33: 241.67 EUR' },
+        ],
+        cash: { account: { EUR: { settled: 1_312_073.18, unsettled: 1_199_594.29, availableToTrade: 2_511_667.47 } } }, // 1,199,654.17 - 59.88
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', dueDate: '2027-04-02', amount: 1_199_594.29, ccy: 'EUR', into: 'cash' }],
+        lifecycle: [],
+        // Euro interest in all: 72,500 + 1,208.33 + 2,054.17 sold - 71,895.83 bought = 3,866.67; in dollars, posting by posting, 4,241.25.
+        pnl: { account: { realized: 8_800, couponInterest: 4_241.25, commissions: -217.13, unrealized: 0, fx: 50_010.10, total: 62_834.22 } }, // 3,520 + 5,280; 151.26 + 65.87
+        nav: { account: 2_762_834.22, book: 4_312_834.22 }, // 2,511,667.47 x 1.10 = 2,762,834.217
+        balance: { account: { cash: 1_443_280.50, receivable: 1_319_553.72, positions: null, accruedIncome: null, assets: 2_762_834.22, liabilities: 0, netAssets: 2_762_834.22,
+          local: { EUR: { cash: 1_312_073.18, receivable: 1_199_594.29, positions: null, accruedIncome: null } } } },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: EDT('2027-04-02'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 1,199,594.29 EUR into settled cash', cash: { EUR: 1_199_594.29 } }],
+        cash: { account: { EUR: { settled: 2_511_667.47, unsettled: 0, availableToTrade: 2_511_667.47 } }, treasury: { USD: { settled: 1_000_000 }, EUR: { settled: 500_000 } } },
+        pending: [],
+        balance: { account: { cash: 2_762_834.22, receivable: null, assets: 2_762_834.22, liabilities: 0, netAssets: 2_762_834.22, local: { EUR: { cash: 2_511_667.47, receivable: null } } } },
+      },
+    },
+  ],
+};
+
+export default [corporateBondIg, highYieldBond, eurobond];

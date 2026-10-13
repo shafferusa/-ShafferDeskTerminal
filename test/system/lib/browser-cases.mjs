@@ -1176,16 +1176,19 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function settle(b, quietMs = 400) {
   const { page } = b;
   if (!b.net) {
-    const n = { busy: new Set(), last: Date.now() };
+    const n = { busy: new Map(), last: Date.now() };
     const api = (r) => { try { const p = new URL(r.url()).pathname; return p.startsWith('/api/') && p !== '/api/stream'; } catch { return false; } };
-    page.on('request', (r) => { if (api(r)) { n.busy.add(r); n.last = Date.now(); } });
+    page.on('request', (r) => { if (api(r)) { n.busy.set(r, Date.now()); n.last = Date.now(); } });
     const done = (r) => { if (n.busy.delete(r)) n.last = Date.now(); };
     page.on('requestfinished', done);
     page.on('requestfailed', done);
+    // A full reload abandons what the old document had in flight, and not every abandoned request is reported.
+    page.on('domcontentloaded', () => { n.busy.clear(); n.last = Date.now(); });
     b.net = n;
   }
   const t0 = Date.now();
   while (Date.now() - t0 < 20_000) {
+    for (const [r, since] of b.net.busy) if (Date.now() - since > 15_000) b.net.busy.delete(r); // never answered: not "loading" any more
     if (!b.net.busy.size && Date.now() - b.net.last >= quietMs) { await b.ui.drawn(); return; }
     await sleep(50);
   }

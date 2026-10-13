@@ -138,8 +138,8 @@ const date = (d) => d || html`<${Missing} reason="Not in the contract terms" />`
 const pct = (x, dp = 3) => (isNum(x) ? `${fmtNum(x * 100, dp).replace(/0+$/, '').replace(/\.$/, '')}%` : null);
 
 function instCell(i) {
-  return html`<div class="sym">${sym(i)}</div><div class="sub clip" style="max-width:220px" title=${i.name}>${i.symbol ? i.name : i.id}</div>
-    <div class="sub clip mk-route" style="max-width:240px" title=${`Market view: ${i.classification?.routing?.basisLabel || ''}. ${i.classification?.routing?.text || ''}`}>${i.classification?.routing?.text}</div>
+  return html`<div class="sym">${sym(i)}</div><div class="sub clip" style="max-width:190px" title=${i.name}>${i.symbol ? i.name : i.id}</div>
+    <div class="sub mk-route" title=${`Market view, ${(i.classification?.routing?.basisLabel || '').toLowerCase()}: ${i.classification?.routing?.text || ''}`}>${i.classification?.routing?.short}</div>
     ${i.calendar?.flag ? html`<div class="calflag" style="max-width:240px" title=${i.calendar.flagText}><span class="pill warn">${i.calendar.flag === 'weekends-only' ? 'weekends-only calendar' : 'approximate calendar'}</span> ${i.calendar.flag === 'weekends-only' ? 'Its dates ignore local holidays.' : 'Some closing days are missing from its dates.'}</div>` : null}`;
 }
 const productCell = (i) => html`<div class="clip" style="max-width:170px" title=${i.support.productName}>${i.support.productName.replace(/ \(.*\)$/, '')}</div><div class="sub">${[i.venue || (i.venueType === 'otc' ? 'OTC' : i.venueType === 'global' ? 'Global' : ''), i.tradingCcy].filter(Boolean).join(', ')}</div>`;

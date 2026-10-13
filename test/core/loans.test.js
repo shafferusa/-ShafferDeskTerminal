@@ -81,3 +81,12 @@ test('a loan or deposit cannot be bought or sold like a security, and is not enl
   const down = await app.packages.previewAction(s.id, 'resize', { factor: 0.5 });
   assert.deepEqual(down.legs.map((l) => [l.kind, l.qty]), [['repay', 50_000]]);
 });
+
+test('a secured loan with nothing pledged is refused: it would be an unsecured loan under another name', async () => {
+  const { app } = makeApp();
+  const { book, acct } = makeBook(app);
+  const leg = { ...loanLeg(50_000, { rate: 0.05, maturity: '2026-06-01' }) };
+  leg.contract = { ...leg.contract, productId: 'secured_loan', terms: { ...leg.contract.terms, loanType: 'secured', collateral: [] } };
+  await assert.rejects(app.packages.preview({ bookId: book.id, unitId: acct.id, template: 'custom', legs: [leg] }), /A secured loan pledges collateral: choose the position to pledge and the quantity\./);
+  assert.equal(app.ledger.balance(acct.id, 'loan.liab', 'USD'), 0, 'nothing was borrowed');
+});

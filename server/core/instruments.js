@@ -6,7 +6,7 @@
 // so nothing here has to be re-keyed later.
 
 import { j, pj } from '../db/db.js';
-import { FAMILIES, MARKET_TABS, MARKET_VIEWS, PRICING_BASIS, PRICING_LABEL, ROUTING_BASES, assetClassOf, conventionRoute, getProduct, routingText, tabOf } from './catalog.js';
+import { FAMILIES, MARKET_TABS, MARKET_VIEWS, PRICING_BASIS, PRICING_LABEL, ROUTING_BASES, assetClassOf, conventionRoute, getProduct, routingShort, routingText, tabOf } from './catalog.js';
 import { AppError, CCY_RE, need, newId, num } from './util.js';
 import { calendarInfo, FIXED_SETTLEMENT, MAX_SETTLE_LAG, settlementConvention } from '../products/security.js';
 import { CALENDARS, unknownCalendars } from '../quant/calendar.js';
@@ -305,6 +305,7 @@ export function createInstruments(app) {
       routing: {
         basis, basisLabel: ROUTING_BASES[basis] || basis, stored: Boolean(inst.routing_basis), convention: conv ? { view: conv.view, basis: conv.basis } : null,
         text: routingText({ basis, view: inst.market_view, venue: inst.venue, venueCountry: inst.venue_country, jurisdiction: inst.jurisdiction, domicile: inst.domicile, underlying: und, family: inst.family, venueType: inst.venue_type, convention: conv }),
+        short: routingShort({ basis, venue: inst.venue, venueCountry: inst.venue_country, jurisdiction: inst.jurisdiction, domicile: inst.domicile, underlying: und, family: inst.family, venueType: inst.venue_type }),
       },
     };
   }

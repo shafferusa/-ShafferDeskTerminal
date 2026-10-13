@@ -545,3 +545,6 @@ table.ledger.pv-legs td.amt .sub, table.ledger.pv-legs td.amt .was { white-space
   .mk-inline { flex-wrap: wrap; }
   .mk-inline select { max-width: 100%; }
 }
+.mk-tabs { gap: 0; }
+.mk-tabs button { padding: 7px 8px; font-size: 13.5px; }
+.mk-route { max-width: 200px; white-space: normal; line-height: 1.25; }
