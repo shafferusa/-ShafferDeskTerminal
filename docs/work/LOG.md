@@ -196,3 +196,4 @@
 - 2026-10-13T18:26Z | m1 | +0.2 | credit_spread_option passes at engine, API and browser
 - 2026-10-13T18:29Z | o2 | +0.2 | lookback_option passes at engine, API and browser
 - 2026-10-13T18:29Z | m1 | +0.2 | freight_contract passes at engine, API and browser
+- 2026-10-13T18:30Z | r1 | +0.2 | securities_borrowing passes at engine, API and browser
