@@ -2194,7 +2194,7 @@ const syndicatedLoanSpec = {
       // 236.906. Delayed compensation for 9 to 14 February (5 days): interest 4,750,000 x 5.70% x 5/360 = 3,760.42, less carry on
       // the purchase price 4,738,125 x 3.95% (the reference rate: 5.70% - 1.75%) x 5/360 = 2,599.39: 1,161.03 to the buyer, booked
       // as interest income and received with the settlement.
-      id: 'open', covers: ['open', 'delayed compensation'], action: 'ticket', instrument: 'main', side: 'buy', qty: 5_000_000, as: 'lot', order: { settle: { date: '2028-02-14' } },
+      id: 'open', covers: ['open', 'delayed compensation'], action: 'ticket', instrument: 'main', side: 'buy', qty: 5_000_000, as: 'lot', order: { settle: { date: '2028-02-14' } }, settlementCheck: false, // stated on the ticket: 3 business days after the T+7 standard date
       expect: {
         preview: {
           blocking: 0, errors: [],
