@@ -1394,4 +1394,200 @@ const equityBasketSwap = {
   ],
 };
 
-export default [dividendSwap, cmsSpreadSwap, nonDeliverableSwap, quantoSwap, callableSwap, puttableSwap, equityBasketSwap];
+// ---------------------------------------------------------------------------------------------
+// loan_trs
+// ---------------------------------------------------------------------------------------------
+// One-year total-return swap on 10,000,000 of the Tamberlane Foods Term Loan B (a leveraged loan registered in the bond
+// family, never traded here): receive the loan's price return quarterly, pay 3-month Term SOFR + 1.50% quarterly ACT/360,
+// from Wed 15 July 2026. The loan's closes for the reset dates are fixtures standing in for Shaffer MarketData; its interest
+// and principal repayments are passed through by hand on the position (Lifecycle, "Loan pass-through") on the day the loan
+// pays them: no service publishes a loan's cash flows. Position-level terms: independent amount 10% of notional.
+// Commission 50.00 per million; T+2 (USD).
+//   Wed 30 September, the loan's quarterly payment: interest 1.85 per 100: 10,000,000 x 1.85 / 100 = 185,000.00 received;
+//     2% of the loan repaid at par: 200,000 of the swap leaves at 100.00 against the starting close 97.50:
+//     200,000 x (100 / 97.50 - 1) = 5,128.21 received, with its financing 15 July to 30 September (77 days) at 4.25% + 1.50%:
+//     200,000 x 5.75% x 77/360 = 2,459.72 paid; the notional falls to 9,800,000
+//   15 July to 15 October (92 days) on 9,800,000: return 97.50 to 98.20: 9,800,000 x (98.20 / 97.50 - 1) = 70,358.97
+//     received; financing 9,800,000 x 5.75% x 92/360 = 144,005.56 paid
+//   terminated on Mon 16 November at 0.50: 9,800,000 x 0.50 / 100 = 49,000.00 received (all-in), commission 490.00
+//   cash: 3,000,000 - 500 + 185,000 + 5,128.21 - 2,459.72 + 70,358.97 - 144,005.56 + 48,510 = 3,162,031.90
+const TMBR = { productId: 'leveraged_loan', name: 'Tamberlane Foods Term Loan B due 15-Jan-2031', symbol: 'TMBR-TLB-31', marketView: 'US_CASH', venueType: 'otc', issuer: 'Tamberlane Foods Holdings LLC', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+  conventions: { settleLag: 7 },
+  terms: { couponType: 'float', referenceRate: 'TSOFR3M', spread: 0.0325, currentCoupon: 0.074, frequency: 4, maturity: '2031-01-15', issueDate: '2024-01-15', dayCount: 'ACT/360', redemption: 100, factor: 1, minDenomination: 1_000, seniority: 'Senior secured first lien (B / B2)', tradingDocs: 'par' } };
+const LTRS_NAME = 'TMBR TLB total-return swap v TSFR3M+1.50% 15 Jul 2027';
+const loanTrs = {
+  productId: 'loan_trs',
+  title: 'Loan total-return swap: price return on a term loan, its interest and a repayment passed through by hand, terminated',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'return leg: Leg type "Return on a reference asset", Reference asset (the loan, registered as a leveraged loan)', 'financing leg: Index, Spread'],
+    automaticInputs: ['payment schedule from the contract terms and the USD calendar', 'the loan\'s closes for the reset dates (close fixtures standing in for Shaffer MarketData)', 'Term SOFR fixings (rate fixtures)', 'the financing accrued on a repaid part', 'settlement date T+2', 'commission from the Book fee schedule', 'independent amount from the position-level terms'],
+    manualInputs: ['the reference loan, registered as a leveraged loan', 'each interest payment of the loan, passed through by hand (per 100 of notional)', 'each principal repayment of the loan, passed through by hand (share repaid, price)', 'upfront and termination amounts (stated fill prices)', 'marks entered by hand'],
+    settlement: 'Upfront, termination and commission T+2 on the USD calendar; legs paid on their payment dates; pass-throughs settled the day they are recorded',
+    lifecycle: 'The loan\'s interest passed through; a 2% repayment at par passed through with its return and the financing accrued on it, the notional falling to 9,800,000; the quarterly return and financing on the notional left; termination at a stated amount',
+    accounting: 'Carried at the mark less the upfront; pass-throughs, leg payments and the termination result realized; commission expensed',
+    collateral: 'Position-level terms: independent amount 10% of notional posted at entry, returned on termination',
+  },
+  start: at('2026-07-13'),
+  settlementCheck: { lag: 2, holidays: [] },
+  book: {
+    name: 'Matrix loan TRS', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 5_000_000 }],
+    account: { name: 'Credit', funding: [{ ccy: 'USD', amount: 3_000_000 }] },
+    settings: { fees: { swap: { perUnit: 0.00005, minimum: 0, bps: 0 }, bond: NO_FEE }, fill: FILL, settlement: { swap: 2 } },
+  },
+  instruments: {
+    loan: TMBR,
+    main: {
+      productId: 'loan_trs', name: LTRS_NAME, symbol: 'LTRS-TMBR-0727', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { tradingCalendar: 'USD', settlementCalendar: 'USD', paymentCalendar: 'USD' },
+      terms: {
+        effective: '2026-07-15', maturity: '2027-07-15', counterparty: 'Dealer L',
+        collateralBasis: { type: 'position', independentAmount: { type: 'pct', pct: 0.10 }, variationMargin: false },
+        legs: [
+          { side: 'receive', type: 'return', ccy: 'USD', months: 3, underlyingId: '$inst:loan', passDividends: false, resetNotional: false },
+          { side: 'pay', type: 'float', ccy: 'USD', index: 'TSFR3M', spread: 0.015, months: 3, dayCount: 'ACT/360' },
+        ],
+      },
+    },
+  },
+  closes: { loan: { '2026-07-15': 97.50, '2026-10-15': 98.20 } },
+  rates: { TSFR3M: { byDate: { '2026-07-15': 4.25, '2026-10-15': 4.05 } } },
+  expectAtStart: usdStart(3_000_000, 2_000_000),
+  steps: [
+    {
+      id: 'open', covers: ['open', 'collateral'], action: 'ticket', instrument: 'main', side: 'buy', qty: 10_000_000, as: 'ltrs', order: { statedPrice: 0 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 10_000_000, estimate: 0, model: 'stated-price', settleDate: '2026-07-15', calendar: 'USD', cash: 0, fees: 500 }], // 10,000,000 x 0.00005
+          cash: { USD: { fees: 500, margin: 1_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 10_000_000, avgPrice: 0 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Entered as written: 10,000,000 notional of LTRS-TMBR-0727 at 0.00 per 100 notional', owner: 'account', date: '2026-07-13' },
+          { type: 'swap.collateral', summary: `Collateral posted on ${LTRS_NAME} under its position-level terms: 1,000,000.00 USD (independent amount, 10.00% of 10,000,000.00 USD notional)`, cash: { USD: -1_000_000 } },
+        ],
+        cash: { account: { USD: { settled: 2_000_000, unsettled: -500, margin: 1_000_000, availableToTrade: 1_999_500, availableToWithdraw: 1_999_500 } } },
+        positions: [{ instrument: 'main', lot: 'ltrs', owner: 'account', direction: 'as written', qty: 10_000_000, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, notional: 10_000_000, margin: 1_000_000 }],
+        holdings: { main: { long: 10_000_000, short: 0, net: 10_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-07-15', amount: -500, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-10-15', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-10-15', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-07-15', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', lot: 'ltrs', owner: 'account', qty: 10_000_000, basis: 'position', iaRequired: 1_000_000, iaPosted: 1_000_000, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: -500, unrealized: 0, total: -500 } },
+        nav: { account: 2_999_500, book: 4_999_500 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 2_000_000, margin: 1_000_000, payable: 500, positions: null, assets: 3_000_000, liabilities: 500, netAssets: 2_999_500 } },
+      },
+    },
+    {
+      id: 'mark-at-par', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 0, note: 'Dealer L mark, by hand',
+      expect: { positions: [{ instrument: 'main', lot: 'ltrs', price: 0, value: 0, unrealized: 0, provisional: false }], otc: [{ instrument: 'main', mark: 0, markValue: 0 }], provisional: { account: false, book: false } },
+    },
+    {
+      id: 'settle-commission', covers: 'settlement', action: 'clock', to: at('2026-07-15'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 500.00 USD from settled cash', cash: { USD: -500 } }],
+        cash: { account: { USD: { settled: 1_999_500, unsettled: 0, availableToTrade: 1_999_500, availableToWithdraw: 1_999_500 } } },
+        pending: [],
+        balance: { account: { cash: 1_999_500, payable: null, assets: 2_999_500, liabilities: 0 } },
+      },
+    },
+    { id: 'loan-payment-date', action: 'clock', to: at('2026-09-30'), expect: {} },
+    {
+      // 10,000,000 x 1.85 / 100 = 185,000.00 received.
+      id: 'interest-passed-through', covers: ['interest pass-through'], action: 'lifecycle', lot: 'ltrs', body: { action: 'pass_through', kind: 'interest', amount: 1.85, note: 'TMBR TLB quarterly interest' },
+      expect: {
+        events: [{ type: 'swap.pass_through', summary: 'Interest of TMBR-TLB-31 passed through on LTRS-TMBR-0727, recorded by hand (TMBR TLB quarterly interest): 1.85 per 100 of 10,000,000.00 USD, received 185,000.00 USD', cash: { USD: 185_000 } }],
+        cash: { account: { USD: { settled: 2_184_500, availableToTrade: 2_184_500, availableToWithdraw: 2_184_500 } } },
+        pnl: { account: { realized: 185_000, total: 184_500 } },
+        nav: { account: 3_184_500, book: 5_184_500 },
+        balance: { account: { cash: 2_184_500, assets: 3_184_500, netAssets: 3_184_500 } },
+      },
+    },
+    {
+      // 2% repaid at par: return 5,128.21 received, financing 2,459.72 paid on the 200,000 (see the header): net 2,668.49;
+      // the independent amount on 9,800,000 is 980,000: 20,000 comes back.
+      id: 'repayment-passed-through', covers: ['principal pass-through'], action: 'lifecycle', lot: 'ltrs', body: { action: 'pass_through', kind: 'principal', share: 0.02, price: 100, note: 'TMBR TLB scheduled amortization' },
+      expect: {
+        events: [
+          { type: 'swap.pass_through', summary: 'Principal of TMBR-TLB-31 repaid and passed through on LTRS-TMBR-0727, recorded by hand (TMBR TLB scheduled amortization): 2.00% of the notional, 200,000.00 USD, at 100 against the last fixing 97.5: return received 5,128.21 USD; leg B (float) accrued 2026-07-15 to 2026-09-30 on it paid 2,459.72 USD; cost of the repaid part 0.00 USD realized; the notional falls to 9,800,000.00 USD', cash: { USD: 2_668.49 } },
+          { type: 'swap.collateral', summary: `Collateral returned on ${LTRS_NAME} under its position-level terms: 20,000.00 USD (independent amount, 10.00% of 9,800,000.00 USD notional)`, cash: { USD: 20_000 } },
+        ],
+        cash: { account: { USD: { settled: 2_207_168.49, margin: 980_000, availableToTrade: 2_207_168.49, availableToWithdraw: 2_207_168.49 } } },
+        otc: [{ instrument: 'main', qty: 9_800_000, iaRequired: 980_000, iaPosted: 980_000 }],
+        positions: [{ instrument: 'main', lot: 'ltrs', qty: 9_800_000, cost: 0, price: 0, value: 0, notional: 9_800_000 }],
+        holdings: { main: { long: 9_800_000, short: 0, net: 9_800_000 } },
+        pnl: { account: { realized: 187_668.49, total: 187_168.49 } },
+        nav: { account: 3_187_168.49, book: 5_187_168.49 },
+        balance: { account: { cash: 2_207_168.49, margin: 980_000, assets: 3_187_168.49, netAssets: 3_187_168.49 } },
+      },
+    },
+    {
+      // On 9,800,000: return 70,358.97 received, financing 144,005.56 paid (see the header); the close of 15 October is known
+      // after the market closes.
+      id: 'first-quarter', covers: ['loan return', 'financing payment'], action: 'clock', to: eod('2026-10-15'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap receipt on ${LTRS_NAME}, leg A (return), period 2026-07-15 to 2026-10-15: 70,358.97 USD`, cash: { USD: 70_358.97 } },
+          { type: 'swap.payment', summary: `Swap payment on ${LTRS_NAME}, leg B (float), period 2026-07-15 to 2026-10-15: 144,005.56 USD`, cash: { USD: -144_005.56 } },
+        ],
+        cash: { account: { USD: { settled: 2_133_521.90, availableToTrade: 2_133_521.90, availableToWithdraw: 2_133_521.90 } } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-01-15', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-01-15', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-07-15', status: 'pending' },
+        ],
+        pnl: { account: { realized: 114_021.90, total: 113_521.90 } },
+        nav: { account: 3_113_521.90, book: 5_113_521.90 },
+        balance: { account: { cash: 2_133_521.90, assets: 3_113_521.90, netAssets: 3_113_521.90 } },
+      },
+    },
+    { id: 'mid-november', action: 'clock', to: at('2026-11-16'), expect: {} },
+    {
+      id: 'mark-before-termination', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 0.50, note: 'Dealer L mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'ltrs', price: 0.5, value: 49_000, unrealized: 49_000 }],
+        otc: [{ instrument: 'main', mark: 0.5, markValue: 49_000 }],
+        pnl: { account: { unrealized: 49_000, total: 162_521.90 } },
+        nav: { account: 3_162_521.90, book: 5_162_521.90 },
+        balance: { account: { positions: 49_000, assets: 3_162_521.90, netAssets: 3_162_521.90 } },
+      },
+    },
+    {
+      // 49,000.00 received, commission 490.00, settles Wed 18 November; the independent amount comes back.
+      id: 'terminate', covers: ['close', 'full termination', 'collateral'], action: 'close', lot: 'ltrs', scope: 'position', percent: 100, order: { statedPrice: 0.50 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 9_800_000, estimate: 0.5, model: 'stated-price', settleDate: '2026-11-18', cash: 49_000, fees: 490 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 9_800_000, avgPrice: 0.5 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Terminated: 9,800,000 notional of LTRS-TMBR-0727 at 0.50 per 100 notional (realized 49,000.00 USD)' },
+          { type: 'swap.collateral', summary: /^Collateral returned on .* under its position-level terms: 980,000.00 USD \(independent amount, the position ended\)$/, cash: { USD: 980_000 } },
+        ],
+        cash: { account: { USD: { settled: 3_113_521.90, unsettled: 48_510, margin: 0, availableToTrade: 3_162_031.90, availableToWithdraw: 3_113_521.90 } } },
+        positions: [], holdings: { main: null }, lifecycle: [], otc: [],
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-11-18', amount: 48_510, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: 163_021.90, commissions: -990, unrealized: 0, total: 162_031.90 } },
+        nav: { account: 3_162_031.90, book: 5_162_031.90 },
+        balance: { account: { cash: 3_113_521.90, margin: null, positions: null, receivable: 48_510, assets: 3_162_031.90, liabilities: 0, netAssets: 3_162_031.90 } },
+      },
+    },
+    {
+      id: 'settle-termination', covers: ['settlement', 'close'], action: 'clock', to: at('2026-11-18'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 48,510.00 USD into settled cash', cash: { USD: 48_510 } }],
+        cash: { account: { USD: { settled: 3_162_031.90, unsettled: 0, availableToTrade: 3_162_031.90, availableToWithdraw: 3_162_031.90 } } },
+        pending: [], lifecycle: [], otc: [], alerts: [],
+        balance: { account: { cash: 3_162_031.90, receivable: null, assets: 3_162_031.90 } },
+      },
+    },
+  ],
+};
+
+export default [dividendSwap, cmsSpreadSwap, nonDeliverableSwap, quantoSwap, callableSwap, puttableSwap, equityBasketSwap, loanTrs];

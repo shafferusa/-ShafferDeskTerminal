@@ -24,7 +24,8 @@
 //                          hand on the reference stock (Instrument, Dividends and corporate actions), against a fixed price leg.
 
 import { fmt } from '../core/books.js';
-import { addBusinessDays } from '../quant/calendar.js';
+import { addBusinessDays, isBusinessDay } from '../quant/calendar.js';
+import { addDays } from '../quant/dates.js';
 import { yearFraction } from '../quant/daycount.js';
 import { CCY_RE, ISO_DATE_RE, isZero, money, need, num, sign } from '../core/util.js';
 import { paymentCalendarFor } from './security.js';
@@ -230,7 +231,42 @@ export function partialMethods(deps) {
     return { rows: out };
   }
 
+  /** The fixing date the first period of a swap starts from: the effective date, or the business day before it. */
+  function firstFixingDate(inst) {
+    const cal = paymentCalendarFor(inst);
+    let d = inst.terms.effective;
+    for (let i = 0; i < 14 && !isBusinessDay(d, cal); i++) d = addDays(d, -1);
+    return d;
+  }
+
   return {
+    /**
+     * What an exercise or a pass-through needs from the data service before it is recorded (the API asks for it first):
+     * the fixings of every rate leg from the start of its current period, and a loan TRS's starting close in its first
+     * period. Without it, an amount accrued since a period start that no payment has fetched yet could not be worked out.
+     */
+    lifecycleNeeds(app, { inst, pos }) {
+      const out = { instruments: [], closes: [], rateCodes: [] };
+      const today = app.clock.today();
+      let from = today;
+      for (const leg of inst.terms.legs) {
+        if (leg.index) out.rateCodes.push(leg.index);
+        if (leg.index2) out.rateCodes.push(leg.index2);
+        if (!leg.index) continue;
+        const paid = pos.data.legs?.[leg.id]?.paidThrough;
+        const current = legSchedule(inst, leg).find((p) => p.end > (paid || '0000-00-00'));
+        if (current && current.start < from) from = current.start;
+      }
+      if (out.rateCodes.length) out.rateRange = { from: addDays(from, -10), to: today };
+      const ret = inst.terms.legs.find((l) => l.type === 'return');
+      const ref = ret && app.instruments.get(ret.underlyingId);
+      if (ref && inst.product_id === 'loan_trs' && (pos.data.legs?.[ret.id]?.lastFixing ?? inst.terms.initialPrices?.[ret.id] ?? null) === null) {
+        out.instruments.push(ref);
+        out.closes.push({ instrument: ref, date: firstFixingDate(inst) });
+      }
+      return out;
+    },
+
     /**
      * The call or put of a callable or puttable swap, exercised by hand on one of its dates: by us (the right must be
      * ours) or by the counterparty (it must be theirs). The legs' amounts accrued since their last payment are settled
@@ -310,8 +346,15 @@ export function partialMethods(deps) {
       need(share !== null && share > 0 && share < 1, 'Enter the share of the notional repaid, above 0 and below 1 (a full repayment is a termination).');
       const price = num(body.price) ?? 100;
       need(price > 0, 'Enter the repayment price in % of par.');
-      const p0 = pos.data.legs?.[ret.id]?.lastFixing ?? t.initialPrices?.[ret.id] ?? null;
-      need(p0 !== null, `The reference loan's last fixing is not known yet: enter the first period's starting price (${refName}'s close) first.`);
+      let p0 = pos.data.legs?.[ret.id]?.lastFixing ?? t.initialPrices?.[ret.id] ?? null;
+      let p0Obs = null;
+      if (p0 === null) {
+        // Still in the first period: its start is the close of the effective date (or the business day before it).
+        const d0 = firstFixingDate(inst);
+        p0Obs = app.data.closeFor(ret.underlyingId, d0);
+        p0 = p0Obs?.value ?? null;
+        need(p0 !== null, `The reference loan's starting price is not known: enter ${refName}'s close of ${d0} first.`);
+      }
       const q = Math.abs(pos.qty) * share;
       const ret$ = money(s * q * (price / p0 - 1), ccy);
       // The financing of the repaid notional, accrued since the last payment of each other leg.
@@ -332,7 +375,7 @@ export function partialMethods(deps) {
       const eventId = app.ledger.post({
         bookId: book.id, unitId: unit.id, type: 'swap.pass_through', instrumentId: inst.id, strategyId: pos.strategy_id, positionId: pos.id, actor: 'user',
         summary: `Principal of ${refName} repaid and passed through on ${nameOf(inst)}, recorded by hand${body.note ? ` (${body.note})` : ''}: ${pct(share, 2)} of the notional, ${fmt(q, ccy)}, at ${price} against the last fixing ${p0}: return ${ret$ >= 0 ? 'received' : 'paid'} ${fmt(Math.abs(ret$), ccy)}${fin.map((x) => `; leg ${x.leg.id} (${x.leg.type}) accrued ${x.from} to ${today} on it ${x.amount >= 0 ? 'received' : 'paid'} ${fmt(Math.abs(x.amount), x.leg.ccy)}`).join('')}; cost of the repaid part ${fmt(Math.abs(costOut), ccy)} realized; the notional falls to ${fmt(Math.abs(pos.qty) - q, ccy)}`,
-        data: { kind: 'principal', share, price, lastFixing: p0, notionalRepaid: q, returnAmount: ret$, financing: fin.map((x) => ({ legId: x.leg.id, amount: x.amount, from: x.from })), costOut },
+        data: { kind: 'principal', share, price, lastFixing: p0, notionalRepaid: q, returnAmount: ret$, financing: fin.map((x) => ({ legId: x.leg.id, amount: x.amount, from: x.from })), costOut, obsIds: p0Obs ? [app.data.recordUsed(p0Obs)] : [] },
         entries,
       });
       app.positions.change(pos, { dQty: -sign(pos.qty) * q, dCost: -costOut });

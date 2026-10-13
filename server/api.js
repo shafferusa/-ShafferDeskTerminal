@@ -364,7 +364,7 @@ export function createApi(app) {
   });
 
   // ---- lifecycle by hand ---------------------------------------------------------------------------------------------
-  r.post('/api/positions/:id/lifecycle', ({ params, body }) => {
+  r.post('/api/positions/:id/lifecycle', async ({ params, body }) => { // s3: async for the data a pass-through needs
     const pos = positions.get(params.id);
     need(pos, 'Position not found.', { status: 404 });
     const inst = instruments.get(pos.instrument_id);
@@ -379,6 +379,8 @@ export function createApi(app) {
       need(n !== null && n > 0, 'Enter the number of contracts as a positive number.');
       need(!(step >= 1) || Math.abs(n / step - Math.round(n / step)) < 1e-9, `The number of contracts must be a multiple of ${step}.`);
     }
+    // s3: an exercise or a loan pass-through needs the fixings accrued on (and a loan's starting close): ask for them first.
+    if (['call_exercise', 'put_exercise', 'pass_through'].includes(body.action) && plugin.lifecycleNeeds) await app.data.refresh(plugin.lifecycleNeeds(app, ctx));
     const out = db.tx(() => {
       let result;
       switch (body.action) {
