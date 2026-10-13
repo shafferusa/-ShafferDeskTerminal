@@ -137,6 +137,12 @@ const equityIndexFuture = {
       },
     },
     {
+      // The contract is cash-settled (settlement 'cash'): a delivery notice is refused with that reason, and nothing changes.
+      id: 'request-delivery-cash-settled', covers: 'physical delivery', action: 'lifecycle', lot: 'lot', body: { action: 'deliver', contracts: 4 },
+      status: 'blocked', reason: 'A cash-settled index future has no delivery.',
+      expect: { refused: 'M5H6 is cash-settled under its contract terms: it is closed in cash at the final settlement price, so there is no delivery to give or take' },
+    },
+    {
       // 10 more would need 220,000 of margin and 22.50 of commission; 211,991 is free. Shortfall 8,031.50.
       id: 'order-beyond-margin', covers: 'margin shortfall', action: 'ticket', instrument: 'main', side: 'buy', qty: 10,
       status: 'blocked', reason: 'Initial margin for 10 more contracts is not covered by the Account\'s free cash. It is refused, not funded.',
@@ -729,7 +735,7 @@ const govBondFuture = {
   title: 'Euro-Bund future (100,000 EUR face, 10 EUR a tick), June 2026, Eurex, held short across 1 May',
   matrix: {
     ...FUTURES_TICKET,
-    manualInputs: ['none in this scenario (delivery of a deliverable bond is not simulated: the position is closed before the last trading day)'],
+    manualInputs: ['none in this scenario (delivery of a deliverable bond is not simulated: a delivery notice is refused with that reason, and the position is closed before the last trading day)'],
     settlement: 'No purchase cash; initial margin 2,600 EUR a contract and daily variation margin, both in euros; no variation on a TARGET holiday',
     lifecycle: 'Daily variation margin on the contract\'s own business days (automatic); none on 1 May 2026 (TARGET holiday, US business day); the first settlement after the holiday is against the last settlement before it',
     accounting: 'Euro cash, margin and open trade equity translated to USD at the current fixture rate; realized P&L and commission at the rate of their day; the rest is FX effects; commission 1.50 EUR a contract',
@@ -786,6 +792,14 @@ const govBondFuture = {
         pnl: { account: { realized: 880, unrealized: -880, total: -16.50 } },
         balance: { account: { cash: 392_263.50, positions: -880, assets: 419_983.50, local: { EUR: { cash: 174_785, positions: -800 } } } }, // 200,000 + 174,785 x 1.10
       },
+    },
+    {
+      // Physically delivered in the contract's terms, but a bond future's delivery (the short's choice of bond from the
+      // deliverable basket, invoiced at the settlement price times its conversion factor plus accrued interest) is not
+      // modelled: the notice is refused with that reason. This position is closed before the last trading day.
+      id: 'request-delivery-bond-future', covers: 'physical delivery', action: 'lifecycle', lot: 'hedge', body: { action: 'deliver', contracts: 10 },
+      status: 'unsupported', reason: 'Delivery of a bond against a bond future is not simulated: the deliverable basket, conversion factors and accrued interest are not modelled.',
+      expect: { refused: 'Delivery against FGBLM6 is not simulated. A bond future is delivered with a bond of the short\'s choosing from the deliverable basket' },
     },
     { id: 'wednesday', action: 'clock', to: AM('2026-04-29'), expect: {} },
     {
@@ -933,7 +947,7 @@ const treasuryFuture = {
     ...FUTURES_TICKET,
     manualInputs: ['none in this scenario; delivery of a Treasury note against the invoice amount is not simulated and would be recorded by hand on the note\'s own ticket'],
     settlement: 'No purchase cash; initial margin 2,200 USD a contract; daily variation margin at 15.625 USD a sixty-fourth; closed out in cash on the last trading day',
-    lifecycle: 'Daily variation margin (automatic); on the last trading day closed in cash at the final settlement price, labelled "physical delivery is not simulated" (automatic); a contract past that day refuses trades',
+    lifecycle: 'Daily variation margin (automatic); a delivery notice is refused because the deliverable basket, conversion factors and accrued interest are not modelled; on the last trading day closed in cash at the final settlement price, labelled "physical delivery is not simulated" (automatic); a contract past that day refuses trades',
     accounting: 'Nil cost; prices in sixty-fourths carried exactly; variation margin and closes are realized P&L; commission 0.85 USD a contract',
     collateral: 'Initial margin per contract, released pro rata on reduction and at final settlement',
   },
@@ -972,6 +986,15 @@ const treasuryFuture = {
         nav: { account: 249_993.20, book: 999_993.20 },
         balance: { account: { cash: 232_393.20, margin: 17_600, positions: null, assets: 249_993.20, liabilities: 0, netAssets: 249_993.20 } },
       },
+    },
+    {
+      // Physically delivered, but a Treasury future's delivery (a note of the short's choosing, invoiced at the settlement
+      // price times its conversion factor plus accrued interest) is not modelled. A long cannot give notice in any case,
+      // but the contract's terms are what rule delivery out here, and the reason says so. Held to the last trading day,
+      // the contract is closed in cash and the history says delivery is not simulated (expiry-physical-contract).
+      id: 'request-delivery-bond-future', covers: 'physical delivery', action: 'lifecycle', lot: 'lot', body: { action: 'deliver', contracts: 8 },
+      status: 'unsupported', reason: 'Delivery of a Treasury note against a Treasury future is not simulated: the deliverable basket, conversion factors and accrued interest are not modelled.',
+      expect: { refused: 'Delivery against TYH6 is not simulated. A bond future is delivered with a bond of the short\'s choosing from the deliverable basket' },
     },
     {
       id: 'day-1-variation', covers: 'variation margin', action: 'clock', to: EOD('2026-03-16'),

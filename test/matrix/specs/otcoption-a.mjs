@@ -394,4 +394,312 @@ const otcOption = {
   ],
 };
 
-export default [otcOption];
+// ---------------------------------------------------------------------------------------------
+// bond_option
+// ---------------------------------------------------------------------------------------------
+// Two OTC options on a US Treasury note, dealt by Treasury with Dealer C, quoted in points per 100 of face (multiplier
+// 0.01, quantity in face amount):
+//   - a Bermudan call struck at 99.50, exercisable on 15 April and 15 May 2026 and at expiry (15 June), physical
+//     delivery; position-level terms with variation margin only (threshold 25,000, minimum transfer 5,000). The mark
+//     rises and the dealer posts collateral to Treasury (restricted cash with a liability). Exercise on 14 April is
+//     refused; on 15 April it delivers the note at the strike plus accrued interest (a simulated delivery, T+1), the
+//     collateral received goes back to the dealer, and the note is sold the same day.
+//   - a European put struck at 98.00, cash-settled, written; position-level terms: independent amount 2% of strike
+//     notional, variation margin with no threshold (minimum transfer 5,000). It finishes in the money against the 15
+//     June close of the note (97.40, the stated settlement price) and is cash-settled: 0.60 per 100 of face.
+// Treasury owns every position; the Account is not used.
+//
+// The note: 4.25% semi-annual, ACT/ACT, coupons 15 May and 15 November, maturity 15 May 2031. Accrued interest to
+// Thursday 16 April 2026 (settlement of the delivery and of the sale): 152 days of the 181-day period from 15 November
+// 2025 to 15 May 2026: 10,000,000 x 4.25% / 2 x 152 / 181 = 178,453.04.
+const BOND_NOTE = 'US Treasury Note 4.25% 15-May-2031';
+const BCALL_NAME = 'UST 4.25% May-31 Bermudan call 99.50, 15 Jun 2026 (Dealer C)';
+const BPUT_NAME = 'UST 4.25% May-31 European put 98.00, 15 Jun 2026, cash (Dealer C)';
+const bondOption = {
+  productId: 'bond_option',
+  title: 'US Treasury note options owned by Treasury: Bermudan 99.50 call (physical, at the strike plus accrued) bought; European 98.00 put (cash) written',
+  matrix: {
+    ...OTC_TICKET,
+    automaticInputs: ['note price (quote fixture standing in for Shaffer MarketData) for the notional and the delivered note', 'accrued interest on the delivery and on the sale, from the note\'s registered coupon terms (ACT/ACT)', 'premium settlement date, T+2 on the US calendar; the note settles T+1 (settlement.bond = 1)', 'commission per unit of face from the Book fee schedule', 'variation margin and independent amount from the position-level terms', 'expiry item settled against the note\'s close for the expiration date (close fixture: the stated settlement price)'],
+    manualInputs: ['premium agreed with the dealer, points per 100 of face (stated fill price)', 'marks of both options entered by hand (Manual entry), points per 100 of face', 'Bermudan exercise on an exercise date (Lifecycle, Exercise); exercise on another date refused'],
+    settlement: 'Premium and commission T+2 on the US calendar; the note delivered on exercise, and its sale, T+1 at the clean price plus accrued interest to the settlement date; the cash settlement of the put T+1',
+    lifecycle: 'Bermudan exercise refused off its dates and recorded by hand on one, with a simulated delivery of 10,000,000 face at 99.50 plus accrued interest; the note sold before its coupon; the put cash-settled in the money at expiry; nothing scheduled afterwards',
+    accounting: 'Premium per 100 of face x face x 0.01; average premium; premium realized on exercise and at expiry; the note carried at the strike with its accrued interest in Accrued income; commission expensed; marks by hand drive unrealized P&L',
+    collateral: 'Call (bought): position-level terms, variation margin only, threshold 25,000: collateral received from the dealer is restricted cash with a liability, returned when the call is exercised; no independent amount for a bought option. Put (written): independent amount 2% x 9,800,000 = 196,000, variation margin with no threshold, posted and returned at expiry',
+  },
+  start: at('2026-03-02'),
+  settlementCheck: { lag: 2, holidays: [] }, // option premium T+2 on the US calendar (bond legs, T+1, are exempted step by step)
+  book: {
+    name: 'Matrix bond option', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 25_000_000 }],
+    account: { name: 'Rates', funding: [{ ccy: 'USD', amount: 1_000_000 }] },
+    settings: { fees: { otcoption: { perUnit: 0.00005, minimum: 0, bps: 0 }, bond: NO_FEE }, fill: FILL, settlement: { otcoption: 2, bond: 1 } }, // 50.00 per million of face
+  },
+  instruments: {
+    bond: { productId: 'treasury_note', name: BOND_NOTE, symbol: 'UST-4.25-MAY31', marketView: 'US_CASH', venueType: 'otc', issuer: 'United States Treasury', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      terms: { couponType: 'fixed', couponRate: 0.0425, frequency: 2, maturity: '2031-05-15', issueDate: '2021-05-15', dayCount: 'ACT/ACT', redemption: 100, minDenomination: 100 } },
+    call: {
+      productId: 'bond_option', name: BCALL_NAME, symbol: 'UST31-BC995', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', underlying: 'bond', multiplier: 0.01,
+      terms: { right: 'C', strike: 99.5, expiration: '2026-06-15', optionType: 'vanilla', exercise: 'bermudan', exerciseDates: ['2026-04-15', '2026-05-15'], settlement: 'physical', counterparty: 'Dealer C',
+        collateralBasis: { type: 'position', independentAmount: { type: 'none' }, variationMargin: true, threshold: 25_000, minimumTransfer: 5_000 } },
+    },
+    put: {
+      productId: 'bond_option', name: BPUT_NAME, symbol: 'UST31-EP98', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', underlying: 'bond', multiplier: 0.01,
+      terms: { right: 'P', strike: 98, expiration: '2026-06-15', optionType: 'vanilla', exercise: 'european', settlement: 'cash', counterparty: 'Dealer C',
+        collateralBasis: { type: 'position', independentAmount: { type: 'pct', pct: 0.02 }, variationMargin: true, threshold: 0, minimumTransfer: 5_000 } },
+    },
+  },
+  quotes: { bond: { bid: 99.50, ask: 99.55, last: 99.525, bidSize: 50_000_000, askSize: 50_000_000 } },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 1_000_000, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 1_000_000, availableToWithdraw: 1_000_000 } },
+      treasury: { USD: { settled: 24_000_000, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 24_000_000, availableToWithdraw: 24_000_000 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [], otc: [], alerts: [],
+    nav: { account: 1_000_000, treasury: 24_000_000, book: 25_000_000 },
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+  },
+  steps: [
+    otcTicket({
+      id: 'buy-call', covers: ['open', 'collateral'], owner: 'treasury', instrument: 'call', side: 'buy', qty: 10_000_000, premium: 0.80, as: 'calls',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'call', qty: 10_000_000, estimate: 0.8, model: 'stated-price', settleDate: '2026-03-04', calendar: 'US',
+            cash: -80_000, // 10,000,000 x 0.80 x 0.01
+            fees: 500, // 10,000,000 x 0.00005
+            notional: 9_952_500 }], // 10,000,000 x 0.01 x 99.525 (note last)
+          cash: { USD: { purchases: 80_000, fees: 500, margin: 0, required: 80_500, available: 24_000_000, shortfall: 0 } }, // a bought option posts no independent amount
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 10_000_000, avgPrice: 0.8, fills: [{ qty: 10_000_000, price: 0.8, model: 'stated-price', settleDate: '2026-03-04' }] }] },
+        events: [{ type: 'strategy.submitted', owner: 'treasury' }, { type: 'trade.fill', summary: 'Bought 10,000,000 UST31-BC995 @ 0.80 USD', owner: 'treasury', date: '2026-03-02' }],
+        cash: { treasury: { USD: { settled: 24_000_000, unsettled: -80_500, availableToTrade: 23_919_500, availableToWithdraw: 23_919_500 } } },
+        positions: [{ instrument: 'call', lot: 'calls', owner: 'treasury', direction: 'long', qty: 10_000_000, avgCost: 0.8, cost: 80_000, price: null, value: null, unrealized: null, provisional: true, notional: 9_952_500, margin: 0 }],
+        holdings: { call: { long: 10_000_000, short: 0, net: 10_000_000 } },
+        pending: [{ instrument: 'call', owner: 'treasury', dueDate: '2026-03-04', amount: -80_500, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'option.expiry', instrument: 'call', dueDate: '2026-06-15', status: 'pending', owner: 'treasury' }],
+        otc: [{ instrument: 'call', lot: 'calls', owner: 'treasury', qty: 10_000_000, basis: 'position', mark: null, iaRequired: 0, iaPosted: 0, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: 0, unrealized: 0, total: 0 }, treasury: { realized: 0, commissions: -500, unrealized: 0, total: -500 }, book: { commissions: -500, total: -500 } },
+        nav: { account: 1_000_000, treasury: 23_999_500, book: 24_999_500 }, // 24,000,000 - 80,500 + 80,000 (unpriced: at cost)
+        provisional: { account: false, book: true },
+        balance: {
+          account: { cash: 1_000_000, assets: 1_000_000, liabilities: 0, netAssets: 1_000_000 },
+          treasury: { cash: 24_000_000, payable: 80_500, positions: 80_000, assets: 24_080_000, liabilities: 80_500, netAssets: 23_999_500 },
+        },
+      },
+    }),
+    // Half an hour later (the netting sets are valued in the order their positions opened).
+    { id: 'half-an-hour-later', action: 'clock', to: at('2026-03-02', '15:30'), expect: {} },
+    otcTicket({
+      // Written: independent amount 2% x 10,000,000 x 98 x 0.01 = 196,000, posted at the fill.
+      id: 'write-put', covers: ['write', 'collateral'], owner: 'treasury', instrument: 'put', side: 'sell', qty: 10_000_000, premium: 0.45, as: 'puts',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'put', qty: 10_000_000, estimate: 0.45, model: 'stated-price', settleDate: '2026-03-04', calendar: 'US',
+            cash: 45_000, fees: 500, notional: 9_952_500 }], // 10,000,000 x 0.45 x 0.01
+          cash: { USD: { proceeds: 45_000, fees: 500, margin: 196_000, required: 196_500, available: 23_919_500, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 10_000_000, avgPrice: 0.45 }] },
+        events: [
+          { type: 'strategy.submitted', owner: 'treasury' },
+          { type: 'trade.fill', summary: 'Sold 10,000,000 UST31-EP98 @ 0.45 USD', owner: 'treasury' },
+          { type: 'otcoption.collateral', summary: `Collateral posted on ${BPUT_NAME} under its position-level terms: 196,000.00 USD (independent amount, 2.00% of 9,800,000.00 USD notional)`, cash: { USD: -196_000 }, owner: 'treasury' },
+        ],
+        cash: { treasury: { USD: { settled: 23_804_000, unsettled: -36_000, margin: 196_000, availableToTrade: 23_768_000, availableToWithdraw: 23_723_500 } } }, // -80,500 + 44,500; 23,804,000 - 80,500
+        positions: [
+          { instrument: 'call', lot: 'calls', qty: 10_000_000 },
+          { instrument: 'put', lot: 'puts', owner: 'treasury', direction: 'short', qty: -10_000_000, avgCost: 0.45, cost: -45_000, price: null, value: null, unrealized: null, provisional: true, notional: 9_952_500, margin: 196_000 },
+        ],
+        holdings: { put: { long: 0, short: 10_000_000, net: -10_000_000 } },
+        pending: [
+          { instrument: 'call', owner: 'treasury', dueDate: '2026-03-04', amount: -80_500, ccy: 'USD', into: 'cash' },
+          { instrument: 'put', owner: 'treasury', dueDate: '2026-03-04', amount: 44_500, ccy: 'USD', into: 'cash' },
+        ],
+        lifecycle: [{ type: 'option.expiry', instrument: 'call', dueDate: '2026-06-15', status: 'pending' }, { type: 'option.expiry', instrument: 'put', dueDate: '2026-06-15', status: 'pending' }],
+        otc: [{ instrument: 'call' }, { instrument: 'put', lot: 'puts', owner: 'treasury', qty: -10_000_000, basis: 'position', iaRequired: 196_000, iaPosted: 196_000, vmPosted: 0, vmHeld: 0 }],
+        pnl: { treasury: { commissions: -1_000, total: -1_000 }, book: { commissions: -1_000, total: -1_000 } },
+        nav: { treasury: 23_999_000, book: 24_999_000 }, // 23,804,000 + 196,000 + 44,500 - 80,500 + 80,000 - 45,000
+        balance: { treasury: { cash: 23_804_000, margin: 196_000, receivable: 44_500, payable: 80_500, positions: 35_000, assets: 24_079_500, liabilities: 80_500, netAssets: 23_999_000 } },
+      },
+    }),
+    {
+      id: 'mark-call', covers: 'manual mark', action: 'manual_price', instrument: 'call', value: 1.10, note: 'Dealer C mark, by hand, per 100 of face',
+      expect: {
+        positions: [{ instrument: 'call', lot: 'calls', price: 1.1, value: 110_000, unrealized: 30_000, provisional: false, priceSource: 'Manual entry' }, { instrument: 'put', lot: 'puts' }], // 10,000,000 x 1.10 x 0.01
+        otc: [{ instrument: 'call', mark: 1.1, markValue: 110_000 }, { instrument: 'put' }],
+        pnl: { treasury: { unrealized: 30_000, total: 29_000 }, book: { unrealized: 30_000, total: 29_000 } },
+        nav: { treasury: 24_029_000, book: 25_029_000 },
+        balance: { treasury: { positions: 65_000, assets: 24_109_500, netAssets: 24_029_000 } },
+      },
+    },
+    {
+      id: 'mark-put', covers: 'manual mark', action: 'manual_price', instrument: 'put', value: 0.30, note: 'Dealer C mark, by hand, per 100 of face',
+      expect: {
+        positions: [{ instrument: 'call', lot: 'calls' }, { instrument: 'put', lot: 'puts', price: 0.3, value: -30_000, unrealized: 15_000, provisional: false, priceSource: 'Manual entry' }], // -10,000,000 x 0.30 x 0.01; + 45,000
+        otc: [{ instrument: 'call' }, { instrument: 'put', mark: 0.3, markValue: -30_000 }],
+        pnl: { treasury: { unrealized: 45_000, total: 44_000 }, book: { unrealized: 45_000, total: 44_000 } },
+        nav: { treasury: 24_044_000, book: 25_044_000 },
+        provisional: { book: false },
+        balance: { treasury: { positions: 80_000, assets: 24_124_500, netAssets: 24_044_000 } },
+      },
+    },
+    {
+      // Call marked at +110,000: 85,000 beyond the 25,000 threshold, posted to Treasury by the dealer: restricted cash
+      // with a liability, never spendable. Put marked at -30,000, no threshold: Treasury posts 30,000.
+      id: 'variation-margin-both-ways', covers: 'variation margin', action: 'clock', to: eod('2026-03-02'),
+      expect: {
+        events: [
+          { type: 'collateral.variation', summary: 'Variation margin under position-level terms: 85,000.00 USD received. Netting set of 1 position marked at 110,000.00 USD; threshold 25,000.00 USD.', owner: 'treasury', date: '2026-03-02' },
+          { type: 'collateral.variation', summary: 'Variation margin under position-level terms: 30,000.00 USD posted. Netting set of 1 position marked at -30,000.00 USD; threshold 0.00 USD.', cash: { USD: -30_000 }, owner: 'treasury', date: '2026-03-02' },
+        ],
+        cash: { treasury: { USD: { settled: 23_774_000, restricted: 85_000, margin: 226_000, availableToTrade: 23_738_000, availableToWithdraw: 23_693_500 } } },
+        otc: [{ instrument: 'call', vmPosted: 0, vmHeld: 85_000, vmExposure: 110_000, vmStatus: 'ok' }, { instrument: 'put', vmPosted: 30_000, vmHeld: 0, vmExposure: -30_000, vmStatus: 'ok' }],
+        balance: { treasury: { cash: 23_774_000, restricted: 85_000, margin: 226_000, collateralReceived: 85_000, assets: 24_209_500, liabilities: 165_500, netAssets: 24_044_000 } },
+      },
+    },
+    { id: 'treasury-screens-collateral', covers: 'owner screens', action: 'owner_screens', owner: 'treasury', expect: {} },
+    {
+      id: 'settle-premiums', covers: 'settlement', action: 'clock', to: at('2026-03-04'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 44,500.00 USD into settled cash', cash: { USD: 44_500 }, owner: 'treasury' },
+          { type: 'settlement.pay', summary: 'paid 80,500.00 USD from settled cash', cash: { USD: -80_500 }, owner: 'treasury' },
+        ],
+        cash: { treasury: { USD: { settled: 23_738_000, unsettled: 0, availableToTrade: 23_738_000, availableToWithdraw: 23_738_000 } } },
+        pending: [],
+        balance: { treasury: { cash: 23_738_000, receivable: null, payable: null, assets: 24_129_000, liabilities: 85_000 } },
+      },
+    },
+    // Held across Good Friday (3 April, closed on the US calendar).
+    { id: 'tuesday-14-april', covers: 'holiday', action: 'clock', to: at('2026-04-14'), expect: {} },
+    {
+      id: 'exercise-off-date-refused', covers: 'exercise style', action: 'lifecycle', lot: 'calls', body: { action: 'exercise', contracts: 10_000_000 },
+      status: 'blocked', reason: 'A Bermudan option is exercised only on its stated exercise dates (15 April, 15 May) or at expiration; 14 April is none of them.',
+      expect: { refused: 'This option is Bermudan: it can only be exercised on its exercise dates (2026-04-15, 2026-05-15) or at expiration (2026-06-15). Today is 2026-04-14.' },
+    },
+    { id: 'wednesday-15-april', action: 'clock', to: at('2026-04-15'), expect: {} },
+    {
+      id: 'note-rallies', action: 'quote', instrument: 'bond', quote: { bid: 101.20, ask: 101.25, last: 101.225, bidSize: 50_000_000, askSize: 50_000_000 },
+      expect: { positions: [{ instrument: 'call', lot: 'calls', notional: 10_122_500 }, { instrument: 'put', lot: 'puts', notional: 10_122_500 }] }, // 10,000,000 x 0.01 x 101.225
+    },
+    {
+      // An exercise date. The call closes at zero (its 80,000 premium is realized); 10,000,000 face is delivered at 99.50
+      // plus accrued interest to Thursday 16 April, T+1: 9,950,000 + 178,453.04 = 10,128,453.04. The 85,000 the dealer
+      // posted against the call goes back to the dealer.
+      id: 'exercise-on-date', covers: ['bermudan exercise', 'physical settlement', 'collateral'], action: 'lifecycle', lot: 'calls', body: { action: 'exercise', contracts: 10_000_000 },
+      expect: {
+        events: [
+          { type: 'option.exercised', summary: 'Exercised: 10,000,000 UST31-BC995 at strike 99.5', owner: 'treasury', date: '2026-04-15' },
+          { type: 'option.delivery', summary: /^Simulated delivery: received 10,000,000 UST-4\.25-MAY31 at strike 99\.5 plus accrued interest on exercise of UST31-BC995/, owner: 'treasury', date: '2026-04-15' },
+          { type: 'collateral.variation', summary: 'Variation margin under position-level terms: 85,000.00 USD returned to the counterparty. The last position of the netting set ended.', owner: 'treasury' },
+        ],
+        cash: { treasury: { USD: { restricted: 0, unsettled: -10_128_453.04, availableToTrade: 13_609_546.96, availableToWithdraw: 13_609_546.96 } } }, // 23,738,000 - 10,128,453.04
+        positions: [
+          { instrument: 'bond', lot: 'calls', owner: 'treasury', direction: 'long', qty: 10_000_000, avgCost: 99.5, cost: 9_950_000, price: 101.225, value: 10_122_500, unrealized: 172_500, accrued: 178_453.04, provisional: false },
+          { instrument: 'put', lot: 'puts', qty: -10_000_000 },
+        ],
+        holdings: { call: null, bond: { long: 10_000_000, short: 0, net: 10_000_000 } },
+        pending: [{ instrument: 'bond', owner: 'treasury', dueDate: '2026-04-16', amount: -10_128_453.04, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'bond.coupon', instrument: 'bond', dueDate: '2026-05-15', status: 'pending' },
+          { type: 'option.expiry', instrument: 'put', dueDate: '2026-06-15', status: 'pending' },
+          { type: 'bond.maturity', instrument: 'bond', dueDate: '2031-05-15', status: 'pending' },
+        ],
+        otc: [{ instrument: 'put', lot: 'puts' }],
+        pnl: { treasury: { realized: -80_000, unrealized: 187_500, total: 106_500 }, book: { realized: -80_000, unrealized: 187_500, total: 106_500 } }, // 172,500 + 15,000; -80,000 - 1,000 + 187,500
+        nav: { treasury: 24_106_500, book: 25_106_500 }, // 23,738,000 + 226,000 + 10,122,500 + 178,453.04 - 10,128,453.04 - 30,000
+        balance: { treasury: { restricted: null, collateralReceived: null, positions: 10_092_500, accruedIncome: 178_453.04, payable: 10_128_453.04, assets: 34_234_953.04, liabilities: 10_128_453.04, netAssets: 24_106_500 } },
+      },
+    },
+    {
+      // Sold the same day at the bid, 101.20, T+1: clean 10,120,000 plus the same accrued interest, 178,453.04. Realized
+      // 10,120,000 - 9,950,000 = 170,000. Bought and sold for the same settlement date: no interest accrues to Treasury.
+      id: 'sell-delivered-note', covers: 'close', action: 'ticket', ticketOf: 'bond', owner: 'treasury', settlementCheck: false, // the note settles T+1 (Wednesday 15 to Thursday 16 April)
+      instrument: 'bond', side: 'sell', qty: 10_000_000, from: 'calls',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'bond', qty: 10_000_000, estimate: 101.2, model: 'quoted-bid-ask', settleDate: '2026-04-16', cash: 10_298_453.04, accrued: 178_453.04, fees: 0 }] },
+        result: { orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 10_000_000, avgPrice: 101.2 }] },
+        events: [{ type: 'strategy.legs_added', owner: 'treasury' }, { type: 'trade.fill', summary: 'Sold 10,000,000 UST-4.25-MAY31 @ 101.20 USD (realized 170,000.00 USD)', owner: 'treasury' }],
+        cash: { treasury: { USD: { unsettled: 170_000, availableToTrade: 23_908_000, availableToWithdraw: 13_609_546.96 } } }, // 10,298,453.04 - 10,128,453.04
+        positions: [{ instrument: 'put', lot: 'puts', qty: -10_000_000 }],
+        holdings: { bond: null },
+        pending: [
+          { instrument: 'bond', owner: 'treasury', dueDate: '2026-04-16', amount: -10_128_453.04, ccy: 'USD', into: 'cash' },
+          { instrument: 'bond', owner: 'treasury', dueDate: '2026-04-16', amount: 10_298_453.04, ccy: 'USD', into: 'cash' },
+        ],
+        lifecycle: [{ type: 'option.expiry', instrument: 'put', dueDate: '2026-06-15', status: 'pending' }],
+        pnl: { treasury: { realized: 90_000, unrealized: 15_000, couponInterest: 0, total: 104_000 }, book: { realized: 90_000, unrealized: 15_000, total: 104_000 } },
+        nav: { treasury: 24_104_000, book: 25_104_000 }, // 23,738,000 + 226,000 + 10,298,453.04 - 10,128,453.04 - 30,000
+        balance: { treasury: { positions: -30_000, accruedIncome: null, receivable: 10_298_453.04, assets: 34_232_453.04, netAssets: 24_104_000 } },
+      },
+    },
+    { id: 'treasury-screens-after-delivery', covers: 'owner screens', action: 'owner_screens', owner: 'treasury', expect: {} },
+    {
+      id: 'settle-delivery-and-sale', covers: 'settlement', action: 'clock', to: at('2026-04-16'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 10,298,453.04 USD into settled cash', owner: 'treasury' },
+          { type: 'settlement.pay', summary: 'paid 10,128,453.04 USD from settled cash', owner: 'treasury' },
+        ],
+        cash: { treasury: { USD: { settled: 23_908_000, unsettled: 0, availableToTrade: 23_908_000, availableToWithdraw: 23_908_000 } } },
+        pending: [],
+        balance: { treasury: { cash: 23_908_000, receivable: null, payable: null, assets: 24_104_000, liabilities: 0, netAssets: 24_104_000 } }, // 23,908,000 + 226,000 - 30,000
+      },
+    },
+    { id: 'friday-12-june', action: 'clock', to: at('2026-06-12'), expect: {} },
+    {
+      id: 'mark-put-higher', covers: 'manual mark', action: 'manual_price', instrument: 'put', value: 0.62, note: 'Dealer C mark, by hand, per 100 of face',
+      expect: {
+        positions: [{ instrument: 'put', lot: 'puts', price: 0.62, value: -62_000, unrealized: -17_000 }], // -10,000,000 x 0.62 x 0.01; + 45,000
+        otc: [{ instrument: 'put', mark: 0.62, markValue: -62_000 }],
+        pnl: { treasury: { unrealized: -17_000, total: 72_000 }, book: { unrealized: -17_000, total: 72_000 } }, // 90,000 - 1,000 - 17,000
+        nav: { treasury: 24_072_000, book: 25_072_000 },
+        balance: { treasury: { positions: -62_000, assets: 24_072_000, netAssets: 24_072_000 } },
+      },
+    },
+    {
+      // -62,000 requires 62,000; 30,000 is posted: 32,000 more.
+      id: 'variation-margin-call', covers: 'variation margin', action: 'clock', to: eod('2026-06-12'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under position-level terms: 32,000.00 USD posted. Netting set of 1 position marked at -62,000.00 USD; threshold 0.00 USD.', cash: { USD: -32_000 }, owner: 'treasury' }],
+        cash: { treasury: { USD: { settled: 23_876_000, margin: 258_000, availableToTrade: 23_876_000, availableToWithdraw: 23_876_000 } } },
+        otc: [{ instrument: 'put', vmPosted: 62_000, vmExposure: -62_000 }],
+        balance: { treasury: { cash: 23_876_000, margin: 258_000 } },
+      },
+    },
+    { id: 'settlement-price-known-later', action: 'close_price', instrument: 'bond', date: '2026-06-15', value: 97.40, expect: {} },
+    {
+      // The note closed at 97.40 on 15 June, below the 98.00 strike: the put is assigned for cash, 0.60 per 100 of face:
+      // 10,000,000 x 0.60 x 0.01 = 60,000, paid T+1. Realized 45,000 - 60,000 = -15,000. The 196,000 independent amount
+      // and the 62,000 of variation margin come back.
+      id: 'expires-in-the-money', covers: ['expiry', 'cash settlement', 'collateral'], action: 'clock', to: eod('2026-06-15'),
+      expect: {
+        events: [
+          { type: 'option.cash_settled', summary: 'Assigned (cash settlement): 10,000,000 UST31-EP98 at 0.60 USD per 100 of face (fixing 97.40)', owner: 'treasury', date: '2026-06-15' },
+          { type: 'otcoption.collateral', summary: `Collateral returned on ${BPUT_NAME} under its position-level terms: 196,000.00 USD (independent amount, the position ended)`, cash: { USD: 196_000 }, owner: 'treasury' },
+          { type: 'collateral.variation', summary: 'Variation margin under position-level terms: 62,000.00 USD returned to us. The last position of the netting set ended.', cash: { USD: 62_000 }, owner: 'treasury' },
+        ],
+        cash: { treasury: { USD: { settled: 24_134_000, margin: 0, unsettled: -60_000, availableToTrade: 24_074_000, availableToWithdraw: 24_074_000 } } }, // 23,876,000 + 196,000 + 62,000
+        positions: [], holdings: { put: null }, otc: [], lifecycle: [],
+        pending: [{ instrument: 'put', owner: 'treasury', dueDate: '2026-06-16', amount: -60_000, ccy: 'USD', into: 'cash' }],
+        pnl: { treasury: { realized: 75_000, unrealized: 0, total: 74_000 }, book: { realized: 75_000, unrealized: 0, total: 74_000 } }, // 90,000 - 15,000; - 1,000
+        nav: { treasury: 24_074_000, book: 25_074_000 },
+        balance: { treasury: { cash: 24_134_000, margin: null, positions: null, payable: 60_000, assets: 24_134_000, liabilities: 60_000, netAssets: 24_074_000 } },
+      },
+    },
+    {
+      id: 'settle-cash-settlement', covers: 'settlement', action: 'clock', to: at('2026-06-16'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 60,000.00 USD from settled cash', cash: { USD: -60_000 }, owner: 'treasury' }],
+        cash: { treasury: { USD: { settled: 24_074_000, unsettled: 0 } } },
+        pending: [],
+        balance: { treasury: { cash: 24_074_000, payable: null, assets: 24_074_000, liabilities: 0 } },
+      },
+    },
+    { id: 'treasury-screens-closed', covers: 'owner screens', action: 'owner_screens', owner: 'treasury', expect: {} },
+  ],
+};
+
+export default [otcOption, bondOption];

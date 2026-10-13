@@ -253,6 +253,9 @@ export const actions = {
     if (MANUAL_FORMS[kind]) {
       // A form of the "Lifecycle events recorded by hand" part (b3): fill its fields, then review and confirm.
       const f = MANUAL_FORMS[kind];
+      // The form draws its lifecycle part once the instrument has loaded: wait for it before looking for a field.
+      await dlg.getByText('Lifecycle events recorded by hand').first().waitFor();
+      await ui.drawn();
       for (const [label, value] of f.fields(step.body)) {
         if (!has(value)) continue;
         const input = ui.input(dlg, label);

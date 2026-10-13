@@ -45,6 +45,9 @@ export async function observeState(t, ctx) {
     // collateral held against securities lent, and a lender's recall of borrowed securities.
     collateralHeld: p.data?.collateralHeld ? { instrument: ctx.instrumentKey(p.data.collateralHeld.instrumentId), qty: p.data.collateralHeld.qty } : null,
     collateralCash: p.family === 'secloan' ? p.collateral ?? null : null, recall: p.recall ? { qty: p.recall.qty, dueDate: p.recall.dueDate } : null,
+    // A holding or contract valued by hand (manual family): its manual workflow figures (committed, called, uncalled, distributions,
+    // redemptions under notice, ...) and the freshness of its valuation ('manual' when current, 'stale' when older than its limit).
+    manual: p.manual ?? null, freshness: p.priceObs?.freshness ?? null,
   })).sort(byKeys('instrument', 'lot', 'qty'));
 
   // OTC collateral (swaps, credit default swaps, forwards, OTC options), one row per open position: the basis on

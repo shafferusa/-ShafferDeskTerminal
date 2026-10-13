@@ -312,6 +312,17 @@ export function manualPlugin(base, { standardSettleDate, paymentCalendarFor }) {
   };
 
   function manualOf(pos) { return { ...(pos.data.manual || {}) }; }
+  // Roll-forward of a valuation (commitments and direct assets): cash put in or taken out after the valuation date
+  // changes the value of the holding by the same amount until the next valuation is entered. Kept per unit of the
+  // holding, so a later sale of part of it does not change what one unit has received or paid.
+  const addFlow = (app, m, pos, amount) => [...(m.flows || []), { date: app.clock.today(), perUnit: round(amount / app.positions.get(pos.id).qty, 8) }];
+  const ROLLED = new Set(['commitment', 'direct_asset']);
+  function rolled(inst, pos, obs) {
+    if (!obs || !ROLLED.has(kindOf(inst))) return null;
+    const d = obs.forDate || String(obs.asOf || '').slice(0, 10);
+    const flows = (manualOf(pos).flows || []).filter((f) => f.date > d);
+    return { from: d, perUnit: round(flows.reduce((a, f) => a + f.perUnit, 0), 8), flows: flows.length };
+  }
   const setManual = (app, pos, patch) => app.positions.setData(app.positions.get(pos.id), { manual: { ...manualOf(app.positions.get(pos.id)), ...patch } });
 
   /** What the screens show about the manual workflow of a position. */
@@ -437,7 +448,7 @@ export function manualPlugin(base, { standardSettleDate, paymentCalendarFor }) {
         summary: `Capital call on ${label(inst)} entered by hand: paid ${fmt(amount, ccy)}${fee ? ` (${fmt(invested, ccy)} invested, ${fmt(fee, ccy)} management fee)` : ''}; called ${fmt(called, ccy)} of ${fmt(s.committed, ccy)}, uncalled ${fmt(money(s.committed - called, ccy), ccy)}${noteText(b)}`,
         data: { amount, invested, fee } });
       app.positions.change(app.positions.get(pos.id), { dCost: invested });
-      setManual(app, pos, { called, feesCalled: money((m.feesCalled || 0) + fee, ccy) });
+      setManual(app, pos, { called, feesCalled: money((m.feesCalled || 0) + fee, ccy), flows: addFlow(app, m, pos, invested) });
       return { eventId };
     },
 
@@ -461,7 +472,8 @@ export function manualPlugin(base, { standardSettleDate, paymentCalendarFor }) {
         summary: `Distribution from ${label(inst)} entered by hand: ${parts}${carry ? `, less ${fmt(carry, ccy)} carried interest withheld` : ''}; received ${fmt(cash, ccy)}${noteText(b)}`,
         data: { returnOfCapital: roc, realizedGain: gain, income, carry, cash } });
       if (roc) app.positions.change(app.positions.get(pos.id), { dCost: -roc });
-      setManual(app, pos, { returnOfCapital: money((m.returnOfCapital || 0) + roc, ccy), realizedGain: money((m.realizedGain || 0) + gain, ccy), income: money((m.income || 0) + income, ccy), carry: money((m.carry || 0) + carry, ccy) });
+      setManual(app, pos, { returnOfCapital: money((m.returnOfCapital || 0) + roc, ccy), realizedGain: money((m.realizedGain || 0) + gain, ccy), income: money((m.income || 0) + income, ccy), carry: money((m.carry || 0) + carry, ccy),
+        flows: addFlow(app, m, fresh, -gross) });
       return { eventId };
     },
 
@@ -503,7 +515,7 @@ export function manualPlugin(base, { standardSettleDate, paymentCalendarFor }) {
       const m = manualOf(pos);
       const eventId = post(app, { book, unit, inst, pos, type: 'manual.capex', cash: -amount, lines: [{ account: 'pos', amount }], summary: `Capital expenditure on ${label(inst)} entered by hand: paid ${fmt(amount, ccy)}, added to cost${noteText(b)}`, data: { amount } });
       app.positions.change(app.positions.get(pos.id), { dCost: amount });
-      setManual(app, pos, { capex: money((m.capex || 0) + amount, ccy) });
+      setManual(app, pos, { capex: money((m.capex || 0) + amount, ccy), flows: addFlow(app, m, pos, amount) });
       return { eventId };
     },
 
@@ -769,9 +781,17 @@ export function manualPlugin(base, { standardSettleDate, paymentCalendarFor }) {
       return { ...r, position: app.positions.get(r.position.id) };
     },
     value(app, inst, pos, obs, mark) {
-      const v = valueSecurity(inst, pos, obs, mark);
+      const roll = mark !== null && mark !== undefined ? rolled(inst, pos, obs) : null;
+      const v = valueSecurity(inst, pos, obs, roll ? round(mark + roll.perUnit, 8) : mark);
       const presented = obs ? app.data.present(obs) : null;
-      return { ...v, manual: summary(inst, pos, presented), valuationNote: presented?.freshness === 'stale' ? `The last valuation (${presented.forDate || String(presented.asOf).slice(0, 10)}) is older than ${inst.terms.valuationMaxAgeDays} days: the value is provisional.` : null };
+      const manual = summary(inst, pos, presented);
+      if (manual.valuation) {
+        manual.valuation.reported = mark;
+        manual.valuation.rolledForward = roll && roll.flows ? money(roll.perUnit * pos.qty * inst.multiplier, inst.trading_ccy) : 0;
+      }
+      const notes = [presented?.freshness === 'stale' ? `The last valuation (${presented.forDate || String(presented.asOf).slice(0, 10)}) is older than ${inst.terms.valuationMaxAgeDays} days: the value is provisional.` : null,
+        roll?.flows ? `Rolled forward from the valuation of ${roll.from} for the calls, capital expenditure and distributions recorded since.` : null].filter(Boolean);
+      return { ...v, manual, valuationNote: notes.join(' ') || null };
     },
     onPositionChange(app, { book, unit, inst, pos }) {
       const k = kindOf(inst);

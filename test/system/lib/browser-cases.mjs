@@ -2280,6 +2280,7 @@ export async function restartScreens(b, c) {
   const restartHere = async (stage) => {
     const fp = b.fingerprint();
     const before = await screens();
+    const hr0 = JSON.stringify(b.sql('SELECT * FROM hedge_requests'));
     await b.restart();
     await page.reload();
     await page.locator('.shell .topbar').waitFor();
@@ -2288,7 +2289,7 @@ export async function restartScreens(b, c) {
     c.eq(after.cash, before.cash, `restart at "${stage}": the cash balances read as before`);
     c.eq(after.holding, before.holding, `restart at "${stage}": the holding reads as before`);
     c.eq(sameHistoryShown(c, before.history, after.history, `restart at "${stage}"`), [], `restart at "${stage}": no row was added to the Full history`);
-    b.sameStored(c, fp, b.fingerprint(), `restart at "${stage}": every stored row is as it was`);
+    if (!b.sameStored(c, fp, b.fingerprint(), `restart at "${stage}": every stored row is as it was`)) c.fail(`DIAG hedge_requests before ${hr0} after ${JSON.stringify(b.sql('SELECT * FROM hedge_requests'))}`);
     await b.clean(c, book.id, `restart at "${stage}"`);
     return after;
   };
@@ -2305,7 +2306,7 @@ export async function restartScreens(b, c) {
   s = await restartHere('partly filled');
   c.match((s.pending['Partly filled'] || []).join(' | '), /300 of 1,000.*700/, 'stage 2: the Pending tab lists it as partly filled: 300 of 1,000, 700 remaining');
   await b.tick(); await b.tick(); await b.tick();
-  c.eq(b.sql('SELECT f.qty FROM fills f JOIN orders o ON o.id = f.order_id WHERE o.book_id = ? ORDER BY f.id', book.id).map((f) => f.qty), [300, 300, 300, 100], 'after the restart the remainder fills: 300, 300, 100');
+  c.eq(b.sql('SELECT f.qty FROM fills f JOIN orders o ON o.id = f.order_id WHERE o.book_id = ? ORDER BY f.rowid', book.id).map((f) => f.qty), [300, 300, 300, 100], 'after the restart the remainder fills: 300, 300, 100');
 
   // Stage 3: filled, unsettled. 1,000 x 49.00 = 49,000.00 plus commission 1,000 x 0.005 = 5.00.
   s = await restartHere('filled, unsettled');

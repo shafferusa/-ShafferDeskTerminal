@@ -133,3 +133,4 @@
 - 2026-10-13T17:28Z | s8 | +1 | level mapping enforced (lib/mapping.mjs, loadCases) and printed in test/system/README.md and the System behaviour section of scripts/test-matrix.js; end-of-case integrity sweep
 - 2026-10-13T17:30Z | r1 | +0 | repo engine: buffer, reverse repo cover cap, buy/sell-back forward and coupon pass, collateral changes; bond loan collateral on dirty value
 - 2026-10-13T17:31Z | fw | +0 | fw: futures simulated physical delivery in the engine (repairs future.mjs captured half-edited in f3c20ac); commodity_future passes E/A/B
+- 2026-10-13T17:34Z | o2 | +0.2 | bond_option passes at engine, API and browser

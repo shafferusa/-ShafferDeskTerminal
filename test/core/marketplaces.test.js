@@ -231,7 +231,8 @@ const DRAFTS = {
     : { productId: 'fx_spot', name: `Route pair ${n}`, venueType: 'global', tradingCcy: 'USD', terms: { base: 'EUR', quote: 'USD', settleDays: 2 } }),
   commodities: (g, n) => ({ productId: 'crude_oil', name: `Route oil ${n}`, venueType: 'exchange', venueCountry: g === 'US' ? 'US' : 'GB', tradingCcy: 'USD', terms: { quantityUnit: 'barrels', priceUnits: 'USD per barrel' } }),
   crypto: (g, n) => (g === 'US' ? { productId: 'cryptocurrency', name: `Route coin ${n}`, venueType: 'exchange', venueCountry: 'US', tradingCcy: 'USD' } : { productId: 'cryptocurrency', name: `Route coin ${n}`, venueType: 'global', tradingCcy: 'USD' }),
-  alternatives: (g, n) => ({ productId: 'private_equity', name: `Route PE ${n}`, venueType: 'otc', jurisdiction: g === 'US' ? 'US' : 'LU', tradingCcy: 'USD' }),
+  // Terms as server/products/manual.js asks for them (TERMS.commitment, TERMS.weather).
+  alternatives: (g, n) => ({ productId: 'private_equity', name: `Route PE ${n}`, venueType: 'otc', jurisdiction: g === 'US' ? 'US' : 'LU', tradingCcy: 'USD', terms: { valuationMaxAgeDays: 90, commitment: 1_000_000 } }),
   options: (g, n, inst) => ({ productId: 'equity_option', name: `Route option ${n}`, venueType: 'exchange', underlyingId: (g === 'US' ? inst.ALFA : inst.KAIJ).id, tradingCcy: g === 'US' ? 'USD' : 'JPY', multiplier: 100,
     terms: { right: 'C', strike: 100 + n, expiration: '2026-06-19', exercise: 'american', settlement: 'physical', deliverable: { units: 100 } } }),
   futures: (g, n) => ({ productId: 'equity_index_future', name: `Route future ${n}`, venueType: 'exchange', venueCountry: g === 'US' ? 'US' : 'DE', tradingCcy: 'USD', multiplier: 50, terms: { expiration: '2026-06-19', initialMargin: 12000 } }),
@@ -240,7 +241,9 @@ const DRAFTS = {
   swaps: (g, n) => irs({ name: `Route swap ${n}`, jurisdiction: g === 'US' ? 'US' : 'GB' }),
   credit: (g, n) => ({ productId: 'cds_single_name', name: `Route CDS ${n}`, venueType: 'otc', jurisdiction: g === 'US' ? 'US' : 'GB', tradingCcy: 'USD',
     terms: { referenceEntity: 'Acme Corp', coupon: 0.01, effective: '2026-03-02', maturity: '2031-03-20', recovery: 0.4, counterparty: 'Dealer A', collateralBasis: { type: 'uncollateralized' } } }),
-  structured: (g, n) => ({ productId: 'weather_derivative', name: `Route weather ${n}`, venueType: 'otc', jurisdiction: g === 'US' ? 'US' : 'GB', tradingCcy: 'USD' }),
+  structured: (g, n) => ({ productId: 'weather_derivative', name: `Route weather ${n}`, venueType: 'otc', jurisdiction: g === 'US' ? 'US' : 'GB', tradingCcy: 'USD',
+    terms: { valuationMaxAgeDays: 30, station: 'Sim Airport', index: 'HDD', baseTemp: 65, periodStart: '2026-11-01', periodEnd: '2027-03-31', strike: 1000, tick: 5000, cap: 1_000_000, optionType: 'call', side: 'long',
+      counterparty: 'Dealer C', collateralBasis: { type: 'uncollateralized' } } }),
 };
 
 test('API: one instrument of every tab, registered with US and with foreign facts, is listed in exactly one view and tab', async () => {

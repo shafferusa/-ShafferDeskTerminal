@@ -312,7 +312,8 @@ export async function actThroughClient(t, ctx, step) {
       }
       case 'lifecycle': {
         const { position } = await positionIn(t, ctx, step.lot, step.instrument, { allowClosed: step.status === 'blocked' || step.status === 'unsupported' });
-        await t.positionLifecycle(position.positionId, step.body);
+        // '$pos:<lot>:<key>' and '$inst:<key>' in the body (r1: a repo collateral substitution names a position or a security).
+        await t.positionLifecycle(position.positionId, resolveRefs(await resolvePositions(t, ctx, step.body), ctx));
         return {};
       }
       case 'instrument_lifecycle': await t.instrumentLifecycle(ctx.inst(step.instrument).id, step.body); return {};

@@ -10,7 +10,7 @@ import { intrinsic } from '../quant/options.js';
 import { AppError, ISO_DATE_RE, money, need, num } from '../core/util.js';
 import { fmt } from '../core/books.js';
 import { normalizeBasis } from '../core/agreements.js';
-import { bookSecurityFill, fmtQty, valueSecurity } from './common.js';
+import { bookSecurityFill, fmtPx, fmtQty, valueSecurity } from './common.js';
 import { calendarFor, standardSettleDate } from './security.js';
 
 const EXOTIC_MANUAL = new Set(['asian', 'lookback', 'basket', 'spread', 'quanto', 'compound', 'swaption', 'other']);
@@ -135,7 +135,11 @@ export function settleOption(app, { book, unit, inst, pos, S, date, contracts, m
   }
 
   if (t.settlement === 'cash' || manualAmount !== undefined && manualAmount !== null || !active) {
-    const r = bookSecurityFill(app, { ...base, action: closeAction, price: perUnit, settleDate, eventType: 'option.cash_settled', summary: `${long ? 'Exercised' : 'Assigned'} (cash settlement): ${label} at ${money(perUnit, inst.trading_ccy)} per unit`, data: { fixing: S ?? null, fixingObsId: obsId, perUnit } }, { unitCost: perUnit * inst.multiplier });
+    // An OTC option states the amount in its own quotation (per 100 of face for a bond option) and the fixing it came from.
+    const und = inst.family === 'otcoption' && inst.underlying_id ? app.instruments.get(inst.underlying_id) : null;
+    const per = inst.family !== 'otcoption' ? `${money(perUnit, inst.trading_ccy)} per unit`
+      : `${fmtPx(perUnit)} ${inst.trading_ccy} per ${und?.family === 'bond' ? '100 of face' : 'unit'}${manualAmount !== undefined && manualAmount !== null ? ' (settlement amount entered by hand)' : S !== undefined && S !== null ? ` (fixing ${fmtPx(S)})` : ''}`;
+    const r = bookSecurityFill(app, { ...base, action: closeAction, price: perUnit, settleDate, eventType: 'option.cash_settled', summary: `${long ? 'Exercised' : 'Assigned'} (cash settlement): ${label} at ${per}`, data: { fixing: S ?? null, fixingObsId: obsId, perUnit, ...(manualAmount !== undefined && manualAmount !== null ? { manualAmount } : {}) } }, { unitCost: perUnit * inst.multiplier });
     return { outcome: 'cash_settled', eventId: r.eventId, realized: r.realized };
   }
 

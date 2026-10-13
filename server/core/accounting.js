@@ -11,6 +11,7 @@
 
 import { j, pj } from '../db/db.js';
 import { fmt } from './books.js';
+import { isOtcContract } from './agreements.js';
 import { ACCOUNTS, BALANCE_SHEET_ACCOUNTS } from './ledger.js';
 import { AppError, CCY_RE, isZero, money, need, num } from './util.js';
 
@@ -236,7 +237,7 @@ export function createAccounting(app) {
         ...(app.hedge?.positionLinks ? app.hedge.positionLinks(p.unitId, p.positionId) : {}),
         collateral: { pledgedQty: p.pledgedQty, onLoanQty: p.onLoanQty, restrictedCash: p.restrictedCash, marginPosted: p.marginPosted, received: p.collateral, held: p.data.collateralHeld || null },
         // OTC positions: the collateral basis on record and what is posted or held for it (variation margin at netting-set level when the set has several positions).
-        otcCollateral: app.agreements && OTC_COLLATERAL.includes(p.family) ? otcCollateralOf(positions.get(p.positionId), collCtx) : null,
+        otcCollateral: app.agreements && (OTC_COLLATERAL.includes(p.family) || isOtcContract(inst)) ? otcCollateralOf(positions.get(p.positionId), collCtx) : null,
         support: instruments.support(inst),
       };
     });
@@ -517,7 +518,7 @@ export function createAccounting(app) {
   function taskView(t, unitName) {
     const inst = t.instrument_id ? instruments.get(t.instrument_id) : null;
     const strat = t.strategy_id ? app.packages.getStrategyRow(t.strategy_id) : null;
-    const LABEL = { 'option.expiry': 'Option expiration', 'future.expiry': 'Futures final settlement', 'forward.maturity': 'Forward settlement', 'bond.coupon': 'Coupon payment', 'bond.maturity': 'Redemption at maturity', 'loan.interest': 'Interest payment', 'loan.maturity': 'Loan maturity', 'repo.end': 'Repo repurchase', 'secloan.fee': 'Borrow / lending fee payment', 'secloan.recall': 'Recall deadline', 'swap.payment': 'Swap leg payment', 'swap.notional': 'Notional exchange', 'swap.maturity': 'Swap maturity', 'cds.premium': 'CDS premium', 'cds.maturity': 'CDS maturity' };
+    const LABEL = { 'option.expiry': 'Option expiration', 'future.expiry': 'Futures final settlement', 'forward.maturity': 'Forward settlement', 'bond.coupon': 'Coupon payment', 'bond.maturity': 'Redemption at maturity', 'loan.interest': 'Interest payment', 'loan.maturity': 'Loan maturity', 'repo.end': 'Repo repurchase', 'secloan.fee': 'Borrow / lending fee payment', 'secloan.recall': 'Recall deadline', 'swap.payment': 'Swap leg payment', 'swap.notional': 'Notional exchange', 'swap.maturity': 'Swap maturity', 'cds.premium': 'CDS premium', 'cds.maturity': 'CDS maturity', 'manual.settlement': 'Final settlement (entered by hand)', 'manual.maturity': 'Redemption at maturity (entered by hand)', 'manual.redemption': 'Redemption dealing date (NAV entered by hand)' };
     return { id: t.id, owner: unitName.get(t.unit_id), unitId: t.unit_id, type: t.type, label: LABEL[t.type] || t.type, instrument: app.valuation.lite(inst), strategy: strat ? { id: strat.id, name: strat.name } : null, positionId: t.position_id, dueDate: t.due_date, status: t.status, reason: t.blocked_reason, needs: t.needs, data: t.data };
   }
 

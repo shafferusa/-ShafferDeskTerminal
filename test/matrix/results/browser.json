@@ -12373,229 +12373,6 @@
     "restart"
    ]
   },
-  "B:treasury_note:setup": {
-   "status": "passed",
-   "message": "",
-   "ms": 3359,
-   "commit": "c81ccae+changes",
-   "at": "2026-10-13T17:22:05.912Z",
-   "product": "treasury_note",
-   "template": null,
-   "family": "bond",
-   "step": "setup",
-   "covers": []
-  },
-  "B:treasury_note:odd-denomination": {
-   "status": "blocked",
-   "message": "Treasury notes trade in multiples of 100 face; 1,000,050 is not one. Terminal: \"Leg 1: quantity must be a multiple of 100.\"",
-   "ms": 1150,
-   "commit": "c81ccae+changes",
-   "at": "2026-10-13T17:22:05.912Z",
-   "product": "treasury_note",
-   "template": null,
-   "family": "bond",
-   "step": "odd-denomination",
-   "covers": [
-    "minimum denomination"
-   ]
-  },
-  "B:treasury_note:open": {
-   "status": "passed",
-   "message": "",
-   "ms": 1450,
-   "commit": "c81ccae+changes",
-   "at": "2026-10-13T17:22:05.912Z",
-   "product": "treasury_note",
-   "template": null,
-   "family": "bond",
-   "step": "open",
-   "covers": [
-    "open"
-   ]
-  },
-  "B:treasury_note:settle-open": {
-   "status": "passed",
-   "message": "",
-   "ms": 666,
-   "commit": "c81ccae+changes",
-   "at": "2026-10-13T17:22:05.912Z",
-   "product": "treasury_note",
-   "template": null,
-   "family": "bond",
-   "step": "settle-open",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "B:treasury_note:quote-up": {
-   "status": "passed",
-   "message": "",
-   "ms": 651,
-   "commit": "c81ccae+changes",
-   "at": "2026-10-13T17:22:05.912Z",
-   "product": "treasury_note",
-   "template": null,
-   "family": "bond",
-   "step": "quote-up",
-   "covers": []
-  },
-  "B:treasury_note:increase": {
-   "status": "passed",
-   "message": "",
-   "ms": 1248,
-   "commit": "c81ccae+changes",
-   "at": "2026-10-13T17:22:05.912Z",
-   "product": "treasury_note",
-   "template": null,
-   "family": "bond",
-   "step": "increase",
-   "covers": [
-    "increase",
-    "market holiday"
-   ]
-  },
-  "B:treasury_note:holiday-morning": {
-   "status": "passed",
-   "message": "",
-   "ms": 635,
-   "commit": "c81ccae+changes",
-   "at": "2026-10-13T17:22:05.912Z",
-   "product": "treasury_note",
-   "template": null,
-   "family": "bond",
-   "step": "holiday-morning",
-   "covers": [
-    "market holiday"
-   ]
-  },
-  "B:treasury_note:holiday-sell": {
-   "status": "passed",
-   "message": "",
-   "ms": 1266,
-   "commit": "c81ccae+changes",
-   "at": "2026-10-13T17:22:05.912Z",
-   "product": "treasury_note",
-   "template": null,
-   "family": "bond",
-   "step": "holiday-sell",
-   "covers": [
-    "reduce",
-    "market holiday"
-   ]
-  },
-  "B:treasury_note:holiday-sell-fills": {
-   "status": "passed",
-   "message": "",
-   "ms": 650,
-   "commit": "c81ccae+changes",
-   "at": "2026-10-13T17:22:05.912Z",
-   "product": "treasury_note",
-   "template": null,
-   "family": "bond",
-   "step": "holiday-sell-fills",
-   "covers": [
-    "reduce",
-    "settlement",
-    "accrual"
-   ]
-  },
-  "B:treasury_note:settle-reduce": {
-   "status": "passed",
-   "message": "",
-   "ms": 649,
-   "commit": "c81ccae+changes",
-   "at": "2026-10-13T17:22:05.912Z",
-   "product": "treasury_note",
-   "template": null,
-   "family": "bond",
-   "step": "settle-reduce",
-   "covers": [
-    "settlement",
-    "accrual"
-   ]
-  },
-  "B:treasury_note:oversell": {
-   "status": "blocked",
-   "message": "The Account holds 1,200,000 face and cannot sell 2,000,000; going short needs a securities borrow. Terminal: \"Sells from Long UST-4-NOV30 in this Account, which is long 1,200,000 at an average 99.625. 2,000,000 is more than it holds.\"",
-   "ms": 1201,
-   "commit": "c81ccae+changes",
-   "at": "2026-10-13T17:22:05.912Z",
-   "product": "treasury_note",
-   "template": null,
-   "family": "bond",
-   "step": "oversell",
-   "covers": [
-    "reduce"
-   ]
-  },
-  "B:treasury_note:coupon": {
-   "status": "passed",
-   "message": "",
-   "ms": 683,
-   "commit": "c81ccae+changes",
-   "at": "2026-10-13T17:22:05.912Z",
-   "product": "treasury_note",
-   "template": null,
-   "family": "bond",
-   "step": "coupon",
-   "covers": [
-    "coupon"
-   ]
-  },
-  "B:treasury_note:quote-down": {
-   "status": "passed",
-   "message": "",
-   "ms": 600,
-   "commit": "c81ccae+changes",
-   "at": "2026-10-13T17:22:05.912Z",
-   "product": "treasury_note",
-   "template": null,
-   "family": "bond",
-   "step": "quote-down",
-   "covers": []
-  },
-  "B:treasury_note:close": {
-   "status": "passed",
-   "message": "",
-   "ms": 1149,
-   "commit": "c81ccae+changes",
-   "at": "2026-10-13T17:22:05.912Z",
-   "product": "treasury_note",
-   "template": null,
-   "family": "bond",
-   "step": "close",
-   "covers": [
-    "close"
-   ]
-  },
-  "B:treasury_note:settle-close": {
-   "status": "passed",
-   "message": "",
-   "ms": 617,
-   "commit": "c81ccae+changes",
-   "at": "2026-10-13T17:22:05.912Z",
-   "product": "treasury_note",
-   "template": null,
-   "family": "bond",
-   "step": "settle-close",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "B:treasury_note:restart": {
-   "status": "passed",
-   "message": "",
-   "ms": 2983,
-   "commit": "c81ccae+changes",
-   "at": "2026-10-13T17:22:05.912Z",
-   "product": "treasury_note",
-   "template": null,
-   "family": "bond",
-   "step": "restart",
-   "covers": [
-    "restart"
-   ]
-  },
   "B:common_stock:setup": {
    "status": "passed",
    "message": "",
@@ -14718,6 +14495,229 @@
    "covers": [
     "restart"
    ]
+  },
+  "B:treasury_note:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 7765,
+   "commit": "617f1a9+changes",
+   "at": "2026-10-13T17:34:30.359Z",
+   "product": "treasury_note",
+   "template": null,
+   "family": "bond",
+   "step": "setup",
+   "covers": []
+  },
+  "B:treasury_note:odd-denomination": {
+   "status": "blocked",
+   "message": "Treasury notes trade in multiples of 100 face; 1,000,050 is not one. Terminal: \"Leg 1: quantity must be a multiple of 100.\"",
+   "ms": 3576,
+   "commit": "617f1a9+changes",
+   "at": "2026-10-13T17:34:30.359Z",
+   "product": "treasury_note",
+   "template": null,
+   "family": "bond",
+   "step": "odd-denomination",
+   "covers": [
+    "minimum denomination"
+   ]
+  },
+  "B:treasury_note:open": {
+   "status": "passed",
+   "message": "",
+   "ms": 4173,
+   "commit": "617f1a9+changes",
+   "at": "2026-10-13T17:34:30.359Z",
+   "product": "treasury_note",
+   "template": null,
+   "family": "bond",
+   "step": "open",
+   "covers": [
+    "open"
+   ]
+  },
+  "B:treasury_note:settle-open": {
+   "status": "passed",
+   "message": "",
+   "ms": 1687,
+   "commit": "617f1a9+changes",
+   "at": "2026-10-13T17:34:30.359Z",
+   "product": "treasury_note",
+   "template": null,
+   "family": "bond",
+   "step": "settle-open",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:treasury_note:quote-up": {
+   "status": "passed",
+   "message": "",
+   "ms": 1443,
+   "commit": "617f1a9+changes",
+   "at": "2026-10-13T17:34:30.359Z",
+   "product": "treasury_note",
+   "template": null,
+   "family": "bond",
+   "step": "quote-up",
+   "covers": []
+  },
+  "B:treasury_note:increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 3024,
+   "commit": "617f1a9+changes",
+   "at": "2026-10-13T17:34:30.359Z",
+   "product": "treasury_note",
+   "template": null,
+   "family": "bond",
+   "step": "increase",
+   "covers": [
+    "increase",
+    "market holiday"
+   ]
+  },
+  "B:treasury_note:holiday-morning": {
+   "status": "passed",
+   "message": "",
+   "ms": 1357,
+   "commit": "617f1a9+changes",
+   "at": "2026-10-13T17:34:30.359Z",
+   "product": "treasury_note",
+   "template": null,
+   "family": "bond",
+   "step": "holiday-morning",
+   "covers": [
+    "market holiday"
+   ]
+  },
+  "B:treasury_note:holiday-sell": {
+   "status": "passed",
+   "message": "",
+   "ms": 2909,
+   "commit": "617f1a9+changes",
+   "at": "2026-10-13T17:34:30.359Z",
+   "product": "treasury_note",
+   "template": null,
+   "family": "bond",
+   "step": "holiday-sell",
+   "covers": [
+    "reduce",
+    "market holiday"
+   ]
+  },
+  "B:treasury_note:holiday-sell-fills": {
+   "status": "passed",
+   "message": "",
+   "ms": 1800,
+   "commit": "617f1a9+changes",
+   "at": "2026-10-13T17:34:30.359Z",
+   "product": "treasury_note",
+   "template": null,
+   "family": "bond",
+   "step": "holiday-sell-fills",
+   "covers": [
+    "reduce",
+    "settlement",
+    "accrual"
+   ]
+  },
+  "B:treasury_note:settle-reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 1632,
+   "commit": "617f1a9+changes",
+   "at": "2026-10-13T17:34:30.359Z",
+   "product": "treasury_note",
+   "template": null,
+   "family": "bond",
+   "step": "settle-reduce",
+   "covers": [
+    "settlement",
+    "accrual"
+   ]
+  },
+  "B:treasury_note:oversell": {
+   "status": "blocked",
+   "message": "The Account holds 1,200,000 face and cannot sell 2,000,000; going short needs a securities borrow. Terminal: \"Sells from Long UST-4-NOV30 in this Account, which is long 1,200,000 at an average 99.625. 2,000,000 is more than it holds.\"",
+   "ms": 2388,
+   "commit": "617f1a9+changes",
+   "at": "2026-10-13T17:34:30.359Z",
+   "product": "treasury_note",
+   "template": null,
+   "family": "bond",
+   "step": "oversell",
+   "covers": [
+    "reduce"
+   ]
+  },
+  "B:treasury_note:coupon": {
+   "status": "passed",
+   "message": "",
+   "ms": 1248,
+   "commit": "617f1a9+changes",
+   "at": "2026-10-13T17:34:30.359Z",
+   "product": "treasury_note",
+   "template": null,
+   "family": "bond",
+   "step": "coupon",
+   "covers": [
+    "coupon"
+   ]
+  },
+  "B:treasury_note:quote-down": {
+   "status": "passed",
+   "message": "",
+   "ms": 1559,
+   "commit": "617f1a9+changes",
+   "at": "2026-10-13T17:34:30.359Z",
+   "product": "treasury_note",
+   "template": null,
+   "family": "bond",
+   "step": "quote-down",
+   "covers": []
+  },
+  "B:treasury_note:close": {
+   "status": "passed",
+   "message": "",
+   "ms": 3039,
+   "commit": "617f1a9+changes",
+   "at": "2026-10-13T17:34:30.359Z",
+   "product": "treasury_note",
+   "template": null,
+   "family": "bond",
+   "step": "close",
+   "covers": [
+    "close"
+   ]
+  },
+  "B:treasury_note:settle-close": {
+   "status": "passed",
+   "message": "",
+   "ms": 1103,
+   "commit": "617f1a9+changes",
+   "at": "2026-10-13T17:34:30.359Z",
+   "product": "treasury_note",
+   "template": null,
+   "family": "bond",
+   "step": "settle-close",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:treasury_note:restart": {
+   "status": "passed",
+   "message": "",
+   "ms": 5022,
+   "commit": "617f1a9+changes",
+   "at": "2026-10-13T17:34:30.359Z",
+   "product": "treasury_note",
+   "template": null,
+   "family": "bond",
+   "step": "restart",
+   "covers": [
+    "restart"
+   ]
   }
  },
  "runs": {
@@ -14950,9 +14950,9 @@
    }
   },
   "treasury_note": {
-   "at": "2026-10-13T17:22:05.912Z",
-   "commit": "c81ccae+changes",
-   "ms": 18958,
+   "at": "2026-10-13T17:34:30.359Z",
+   "commit": "617f1a9+changes",
+   "ms": 43727,
    "family": "bond",
    "steps": 16,
    "ran": 16,
@@ -15843,5 +15843,5 @@
    }
   }
  },
- "updatedAt": "2026-10-13T17:26:02.918Z"
+ "updatedAt": "2026-10-13T17:34:30.359Z"
 }
