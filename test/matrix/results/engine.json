@@ -5913,32 +5913,6 @@
     "restart"
    ]
   },
-  "E:coco_bond:setup": {
-   "status": "passed",
-   "message": "",
-   "ms": 27,
-   "commit": "03a4d9e+changes",
-   "at": "2026-10-13T18:00:15.816Z",
-   "product": "coco_bond",
-   "template": null,
-   "family": "bond",
-   "step": "setup",
-   "covers": []
-  },
-  "E:coco_bond:odd-lot": {
-   "status": "failed",
-   "message": "Refused, but not for the stated reason. Terminal said: \"Leg 1: quantity must be a multiple of 200000.\"; expected quantity must be a multiple of 200,000",
-   "ms": 13,
-   "commit": "03a4d9e+changes",
-   "at": "2026-10-13T18:00:15.816Z",
-   "product": "coco_bond",
-   "template": null,
-   "family": "bond",
-   "step": "odd-lot",
-   "covers": [
-    "minimum denomination"
-   ]
-  },
   "E:currency:setup": {
    "status": "passed",
    "message": "",
@@ -8977,154 +8951,6 @@
    "step": "restart",
    "covers": [
     "restart"
-   ]
-  },
-  "E:convertible_preferred:setup": {
-   "status": "passed",
-   "message": "",
-   "ms": 31,
-   "commit": "03a4d9e+changes",
-   "at": "2026-10-13T18:00:15.816Z",
-   "product": "convertible_preferred",
-   "template": null,
-   "family": "equity",
-   "step": "setup",
-   "covers": []
-  },
-  "E:convertible_preferred:open": {
-   "status": "passed",
-   "message": "",
-   "ms": 27,
-   "commit": "03a4d9e+changes",
-   "at": "2026-10-13T18:00:15.816Z",
-   "product": "convertible_preferred",
-   "template": null,
-   "family": "equity",
-   "step": "open",
-   "covers": [
-    "open"
-   ]
-  },
-  "E:convertible_preferred:settle-open": {
-   "status": "passed",
-   "message": "",
-   "ms": 21,
-   "commit": "03a4d9e+changes",
-   "at": "2026-10-13T18:00:15.816Z",
-   "product": "convertible_preferred",
-   "template": null,
-   "family": "equity",
-   "step": "settle-open",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "E:convertible_preferred:increase": {
-   "status": "passed",
-   "message": "",
-   "ms": 29,
-   "commit": "03a4d9e+changes",
-   "at": "2026-10-13T18:00:15.816Z",
-   "product": "convertible_preferred",
-   "template": null,
-   "family": "equity",
-   "step": "increase",
-   "covers": [
-    "increase"
-   ]
-  },
-  "E:convertible_preferred:settle-increase": {
-   "status": "passed",
-   "message": "",
-   "ms": 22,
-   "commit": "03a4d9e+changes",
-   "at": "2026-10-13T18:00:15.816Z",
-   "product": "convertible_preferred",
-   "template": null,
-   "family": "equity",
-   "step": "settle-increase",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "E:convertible_preferred:dividend-recorded": {
-   "status": "passed",
-   "message": "",
-   "ms": 13,
-   "commit": "03a4d9e+changes",
-   "at": "2026-10-13T18:00:15.816Z",
-   "product": "convertible_preferred",
-   "template": null,
-   "family": "equity",
-   "step": "dividend-recorded",
-   "covers": [
-    "dividend"
-   ]
-  },
-  "E:convertible_preferred:dividend-paid": {
-   "status": "passed",
-   "message": "",
-   "ms": 15,
-   "commit": "03a4d9e+changes",
-   "at": "2026-10-13T18:00:15.816Z",
-   "product": "convertible_preferred",
-   "template": null,
-   "family": "equity",
-   "step": "dividend-paid",
-   "covers": [
-    "dividend"
-   ]
-  },
-  "E:convertible_preferred:shares-rally": {
-   "status": "passed",
-   "message": "",
-   "ms": 29,
-   "commit": "03a4d9e+changes",
-   "at": "2026-10-13T18:00:15.816Z",
-   "product": "convertible_preferred",
-   "template": null,
-   "family": "equity",
-   "step": "shares-rally",
-   "covers": []
-  },
-  "E:convertible_preferred:preferred-rallies": {
-   "status": "passed",
-   "message": "",
-   "ms": 25,
-   "commit": "03a4d9e+changes",
-   "at": "2026-10-13T18:00:15.816Z",
-   "product": "convertible_preferred",
-   "template": null,
-   "family": "equity",
-   "step": "preferred-rallies",
-   "covers": []
-  },
-  "E:convertible_preferred:reduce": {
-   "status": "passed",
-   "message": "",
-   "ms": 19,
-   "commit": "03a4d9e+changes",
-   "at": "2026-10-13T18:00:15.816Z",
-   "product": "convertible_preferred",
-   "template": null,
-   "family": "equity",
-   "step": "reduce",
-   "covers": [
-    "reduce"
-   ]
-  },
-  "E:convertible_preferred:automatic-conversion": {
-   "status": "failed",
-   "message": "Refused, but not for the stated reason. Terminal said: \"This event applies to debt securities.\"; expected Unknown lifecycle action \"convert\"",
-   "ms": 17,
-   "commit": "03a4d9e+changes",
-   "at": "2026-10-13T18:00:15.816Z",
-   "product": "convertible_preferred",
-   "template": null,
-   "family": "equity",
-   "step": "automatic-conversion",
-   "covers": [
-    "conversion"
    ]
   },
   "E:fx_forward:setup": {
@@ -26750,6 +26576,362 @@
    "covers": [
     "restart"
    ]
+  },
+  "E:coco_bond:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 252,
+   "commit": "79949a9+changes",
+   "at": "2026-10-13T18:06:16.348Z",
+   "product": "coco_bond",
+   "template": null,
+   "family": "bond",
+   "step": "setup",
+   "covers": []
+  },
+  "E:coco_bond:odd-lot": {
+   "status": "blocked",
+   "message": "AT1 notes trade in multiples of 200,000 face. Terminal: \"Leg 1: quantity must be a multiple of 200000.\"",
+   "ms": 31,
+   "commit": "79949a9+changes",
+   "at": "2026-10-13T18:06:16.348Z",
+   "product": "coco_bond",
+   "template": null,
+   "family": "bond",
+   "step": "odd-lot",
+   "covers": [
+    "minimum denomination"
+   ]
+  },
+  "E:coco_bond:open": {
+   "status": "passed",
+   "message": "",
+   "ms": 259,
+   "commit": "79949a9+changes",
+   "at": "2026-10-13T18:06:16.348Z",
+   "product": "coco_bond",
+   "template": null,
+   "family": "bond",
+   "step": "open",
+   "covers": [
+    "open"
+   ]
+  },
+  "E:coco_bond:settle-open": {
+   "status": "passed",
+   "message": "",
+   "ms": 43,
+   "commit": "79949a9+changes",
+   "at": "2026-10-13T18:06:16.348Z",
+   "product": "coco_bond",
+   "template": null,
+   "family": "bond",
+   "step": "settle-open",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:coco_bond:increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 83,
+   "commit": "79949a9+changes",
+   "at": "2026-10-13T18:06:16.348Z",
+   "product": "coco_bond",
+   "template": null,
+   "family": "bond",
+   "step": "increase",
+   "covers": [
+    "increase"
+   ]
+  },
+  "E:coco_bond:settle-increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 36,
+   "commit": "79949a9+changes",
+   "at": "2026-10-13T18:06:16.348Z",
+   "product": "coco_bond",
+   "template": null,
+   "family": "bond",
+   "step": "settle-increase",
+   "covers": [
+    "settlement",
+    "accrual"
+   ]
+  },
+  "E:coco_bond:reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 112,
+   "commit": "79949a9+changes",
+   "at": "2026-10-13T18:06:16.348Z",
+   "product": "coco_bond",
+   "template": null,
+   "family": "bond",
+   "step": "reduce",
+   "covers": [
+    "reduce"
+   ]
+  },
+  "E:coco_bond:settle-reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 46,
+   "commit": "79949a9+changes",
+   "at": "2026-10-13T18:06:16.348Z",
+   "product": "coco_bond",
+   "template": null,
+   "family": "bond",
+   "step": "settle-reduce",
+   "covers": [
+    "settlement",
+    "accrual"
+   ]
+  },
+  "E:coco_bond:coupon-cancelled": {
+   "status": "passed",
+   "message": "",
+   "ms": 43,
+   "commit": "79949a9+changes",
+   "at": "2026-10-13T18:06:16.348Z",
+   "product": "coco_bond",
+   "template": null,
+   "family": "bond",
+   "step": "coupon-cancelled",
+   "covers": [
+    "coupon cancellation (by hand)"
+   ]
+  },
+  "E:coco_bond:coupon-date-missed": {
+   "status": "passed",
+   "message": "",
+   "ms": 42,
+   "commit": "79949a9+changes",
+   "at": "2026-10-13T18:06:16.348Z",
+   "product": "coco_bond",
+   "template": null,
+   "family": "bond",
+   "step": "coupon-date-missed",
+   "covers": [
+    "coupon cancellation (by hand)"
+   ]
+  },
+  "E:coco_bond:trigger-write-down": {
+   "status": "passed",
+   "message": "",
+   "ms": 42,
+   "commit": "79949a9+changes",
+   "at": "2026-10-13T18:06:16.348Z",
+   "product": "coco_bond",
+   "template": null,
+   "family": "bond",
+   "step": "trigger-write-down",
+   "covers": [
+    "trigger event (by hand)"
+   ]
+  },
+  "E:coco_bond:written-down-quote": {
+   "status": "passed",
+   "message": "",
+   "ms": 98,
+   "commit": "79949a9+changes",
+   "at": "2026-10-13T18:06:16.348Z",
+   "product": "coco_bond",
+   "template": null,
+   "family": "bond",
+   "step": "written-down-quote",
+   "covers": []
+  },
+  "E:coco_bond:close": {
+   "status": "passed",
+   "message": "",
+   "ms": 78,
+   "commit": "79949a9+changes",
+   "at": "2026-10-13T18:06:16.348Z",
+   "product": "coco_bond",
+   "template": null,
+   "family": "bond",
+   "step": "close",
+   "covers": [
+    "close"
+   ]
+  },
+  "E:coco_bond:settle-close": {
+   "status": "passed",
+   "message": "",
+   "ms": 128,
+   "commit": "79949a9+changes",
+   "at": "2026-10-13T18:06:16.348Z",
+   "product": "coco_bond",
+   "template": null,
+   "family": "bond",
+   "step": "settle-close",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:coco_bond:restart": {
+   "status": "passed",
+   "message": "",
+   "ms": 130,
+   "commit": "79949a9+changes",
+   "at": "2026-10-13T18:06:16.348Z",
+   "product": "coco_bond",
+   "template": null,
+   "family": "bond",
+   "step": "restart",
+   "covers": [
+    "restart"
+   ]
+  },
+  "E:convertible_preferred:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 284,
+   "commit": "79949a9+changes",
+   "at": "2026-10-13T18:06:24.761Z",
+   "product": "convertible_preferred",
+   "template": null,
+   "family": "equity",
+   "step": "setup",
+   "covers": []
+  },
+  "E:convertible_preferred:open": {
+   "status": "passed",
+   "message": "",
+   "ms": 128,
+   "commit": "79949a9+changes",
+   "at": "2026-10-13T18:06:24.761Z",
+   "product": "convertible_preferred",
+   "template": null,
+   "family": "equity",
+   "step": "open",
+   "covers": [
+    "open"
+   ]
+  },
+  "E:convertible_preferred:settle-open": {
+   "status": "passed",
+   "message": "",
+   "ms": 67,
+   "commit": "79949a9+changes",
+   "at": "2026-10-13T18:06:24.761Z",
+   "product": "convertible_preferred",
+   "template": null,
+   "family": "equity",
+   "step": "settle-open",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:convertible_preferred:increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 99,
+   "commit": "79949a9+changes",
+   "at": "2026-10-13T18:06:24.761Z",
+   "product": "convertible_preferred",
+   "template": null,
+   "family": "equity",
+   "step": "increase",
+   "covers": [
+    "increase"
+   ]
+  },
+  "E:convertible_preferred:settle-increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 91,
+   "commit": "79949a9+changes",
+   "at": "2026-10-13T18:06:24.761Z",
+   "product": "convertible_preferred",
+   "template": null,
+   "family": "equity",
+   "step": "settle-increase",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:convertible_preferred:dividend-recorded": {
+   "status": "passed",
+   "message": "",
+   "ms": 16,
+   "commit": "79949a9+changes",
+   "at": "2026-10-13T18:06:24.761Z",
+   "product": "convertible_preferred",
+   "template": null,
+   "family": "equity",
+   "step": "dividend-recorded",
+   "covers": [
+    "dividend"
+   ]
+  },
+  "E:convertible_preferred:dividend-paid": {
+   "status": "passed",
+   "message": "",
+   "ms": 64,
+   "commit": "79949a9+changes",
+   "at": "2026-10-13T18:06:24.761Z",
+   "product": "convertible_preferred",
+   "template": null,
+   "family": "equity",
+   "step": "dividend-paid",
+   "covers": [
+    "dividend"
+   ]
+  },
+  "E:convertible_preferred:shares-rally": {
+   "status": "passed",
+   "message": "",
+   "ms": 95,
+   "commit": "79949a9+changes",
+   "at": "2026-10-13T18:06:24.761Z",
+   "product": "convertible_preferred",
+   "template": null,
+   "family": "equity",
+   "step": "shares-rally",
+   "covers": []
+  },
+  "E:convertible_preferred:preferred-rallies": {
+   "status": "passed",
+   "message": "",
+   "ms": 63,
+   "commit": "79949a9+changes",
+   "at": "2026-10-13T18:06:24.761Z",
+   "product": "convertible_preferred",
+   "template": null,
+   "family": "equity",
+   "step": "preferred-rallies",
+   "covers": []
+  },
+  "E:convertible_preferred:reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 107,
+   "commit": "79949a9+changes",
+   "at": "2026-10-13T18:06:24.761Z",
+   "product": "convertible_preferred",
+   "template": null,
+   "family": "equity",
+   "step": "reduce",
+   "covers": [
+    "reduce"
+   ]
+  },
+  "E:convertible_preferred:automatic-conversion": {
+   "status": "failed",
+   "message": "Refused, but not for the stated reason. Terminal said: \"This event applies to debt securities.\"; expected Unknown lifecycle action \"convert\"",
+   "ms": 51,
+   "commit": "79949a9+changes",
+   "at": "2026-10-13T18:06:24.761Z",
+   "product": "convertible_preferred",
+   "template": null,
+   "family": "equity",
+   "step": "automatic-conversion",
+   "covers": [
+    "conversion"
+   ]
   }
  },
  "runs": {
@@ -26930,9 +27112,9 @@
    }
   },
   "convertible_preferred": {
-   "at": "2026-10-13T18:00:15.816Z",
-   "commit": "03a4d9e+changes",
-   "ms": 248,
+   "at": "2026-10-13T18:06:24.761Z",
+   "commit": "79949a9+changes",
+   "ms": 1066,
    "family": "equity",
    "steps": 19,
    "ran": 11,
@@ -28434,15 +28616,15 @@
    }
   },
   "coco_bond": {
-   "at": "2026-10-13T18:00:15.816Z",
-   "commit": "03a4d9e+changes",
-   "ms": 40,
+   "at": "2026-10-13T18:06:16.348Z",
+   "commit": "79949a9+changes",
+   "ms": 1424,
    "family": "bond",
    "steps": 15,
-   "ran": 2,
-   "passed": 1,
-   "failed": 1,
-   "blocked": 0,
+   "ran": 15,
+   "passed": 14,
+   "failed": 0,
+   "blocked": 1,
    "unsupported": 0,
    "environment": {
     "node": "v22.22.0",
@@ -28674,5 +28856,5 @@
    }
   }
  },
- "updatedAt": "2026-10-13T18:00:15.816Z"
+ "updatedAt": "2026-10-13T18:06:24.761Z"
 }

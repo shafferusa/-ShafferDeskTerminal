@@ -110,7 +110,13 @@ export const forward = {
     const t = inst.terms;
     if (t.forwardType === 'fra') return 'contract rate (% p.a.)';
     if (t.forwardType === 'fx' || t.forwardType === 'ndf') return `forward rate (${t.quote} per ${t.base})`;
-    return 'forward price';
+    return t.priceUnits ? `forward price (${t.priceUnits})` : 'forward price';
+  },
+  qtyLabelFor(inst) {
+    const t = inst.terms || {};
+    if (t.forwardType === 'fx' || t.forwardType === 'ndf') return `Amount in ${t.base}`;
+    if (t.forwardType === 'asset' && t.quantityUnit) return t.quantityUnit[0].toUpperCase() + t.quantityUnit.slice(1);
+    return 'Notional';
   },
   calendar: calendarFor,
   normalize(app, draft) {
@@ -151,7 +157,16 @@ export const forward = {
     // Collateral follows the basis stated on the contract; nothing is assumed from the product.
     t.collateralBasis = normalizeBasis(t.collateralBasis, errors);
     if (!t.collateralBasis) delete t.collateralBasis;
-    const multiplier = num(draft.multiplier) > 0 ? num(draft.multiplier) : 1;
+    // An asset forward takes its underlying's value per unit of price unless one is stated (0.01 for a bond quoted in % of par).
+    const und = t.forwardType === 'asset' && draft.underlying_id ? app.instruments.get(draft.underlying_id) : null;
+    const multiplier = num(draft.multiplier) > 0 ? num(draft.multiplier) : und?.multiplier > 0 ? und.multiplier : 1;
+    // The quantity and price of an asset forward are in its underlying's own units (barrels and USD per barrel, face
+    // amount and % of par, shares and price per share), so the ticket says so.
+    const unitOf = { bond: 'face amount', equity: 'shares', fund: 'units', crypto: 'units' };
+    const qUnit = und ? und.terms?.quantityUnit || unitOf[und.family] || null : null;
+    const pUnit = und ? und.terms?.priceUnits || (und.family === 'bond' ? '% of par' : null) : null;
+    if (qUnit) t.quantityUnit = qUnit; else delete t.quantityUnit;
+    if (pUnit) t.priceUnits = pUnit; else delete t.priceUnits;
     return { terms: t, multiplier, errors, tradingCcy, settleCcy };
   },
   describe(inst, app) {
@@ -360,7 +375,9 @@ function settleForwardTask(app, task, { book, unit, inst, pos }) {
     if (t.forwardType === 'asset' && t.settlement === 'physical') {
       const und = app.instruments.get(inst.underlying_id);
       const plugin = app.products.get(und.family);
-      const units = qty8(Math.abs(q) * inst.multiplier);
+      // Units of the underlying delivered: quantity x the forward's value per unit of price, over the underlying's own
+      // (a bond forward on 1,000,000 face with multiplier 0.01 delivers 1,000,000 face of a bond whose multiplier is 0.01).
+      const units = qty8(Math.abs(q) * inst.multiplier / (und.multiplier || 1));
       const settleDate = plugin.settleDate(app, und, t.valueDate, book);
       const label = (n) => `Simulated forward delivery (paper entry, no goods or securities move): ${q > 0 ? 'received' : 'delivered'} ${fmtQty(n)} ${und.symbol || und.name} at ${fmtPx(k)} on ${inst.symbol || inst.name}`;
       const base = { book, unit, inst: und, price: k, fees: [], tradeDate: t.valueDate, settleDate, actor: 'engine', eventType: 'forward.delivery', data: { fromForward: inst.id, simulated: true } };

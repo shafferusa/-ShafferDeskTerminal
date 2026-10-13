@@ -1741,4 +1741,211 @@ const cocoBond = {
   ],
 };
 
-export default [tips, foreignInflationLinked, callableBond, puttableBond, convertibleBond, exchangeableBond, cocoBond];
+// ---------------------------------------------------------------------------------------------
+// Mortgage-backed securities: rules common to the five scenarios below
+// ---------------------------------------------------------------------------------------------
+//   - Quantity is ORIGINAL face. Current face = original face x pool factor. A trade settles current face x price / 100
+//     plus accrued interest on current face; a position is valued, and its average cost shown, per 100 of current face.
+//   - A monthly pool accrues 30/360 from the 1st of the month: its coupon dates are the 1st, each ending the accrual period
+//     of the month before, and the coupon (interest on the factor of that month) is paid after the payment delay
+//     (registered as days after the period end: Fannie Mae 24, the 25th; Ginnie Mae I 14, the 15th), moved to the next
+//     business day. It belongs to the face held at the end of the month (settled before the 1st).
+//   - Paydowns are recorded by hand on the instrument (Edit, Lifecycle events recorded by hand) when the new factor is
+//     published (about the 4th business day of the month): the new factor, the date it is effective from (the 1st), the date
+//     the principal is paid (the same day as the coupon), and optionally the factor after scheduled amortisation alone (the
+//     history then splits the principal into scheduled and prepaid, with the single monthly mortality SMM). Each holder is
+//     paid face x (old factor - new factor) at par: a receivable until the payment date. Its cost falls in proportion; the
+//     difference is realized P&L (the premium or discount on the principal returned). Accrued interest of the new month is
+//     restated on the new factor; the coupon of the month before keeps the old one.
+//   - A loss allocated to a non-agency tranche is a write-down of the factor with no payment (kind 'loss'); it is refused on
+//     a pool whose principal an agency guarantees.
+
+// ---------------------------------------------------------------------------------------------
+// agency_mbs
+// ---------------------------------------------------------------------------------------------
+// A Fannie Mae UMBS 30-year 5.50% specified pool held by TREASURY as part of its liquidity portfolio: monthly 30/360,
+// 24-day payment delay (paid on the 25th), guaranteed by Fannie Mae, settling T+3 on the US bond calendar (the instrument's
+// own convention), original face in whole dollars. Factor 0.9187321 for November 2028.
+//   - Bought on Tuesday 7 November for settlement on Monday 13 November (T+3 skips Friday 10 November, Veterans Day observed
+//     by the bond market). Bought after the October record date, so the first coupon it receives is November's interest,
+//     paid on 26 December (the 25th is Christmas).
+//   - A loss allocation is refused: the principal is guaranteed.
+//   - On 6 December the December factor is published: 0.9104562, effective 1 December, principal paid with the coupon;
+//     0.9168105 after scheduled amortisation alone (the rest is prepayment).
+//   - A quarter of the pool is sold after the factor, at the new current face; the coupon and the paydown of the whole
+//     holding still come to Treasury (it held it at the November record date).
+//   - The rest is sold for settlement on 29 December, before the December record date: nothing is left to receive.
+// Commission: 0.25 basis point of clean principal. Days of 30/360: 1 to 13 Nov 12, 1 to 30 Nov 29; 1 Dec to 5 Dec 4, to 8 Dec 7,
+// to 11 Dec 10, to 22 Dec 21, to 29 Dec 28. A month's coupon is 5.5% / 12 of current face.
+const agencyMbs = {
+  productId: 'agency_mbs',
+  title: 'Fannie Mae UMBS 5.50% pool held by Treasury: T+3 over Veterans Day, loss allocation refused (guaranteed), factor and paydown by hand with prepayment split, sale on current face, coupon after the 24-day delay over Christmas, close',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account (Treasury)', 'Action', 'Face amount (original face)'],
+    manualInputs: ['Registration: Pool factor, Payment delay 24, Guarantor, Settlement convention 3', 'Paydown recorded by hand on the instrument form: New pool factor, Factor effective from, Principal paid on, Factor after scheduled principal'],
+    settlement: 'T+3 on the US bond calendar (the pool\'s own convention); current face = original face x factor; accrued 30/360 from the 1st on current face',
+    lifecycle: 'Monthly coupon on the factor of the month, paid 24 days after the period ends (next business day); paydown principal paid on the payment date as a receivable; accrued restated on the new factor; loss allocation refused for a guaranteed pool',
+    accounting: 'Treasury\'s position: cost per 100 of current face; paydown at par against cost is realized P&L; coupon and interest income; commission expensed',
+    collateral: 'None for a long position',
+  },
+  start: EST('2028-11-07'), // Tuesday
+  settlementCheck: { lag: 3, holidays: ['2028-11-10', '2028-11-23', '2028-12-25'] }, // Veterans Day (observed by the bond market), Thanksgiving, Christmas
+  book: {
+    name: 'Matrix agency MBS', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 25_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 1_000_000 }] }, // the Account stays idle: Treasury trades
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.25 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'agency_mbs', name: 'Fannie Mae UMBS 30-Year 5.50% Pool BX1234', symbol: 'FN-5.5-BX1234', marketView: 'US_CASH', venueType: 'otc', issuer: 'Federal National Mortgage Association', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { settleLag: 3 },
+      terms: { couponType: 'fixed', couponRate: 0.055, frequency: 12, maturity: '2054-10-01', issueDate: '2024-10-01', dayCount: '30/360', redemption: 100, factor: 0.9187321, paymentDelayDays: 24, guarantor: 'Fannie Mae' } },
+  },
+  quotes: { main: { bid: 100.375, ask: 100.5, last: 100.4375, bidSize: 100_000_000, askSize: 100_000_000 } },
+  expectAtStart: { ...startState(1_000_000, 24_000_000), cash: { account: usdCash(1_000_000), treasury: usdCash(24_000_000) } },
+  steps: [
+    {
+      id: 'open', covers: ['open', 'market holiday'], action: 'ticket', instrument: 'main', side: 'buy', qty: 20_000_000, as: 'lot', owner: 'treasury',
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 20_000_000, estimate: 100.5, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2028-11-13', calendar: 'USBOND',
+            notional: 18_374_642, // current face: 20,000,000 x 0.9187321
+            gross: 18_466_515.21, // 18,374,642 x 100.50 / 100
+            accrued: 33_686.84, // 12 days: 18,374,642 x 5.5% x 12/360 = 33,686.844
+            cash: -18_500_202.05, fees: 461.66 }], // 0.25 bp of 18,466,515.21 = 461.663
+          cash: { USD: { purchases: 18_500_202.05, fees: 461.66, required: 18_500_663.71, available: 24_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 20_000_000, avgPrice: 100.5, fills: [{ qty: 20_000_000, price: 100.5, model: 'quoted-bid-ask', settleDate: '2028-11-13', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted', owner: 'treasury' }, { type: 'trade.fill', summary: 'Bought 20,000,000 FN-5.5-BX1234 @ 100.50 USD', owner: 'treasury', date: '2028-11-07' }],
+        cash: { treasury: { USD: { settled: 24_000_000, unsettled: -18_500_663.71, availableToTrade: 5_499_336.29 } }, account: { USD: { settled: 1_000_000, availableToTrade: 1_000_000 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'treasury', direction: 'long', qty: 20_000_000, avgCost: 100.5, cost: 18_466_515.21, price: 100.4375,
+          value: 18_455_031.06, // 18,374,642 x 100.4375 / 100 = 18,455,031.059
+          unrealized: -11_484.15, accrued: 33_686.84, priceSource: 'Test fixture' }],
+        holdings: { main: { long: 20_000_000, short: 0, net: 20_000_000 } },
+        pending: [{ instrument: 'main', owner: 'treasury', dueDate: '2028-11-13', amount: -18_500_663.71, ccy: 'USD', into: 'cash' }],
+        // Bought after the 31 October record date: the first coupon is 1 December's (November's interest), paid 24 days later,
+        // the 25th, Christmas: on Tuesday 26 December. Maturity 1 Oct 2054 + 24 days = Sunday 25 Oct 2054: paid Monday 26 Oct.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2028-12-26', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2054-10-26', status: 'pending' }],
+        pnl: {
+          account: { realized: 0, couponInterest: 0, commissions: 0, unrealized: 0, total: 0 },
+          book: { realized: 0, couponInterest: 0, commissions: -461.66, fees: 0, borrowFunding: 0, unrealized: -11_484.15, total: -11_945.81 },
+        },
+        nav: { account: 1_000_000, treasury: 23_988_054.19, book: 24_988_054.19 },
+        balance: {
+          account: { cash: 1_000_000, assets: 1_000_000, liabilities: 0, netAssets: 1_000_000 },
+          book: { cash: 25_000_000, accruedIncome: 33_686.84, positions: 18_455_031.06, payable: 18_500_663.71, assets: 43_488_717.90, liabilities: 18_500_663.71, netAssets: 24_988_054.19 },
+        },
+      },
+    },
+    {
+      // Monday 13 Nov (T+3: 8, 9, 13 November; the 10th is closed). End of day Friday 10 Nov (New York open): the interest bought runs
+      // to the 13th and is on the books.
+      id: 'settle-open', covers: ['settlement', 'market holiday'], action: 'clock', to: EST('2028-11-13'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 18,500,663.71 USD from settled cash', cash: { USD: -18_500_663.71 }, owner: 'treasury', date: '2028-11-13' }],
+        cash: { treasury: { USD: { settled: 5_499_336.29, unsettled: 0, availableToTrade: 5_499_336.29 } } },
+        pending: [],
+        balance: { book: { cash: 6_499_336.29, payable: null, assets: 24_988_054.19, liabilities: 0 } },
+      },
+    },
+    { id: 'treasury-screens', covers: 'open', action: 'owner_screens', owner: 'treasury', expect: {} },
+    {
+      id: 'loss-refused', covers: 'loss allocation (by hand)', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'writedown', newFactor: 0.9, kind: 'loss' },
+      status: 'blocked', reason: 'Fannie Mae guarantees the pool\'s principal: losses on the loans are not passed to holders.',
+      expect: { refused: 'FN-5.5-BX1234 is guaranteed by Fannie Mae: losses on the underlying loans are not passed to holders.' },
+    },
+    {
+      // Friday 1 December. End of day 30 Nov: 18,374,642 x 5.5% x 29/360 = 81,409.87; 47,723.03 more.
+      id: 'december-1', covers: 'accrual', action: 'clock', to: EST('2028-12-01'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on FN-5.5-BX1234: 47,723.03 USD', owner: 'treasury' }],
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'treasury', qty: 20_000_000, accrued: 81_409.87 }],
+        pnl: { book: { couponInterest: 47_723.03, total: 35_777.22 } },
+        nav: { treasury: 24_035_777.22, book: 25_035_777.22 },
+        balance: { book: { accruedIncome: 81_409.87, assets: 25_035_777.22, netAssets: 25_035_777.22 } },
+      },
+    },
+    {
+      // Wednesday 6 December. End of day 5 Dec: November's coupon, due on the 26th, is a receivable in accrued interest:
+      // 18,374,642 x 5.5% / 12 = 84,217.11; plus 4 days of December on the same face (the December factor is not known yet):
+      // 11,228.95. Together 95,446.06; 14,036.19 more.
+      id: 'december-6', covers: 'accrual', action: 'clock', to: EST('2028-12-06'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on FN-5.5-BX1234: 14,036.19 USD', owner: 'treasury' }],
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'treasury', qty: 20_000_000, accrued: 95_446.06 }],
+        pnl: { book: { couponInterest: 61_759.22, total: 49_813.41 } },
+        nav: { treasury: 24_049_813.41, book: 25_049_813.41 },
+        balance: { book: { accruedIncome: 95_446.06, assets: 25_049_813.41, netAssets: 25_049_813.41 } },
+      },
+    },
+    {
+      // The December factor is published and recorded by hand: 0.9187321 to 0.9104562 from 1 December, principal paid on
+      // 26 December. Principal 20,000,000 x 0.0082759 = 165,518.00, receivable until then. Of it 0.0019216 of original face is
+      // scheduled (0.9187321 - 0.9168105) and 0.0063543 prepaid (SMM 0.0063543 / 0.9168105 = 0.6931%). Cost out
+      // 18,466,515.21 x 0.0082759 / 0.9187321 = 166,345.59: realized 165,518 - 166,345.59 = -827.59 (the 0.50 premium paid on
+      // the principal returned at par). December's 4 days restated on the new current face 18,209,124: 11,127.80 instead of
+      // 11,228.95, so the accrued balance is 95,344.91, 101.15 down. Current face now 18,209,124, valued at 100.4375.
+      id: 'factor-and-paydown', covers: ['paydown (by hand)', 'prepayment (by hand)'], action: 'instrument_lifecycle', instrument: 'main',
+      body: { action: 'paydown', newFactor: 0.9104562, effective: '2028-12-01', payDate: '2028-12-26', scheduledFactor: 0.9168105 },
+      expect: {
+        events: [
+          { type: 'bond.paydown', summary: 'Principal paydown on FN-5.5-BX1234: factor 0.9187321 to 0.9104562 from 2028-12-01; scheduled principal 0.0019216, prepaid 0.0063543 of original face (SMM 0.6931%), 165,518.00 USD receivable on 2028-12-26', owner: 'treasury', date: '2028-12-06' },
+          { type: 'accrual.coupon', summary: 'Accrued interest restated on the new factor of FN-5.5-BX1234, down: 101.15 USD', owner: 'treasury' },
+        ],
+        cash: { treasury: { USD: { settled: 5_499_336.29, unsettled: 165_518, availableToTrade: 5_664_854.29 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'treasury', qty: 20_000_000, cost: 18_300_169.62, avgCost: 100.5, price: 100.4375,
+          value: 18_288_788.92, // 18,209,124 x 100.4375 / 100 = 18,288,788.918
+          unrealized: -11_380.70, accrued: 95_344.91 }],
+        pending: [{ instrument: 'main', owner: 'treasury', dueDate: '2028-12-26', amount: 165_518, ccy: 'USD', into: 'cash' }],
+        pnl: { book: { realized: -827.59, couponInterest: 61_658.07, unrealized: -11_380.70, total: 48_988.12 } },
+        nav: { treasury: 24_048_988.12, book: 25_048_988.12 },
+        balance: { book: { cash: 6_499_336.29, receivable: 165_518, accruedIncome: 95_344.91, positions: 18_288_788.92, assets: 25_048_988.12, netAssets: 25_048_988.12 } },
+      },
+    },
+    {
+      // A quarter sold at the new factor: current face 5,000,000 x 0.9104562 = 4,552,281 at 100.375 = 4,569,352.05; accrued 10 days
+      // to settlement on Monday 11 Dec: 6,954.87. Cost out 18,300,169.62 / 4 = 4,575,042.41: realized -5,690.36.
+      id: 'reduce', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 5_000_000, from: 'lot', owner: 'treasury',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 5_000_000, estimate: 100.375, settleDate: '2028-12-11', notional: 4_552_281,
+          gross: 4_569_352.05, accrued: 6_954.87, cash: 4_576_306.92, fees: 114.23 }] }, // 4,552,281 x 5.5% x 10/360 = 6,954.874; 0.25 bp = 114.234
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 5_000_000, avgPrice: 100.375 }] },
+        events: [{ type: 'strategy.legs_added', owner: 'treasury' }, { type: 'trade.fill', summary: /^Sold 5,000,000 FN-5\.5-BX1234 @ 100\.375 USD \(realized [-−]5,690\.36 USD\)$/, owner: 'treasury' }],
+        cash: { treasury: { USD: { settled: 5_499_336.29, unsettled: 4_741_710.69, availableToTrade: 10_241_046.98 } } }, // 165,518 + 4,576,192.69
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'treasury', qty: 15_000_000, cost: 13_725_127.21, avgCost: 100.5, price: 100.4375,
+          value: 13_716_591.69, unrealized: -8_535.52, accrued: 88_390.04 }], // 13,656,843 x 100.4375 / 100; 95,344.91 - 6,954.87
+        holdings: { main: { long: 15_000_000, short: 0, net: 15_000_000 } },
+        pending: [
+          { instrument: 'main', owner: 'treasury', dueDate: '2028-12-11', amount: 4_576_192.69, ccy: 'USD', into: 'cash' },
+          { instrument: 'main', owner: 'treasury', dueDate: '2028-12-26', amount: 165_518, ccy: 'USD', into: 'cash' },
+        ],
+        pnl: { book: { realized: -6_517.95, commissions: -575.89, unrealized: -8_535.52, total: 46_028.71 } },
+        nav: { treasury: 24_046_028.71, book: 25_046_028.71 },
+        balance: { book: { receivable: 4_741_710.69, accruedIncome: 88_390.04, positions: 13_716_591.69, assets: 25_046_028.71, netAssets: 25_046_028.71 } },
+      },
+    },
+    {
+      // Monday 11 Dec. End of day Friday 8 Dec: November's coupon on the whole 20,000,000 (held at the record date) 84,217.11, plus
+      // 7 days of December on 18,209,124 (the sale settles on the 11th) 19,474.37, less the 10 days sold 6,954.87: 96,736.61?
+      // Worked to the cent: 84,217.11 + 19,474.37 - 6,954.87 = 96,736.61 before rounding the parts; whole: 84,217.11 +
+      // (18,209,124 x 5.5% x 7/360 = 19,474.3632) - (6,954.8738) = 96,736.60 -> on the books 88,390.04: 8,346.56 more.
+      id: 'settle-reduce', covers: ['settlement', 'accrual'], action: 'clock', to: EST('2028-12-11'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 4,576,192.69 USD into settled cash', cash: { USD: 4_576_192.69 }, owner: 'treasury' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on FN-5.5-BX1234: 8,346.56 USD', owner: 'treasury' },
+        ],
+        cash: { treasury: { USD: { settled: 10_075_528.98, unsettled: 165_518, availableToTrade: 10_241_046.98 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'treasury', qty: 15_000_000, accrued: 96_736.60 }],
+        pending: [{ instrument: 'main', owner: 'treasury', dueDate: '2028-12-26', amount: 165_518, ccy: 'USD', into: 'cash' }],
+        pnl: { book: { couponInterest: 70_004.63, total: 54_375.27 } },
+        nav: { treasury: 24_055_375.27, book: 25_055_375.27 },
+        balance: { book: { cash: 11_075_528.98, receivable: 165_518, accruedIncome: 96_736.60, assets: 25_055_375.27, netAssets: 25_055_375.27 } },
+      },
+    },
+  ],
+};
+
+export default [tips, foreignInflationLinked, callableBond, puttableBond, convertibleBond, exchangeableBond, cocoBond, agencyMbs];

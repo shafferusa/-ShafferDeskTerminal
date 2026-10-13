@@ -25,10 +25,10 @@
 - Item 2 (saved): markets.js last tab per view (localStorage sdt.mk.tab.<view>), URL /find/<text> and /show/<id> (row marked .mk-focus, scrolled), Elsewhere panel (search matches in the other 3 Marketplaces with view+tab links). instrument.js drawer subtitle has the tab; Overview Market view links to the tab (closes drawer); arrangements say "financing arrangement". registry.js MarketLink in search results and registry list. app.css block appended. Verified with steps/nav.mjs (tab click -> URL, Back restores, reload restores, remembered tab, search hits elsewhere, link lands with row marked).
 - Item 3 (saved): marketplaces.test.js tests 9-13 (205 products US/foreign listed -> one tab of one view; convention for global FX/crypto/OTC; API registration of one instrument per tab US+foreign, listed in exactly one view/tab; never US from USD; hand-set override labelled). docs/ARCHITECTURE.md (navigation, Financing links, financing record view), README row, scripts/coverage-report.js convention list, docs/COVERAGE.md regenerated. Browser 8 products pass (interest_rate_swap flaked once on audit-trail screen-vs-API at settlement, passed on rerun).
 
+- Item 4 (saved): seed-tabs.mjs registers an instrument in every tab of every view (demo 8881, normal 8882 with Desk Book / Treasury Only Book, manual prices); sweep.mjs checks page scroll, table overflow, clipped headers, provenance on every Current market price cell, Current market price | Fair price | Gap % adjacent, console errors. 28 tabs x 1440/1024/390 x light/dark x demo/normal = 336 screens, 0 flags (sweep-demo.log, sweep-real.log); empty registry (8883), no-Accounts Book, empty Book also clean. Fixes from the sweep: markets.js MkTable (data-label cells; container query turns rows into labelled cards below 1080px panel width, market trio first), Fair price and Gap % moved right after Current market price on every tab, tight padding; drawer positions table: actions in one wrapping column, under the strategy name below 600px; routing sentence no longer repeats its basis label. Browser 8 products pass. npm test 524/531: failures are others' in-progress products (coco_bond, convertible_preferred, fra, fx_forward/ndf/fra/crypto_option spec audits).
+
 ## In progress
-- Item 4 screens.
+- nothing half-edited.
 
 ## Next
-1. Seed an instrument in every tab of every view via API on 8881 (demo) and 8882 (normal); empty Book; Book with no Accounts.
-2. multi.mjs sweep: every view x tab, light/dark, 1440/1024/390, demo/normal; check scrollWidth, console errors, clipping; fix.
-3. Browser driver run; save item 4; report.
+- Report. Not done: InstrumentPicker (web/lib/contracts.js, being edited by someone else) does not show or link a hit's view and tab.

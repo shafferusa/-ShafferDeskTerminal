@@ -1103,4 +1103,228 @@ const directRealEstate = {
   ],
 };
 
-export default [privateEquity, ventureCapital, hedgeFund, infrastructure, directRealEstate];
+// ---------------------------------------------------------------------------------------------
+// insurance_linked_security
+// ---------------------------------------------------------------------------------------------
+// A privately placed collateralised reinsurance note (not a listed catastrophe bond): 5,000,000 face bought at par, priced
+// in % of face (multiplier 0.01, set by the product), quarterly coupons of 9.50% a year entered by hand, broker indications
+// as valuations (stale after 45 days), a hurricane: the price falls, then the cedent's loss notice writes 30% of principal
+// down (a realized loss), coupons continue on the face left, and the rest is redeemed at par at maturity. The redemption is
+// paid T+2 on the USD calendar, across New Year's Day 2027. An early redemption is refused before maturity.
+const ILS_POS = { instrument: 'main', lot: 'note', owner: 'account', direction: 'long' };
+const ilsM = (o) => ({ kind: 'ils', faceLost: 0, coupons: 0, ...o });
+const ILS_TASK = { type: 'manual.maturity', instrument: 'main', dueDate: '2026-12-31', owner: 'account' };
+const insuranceLinked = {
+  productId: 'insurance_linked_security',
+  title: 'Sable Harbor Re 2026-1 Class A: a collateralised reinsurance note, coupons, broker marks, a hurricane loss writing down 30% of face, redemption at maturity, by hand',
+  matrix: {
+    ...MANUAL_TICKET,
+    requiredFields: ['Trading owner', 'Action (Buy)', 'Face amount', 'State a fill price (% of face)', 'Peril and maturity (registration)', 'Valuation goes stale after (registration)'],
+    manualInputs: ['purchase price', 'coupons received', 'broker indications as valuations (% of face, date, source)', 'loss event (face written down)', 'redemption price at maturity'],
+    settlement: 'Purchase T+2 on the USD payment calendar; redemption T+2 after maturity (31 December 2026 to 5 January 2027, across New Year\'s Day)',
+    lifecycle: 'Maturity is a lifecycle item that waits, visibly, for the redemption entered by hand; coupons and the loss event by hand; an early redemption is refused',
+    accounting: 'Face amount at average cost in % of face; coupons in Coupon and interest income; principal written down realized as a loss at its cost; valued at the latest broker indication, stale after 45 days',
+    collateral: 'None held by the investor: the note is backed by a collateral trust at the issuer (recorded in the terms, not simulated)',
+  },
+  start: '2026-03-02T15:00:00.000Z',
+  settlementCheck: { lag: 2, holidays: [] },
+  book: { name: 'Matrix insurance-linked', reportingCcy: 'USD', capital: [{ ccy: 'USD', amount: 8_000_000 }], account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 6_000_000 }] }, settings: SETTINGS },
+  instruments: {
+    main: { productId: 'insurance_linked_security', name: 'Sable Harbor Re 2026-1 Class A collateralised reinsurance note', symbol: 'SHRE26A', marketView: 'FOREIGN_CASH', venueType: 'otc', issuer: 'Sable Harbor Re Ltd', domicile: 'BM', underlyingGeo: 'US', tradingCcy: 'USD',
+      terms: { peril: 'US named storm and earthquake, per-occurrence excess of loss', trigger: 'indemnity', maturity: '2026-12-31', couponRate: 0.095, valuationMaxAgeDays: 45 } },
+  },
+  expectAtStart: { cash: { account: { USD: { settled: 6_000_000, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 6_000_000 } }, treasury: { USD: { settled: 2_000_000 } } },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [], nav: { account: 6_000_000, treasury: 2_000_000, book: 8_000_000 }, provisional: { account: false, book: false }, failed: { orders: 0, settlements: 0, lifecycle: 0 } },
+  steps: [
+    {
+      // 5,000,000 face at 100 (% of face) x 0.01 = 5,000,000.
+      id: 'buy', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 5_000_000, as: 'note', order: { statedPrice: 100 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 5_000_000, estimate: 100, model: 'stated-price', settleDate: '2026-03-04', calendar: 'USD', cash: -5_000_000, fees: 0 }] },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 5_000_000, avgPrice: 100 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 5,000,000 SHRE26A @ 100.00 USD', owner: 'account', date: '2026-03-02' }],
+        cash: { account: { USD: { settled: 6_000_000, unsettled: -5_000_000, availableToTrade: 1_000_000 } } },
+        positions: [{ ...ILS_POS, qty: 5_000_000, avgCost: 100, cost: 5_000_000, price: null, value: null, unrealized: null, provisional: true, manual: ilsM({ valuation: null }) }], // 5,000,000 / (5,000,000 x 0.01)
+        holdings: { main: { long: 5_000_000, short: 0, net: 5_000_000 } },
+        pending: [{ instrument: 'main', lot: 'note', owner: 'account', dueDate: '2026-03-04', amount: -5_000_000, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ ...ILS_TASK, status: 'pending' }],
+        pnl: { account: { realized: 0, couponInterest: 0, fees: 0 } },
+        nav: { account: 6_000_000, book: 8_000_000 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 6_000_000, positions: 5_000_000, payable: 5_000_000, assets: 11_000_000, liabilities: 5_000_000, netAssets: 6_000_000 } },
+      },
+    },
+    {
+      id: 'settle-purchase', covers: 'settlement', action: 'clock', to: '2026-03-04T15:00:00.000Z',
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 5,000,000.00 USD from settled cash', cash: { USD: -5_000_000 } }],
+        cash: { account: { USD: { settled: 1_000_000, unsettled: 0, availableToTrade: 1_000_000 } } },
+        pending: [],
+        balance: { account: { cash: 1_000_000, payable: null, assets: 6_000_000, liabilities: 0 } },
+      },
+    },
+    { id: 'first-mark-date', action: 'clock', to: '2026-03-16T14:00:00.000Z', expect: {} },
+    {
+      id: 'valuation-march', covers: 'valuation', action: 'lifecycle', lot: 'note', body: { action: 'valuation', value: 99.75, asOf: '2026-03-13', source: 'Broker indication, Thornbury Re Capital (bid side)' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of SHRE26A entered by hand: 99.75 % of face, as of 2026-03-13, source: Broker indication, Thornbury Re Capital (bid side). A manual input, not a market quote' }],
+        positions: [{ ...ILS_POS, qty: 5_000_000, cost: 5_000_000, price: 99.75, value: 4_987_500, unrealized: -12_500, provisional: false, freshness: 'manual', priceSource: 'Manual entry', // 5,000,000 x 99.75 x 0.01
+          manual: ilsM({ valuation: { date: '2026-03-13', source: 'Broker indication, Thornbury Re Capital (bid side)', stale: false } }) }],
+        pnl: { account: { unrealized: -12_500, total: -12_500 } },
+        nav: { account: 5_987_500, book: 7_987_500 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 4_987_500, assets: 5_987_500, netAssets: 5_987_500 } },
+      },
+    },
+    { id: 'q1-coupon-date', action: 'clock', to: '2026-04-01T14:00:00.000Z', expect: {} },
+    {
+      // 5,000,000 x 9.50% / 4 = 118,750.
+      id: 'coupon-q1', covers: 'coupon', action: 'lifecycle', lot: 'note', body: { action: 'income', kind: 'coupon', amount: 118_750, note: 'Quarterly coupon, 9.50% a year on 5,000,000 face' },
+      expect: {
+        events: [{ type: 'manual.income', summary: 'Coupon from SHRE26A entered by hand: received 118,750.00 USD. Quarterly coupon, 9.50% a year on 5,000,000 face', cash: { USD: 118_750 } }],
+        cash: { account: { USD: { settled: 1_118_750, availableToTrade: 1_118_750 } } },
+        positions: [{ ...ILS_POS, qty: 5_000_000, cost: 5_000_000, value: 4_987_500, manual: ilsM({ coupons: 118_750, valuation: { date: '2026-03-13', source: 'Broker indication, Thornbury Re Capital (bid side)', stale: false } }) }],
+        pnl: { account: { couponInterest: 118_750, total: 106_250 } },
+        nav: { account: 6_106_250, book: 8_106_250 },
+        balance: { account: { cash: 1_118_750, assets: 6_106_250, netAssets: 6_106_250 } },
+      },
+    },
+    {
+      // Monday 4 May 2026: the 13 March indication is 52 days old, past the 45-day limit.
+      id: 'mark-stale', covers: 'valuation', action: 'clock', to: '2026-05-04T14:00:00.000Z',
+      expect: {
+        positions: [{ ...ILS_POS, qty: 5_000_000, cost: 5_000_000, value: 4_987_500, freshness: 'stale', manual: ilsM({ coupons: 118_750, valuation: { date: '2026-03-13', source: 'Broker indication, Thornbury Re Capital (bid side)', stale: true } }) }],
+        provisional: { account: true, book: true },
+      },
+    },
+    {
+      id: 'valuation-april', covers: 'valuation', action: 'lifecycle', lot: 'note', body: { action: 'valuation', value: 100.10, asOf: '2026-04-30', source: 'Broker indication, Thornbury Re Capital (bid side)' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of SHRE26A entered by hand: 100.10 % of face, as of 2026-04-30, source: Broker indication, Thornbury Re Capital (bid side). A manual input, not a market quote' }],
+        positions: [{ ...ILS_POS, qty: 5_000_000, cost: 5_000_000, price: 100.1, value: 5_005_000, unrealized: 5_000, freshness: 'manual', manual: ilsM({ coupons: 118_750, valuation: { date: '2026-04-30', source: 'Broker indication, Thornbury Re Capital (bid side)', stale: false } }) }],
+        pnl: { account: { unrealized: 5_000, total: 123_750 } },
+        nav: { account: 6_123_750, book: 8_123_750 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 5_005_000, assets: 6_123_750, netAssets: 6_123_750 } },
+      },
+    },
+    { id: 'q2-coupon-date', action: 'clock', to: '2026-07-01T14:00:00.000Z', expect: {} },
+    {
+      // Wednesday 1 July: the 30 April indication is 62 days old (stale) when the second coupon arrives.
+      id: 'coupon-q2', covers: 'coupon', action: 'lifecycle', lot: 'note', body: { action: 'income', kind: 'coupon', amount: 118_750, note: 'Quarterly coupon' },
+      expect: {
+        events: [{ type: 'manual.income', summary: 'Coupon from SHRE26A entered by hand: received 118,750.00 USD. Quarterly coupon', cash: { USD: 118_750 } }],
+        cash: { account: { USD: { settled: 1_237_500, availableToTrade: 1_237_500 } } },
+        positions: [{ ...ILS_POS, qty: 5_000_000, cost: 5_000_000, value: 5_005_000, freshness: 'stale', manual: ilsM({ coupons: 237_500, valuation: { date: '2026-04-30', source: 'Broker indication, Thornbury Re Capital (bid side)', stale: true } }) }],
+        pnl: { account: { couponInterest: 237_500, total: 242_500 } },
+        nav: { account: 6_242_500, book: 8_242_500 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 1_237_500, assets: 6_242_500, netAssets: 6_242_500 } },
+      },
+    },
+    { id: 'landfall-date', action: 'clock', to: '2026-09-28T14:00:00.000Z', expect: {} },
+    {
+      // After Hurricane Delphine makes landfall the note is indicated at 72.00: 5,000,000 x 72 x 0.01 = 3,600,000.
+      id: 'valuation-after-landfall', covers: 'valuation', action: 'lifecycle', lot: 'note', body: { action: 'valuation', value: 72, asOf: '2026-09-25', source: 'Broker indication after Hurricane Delphine landfall' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of SHRE26A entered by hand: 72.00 % of face, as of 2026-09-25, source: Broker indication after Hurricane Delphine landfall. A manual input, not a market quote' }],
+        positions: [{ ...ILS_POS, qty: 5_000_000, cost: 5_000_000, price: 72, value: 3_600_000, unrealized: -1_400_000, freshness: 'manual', manual: ilsM({ coupons: 237_500, valuation: { date: '2026-09-25', source: 'Broker indication after Hurricane Delphine landfall', stale: false } }) }],
+        pnl: { account: { unrealized: -1_400_000, total: -1_162_500 } },
+        nav: { account: 4_837_500, book: 6_837_500 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 3_600_000, assets: 4_837_500, netAssets: 4_837_500 } },
+      },
+    },
+    { id: 'q3-coupon-date', action: 'clock', to: '2026-10-01T14:00:00.000Z', expect: {} },
+    {
+      id: 'coupon-q3', covers: 'coupon', action: 'lifecycle', lot: 'note', body: { action: 'income', kind: 'coupon', amount: 118_750, note: 'Quarterly coupon, before the loss notice' },
+      expect: {
+        events: [{ type: 'manual.income', summary: 'Coupon from SHRE26A entered by hand: received 118,750.00 USD. Quarterly coupon, before the loss notice', cash: { USD: 118_750 } }],
+        cash: { account: { USD: { settled: 1_356_250, availableToTrade: 1_356_250 } } },
+        positions: [{ ...ILS_POS, qty: 5_000_000, cost: 5_000_000, value: 3_600_000, manual: ilsM({ coupons: 356_250, valuation: { date: '2026-09-25', source: 'Broker indication after Hurricane Delphine landfall', stale: false } }) }],
+        pnl: { account: { couponInterest: 356_250, total: -1_043_750 } },
+        nav: { account: 4_956_250, book: 6_956_250 },
+        balance: { account: { cash: 1_356_250, assets: 4_956_250, netAssets: 4_956_250 } },
+      },
+    },
+    { id: 'loss-notice-date', action: 'clock', to: '2026-11-02T15:00:00.000Z', expect: {} },
+    {
+      // The cedent's loss notice: 30% of principal is lost: 1,500,000 of face written down at its cost (100) = 1,500,000 realized.
+      // Face left 3,500,000 at cost 3,500,000, still indicated at 72: 2,520,000.
+      id: 'loss-event', covers: 'loss event', action: 'lifecycle', lot: 'note', body: { action: 'loss_event', face: 1_500_000, note: 'Cedent loss notice: Hurricane Delphine, 30% of principal' },
+      expect: {
+        events: [{ type: 'manual.loss_event', summary: 'Loss event on SHRE26A entered by hand: 1,500,000.00 USD of face written down (principal lost), cost 1,500,000.00 USD realized. Cedent loss notice: Hurricane Delphine, 30% of principal', owner: 'account' }],
+        positions: [{ ...ILS_POS, qty: 3_500_000, avgCost: 100, cost: 3_500_000, price: 72, value: 2_520_000, unrealized: -980_000, manual: ilsM({ faceLost: 1_500_000, coupons: 356_250, valuation: { date: '2026-09-25', source: 'Broker indication after Hurricane Delphine landfall', stale: false } }) }],
+        holdings: { main: { long: 3_500_000, short: 0, net: 3_500_000 } },
+        pnl: { account: { realized: -1_500_000, unrealized: -980_000, total: -2_123_750 } },
+        nav: { account: 3_876_250, book: 5_876_250 }, // 1,356,250 + 2,520,000
+        balance: { account: { positions: 2_520_000, assets: 3_876_250, netAssets: 3_876_250 } },
+      },
+    },
+    {
+      id: 'early-redemption', covers: 'redeem', action: 'lifecycle', lot: 'note', body: { action: 'settle', redemptionPrice: 100 },
+      status: 'blocked', reason: 'The note matures on 31 December 2026; it cannot be redeemed before.',
+      expect: { refused: 'SHRE26A matures on 2026-12-31' },
+    },
+    { id: 'residual-mark-date', action: 'clock', to: '2026-11-16T15:00:00.000Z', expect: {} },
+    {
+      id: 'valuation-residual', covers: 'valuation', action: 'lifecycle', lot: 'note', body: { action: 'valuation', value: 98.5, asOf: '2026-11-13', source: 'Broker indication, residual exposure after the loss notice' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of SHRE26A entered by hand: 98.50 % of face, as of 2026-11-13, source: Broker indication, residual exposure after the loss notice. A manual input, not a market quote' }],
+        positions: [{ ...ILS_POS, qty: 3_500_000, cost: 3_500_000, price: 98.5, value: 3_447_500, unrealized: -52_500, freshness: 'manual', manual: ilsM({ faceLost: 1_500_000, coupons: 356_250, valuation: { date: '2026-11-13', source: 'Broker indication, residual exposure after the loss notice', stale: false } }) }],
+        pnl: { account: { unrealized: -52_500, total: -1_196_250 } },
+        nav: { account: 4_803_750, book: 6_803_750 },
+        balance: { account: { positions: 3_447_500, assets: 4_803_750, netAssets: 4_803_750 } },
+      },
+    },
+    {
+      // Thursday 31 December 2026: maturity. The lifecycle item waits for the redemption entered by hand; the 13 November
+      // indication is 48 days old.
+      id: 'maturity-waits', covers: 'redeem', action: 'clock', to: '2026-12-31T15:00:00.000Z',
+      expect: {
+        lifecycle: [{ ...ILS_TASK, status: 'blocked', reason: 'Waiting for the redemption of SHRE26A, entered by hand (Lifecycle, Redemption at maturity).' }],
+        positions: [{ ...ILS_POS, qty: 3_500_000, cost: 3_500_000, value: 3_447_500, freshness: 'stale', manual: ilsM({ faceLost: 1_500_000, coupons: 356_250, valuation: { date: '2026-11-13', source: 'Broker indication, residual exposure after the loss notice', stale: true } }) }],
+        provisional: { account: true, book: true },
+      },
+    },
+    {
+      // Last coupon on the face left: 3,500,000 x 9.50% / 4 = 83,125.
+      id: 'coupon-q4', covers: 'coupon', action: 'lifecycle', lot: 'note', body: { action: 'income', kind: 'coupon', amount: 83_125, note: 'Final quarterly coupon on 3,500,000 face' },
+      expect: {
+        events: [{ type: 'manual.income', summary: 'Coupon from SHRE26A entered by hand: received 83,125.00 USD. Final quarterly coupon on 3,500,000 face', cash: { USD: 83_125 } }],
+        cash: { account: { USD: { settled: 1_439_375, availableToTrade: 1_439_375 } } },
+        positions: [{ ...ILS_POS, qty: 3_500_000, cost: 3_500_000, value: 3_447_500, manual: ilsM({ faceLost: 1_500_000, coupons: 439_375, valuation: { date: '2026-11-13', source: 'Broker indication, residual exposure after the loss notice', stale: true } }) }],
+        pnl: { account: { couponInterest: 439_375, total: -1_113_125 } },
+        nav: { account: 4_886_875, book: 6_886_875 },
+        balance: { account: { cash: 1_439_375, assets: 4_886_875, netAssets: 4_886_875 } },
+      },
+    },
+    {
+      // 3,500,000 face at 100 = 3,500,000, paid T+2 on the USD calendar: Friday 1 January 2027 is a holiday, so Tuesday 5 January.
+      id: 'redemption', covers: 'close', action: 'lifecycle', lot: 'note', body: { action: 'settle', redemptionPrice: 100 },
+      expect: {
+        events: [{ type: 'manual.settlement', summary: 'Redemption at maturity of SHRE26A entered by hand: 3,500,000.00 USD of face at 100.00% = 3,500,000.00 USD, paid 2027-01-05', owner: 'account', date: '2026-12-31' }],
+        cash: { account: { USD: { settled: 1_439_375, unsettled: 3_500_000, availableToTrade: 4_939_375 } } },
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', lot: 'note', owner: 'account', dueDate: '2027-01-05', amount: 3_500_000, ccy: 'USD', into: 'cash' }],
+        lifecycle: [],
+        pnl: { account: { realized: -1_500_000, couponInterest: 439_375, unrealized: 0, total: -1_060_625 } },
+        nav: { account: 4_939_375, book: 6_939_375 },
+        provisional: { account: false, book: false },
+        balance: { account: { cash: 1_439_375, receivable: 3_500_000, positions: null, assets: 4_939_375, netAssets: 4_939_375 } },
+      },
+    },
+    {
+      id: 'redemption-paid', covers: 'settlement', action: 'clock', to: '2027-01-05T15:00:00.000Z',
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 3,500,000.00 USD into settled cash', cash: { USD: 3_500_000 }, date: '2027-01-05' }],
+        cash: { account: { USD: { settled: 4_939_375, unsettled: 0, availableToTrade: 4_939_375 } } },
+        pending: [],
+        balance: { account: { cash: 4_939_375, receivable: null, assets: 4_939_375, liabilities: 0, netAssets: 4_939_375 } },
+      },
+    },
+  ],
+};
+
+export default [privateEquity, ventureCapital, hedgeFund, infrastructure, directRealEstate, insuranceLinked];

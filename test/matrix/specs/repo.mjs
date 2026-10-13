@@ -1323,4 +1323,177 @@ const bilateralRepo = {
   ],
 };
 
-export default [repo, reverseRepo, overnightRepo, termRepo, openRepo, bilateralRepo];
+// ---------------------------------------------------------------------------------------------
+// triparty_repo
+// ---------------------------------------------------------------------------------------------
+// Treasury borrows for a week from a money-market fund through a tri-party agent, pledging 2,500,000 of the 3,000,000 face
+// of corporate notes it holds. The notes rise the next day and the agent returns 100,000 face of excess collateral, which
+// Treasury records by hand (the cover after the return still meets what is owed). The repo is repurchased on its end date.
+//
+// What differs from a bilateral repo in the Terminal: the tri-party agent is recorded as a term (Tri-party ticked, the
+// agent named; the contract reads "Classic repo, tri-party"). The cash, interest, cover, collateral and accounting are
+// simulated exactly as for a bilateral repo. The agent's allocation of a basket and its automatic substitutions are not
+// simulated: one security is pledged, and any change is recorded by hand.
+//
+// Inputs: HALV-5.1-DEC33, 5.10% 30/360, coupons 1 June / 1 December, 100.90 / 101.00, last 100.95, then 103.90 / 104.00 /
+// 103.95 (fixtures); no commission; T+1. Repo 2,400,000 at 4.05% ACT/360, 14 to 21 April 2026, haircut 5%.
+//   Bought 13 April, settles 14 April: 3,000,000 x 101.00 / 100 = 3,030,000.00 plus 133 days (30/360 from 1 December) of
+//   5.10%: 56,525.00; cash 3,086,525.00.
+//   Collateral 14 April: 2,500,000 x 100.95 / 100 = 2,523,750.00 plus 47,104.17 = 2,570,854.17; less 5%: 2,442,311.46.
+//   After the rise, 2,400,000 on 15 April: 2,494,800.00 plus 134 days, 45,560.00 = 2,540,360.00; less 5%: 2,413,342.00.
+//   Interest: 2,400,000 x 0.0405 / 360 = 270.00 a day; 7 days 1,890.00.
+const HALV = { productId: 'corporate_bond', name: 'Halvorsen Utilities 5.10% Notes 1-Dec-2033', symbol: 'HALV-5.1-DEC33', marketView: 'US_CASH', venueType: 'otc', issuer: 'Halvorsen Utilities', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+  terms: { couponType: 'fixed', couponRate: 0.051, frequency: 2, maturity: '2033-12-01', issueDate: '2023-12-01', dayCount: '30/360', redemption: 100, minDenomination: 1_000, seniority: 'Senior unsecured' } };
+const TPREPO = { owner: 'treasury', side: 'repo', productId: 'triparty_repo', productLabel: 'Tri-party repo', ccy: 'USD', principal: 2_400_000, name: 'Northbridge tri-party repo', collateral: { instrument: 'halv', lot: 'halv' }, as: 'tprepo',
+  terms: { collateralInstrumentId: '$inst:halv', collateralQty: 2_500_000, haircut: 0.05, rateType: 'fixed', rate: 0.0405, dayCount: 'ACT/360', term: 'term', endDate: '2026-04-21', style: 'classic', collateralType: 'gc', triparty: true, agent: 'Northbridge Collateral Services', counterparty: 'Halberd Liquidity Fund' } };
+const HPOS = { instrument: 'halv', lot: 'halv', owner: 'treasury', direction: 'long', qty: 3_000_000, avgCost: 101.00, cost: 3_030_000 };
+const TP_POS = { instrument: 'tprepo', lot: 'tprepo', owner: 'treasury', direction: 'repo (cash borrowed)', qty: -2_400_000, value: 2_400_000, carrying: -2_400_000, collateralHeld: null };
+const HALV_LIFE = [{ type: 'bond.coupon', instrument: 'halv', dueDate: '2026-06-01', status: 'pending', owner: 'treasury' }, { type: 'bond.maturity', instrument: 'halv', dueDate: '2033-12-01', status: 'pending', owner: 'treasury' }];
+const TP_RECORD = { owner: 'treasury', origin: 'treasury', family: 'repo', type: 'Repo (cash borrowed against securities)', lot: 'tprepo', principal: 2_400_000, principalRc: 2_400_000, ccy: 'USD', rate: 0.0405, rateType: 'fixed', rateText: '4.050% fixed', dayCount: 'ACT/360',
+  accrued: 0, costToDate: 0, feesToDate: 0, startDate: '2026-04-14', maturity: '2026-04-21', term: 'term', lender: 'Halberd Liquidity Fund', schedule: 'Interest paid at repurchase', nextPayment: '2026-04-21', nextPaymentType: 'repo.end', blocked: null };
+
+const tripartyRepo = {
+  productId: 'triparty_repo',
+  title: 'One-week tri-party repo by Treasury with a money-market fund through Northbridge Collateral Services: part of a holding pledged, excess returned by hand after a rise, repurchased on the end date',
+  matrix: {
+    ...REPO_TICKET,
+    requiredFields: [...REPO_TICKET.requiredFields, 'Tri-party (ticked) and the tri-party agent'],
+    automaticInputs: ['the notes\' dirty value and the cash they support after the haircut', 'repo interest accrued daily', 'the cover after the return of excess checked against what is owed', 'repurchase on the end date with interest', 'the daily check of the cover'],
+    manualInputs: ['every term, entered on the ticket, Tri-party ticked and the agent named', 'the excess collateral returned by the agent, recorded with Collateral on the repo\'s row (the agent\'s allocation and substitutions are not simulated)'],
+    settlement: 'None for the repo: cash received when confirmed and paid back on the end date. The notes bought settle T+1',
+    lifecycle: 'Interest accrues daily; excess collateral returned by hand; repurchased automatically on the end date',
+    accounting: 'As a bilateral repo: cash borrowed is a liability of Treasury; repo interest a funding expense; the pledged notes stay on Treasury\'s balance sheet',
+    collateral: 'Part of the holding pledged (2,500,000 of 3,000,000 face), the rest free; a return of excess leaves 2,400,000 pledged; released on repurchase. Tri-party differs from bilateral only by the agent recorded as a term: basket allocation and automatic substitution by the agent are not simulated',
+  },
+  tradedOn: 'A tri-party repo is not a registry instrument: it is entered on the Repo or reverse repo ticket of the Treasury page (Tri-party ticked) and registers itself when the ticket is confirmed. The collateral is a registered corporate bond.',
+  start: AT_1000('2026-04-13'), // Monday 13 April 2026, 10:00 New York
+  settlementCheck: { lag: 1, holidays: [] },
+  book: {
+    name: 'Matrix tri-party repo', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 4_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 200_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0 } }, fill: FILL, settlement: { bond: 1 } },
+  },
+  instruments: { halv: HALV },
+  quotes: { halv: { bid: 100.90, ask: 101.00, last: 100.95, bidSize: 10_000_000, askSize: 10_000_000 } },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 200_000, availableToTrade: 200_000, borrowed: 0 } },
+      treasury: { USD: { settled: 3_800_000, unsettled: 0, payable: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 3_800_000, availableToWithdraw: 3_800_000, borrowed: 0, lent: 0 } },
+    },
+    positions: [], holdings: {}, pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 200_000, treasury: 3_800_000, book: 4_000_000 },
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+    pnl: { account: { total: 0 }, treasury: { couponInterest: 0, borrowFunding: 0, unrealized: 0, total: 0 }, book: { total: 0 } },
+    balance: {
+      account: { cash: 200_000, assets: 200_000, netAssets: 200_000 },
+      treasury: { cash: 3_800_000, assets: 3_800_000, liabilities: 0, netAssets: 3_800_000 },
+      book: { cash: 4_000_000, assets: 4_000_000, liabilities: 0, netAssets: 4_000_000 },
+    },
+    oversight: { accountBorrowings: [], treasuryOwn: [] },
+  },
+  steps: [
+    {
+      id: 'buy-the-notes', covers: 'collateral', action: 'ticket', ticketOf: 'bond', instrument: 'halv', owner: 'treasury', side: 'buy', qty: 3_000_000, as: 'halv',
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'buy', instrument: 'halv', qty: 3_000_000, estimate: 101.00, settleDate: '2026-04-14', gross: 3_030_000, accrued: 56_525, cash: -3_086_525, fees: 0 }] },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 3_000_000, avgPrice: 101.00 }] },
+        events: [{ type: 'strategy.submitted', owner: 'treasury' }, { type: 'trade.fill', summary: 'Bought 3,000,000 HALV-5.1-DEC33 @ 101.00 USD', owner: 'treasury', date: '2026-04-13' }],
+        cash: { treasury: { USD: { settled: 3_800_000, unsettled: -3_086_525, payable: 3_086_525, availableToTrade: 713_475, availableToWithdraw: 713_475 } } },
+        positions: [{ ...HPOS, price: 100.95, value: 3_028_500, unrealized: -1_500, accrued: 56_525, pledged: 0 }],
+        holdings: { halv: { long: 3_000_000, short: 0, net: 3_000_000 } },
+        pending: [{ instrument: 'halv', lot: 'halv', owner: 'treasury', dueDate: '2026-04-14', amount: -3_086_525, ccy: 'USD', into: 'cash' }],
+        lifecycle: HALV_LIFE,
+        pnl: { treasury: { unrealized: -1_500, total: -1_500 }, book: { total: -1_500 } },
+        nav: { treasury: 3_798_500, book: 3_998_500 },
+        balance: {
+          treasury: { cash: 3_800_000, positions: 3_028_500, accruedIncome: 56_525, payable: 3_086_525, assets: 6_885_025, liabilities: 3_086_525, netAssets: 3_798_500 },
+          book: { cash: 4_000_000, positions: 3_028_500, accruedIncome: 56_525, payable: 3_086_525, assets: 7_085_025, liabilities: 3_086_525, netAssets: 3_998_500 },
+        },
+      },
+    },
+    {
+      id: 'notes-settle', covers: 'settlement', action: 'clock', to: AT_1000('2026-04-14'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: /^Settlement: paid 3,086,525\.00 USD/, cash: { USD: -3_086_525 }, owner: 'treasury', date: '2026-04-14' }],
+        cash: { treasury: { USD: { settled: 713_475, unsettled: 0, payable: 0, availableToTrade: 713_475, availableToWithdraw: 713_475 } } },
+        pending: [],
+        balance: { treasury: { cash: 713_475, payable: null, assets: 3_798_500, liabilities: 0 }, book: { cash: 913_475, payable: null, assets: 3_998_500, liabilities: 0 } },
+      },
+    },
+    repoTicket('repo-through-the-agent', TPREPO, {
+      covers: ['open', 'borrow', 'haircut', 'collateral', 'tri-party agent'],
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'repo_open', action: 'repo', purpose: 'financing', qty: 2_400_000, cash: 2_400_000, fees: 0, ccy: 'USD', dailyCost: 270,
+            financing: { amount: 2_400_000, rateType: 'fixed', rate: 0.0405, maturity: '2026-04-21', interestFrom: '2026-04-14',
+              collateral: { qty: 2_500_000, clean: 2_523_750, accrued: 47_104.17, worth: 2_570_854.17, haircutAmount: 128_542.71, buffer: 0, supports: 2_442_311.46 }, forward: null } }],
+          cash: { USD: { financingIn: 2_400_000, financingOut: 0, required: 0, available: 713_475, shortfall: 0, netCash: 2_400_000 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'repo_open', action: 'repo', instrument: 'tprepo', status: 'filled', qty: 2_400_000, filledQty: 2_400_000 }] },
+        events: [
+          { type: 'strategy.submitted', owner: 'treasury' },
+          { type: 'repo.open', summary: 'Repo: received 2,400,000.00 USD against 2,500,000 HALV-5.1-DEC33 at 4.050% fixed to 2026-04-21', cash: { USD: 2_400_000 }, owner: 'treasury', date: '2026-04-14' },
+        ],
+        cash: { treasury: { USD: { settled: 3_113_475, availableToTrade: 3_113_475, availableToWithdraw: 3_113_475, borrowed: 2_400_000 } } },
+        positions: [{ ...HPOS, price: 100.95, value: 3_028_500, unrealized: -1_500, accrued: 56_525, pledged: 2_500_000 }, { ...TP_POS, accrued: 0 }],
+        lifecycle: [{ type: 'repo.end', instrument: 'tprepo', dueDate: '2026-04-21', status: 'pending', owner: 'treasury' }, ...HALV_LIFE],
+        borrowings: [{ ...TP_RECORD, collateral: 'HALV-5.1-DEC33: 2,500,000 pledged, haircut 5.00%' }],
+        balance: {
+          treasury: { cash: 3_113_475, borrowed: 2_400_000, assets: 6_198_500, liabilities: 2_400_000, netAssets: 3_798_500 },
+          book: { cash: 3_313_475, borrowed: 2_400_000, assets: 6_398_500, liabilities: 2_400_000, netAssets: 3_998_500 },
+        },
+        oversight: { accountBorrowings: [], treasuryOwn: [{ owner: 'treasury', origin: 'treasury', lot: 'tprepo', principal: 2_400_000, ccy: 'USD', accrued: 0 }] },
+      },
+    }),
+    { id: 'wednesday-morning', action: 'clock', to: AT_1000('2026-04-15'), expect: { events: [] } }, // the run of 14 April: nothing accrues yet
+    {
+      id: 'notes-rise', covers: 'collateral value rises', action: 'quote', instrument: 'halv', quote: { bid: 103.90, ask: 104.00, last: 103.95, bidSize: 10_000_000, askSize: 10_000_000 },
+      expect: {
+        events: [],
+        positions: [{ ...HPOS, price: 103.95, value: 3_118_500, unrealized: 88_500, accrued: 56_525, pledged: 2_500_000 }, { ...TP_POS, accrued: 0 }], // 3,000,000 x 103.95 / 100
+        pnl: { treasury: { unrealized: 88_500, total: 88_500 }, book: { total: 88_500 } },
+        nav: { treasury: 3_888_500, book: 4_088_500 },
+        balance: { treasury: { positions: 3_118_500, assets: 6_288_500, netAssets: 3_888_500 }, book: { positions: 3_118_500, assets: 6_488_500, netAssets: 4_088_500 } },
+      },
+    },
+    {
+      // The agent returns 100,000 face: 2,400,000 at 103.95 plus 134 days of coupon = 2,540,360.00, less 5% = 2,413,342.00 against
+      // 2,400,000.00 owed (no interest has accrued yet).
+      id: 'agent-returns-excess', covers: ['return of excess collateral', 'collateral'], action: 'lifecycle', lot: 'tprepo', instrument: 'tprepo', body: { action: 'collateral', change: 'release', qty: 100_000 },
+      expect: {
+        events: [{ type: 'repo.collateral', summary: 'Excess collateral returned on Northbridge tri-party repo: 100,000 HALV-5.1-DEC33 released (now 2,400,000 HALV-5.1-DEC33 pledged, worth 2,540,360.00 USD: cover 2,413,342.00 USD against 2,400,000.00 USD owed)', owner: 'treasury', date: '2026-04-15', cash: {} }],
+        positions: [{ ...HPOS, price: 103.95, value: 3_118_500, unrealized: 88_500, accrued: 56_525, pledged: 2_400_000 }, { ...TP_POS, accrued: 0 }],
+        borrowings: [{ ...TP_RECORD, collateral: 'HALV-5.1-DEC33: 2,400,000 pledged, haircut 5.00%' }],
+      },
+    },
+    {
+      // Tuesday 21 April: repurchased with 7 days' interest, 1,890.00; the notes released. The run of 20 April then accrues the
+      // coupon to 139 days: 59,075.00 (+2,550.00).
+      id: 'repurchased-on-the-end-date', covers: ['maturity', 'close', 'repurchase', 'collateral released'], action: 'clock', to: AT_1000('2026-04-21'),
+      expect: {
+        events: [
+          { type: 'accrual.interest', summary: 'Repo interest accrued on Northbridge tri-party repo: 1,890.00 USD', owner: 'treasury', date: '2026-04-21' },
+          { type: 'interest.payment', summary: 'Repo interest paid on Northbridge tri-party repo: 1,890.00 USD', cash: { USD: -1_890 }, owner: 'treasury', date: '2026-04-21' },
+          { type: 'repo.close', summary: 'Repo repurchase: paid 2,400,000.00 USD principal (interest 1,890.00 USD); collateral released', cash: { USD: -2_400_000 }, owner: 'treasury', date: '2026-04-21' },
+          { type: 'accrual.coupon', summary: /^Interest accrued on HALV-5\.1-DEC33: 2,550\.00 USD$/, owner: 'treasury', date: '2026-04-21' },
+        ],
+        cash: { treasury: { USD: { settled: 711_585, availableToTrade: 711_585, availableToWithdraw: 711_585, borrowed: 0 } } }, // 3,113,475 - 2,401,890
+        positions: [{ ...HPOS, price: 103.95, value: 3_118_500, unrealized: 88_500, accrued: 59_075, pledged: 0 }],
+        lifecycle: HALV_LIFE, borrowings: [],
+        pnl: { treasury: { couponInterest: 2_550, borrowFunding: -1_890, unrealized: 88_500, total: 89_160 }, book: { total: 89_160 } },
+        nav: { treasury: 3_889_160, book: 4_089_160 },
+        balance: {
+          treasury: { cash: 711_585, accruedIncome: 59_075, borrowed: null, accruedExpense: null, assets: 3_889_160, liabilities: 0, netAssets: 3_889_160 },
+          book: { cash: 911_585, accruedIncome: 59_075, borrowed: null, accruedExpense: null, assets: 4_089_160, liabilities: 0, netAssets: 4_089_160 },
+        },
+        oversight: { treasuryOwn: [] },
+      },
+    },
+  ],
+};
+
+export default [repo, reverseRepo, overnightRepo, termRepo, openRepo, bilateralRepo, tripartyRepo];
