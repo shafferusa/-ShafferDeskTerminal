@@ -103,13 +103,13 @@ async function fillLegs(ui, scope, legs, ctx) {
       await ui.input(p, 'Units per unit of notional').fill(String(leg.units ?? 1));
       await ui.input(p, 'Fixed price').fill(leg.fixedPrice === null || leg.fixedPrice === undefined ? '' : String(leg.fixedPrice));
     }
-    if (leg.type === 'return' || (leg.type === 'price' && (leg.fixedPrice === null || leg.fixedPrice === undefined))) {
+    if ((leg.type === 'return' && !leg.basket) || leg.type === 'dividend' || (leg.type === 'price' && (leg.fixedPrice === null || leg.fixedPrice === undefined))) { // s3: dividend legs; a basket has no reference asset
       const inst = instOf(ctx, leg.underlyingId);
       if (!inst) throw new Error(`Leg ${String.fromCharCode(65 + i)}: state the reference asset as underlyingId: '$inst:<key>'.`);
       await pickInstrument(ui, ui.field(p, 'Reference asset'), inst);
     }
     await ui.select(p, /^\s*(Reset and payment|Payment)/).selectOption(String(leg.months ?? 0));
-    if (!['return', 'price'].includes(leg.type)) await ui.select(p, 'Day count').selectOption(leg.dayCount || 'ACT/360');
+    if (!['return', 'price', 'dividend'].includes(leg.type)) await ui.select(p, 'Day count').selectOption(leg.dayCount || 'ACT/360');
     if (leg.type === 'fixed' && (leg.compounding || await ui.field(p, 'Compounding').count())) {
       await ui.drawn();
       if (await ui.field(p, 'Compounding').count()) await ui.select(p, 'Compounding').selectOption(leg.compounding || 'none');
@@ -133,6 +133,7 @@ async function fillLegs(ui, scope, legs, ctx) {
     await ui.input(p, 'Payment lag (business days)').fill(String(leg.paymentLag ?? 0));
     const sched = (leg.notionalSchedule || []).map((s) => `${s.from} ${s.factor ?? ''}`.trim()).join('\n');
     await ui.field(p, 'Notional schedule').locator('textarea').fill(sched);
+    await fillPartialLeg(ui, p, leg); // s3
   }
 }
 
@@ -195,6 +196,7 @@ export async function contractTerms(ui, dialog, draft, ctx) {
   await fillCollateral(ui, dialog, t.collateralBasis, ctx);
   if (t.collateral) await ui.input(dialog, 'Other collateral terms').fill(t.collateral);
   if (t.netSettlement || await ui.field(dialog, 'Net settlement').count()) await checkbox(ui, dialog, 'Net settlement').setChecked(Boolean(t.netSettlement)); // s2
+  await fillPartialTerms(ui, dialog, t); // s3
   await fillLegs(ui, dialog, t.legs || [], ctx);
 }
 
@@ -341,7 +343,11 @@ async function strategiesPage(ui, t, ctx, step, { previewAndConfirm, expectsRefu
 export const actions = {
   close: atStatedPrice,
   resize: atStatedPrice,
-  package: strategiesPage,
+  // s3: a package of registered instruments (an asset swap: the bond and its swap) when the legs are not new contracts.
+  package: async (ui, t, ctx, step, tools) => (await strategiesPage(ui, t, ctx, step, tools)) ?? instrumentLegsPackage(ui, t, ctx, step, tools),
+  manual_fx: (...args) => manualFx(...args), // s3
+  basket_level: (...args) => basketLevel(...args), // s3
+  lifecycle: (...args) => partialLifecycle(...args), // s3: call or put exercised, loan pass-through; anything else falls through
 
   /**
    * The Accounting screens read in Treasury's scope (`owner: 'treasury'`). The shared check after every step reads the
@@ -426,3 +432,159 @@ export const actions = {
     return {};
   },
 };
+
+// ---------------------------------------------------------------------------------------------
+// s3: the swaps marked partial (non-deliverable, CMS spread, callable and puttable, quanto, basket, loan TRS, dividend)
+// ---------------------------------------------------------------------------------------------
+const has = (v) => v !== undefined && v !== null && v !== '';
+
+/** Contract fields of a non-deliverable swap (settlement currency, fixing lag) and of a callable or puttable swap (its right). */
+async function fillPartialTerms(ui, dialog, t) {
+  if (t.settlementCcy) await ui.input(dialog, 'Settlement currency').fill(t.settlementCcy);
+  if (has(t.fixingLag)) await ui.input(dialog, 'FX fixing lag').fill(String(t.fixingLag));
+  if (t.callRight) {
+    await ui.input(dialog, 'Exercise dates').fill([].concat(t.callRight.dates || []).join('; '));
+    await ui.select(dialog, 'Right held by').selectOption(t.callRight.by || 'written');
+  }
+}
+
+/** Leg fields: a CMS spread's second index, a dividend leg's units, a basket instead of a reference asset, a quanto conversion. */
+async function fillPartialLeg(ui, p, leg) {
+  if (leg.index2) await ui.input(p, 'Minus index').fill(leg.index2);
+  if (leg.type === 'dividend') await ui.input(p, 'Units per unit of notional').fill(String(leg.units ?? 1));
+  if (leg.type === 'return' && leg.basket) {
+    const text = Array.isArray(leg.basket) ? leg.basket.map((b) => `${b.name}: ${b.weight}`).join('; ') : leg.basket;
+    await ui.input(p, 'Basket instead of a reference asset').fill(text);
+    await ui.drawn();
+    await ui.input(p, 'Initial basket level').fill(String(leg.initialLevel));
+  }
+  if (leg.quantoCcy) {
+    await ui.input(p, 'Quanto currency').fill(leg.quantoCcy);
+    await ui.drawn();
+    await ui.input(p, 'Fixed conversion rate').fill(String(leg.quantoRate));
+  }
+}
+
+/** An FX fixing entered by hand for its date: Data connection, Manual entries, FX rate (`pair: 'USD/INR'`, `rate`, `date`). */
+async function manualFx(ui, t, ctx, step) {
+  await ui.closeOverlays();
+  await ui.goto('#/data/manual');
+  const panel = ui.section(ui.page.locator('main'), 'FX rate');
+  await panel.waitFor();
+  const [base, quote] = String(step.pair).split('/');
+  await ui.input(panel, 'Base currency').fill(base);
+  await ui.input(panel, 'Quote currency').fill(quote);
+  await ui.drawn();
+  await ui.input(panel, /^\s*Rate/).fill(String(step.rate));
+  await ui.input(panel, 'FX fixing date').fill(step.date || '');
+  if (step.note) await ui.input(panel, 'Note').fill(step.note);
+  const r = await ui.respondsTo('POST', /^\/api\/observations$/, () => ui.button(panel, 'Save FX rate').click());
+  if (!r.ok) {
+    await panel.locator('.notice.err', { hasText: r.body?.error || 'no message' }).first().waitFor();
+    return { refusal: { message: r.body?.error, status: r.status, where: 'FX rate form message' } };
+  }
+  await ui.toast(/FX rate saved/);
+  return {};
+}
+
+/** The level of a basket at a reset, entered on the blocked payment item: Accounting, Pending, Lifecycle items. */
+async function basketLevel(ui, t, ctx, step) {
+  const lot = ctx.lot(step.lot);
+  const inst = ctx.inst(step.instrument || lot.instrument);
+  await ui.closeOverlays();
+  await ui.reloadAt(`#/accounting/pending/${ctx.strategyUnits?.get(lot.strategyId) || ctx.accountId}`);
+  const section = ui.section(ui.page.locator('main'), 'Lifecycle items');
+  await section.waitFor();
+  const row = section.locator('tbody tr').filter({ hasText: inst.symbol || inst.name }).filter({ has: ui.page.getByRole('button', { name: 'Save basket level' }) }).first();
+  if (!await row.count()) return { refusal: { message: `No lifecycle item of ${inst.symbol || inst.name} asks for a basket level.`, where: 'Accounting, Pending, Lifecycle items' } };
+  await row.locator('input').first().fill(String(step.value));
+  const r = await ui.respondsTo('POST', /^\/api\/tasks\/[^/]+\/settlement-amount$/, () => ui.button(row, 'Save basket level').click());
+  if (!r.ok) return { refusal: { message: r.body?.error, status: r.status, where: 'Pending, basket level' } };
+  await ui.toast(/Basket level saved/);
+  return {};
+}
+
+/** A swap position's own events from its Lifecycle menu: the exercise of a call or put, a loan pass-through. */
+const PARTIAL_FORMS = {
+  call_exercise: { menu: 'Call exercised', button: 'Record exercise' },
+  put_exercise: { menu: 'Put exercised', button: 'Record exercise' },
+  pass_through: { menu: 'Loan pass-through', button: 'Record pass-through' },
+};
+async function partialLifecycle(ui, t, ctx, step, tools) {
+  const b = step.body || {};
+  const f = PARTIAL_FORMS[b.action];
+  if (!f) return undefined;
+  const lot = ctx.lot(step.lot);
+  const drawer = await openStrategy(ui, ctx, lot, step.owner);
+  const row = tools.positionRow(drawer, ctx.inst(step.instrument || lot.instrument));
+  if (!await row.count()) return { refusal: { message: 'The strategy instance lists no open position to record it on.', where: 'strategy instance, Positions' } };
+  const menu = row.locator('select').first();
+  try { await menu.locator('option', { hasText: f.menu }).first().waitFor({ state: 'attached', timeout: 8000 }); } catch { /* reported below */ }
+  const offered = (await menu.locator('option').allInnerTexts()).map((x) => x.trim()).filter((x) => x && x !== 'Lifecycle');
+  if (!offered.includes(f.menu)) return { refusal: { message: `The Lifecycle menu of this position offers only: ${offered.join(', ') || 'nothing'}. "${f.menu}" is not offered.`, where: 'strategy instance, position Lifecycle menu' } };
+  await menu.selectOption({ label: f.menu });
+  const dlg = ui.dialog(new RegExp(`^${f.menu}`));
+  await dlg.waitFor();
+  if (b.action === 'pass_through') {
+    await ui.select(dlg, 'Pass-through').selectOption(b.kind);
+    await ui.drawn();
+    if (b.kind === 'interest') await ui.input(dlg, 'Interest per 100 of notional').fill(String(b.amount));
+    else {
+      await ui.input(dlg, 'Share of the notional repaid').fill(String(b.share));
+      if (has(b.price)) await ui.input(dlg, 'Repayment price').fill(String(b.price));
+    }
+    if (b.note) await ui.input(dlg, 'Note').fill(b.note);
+  } else await ui.select(dlg, 'Exercised by').selectOption(b.by || 'us');
+  const record = ui.button(dlg, f.button);
+  if (await record.isDisabled()) { await ui.button(dlg, 'Cancel').click(); return { refusal: { message: `The "${f.button}" button is disabled: the dialog is missing an amount it needs.`, where: `${f.menu} dialog` } }; }
+  const r = await ui.respondsTo('POST', /^\/api\/positions\/[^/]+\/lifecycle$/, () => record.click());
+  if (!r.ok) {
+    await dlg.locator('.notice.err', { hasText: r.body?.error || 'no message' }).first().waitFor();
+    const message = (await dlg.locator('.notice.err').first().innerText()).trim();
+    await ui.button(dlg, 'Cancel').click();
+    return { refusal: { message, status: r.status, where: 'dialog message' } };
+  }
+  await dlg.waitFor({ state: 'hidden' });
+  return {};
+}
+
+/**
+ * A package of registered instruments on the Strategies page (an asset swap: the bond and the swap): Trading owner, template
+ * Custom, "Add a leg" with Leg "Registered instrument" for each (instrument, side, quantity, stated fill price), Preview package.
+ */
+async function instrumentLegsPackage(ui, t, ctx, step, { previewAndConfirm, expectsRefusal }) {
+  const input = step.input || {};
+  const legs = input.legs || [];
+  if ((input.template && input.template !== 'custom') || input.attachTo || !legs.length || !legs.every((l) => l.kind === 'trade' && String(l.instrumentId || '').startsWith('$inst:'))) return undefined;
+  const { page } = ui;
+  await ui.closeOverlays();
+  await ui.reloadAt('#/strategy');
+  const main = page.locator('main');
+  await ui.select(main, 'Account').selectOption({ label: ownerName(ctx, step.owner) });
+  await ui.select(main, 'Execution template').selectOption('custom');
+  await ui.drawn();
+  for (const leg of legs) {
+    const inst = ctx.inst(leg.instrumentId.slice(6));
+    await ui.button(ui.section(main, /^Legs/), 'Add a leg').click();
+    const dlg = ui.dialog('Add a leg');
+    await dlg.waitFor();
+    await ui.select(dlg, /^\s*Leg\s*$/).selectOption('instrument');
+    await ui.drawn();
+    if (leg.purpose === 'hedge') await ui.option(dlg, 'Purpose', 'Hedge').click();
+    await pickInstrument(ui, ui.field(dlg, exactly('Instrument')), inst);
+    await ui.select(dlg, /^\s*Side\s*$/).selectOption(leg.action);
+    await ui.input(dlg, inst.qtyLabel || 'Quantity').fill(String(leg.qty));
+    if (has(leg.statedPrice)) await ui.input(dlg, 'State a fill price').fill(String(leg.statedPrice));
+    await ui.button(dlg, 'Add leg').click();
+    if (await dlg.locator('.notice.err').count()) {
+      const message = (await dlg.locator('.notice.err').first().innerText()).trim();
+      await ui.button(dlg, 'Cancel').click();
+      return { refusal: { message, where: 'Add a leg dialog' } };
+    }
+    await dlg.waitFor({ state: 'hidden' });
+  }
+  const out = await previewAndConfirm(ui, ctx, () => ui.button(main, 'Preview package').click(), { expectsRefusal });
+  if (out.strategy && step.as && !ctx.lots.has(step.as)) ctx.nameLot(step.as, out.strategy.id, step.instrument);
+  if (out.strategy?.id && out.strategy.unit?.id) (ctx.strategyUnits ||= new Map()).set(out.strategy.id, out.strategy.unit.id);
+  return out;
+}

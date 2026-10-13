@@ -4031,4 +4031,440 @@ const longDiagonal = {
   ],
 };
 
-export default [bearCall, longStraddle, longStrangle, ironCondor, ironButterfly, longButterfly, longCalendar, longDiagonal];
+// =====================================================================================================================
+// synthetic_long
+// =====================================================================================================================
+// Rowan Cycles (NYSE) 17 April 2026 50 strike, physical delivery: buy the call and sell the put, 2 each. The two legs do
+// not depend on each other. Nothing covers the written put: it reserves its full strike value, 2 x 100 x 50 = 10,000.
+//   synthetic  refused short of cash, then Treasury funding of 9,042.60; the call fills 1 of 2 on its first cycle (one
+//              contract displayed at the ask), the put fills in full. Held over Good Friday. 17 April, close 56: the call
+//              is exercised (200 shares received at 50) and the put lapses on the same day; the reserve is released.
+//   retry / accept / unwind  1 each when the put has no fresh quote; Accept keeps a call alone (100 shares at expiry).
+const SYNL_PAGE = (contracts, financing) => ({ template: 'Synthetic Long', underlying: 'stock', expiration: '2026-04-17', strikes: { Strike: 50 }, contracts, ...(financing ? { financing } : {}) });
+const synlInput = (contracts, financing) => templateInput('synthetic_long', { underlyingId: '$inst:stock', options: { expiration: '2026-04-17', strikes: { middle: 50 }, contracts }, financing });
+const synlOne = (as) => ({ action: 'package', as, instrument: 'stock', input: synlInput(1, null), strategyPage: SYNL_PAGE(1, null) });
+const syntheticLong = {
+  template: 'synthetic_long',
+  title: 'Synthetic long on Rowan Cycles (NYSE): buy the 17 April 2026 50 call, sell the 50 put',
+  matrix: {
+    ...OPTION_TEMPLATE_MATRIX,
+    settlement: 'Premium of each leg T+1 on the US calendar; Treasury funding moves at once; shares received on exercise T+1 at the strike',
+    lifecycle: 'The call and the put settle on the same day from the close of 17 April 2026 (56: the call is exercised with a simulated delivery of the shares, the put lapses and its reserve is released); held across Good Friday; a failed leg leaves the instance needing attention: Retry, Unwind or Accept; Close buys the put back before the call is sold',
+    accounting: 'Net debit paid; commission expensed; premium realized on buy-back, sale, exercise (closed at zero) and lapse; delivered shares carried at the strike and sold',
+    collateral: 'The written put is not covered by anything in the package: its full strike value is reserved (cash-secured), 10,000 for 2 contracts, released when it lapses',
+  },
+  start: MAR(2),
+  settlementCheck: { lag: 1, holidays: ['2026-04-03'] },
+  book: book('Templates synthetic long'),
+  instruments: {
+    stock: stockDraft('Rowan Cycles Inc.', 'RWC'),
+    c50: equityOption('RWC', 'RWC260417C50', 'C', 50, '2026-04-17'),
+    p50: equityOption('RWC', 'RWC260417P50', 'P', 50, '2026-04-17'),
+  },
+  quotes: {
+    stock: { bid: 49.98, ask: 50.02, last: 50.00, bidSize: 10000, askSize: 10000 },
+    c50: { bid: 2.40, ask: 2.50, last: 2.45, bidSize: 20, askSize: 1 }, // one contract displayed at the ask
+    p50: { bid: 2.30, ask: 2.40, last: 2.35, bidSize: 20, askSize: 20 },
+  },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 1_000, unsettled: 0, reserved: 0, availableToTrade: 1_000, availableToWithdraw: 1_000 } },
+      treasury: { USD: { settled: 999_000, unsettled: 0, reserved: 0, availableToTrade: 999_000, availableToWithdraw: 999_000 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 1_000, treasury: 999_000, book: 1_000_000 },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+  },
+  steps: [
+    {
+      // 500 for the calls (2 x 2.50 x 100), 2.60 commission, 10,000 reserved for the put, against 460 (2 x 2.30 x 100) and 1,000.
+      id: 'open-short-of-cash', covers: 'financing', action: 'package', as: 'refused', instrument: 'stock',
+      input: synlInput(2, null), strategyPage: SYNL_PAGE(2, null),
+      status: 'blocked', reason: 'The Account cannot secure the written put: the preview is blocked until financing is chosen.',
+      expect: {
+        refused: 'Alpha is short 9,042.60 USD',
+        preview: {
+          blocking: 1, errors: ['cash'],
+          legs: [
+            { kind: 'trade', action: 'buy', instrument: 'c50', qty: 2, estimate: 2.50, settleDate: '2026-03-03', cash: -500, fees: 1.30, dependsOn: [] },
+            { kind: 'trade', action: 'sell', instrument: 'p50', qty: 2, estimate: 2.30, settleDate: '2026-03-03', cash: 460, fees: 1.30, dependsOn: [] },
+          ],
+          cash: { USD: { purchases: 500, proceeds: 460, fees: 2.60, reserved: 10_000, required: 10_502.60, available: 1_000, shortfall: 9_042.60 } },
+        },
+      },
+    },
+    {
+      id: 'open', covers: ['open', 'financing', 'partial fill', 'dependency'], action: 'package', as: 'synthetic', instrument: 'stock',
+      input: synlInput(2, { mode: 'treasury' }), strategyPage: SYNL_PAGE(2, { mode: 'treasury' }),
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [
+            { kind: 'funding', purpose: 'financing', qty: 9_042.60, cash: 9_042.60, dependsOn: [] },
+            { kind: 'trade', action: 'buy', instrument: 'c50', qty: 2, estimate: 2.50, model: 'quoted-bid-ask', settleDate: '2026-03-03', cash: -500, fees: 1.30, dependsOn: [1] },
+            { kind: 'trade', action: 'sell', instrument: 'p50', qty: 2, estimate: 2.30, settleDate: '2026-03-03', cash: 460, fees: 1.30, dependsOn: [1] },
+          ],
+          cash: { USD: { purchases: 500, proceeds: 460, fees: 2.60, reserved: 10_000, financingIn: 9_042.60, required: 10_502.60, available: 1_000, shortfall: 0, netCash: 9_000 } },
+          netPremium: { amount: 40, ccy: 'USD', type: 'debit', complete: true },
+          optionRequirement: [{ ccy: 'USD', amount: 10_000, finite: 10_000, naked: 0, uncoveredCallUnits: 0 }], // the put is not covered by the call
+        },
+        result: {
+          status: 'partial',
+          orders: [
+            { kind: 'funding', status: 'filled', filledQty: 9_042.60 },
+            { action: 'buy', instrument: 'c50', status: 'partial', filledQty: 1, avgPrice: 2.50 },
+            { action: 'sell', instrument: 'p50', status: 'filled', filledQty: 2, avgPrice: 2.30 },
+          ],
+        },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'transfer.funding', summary: 'Treasury funding: 9,042.60 USD from Treasury to Alpha' },
+          { type: 'trade.fill', summary: 'Bought 1 RWC260417C50 @ 2.50 USD', date: '2026-03-02' },
+          { type: 'trade.fill', summary: 'Sold 2 RWC260417P50 @ 2.30 USD' },
+          { type: 'trade.fill', summary: 'Bought 1 RWC260417C50 @ 2.50 USD' },
+        ],
+        cash: {
+          // owed 250.65 x 2; owed to it 458.70; reserved 10,000
+          account: { USD: { settled: 10_042.60, unsettled: -42.60, reserved: 10_000, availableToTrade: 0, availableToWithdraw: -458.70 } },
+          treasury: { USD: { settled: 989_957.40, unsettled: 0, availableToTrade: 989_957.40, availableToWithdraw: 989_957.40 } },
+        },
+        positions: [
+          { instrument: 'c50', lot: 'synthetic', owner: 'account', direction: 'long', qty: 2, avgCost: 2.50, cost: 500, price: 2.45, value: 490, unrealized: -10 },
+          { instrument: 'p50', lot: 'synthetic', owner: 'account', direction: 'short', qty: -2, avgCost: 2.30, cost: -460, price: 2.35, value: -470, unrealized: -10 },
+        ],
+        holdings: { c50: { long: 2, short: 0, net: 2 }, p50: { long: 0, short: 2, net: -2 } },
+        pending: [
+          { instrument: 'c50', lot: 'synthetic', dueDate: '2026-03-03', amount: -250.65, into: 'cash' },
+          { instrument: 'c50', lot: 'synthetic', dueDate: '2026-03-03', amount: -250.65, into: 'cash' },
+          { instrument: 'p50', lot: 'synthetic', dueDate: '2026-03-03', amount: 458.70, into: 'cash' },
+        ],
+        lifecycle: [
+          { type: 'option.expiry', instrument: 'c50', dueDate: '2026-04-17', status: 'pending' },
+          { type: 'option.expiry', instrument: 'p50', dueDate: '2026-04-17', status: 'pending' },
+        ],
+        pnl: {
+          account: { realized: 0, commissions: -2.60, fees: 0, unrealized: -20, total: -22.60 },
+          book: { realized: 0, commissions: -2.60, unrealized: -20, total: -22.60 },
+          treasury: { total: 0 },
+        },
+        nav: { account: 10_020, treasury: 989_957.40, book: 999_977.40 },
+        balance: {
+          account: { cash: 10_042.60, receivable: 458.70, payable: 501.30, positions: 20, assets: 10_521.30, liabilities: 501.30, netAssets: 10_020 },
+          treasury: { cash: 989_957.40, assets: 989_957.40, liabilities: 0, netAssets: 989_957.40 },
+          book: { cash: 1_000_000, receivable: 458.70, payable: 501.30, positions: 20, assets: 1_000_478.70, liabilities: 501.30, netAssets: 999_977.40 },
+        },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: MAR(3),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 458.70 USD into settled cash', date: '2026-03-03' },
+          { type: 'settlement.pay', summary: 'paid 250.65 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 250.65 USD from settled cash' },
+        ],
+        cash: { account: { USD: { settled: 10_000, unsettled: 0, availableToTrade: 0, availableToWithdraw: 0 } } },
+        pending: [],
+        balance: { account: { cash: 10_000, receivable: null, payable: null, assets: 10_020, liabilities: 0 }, book: { cash: 999_957.40, receivable: null, payable: null, assets: 999_977.40, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'fund-account', covers: 'internal funding', action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 20_000,
+      expect: {
+        events: [{ type: 'transfer.funding', summary: 'Treasury funding: 20,000.00 USD from Treasury to Alpha' }],
+        cash: { account: { USD: { settled: 30_000, availableToTrade: 20_000, availableToWithdraw: 20_000 } }, treasury: { USD: { settled: 969_957.40, availableToTrade: 969_957.40, availableToWithdraw: 969_957.40 } } },
+        nav: { account: 30_020, treasury: 969_957.40 },
+        balance: { account: { cash: 30_000, assets: 30_020, netAssets: 30_020 }, treasury: { cash: 969_957.40, assets: 969_957.40, netAssets: 969_957.40 } },
+      },
+    },
+    { id: 'p50-quote-stops', action: 'quote', instrument: 'p50', quote: { bid: 2.30, ask: 2.40, last: 2.35, bidSize: 20, askSize: 20, asOf: MAR(3, '09:50') }, expect: {} },
+    {
+      ...synlOne('retry'), id: 'open-retry', covers: ['open', 'failed leg'],
+      expect: {
+        preview: {
+          blocking: 0, warnings: ['not-executable'],
+          legs: [
+            { kind: 'trade', action: 'buy', instrument: 'c50', qty: 1, estimate: 2.50, settleDate: '2026-03-04', cash: -250, fees: 0.65, dependsOn: [] },
+            { kind: 'trade', action: 'sell', instrument: 'p50', qty: 1, estimate: null, reference: 2.35, executable: false, settleDate: '2026-03-04', cash: 235, fees: 0.65, dependsOn: [] },
+          ],
+          cash: { USD: { purchases: 250, proceeds: 235, fees: 1.30, reserved: 5_000, required: 5_251.30, available: 20_000, shortfall: 0 } },
+        },
+        result: { status: 'partial', orders: [{ instrument: 'c50', status: 'filled', filledQty: 1, avgPrice: 2.50 }, { instrument: 'p50', status: 'working', filledQty: 0 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1 RWC260417C50 @ 2.50 USD', date: '2026-03-03' }],
+        cash: { account: { USD: { settled: 30_000, unsettled: -250.65, reserved: 10_000, availableToTrade: 19_749.35, availableToWithdraw: 19_749.35 } } },
+        positions: [
+          { instrument: 'c50', lot: 'retry', owner: 'account', direction: 'long', qty: 1, avgCost: 2.50, cost: 250, price: 2.45, value: 245, unrealized: -5 },
+          { instrument: 'c50', lot: 'synthetic', value: 490 },
+          { instrument: 'p50', lot: 'synthetic', value: -470 },
+        ],
+        holdings: { c50: { long: 3, short: 0, net: 3 } },
+        pending: [{ instrument: 'c50', lot: 'retry', dueDate: '2026-03-04', amount: -250.65 }],
+        openOrders: [{ instrument: 'p50', kind: 'trade', action: 'sell', status: 'working', qty: 1, filledQty: 0 }],
+        lifecycle: [{ instrument: 'c50' }, { instrument: 'c50' }, { instrument: 'p50' }],
+        pnl: { account: { commissions: -3.25, unrealized: -25, total: -28.25 }, book: { commissions: -3.25, unrealized: -25, total: -28.25 } },
+        nav: { account: 30_014.35, book: 999_971.75 },
+        balance: {
+          account: { cash: 30_000, payable: 250.65, positions: 265, assets: 30_265, liabilities: 250.65, netAssets: 30_014.35 },
+          book: { cash: 999_957.40, payable: 250.65, positions: 265, assets: 1_000_222.40, liabilities: 250.65, netAssets: 999_971.75 },
+        },
+      },
+    },
+    {
+      ...synlOne('accept'), id: 'open-accept', covers: ['open', 'failed leg'],
+      expect: {
+        preview: { blocking: 0, legs: [{ instrument: 'c50', qty: 1 }, { instrument: 'p50', qty: 1, estimate: null }], cash: { USD: { required: 5_251.30, available: 19_749.35, shortfall: 0 } } },
+        result: { status: 'partial', orders: [{ instrument: 'c50', status: 'filled' }, { instrument: 'p50', status: 'working' }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1 RWC260417C50 @ 2.50 USD' }],
+        cash: { account: { USD: { settled: 30_000, unsettled: -501.30, availableToTrade: 19_498.70, availableToWithdraw: 19_498.70 } } },
+        positions: [{ instrument: 'c50', lot: 'accept', value: 245 }, { instrument: 'c50', lot: 'retry' }, { instrument: 'c50', lot: 'synthetic' }, { instrument: 'p50', lot: 'synthetic' }],
+        holdings: { c50: { long: 4, short: 0, net: 4 } },
+        pending: [{ lot: 'accept', amount: -250.65 }, { lot: 'retry', amount: -250.65 }],
+        openOrders: [{ instrument: 'p50', status: 'working' }, { instrument: 'p50', status: 'working' }],
+        lifecycle: [{ instrument: 'c50' }, { instrument: 'c50' }, { instrument: 'c50' }, { instrument: 'p50' }],
+        pnl: { account: { commissions: -3.90, unrealized: -30, total: -33.90 }, book: { commissions: -3.90, unrealized: -30, total: -33.90 } },
+        nav: { account: 30_008.70, book: 999_966.10 },
+        balance: {
+          account: { cash: 30_000, payable: 501.30, positions: 510, assets: 30_510, liabilities: 501.30, netAssets: 30_008.70 },
+          book: { cash: 999_957.40, payable: 501.30, positions: 510, assets: 1_000_467.40, liabilities: 501.30, netAssets: 999_966.10 },
+        },
+      },
+    },
+    {
+      ...synlOne('unwind'), id: 'open-unwind', covers: ['open', 'failed leg'],
+      expect: {
+        preview: { blocking: 0, legs: [{ instrument: 'c50', qty: 1 }, { instrument: 'p50', qty: 1, estimate: null }], cash: { USD: { required: 5_251.30, available: 19_498.70, shortfall: 0 } } },
+        result: { status: 'partial', orders: [{ instrument: 'c50', status: 'filled' }, { instrument: 'p50', status: 'working' }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1 RWC260417C50 @ 2.50 USD' }],
+        cash: { account: { USD: { settled: 30_000, unsettled: -751.95, availableToTrade: 19_248.05, availableToWithdraw: 19_248.05 } } },
+        positions: [{ instrument: 'c50', lot: 'accept' }, { instrument: 'c50', lot: 'retry' }, { instrument: 'c50', lot: 'synthetic' }, { instrument: 'c50', lot: 'unwind', value: 245 }, { instrument: 'p50', lot: 'synthetic' }],
+        holdings: { c50: { long: 5, short: 0, net: 5 } },
+        pending: [{ lot: 'accept' }, { lot: 'retry' }, { lot: 'unwind', amount: -250.65 }],
+        openOrders: [{ instrument: 'p50', status: 'working' }, { instrument: 'p50', status: 'working' }, { instrument: 'p50', status: 'working' }],
+        lifecycle: [{ instrument: 'c50' }, { instrument: 'c50' }, { instrument: 'c50' }, { instrument: 'c50' }, { instrument: 'p50' }],
+        pnl: { account: { commissions: -4.55, unrealized: -35, total: -39.55 }, book: { commissions: -4.55, unrealized: -35, total: -39.55 } },
+        nav: { account: 30_003.05, book: 999_960.45 },
+        balance: {
+          account: { cash: 30_000, payable: 751.95, positions: 755, assets: 30_755, liabilities: 751.95, netAssets: 30_003.05 },
+          book: { cash: 999_957.40, payable: 751.95, positions: 755, assets: 1_000_712.40, liabilities: 751.95, netAssets: 999_960.45 },
+        },
+      },
+    },
+    {
+      id: 'put-legs-expire', covers: ['failed leg', 'settlement'], action: 'clock', to: MAR(4),
+      expect: {
+        events: [
+          { type: 'settlement.pay', summary: 'paid 250.65 USD from settled cash', date: '2026-03-04' },
+          { type: 'settlement.pay', summary: 'paid 250.65 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 250.65 USD from settled cash' },
+          { type: 'order.expired', summary: 'Leg 2 expired: sell 1 RWC260417P50. Day order did not fill before the end of the business day' },
+          { type: 'order.expired', summary: 'Leg 2 expired: sell 1 RWC260417P50. Day order did not fill before the end of the business day' },
+          { type: 'order.expired', summary: 'Leg 2 expired: sell 1 RWC260417P50. Day order did not fill before the end of the business day' },
+        ],
+        cash: { account: { USD: { settled: 29_248.05, unsettled: 0, availableToTrade: 19_248.05, availableToWithdraw: 19_248.05 } } },
+        pending: [], openOrders: [],
+        failed: { orders: 3 },
+        alerts: ['strategy.attention', 'strategy.attention', 'strategy.attention'],
+        balance: { account: { cash: 29_248.05, payable: null, assets: 30_003.05, liabilities: 0 }, book: { cash: 999_205.45, payable: null, assets: 999_960.45, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'p50-quote-day3', action: 'quote', instrument: 'p50', quote: { bid: 2.10, ask: 2.20, last: 2.15, bidSize: 20, askSize: 20 },
+      expect: {
+        positions: [{ instrument: 'c50', lot: 'accept' }, { instrument: 'c50', lot: 'retry' }, { instrument: 'c50', lot: 'synthetic' }, { instrument: 'c50', lot: 'unwind' }, { instrument: 'p50', lot: 'synthetic', price: 2.15, value: -430, unrealized: 30 }],
+        pnl: { account: { unrealized: 5, total: 0.45 }, book: { unrealized: 5, total: 0.45 } },
+        nav: { account: 30_043.05, book: 1_000_000.45 },
+        balance: { account: { positions: 795, assets: 30_043.05, netAssets: 30_043.05 }, book: { positions: 795, assets: 1_000_000.45, netAssets: 1_000_000.45 } },
+      },
+    },
+    {
+      // Retry sells the put at 2.10 (209.35 after commission); its strike value, 5,000, is reserved.
+      id: 'retry', covers: ['retry', 'failed leg'], action: 'recover', how: 'retry', lot: 'retry',
+      expect: {
+        preview: { blocking: 0, errors: [], intent: 'retry', legs: [{ kind: 'trade', action: 'sell', instrument: 'p50', qty: 1, estimate: 2.10, settleDate: '2026-03-05', cash: 210, fees: 0.65 }], cash: { USD: { proceeds: 210, fees: 0.65, reserved: 5_000, required: 5_000.65, available: 19_248.05, shortfall: 0 } }, optionRequirement: [{ ccy: 'USD', amount: 5_000, finite: 5_000, naked: 0, uncoveredCallUnits: 0 }] },
+        result: { status: 'open', complete: true, orders: [{ action: 'sell', instrument: 'p50', status: 'filled', filledQty: 1, avgPrice: 2.10 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 1 RWC260417P50 @ 2.10 USD', date: '2026-03-04' }],
+        cash: { account: { USD: { settled: 29_248.05, unsettled: 209.35, reserved: 15_000, availableToTrade: 14_457.40, availableToWithdraw: 14_248.05 } } },
+        positions: [
+          { instrument: 'c50', lot: 'accept' }, { instrument: 'c50', lot: 'retry' }, { instrument: 'c50', lot: 'synthetic' }, { instrument: 'c50', lot: 'unwind' },
+          { instrument: 'p50', lot: 'retry', owner: 'account', direction: 'short', qty: -1, avgCost: 2.10, cost: -210, price: 2.15, value: -215, unrealized: -5 }, { instrument: 'p50', lot: 'synthetic', value: -430 },
+        ],
+        holdings: { p50: { long: 0, short: 3, net: -3 } },
+        pending: [{ instrument: 'p50', lot: 'retry', dueDate: '2026-03-05', amount: 209.35 }],
+        lifecycle: [{ instrument: 'c50' }, { instrument: 'c50' }, { instrument: 'c50' }, { instrument: 'c50' }, { instrument: 'p50' }, { instrument: 'p50' }],
+        alerts: ['strategy.attention', 'strategy.attention'],
+        pnl: { account: { commissions: -5.20, unrealized: 0, total: -5.20 }, book: { commissions: -5.20, unrealized: 0, total: -5.20 } },
+        nav: { account: 30_037.40, book: 999_994.80 },
+        balance: {
+          account: { cash: 29_248.05, receivable: 209.35, positions: 580, assets: 30_037.40, liabilities: 0, netAssets: 30_037.40 },
+          book: { cash: 999_205.45, receivable: 209.35, positions: 580, assets: 999_994.80, netAssets: 999_994.80 },
+        },
+      },
+    },
+    {
+      id: 'accept', covers: ['accept', 'failed leg'], action: 'strategy_action', lot: 'accept', how: 'accept',
+      expect: { events: [{ type: 'strategy.accepted', summary: 'accepted as it stands with 1 leg unexecuted. The position no longer matches its template.' }], alerts: ['strategy.attention'] },
+    },
+    {
+      id: 'unwind', covers: ['unwind', 'close'], action: 'recover', how: 'unwind', lot: 'unwind',
+      expect: {
+        preview: { blocking: 0, errors: [], intent: 'unwind', legs: [{ kind: 'trade', action: 'sell', instrument: 'c50', qty: 1, estimate: 2.40, settleDate: '2026-03-05', cash: 240, fees: 0.65, dependsOn: [] }] },
+        result: { status: 'closed', orders: [{ action: 'sell', instrument: 'c50', status: 'filled', filledQty: 1, avgPrice: 2.40 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 1 RWC260417C50 @ 2.40 USD (realized -10.00 USD)' }],
+        cash: { account: { USD: { settled: 29_248.05, unsettled: 448.70, availableToTrade: 14_696.75, availableToWithdraw: 14_248.05 } } },
+        positions: [
+          { instrument: 'c50', lot: 'accept' }, { instrument: 'c50', lot: 'retry' }, { instrument: 'c50', lot: 'synthetic' },
+          { instrument: 'p50', lot: 'retry' }, { instrument: 'p50', lot: 'synthetic' },
+        ],
+        holdings: { c50: { long: 4, short: 0, net: 4 } },
+        pending: [{ instrument: 'c50', lot: 'unwind', dueDate: '2026-03-05', amount: 239.35 }, { instrument: 'p50', lot: 'retry', amount: 209.35 }],
+        lifecycle: [{ instrument: 'c50' }, { instrument: 'c50' }, { instrument: 'c50' }, { instrument: 'p50' }, { instrument: 'p50' }],
+        alerts: [],
+        pnl: { account: { realized: -10, commissions: -5.85, unrealized: 5, total: -10.85 }, book: { realized: -10, commissions: -5.85, unrealized: 5, total: -10.85 } },
+        nav: { account: 30_031.75, book: 999_989.15 },
+        balance: {
+          account: { cash: 29_248.05, receivable: 448.70, positions: 335, assets: 30_031.75, liabilities: 0, netAssets: 30_031.75 },
+          book: { cash: 999_205.45, receivable: 448.70, positions: 335, assets: 999_989.15, netAssets: 999_989.15 },
+        },
+      },
+    },
+    {
+      id: 'settle-recovery', covers: 'settlement', action: 'clock', to: MAR(5),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 209.35 USD into settled cash', date: '2026-03-05' }, { type: 'settlement.receive', summary: 'received 239.35 USD into settled cash' }],
+        cash: { account: { USD: { settled: 29_696.75, unsettled: 0, availableToTrade: 14_696.75, availableToWithdraw: 14_696.75 } } },
+        pending: [],
+        balance: { account: { cash: 29_696.75, receivable: null, assets: 30_031.75 }, book: { cash: 999_654.15, receivable: null, assets: 999_989.15 } },
+      },
+    },
+    {
+      // Close "retry": the written put is bought back first at 2.20, then the call is sold at 2.40. -10 each.
+      id: 'close-retry', covers: ['close', 'dependency'], action: 'close', lot: 'retry', instrument: 'c50', scope: 'strategy', percent: 100,
+      expect: {
+        preview: {
+          blocking: 0, errors: [], intent: 'close',
+          legs: [
+            { kind: 'trade', action: 'buy', instrument: 'p50', qty: 1, estimate: 2.20, settleDate: '2026-03-06', cash: -220, fees: 0.65, dependsOn: [] },
+            { kind: 'trade', action: 'sell', instrument: 'c50', qty: 1, estimate: 2.40, settleDate: '2026-03-06', cash: 240, fees: 0.65, dependsOn: [1] },
+          ],
+          cash: { USD: { purchases: 220, proceeds: 240, fees: 1.30, reserved: 0, required: 221.30, available: 14_696.75, shortfall: 0 } },
+        },
+        result: { status: 'closed', orders: [{ instrument: 'p50', status: 'filled' }, { instrument: 'c50', status: 'filled' }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Bought 1 RWC260417P50 @ 2.20 USD (realized -10.00 USD)' },
+          { type: 'trade.fill', summary: 'Sold 1 RWC260417C50 @ 2.40 USD (realized -10.00 USD)' },
+        ],
+        cash: { account: { USD: { settled: 29_696.75, unsettled: 18.70, reserved: 10_000, availableToTrade: 19_715.45, availableToWithdraw: 19_476.10 } } },
+        positions: [{ instrument: 'c50', lot: 'accept', value: 245 }, { instrument: 'c50', lot: 'synthetic', value: 490 }, { instrument: 'p50', lot: 'synthetic', value: -430 }],
+        holdings: { c50: { long: 3, short: 0, net: 3 }, p50: { long: 0, short: 2, net: -2 } },
+        pending: [{ instrument: 'c50', lot: 'retry', dueDate: '2026-03-06', amount: 239.35 }, { instrument: 'p50', lot: 'retry', dueDate: '2026-03-06', amount: -220.65 }],
+        lifecycle: [{ instrument: 'c50' }, { instrument: 'c50' }, { instrument: 'p50' }],
+        pnl: { account: { realized: -30, commissions: -7.15, unrealized: 15, total: -22.15 }, book: { realized: -30, commissions: -7.15, unrealized: 15, total: -22.15 } },
+        nav: { account: 30_020.45, book: 999_977.85 },
+        balance: {
+          account: { cash: 29_696.75, receivable: 239.35, payable: 220.65, positions: 305, assets: 30_241.10, liabilities: 220.65, netAssets: 30_020.45 },
+          book: { cash: 999_654.15, receivable: 239.35, payable: 220.65, positions: 305, assets: 1_000_198.50, liabilities: 220.65, netAssets: 999_977.85 },
+        },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: MAR(6),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 239.35 USD into settled cash', date: '2026-03-06' }, { type: 'settlement.pay', summary: 'paid 220.65 USD from settled cash' }],
+        cash: { account: { USD: { settled: 29_715.45, unsettled: 0, availableToTrade: 19_715.45, availableToWithdraw: 19_715.45 } } },
+        pending: [],
+        balance: { account: { cash: 29_715.45, receivable: null, payable: null, assets: 30_020.45, liabilities: 0 }, book: { cash: 999_672.85, receivable: null, payable: null, assets: 999_977.85, liabilities: 0 } },
+      },
+    },
+    { id: 'stock-quote', action: 'quote', instrument: 'stock', quote: { bid: 55.98, ask: 56.02, last: 56.00, bidSize: 10000, askSize: 10000 }, expect: {} }, // no shares held yet
+    { id: 'expiry-close', action: 'close_price', instrument: 'stock', date: '2026-04-17', value: 56.00, expect: {} },
+    {
+      // Held across Good Friday. 17 April, close 56: the calls are exercised (closed at zero: -500 and -250 realized) and
+      // 200 + 100 shares received at 50 (10,000 and 5,000, due 20 April); the written put lapses on the same day (+460)
+      // and its 10,000 reserve is released. Realized -30 - 500 + 460 - 250 = -320. Shares worth 300 x 56 = 16,800.
+      id: 'expiry', covers: ['expiry', 'exercise', 'holiday', 'reserve release'], action: 'clock', to: APR(17, '17:30'),
+      expect: {
+        events: [
+          { type: 'option.exercised', summary: 'Exercised: 2 RWC260417C50 at strike 50', date: '2026-04-17' },
+          { type: 'option.delivery', summary: /^Simulated delivery: received 200 RWC at strike 50 on exercise of RWC260417C50/ },
+          { type: 'option.expired', summary: 'Expired worthless: 2 RWC260417P50 (fixing 56)', date: '2026-04-17' },
+          { type: 'option.exercised', summary: 'Exercised: 1 RWC260417C50 at strike 50' },
+          { type: 'option.delivery', summary: /^Simulated delivery: received 100 RWC at strike 50 on exercise of RWC260417C50/ },
+        ],
+        cash: { account: { USD: { settled: 29_715.45, unsettled: -15_000, reserved: 0, availableToTrade: 14_715.45, availableToWithdraw: 14_715.45 } } },
+        positions: [
+          { instrument: 'stock', lot: 'accept', owner: 'account', direction: 'long', qty: 100, avgCost: 50, cost: 5_000, price: 56, value: 5_600, unrealized: 600 },
+          { instrument: 'stock', lot: 'synthetic', owner: 'account', direction: 'long', qty: 200, avgCost: 50, cost: 10_000, price: 56, value: 11_200, unrealized: 1_200 },
+        ],
+        holdings: { c50: null, p50: null, stock: { long: 300, short: 0, net: 300 } },
+        pending: [{ instrument: 'stock', lot: 'synthetic', dueDate: '2026-04-20', amount: -10_000, into: 'cash' }, { instrument: 'stock', lot: 'accept', dueDate: '2026-04-20', amount: -5_000, into: 'cash' }],
+        lifecycle: [],
+        pnl: { account: { realized: -320, commissions: -7.15, unrealized: 1_800, total: 1_472.85 }, book: { realized: -320, commissions: -7.15, unrealized: 1_800, total: 1_472.85 } },
+        nav: { account: 31_515.45, book: 1_001_472.85 }, // 29,715.45 - 15,000 + 16,800
+        balance: {
+          account: { cash: 29_715.45, payable: 15_000, positions: 16_800, assets: 46_515.45, liabilities: 15_000, netAssets: 31_515.45 },
+          book: { cash: 999_672.85, payable: 15_000, positions: 16_800, assets: 1_016_472.85, liabilities: 15_000, netAssets: 1_001_472.85 },
+        },
+      },
+    },
+    {
+      id: 'settle-delivery', covers: 'settlement', action: 'clock', to: APR(20),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 10,000.00 USD from settled cash', date: '2026-04-20' }, { type: 'settlement.pay', summary: 'paid 5,000.00 USD from settled cash' }],
+        cash: { account: { USD: { settled: 14_715.45, unsettled: 0, availableToTrade: 14_715.45, availableToWithdraw: 14_715.45 } } },
+        pending: [],
+        balance: { account: { cash: 14_715.45, payable: null, assets: 31_515.45, liabilities: 0 }, book: { cash: 984_672.85, payable: null, assets: 1_001_472.85, liabilities: 0 } },
+      },
+    },
+    {
+      // 200 shares at the bid 55.98 = 11,196; commission 200 x 0.005 = 1.00 (the minimum). Realized 200 x 5.98 = 1,196.
+      id: 'close-synthetic', covers: ['close'], action: 'close', lot: 'synthetic', instrument: 'stock', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], intent: 'close', legs: [{ kind: 'trade', action: 'sell', instrument: 'stock', qty: 200, estimate: 55.98, settleDate: '2026-04-21', cash: 11_196, fees: 1 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', instrument: 'stock', status: 'filled', filledQty: 200, avgPrice: 55.98 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 200 RWC @ 55.98 USD (realized 1,196.00 USD)', date: '2026-04-20' }],
+        cash: { account: { USD: { settled: 14_715.45, unsettled: 11_195, availableToTrade: 25_910.45, availableToWithdraw: 14_715.45 } } },
+        positions: [{ instrument: 'stock', lot: 'accept', qty: 100, value: 5_600, unrealized: 600 }],
+        holdings: { stock: { long: 100, short: 0, net: 100 } },
+        pending: [{ instrument: 'stock', lot: 'synthetic', dueDate: '2026-04-21', amount: 11_195, into: 'cash' }],
+        pnl: { account: { realized: 876, commissions: -8.15, unrealized: 600, total: 1_467.85 }, book: { realized: 876, commissions: -8.15, unrealized: 600, total: 1_467.85 } },
+        nav: { account: 31_510.45, book: 1_001_467.85 },
+        balance: {
+          account: { cash: 14_715.45, receivable: 11_195, positions: 5_600, assets: 31_510.45, liabilities: 0, netAssets: 31_510.45 },
+          book: { cash: 984_672.85, receivable: 11_195, positions: 5_600, assets: 1_001_467.85, netAssets: 1_001_467.85 },
+        },
+      },
+    },
+    {
+      id: 'close-accept', covers: ['close'], action: 'close', lot: 'accept', instrument: 'stock', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'sell', instrument: 'stock', qty: 100, estimate: 55.98, settleDate: '2026-04-21', cash: 5_598, fees: 1 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 100, avgPrice: 55.98 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 100 RWC @ 55.98 USD (realized 598.00 USD)' }],
+        cash: { account: { USD: { settled: 14_715.45, unsettled: 16_792, availableToTrade: 31_507.45, availableToWithdraw: 14_715.45 } } },
+        positions: [],
+        holdings: { stock: null },
+        pending: [{ instrument: 'stock', lot: 'accept', dueDate: '2026-04-21', amount: 5_597 }, { instrument: 'stock', lot: 'synthetic', dueDate: '2026-04-21', amount: 11_195 }],
+        pnl: { account: { realized: 1_474, commissions: -9.15, unrealized: 0, total: 1_464.85 }, book: { realized: 1_474, commissions: -9.15, unrealized: 0, total: 1_464.85 } },
+        nav: { account: 31_507.45, book: 1_001_464.85 },
+        balance: {
+          account: { cash: 14_715.45, receivable: 16_792, positions: null, assets: 31_507.45, netAssets: 31_507.45 },
+          book: { cash: 984_672.85, receivable: 16_792, positions: null, assets: 1_001_464.85, netAssets: 1_001_464.85 },
+        },
+      },
+    },
+    {
+      // Nothing left: 1,000 + 9,042.60 + 20,000 funded, plus 1,464.85.
+      id: 'settle-final', covers: 'settlement', action: 'clock', to: APR(21),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 11,195.00 USD into settled cash', date: '2026-04-21' }, { type: 'settlement.receive', summary: 'received 5,597.00 USD into settled cash' }],
+        cash: { account: { USD: { settled: 31_507.45, unsettled: 0, reserved: 0, availableToTrade: 31_507.45, availableToWithdraw: 31_507.45 } } },
+        pending: [],
+        balance: { account: { cash: 31_507.45, receivable: null, assets: 31_507.45 }, book: { cash: 1_001_464.85, receivable: null, assets: 1_001_464.85 } },
+      },
+    },
+  ],
+};
+
+export default [bearCall, longStraddle, longStrangle, ironCondor, ironButterfly, longButterfly, longCalendar, longDiagonal, syntheticLong];

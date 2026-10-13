@@ -200,7 +200,7 @@ const STATUS = { 'real-time': 'Real-time', delayed: 'Delayed', indicative: 'Indi
 export const SWAP_MARK_HINT = 'A swap is marked at its net present value per 100 notional, negative when it is against you. Include the interest accrued since the last payment: nothing accrues in the ledger between payment dates. On a cross-currency swap, leave out the principal already exchanged: it is on the balance sheet as lent and owed, and would be counted twice.';
 const CCY = /^[A-Z]{3}$/;
 function ManualForms({ rateCodes, onSaved }) {
-  const [fx, setFx] = useState({ base: '', quote: '', rate: null, note: '' });
+  const [fx, setFx] = useState({ base: '', quote: '', rate: null, forDate: '', note: '' });
   const [rate, setRate] = useState({ code: '', value: null, forDate: '', note: '' });
   const [px, setPx] = useState({ inst: null, value: null, bid: null, ask: null, forDate: '', note: '' });
   const [round, setRound] = useState(0); // a fresh picker after each saved price
@@ -212,7 +212,8 @@ function ManualForms({ rateCodes, onSaved }) {
     setBusy('');
   };
   const pairOk = CCY.test(fx.base) && CCY.test(fx.quote) && fx.base !== fx.quote;
-  const saveFx = () => send('fx', { kind: 'fx', subject: `${fx.base}/${fx.quote}`, value: fx.rate, currency: fx.quote, units: `${fx.quote} per ${fx.base}`, note: fx.note.trim() || null }, 'FX rate saved.', () => setFx({ base: '', quote: '', rate: null, note: '' }));
+  // s3: a fixing date makes it the published fixing of that date (a non-deliverable swap settles at it).
+  const saveFx = () => send('fx', { kind: 'fx', subject: `${fx.base}/${fx.quote}`, value: fx.rate, currency: fx.quote, units: `${fx.quote} per ${fx.base}`, forDate: fx.forDate || null, note: fx.note.trim() || null }, 'FX rate saved.', () => setFx({ base: '', quote: '', rate: null, forDate: '', note: '' }));
   const saveRate = () => send('rate', { kind: 'rate', subject: rate.code.trim(), value: rate.value, units: 'percent p.a.', forDate: rate.forDate || null, note: rate.note.trim() || null }, 'Rate saved.', () => setRate({ code: '', value: null, forDate: '', note: '' }));
   const savePx = () => send('px', { kind: 'price', subject: px.inst.id, value: px.value, bid: px.bid, ask: px.ask, currency: px.inst.tradingCcy, units: px.inst.priceUnits, forDate: px.forDate || null, note: px.note.trim() || null }, 'Price saved.', () => { setPx({ inst: null, value: null, bid: null, ask: null, forDate: '', note: '' }); setRound(round + 1); });
   const pxOk = px.inst && (isNum(px.value) || (isNum(px.bid) && isNum(px.ask)));
@@ -224,6 +225,7 @@ function ManualForms({ rateCodes, onSaved }) {
           <${Field} label="Base currency"><${Text} value=${fx.base} onInput=${(x) => setFx({ ...fx, base: x.toUpperCase() })} placeholder="EUR" /><//>
           <${Field} label="Quote currency" error=${fx.base && fx.base === fx.quote ? 'Must differ from the base.' : null}><${Text} value=${fx.quote} onInput=${(x) => setFx({ ...fx, quote: x.toUpperCase() })} placeholder="USD" /><//>
           <${Field} label=${pairOk ? `Rate (${fx.quote} per 1 ${fx.base})` : 'Rate (quote per 1 base)'} span="all"><${Num} value=${fx.rate} onInput=${(x) => setFx({ ...fx, rate: x })} /><//>
+          <${Field} label="FX fixing date" span="all" hint="Optional: the date of a published fixing (a non-deliverable swap settles at it). Empty: a current rate."><${Text} type="date" value=${fx.forDate} onInput=${(x) => setFx({ ...fx, forDate: x })} /><//>
           <${Field} label="Note" span="all" hint="Where the rate came from"><${Text} value=${fx.note} onInput=${(x) => setFx({ ...fx, note: x })} /><//>
         </div>
         <div><${Button} busy=${busy === 'fx'} disabled=${!pairOk || !(fx.rate > 0)} onClick=${saveFx}>Save FX rate<//></div>

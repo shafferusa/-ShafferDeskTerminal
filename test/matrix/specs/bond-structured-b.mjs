@@ -2645,4 +2645,292 @@ const leveragedLoanSpec = {
   ],
 };
 
-export default [specifiedPool, absSpec, cmoSpec, cloSpec, cdoSpec, clnSpec, structuredNoteSpec, catBondSpec, syndicatedLoanSpec, leveragedLoanSpec];
+// ---------------------------------------------------------------------------------------------
+// private_credit
+// ---------------------------------------------------------------------------------------------
+// A direct-lending unitranche loan held by the Account as a bilateral lender: Ridgeline Software Holdings Unitranche Term Loan
+// due 15 January 2032. Interest: 3-month term SOFR (TSOFR3M) + 6.00% in cash, plus 2.00% paid in kind (capitalised into
+// principal every coupon date), quarterly on 15 January, April, July and October, ACT/360. A delayed-draw commitment of 3,000,000
+// is funded when the borrower draws, at par, recorded by hand on an interest payment date; the undrawn amount earns a 0.50%
+// commitment fee, received quarterly and recorded by hand. There is no market quote: the loan is funded at closing at 98.00
+// (2% original issue discount) and valued by hand each quarter. Trades settle the same day.
+//   - Closing on Friday 15 January 2027 (a period start: no accrued); the closing valuation entered by hand (98.00).
+//   - MLK Day passes; the March valuation (98.50) is entered by hand; a draw off an interest payment date is refused.
+//   - Thursday 15 April: interest 11.90% for 90 days: 9.90% in cash, 2.00% capitalised (factor 1 to 1.005); the rate resets to
+//     the April fixing (3.75% + 6.00% cash, + 2.00% PIK). The borrower draws 2,010,000 (2,000,000 of face at factor 1.005); the
+//     quarter's commitment fee on the undrawn 3,000,000, 3,750.00, is received.
+//   - June valuation (99.00); 4,000,000 of face sold to another fund at 99.00 on 30 June.
+//   - Thursday 15 July: interest on the 8,000,000 held: 9.75% cash, 2.00% PIK (factor 1.005 to 1.0100808333). On Tuesday 20 July
+//     the borrower refinances: the loan is repaid at 101 (call protection) with the interest to date, recorded by hand.
+// Commission: 0.5 basis point of clean principal (the Book's schedule). Days (ACT/360) from 15 Jan: to 19 Jan 4, 30 Mar 74,
+// 12 Apr 87, 15 Apr 90; from 15 Apr: to 29 Jun 75, 30 Jun 76, 12 Jul 88, 15 Jul 91; from 15 Jul: to 19 Jul 4, 20 Jul 5.
+// Principal: 10,000,000 x 1.005 = 10,050,000; 12,000,000 x 1.005 = 12,060,000; 4,000,000 x 1.005 = 4,020,000; 8,000,000 x 1.005 =
+// 8,040,000; 8,000,000 x 1.0100808333 = 8,080,646.67.
+const privateCreditSpec = {
+  productId: 'private_credit',
+  title: 'Ridgeline Software unitranche (TSOFR3M + 6.00% cash + 2.00% PIK) held bilaterally: funded at an OID with a stated price, valued by hand quarterly, PIK capitalised with each coupon, delayed draw by hand on a payment date (refused off one), commitment fee by hand, partial sale, refinanced at 101 by hand',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action (Buy or Sell: no short sale of a loan)', 'Face amount', 'State a fill price (no market quote)'],
+    automaticInputs: ['TSOFR3M fixing of each interest period (rate fixture standing in for Shaffer MarketData)', 'accrued interest at the cash rate plus the PIK rate', 'the PIK part of each coupon capitalised', 'settlement date (same day)', 'commission from the Book fee schedule'],
+    manualInputs: ['Registration: Coupon Floating TSOFR3M + 6.00%, PIK rate 0.02, Undrawn commitment, Current coupon, Settlement convention 0', 'Fill prices stated on the ticket (no quote)', 'Quarterly valuations entered by hand (Instrument drawer, Enter a price by hand)', 'Draw recorded by hand from the position (Lifecycle, Draw funded)', 'Commitment fee recorded by hand (manual cash flow, Coupon)', 'Refinancing recorded by hand as an early redemption at 101'],
+    settlement: 'Same day (settlement convention 0)',
+    lifecycle: 'Automatic: daily accrual at the cash plus PIK rate, quarterly interest split into cash and PIK (principal and cost up), reset from the fixing. Manual: valuations (no market price), the draw (on an interest payment date), the commitment fee, the refinancing. Refused: a draw off an interest payment date (a stub period is not modelled)',
+    accounting: 'Cost per 100 of principal outstanding, PIK capitalised into cost; interest income in cash and in kind, commitment fee as interest income; OID and the 101 repayment through realized P&L; commission expensed; value from the manual mark',
+    collateral: 'None for a long position',
+  },
+  start: EST('2027-01-15'), // Friday
+  settlementCheck: { lag: 0, holidays: ['2027-01-18'] }, // MLK Day
+  book: {
+    name: 'Matrix private credit', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 15_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 14_000_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.5 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'private_credit', name: 'Ridgeline Software Holdings Unitranche Term Loan due 15-Jan-2032', symbol: 'RIDGELINE-UT-32', marketView: 'US_CASH', venueType: 'otc', issuer: 'Ridgeline Software Holdings LLC', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { settleLag: 0 },
+      terms: { couponType: 'float', referenceRate: 'TSOFR3M', spread: 0.06, currentCoupon: 0.099, pikRate: 0.02, frequency: 4, maturity: '2032-01-15', issueDate: '2027-01-15', dayCount: 'ACT/360', redemption: 100, seniority: 'Senior secured unitranche', undrawnCommitment: 3_000_000 } },
+  },
+  quotes: {}, // no market quote: fills at stated prices, valued by hand
+  expectAtStart: { ...startState(14_000_000, 1_000_000), cash: { account: usdCash(14_000_000), treasury: usdCash(1_000_000) } },
+  steps: [
+    {
+      // Funded at closing at 98.00: 10,000,000 x 98 / 100 = 9,800,000; no accrued (the first day of the period); 0.5 bp = 490.00.
+      id: 'open', covers: ['open', 'stated fill price'], action: 'ticket', instrument: 'main', side: 'buy', qty: 10_000_000, as: 'lot', order: { statedPrice: 98 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 10_000_000, estimate: 98, model: 'stated-price', priceSource: null, settleDate: '2027-01-15', calendar: 'USBOND',
+            gross: 9_800_000, accrued: 0, cash: -9_800_000, fees: 490 }],
+          cash: { USD: { purchases: 9_800_000, fees: 490, required: 9_800_490, available: 14_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 10_000_000, avgPrice: 98, fills: [{ qty: 10_000_000, price: 98, model: 'stated-price', settleDate: '2027-01-15' }] }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Bought 10,000,000 RIDGELINE-UT-32 @ 98.00 USD', owner: 'account', date: '2027-01-15' },
+          { type: 'settlement.pay', summary: 'paid 9,800,490.00 USD from settled cash', cash: { USD: -9_800_490 }, date: '2027-01-15' },
+        ],
+        cash: { account: { USD: { settled: 4_199_510, unsettled: 0, availableToTrade: 4_199_510 } } },
+        // No price yet: carried at cost, provisional.
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 10_000_000, avgCost: 98, cost: 9_800_000, price: null, value: null, unrealized: null, accrued: 0, provisional: true, priceSource: null }],
+        holdings: { main: { long: 10_000_000, short: 0, net: 10_000_000 } },
+        pending: [],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-04-15', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2032-01-15', status: 'pending' }],
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -490, fees: 0, borrowFunding: 0, total: -490, complete: false } },
+        nav: { account: 13_999_510, book: 14_999_510 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 4_199_510, positions: 9_800_000, payable: null, assets: 13_999_510, liabilities: 0, netAssets: 13_999_510 } },
+      },
+    },
+    {
+      id: 'closing-valuation', covers: 'valuation (by hand)', action: 'manual_price', instrument: 'main', value: 98, note: 'Closing valuation: funded price',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 10_000_000, price: 98, value: 9_800_000, unrealized: 0, provisional: false, priceSource: 'Manual entry' }],
+        pnl: { account: { unrealized: 0, total: -490, complete: true } },
+        nav: { account: 13_999_510, book: 14_999_510 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 9_800_000, assets: 13_999_510, netAssets: 13_999_510 } },
+      },
+    },
+    {
+      // Wednesday 20 January, after MLK Day. End of day 19 Jan: 10,000,000 x 11.90% (9.90% + 2.00% PIK) x 4/360 = 13,222.22.
+      id: 'after-mlk', covers: ['accrual', 'market holiday'], action: 'clock', to: EST('2027-01-20'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on RIDGELINE-UT-32: 13,222.22 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 10_000_000, accrued: 13_222.22 }],
+        pnl: { account: { couponInterest: 13_222.22, total: 12_732.22 } },
+        nav: { account: 14_012_732.22, book: 15_012_732.22 },
+        balance: { account: { accruedIncome: 13_222.22, assets: 14_012_732.22, netAssets: 14_012_732.22 } },
+      },
+    },
+    {
+      // Wednesday 31 March. End of day 30 Mar: 74 days = 244,611.11; 231,388.89 more.
+      id: 'quarter-end', covers: 'accrual', action: 'clock', to: EDT('2027-03-31'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on RIDGELINE-UT-32: 231,388.89 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 10_000_000, accrued: 244_611.11 }],
+        pnl: { account: { couponInterest: 244_611.11, total: 244_121.11 } },
+        nav: { account: 14_244_121.11, book: 15_244_121.11 },
+        balance: { account: { accruedIncome: 244_611.11, assets: 14_244_121.11, netAssets: 14_244_121.11 } },
+      },
+    },
+    {
+      id: 'march-valuation', covers: 'valuation (by hand)', action: 'manual_price', instrument: 'main', value: 98.5, note: 'Quarterly valuation, 31 March',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 10_000_000, price: 98.5, value: 9_850_000, unrealized: 50_000 }],
+        pnl: { account: { unrealized: 50_000, total: 294_121.11 } },
+        nav: { account: 14_294_121.11, book: 15_294_121.11 },
+        balance: { account: { positions: 9_850_000, assets: 14_294_121.11, netAssets: 14_294_121.11 } },
+      },
+    },
+    {
+      // Tuesday 13 April. End of day 12 Apr: 87 days = 287,583.33; 42,972.22 more.
+      id: 'accrue-april', covers: 'accrual', action: 'clock', to: EDT('2027-04-13'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on RIDGELINE-UT-32: 42,972.22 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 10_000_000, accrued: 287_583.33 }],
+        pnl: { account: { couponInterest: 287_583.33, total: 337_093.33 } },
+        nav: { account: 14_337_093.33, book: 15_337_093.33 },
+        balance: { account: { accruedIncome: 287_583.33, assets: 14_337_093.33, netAssets: 14_337_093.33 } },
+      },
+    },
+    {
+      // A draw requested for today is refused: it funds at the start of an interest period (15 April).
+      id: 'draw-off-payment-date', covers: 'draw (by hand)', action: 'lifecycle', lot: 'lot', body: { action: 'draw', amount: 2_010_000 },
+      status: 'blocked', reason: 'A draw is funded on an interest payment date; a stub period is not modelled.',
+      expect: { refused: 'A draw funds at the start of an interest period' },
+    },
+    // The April term SOFR fixing, 3.75%, from the fixture.
+    { id: 'april-fixing', covers: 'rate reset', action: 'rate', code: 'TSOFR3M', value: 3.75, date: '2027-04-13', expect: { events: [] } },
+    {
+      // Thursday 15 April: 90 days at 11.90% on 10,000,000 = 297,500.00: 9.90% in cash, 247,500.00, and 2.00% in kind, 50,000.00,
+      // capitalised: factor 1 x (1 + 0.5%) = 1.005, cost 9,800,000 + 50,000 = 9,850,000. The balance stands at 15 April: 0, so
+      // 297,500.00 - 287,583.33 = 9,916.67 more. The rate resets to 3.75% + 6.00% = 9.75% cash (11.75% with the PIK).
+      id: 'interest-cash-and-pik', covers: ['coupon', 'PIK interest', 'rate reset'], action: 'clock', to: EDT('2027-04-15'),
+      expect: {
+        events: [
+          { type: 'bond.coupon', summary: 'Coupon received on 10,000,000 RIDGELINE-UT-32: 247,500.00 USD in cash and 50,000.00 USD paid in kind (2.000% PIK added to principal, factor 1 to 1.005): 297,500.00 USD', cash: { USD: 247_500 }, owner: 'account', date: '2027-04-15' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on RIDGELINE-UT-32: 9,916.67 USD' },
+        ],
+        cash: { account: { USD: { settled: 4_447_010, availableToTrade: 4_447_010 } } },
+        // avgCost 9,850,000 / 100,500 = 98.00995; value 10,050,000 x 98.50 / 100 = 9,899,250.
+        positions: [{ instrument: 'main', lot: 'lot', qty: 10_000_000, cost: 9_850_000, avgCost: 98.00995, price: 98.5, value: 9_899_250, unrealized: 49_250, accrued: 0 }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-07-15', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2032-01-15', status: 'pending' }],
+        pnl: { account: { couponInterest: 297_500, unrealized: 49_250, total: 346_260 } },
+        nav: { account: 14_346_260, book: 15_346_260 },
+        balance: { account: { cash: 4_447_010, accruedIncome: null, positions: 9_899_250, assets: 14_346_260, netAssets: 14_346_260 } },
+      },
+    },
+    {
+      // The borrower draws 2,010,000 on the payment date, recorded by hand: funded at par now; 2,010,000 / 1.005 = 2,000,000 of face;
+      // cost 9,850,000 + 2,010,000 = 11,860,000; undrawn commitment 3,000,000 to 990,000.
+      id: 'draw', covers: 'draw (by hand)', action: 'lifecycle', lot: 'lot', body: { action: 'draw', amount: 2_010_000 },
+      expect: {
+        events: [{ type: 'loan.draw', summary: 'Draw funded on RIDGELINE-UT-32, recorded by hand: 2,010,000.00 USD of principal at par (2,000,000 face at factor 1.005); undrawn commitment 3,000,000.00 USD to 990,000.00 USD', cash: { USD: -2_010_000 }, owner: 'account', date: '2027-04-15' }],
+        cash: { account: { USD: { settled: 2_437_010, availableToTrade: 2_437_010 } } },
+        // avgCost 11,860,000 / 120,600 = 98.341625; value 12,060,000 x 98.50 / 100 = 11,879,100.
+        positions: [{ instrument: 'main', lot: 'lot', qty: 12_000_000, cost: 11_860_000, avgCost: 98.341625, price: 98.5, value: 11_879_100, unrealized: 19_100, accrued: 0 }],
+        holdings: { main: { long: 12_000_000, short: 0, net: 12_000_000 } },
+        pnl: { account: { unrealized: 19_100, total: 316_110 } },
+        nav: { account: 14_316_110, book: 15_316_110 },
+        balance: { account: { cash: 2_437_010, positions: 11_879_100, assets: 14_316_110, netAssets: 14_316_110 } },
+      },
+    },
+    {
+      // The commitment fee for 15 Jan to 15 Apr on the undrawn 3,000,000: 0.50% x 90/360 = 3,750.00, received; recorded by hand.
+      id: 'commitment-fee', covers: 'commitment fee (by hand)', action: 'cashflow', lot: 'lot', category: 'coupon', amount: 3_750, note: 'Commitment fee 0.50% a year on the undrawn 3,000,000, 15 Jan to 15 Apr',
+      expect: {
+        events: [{ type: 'manual.cashflow', summary: 'Manual coupon on RIDGELINE-UT-32: received 3,750.00 USD. Commitment fee 0.50% a year on the undrawn 3,000,000, 15 Jan to 15 Apr', cash: { USD: 3_750 }, owner: 'account' }],
+        cash: { account: { USD: { settled: 2_440_760, availableToTrade: 2_440_760 } } },
+        pnl: { account: { couponInterest: 301_250, total: 319_860 } },
+        nav: { account: 14_319_860, book: 15_319_860 },
+        balance: { account: { cash: 2_440_760, assets: 14_319_860, netAssets: 14_319_860 } },
+      },
+    },
+    {
+      // Wednesday 30 June. End of day 29 Jun: 12,060,000 x 11.75% x 75/360 = 295,218.75.
+      id: 'accrue-june', covers: 'accrual', action: 'clock', to: EDT('2027-06-30'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on RIDGELINE-UT-32: 295,218.75 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 12_000_000, accrued: 295_218.75 }],
+        pnl: { account: { couponInterest: 596_468.75, total: 615_078.75 } },
+        nav: { account: 14_615_078.75, book: 15_615_078.75 },
+        balance: { account: { accruedIncome: 295_218.75, assets: 14_615_078.75, netAssets: 14_615_078.75 } },
+      },
+    },
+    {
+      id: 'june-valuation', covers: 'valuation (by hand)', action: 'manual_price', instrument: 'main', value: 99, note: 'Quarterly valuation, 30 June',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 12_000_000, price: 99, value: 11_939_400, unrealized: 79_400 }], // 12,060,000 x 99 / 100
+        pnl: { account: { unrealized: 79_400, total: 675_378.75 } },
+        nav: { account: 14_675_378.75, book: 15_675_378.75 },
+        balance: { account: { positions: 11_939_400, assets: 14_675_378.75, netAssets: 14_675_378.75 } },
+      },
+    },
+    {
+      // 4,000,000 of face sold to another fund at 99.00, settling today: principal 4,020,000 x 99 / 100 = 3,979,800; 76 days at 11.75%
+      // 99,718.33; 0.5 bp = 198.99. Cost out 11,860,000 x 4 / 12 = 3,953,333.33: realized 26,466.67.
+      id: 'reduce', covers: ['reduce', 'stated fill price'], action: 'ticket', instrument: 'main', side: 'sell', qty: 4_000_000, from: 'lot', order: { statedPrice: 99 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 4_000_000, estimate: 99, model: 'stated-price', settleDate: '2027-06-30', notional: 4_020_000, gross: 3_979_800, accrued: 99_718.33, cash: 4_079_518.33, fees: 198.99 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 4_000_000, avgPrice: 99 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 4,000,000 RIDGELINE-UT-32 @ 99.00 USD (realized 26,466.67 USD)' },
+          { type: 'settlement.receive', summary: 'received 4,079,319.34 USD into settled cash', cash: { USD: 4_079_319.34 } },
+        ],
+        cash: { account: { USD: { settled: 6_520_079.34, unsettled: 0, availableToTrade: 6_520_079.34 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 8_000_000, cost: 7_906_666.67, avgCost: 98.341625, price: 99, value: 7_959_600, unrealized: 52_933.33, accrued: 195_500.42 }], // 8,040,000 x 99 / 100
+        holdings: { main: { long: 8_000_000, short: 0, net: 8_000_000 } },
+        pnl: { account: { realized: 26_466.67, commissions: -688.99, unrealized: 52_933.33, total: 675_179.76 } },
+        nav: { account: 14_675_179.76, book: 15_675_179.76 },
+        balance: { account: { cash: 6_520_079.34, accruedIncome: 195_500.42, positions: 7_959_600, assets: 14_675_179.76, netAssets: 14_675_179.76 } },
+      },
+    },
+    {
+      // Tuesday 13 July. End of day 12 Jul: the 8,000,000 held (8,040,000 of principal) x 11.75% x 88/360 = 230,926.67; 35,426.25 more.
+      id: 'accrue-july', covers: 'accrual', action: 'clock', to: EDT('2027-07-13'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on RIDGELINE-UT-32: 35,426.25 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 8_000_000, accrued: 230_926.67 }],
+        pnl: { account: { couponInterest: 631_895, total: 710_606.01 } },
+        nav: { account: 14_710_606.01, book: 15_710_606.01 },
+        balance: { account: { accruedIncome: 230_926.67, assets: 14_710_606.01, netAssets: 14_710_606.01 } },
+      },
+    },
+    { id: 'july-fixing', covers: 'rate reset', action: 'rate', code: 'TSOFR3M', value: 3.7, date: '2027-07-13', expect: { events: [] } },
+    {
+      // Thursday 15 July: 91 days at 11.75% on 8,040,000 = 238,799.17: PIK 2.00% x 91/360 = 40,646.67 capitalised (factor 1.005 x
+      // (1 + 0.5055556%) = 1.0100808333), cash 198,152.50. 238,799.17 - 230,926.67 = 7,872.50 more. Reset: 3.70% + 6.00% = 9.70%.
+      id: 'interest-july', covers: ['coupon', 'PIK interest', 'rate reset'], action: 'clock', to: EDT('2027-07-15'),
+      expect: {
+        events: [
+          { type: 'bond.coupon', summary: 'Coupon received on 8,000,000 RIDGELINE-UT-32 (factor 1.005: current face 8,040,000): 198,152.50 USD in cash and 40,646.67 USD paid in kind (2.000% PIK added to principal, factor 1.005 to 1.0100808333): 238,799.17 USD', cash: { USD: 198_152.5 }, owner: 'account', date: '2027-07-15' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on RIDGELINE-UT-32: 7,872.50 USD' },
+        ],
+        cash: { account: { USD: { settled: 6_718_231.84, availableToTrade: 6_718_231.84 } } },
+        // cost 7,906,666.67 + 40,646.67 = 7,947,313.34; avgCost / 80,806.466664 = 98.349967; value 8,080,646.67 x 99 / 100 = 7,999,840.20.
+        positions: [{ instrument: 'main', lot: 'lot', qty: 8_000_000, cost: 7_947_313.34, avgCost: 98.349967, price: 99, value: 7_999_840.2, unrealized: 52_526.86, accrued: 0 }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-10-15', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2032-01-15', status: 'pending' }],
+        pnl: { account: { couponInterest: 639_767.5, unrealized: 52_526.86, total: 718_072.04 } },
+        nav: { account: 14_718_072.04, book: 15_718_072.04 },
+        balance: { account: { cash: 6_718_231.84, accruedIncome: null, positions: 7_999_840.2, assets: 14_718_072.04, netAssets: 14_718_072.04 } },
+      },
+    },
+    {
+      // Tuesday 20 July. End of day 19 Jul: 8,080,646.67 x 11.70% x 4/360 = 10,504.84.
+      id: 'accrue-to-refinancing', covers: 'accrual', action: 'clock', to: EDT('2027-07-20'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on RIDGELINE-UT-32: 10,504.84 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 8_000_000, accrued: 10_504.84 }],
+        pnl: { account: { couponInterest: 650_272.34, total: 728_576.88 } },
+        nav: { account: 14_728_576.88, book: 15_728_576.88 },
+        balance: { account: { accruedIncome: 10_504.84, assets: 14_728_576.88, netAssets: 14_728_576.88 } },
+      },
+    },
+    {
+      // The borrower refinances: repaid at 101 under the call protection, recorded by hand. 8,080,646.67 x 101% = 8,161,453.13, plus
+      // 5 days at 11.70% (cash and PIK, paid in cash at the repayment) 13,131.05 (2,626.21 more than on the books). Realized
+      // 8,161,453.13 - 7,947,313.34 = 214,139.79. Settled today.
+      id: 'refinanced', covers: ['early repayment (by hand)', 'close'], action: 'lifecycle', lot: 'lot', body: { action: 'redeem', price: 101, face: 8_000_000, label: 'Refinanced: repaid at 101 under the call protection' },
+      expect: {
+        events: [
+          { type: 'bond.early_redemption', summary: 'Refinanced: repaid at 101 under the call protection: 8,000,000 RIDGELINE-UT-32 at 101.00% of par on current face 8,080,646.67', owner: 'account', date: '2027-07-20' },
+          { type: 'settlement.receive', summary: 'received 8,174,584.18 USD into settled cash', cash: { USD: 8_174_584.18 } }, // settled the same day, before the position's disposal true-up
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of RIDGELINE-UT-32: 2,626.21 USD' },
+        ],
+        cash: { account: { USD: { settled: 14_892_816.02, unsettled: 0, availableToTrade: 14_892_816.02 } }, treasury: usdCash(1_000_000) },
+        positions: [],
+        holdings: { main: null },
+        pending: [],
+        lifecycle: [],
+        pnl: { account: { realized: 240_606.46, couponInterest: 652_898.55, commissions: -688.99, unrealized: 0, total: 892_816.02 } },
+        nav: { account: 14_892_816.02, book: 15_892_816.02 },
+        balance: { account: { cash: 14_892_816.02, receivable: null, positions: null, accruedIncome: null, assets: 14_892_816.02, liabilities: 0, netAssets: 14_892_816.02 } },
+      },
+    },
+  ],
+};
+
+export default [specifiedPool, absSpec, cmoSpec, cloSpec, cdoSpec, clnSpec, structuredNoteSpec, catBondSpec, syndicatedLoanSpec, leveragedLoanSpec, privateCreditSpec];

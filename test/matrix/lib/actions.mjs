@@ -375,6 +375,23 @@ export async function actThroughClient(t, ctx, step) {
         await t.manualPrice({ kind: 'price', subject: i.id, value: step.value ?? null, bid: step.bid ?? null, ask: step.ask ?? null, currency: i.tradingCcy, units: i.priceUnits, forDate: step.forDate || null, note: step.note || null });
         return {};
       }
+      case 'manual_fx': {
+        // s3: an FX fixing entered by hand for one date (Data connection, Manual entries, FX rate with its fixing date):
+        // `pair: 'USD/INR'` (quote per base), `rate`, `date`.
+        const [b, q] = String(step.pair).split('/');
+        await t.manualPrice({ kind: 'fx', subject: step.pair, value: step.rate, currency: q, units: `${q} per ${b}`, forDate: step.date || null, note: step.note || null });
+        return {};
+      }
+      case 'basket_level': {
+        // s3: the level of a basket at a reset, entered by hand on the blocked payment item of the swap's return leg
+        // (Accounting, Pending). `lot` (and `instrument`) name the position.
+        const { position } = await positionIn(t, ctx, step.lot, step.instrument);
+        const pend = await t.accounting(ctx.bookId, 'pending', { scope: 'book' });
+        const task = pend.lifecycle.find((x) => x.positionId === position.positionId && x.type === 'swap.payment' && (x.needs || []).some((n) => n.kind === 'basket-level'));
+        if (!task) throw new Error(`"${step.lot}" has no payment item waiting for a basket level.`);
+        await t.http.post(`/api/tasks/${task.id}/settlement-amount`, { value: step.value });
+        return {};
+      }
       case 'manual_rate':
         // A reference-rate fixing entered by hand (Data connection, Manual entries): percent a year, for one date.
         await t.manualPrice({ kind: 'rate', subject: step.code, value: step.value, units: 'percent p.a.', forDate: step.date || null, note: step.note || null });

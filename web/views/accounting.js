@@ -578,6 +578,19 @@ function TaskAmount({ t, onChanged }) {
     <${Button} small busy=${busy} disabled=${!isNum(amount) || amount < 0} onClick=${save}>Save settlement amount<//></div>
     <div class="sub">Total due to the option holder. Enter 0 if it expired worthless.${isNum(t.data?.manualAmount) ? ` Saved so far: ${fmtNum(t.data.manualAmount)}.` : ''}</div>`;
 }
+/** s3: the level of an equity basket at a reset, entered by hand on the payment item of a basket swap's return leg. */
+function TaskBasketLevel({ t, onChanged }) {
+  const [value, setValue] = useState(t.data?.basketLevel ?? null);
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    setBusy(true);
+    try { await post(`/api/tasks/${t.id}/settlement-amount`, { value }); toast('Basket level saved. The payment is made on the next engine cycle.'); bump(); onChanged(); } catch (err) { toastError(err); }
+    setBusy(false);
+  };
+  return html`<div class="row" style="flex-wrap:nowrap;margin-top:4px"><div style="width:120px"><${Num} value=${value} onInput=${setValue} placeholder="basket level" /></div>
+    <${Button} small busy=${busy} disabled=${!isNum(value) || value <= 0} onClick=${save}>Save basket level<//></div>
+    <div class="sub">The composite's level at this reset, entered by hand: no service supplies it. The return is worked out from it against the level the period started from.</div>`;
+}
 /** The value a basket or spread option settles against, entered by hand on its expiry item. */
 function TaskValue({ t, onChanged }) {
   const [value, setValue] = useState(t.data?.settlementValue ?? null);
@@ -596,6 +609,8 @@ function PendingTab({ d, units, multi, owner, setOwner, reload }) {
   const open = d.openOrders.filter(mine), part = d.partiallyFilled.filter(mine), settle = d.awaitingSettlement.filter(mine), tasks = d.lifecycle.filter(mine);
   const blocked = tasks.filter((t) => t.status === 'blocked');
   const need = (t) => (t.needs || []).map((n) => (n.kind === 'settlement-amount' ? html`<${TaskAmount} t=${t} onChanged=${reload} />`
+    : n.kind === 'basket-level' ? html`<${TaskBasketLevel} t=${t} onChanged=${reload} />`
+    : n.kind === 'fx' && n.subject ? html`<div class="sub">Needs the ${n.subject} fixing of ${n.date || ''}: enter it under <a href="#/data/manual">Data connection, Manual entries</a> (FX rate, with its fixing date).</div>`
     : n.kind === 'settlement-value' ? html`<${TaskValue} t=${t} onChanged=${reload} />`
     : n.kind === 'lookback-extreme' ? html`<div class="sub">Needs the observed extreme: record it from the position's Lifecycle menu (Lookback extreme) on its strategy instance.</div>`
     : n.kind === 'price' && n.subject ? html`<div class="sub">Needs the ${n.date || ''} closing price. ${link('Enter it on the instrument', () => openInstrument(n.subject, { tab: 'overview' }))}.</div>`

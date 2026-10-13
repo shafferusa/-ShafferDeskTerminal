@@ -56,7 +56,7 @@ const FORM_TERMS = new Set(['couponType', 'couponRate', 'referenceRate', 'spread
   // structured debt (added by b3): inflation-linked, callable, puttable, convertible and exchangeable bonds, securitised paper
   'indexRatio', 'inflationFloor', 'callSchedule', 'putSchedule', 'conversionRatio', 'paymentDelayDays', 'guarantor',
   // structured debt, group B (added by b4)
-  'poolCharacteristics', 'servicingFeeRate', 'seniorTranche', 'seniorBalance', 'seniorRemaining', 'pikAllowed', 'referenceEntity', 'linkedTo', 'initialLevel', 'couponBarrier', 'principalProtected', 'principalBarrier', 'collateralAccount', 'issueSize', 'sponsor', 'trigger', 'tradingDocs']);
+  'poolCharacteristics', 'servicingFeeRate', 'seniorTranche', 'seniorBalance', 'seniorRemaining', 'pikAllowed', 'referenceEntity', 'linkedTo', 'initialLevel', 'couponBarrier', 'principalProtected', 'principalBarrier', 'collateralAccount', 'issueSize', 'sponsor', 'trigger', 'tradingDocs', 'pikRate', 'undrawnCommitment']);
 const has = (v) => v !== undefined && v !== null && v !== '';
 const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** A call or put schedule as the form takes it: "2028-06-15 101; 2029-06-15 100". */
@@ -133,6 +133,8 @@ export async function contractTerms(ui, dialog, draft, ctx) {
   if (has(t.poolCharacteristics)) await ui.input(dialog, 'Pool characteristics').fill(String(t.poolCharacteristics));
   if (has(t.servicingFeeRate)) await ui.input(dialog, 'Servicing fee').fill(String(t.servicingFeeRate));
   if (has(t.tradingDocs)) await ui.select(dialog, 'Trading documentation').selectOption(String(t.tradingDocs));
+  if (has(t.pikRate)) await ui.input(dialog, 'PIK rate').fill(String(t.pikRate));
+  if (has(t.undrawnCommitment)) await ui.input(dialog, 'Undrawn commitment').fill(String(t.undrawnCommitment));
   if (has(t.collateralAccount)) await ui.input(dialog, 'Collateral account').fill(String(t.collateralAccount));
   if (has(t.issueSize)) await ui.input(dialog, 'Issue size').fill(String(t.issueSize));
   if (has(t.sponsor)) await ui.input(dialog, 'Sponsor').fill(String(t.sponsor));
@@ -255,6 +257,7 @@ const MANUAL_FORMS = {
  */
 const POSITION_FORMS = {
   put: { menu: 'Holder put', fields: (b) => [['Face amount put', b.face], ['Label', b.label]], button: 'Record holder put' },
+  draw: { menu: 'Draw funded', fields: (b) => [['Amount drawn', b.amount]], button: 'Record draw' }, // b4
   convert: { menu: 'Conversion into shares', fields: (b) => [['Face amount converted', b.face], ['Share price', b.sharePrice]], select: (b) => [['Settlement', b.settlement]], button: 'Record conversion' },
 };
 async function positionForm(ui, ctx, step, { positionRow }) {

@@ -263,3 +263,4 @@
 - 2026-10-13T20:13Z | t2 | +0.2 | long_calendar passes at engine, API and browser
 - 2026-10-13T20:15Z | b4 | +0.2 | leveraged_loan passes at engine, API and browser
 - 2026-10-13T20:17Z | t2 | +0.2 | long_diagonal passes at engine, API and browser
+- 2026-10-13T20:22Z | t2 | +0.2 | synthetic_long passes at engine, API and browser
