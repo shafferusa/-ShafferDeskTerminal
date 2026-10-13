@@ -123,6 +123,7 @@ const longTemplate = {
       expect: {
         result: {
           state: 'recommendation_ready', complete: true, missing: [], source: { kind: 'demo-fixture', label: 'Demo fixture, not Shaffer Hedge' },
+          // (Which canned packages the fixture proposes depends on the demo data present: not stated. None is chosen here.)
           investmentStrategy: { id: 'DEMO-IS-002', name: 'Core Equity', resolved: true }, holdingDays: 30, objective: 'downside_protection', scope: 'trade',
           primary: { instrument: 'main', direction: 'long', quantity: 1500, status: 'proposed' },
           proposedProtection: [], linkedProtection: [], hedgesHeld: [], // a Long template carries no protection of its own; nothing is held yet
