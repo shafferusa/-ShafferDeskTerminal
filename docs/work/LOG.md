@@ -115,3 +115,4 @@
 - 2026-10-13T17:02Z | b2 | +0.2 | bankers_acceptance passes at engine, API and browser (all 13 b2 products done)
 - 2026-10-13T17:03Z | c2 | +0.2 | crude_oil passes at engine, API and browser
 - 2026-10-13T17:03Z | s8 | +0.3 | s8: browser case SB:stress:service-stops-answering passes
+- 2026-10-13T17:03Z | c2 | +0.2 | refined_product passes at engine, API and browser
