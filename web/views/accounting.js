@@ -163,7 +163,7 @@ function PnlTab({ book, scope, units, whole, multi, scopeName, owner, setOwner, 
     </div></section>`;
   return html`<div class="stack">${dates}
     ${badRange ? html`<${Notice} tone="err">The From date is after the To date. Swap them or clear one.<//>` : null}
-    ${multi ? html`${statement}<div class="cols-2" style="align-items:start">${side}</div>` : html`<div class="split" style="grid-template-columns:minmax(0,1.5fr) minmax(320px,1fr)"><div class="stack">${statement}</div><div class="stack">${side}</div></div>`}
+    ${multi ? html`${statement}<div class="cols-2" style="align-items:start">${side}</div>` : html`<div class="split pnl-split"><div class="stack">${statement}</div><div class="stack">${side}</div></div>`}
   </div>`;
 }
 

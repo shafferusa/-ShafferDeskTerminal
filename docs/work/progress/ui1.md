@@ -13,6 +13,9 @@
 - test/core/marketplaces.test.js (8 tests pass); scripts/coverage-report.js prints tab mapping; docs/COVERAGE.md regenerated; ARCHITECTURE.md + README routing convention.
 - npm test 393/393. Browser 6 products: 5 match baseline; interest_rate_swap open step fails on "margin posted" screen vs API (looks like others' collateral work; re-check).
 
+- Milestone 2: registry.js form: Primary view Seg (By convention: X | US | Foreign; listed decided), Jurisdiction field, Global venue type, routing notice from GET /api/instruments/routing, save re-asks routing (race fix), payload marketView/routingBasis/jurisdiction; registry list "Market view" column shows tab + routing short; instrument.js Overview: Market view with tab + basis sentence, Jurisdiction row, Venue global. contracts.js newDraft default marketView '' (convention), draftToContract sends undefined. strategy.js LegDialog Primary view has "By convention".
+- Browser after M2: common_stock 17/0/1 OK; equity_option setup fails on "Underlying (required)" label: fixer commit 00d61ea changed the index option form (not mine). interest_rate_swap open fails "margin posted" screen vs API (not navigation; collateral work by others). npm test 410/411: fixed-income FRN test fails from others' bond.js edit.
+
 ## In progress
 - nothing half-edited.
 

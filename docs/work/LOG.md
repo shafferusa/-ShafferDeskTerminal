@@ -90,3 +90,4 @@
 - 2026-10-13T16:38Z | s8 | +0.3 | s8: browser case SB:history:reference-edits passes; popup helper fixed for chained prompts
 - 2026-10-13T16:41Z | l1 | +0.2 | securities_backed_loan passes at engine, API and browser (missing fixing blocks payment and repayment)
 - 2026-10-13T16:41Z | l1 | +0.2 | margin_loan passes at engine, API and browser
+- 2026-10-13T16:42Z | ui1 | +1 | Classification from explicit metadata: routing convention stored and shown on rows, instrument page and registration form
