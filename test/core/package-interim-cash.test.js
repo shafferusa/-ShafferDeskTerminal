@@ -52,3 +52,23 @@ test('iron condor with ample cash: the leg-by-leg path needs no more than the ne
   assert.equal(pv.totals.cash.USD.shortfall, 0);
   assert.equal(pv.totals.cash.USD.required, 3_463);
 });
+
+test('closing a spread buys back the written legs first, and the sale of the protection waits on them', async () => {
+  // Found by the bear call spread scenario: Close sold the bought wing first, leaving the written leg uncovered (its
+  // reserve went to the uncovered figure) and, when the buy-back could not fill, leaving it naked.
+  const { app, input } = await condorBook({ account: 10_000 });
+  const pv = await app.packages.preview(input);
+  const opened = (await app.packages.submit({ ...input, legs: pv.legs, clientToken: pv.token, confirm: true, expected: pv.confirmation })).strategy;
+  assert.equal(opened.status, 'open');
+  const close = await app.packages.previewAction(opened.id, 'close', { fraction: 1 });
+  const legs = close.legs.map((l) => [l.action, l.instrument.symbol, l.dependsOn]);
+  assert.deepEqual(legs, [
+    ['buy', 'PRBX260320P95', []],
+    ['buy', 'PRBX260320C105', []],
+    ['sell', 'PRBX260320P90', [1, 2]],
+    ['sell', 'PRBX260320C110', [1, 2]],
+  ]);
+  // Nothing on the way out needs more than the instance already reserves.
+  assert.equal(close.blocking, 0);
+  assert.equal(close.totals.cash.USD.reserved, 0);
+});

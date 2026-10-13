@@ -239,3 +239,4 @@
 - 2026-10-13T19:53Z | s2 | +0.2 | index_trs passes at engine, API and browser (index dividends passed through per period)
 - 2026-10-13T19:54Z | t1 | +0.2 | T:short template passes at engine, API and browser; fixes: cover preview uses restricted collateral, multi-borrow returns
 - 2026-10-13T19:54Z | s3 | +0.2 | cds_index passes at engine, API and browser
+- 2026-10-13T19:55Z | s7 | +1.5 | s7: docs/ACCOUNTING-VERIFICATION.md worked ledger, hand figures beside the Terminal's at 11 checkpoints

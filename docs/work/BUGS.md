@@ -261,3 +261,14 @@ start fixing never asked of the data service; a return or price fixing asked for
 - Not fixed by t1: the equity short_sale spec (equity.mjs, cover-part) states the current figures (availableToTrade 450,383 counts
   the cover payable); changing ledger.cash changes that finished family's expectations. Needs the equity owner's decision.
 - Reproduce: T:short with the Treasury top-up step removed: close-exact is refused at the preview.
+
+## s7 (accounting verification), 2026-10-13
+- FIXED (not open): balance sheet retranslated capital and internal funding at today's FX rate, so "Results to date"
+  differed from the P&L by the FX on foreign capital/funding (server/core/accounting.js balanceSheet; proved by
+  test/core/accounting-verification.test.js). Listed here for the record only.
+- OPEN, owner decision: short positions, written options and negative-value contracts reduce the "Positions at market
+  value" asset line instead of appearing as liabilities (GAAP: securities sold short are a liability). Net assets are
+  right and gross long/short are in Holdings; changing it alters the balance-sheet layout 160+ specs assert.
+- OPEN, test fixtures: POST /api/demo/fixtures/quote refuses negative prices, so an out-of-the-money swap/CDS mark
+  cannot be a (stale-able) fixture; manual marks can be negative but never go stale.
+- Convention noted: a cash dividend posts on its pay date; no receivable between ex-date and pay date.

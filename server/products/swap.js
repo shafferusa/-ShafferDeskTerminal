@@ -342,6 +342,11 @@ export const swap = {
       return l;
     });
     checkScheduleProduct(draft.productId, t, errors);
+    // Net settlement (s2): legs of one currency ending a period on the same date settle as one amount. Not with a return or
+    // overnight leg, whose resets and compounding are kept per leg.
+    t.netSettlement = Boolean(t.netSettlement);
+    if (t.netSettlement && t.legs.some((l) => l.type === 'return' || l.type === 'ois' || l.exchangeNotional)) errors.push('Net settlement applies to fixed, floating, price, cap and floor legs without notional exchange; a return or overnight-index leg is paid gross.');
+    if (!t.netSettlement) delete t.netSettlement;
     // Quantity (the notional) and price (upfront, mark, per 100 of notional) are in the contract's trading currency, and a
     // leg's own notional is the quantity x its notional factor. The currency stated on the contract is kept when a leg is
     // in it; it is never replaced silently by another one. Left empty, it is the first leg's.
@@ -363,6 +368,7 @@ export const swap = {
     for (const l of t.legs) rows.push([`Leg ${l.id}`, describeLeg(l, app)]);
     // The notional of each period of an amortizing or accreting leg, as the schedule states it (s2).
     for (const l of t.legs) if (l.notionalSchedule?.length) rows.push([`Leg ${l.id} notional schedule`, l.notionalSchedule.map((s) => `from ${s.from}: ${s.factor} x notional`).join('; ')]);
+    if (t.netSettlement) rows.push(['Settlement', 'Net: the legs of one currency that end a period on the same date are paid as one net amount']);
     for (const l of t.legs) if (l.paymentLag) rows.push([`Leg ${l.id} payment`, `${l.paymentLag} business day${l.paymentLag > 1 ? 's' : ''} after each period end, on the payment calendar`]);
     // Convention (docs/ARCHITECTURE.md): fixing dates are business days of the contract's joint payment calendar, not of each index's own market.
     if (t.legs.some((l) => ['float', 'ois', 'cap', 'floor'].includes(l.type))) rows.push(['Fixing dates', `On business days of the contract's payment calendar (${paymentCalendarFor(inst) || 'the joint calendar of its currencies'}), not of each index's own market: a fixing that falls on a holiday there is taken on the business day before.`]);
@@ -770,6 +776,73 @@ function passDividend(app, task, { book, unit, inst, pos }) {
     entries: [{ account: 'cash', ccy: leg.ccy, amount, positionId: pos.id }, { account: 'pnl.realized', ccy: leg.ccy, amount: -amount, positionId: pos.id }],
   });
   app.alerts.resolve({ refType: 'task', refId: task.id, code: 'funding.failed' });
+  return { done: true, eventId };
+}
+
+/** What a payment that cannot be worked out is waiting for (or why it cannot be made at all). */
+function missingOutcome(app, inst, leg, r, eff, period, awaiting) {
+  const refName = app.instruments.get(r.missing.subject)?.symbol || 'the reference asset';
+  if (r.missing.dates) return { blocked: `Awaiting the averaging fixings of ${refName} for ${r.missing.dates.join(', ')} (${r.missing.dates.length} of the ${r.missing.of} pricing days of the period ${eff.start} to ${period.end}). ${awaiting}, or enter each fixing by hand as the close for its date.`, needs: r.missing.dates.map((date) => ({ kind: 'price', subject: r.missing.subject, date })) };
+  if (r.missing.none) return { failed: `Leg ${leg.id} of ${inst.name} has no pricing day in the period ${eff.start} to ${period.end} on its pricing calendar: nothing can be averaged. Correct the contract's pricing calendar.` };
+  const what = r.missing.kind === 'rate' ? `the ${r.missing.subject} fixing for ${r.missing.date}` : `the ${r.missing.date} fixing for ${refName}`;
+  return { blocked: `Awaiting ${what}. ${awaiting}, or enter the fixing manually.`, needs: [r.missing] };
+}
+
+/** One leg's part of a net payment, in words: "leg B, average of 19 fixings 73.10 x 50,000: 3,655,000.00 USD received". */
+function netPart(leg, r, amount) {
+  const d = r.detail || {};
+  let what;
+  if (leg.type === 'price') {
+    const px = d.average !== undefined ? `average of ${d.days} fixings ${fmtPx(d.average)}` : leg.fixedPrice !== null && leg.fixedPrice !== undefined ? `fixed price ${fmtPx(leg.fixedPrice)}` : `fixing ${fmtPx(d.price)}`;
+    what = `${px} x ${fmtQty(d.units)}${d.hours ? ` (${fmtQty(d.hours)} hours)` : ''}`;
+  } else if (leg.type === 'fixed') what = `fixed ${pct(leg.rate)}`;
+  else what = `${leg.index}${d.fixing !== undefined ? ` ${pct(d.fixing / 100)}` : ''}`;
+  return `leg ${leg.id}, ${what}: ${fmt(Math.abs(amount), leg.ccy)} ${amount >= 0 ? 'received' : 'paid'}`;
+}
+
+/**
+ * Net settlement (contract term `netSettlement`, s2): every leg of the paying leg's currency that ends a period on the same
+ * date is worked out, and one net amount moves. Nothing moves until every one of them can be worked out; the funding check
+ * is on the net amount. Each leg's own amount is kept in the event (cash and realized P&L by leg), and each leg's next period
+ * is scheduled by its own task, which finds the period already settled.
+ */
+function netPayment(app, task, { book, unit, inst, pos, leg, sched, period, base, awaiting }) {
+  const t = inst.terms;
+  const scheduleNext = (l, s) => {
+    const i = s.findIndex((p) => p.end === period.end) + 1;
+    if (i > 0 && i < s.length) app.tasks.schedule({ ...base, type: 'swap.payment', dueDate: s[i].payDate, data: { key: `${l.id}:${s[i].end}`, legId: l.id, periodEnd: s[i].end } });
+  };
+  const paid = pos.data.legs?.[leg.id]?.paidThrough;
+  if (paid && paid >= period.end) { scheduleNext(leg, sched); return 'done'; } // settled with another leg's net payment
+  const from = pos.data.cashflowsFrom || t.effective;
+  const group = t.legs.filter((l) => l.ccy === leg.ccy).map((l) => ({ l, s: l.id === leg.id ? sched : legSchedule(inst, l) })).map((x) => ({ ...x, p: x.s.find((q) => q.end === period.end) })).filter((x) => x.p && !(pos.data.legs?.[x.l.id]?.paidThrough >= period.end));
+  const parts = [];
+  for (const x of group) {
+    const eff = { ...x.p, start: from > x.p.start && from < x.p.end ? from : x.p.start };
+    const r = legAmount(app, inst, pos, x.l, eff);
+    if (r.missing) return missingOutcome(app, inst, x.l, r, eff, x.p, awaiting);
+    const amount = money(sign(pos.qty) * (x.l.side === 'receive' ? 1 : -1) * exact(r.amount), x.l.ccy);
+    parts.push({ ...x, eff, r, amount });
+  }
+  const net = money(parts.reduce((a, x) => a + x.amount, 0), leg.ccy);
+  if (net < 0 && app.ledger.balance(unit.id, 'cash', leg.ccy) < -net - 0.004) {
+    const msg = `Net swap payment of ${fmt(-net, leg.ccy)} on ${inst.name} (period ending ${period.end}) could not be paid: insufficient settled ${leg.ccy} cash in ${unit.name}.`;
+    app.alerts.raise({ bookId: book.id, unitId: unit.id, level: 'error', code: 'funding.failed', refType: 'task', refId: task.id, message: msg });
+    return { failed: msg };
+  }
+  const start = parts.reduce((a, x) => (x.eff.start < a ? x.eff.start : a), period.end);
+  const eventId = app.ledger.post({
+    ...base, type: 'swap.payment',
+    summary: `Net swap ${net >= 0 ? 'receipt' : 'payment'} on ${inst.name}, period ${start} to ${period.end}: ${fmt(Math.abs(net), leg.ccy)} (${parts.map((x) => netPart(x.l, x.r, x.amount)).join('; ')})`,
+    data: { net: true, legs: parts.map((x) => ({ legId: x.l.id, period: x.eff, amount: x.amount, detail: x.r.detail })), obsIds: parts.flatMap((x) => x.r.used || []) },
+    entries: parts.flatMap((x) => [{ account: 'cash', ccy: x.l.ccy, amount: x.amount, positionId: pos.id }, { account: 'pnl.realized', ccy: x.l.ccy, amount: -x.amount, positionId: pos.id }]),
+  });
+  app.alerts.resolve({ refType: 'task', refId: task.id, code: 'funding.failed' });
+  const legs = { ...(pos.data.legs || {}) };
+  for (const x of parts) legs[x.l.id] = { ...(legs[x.l.id] || {}), paidThrough: period.end };
+  const updated = app.positions.change(pos, { data: { legs } });
+  if (t.legs.some((l) => l.notionalSchedule?.length)) app.agreements.onPositionChange({ book, unit, inst, pos: updated });
+  scheduleNext(leg, sched);
   return { done: true, eventId };
 }
 

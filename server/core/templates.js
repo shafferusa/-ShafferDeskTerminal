@@ -118,17 +118,19 @@ export function buildLegs(input, ctx) {
   switch (tpl.id) {
     case 'long': legs.push(stockLong()); break;
     case 'short': legs.push(...stockShort()); break;
-    case 'protective_put': legs.push(stockLong(), optionLeg('put', 'P', 'put', 'buy', { purpose: 'hedge' })); break;
-    case 'protective_call': legs.push(...stockShort(), optionLeg('call', 'C', 'call', 'buy', { purpose: 'hedge' })); break;
+    // The protection a template buys waits for the exposure it protects and is scaled to what of it fills (t1): a part-filled
+    // or failed purchase or short sale never leaves more protection than exposure, or protection with no exposure at all.
+    case 'protective_put': legs.push(stockLong(), optionLeg('put', 'P', 'put', 'buy', { dependsOn: ['underlying'], purpose: 'hedge' })); break;
+    case 'protective_call': legs.push(...stockShort(), optionLeg('call', 'C', 'call', 'buy', { dependsOn: ['underlying'], purpose: 'hedge' })); break;
     case 'covered_call': legs.push(stockLong(), optionLeg('call', 'C', 'call', 'sell', { dependsOn: ['underlying'], purpose: 'hedge' })); break;
     case 'covered_put': legs.push(...stockShort(), optionLeg('put', 'P', 'put', 'sell', { dependsOn: ['underlying'], purpose: 'hedge' })); break;
     case 'long_collar':
       need(num(strikes.put) < num(strikes.call), 'A collar needs the put strike below the call strike.');
-      legs.push(stockLong(), optionLeg('put', 'P', 'put', 'buy', { purpose: 'hedge' }), optionLeg('call', 'C', 'call', 'sell', { dependsOn: ['underlying'], purpose: 'hedge' }));
+      legs.push(stockLong(), optionLeg('put', 'P', 'put', 'buy', { dependsOn: ['underlying'], purpose: 'hedge' }), optionLeg('call', 'C', 'call', 'sell', { dependsOn: ['underlying'], purpose: 'hedge' }));
       break;
     case 'short_collar':
       need(num(strikes.put) < num(strikes.call), 'A short collar needs the put strike below the call strike.');
-      legs.push(...stockShort(), optionLeg('call', 'C', 'call', 'buy', { purpose: 'hedge' }), optionLeg('put', 'P', 'put', 'sell', { dependsOn: ['underlying'], purpose: 'hedge' }));
+      legs.push(...stockShort(), optionLeg('call', 'C', 'call', 'buy', { dependsOn: ['underlying'], purpose: 'hedge' }), optionLeg('put', 'P', 'put', 'sell', { dependsOn: ['underlying'], purpose: 'hedge' }));
       break;
     case 'cash_secured_put': {
       const put = optionLeg('put', 'P', 'put', 'sell', { dependsOn: ['reserve'] });
