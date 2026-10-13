@@ -1815,18 +1815,26 @@ async function lifeShown(b, L) {
   await show(b, `#/accounting/positions/${L.book.accountId}`);
   const cash = flat(await b.ui.section(b.page.locator('main'), 'Cash and financing balances').innerText());
   await show(b, `#/accounting/pnl/${L.book.accountId}`);
+  await b.page.locator('main').getByText('Borrowing and funding expenses').first().waitFor();
+  await settle(b);
   const pnl = flat(await b.page.locator('main').innerText());
   await show(b, `#/accounting/pending/${L.book.accountId}`);
+  await b.page.locator('main').getByText('Executed trades awaiting settlement').first().waitFor();
+  await b.ui.section(b.page.locator('main'), 'Lifecycle items').waitFor();
   const pending = flat(await b.page.locator('main').innerText());
   const lifecycle = (await b.ui.section(b.page.locator('main'), 'Lifecycle items').locator('tbody tr').allInnerTexts().catch(() => [])).map(flat);
   await show(b, `#/accounting/failed/${L.book.accountId}`);
+  await b.ui.section(b.page.locator('main'), 'Failed settlements').waitFor();
   const failed = flat(await b.page.locator('main').innerText());
   return { cash, pnl, pending, lifecycle, failed };
 }
 /** Press one of the demo band's buttons that move the clock, and wait until the top bar shows the new date. */
 async function pressClock(b, label, datePattern) {
-  await closeHedgePopup(b); // a recommendation that arrived meanwhile reopens its post-trade popup
-  await b.page.getByRole('button', { name: label }).first().click();
+  // A post-trade popup can open at any moment (a request made or answered by the last cycle): close it and press again.
+  for (let i = 0; ; i++) {
+    await closeHedgePopup(b);
+    try { await b.page.getByRole('button', { name: label }).first().click({ timeout: 4_000 }); break; } catch (err) { if (i >= 4) throw err; }
+  }
   await b.page.locator('.topbar .clock', { hasText: datePattern }).waitFor({ timeout: 60_000 });
   await settle(b);
 }

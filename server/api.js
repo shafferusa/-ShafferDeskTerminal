@@ -381,6 +381,10 @@ export function createApi(app) {
         case 'redeem': need(plugin.redeemEarly, 'Early redemption does not apply to this position.'); result = plugin.redeemEarly(app, { ...ctx, price: body.price, face: body.face, label: body.label }); break;
         case 'recall': need(plugin.recall, 'A lender recall does not apply to this position.'); result = plugin.recall(app, { ...ctx, qty: body.qty, days: num(body.days) ?? 2 }); break;
         case 'cashflow': result = app.accounting.manualCashflow({ positionId: pos.id, category: body.category, amount: body.amount, note: body.note }); break;
+        // Physical delivery of goods is not simulated for a spot asset: the Terminal moves no goods. Say so plainly.
+        case 'deliver': throw new AppError(inst.family === 'spot'
+          ? `Physical delivery is not simulated for ${inst.symbol || inst.name}: the Terminal moves no goods. Record delivery, storage and transport costs as manual cash flows on the position, and the goods leaving as a sale at the agreed price (or at 0.00 when they are consumed or lost).`
+          : 'Physical delivery does not apply to this position.', { code: 'delivery_not_simulated' });
         case 'barrier': {
           need(inst.terms.barrier, 'This option has no barrier.');
           positions.setData(pos, { barrierHit: true, barrierHitAt: app.clock.now().toISOString() });

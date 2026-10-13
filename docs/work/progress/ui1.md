@@ -18,6 +18,8 @@
 
 - Milestone 3: per-tab columns in markets.js verified on screen (equities, funds, bonds with coupon/maturity/accrued/yield-if-supplied, money with financing panel, fx value date convention, options, futures contract value + initial margin, swaps legs, credit coupon). fmtPriceUnits used in preview.js (estimate, reference, indicative, link avg cost), accounting.js positions (avg cost, Price units), instrument.js (bid/ask, price, avg cost). Checked in browser: 99.53125 -> "99.53125", 99.515625 -> "99.515625". Browser treasury_note/common_stock/equity_index_future pass as baseline.
 
+- Milestone 4: Trading owner. instrument.js UnitSelect (optgroups "Accounts" / "Treasury (the Book's own balance sheet)", disabled "No Accounts in this Book yet", placeholder "Choose an owner"), defaultUnit without Treasury fallback, ownerHint; ticket + option ticket label "Trading owner" (option Preview needs an owner). core.js pickUnit no longer falls back to units[0]. strategy.js panel "Trading owner and intent", notice + New Account (AccountDialog) / Use Treasury buttons in a Book with no Accounts, hedge panel waits for a trading owner. Driver aliases verified by $SP/ui1/drvcheck.mjs (old names 'Account'/'Account and intent' select Treasury; openInstrument for 11 instruments across 4 views/8 tabs). System browser cases double-click-confirm, collateral-independent-amount, ticket-blocks pass. npm test 432/432.
+
 ## In progress
 - nothing half-edited.
 
