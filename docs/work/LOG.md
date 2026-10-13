@@ -200,3 +200,4 @@
 - 2026-10-13T18:32Z | o2 | +0.2 | basket_option passes at engine, API and browser
 - 2026-10-13T18:32Z | m1 | +0.2 | collateral_swap passes at engine, API and browser (all 16 manual products done)
 - 2026-10-13T18:33Z | b3 | +0 | structured bonds A: core tests for call, put, conversion, paydown, delay, loss; all 12 rerun E/A/B
+- 2026-10-13T18:34Z | r1 | +0.2 | securities_lending passes at engine, API and browser

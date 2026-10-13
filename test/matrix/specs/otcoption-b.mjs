@@ -1066,8 +1066,8 @@ const spreadOption = {
         cash: { account: { USD: { settled: 889_000, margin: 0, unsettled: 120_000, availableToTrade: 1_009_000, availableToWithdraw: 699_000 } } }, // 310,000 - 190,000; 889,000 - 190,000
         positions: [], holdings: { put: null }, otc: [], lifecycle: [],
         pending: [
-          { instrument: 'put', owner: 'account', dueDate: '2026-04-29', amount: -190_000, ccy: 'USD', into: 'cash' },
           { instrument: 'call', owner: 'account', dueDate: '2026-04-29', amount: 310_000, ccy: 'USD', into: 'cash' },
+          { instrument: 'put', owner: 'account', dueDate: '2026-04-29', amount: -190_000, ccy: 'USD', into: 'cash' },
         ],
         pnl: { account: { realized: 210_000, unrealized: 0, total: 209_000 } },
         nav: { account: 1_009_000, book: 2_209_000 },
