@@ -437,13 +437,13 @@ function makeOptionPlugin(family, listed) {
     /** User-initiated early exercise of a long American option. */
     exercise(app, { book, unit, inst, pos, contracts, price }) {
       need(pos.qty > 0, 'Only a long option can be exercised.');
-      exerciseAllowed(app, inst, 'exercised');
-      const q = num(contracts) ?? pos.qty;
-      need(q > 0 && q <= pos.qty + 1e-9, `You hold ${fmtQty(pos.qty)}; cannot exercise ${fmtQty(q)}.`);
       const ot = inst.terms.optionType;
       if (!listed && inst.terms.settlement === 'cash' && ['asian', 'lookback', 'basket', 'spread', 'swaption', 'other'].includes(ot)) {
         throw new AppError(`A cash-settled ${ot} option is settled by its expiry item, from ${{ asian: 'its averaging fixings', lookback: 'the extreme recorded on it', basket: 'the basket value entered at expiry', spread: 'the spread value entered at expiry' }[ot] || 'the settlement amount entered at expiry'} (Accounting, Pending). It is not exercised by hand.`);
       }
+      exerciseAllowed(app, inst, 'exercised');
+      const q = num(contracts) ?? pos.qty;
+      need(q > 0 && q <= pos.qty + 1e-9, `You hold ${fmtQty(pos.qty)}; cannot exercise ${fmtQty(q)}.`);
       let S = null, obs = null;
       if (inst.terms.settlement === 'cash') {
         obs = inst.underlying_id ? app.data.price(inst.underlying_id) : null;

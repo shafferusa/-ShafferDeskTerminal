@@ -166,7 +166,7 @@ const ACTION_LABELS = {
   direct_asset: { buy: 'Acquire', sell: 'Sell' },
   ils: { buy: 'Buy', sell: 'Sell' },
 };
-const unitWord = (inst) => (kindOf(inst) === 'freight' ? (inst.terms.quantityUnit || 'units') : 'contract');
+const unitWord = (inst) => (kindOf(inst) === 'freight' ? ({ days: 'day', tonnes: 'tonne' }[inst.terms.quantityUnit] || 'unit') : 'contract');
 
 /** Direction words for a manual holding or contract. */
 export function directionOf(inst, pos) {
@@ -677,7 +677,7 @@ export function manualPlugin(base, { standardSettleDate, paymentCalendarFor }) {
         const amount = money(perUnit * qty, ccy);
         const payDate = payDateFor(app, ctx, b.payDate);
         const r = closeBy(app, ctx, { qty, price: perUnit / inst.multiplier, unitCost: perUnit, settleDate: payDate, type: 'manual.settlement',
-          text: `Settlement of ${label(inst)} for ${period} entered by hand: average ${fmtPx(avg)} against the contract rate ${fmtPx(t.contractRate)}, ${fmtQty(qty)} ${t.quantityUnit} x ${fmtPx(avg)} - ${fmtPx(t.contractRate)}${sideSign(t) < 0 ? ', sign reversed (seller)' : ''} = ${fmt(amount, ccy)} ${amount >= 0 ? 'received' : 'paid'} ${payDate}`,
+          text: `Settlement of ${label(inst)} for ${period} entered by hand: average ${fmtPx(avg)} against the contract rate ${fmtPx(t.contractRate)}: ${fmtQty(qty)} ${t.quantityUnit} x (${fmtPx(avg)} - ${fmtPx(t.contractRate)})${sideSign(t) < 0 ? ', sign reversed (seller)' : ''} = ${fmt(amount, ccy)}${amount ? ` ${amount > 0 ? 'received' : 'paid'} ${payDate}` : ': nothing is paid'}`,
           data: { period, average: avg, qty, amount, payDate } });
         setManual(app, pos, { settled: money((m.settled || 0) + amount, ccy), settledQty: round((m.settledQty || 0) + qty, 8) });
         if (isZero(app.positions.get(pos.id).qty)) finish(r.eventId);

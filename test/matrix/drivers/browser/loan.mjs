@@ -572,7 +572,8 @@ export async function screens(ui, ctx, t, { expected, state }) {
     num(api, `Book totals ${ccy}, accrued`, sum(reg.items, (b) => b.accrued), cell('Accrued, unpaid'));
     num(api, `Book totals ${ccy}, interest to date`, sum(reg.items, (b) => b.interestToDate), cell('Interest to date'));
   }
-  if (!cash.length && totals) api('the Book totals table is shown although nothing is borrowed');
+  // A securities borrow is a record too (its fees are in the accrued and to-date columns): the table shows whenever the register has one.
+  if (!reg.items.length && totals) api('the Book totals table is shown although nothing is borrowed');
 
   // Cash lent and deposits: one row per arrangement, with its owner, principal and accrued interest receivable.
   const lendTable = tableOf(tables, 'Lending, deposits and securities lent');

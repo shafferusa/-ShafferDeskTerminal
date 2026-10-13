@@ -2568,4 +2568,187 @@ const creditSpreadOption = {
   ],
 };
 
-export default [privateEquity, ventureCapital, hedgeFund, infrastructure, directRealEstate, insuranceLinked, varianceSwap, volatilitySwap, correlationSwap, dispersionSwap, recoverySwap, weatherDerivative, creditSpreadForward, creditSpreadOption];
+// ---------------------------------------------------------------------------------------------
+// freight_contract
+// ---------------------------------------------------------------------------------------------
+// A shipowner's hedge: selling a Panamax 4TC forward freight agreement for the fourth quarter of 2026 at 15,000 USD a day,
+// 30 days a month (90 days). Position-level collateral terms: an independent amount of 10% of contract rate x days, trued
+// down as each month settles. Each month is settled by hand from the monthly average of the Baltic index: the seller pays
+// (average - 15,000) x 30 when rates are above the contract rate and receives when below. The last month is entered after
+// the period ends (31 December), when the item waits for it.
+const FFA_POS = { instrument: 'main', lot: 'ffa', owner: 'account', direction: 'seller' };
+const FFA_NAME = 'Panamax 4TC FFA, Q4 2026, 15,000 USD a day (Eastgate Shipping Derivatives)';
+const freightContract = {
+  productId: 'freight_contract',
+  title: 'Panamax 4TC forward freight agreement, Q4 2026, sold at 15,000 a day for 90 days: monthly settlements from the Baltic average by hand, independent amount trued down',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: ['Trading owner', 'Action (Enter the contract)', 'Quantity (days)', 'State a fill price', 'Route, settlement index, quantity unit, contract rate, side, period (registration)', 'Collateral basis (registration, required)'],
+    manualInputs: ['marks (value to us, date, source)', 'each month\'s average of the settlement index and the days settled'],
+    settlement: 'Each monthly settlement T+2 on the USD payment calendar after it is entered (4 November, 3 December 2026, 6 January 2027)',
+    lifecycle: 'The end of the period waits, visibly, for the last month entered by hand; each month settles its own days and the contract closes with the last',
+    accounting: 'Zero cost; valued at the mark per day by hand; each month realized: (average - contract rate) x days, sign reversed for the seller',
+    collateral: 'Position-level terms: independent amount 10% of 15,000 x days open (135,000, then 90,000, 45,000, 0), returned as months settle',
+  },
+  start: ny('2026-09-08'), // Tuesday 8 September 2026 (Labor Day is 7 September)
+  settlementCheck: { lag: 2, holidays: [] },
+  book: { name: 'Matrix freight contract', reportingCcy: 'USD', capital: [{ ccy: 'USD', amount: 3_000_000 }], account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 2_000_000 }] }, settings: SETTINGS },
+  instruments: {
+    main: { productId: 'freight_contract', name: FFA_NAME, symbol: 'FFA-P4TC-Q426', marketView: 'FOREIGN_DERIV', venueType: 'otc', jurisdiction: 'GB', underlyingGeo: 'Global dry bulk', tradingCcy: 'USD',
+      terms: { route: 'Panamax average of the four time-charter routes (P4TC)', settlementIndex: 'Baltic Panamax Index P4TC average', quantityUnit: 'days', contractRate: 15_000, side: 'sell', periodStart: '2026-10-01', periodEnd: '2026-12-31',
+        valuationMaxAgeDays: 10, counterparty: 'Eastgate Shipping Derivatives', collateralBasis: { type: 'position', independentAmount: { type: 'pct', pct: 0.10 }, variationMargin: false, threshold: 0, minimumTransfer: 0 } } },
+  },
+  expectAtStart: SIMPLE_START(2_000_000, 1_000_000),
+  steps: [
+    {
+      // 90 days at the contract rate, no upfront. Independent amount 10% x 15,000 x 90 = 135,000.
+      id: 'sell-the-quarter', covers: ['open', 'collateral'], action: 'ticket', instrument: 'main', side: 'buy', qty: 90, as: 'ffa', order: { statedPrice: 0 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 90, estimate: 0, model: 'stated-price', settleDate: '2026-09-10', calendar: 'USD', cash: 0, fees: 0, notional: 1_350_000 }],
+          cash: { USD: { margin: 135_000, required: 135_000, available: 2_000_000, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 90, avgPrice: 0 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Bought 90 FFA-P4TC-Q426 @ 0.00 USD', owner: 'account', date: '2026-09-08' },
+          { type: 'manual.collateral', summary: `Collateral posted on ${FFA_NAME} under its position-level terms: 135,000.00 USD (independent amount, 10.00% of 1,350,000.00 USD notional)`, cash: { USD: -135_000 }, owner: 'account' },
+        ],
+        cash: { account: { USD: { settled: 1_865_000, margin: 135_000, availableToTrade: 1_865_000 } } },
+        positions: [{ ...FFA_POS, qty: 90, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, margin: 135_000, manual: { kind: 'freight', settled: 0, settledQty: 0, endDate: '2026-12-31', valuation: null } }],
+        holdings: { main: { long: 90, short: 0, net: 90 } },
+        pending: [],
+        lifecycle: [{ type: 'manual.settlement', instrument: 'main', dueDate: '2026-12-31', status: 'pending', owner: 'account' }],
+        otc: [{ instrument: 'main', lot: 'ffa', owner: 'account', qty: 90, basis: 'position', mark: null, iaRequired: 135_000, iaPosted: 135_000 }],
+        pnl: { account: { realized: 0, fees: 0 } },
+        nav: { account: 2_000_000, book: 3_000_000 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 1_865_000, margin: 135_000, assets: 2_000_000, liabilities: 0, netAssets: 2_000_000 } },
+      },
+    },
+    { id: 'rates-rise', action: 'clock', to: ny('2026-09-21'), expect: {} },
+    {
+      // Q4 forward at 16,200: the seller is 1,200 a day under water, 90 days: -108,000 (the broker's mark, by hand).
+      id: 'mark-september', covers: 'valuation', action: 'lifecycle', lot: 'ffa', body: { action: 'valuation', value: -108_000, asOf: '2026-09-21', source: 'FFA broker mark, Q4 at 16,200' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of FFA-P4TC-Q426 entered by hand: -108,000.00 USD for the 90 held (-1,200.00 mark per day, signed), as of 2026-09-21, source: FFA broker mark, Q4 at 16,200. A manual input, not a market quote' }],
+        positions: [{ ...FFA_POS, qty: 90, price: -1_200, value: -108_000, unrealized: -108_000, provisional: false, freshness: 'manual', margin: 135_000 }],
+        otc: [{ instrument: 'main', mark: -1_200, markValue: -108_000 }],
+        pnl: { account: { unrealized: -108_000, total: -108_000 } },
+        nav: { account: 1_892_000, book: 2_892_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: -108_000, assets: 1_892_000, netAssets: 1_892_000 } },
+      },
+    },
+    { id: 'october-settles', action: 'clock', to: ny('2026-11-02'), expect: { positions: [{ ...FFA_POS, qty: 90, value: -108_000, freshness: 'stale', margin: 135_000 }], provisional: { account: true, book: true } } },
+    {
+      // October average 16,450: the seller pays 30 x (16,450 - 15,000) = 43,500, T+2 (4 November). The independent amount
+      // falls to 10% x 15,000 x 60 = 90,000: 45,000 comes back. 60 days left at the September mark: 60 x -1,200 = -72,000.
+      id: 'settle-october', covers: ['settlement', 'reduce', 'collateral'], action: 'lifecycle', lot: 'ffa', body: { action: 'settle', period: 'October 2026', average: 16_450, qty: 30 },
+      expect: {
+        events: [
+          { type: 'manual.settlement', summary: 'Settlement of FFA-P4TC-Q426 for October 2026 entered by hand: average 16,450.00 against the contract rate 15,000.00: 30 days x (16,450.00 - 15,000.00), sign reversed (seller) = -43,500.00 USD paid 2026-11-04', owner: 'account', date: '2026-11-02' },
+          { type: 'manual.collateral', summary: `Collateral returned on ${FFA_NAME} under its position-level terms: 45,000.00 USD (independent amount, 10.00% of 900,000.00 USD notional)`, cash: { USD: 45_000 } },
+        ],
+        cash: { account: { USD: { settled: 1_910_000, unsettled: -43_500, margin: 90_000, availableToTrade: 1_866_500 } } },
+        positions: [{ ...FFA_POS, qty: 60, cost: 0, price: -1_200, value: -72_000, unrealized: -72_000, freshness: 'stale', margin: 90_000, manual: { kind: 'freight', settled: -43_500, settledQty: 30 } }],
+        holdings: { main: { long: 60, short: 0, net: 60 } },
+        pending: [{ instrument: 'main', lot: 'ffa', owner: 'account', dueDate: '2026-11-04', amount: -43_500, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: 60, iaRequired: 90_000, iaPosted: 90_000, markValue: -72_000 }],
+        pnl: { account: { realized: -43_500, unrealized: -72_000, total: -115_500 } },
+        nav: { account: 1_884_500, book: 2_884_500 },
+        balance: { account: { cash: 1_910_000, margin: 90_000, payable: 43_500, positions: -72_000, assets: 1_928_000, liabilities: 43_500, netAssets: 1_884_500 } },
+      },
+    },
+    {
+      id: 'october-paid', covers: 'settlement', action: 'clock', to: ny('2026-11-04'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 43,500.00 USD from settled cash', cash: { USD: -43_500 } }],
+        cash: { account: { USD: { settled: 1_866_500, unsettled: 0, availableToTrade: 1_866_500 } } },
+        pending: [],
+        balance: { account: { cash: 1_866_500, payable: null, assets: 1_884_500, liabilities: 0 } },
+      },
+    },
+    { id: 'rates-fall', action: 'clock', to: ny('2026-11-16'), expect: {} },
+    {
+      // November and December forward at 14,100: +900 a day for the seller, 60 days: +54,000.
+      id: 'mark-november', covers: 'valuation', action: 'lifecycle', lot: 'ffa', body: { action: 'valuation', value: 54_000, asOf: '2026-11-16', source: 'FFA broker mark, Nov-Dec at 14,100' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of FFA-P4TC-Q426 entered by hand: 54,000.00 USD for the 60 held (900.00 mark per day, signed), as of 2026-11-16, source: FFA broker mark, Nov-Dec at 14,100. A manual input, not a market quote' }],
+        positions: [{ ...FFA_POS, qty: 60, price: 900, value: 54_000, unrealized: 54_000, freshness: 'manual', margin: 90_000 }],
+        otc: [{ instrument: 'main', mark: 900, markValue: 54_000 }],
+        pnl: { account: { unrealized: 54_000, total: 10_500 } },
+        nav: { account: 2_010_500, book: 3_010_500 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 54_000, assets: 2_010_500, netAssets: 2_010_500 } },
+      },
+    },
+    {
+      // Tuesday 1 December: the 16 November mark is 15 days old (limit 10).
+      id: 'november-settles', action: 'clock', to: ny('2026-12-01'),
+      expect: { positions: [{ ...FFA_POS, qty: 60, value: 54_000, freshness: 'stale', margin: 90_000 }], provisional: { account: true, book: true } },
+    },
+    {
+      // November average 14,600: the seller receives 30 x (15,000 - 14,600) = 12,000, T+2 (3 December); 45,000 more collateral back.
+      id: 'settle-november', covers: ['settlement', 'reduce', 'collateral'], action: 'lifecycle', lot: 'ffa', body: { action: 'settle', period: 'November 2026', average: 14_600, qty: 30 },
+      expect: {
+        events: [
+          { type: 'manual.settlement', summary: 'Settlement of FFA-P4TC-Q426 for November 2026 entered by hand: average 14,600.00 against the contract rate 15,000.00: 30 days x (14,600.00 - 15,000.00), sign reversed (seller) = 12,000.00 USD received 2026-12-03', owner: 'account' },
+          { type: 'manual.collateral', summary: `Collateral returned on ${FFA_NAME} under its position-level terms: 45,000.00 USD (independent amount, 10.00% of 450,000.00 USD notional)`, cash: { USD: 45_000 } },
+        ],
+        cash: { account: { USD: { settled: 1_911_500, unsettled: 12_000, margin: 45_000, availableToTrade: 1_923_500 } } },
+        positions: [{ ...FFA_POS, qty: 30, price: 900, value: 27_000, unrealized: 27_000, freshness: 'stale', margin: 45_000, manual: { kind: 'freight', settled: -31_500, settledQty: 60 } }],
+        holdings: { main: { long: 30, short: 0, net: 30 } },
+        pending: [{ instrument: 'main', lot: 'ffa', owner: 'account', dueDate: '2026-12-03', amount: 12_000, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: 30, iaRequired: 45_000, iaPosted: 45_000, markValue: 27_000 }],
+        pnl: { account: { realized: -31_500, unrealized: 27_000, total: -4_500 } },
+        nav: { account: 1_995_500, book: 2_995_500 },
+        balance: { account: { cash: 1_911_500, margin: 45_000, receivable: 12_000, positions: 27_000, assets: 1_995_500, liabilities: 0, netAssets: 1_995_500 } },
+      },
+    },
+    {
+      id: 'november-paid', covers: 'settlement', action: 'clock', to: ny('2026-12-03'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 12,000.00 USD into settled cash', cash: { USD: 12_000 } }],
+        cash: { account: { USD: { settled: 1_923_500, unsettled: 0, availableToTrade: 1_923_500 } } },
+        pending: [],
+        balance: { account: { cash: 1_923_500, receivable: null } },
+      },
+    },
+    {
+      // Monday 4 January 2027: the period ended on 31 December; the item waits for the December average.
+      id: 'period-ends', covers: 'settlement', action: 'clock', to: '2027-01-04T15:00:00.000Z',
+      expect: { lifecycle: [{ type: 'manual.settlement', instrument: 'main', dueDate: '2026-12-31', status: 'blocked', owner: 'account', reason: /^Waiting for the realised value, entered by hand \(Lifecycle, Period settlement\)\./ }] },
+    },
+    {
+      // December average 13,800: the seller receives 30 x (15,000 - 13,800) = 36,000, T+2 (6 January 2027). The contract closes;
+      // the last 45,000 of collateral comes back. Realized over the quarter: -43,500 + 12,000 + 36,000 = 4,500.
+      id: 'settle-december', covers: ['close', 'collateral'], action: 'lifecycle', lot: 'ffa', body: { action: 'settle', period: 'December 2026', average: 13_800 },
+      expect: {
+        events: [
+          { type: 'manual.settlement', summary: 'Settlement of FFA-P4TC-Q426 for December 2026 entered by hand: average 13,800.00 against the contract rate 15,000.00: 30 days x (13,800.00 - 15,000.00), sign reversed (seller) = 36,000.00 USD received 2027-01-06', owner: 'account', date: '2027-01-04' },
+          { type: 'manual.collateral', summary: `Collateral returned on ${FFA_NAME} under its position-level terms: 45,000.00 USD (independent amount, the position ended)`, cash: { USD: 45_000 } },
+        ],
+        cash: { account: { USD: { settled: 1_968_500, unsettled: 36_000, margin: 0, availableToTrade: 2_004_500 } } },
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', lot: 'ffa', owner: 'account', dueDate: '2027-01-06', amount: 36_000, ccy: 'USD', into: 'cash' }],
+        lifecycle: [],
+        otc: [],
+        pnl: { account: { realized: 4_500, unrealized: 0, total: 4_500 } },
+        nav: { account: 2_004_500, book: 3_004_500 },
+        provisional: { account: false, book: false },
+        balance: { account: { cash: 1_968_500, margin: null, receivable: 36_000, positions: null, assets: 2_004_500, netAssets: 2_004_500 } },
+      },
+    },
+    {
+      id: 'december-paid', covers: 'settlement', action: 'clock', to: '2027-01-06T15:00:00.000Z',
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 36,000.00 USD into settled cash', cash: { USD: 36_000 }, date: '2027-01-06' }],
+        cash: { account: { USD: { settled: 2_004_500, unsettled: 0, availableToTrade: 2_004_500 } } },
+        pending: [],
+        balance: { account: { cash: 2_004_500, receivable: null, assets: 2_004_500, liabilities: 0, netAssets: 2_004_500 } },
+      },
+    },
+  ],
+};
+
+export default [privateEquity, ventureCapital, hedgeFund, infrastructure, directRealEstate, insuranceLinked, varianceSwap, volatilitySwap, correlationSwap, dispersionSwap, recoverySwap, weatherDerivative, creditSpreadForward, creditSpreadOption, freightContract];

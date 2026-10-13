@@ -464,4 +464,210 @@ const asianOption = {
   ],
 };
 
-export default [barrierOption, asianOption];
+// ---------------------------------------------------------------------------------------------
+// lookback_option
+// ---------------------------------------------------------------------------------------------
+// Two lookback options on Calder Biotech (CLDR, NASDAQ), cash-settled at expiry on Friday 12 June 2026, dealt with
+// Dealer M. The Terminal does not monitor prices between closes: the extreme is recorded by hand on the position
+// (Lifecycle, Lookback extreme) and a later record replaces it.
+//   - a fixed-strike lookback call struck at 60, bought on 5,000 units; uncollateralized (explicit paper assumption).
+//     Payoff: observed maximum - strike. Maximum recorded at 66.40 in April, then 71.25 in May: 11.25 a unit, 56,250.
+//   - a floating-strike lookback put, written on 5,000 units (strike 62 recorded as the reference level at trade);
+//     position-level terms: a fixed independent amount of 30,000. Payoff: observed maximum - expiry close. Its maximum
+//     is not recorded when it expires: the item waits; once 71.25 is recorded it pays 71.25 - 68.00 = 3.25 a unit.
+// Early exercise of the cash-settled call is refused: it is settled by its expiry item.
+const LBC = 'CLDR fixed-strike lookback call 60, 12 Jun 2026 (Dealer M)';
+const LBP = 'CLDR floating-strike lookback put, 12 Jun 2026 (Dealer M)';
+const lookbackOption = {
+  productId: 'lookback_option',
+  title: 'Calder Biotech lookbacks: fixed-strike call bought (maximum recorded by hand, replaced once); floating-strike put written (waits for its maximum)',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'Payoff: Lookback', 'Lookback strike (fixed or floating)'],
+    automaticInputs: ['CLDR price (quote fixture standing in for Shaffer MarketData) for the notional', 'CLDR close for the expiration date (close fixture), for the floating-strike put', 'the payoff, worked out from the recorded extreme (and the close)', 'premium settlement date, T+2 on the US calendar', 'commission per unit from the Book fee schedule', 'independent amount from the position-level terms'],
+    manualInputs: ['premium agreed with the dealer (stated fill price)', 'marks entered by hand (Manual entry)', 'the observed maximum, recorded by hand on each position (Lifecycle, Lookback extreme); a later record replaces an earlier one', 'early exercise of a cash-settled lookback, refused'],
+    settlement: 'Premium and commission T+2 on the US calendar; the cash settlements T+1 after expiry',
+    lifecycle: 'Extremes recorded by hand; at expiry the fixed-strike call pays (maximum - strike); the floating-strike put waits until its maximum is recorded, then pays (maximum - close); nothing scheduled afterwards',
+    accounting: 'Premium per unit x units; payoff from the recorded extreme; premium realized at expiry; commission expensed; marks by hand drive unrealized P&L',
+    collateral: 'Call (bought): uncollateralized. Put (written): fixed independent amount 30,000, posted at entry and returned at settlement',
+  },
+  start: at('2026-03-02'),
+  settlementCheck: { lag: 2, holidays: [] },
+  book: {
+    name: 'Matrix lookback option', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 1_000_000 }],
+    account: { name: 'Exotics', funding: [{ ccy: 'USD', amount: 400_000 }] },
+    settings: { fees: { otcoption: { perUnit: 0.01, minimum: 0, bps: 0 }, equity: NO_FEE }, fill: FILL, settlement: { otcoption: 2, equity: 1 } },
+  },
+  instruments: {
+    stock: { productId: 'common_stock', name: 'Calder Biotech Inc.', symbol: 'CLDR', marketView: 'US_CASH', venue: 'NASDAQ', venueType: 'exchange', venueCountry: 'US', issuer: 'Calder Biotech Inc.', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', terms: {} },
+    call: {
+      productId: 'lookback_option', name: LBC, symbol: 'CLDR-LBC60-JUN26', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', underlying: 'stock', multiplier: 1,
+      terms: { right: 'C', strike: 60, expiration: '2026-06-12', optionType: 'lookback', lookbackType: 'fixed', exercise: 'european', settlement: 'cash', counterparty: 'Dealer M', collateralBasis: { type: 'uncollateralized' } },
+    },
+    put: {
+      productId: 'lookback_option', name: LBP, symbol: 'CLDR-LBPF-JUN26', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', underlying: 'stock', multiplier: 1,
+      terms: { right: 'P', strike: 62, expiration: '2026-06-12', optionType: 'lookback', lookbackType: 'floating', exercise: 'european', settlement: 'cash', counterparty: 'Dealer M',
+        collateralBasis: { type: 'position', independentAmount: { type: 'fixed', amount: 30_000 }, variationMargin: false, threshold: 0, minimumTransfer: 0 } },
+    },
+  },
+  quotes: { stock: { bid: 61.98, ask: 62.02, last: 62, bidSize: 100_000, askSize: 100_000 } },
+  expectAtStart: usdStart(400_000, 600_000),
+  steps: [
+    otcTicket({
+      id: 'buy-lookback-call', covers: 'open', instrument: 'call', side: 'buy', qty: 5_000, premium: 6.50, as: 'calls',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'call', qty: 5_000, estimate: 6.5, model: 'stated-price', settleDate: '2026-03-04', calendar: 'US', cash: -32_500, fees: 50, notional: 310_000 }], // 5,000 x 6.50; 5,000 x 0.01; 5,000 x 62
+          cash: { USD: { purchases: 32_500, fees: 50, margin: 0, required: 32_550, available: 400_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 5_000, avgPrice: 6.5 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 5,000 CLDR-LBC60-JUN26 @ 6.50 USD', owner: 'account', date: '2026-03-02' }],
+        cash: { account: { USD: { settled: 400_000, unsettled: -32_550, availableToTrade: 367_450, availableToWithdraw: 367_450 } } },
+        positions: [{ instrument: 'call', lot: 'calls', owner: 'account', direction: 'long', qty: 5_000, avgCost: 6.5, cost: 32_500, price: null, value: null, unrealized: null, provisional: true, notional: 310_000, margin: 0 }],
+        holdings: { call: { long: 5_000, short: 0, net: 5_000 } },
+        pending: [{ instrument: 'call', owner: 'account', dueDate: '2026-03-04', amount: -32_550, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'option.expiry', instrument: 'call', dueDate: '2026-06-12', status: 'pending' }],
+        otc: [{ instrument: 'call', lot: 'calls', qty: 5_000, basis: 'uncollateralized', mark: null, iaPosted: 0, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: -50, unrealized: 0, total: -50 } },
+        nav: { account: 399_950, book: 999_950 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 400_000, payable: 32_550, positions: 32_500, assets: 432_500, liabilities: 32_550, netAssets: 399_950 } },
+      },
+    }),
+    { id: 'half-an-hour-later', action: 'clock', to: at('2026-03-02', '15:30'), expect: {} },
+    otcTicket({
+      id: 'write-lookback-put', covers: ['write', 'collateral'], instrument: 'put', side: 'sell', qty: 5_000, premium: 4.00, as: 'puts',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'put', qty: 5_000, estimate: 4, model: 'stated-price', settleDate: '2026-03-04', calendar: 'US', cash: 20_000, fees: 50, notional: 310_000 }],
+          cash: { USD: { proceeds: 20_000, fees: 50, margin: 30_000, required: 30_050, available: 367_450, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 5_000, avgPrice: 4 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Sold 5,000 CLDR-LBPF-JUN26 @ 4.00 USD', owner: 'account' },
+          { type: 'otcoption.collateral', summary: `Collateral posted on ${LBP} under its position-level terms: 30,000.00 USD (independent amount, fixed amount for the position)`, cash: { USD: -30_000 } },
+        ],
+        cash: { account: { USD: { settled: 370_000, unsettled: -12_600, margin: 30_000, availableToTrade: 357_400, availableToWithdraw: 337_450 } } }, // -32,550 + 19,950; 370,000 - 32,550
+        positions: [
+          { instrument: 'call', lot: 'calls', qty: 5_000 },
+          { instrument: 'put', lot: 'puts', owner: 'account', direction: 'short', qty: -5_000, avgCost: 4, cost: -20_000, price: null, value: null, unrealized: null, provisional: true, notional: 310_000, margin: 30_000 },
+        ],
+        holdings: { put: { long: 0, short: 5_000, net: -5_000 } },
+        pending: [
+          { instrument: 'call', owner: 'account', dueDate: '2026-03-04', amount: -32_550, ccy: 'USD', into: 'cash' },
+          { instrument: 'put', owner: 'account', dueDate: '2026-03-04', amount: 19_950, ccy: 'USD', into: 'cash' },
+        ],
+        lifecycle: [{ type: 'option.expiry', instrument: 'call', dueDate: '2026-06-12', status: 'pending' }, { type: 'option.expiry', instrument: 'put', dueDate: '2026-06-12', status: 'pending' }],
+        otc: [{ instrument: 'call' }, { instrument: 'put', lot: 'puts', qty: -5_000, basis: 'position', iaRequired: 30_000, iaPosted: 30_000, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { commissions: -100, total: -100 } },
+        nav: { account: 399_900, book: 999_900 }, // 370,000 + 30,000 + 19,950 - 32,550 + 32,500 - 20,000
+        balance: { account: { cash: 370_000, margin: 30_000, receivable: 19_950, payable: 32_550, positions: 12_500, assets: 432_450, liabilities: 32_550, netAssets: 399_900 } },
+      },
+    }),
+    {
+      id: 'mark-call', covers: 'manual mark', action: 'manual_price', instrument: 'call', value: 7.00, note: 'Dealer M mark, by hand',
+      expect: {
+        positions: [{ instrument: 'call', lot: 'calls', price: 7, value: 35_000, unrealized: 2_500, provisional: false }, { instrument: 'put', lot: 'puts' }],
+        otc: [{ instrument: 'call', mark: 7, markValue: 35_000 }, { instrument: 'put' }],
+        pnl: { account: { unrealized: 2_500, total: 2_400 } },
+        nav: { account: 402_400, book: 1_002_400 },
+        balance: { account: { positions: 15_000, assets: 434_950, netAssets: 402_400 } }, // 35,000 - 20,000
+      },
+    },
+    {
+      id: 'mark-put', covers: 'manual mark', action: 'manual_price', instrument: 'put', value: 4.20, note: 'Dealer M mark, by hand',
+      expect: {
+        positions: [{ instrument: 'call', lot: 'calls' }, { instrument: 'put', lot: 'puts', price: 4.2, value: -21_000, unrealized: -1_000, provisional: false }],
+        otc: [{ instrument: 'call' }, { instrument: 'put', mark: 4.2, markValue: -21_000 }],
+        pnl: { account: { unrealized: 1_500, total: 1_400 } },
+        nav: { account: 401_400, book: 1_001_400 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 14_000, assets: 433_950, netAssets: 401_400 } },
+      },
+    },
+    {
+      id: 'settle-premiums', covers: 'settlement', action: 'clock', to: at('2026-03-04'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 19,950.00 USD into settled cash', cash: { USD: 19_950 } },
+          { type: 'settlement.pay', summary: 'paid 32,550.00 USD from settled cash', cash: { USD: -32_550 } },
+        ],
+        cash: { account: { USD: { settled: 357_400, unsettled: 0, availableToTrade: 357_400, availableToWithdraw: 357_400 } } },
+        pending: [],
+        balance: { account: { cash: 357_400, receivable: null, payable: null, assets: 401_400, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'early-exercise-refused', covers: 'exercise style', action: 'lifecycle', lot: 'calls', body: { action: 'exercise', contracts: 5_000 },
+      status: 'blocked', reason: 'A cash-settled lookback is settled by its expiry item from the recorded extreme; it is not exercised by hand.',
+      expect: { refused: 'A cash-settled lookback option is settled by its expiry item, from the extreme recorded on it' },
+    },
+    { id: 'wednesday-15-april', action: 'clock', to: at('2026-04-15'), expect: {} },
+    {
+      id: 'maximum-recorded', covers: 'lookback extreme', action: 'lifecycle', lot: 'calls', body: { action: 'extreme', value: 66.40, date: '2026-04-14', note: 'Dealer M confirmation' },
+      expect: { events: [{ type: 'option.lookback_extreme', summary: 'Observed maximum of CLDR recorded on CLDR-LBC60-JUN26: 66.40 on 2026-04-14, recorded by hand. Dealer M confirmation', owner: 'account', date: '2026-04-15' }] },
+    },
+    { id: 'wednesday-20-may', action: 'clock', to: at('2026-05-20'), expect: {} },
+    {
+      id: 'higher-maximum-replaces', covers: 'lookback extreme', action: 'lifecycle', lot: 'calls', body: { action: 'extreme', value: 71.25, date: '2026-05-19', note: 'Dealer M confirmation' },
+      expect: { events: [{ type: 'option.lookback_extreme', summary: 'Observed maximum of CLDR recorded on CLDR-LBC60-JUN26: 71.25 on 2026-05-19 (replaces 66.40), recorded by hand. Dealer M confirmation', owner: 'account', date: '2026-05-20' }] },
+    },
+    { id: 'settlement-price-known-later', action: 'close_price', instrument: 'stock', date: '2026-06-12', value: 68, expect: {} },
+    {
+      // Call: 71.25 - 60.00 = 11.25 a unit: 56,250, T+1 (Monday 15 June); realized 56,250 - 32,500 = 23,750. The put has
+      // no recorded maximum: it waits.
+      id: 'expiry', covers: ['expiry', 'cash settlement'], action: 'clock', to: eod('2026-06-12'),
+      expect: {
+        events: [{ type: 'option.cash_settled', summary: 'Exercised (cash settlement): 5,000 CLDR-LBC60-JUN26 at 11.25 USD per unit (observed maximum 71.25, recorded by hand)', owner: 'account', date: '2026-06-12' }],
+        cash: { account: { USD: { unsettled: 56_250, availableToTrade: 413_650, availableToWithdraw: 357_400 } } },
+        positions: [{ instrument: 'put', lot: 'puts', qty: -5_000 }],
+        holdings: { call: null },
+        pending: [{ instrument: 'call', owner: 'account', dueDate: '2026-06-15', amount: 56_250, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'option.expiry', instrument: 'put', dueDate: '2026-06-12', status: 'blocked', reason: /^Record the observed maximum of CLDR over the life of the option/ }],
+        otc: [{ instrument: 'put', lot: 'puts' }],
+        pnl: { account: { realized: 23_750, unrealized: -1_000, total: 22_650 } },
+        nav: { account: 422_650, book: 1_022_650 }, // 357,400 + 30,000 + 56,250 - 21,000
+        balance: { account: { receivable: 56_250, positions: -21_000, assets: 422_650, netAssets: 422_650 } },
+      },
+    },
+    {
+      // The put's maximum, recorded by hand: 71.25. Floating strike: 71.25 - 68.00 (the close) = 3.25 a unit: 16,250 paid by
+      // the Account, T+1; realized 20,000 - 16,250 = 3,750. The 30,000 comes back.
+      id: 'put-maximum-recorded', covers: ['lookback extreme', 'expiry', 'cash settlement', 'collateral'], action: 'lifecycle', lot: 'puts', body: { action: 'extreme', value: 71.25, date: '2026-05-19', note: 'Dealer M confirmation' },
+      expect: {
+        events: [
+          { type: 'option.lookback_extreme', summary: 'Observed maximum of CLDR recorded on CLDR-LBPF-JUN26: 71.25 on 2026-05-19, recorded by hand. Dealer M confirmation', owner: 'account' },
+          { type: 'option.cash_settled', summary: 'Assigned (cash settlement): 5,000 CLDR-LBPF-JUN26 at 3.25 USD per unit (close 68.00 against the observed maximum 71.25, recorded by hand)', owner: 'account', date: '2026-06-12' },
+          { type: 'otcoption.collateral', summary: `Collateral returned on ${LBP} under its position-level terms: 30,000.00 USD (independent amount, the position ended)`, cash: { USD: 30_000 } },
+        ],
+        cash: { account: { USD: { settled: 387_400, margin: 0, unsettled: 40_000, availableToTrade: 427_400, availableToWithdraw: 371_150 } } }, // 357,400 + 30,000; 56,250 - 16,250; 387,400 - 16,250
+        positions: [], holdings: { put: null }, otc: [], lifecycle: [],
+        pending: [
+          { instrument: 'call', owner: 'account', dueDate: '2026-06-15', amount: 56_250, ccy: 'USD', into: 'cash' },
+          { instrument: 'put', owner: 'account', dueDate: '2026-06-15', amount: -16_250, ccy: 'USD', into: 'cash' },
+        ],
+        pnl: { account: { realized: 27_500, unrealized: 0, total: 27_400 } }, // 23,750 + 3,750; - 100
+        nav: { account: 427_400, book: 1_027_400 },
+        balance: { account: { cash: 387_400, margin: null, receivable: 56_250, payable: 16_250, positions: null, assets: 443_650, liabilities: 16_250, netAssets: 427_400 } },
+      },
+    },
+    {
+      id: 'settle-cash-settlements', covers: 'settlement', action: 'clock', to: at('2026-06-15'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 56,250.00 USD into settled cash', cash: { USD: 56_250 } },
+          { type: 'settlement.pay', summary: 'paid 16,250.00 USD from settled cash', cash: { USD: -16_250 } },
+        ],
+        cash: { account: { USD: { settled: 427_400, unsettled: 0, availableToTrade: 427_400, availableToWithdraw: 427_400 } } },
+        pending: [],
+        balance: { account: { cash: 427_400, receivable: null, payable: null, assets: 427_400, liabilities: 0 } },
+      },
+    },
+  ],
+};
+
+export default [barrierOption, asianOption, lookbackOption];
