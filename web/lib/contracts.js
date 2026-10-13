@@ -189,6 +189,7 @@ const F = {
     { path: 'terms.guarantor', label: 'Guarantor', type: 'text', hint: 'Agency guaranteeing principal and interest. Losses cannot be allocated to a guaranteed pool.', show: (d) => SECURITISED_IDS.includes(d.productId) },
     // b4: structured group B (specified pools, ABS, CMO, CLO, CDO, credit-linked and structured notes, cat bonds, traded loans).
     { path: 'terms.poolCharacteristics', label: 'Pool characteristics', type: 'text', span: 2, hint: 'What the pool is specified on: maximum loan balance, LTV, FICO, geography, loan purpose', show: (d) => d.productId === 'specified_pool', required: true },
+    { path: 'terms.servicingFeeRate', label: 'Servicing fee (decimal a year)', type: 'number', hint: 'Deducted from the gross coupon before holders are paid: 0.01 = 1.00%. Holders accrue the net rate.', show: (d) => SECURITISED_IDS.includes(d.productId) },
   ],
   loan: [
     { path: 'terms.loanType', label: 'Arrangement', type: 'select', default: 'unsecured', options: opt([['unsecured', 'Unsecured'], ['margin', 'Margin loan'], ['secured', 'Secured'], ['deposit', 'Deposit'], ['cd', 'Certificate of deposit'], ['facility', 'Credit facility drawing']]) },

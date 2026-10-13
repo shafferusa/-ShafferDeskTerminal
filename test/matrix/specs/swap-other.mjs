@@ -112,7 +112,7 @@ const amortizingSwap = {
     settlement: 'Upfront and termination amounts and commission settle T+2 on the USD calendar; leg payments are cash on their payment date',
     lifecycle: 'A schedule missing a period is refused at registration; fixed and floating amounts each quarter on that quarter\'s notional; a floating payment whose fixing is missing waits until it is entered by hand; increase before the start; partial termination at a stated amount; maturity; nothing left afterwards',
     accounting: 'Carried at the mark less the upfront amounts paid; leg payments and the termination result are realized P&L; the upfront still carried is written off at maturity; commission expensed; no accrual between payment dates',
-    collateral: 'Position-level terms: fixed independent amount 100,000 (posted at entry, unchanged by the increase and the partial termination, returned at maturity); variation margin at end of day on the mark entered by hand, threshold 25,000, minimum transfer 5,000. A percentage independent amount would be on the base notional, not on the amortized notional (not exercised here)',
+    collateral: 'Position-level terms: fixed independent amount 100,000 (posted at entry, unchanged by the increase and the partial termination, returned at maturity); variation margin at end of day on the mark entered by hand, threshold 25,000, minimum transfer 5,000. A percentage independent amount would follow the notional of the current period (exercised in accreting_swap)',
   },
   start: at('2026-06-11'),
   settlementCheck: { lag: 2, holidays: [] }, // no Federal Reserve holiday in the settlement windows used (11 to 16 June, 15 to 19 October 2026)
@@ -383,4 +383,346 @@ const amortizingSwap = {
   ],
 };
 
-export default [amortizingSwap];
+// ---------------------------------------------------------------------------------------------
+// accreting_swap
+// ---------------------------------------------------------------------------------------------
+// The contract is written "pay 3.50% fixed quarterly 30/360, receive 3-month term SOFR quarterly ACT/360" on a
+// notional that accretes: factor 0.40, 0.70, 1.00, 1.00 of the base notional for the four quarters, both legs (a
+// construction-loan hedge seen from the lender's side). The Account enters the opposite side: it receives the fixed
+// amount and pays the floating amount. Collateral under a bilateral agreement of the Book: independent amount 2%
+// of the notional of the current period, variation margin with no threshold and a minimum transfer of 10,000.
+//
+// Schedule (effective Friday 4 September 2026, maturity Saturday 4 September 2027, USD payment calendar):
+//   period 1  2026-09-04 to 2026-12-04  91 days, 90/360  factor 0.40  paid Friday 4 December
+//   period 2  2026-12-04 to 2027-03-04  90 days, 90/360  factor 0.70  paid Thursday 4 March
+//   period 3  2027-03-04 to 2027-06-04  92 days, 90/360  factor 1.00  paid Friday 4 June
+//   period 4  2027-06-04 to 2027-09-04  92 days, 90/360  factor 1.00  paid Tuesday 7 September: the 4th is a Saturday, Monday the 6th Labor Day
+// The independent amount follows the notional of the period: it is trued up when the payment ending a period is made.
+const ACCR_NAME = 'USD accreting swap 3.50% v TSFR3M 4 Sep 2027';
+const ACCR_SCHEDULE = [{ from: '2026-09-04', factor: 0.4 }, { from: '2026-12-04', factor: 0.7 }, { from: '2027-03-04', factor: 1 }, { from: '2027-06-04', factor: 1 }];
+const accrDraft = (scheduleB, extra = {}) => ({
+  productId: 'accreting_swap', name: ACCR_NAME, symbol: 'ACCR-TSFR-0927', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 0.01,
+  conventions: USD_CALENDARS,
+  terms: {
+    effective: '2026-09-04', maturity: '2027-09-04', counterparty: 'Dealer N',
+    collateralBasis: { type: 'agreement', agreementId: '$agreement:csa' },
+    legs: [
+      { side: 'pay', type: 'fixed', ccy: 'USD', rate: 0.035, months: 3, dayCount: '30/360', notionalSchedule: ACCR_SCHEDULE },
+      { side: 'receive', type: 'float', ccy: 'USD', index: 'TSFR3M', spread: 0, months: 3, dayCount: 'ACT/360', notionalSchedule: scheduleB },
+    ],
+  },
+  ...extra,
+});
+const accretingSwap = {
+  productId: 'accreting_swap',
+  title: 'USD 1-year accreting swap, receive 3.50% fixed and pay 3-month term SOFR (opposite side) on a notional rising from 40% to 100%, under a collateral agreement',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'each leg: Notional schedule (the first day of every period and its factor)'],
+    automaticInputs: ['notional of each period from the schedule', 'payment schedule of each leg on the USD payment calendar', 'TSFR3M fixings (rate fixture standing in for Shaffer MarketData)', 'settlement date, T+2 on the USD calendar', 'commission from the Book fee schedule', 'independent amount on the notional of the current period, and variation margin, from the agreement'],
+    manualInputs: ['collateral agreement (Treasury, Collateral)', 'notional schedule of each leg (contract form)', 'upfront amounts (stated fill prices)', 'mark of the contract, entered by hand', 'a fixing the data service has not supplied, entered by hand'],
+    settlement: 'Upfront and termination amounts and commission settle T+2 on the USD calendar; leg payments are cash on their payment date',
+    lifecycle: 'A schedule step that is not the first day of a period is refused at registration; fixed and floating amounts each quarter on that quarter\'s notional; increase inside a period (takes the whole period); partial termination; a final payment across Labor Day; a missing fixing holds the last payment and the maturity until entered by hand; nothing left afterwards',
+    accounting: 'Opposite side carried at the mark less the upfront received; leg payments and the termination result are realized P&L; the upfront still carried is earned at maturity; commission expensed',
+    collateral: 'Bilateral agreement: independent amount 2% of the current period\'s notional (posted at entry on 40%, trued up on the increase, at the payments that start the 70% and 100% periods, on the partial termination, returned at maturity); variation margin on the mark entered by hand, no threshold, minimum transfer 10,000: received (restricted), returned and replaced by a posting, returned when the contract ends',
+  },
+  start: at('2026-09-02'),
+  settlementCheck: { lag: 2, holidays: [] }, // no Federal Reserve holiday in the settlement windows used (2 to 4 September, 15 to 19 October 2026, 15 to 19 April 2027)
+  book: bookOf('Matrix accreting swap', 'Lending desk', 'USD', 3_000_000, 1_500_000, { perUnit: 0.00001, minimum: 0, bps: 0 }), // 10.00 per million of notional
+  instruments: {},
+  tradedOn: 'The contract is registered by the step register-under-agreement (registry form), after the collateral agreement it names has been recorded: an agreement must exist before a contract can refer to it.',
+  rates: { TSFR3M: { byDate: { '2026-09-04': 4.10 } } },
+  expectAtStart: startOf('USD', 3_000_000, 1_500_000),
+  steps: [
+    {
+      id: 'record-agreement', covers: 'collateral', action: 'agreement', as: 'csa',
+      agreement: { name: 'CSA Dealer N', counterparty: 'Dealer N', kind: 'bilateral', covers: ['account'], independentAmount: { type: 'pct', pct: 0.02 }, variationMargin: true, threshold: 0, minimumTransfer: 10_000, baseCcy: 'USD', postingCcy: 'USD', haircut: 0, nettingScope: 'position' },
+      expect: { events: [{ type: 'collateral.agreement', summary: 'Collateral agreement recorded: CSA Dealer N with Dealer N (Bilateral (CSA-style))', owner: 'treasury' }] },
+    },
+    {
+      // The floating leg's second step is put on 4 January 2027, which starts no period of a quarterly leg from 4 September: refused.
+      id: 'schedule-step-off-period', covers: 'notional schedule', action: 'register_instrument',
+      draft: accrDraft([{ from: '2026-09-04', factor: 0.4 }, { from: '2027-01-04', factor: 0.7 }, { from: '2027-03-04', factor: 1 }, { from: '2027-06-04', factor: 1 }], { name: 'USD accreting swap, step off the periods', symbol: 'ACCR-OFF' }),
+      status: 'blocked', reason: 'A schedule step must be the first day of a period of its leg.',
+      expect: { refused: 'Leg B: the notional schedule step from 2027-01-04 is not the start of a period of this leg (periods start on 2026-09-04, 2026-12-04, 2027-03-04, 2027-06-04).' },
+    },
+    { id: 'register-under-agreement', covers: 'registration', action: 'register_instrument', as: 'main', draft: accrDraft(ACCR_SCHEDULE), expect: {} },
+    {
+      // Opposite side, 25,000,000 base notional at 0.03 per 100: 25,000,000 x 0.03 / 100 = 7,500 received; commission 250; settles Friday 4 September.
+      // Independent amount: 2% of the first period's notional, 0.40 x 25,000,000 = 10,000,000: 200,000.
+      id: 'open', covers: ['open', 'collateral'], action: 'ticket', instrument: 'main', side: 'sell', qty: 25_000_000, as: 'accr', order: { statedPrice: 0.03 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 25_000_000, estimate: 0.03, model: 'stated-price', settleDate: '2026-09-04', calendar: 'USD', cash: 7_500, fees: 250 }],
+          cash: { USD: { proceeds: 7_500, fees: 250, margin: 200_000, available: 1_500_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 25_000_000, avgPrice: 0.03, fills: [{ qty: 25_000_000, price: 0.03, model: 'stated-price', settleDate: '2026-09-04' }] }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Entered on the opposite side: 25,000,000 notional of ACCR-TSFR-0927 at 0.03 per 100 notional', owner: 'account', date: '2026-09-02' },
+          { type: 'swap.collateral', summary: `Collateral posted on ${ACCR_NAME} under "CSA Dealer N" (Dealer N): 200,000.00 USD (independent amount, 2.00% of 10,000,000.00 USD notional)`, cash: { USD: -200_000 }, owner: 'account' },
+        ],
+        cash: { account: { USD: { settled: 1_300_000, unsettled: 7_250, margin: 200_000, restricted: 0, availableToTrade: 1_307_250, availableToWithdraw: 1_300_000 } } },
+        positions: [{ instrument: 'main', lot: 'accr', owner: 'account', direction: 'opposite side', qty: -25_000_000, avgCost: 0.03, cost: -7_500, price: null, value: null, unrealized: null, provisional: true, notional: 25_000_000, margin: 200_000 }],
+        holdings: { main: { long: 0, short: 25_000_000, net: -25_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-09-04', amount: 7_250, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-12-04', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-12-04', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-09-07', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', lot: 'accr', owner: 'account', qty: -25_000_000, basis: 'agreement', agreement: 'CSA Dealer N', mark: null, iaRequired: 200_000, iaPosted: 200_000, vmPosted: 0, vmHeld: 0, vmStatus: 'not_valued_yet' }],
+        pnl: { account: { realized: 0, commissions: -250, unrealized: 0, total: -250 } },
+        nav: { account: 1_499_750, book: 2_999_750 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 1_300_000, margin: 200_000, receivable: 7_250, positions: -7_500, assets: 1_499_750, liabilities: 0, netAssets: 1_499_750 } },
+      },
+    },
+    {
+      // Two end-of-day passes without a mark (2 and 3 September): nothing can be called, and it is said.
+      id: 'settle-upfront', covers: 'settlement', action: 'clock', to: at('2026-09-04'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 7,250.00 USD into settled cash', cash: { USD: 7_250 }, date: '2026-09-04' }],
+        cash: { account: { USD: { settled: 1_307_250, unsettled: 0, availableToTrade: 1_307_250, availableToWithdraw: 1_307_250 } } },
+        pending: [],
+        otc: [{ instrument: 'main', vmStatus: 'cannot_value', vmReason: /ACCR-TSFR-0927 has no mark/ }], alerts: ['collateral.unvalued'],
+        balance: { account: { cash: 1_307_250, receivable: null } },
+      },
+    },
+    {
+      // The mark is of the contract as written. On the opposite side: -25,000,000 x -0.08 / 100 = +20,000; 27,500 above the -7,500 carried.
+      id: 'mark', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: -0.08, note: 'Dealer mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'accr', price: -0.08, value: 20_000, unrealized: 27_500, provisional: false, priceSource: 'Manual entry', priceStatus: 'manual' }],
+        otc: [{ instrument: 'main', mark: -0.08, markValue: 20_000 }],
+        pnl: { account: { unrealized: 27_500, total: 27_250 } },
+        nav: { account: 1_527_250, book: 3_027_250 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 20_000, assets: 1_527_250, netAssets: 1_527_250 } },
+      },
+    },
+    {
+      // +20,000 above a zero threshold: the counterparty posts 20,000 (more than the 10,000 minimum). Restricted cash and a liability.
+      id: 'variation-margin-received', covers: 'variation margin', action: 'clock', to: eod('2026-09-04'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under "CSA Dealer N" (Dealer N): 20,000.00 USD received. Netting set of 1 position marked at 20,000.00 USD; threshold 0.00 USD.', owner: 'account', date: '2026-09-04' }],
+        cash: { account: { USD: { settled: 1_307_250, restricted: 20_000, margin: 200_000, availableToTrade: 1_307_250, availableToWithdraw: 1_307_250 } } },
+        otc: [{ instrument: 'main', vmPosted: 0, vmHeld: 20_000, vmExposure: 20_000, vmStatus: 'ok' }],
+        alerts: [],
+        balance: { account: { restricted: 20_000, collateralReceived: 20_000, assets: 1_547_250, liabilities: 20_000, netAssets: 1_527_250 } },
+      },
+    },
+    { id: 'mid-october', action: 'clock', to: at('2026-10-15'), expect: {} },
+    {
+      // 25,000,000 to 30,000,000 on the opposite side at the mark, -0.08 per 100: 5,000,000 x 0.08 / 100 = 4,000 paid; commission 50; settles Monday 19 October.
+      // Cost -7,500 + 4,000 = -3,500 (average 3,500 / 300,000 = 0.0116667 per 100). Value -30,000,000 x -0.08 / 100 = 24,000; unrealized still 27,500.
+      // Independent amount 2% x 0.40 x 30,000,000 = 240,000: 40,000 more. The added notional takes the whole first period.
+      id: 'increase', covers: ['increase', 'collateral'], action: 'resize', lot: 'accr', factor: 1.2, order: { statedPrice: -0.08 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 5_000_000, estimate: -0.08, model: 'stated-price', settleDate: '2026-10-19', cash: -4_000, fees: 50 }], cash: { USD: { fees: 50, margin: 40_000, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 5_000_000, avgPrice: -0.08 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Increased on the opposite side: 5,000,000 notional of ACCR-TSFR-0927 at -0.08 per 100 notional' },
+          { type: 'swap.collateral', summary: `Collateral posted on ${ACCR_NAME} under "CSA Dealer N" (Dealer N): 40,000.00 USD (independent amount, 2.00% of 12,000,000.00 USD notional)`, cash: { USD: -40_000 } },
+        ],
+        cash: { account: { USD: { settled: 1_267_250, unsettled: -4_050, margin: 240_000, restricted: 20_000, availableToTrade: 1_263_200, availableToWithdraw: 1_263_200 } } },
+        positions: [{ instrument: 'main', lot: 'accr', qty: -30_000_000, cost: -3_500, avgCost: 0.0116667, price: -0.08, value: 24_000, unrealized: 27_500, notional: 30_000_000, margin: 240_000 }],
+        holdings: { main: { long: 0, short: 30_000_000, net: -30_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-10-19', amount: -4_050, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: -30_000_000, markValue: 24_000, iaRequired: 240_000, iaPosted: 240_000 }],
+        pnl: { account: { commissions: -300, unrealized: 27_500, total: 27_200 } },
+        nav: { account: 1_527_200, book: 3_027_200 },
+        balance: { account: { cash: 1_267_250, margin: 240_000, payable: 4_050, positions: 24_000, assets: 1_551_250, liabilities: 24_050, netAssets: 1_527_200 } },
+      },
+    },
+    {
+      // 24,000 marked, 20,000 held: 4,000 more would be due, below the 10,000 minimum transfer, at each end of day until then.
+      id: 'settle-increase', covers: 'settlement', action: 'clock', to: at('2026-10-19'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 4,050.00 USD from settled cash', cash: { USD: -4_050 } }],
+        cash: { account: { USD: { settled: 1_263_200, unsettled: 0, availableToTrade: 1_263_200, availableToWithdraw: 1_263_200 } } },
+        pending: [],
+        otc: [{ instrument: 'main', vmHeld: 20_000, vmExposure: 24_000 }],
+        balance: { account: { cash: 1_263_200, payable: null, assets: 1_547_200, liabilities: 20_000 } },
+      },
+    },
+    {
+      // First quarter, factor 0.40 of 30,000,000: 12,000,000 (the increase took the whole period).
+      //   fixed, received: 12,000,000 x 3.50% x 90/360 = 105,000.00
+      //   float, paid:     12,000,000 x 4.10% x 91/360 = 124,366.67
+      // The next period's notional is 0.70 x 30,000,000 = 21,000,000: independent amount 420,000, 180,000 more, posted when the first payment is made.
+      id: 'first-quarter', covers: ['fixed payment', 'floating payment', 'notional schedule', 'collateral'], action: 'clock', to: at('2026-12-04'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap receipt on ${ACCR_NAME}, leg A (fixed), period 2026-09-04 to 2026-12-04: 105,000.00 USD`, cash: { USD: 105_000 }, owner: 'account', date: '2026-12-04' },
+          { type: 'swap.collateral', summary: `Collateral posted on ${ACCR_NAME} under "CSA Dealer N" (Dealer N): 180,000.00 USD (independent amount, 2.00% of 21,000,000.00 USD notional)`, cash: { USD: -180_000 } },
+          { type: 'swap.payment', summary: `Swap payment on ${ACCR_NAME}, leg B (float), period 2026-09-04 to 2026-12-04: 124,366.67 USD`, cash: { USD: -124_366.67 }, owner: 'account', date: '2026-12-04' },
+        ],
+        cash: { account: { USD: { settled: 1_063_833.33, margin: 420_000, availableToTrade: 1_063_833.33, availableToWithdraw: 1_063_833.33 } } },
+        positions: [{ instrument: 'main', lot: 'accr', margin: 420_000 }],
+        otc: [{ instrument: 'main', iaRequired: 420_000, iaPosted: 420_000 }],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-03-04', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-03-04', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-09-07', status: 'pending' },
+        ],
+        pnl: { account: { realized: -19_366.67, total: 7_833.33 } }, // 105,000 - 124,366.67; then - 300 + 27,500
+        nav: { account: 1_507_833.33, book: 3_007_833.33 },
+        balance: { account: { cash: 1_063_833.33, margin: 420_000, assets: 1_527_833.33, netAssets: 1_507_833.33 } },
+      },
+    },
+    { id: 'december-fixing', action: 'rate', code: 'TSFR3M', value: 3.90, date: '2026-12-04', expect: {} },
+    {
+      // -30,000,000 x 0.02 / 100 = -6,000; 2,500 below the -3,500 carried.
+      id: 'mark-turns', action: 'manual_price', instrument: 'main', value: 0.02, note: 'Dealer mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'accr', price: 0.02, value: -6_000, unrealized: -2_500 }],
+        otc: [{ instrument: 'main', mark: 0.02, markValue: -6_000 }],
+        pnl: { account: { unrealized: -2_500, total: -22_166.67 } },
+        nav: { account: 1_477_833.33, book: 2_977_833.33 },
+        balance: { account: { positions: -6_000, assets: 1_497_833.33, netAssets: 1_477_833.33 } },
+      },
+    },
+    {
+      // -6,000 with no threshold: the 20,000 held goes back and 6,000 is posted (26,000 in all, above the minimum transfer).
+      id: 'variation-margin-turns', covers: 'variation margin', action: 'clock', to: eod('2026-12-04'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under "CSA Dealer N" (Dealer N): 20,000.00 USD returned to the counterparty and 6,000.00 USD posted. Netting set of 1 position marked at -6,000.00 USD; threshold 0.00 USD.', owner: 'account' }],
+        cash: { account: { USD: { settled: 1_057_833.33, restricted: 0, margin: 426_000, availableToTrade: 1_057_833.33, availableToWithdraw: 1_057_833.33 } } },
+        otc: [{ instrument: 'main', vmPosted: 6_000, vmHeld: 0, vmExposure: -6_000 }],
+        balance: { account: { cash: 1_057_833.33, margin: 426_000, restricted: null, collateralReceived: null, assets: 1_477_833.33, liabilities: 0 } },
+      },
+    },
+    {
+      // Second quarter, factor 0.70: 21,000,000.
+      //   fixed, received: 21,000,000 x 3.50% x 90/360 = 183,750.00
+      //   float, paid:     21,000,000 x 3.90% x 90/360 = 204,750.00
+      // Next period factor 1.00: 30,000,000, independent amount 600,000, 180,000 more.
+      id: 'second-quarter', covers: ['fixed payment', 'floating payment', 'notional schedule', 'collateral'], action: 'clock', to: at('2027-03-04'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap receipt on ${ACCR_NAME}, leg A (fixed), period 2026-12-04 to 2027-03-04: 183,750.00 USD`, cash: { USD: 183_750 }, date: '2027-03-04' },
+          { type: 'swap.collateral', summary: `Collateral posted on ${ACCR_NAME} under "CSA Dealer N" (Dealer N): 180,000.00 USD (independent amount, 2.00% of 30,000,000.00 USD notional)`, cash: { USD: -180_000 } },
+          { type: 'swap.payment', summary: `Swap payment on ${ACCR_NAME}, leg B (float), period 2026-12-04 to 2027-03-04: 204,750.00 USD`, cash: { USD: -204_750 }, date: '2027-03-04' },
+        ],
+        cash: { account: { USD: { settled: 856_833.33, margin: 606_000, availableToTrade: 856_833.33, availableToWithdraw: 856_833.33 } } },
+        positions: [{ instrument: 'main', lot: 'accr', margin: 600_000 }],
+        otc: [{ instrument: 'main', iaRequired: 600_000, iaPosted: 600_000 }],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-06-04', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-06-04', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-09-07', status: 'pending' },
+        ],
+        pnl: { account: { realized: -40_366.67, total: -43_166.67 } }, // -19,366.67 - 21,000; then - 300 - 2,500
+        nav: { account: 1_456_833.33, book: 2_956_833.33 },
+        balance: { account: { cash: 856_833.33, margin: 606_000, assets: 1_456_833.33, netAssets: 1_456_833.33 } },
+      },
+    },
+    { id: 'march-fixing', action: 'rate', code: 'TSFR3M', value: 3.70, date: '2027-03-04', expect: {} },
+    { id: 'mid-april', action: 'clock', to: at('2027-04-15'), expect: {} },
+    {
+      // Half (15,000,000) terminated at -0.04 per 100 as written: closing the opposite side at -0.04 receives 15,000,000 x 0.04 / 100 = 6,000; commission 150.
+      // Upfront carried on that half: 3,500 / 2 = 1,750 received. Realized 1,750 + 6,000 = 7,750. Settles Monday 19 April.
+      // Independent amount 2% x 15,000,000 = 300,000: 300,000 back. Left: -15,000,000 carrying -1,750, marked 0.02: -3,000, 1,250 down.
+      // Variation margin: -3,000 marked, 6,000 posted: 3,000 would come back, below the minimum transfer.
+      id: 'partial-termination', covers: ['reduce', 'partial termination', 'collateral'], action: 'close', lot: 'accr', scope: 'strategy', percent: 50, order: { statedPrice: -0.04 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 15_000_000, estimate: -0.04, model: 'stated-price', settleDate: '2027-04-19', cash: 6_000, fees: 150 }] },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 15_000_000, avgPrice: -0.04 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Terminated in part: 15,000,000 of 30,000,000 notional of ACCR-TSFR-0927 at -0.04 per 100 notional (realized 7,750.00 USD)' },
+          { type: 'swap.collateral', summary: `Collateral returned on ${ACCR_NAME} under "CSA Dealer N" (Dealer N): 300,000.00 USD (independent amount, 2.00% of 15,000,000.00 USD notional)`, cash: { USD: 300_000 } },
+        ],
+        cash: { account: { USD: { settled: 1_156_833.33, unsettled: 5_850, margin: 306_000, availableToTrade: 1_162_683.33, availableToWithdraw: 1_156_833.33 } } },
+        positions: [{ instrument: 'main', lot: 'accr', qty: -15_000_000, cost: -1_750, avgCost: 0.0116667, price: 0.02, value: -3_000, unrealized: -1_250, notional: 15_000_000, margin: 300_000 }],
+        holdings: { main: { long: 0, short: 15_000_000, net: -15_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2027-04-19', amount: 5_850, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: -15_000_000, markValue: -3_000, iaRequired: 300_000, iaPosted: 300_000 }],
+        pnl: { account: { realized: -32_616.67, commissions: -450, unrealized: -1_250, total: -34_316.67 } },
+        nav: { account: 1_465_683.33, book: 2_965_683.33 },
+        balance: { account: { cash: 1_156_833.33, margin: 306_000, receivable: 5_850, positions: -3_000, assets: 1_465_683.33, liabilities: 0, netAssets: 1_465_683.33 } },
+      },
+    },
+    {
+      id: 'settle-partial-termination', covers: 'settlement', action: 'clock', to: at('2027-04-19'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 5,850.00 USD into settled cash', cash: { USD: 5_850 } }],
+        cash: { account: { USD: { settled: 1_162_683.33, unsettled: 0, availableToTrade: 1_162_683.33, availableToWithdraw: 1_162_683.33 } } },
+        pending: [],
+        otc: [{ instrument: 'main', vmPosted: 6_000, vmExposure: -3_000 }],
+        balance: { account: { cash: 1_162_683.33, receivable: null } },
+      },
+    },
+    {
+      // Third quarter, factor 1.00 of the 15,000,000 left.
+      //   fixed, received: 15,000,000 x 3.50% x 90/360 = 131,250.00
+      //   float, paid:     15,000,000 x 3.70% x 92/360 = 141,833.33
+      // The last period's factor is also 1.00: the independent amount does not move.
+      id: 'third-quarter', covers: ['fixed payment', 'floating payment', 'notional schedule'], action: 'clock', to: at('2027-06-04'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap receipt on ${ACCR_NAME}, leg A (fixed), period 2027-03-04 to 2027-06-04: 131,250.00 USD`, cash: { USD: 131_250 }, date: '2027-06-04' },
+          { type: 'swap.payment', summary: `Swap payment on ${ACCR_NAME}, leg B (float), period 2027-03-04 to 2027-06-04: 141,833.33 USD`, cash: { USD: -141_833.33 }, date: '2027-06-04' },
+        ],
+        cash: { account: { USD: { settled: 1_152_100, availableToTrade: 1_152_100, availableToWithdraw: 1_152_100 } } },
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-09-07', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-09-07', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-09-07', status: 'pending' },
+        ],
+        pnl: { account: { realized: -43_200, total: -44_900 } }, // -32,616.67 - 10,583.33; then - 450 - 1,250
+        nav: { account: 1_455_100, book: 2_955_100 },
+        balance: { account: { cash: 1_152_100, assets: 1_455_100, netAssets: 1_455_100 } },
+      },
+    },
+    {
+      // Labor Day: the payment calendar is closed. Nothing is paid, though the period has ended (Saturday the 4th).
+      id: 'labor-day', covers: 'payment across a holiday', action: 'clock', to: at('2027-09-06'),
+      expect: { events: [], cash: { account: { USD: { settled: 1_152_100 } } } },
+    },
+    {
+      // Tuesday 7 September. Fixed, received: 15,000,000 x 3.50% x 90/360 = 131,250.00.
+      // The floating amount needs the fixing of 4 June, never supplied: it waits, and so does the maturity.
+      id: 'last-fixed-floating-missing', covers: ['fixed payment', 'payment across a holiday', 'missing fixing'], action: 'clock', to: at('2027-09-07'),
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Swap receipt on ${ACCR_NAME}, leg A (fixed), period 2027-06-04 to 2027-09-04: 131,250.00 USD`, cash: { USD: 131_250 }, date: '2027-09-07' }],
+        cash: { account: { USD: { settled: 1_283_350, availableToTrade: 1_283_350, availableToWithdraw: 1_283_350 } } },
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-09-07', status: 'blocked', reason: /Waiting for the final leg payments/ },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-09-07', status: 'blocked', reason: /Awaiting the TSFR3M fixing for 2027-06-04/ },
+        ],
+        pnl: { account: { realized: 88_050, total: 86_350 } }, // -43,200 + 131,250; then - 450 - 1,250
+        nav: { account: 1_586_350, book: 3_086_350 },
+        balance: { account: { cash: 1_283_350, assets: 1_586_350, netAssets: 1_586_350 } },
+      },
+    },
+    {
+      // 3.55% for 4 June, by hand. Float, paid: 15,000,000 x 3.55% x 92/360 = 136,083.33. The swap then matures: the -1,750 still carried is earned
+      // (+1,750), the 300,000 independent amount and the 6,000 of variation margin come back.
+      // 1,500,000 + 7,500 - 4,000 + 6,000 - 450 - 19,366.67 - 21,000 - 10,583.33 + 131,250 - 136,083.33 = 1,453,266.67.
+      id: 'fixing-by-hand-and-maturity', covers: ['missing fixing', 'floating payment', 'maturity', 'close', 'collateral'], action: 'manual_rate', code: 'TSFR3M', value: 3.55, date: '2027-06-04', note: 'Published fixing, entered by hand',
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap payment on ${ACCR_NAME}, leg B (float), period 2027-06-04 to 2027-09-04: 136,083.33 USD`, cash: { USD: -136_083.33 }, date: '2027-09-07' },
+          { type: 'swap.matured', summary: `Swap matured: ${ACCR_NAME} (notional 15,000,000)`, owner: 'account' },
+          { type: 'swap.collateral', summary: `Collateral returned on ${ACCR_NAME} under "CSA Dealer N" (Dealer N): 300,000.00 USD (independent amount, the position ended)`, cash: { USD: 300_000 } },
+          { type: 'collateral.variation', summary: 'Variation margin under "CSA Dealer N" (Dealer N): 6,000.00 USD returned to us. The last position of the netting set ended.', cash: { USD: 6_000 } },
+        ],
+        cash: { account: { USD: { settled: 1_453_266.67, unsettled: 0, margin: 0, restricted: 0, reserved: 0, availableToTrade: 1_453_266.67, availableToWithdraw: 1_453_266.67 } }, treasury: { USD: { settled: 1_500_000 } } },
+        positions: [], holdings: { main: null }, lifecycle: [], otc: [], pending: [], alerts: [],
+        pnl: { account: { realized: -46_283.33, commissions: -450, unrealized: 0, total: -46_733.33 } }, // 88,050 - 136,083.33 + 1,750
+        nav: { account: 1_453_266.67, treasury: 1_500_000, book: 2_953_266.67 },
+        balance: { account: { cash: 1_453_266.67, margin: null, positions: null, assets: 1_453_266.67, liabilities: 0, netAssets: 1_453_266.67 } },
+      },
+    },
+    {
+      id: 'nothing-left', action: 'clock', to: at('2027-09-08'),
+      expect: { events: [], lifecycle: [], positions: [], pending: [], otc: [], alerts: [], cash: { account: { USD: { settled: 1_453_266.67, margin: 0, restricted: 0 } } } },
+    },
+  ],
+};
+
+export default [amortizingSwap, accretingSwap];

@@ -238,3 +238,12 @@ start fixing never asked of the data service; a return or price fixing asked for
 - Not mine, seen in `npm test`: system cases SE:isolation:book-routes and SE:stress:repeated-requests fail because the route
   POST /api/tasks/:id/settlement-value (added by someone else) is not classified in those cases; matrix spec audit of
   cds_swaption fails (o3's spec in progress).
+
+## b4 (bond family, structured group B), 2026-10-13
+- server/core/positions.js `tradeMath` (shared core, not changed): the cost removed by a partial sale is
+  `money(avg * closedSigned)` with `avg = cost / qty` computed in binary floating point. When the exact cost removed is a
+  half cent the product lands just below it and rounds DOWN, against the half-away-from-zero rule `money()` applies
+  everywhere else. Found by specified_pool (first draft): cost 4,857,652.35 on 5,000,000 face, 1,500,000 sold: exact cost
+  out 4,857,652.35 x 1.5 / 5 = 1,457,295.705 -> 1,457,295.71 by hand; the Terminal removes 1,457,295.70 (JS gives
+  1,457,295.7049999998), so realized differs by 0.01. Fix: pre-round
+  the product to 9 decimals. Left open because every family's partial sale goes through it; the spec now sells 1,600,000.

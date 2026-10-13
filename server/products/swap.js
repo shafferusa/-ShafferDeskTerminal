@@ -27,6 +27,7 @@ import { CCY_RE, ISO_DATE_RE, isZero, money, need, num, sign } from '../core/uti
 import { normalizeBasis } from '../core/agreements.js';
 import { bookSecurityFill, fmtPx, fmtQty } from './common.js';
 import { calendarFor, paymentCalendarFor, standardSettleDate } from './security.js';
+import * as credit from './credit.js'; // s3: credit default swap conventions and events recorded by hand
 
 const LEG_TYPES = ['fixed', 'float', 'ois', 'return', 'price', 'cap', 'floor'];
 const pct = (x, dp = 3) => `${(x * 100).toFixed(dp)}%`;

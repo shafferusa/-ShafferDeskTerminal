@@ -237,6 +237,16 @@ export const bond = {
     if (typeof t.poolCharacteristics === 'string') t.poolCharacteristics = t.poolCharacteristics.trim();
     if (!t.poolCharacteristics) delete t.poolCharacteristics;
     if (draft.productId === 'specified_pool' && !t.poolCharacteristics) errors.push('A specified pool needs its stated characteristics (for example: maximum loan balance, LTV, FICO, geography, loan purpose). They are what the pool is priced on and are not assumed.');
+    // b4: servicing fee of an asset-backed pass-through: deducted from the interest collected before holders are paid. The coupon
+    // rate stated is the gross rate; holders accrue and are paid the net rate (gross less the fee; for a floating coupon, the
+    // fixing plus the spread less the fee).
+    if (t.servicingFeeRate === undefined || t.servicingFeeRate === null || t.servicingFeeRate === '') delete t.servicingFeeRate;
+    else {
+      t.servicingFeeRate = num(t.servicingFeeRate);
+      if (!(t.servicingFeeRate >= 0 && t.servicingFeeRate < 0.2)) errors.push('Servicing fee must be a decimal rate a year, such as 0.005 for 0.50%.');
+      else if (t.couponType === 'zero') errors.push('A servicing fee is deducted from interest: a zero-coupon instrument has none to deduct it from.');
+      else if (t.couponType === 'fixed' && !(t.servicingFeeRate < t.couponRate)) errors.push('The servicing fee must be below the gross coupon rate it is deducted from.');
+    }
     if (t.issueDate && !ISO_DATE_RE.test(t.issueDate)) errors.push('Issue date must be YYYY-MM-DD.');
     // Minimum denomination: trades are in multiples of it (the quantity step of the ticket and the preview).
     if (t.minDenomination === undefined || t.minDenomination === null || t.minDenomination === '') delete t.minDenomination;
@@ -264,6 +274,7 @@ export const bond = {
     if (t.paymentDelayDays) rows.push(['Payment delay', `${t.paymentDelayDays} days after each accrual period ends`]);
     if (t.guarantor) rows.push(['Guarantor', `${t.guarantor} (principal and interest guaranteed; no loss allocation)`]);
     if (t.poolCharacteristics) rows.push(['Pool characteristics', `${t.poolCharacteristics} (stated at registration)`]);
+    if (t.servicingFeeRate) rows.push(['Servicing fee', `${(t.servicingFeeRate * 100).toFixed(3)}% a year, deducted from interest before holders are paid${t.couponType === 'fixed' ? `: net coupon ${((t.couponRate - t.servicingFeeRate) * 100).toFixed(3)}%` : ''}`]);
     if (t.writtenDown) rows.push(['Written down', `${t.writtenDown.kind === 'loss' ? 'Losses allocated' : 'Principal written down'} to factor ${t.factor} on ${t.writtenDown.date}`]);
     if (t.issueDate) rows.push(['Issue date', t.issueDate]);
     if (t.seniority) rows.push(['Seniority', t.seniority]);
@@ -423,9 +434,16 @@ export const bond = {
       }
       const cScale = couponScale(inst, couponDate);
       const amount = money((face * cScale * per100) / 100, ccy);
+      // b4: a servicing fee came off the gross interest before the holder was paid: say how much.
+      let servicing = '';
+      if (inst.terms.servicingFeeRate) {
+        const grossPer100 = couponPer100({ ...t, couponRate: inst.terms.couponType === 'fixed' ? inst.terms.couponRate : t.couponRate, currentCoupon: inst.terms.couponType === 'float' ? inst.terms.currentCoupon : t.currentCoupon }, couponDate);
+        const gross = money((face * cScale * grossPer100) / 100, ccy);
+        servicing = `; gross interest ${fmt(Math.abs(gross), ccy)} less servicing fee ${fmt(Math.abs(money(gross - amount, ccy)), ccy)} (${(inst.terms.servicingFeeRate * 100).toFixed(3)}% a year)`;
+      }
       const eventId = ledger.post({
         // A short owes the coupon to the lender of the securities: it is paid, on the face sold short.
-        ...base, type: 'bond.coupon', summary: `Coupon ${amount >= 0 ? 'received' : 'paid'} on ${fmtQty(Math.abs(face))} ${inst.symbol || inst.name}${face < 0 ? ' sold short' : ''}${principalNote(inst, face, cScale)}: ${fmt(Math.abs(amount), ccy)}`,
+        ...base, type: 'bond.coupon', summary: `Coupon ${amount >= 0 ? 'received' : 'paid'} on ${fmtQty(Math.abs(face))} ${inst.symbol || inst.name}${face < 0 ? ' sold short' : ''}${principalNote(inst, face, cScale)}${servicing}: ${fmt(Math.abs(amount), ccy)}`,
         data: { couponDate, per100, face, ...(Math.abs(cScale - 1) > 1e-12 ? { scale: cScale } : {}) },
         entries: [{ account: 'cash', ccy, amount, positionId: pos.id }, { account: 'accrued.asset', ccy, amount: -amount, positionId: pos.id }],
       });
@@ -792,7 +810,12 @@ export const bond = {
 
 /** Terms used for schedule arithmetic (a perpetual gets a far-off synthetic maturity on its anchor). */
 function schedTerms(inst) {
-  const t = inst.terms;
+  let t = inst.terms;
+  // b4: a servicing fee is deducted from the gross rate: holders accrue and are paid the net rate.
+  if (t.servicingFeeRate) {
+    if (t.couponType === 'fixed') t = { ...t, couponRate: t.couponRate - t.servicingFeeRate };
+    else if (t.couponType === 'float' && t.currentCoupon !== null && t.currentCoupon !== undefined) t = { ...t, currentCoupon: t.currentCoupon - t.servicingFeeRate };
+  }
   if (!t.perpetual) return t;
   const y = Number(t.anchorDate.slice(0, 4));
   return { ...t, maturity: `${y + 200}${t.anchorDate.slice(4)}` };

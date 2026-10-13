@@ -217,3 +217,4 @@
 - 2026-10-13T19:12Z | coord | +0 | wave C starting: structured bonds B, other swaps, credit, templates, accounting verification
 - 2026-10-13T19:23Z | s2 | +0.2 | amortizing_swap passes at engine, API and browser (notional schedule on the contract form, missing step refused)
 - 2026-10-13T19:25Z | b4 | +0.2 | specified_pool passes at engine, API and browser
+- 2026-10-13T19:28Z | s2 | +0.2 | accreting_swap passes at engine, API and browser (independent amount follows the notional of the current period)

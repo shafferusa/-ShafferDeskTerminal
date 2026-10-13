@@ -56,7 +56,7 @@ const FORM_TERMS = new Set(['couponType', 'couponRate', 'referenceRate', 'spread
   // structured debt (added by b3): inflation-linked, callable, puttable, convertible and exchangeable bonds, securitised paper
   'indexRatio', 'inflationFloor', 'callSchedule', 'putSchedule', 'conversionRatio', 'paymentDelayDays', 'guarantor',
   // structured debt, group B (added by b4)
-  'poolCharacteristics']);
+  'poolCharacteristics', 'servicingFeeRate']);
 const has = (v) => v !== undefined && v !== null && v !== '';
 const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** A call or put schedule as the form takes it: "2028-06-15 101; 2029-06-15 100". */
@@ -131,6 +131,7 @@ export async function contractTerms(ui, dialog, draft, ctx) {
   if (has(t.guarantor)) await ui.input(dialog, 'Guarantor').fill(String(t.guarantor));
   // ---- structured debt, group B (b4) ----
   if (has(t.poolCharacteristics)) await ui.input(dialog, 'Pool characteristics').fill(String(t.poolCharacteristics));
+  if (has(t.servicingFeeRate)) await ui.input(dialog, 'Servicing fee').fill(String(t.servicingFeeRate));
 }
 
 /** The security ticket in the instrument drawer, for a debt security. */
