@@ -23,8 +23,13 @@
 //     contracts, which is also its unrealized P&L. Its cost is nil.
 //   - Reducing realizes (fill - reference) x multiplier on the contracts closed.
 //   - On the last trading day the position is closed in cash at the final settlement price, without a
-//     fee, and its margin is released. A physically delivered contract is closed out in cash the same
-//     way and the Terminal says that delivery is not simulated. A contract past that day refuses trades.
+//     fee, and its margin is released. A physically delivered contract whose deliverable is configured
+//     (its Underlying is the deliverable asset; commodity_future here) is then delivered on paper: goods
+//     received or given up at the invoice amount, labelled simulated. A physically delivered contract
+//     without a configured deliverable, and every bond future (the deliverable basket, conversion factors
+//     and accrued interest are not modelled), is closed out in cash and the Terminal says that delivery is
+//     not simulated; a delivery notice on it is refused with that reason. A contract past that day
+//     refuses trades.
 //   - Each ticket opens its own strategy instance: a sale from the ticket opens a short beside a long,
 //     and the holding is shown gross. A position is added to with Resize and reduced with Close.
 //
@@ -1456,38 +1461,63 @@ const fxFuture = {
 // commodity_future
 // ---------------------------------------------------------------------------------------------
 // Modelled on NYMEX light sweet crude oil: 1,000 barrels a contract, quoted in USD a barrel, minimum
-// move 0.01 (10 USD a contract), physically delivered at Cushing. The May 2026 contract stops trading
-// on 21 April, the June contract on 19 May. Nobody here wants the oil: the long is rolled from May
-// into June through the strategy instance well before the last day, and a request for delivery is
-// refused (the Terminal has no delivery action for a future).
-// The week holds Good Friday, 3 April 2026: US markets and NYMEX are closed, no end-of-day pass runs,
-// and Monday's settlement is against Thursday's. Initial margin 6,000 USD a contract; commission
-// 1.50 USD a contract.
+// move 0.01 (10 USD a contract), physically delivered at Cushing, Oklahoma. The May 2026 contract stops
+// trading on 21 April, the June contract on 19 May.
+// Contract terms, and what they mean for delivery (determined from the contract, not assumed):
+//   - Settlement is physical. The deliverable is light sweet crude oil (API gravity 37 to 42, sulfur 0.42%
+//     or less) at Cushing; each contract delivers 1,000 barrels. The deliverable is registered as its own
+//     spot instrument (WTI-CUSH, quantity in barrels, quoted USD a barrel) and set as the contract's
+//     Underlying, so the Terminal can simulate the delivery on paper.
+//   - The delivery obligation arises only from a position still open at the end of the last trading day:
+//     NYMEX crude has no notice period before it. The delivery window therefore opens on the last trading
+//     day (first notice day = last trading day), and delivery is made at the final settlement price.
+//   - Only the short side gives notice of delivery; the long takes delivery.
+// What the Terminal does, and what this scenario checks step by step:
+//   - Refused, each with its own reason: a notice for more contracts than the position holds; a notice
+//     before the delivery window; a notice from the long side; a notice on a position that is closed.
+//   - Held to the last trading day (2 of the June contracts): simulated delivery. The contracts close at the
+//     final settlement price 66.40 (variation since the last settlement realized, margin released); the
+//     long receives 2,000 barrels into a position at the invoice amount 2 x 1,000 x 66.40 = 132,800.00, owed
+//     on the deliverable's own settlement date (T+2, Book setting settlement.spot); both entries say
+//     "simulated" and no goods move. The invoice is paid; the barrels are then sold from the strategy
+//     instance and settle T+2 across Memorial Day.
+// The long is first rolled from May into June through the strategy instance, three of the five June
+// contracts are closed before the last day, and two are held to it.
+// The first week holds Good Friday, 3 April 2026: US markets and NYMEX are closed, no end-of-day pass
+// runs, and Monday's settlement is against Thursday's. Initial margin 6,000 USD a contract; commission
+// 1.50 USD a contract; commission on the physical barrels 0.01 USD a barrel.
 const OIL = (symbol, month, expiration) => ({
   productId: 'commodity_future', name: `Light sweet crude oil future, ${month}`, symbol, marketView: 'US_DERIV', venue: 'NYMEX', venueType: 'exchange', venueCountry: 'US', underlyingGeo: 'US (Cushing, Oklahoma)',
-  tradingCcy: 'USD', multiplier: 1000,
-  terms: { root: 'CL', expiration, tickSize: 0.01, initialMargin: 6_000, settlement: 'physical', priceUnits: 'USD per barrel' },
+  tradingCcy: 'USD', multiplier: 1000, underlying: 'oil',
+  terms: { root: 'CL', expiration, tickSize: 0.01, initialMargin: 6_000, settlement: 'physical', priceUnits: 'USD per barrel',
+    delivery: { units: 1000, firstNotice: expiration, grade: 'Light sweet crude oil, API gravity 37 to 42, sulfur 0.42% or less', location: 'Cushing, Oklahoma' } },
 });
 const commodityFuture = {
   productId: 'commodity_future',
-  title: 'Light sweet crude oil future (1,000 barrels), May 2026 rolled into June 2026, NYMEX, held over Good Friday',
+  title: 'Light sweet crude oil future (1,000 barrels, physically delivered at Cushing), May 2026 rolled into June 2026, NYMEX, held over Good Friday and to delivery',
   matrix: {
     ...FUTURES_TICKET,
-    manualInputs: ['none in this scenario; storage, delivery and inspection costs of a delivered commodity are not simulated'],
-    settlement: 'No purchase cash; initial margin 6,000 USD a contract; daily variation margin at 10 USD a cent; no pass on Good Friday',
-    lifecycle: 'Daily variation margin (automatic); no end-of-day pass on a US market holiday; roll from the strategy instance (close May, open June, one confirmation); taking delivery is not offered and is refused',
-    accounting: 'Nil cost; variation margin and the roll\'s closing leg are realized P&L; the June leg starts its own reference price; commission 1.50 USD a contract',
-    collateral: 'Initial margin per contract; the roll releases the May margin and posts the June margin in one package, and the preview requires the June margin in free cash',
+    requiredFields: [...FUTURES_TICKET.requiredFields, 'registration: Underlying (the deliverable), Settlement Physical delivery, Deliverable units per contract, First notice day, Deliverable grade, Delivery location', 'delivery notice: Contracts to deliver'],
+    manualInputs: ['delivery notice (position Lifecycle menu, "Delivery notice"): refused here for the long side, before the window, for more than held and on a closed position', 'storage, transport and inspection costs of delivered oil are not simulated (would be manual cash flows)'],
+    settlement: 'No purchase cash; initial margin 6,000 USD a contract; daily variation margin at 10 USD a cent; no pass on Good Friday; held to the last trading day: simulated physical delivery at the final settlement price, invoice owed T+2 on the deliverable\'s own settlement terms; the delivered barrels sold and settled T+2 across Memorial Day',
+    lifecycle: 'Daily variation margin (automatic); no end-of-day pass on a US market holiday; roll from the strategy instance (close May, open June, one confirmation); partial close; at the last trading day simulated delivery (automatic, labelled simulated); delivery notices refused with a specific reason when outside the contract\'s terms',
+    accounting: 'Nil cost; variation margin, closes and the final settlement are realized P&L; delivered barrels carried at the invoice amount and then sold (realized); commission 1.50 USD a contract and 0.01 USD a barrel',
+    collateral: 'Initial margin per contract; the roll releases the May margin and posts the June margin in one package; the partial close and the final settlement release margin',
   },
   start: AM('2026-04-01'),
   settlementCheck: { lag: 0, holidays: ['2026-04-03'] }, // US: Good Friday, 3 April 2026
-  book: book('Matrix commodity future', { funding: [{ ccy: 'USD', amount: 150_000 }], fee: { perUnit: 1.50, minimum: 0, bps: 0 } }),
-  instruments: { main: OIL('CLK6', 'May 2026', '2026-04-21'), next: OIL('CLM6', 'June 2026', '2026-05-19') },
+  book: book('Matrix commodity future', { funding: [{ ccy: 'USD', amount: 150_000 }], fee: { perUnit: 1.50, minimum: 0, bps: 0 }, extraFees: { spot: { perUnit: 0.01, minimum: 0, bps: 0 } }, settlement: { spot: 2 } }),
+  instruments: {
+    // The deliverable, registered first so that the contracts can name it as their Underlying.
+    oil: { productId: 'crude_oil', name: 'WTI crude oil, Cushing, Oklahoma (pipeline barrels)', symbol: 'WTI-CUSH', marketView: 'US_CASH', venue: 'Prairie Energy Marketing (OTC)', venueType: 'otc', venueCountry: 'US', issuer: 'Prairie Energy Marketing LLC', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', terms: { quantityUnit: 'barrels', priceUnits: 'USD per barrel' } },
+    main: OIL('CLK6', 'May 2026', '2026-04-21'), next: OIL('CLM6', 'June 2026', '2026-05-19'),
+  },
   quotes: {
+    oil: { bid: 71.30, ask: 71.36, last: 71.33, bidSize: 1_000_000, askSize: 1_000_000 },
     main: { bid: 71.20, ask: 71.22, last: 71.21, bidSize: 300, askSize: 300 },
     next: { bid: 70.85, ask: 70.88, last: 70.86, bidSize: 300, askSize: 300 },
   },
-  closes: { main: { '2026-04-01': 72.05, '2026-04-02': 70.38, '2026-04-06': 69.05 }, next: { '2026-04-07': 69.40 } }, // none on Good Friday
+  closes: { main: { '2026-04-01': 72.05, '2026-04-02': 70.38, '2026-04-06': 69.05 }, next: { '2026-04-07': 69.40, '2026-05-18': 66.80, '2026-05-19': 66.40 } }, // none on Good Friday; 66.40 is the June contract's final settlement price
   expectAtStart: {
     ...NO_STATE,
     cash: { account: { USD: usd(150_000) }, treasury: { USD: usd(850_000) } },
@@ -1514,9 +1544,16 @@ const commodityFuture = {
       },
     },
     {
-      id: 'request-delivery', covers: 'physical delivery', action: 'lifecycle', lot: 'lot', body: { action: 'deliver' },
-      status: 'unsupported', reason: 'Physical delivery of a future is not simulated: the Terminal offers no delivery action on the position.',
-      expect: { refused: { api: 'Unknown lifecycle action "deliver"', browser: 'offers only: Manual cash flow' } },
+      // Invalid: 6 contracts against a position of 5.
+      id: 'request-delivery-too-many', covers: 'physical delivery', action: 'lifecycle', lot: 'lot', body: { action: 'deliver', contracts: 6 },
+      status: 'blocked', reason: 'A delivery notice cannot be for more contracts than the position holds.',
+      expect: { refused: 'Delivery of 6 contracts was requested, but this CLK6 position holds only 5' },
+    },
+    {
+      // Invalid: 1 April is before the May contract's delivery window (it opens on its last trading day, 21 April).
+      id: 'request-delivery-before-window', covers: 'physical delivery', action: 'lifecycle', lot: 'lot', body: { action: 'deliver', contracts: 5 },
+      status: 'blocked', reason: 'The delivery window of the May contract opens on its last trading day, 21 April 2026.',
+      expect: { refused: 'The delivery window of CLK6 has not opened: delivery notices are accepted from 2026-04-21 (first notice day)' },
     },
     {
       id: 'day-1-variation', covers: 'variation margin', action: 'clock', to: EOD('2026-04-01'),
@@ -1622,21 +1659,126 @@ const commodityFuture = {
       },
     },
     {
-      id: 'close', covers: ['close', 'margin release'], action: 'close', lot: 'lot', instrument: 'next', scope: 'strategy', percent: 100,
+      // Three of the five June contracts are closed; two are held to the last trading day.
+      id: 'close-part', covers: ['reduce', 'margin release'], action: 'close', lot: 'lot', instrument: 'next', scope: 'strategy', percent: 60,
       expect: {
-        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'next', qty: 5, estimate: 69.55, model: 'quoted-bid-ask', settleDate: '2026-04-08', notional: 347_750, initialMargin: -30_000, fees: 7.50 }],
-          cash: { USD: { purchases: 0, fees: 7.50, margin: 0, required: 7.50, available: 112_227.50, shortfall: 0 } } },
-        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 5, avgPrice: 69.55 }] },
-        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 5 CLM6 @ 69.55 (notional 347,750.00 USD; margin released 30,000.00 USD; realized 750.00 USD)', cash: { USD: 30_742.50 } }], // (69.55 - 69.40) x 5,000
-        // By hand: May bought 71.22, sold 69.10: -2.12 x 5,000 = -10,600. June bought 68.83, sold 69.55: 0.72 x 5,000 = 3,600. Total -7,000.
-        // Commission 20 contracts x 1.50 = 30. 150,000 - 7,000 - 30 = 142,970.
-        cash: { account: { USD: usd(142_970, 0) }, treasury: { USD: usd(850_000) } },
-        positions: [],
-        holdings: { next: null },
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'next', qty: 3, estimate: 69.55, model: 'quoted-bid-ask', settleDate: '2026-04-08', notional: 208_650, initialMargin: -18_000, fees: 4.50 }], // 3 x 69.55 x 1,000; 3 x 6,000; 3 x 1.50
+          cash: { USD: { purchases: 0, fees: 4.50, margin: 0, required: 4.50, available: 112_227.50, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 3, avgPrice: 69.55 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 3 CLM6 @ 69.55 (notional 208,650.00 USD; margin released 18,000.00 USD; realized 450.00 USD)', cash: { USD: 18_445.50 } }], // (69.55 - 69.40) x 3,000 = 450; 450 - 4.50 + 18,000
+        cash: { account: { USD: usd(130_673, 12_000) } }, // 112,227.50 + 18,445.50
+        positions: [{ instrument: 'next', lot: 'lot', owner: 'account', direction: 'long', qty: 2, avgCost: 69.40, cost: 0, price: 69.56, value: 320, unrealized: 320, notional: 139_120, margin: 12_000 }], // (69.56 - 69.40) x 2,000; 2 x 69.56 x 1,000
+        holdings: { next: { long: 2, short: 0, net: 2 } },
+        pnl: { account: { realized: -7_300, commissions: -27, unrealized: 320, total: -7_007 } }, // -7,750 + 450; 22.50 + 4.50
+        nav: { account: 142_993, book: 992_993 }, // 130,673 + 12,000 + 320
+        balance: { account: { cash: 130_673, margin: 12_000, positions: 320, assets: 142_993, netAssets: 142_993 } },
+      },
+    },
+    {
+      // Tuesday 19 May 2026, 10:00 New York. The end-of-day pass of the latest business day (Monday 18 May) settles the
+      // two contracts against 66.80: (66.80 - 69.40) x 1,000 x 2 = 5,200.00 paid. (The Terminal runs the pass of the
+      // latest business day only; the days in between had no settlement price stated and move nothing.) The expiry
+      // item is due today and waits, visibly, for today's final settlement price.
+      id: 'last-trading-day', covers: 'variation margin', action: 'clock', to: AM('2026-05-19'),
+      expect: {
+        events: [{ type: 'future.variation', summary: 'Variation margin paid on 2 CLM6: 5,200.00 USD (settlement 66.80 vs 69.40)', cash: { USD: -5_200 }, date: '2026-05-18' }],
+        cash: { account: { USD: usd(125_473, 12_000) } }, // 130,673 - 5,200
+        positions: [{ instrument: 'next', lot: 'lot', owner: 'account', direction: 'long', qty: 2, avgCost: 66.80, cost: 0, price: 69.56, value: 5_520, unrealized: 5_520, notional: 139_120, margin: 12_000 }], // (69.56 - 66.80) x 2,000, against the standing quote
+        lifecycle: [{ type: 'future.expiry', instrument: 'next', dueDate: '2026-05-19', status: 'blocked' }],
+        pnl: { account: { realized: -12_500, unrealized: 5_520, total: -7_007 } }, // -7,300 - 5,200; -12,500 - 27 + 5,520
+        balance: { account: { cash: 125_473, positions: 5_520 } },
+      },
+    },
+    {
+      id: 'quote-last-day', action: 'quote', instrument: 'next', quote: { bid: 66.30, ask: 66.33, last: 66.31, bidSize: 300, askSize: 300 },
+      expect: {
+        positions: [{ instrument: 'next', lot: 'lot', owner: 'account', direction: 'long', qty: 2, avgCost: 66.80, cost: 0, price: 66.31, value: -980, unrealized: -980, notional: 132_620, margin: 12_000 }], // (66.31 - 66.80) x 2,000
+        pnl: { account: { unrealized: -980, total: -13_507 } }, // -12,500 - 27 - 980
+        nav: { account: 136_493, book: 986_493 }, // 125,473 + 12,000 - 980
+        balance: { account: { positions: -980, assets: 136_493, netAssets: 136_493 } },
+      },
+    },
+    { id: 'oil-quote-last-day', action: 'quote', instrument: 'oil', quote: { bid: 66.45, ask: 66.50, last: 66.48, bidSize: 1_000_000, askSize: 1_000_000 }, expect: {} },
+    {
+      // Invalid: the window is open (last trading day) but a long does not give notice; it takes delivery.
+      id: 'request-delivery-long-side', covers: 'physical delivery', action: 'lifecycle', lot: 'lot', instrument: 'next', body: { action: 'deliver', contracts: 2 },
+      status: 'blocked', reason: 'Only the short side gives notice of delivery; the long takes delivery.',
+      expect: { refused: 'Only the short side gives notice of delivery. This long CLM6 position takes delivery' },
+    },
+    {
+      // Valid: held to the end of the last trading day, the two contracts are delivered (simulated) at the final settlement price 66.40.
+      //   Close-out: (66.40 - 66.80) x 1,000 x 2 = -800.00 realized; margin 12,000.00 released; cash +11,200.00.
+      //   Delivery: 2 x 1,000 = 2,000 barrels received at 66.40: invoice 2 x 1,000 x 66.40 = 132,800.00, owed T+2 = Thursday 21 May.
+      id: 'expiry-delivery', covers: ['final settlement', 'expiry', 'physical delivery', 'margin release'], action: 'clock', to: EOD('2026-05-19'),
+      expect: {
+        events: [
+          { type: 'future.final_settlement', summary: 'Final settlement: 2 CLM6 closed at 66.40 for simulated physical delivery', cash: { USD: 11_200 }, owner: 'account', date: '2026-05-19' },
+          { type: 'future.delivery', summary: 'Simulated delivery (paper entry, no goods move): received 2,000 barrels WTI-CUSH on 2 CLM6 at 66.40; invoice 132,800.00 USD payable 2026-05-21', owner: 'account', date: '2026-05-19' },
+        ],
+        cash: { account: { USD: { settled: 136_673, unsettled: -132_800, reserved: 0, restricted: 0, margin: 0, availableToTrade: 3_873, availableToWithdraw: 3_873 } } }, // 125,473 + 11,200; 136,673 - 132,800
+        positions: [{ instrument: 'oil', lot: 'lot', owner: 'account', direction: 'long', qty: 2_000, avgCost: 66.40, cost: 132_800, price: 66.48, value: 132_960, unrealized: 160 }], // 2,000 x 66.48; 132,960 - 132,800
+        holdings: { next: null, oil: { long: 2_000, short: 0, net: 2_000 } },
+        pending: [{ instrument: 'oil', lot: 'lot', owner: 'account', dueDate: '2026-05-21', amount: -132_800, ccy: 'USD', into: 'cash' }],
         lifecycle: [],
-        pnl: { account: { realized: -7_000, commissions: -30, unrealized: 0, total: -7_030 } },
-        nav: { account: 142_970, treasury: 850_000, book: 992_970 },
-        balance: { account: { cash: 142_970, margin: null, positions: null, assets: 142_970, liabilities: 0, netAssets: 142_970 } },
+        pnl: { account: { realized: -13_300, unrealized: 160, total: -13_167 } }, // -12,500 - 800; -13,300 - 27 + 160
+        nav: { account: 136_833, book: 986_833 }, // 136,673 + 132,960 - 132,800
+        balance: { account: { cash: 136_673, margin: null, positions: 132_960, payable: 132_800, assets: 269_633, liabilities: 132_800, netAssets: 136_833 } },
+      },
+    },
+    {
+      // Invalid: the June position no longer exists (delivered).
+      id: 'request-delivery-closed', covers: 'physical delivery', action: 'lifecycle', lot: 'lot', instrument: 'next', body: { action: 'deliver', contracts: 2 },
+      status: 'blocked', reason: 'The position has been delivered and is closed: there is nothing left to deliver.',
+      expect: { refused: { engine: 'This CLM6 position is closed: it holds no contracts', api: 'This CLM6 position is closed: it holds no contracts', browser: 'lists no open CLM6 position' } },
+    },
+    {
+      id: 'invoice-paid', covers: 'settlement', action: 'clock', to: AM('2026-05-21'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 132,800.00 USD from settled cash', cash: { USD: -132_800 }, owner: 'account', date: '2026-05-21' }],
+        cash: { account: { USD: usd(3_873, 0) } }, // 136,673 - 132,800
+        pending: [],
+        balance: { account: { cash: 3_873, payable: null, assets: 136_833, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'oil-quote', action: 'quote', instrument: 'oil', quote: { bid: 66.90, ask: 66.95, last: 66.92, bidSize: 1_000_000, askSize: 1_000_000 },
+      expect: {
+        positions: [{ instrument: 'oil', lot: 'lot', owner: 'account', direction: 'long', qty: 2_000, avgCost: 66.40, cost: 132_800, price: 66.92, value: 133_840, unrealized: 1_040 }], // 2,000 x 66.92
+        pnl: { account: { unrealized: 1_040, total: -12_287 } }, // -13,300 - 27 + 1,040
+        nav: { account: 137_713, book: 987_713 }, // 3,873 + 133,840
+        balance: { account: { positions: 133_840, assets: 137_713, netAssets: 137_713 } },
+      },
+    },
+    {
+      // The delivered barrels are sold at the bid from the strategy instance: 2,000 x 66.90 = 133,800.00; commission
+      // 2,000 x 0.01 = 20.00; realized (66.90 - 66.40) x 2,000 = 1,000.00. Settles T+2 on the US calendar: Thursday
+      // 21 May + 2 business days, skipping Memorial Day (Monday 25 May) = Tuesday 26 May (checked by hand: the
+      // scenario's standing lag is the futures' 0, hence settlementCheck false).
+      id: 'sell-delivered-oil', covers: ['close', 'settlement'], action: 'close', lot: 'lot', instrument: 'oil', scope: 'position', settlementCheck: false,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'oil', qty: 2_000, estimate: 66.90, model: 'quoted-bid-ask', settleDate: '2026-05-26', cash: 133_800, fees: 20 }] },
+        result: { orders: [{ action: 'sell', status: 'filled', filledQty: 2_000, avgPrice: 66.90 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 2,000 WTI-CUSH @ 66.90 USD (realized 1,000.00 USD)', owner: 'account', date: '2026-05-21' }],
+        cash: { account: { USD: { settled: 3_873, unsettled: 133_780, availableToTrade: 137_653, availableToWithdraw: 3_873 } } }, // 133,800 - 20
+        positions: [],
+        holdings: { oil: null },
+        pending: [{ instrument: 'oil', lot: 'lot', owner: 'account', dueDate: '2026-05-26', amount: 133_780, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: -12_300, commissions: -47, unrealized: 0, total: -12_347 } }, // -13,300 + 1,000; 27 + 20
+        nav: { account: 137_653, book: 987_653 },
+        balance: { account: { cash: 3_873, positions: null, receivable: 133_780, assets: 137_653, liabilities: 0, netAssets: 137_653 } },
+      },
+    },
+    {
+      // By hand, the whole scenario: May bought 71.22, sold 69.10: -2.12 x 5,000 = -10,600. June bought 68.83: 3 sold
+      // at 69.55, 0.72 x 3,000 = 2,160; 2 delivered at 66.40, -2.43 x 2,000 = -4,860. Barrels bought 66.40, sold 66.90:
+      // +1,000. Realized -12,300. Commission 18 contracts x 1.50 = 27 plus 20 = 47. 150,000 - 12,347 = 137,653.
+      id: 'sale-settles', covers: 'settlement', action: 'clock', to: AM('2026-05-26'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 133,780.00 USD into settled cash', cash: { USD: 133_780 }, owner: 'account', date: '2026-05-26' }],
+        cash: { account: { USD: usd(137_653, 0) }, treasury: { USD: usd(850_000) } },
+        pending: [],
+        nav: { account: 137_653, treasury: 850_000, book: 987_653 },
+        balance: { account: { cash: 137_653, margin: null, positions: null, receivable: null, payable: null, assets: 137_653, liabilities: 0, netAssets: 137_653 } },
       },
     },
   ],

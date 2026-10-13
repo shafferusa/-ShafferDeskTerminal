@@ -5,7 +5,10 @@
 // (observed quote, indicative, model mark, manual or simulated). Fair price and Gap % come from Analytics Lab for the
 // chosen investment Strategy and stay awaiting until it supplies them: nothing is valued here.
 // Watchlists filter within the current tab or across families; they never replace the tabs.
-// URL: #/markets/<view>/<tab>.
+// URL: #/markets/<view>/<tab>, with /find/<text> (a search) or /show/<instrument id> (a row picked out) after it. A
+// Marketplace opened without a tab shows the tab last used in that view (kept in this browser), else the first family
+// with instruments. Back and reload restore the tab from the URL. A search also lists the matches in the other three
+// Marketplaces, each with its view and tab, linked there.
 import { html, useEffect, useMemo, useState } from '../vendor/preact-htm.js';
 import { del, fmtMoney, fmtNum, fmtPct, fmtPrice, fmtPriceUnits, fmtQty, get, isNum, openOverlay, post, toast, toastError, useLive, VIEW_LABEL } from '../lib/core.js';
 import { Awaiting, Button, Empty, Holdings, Missing, Modal, Field, Price, Select, Signed, Support, Table, Text } from '../lib/ui.js';
@@ -20,16 +23,22 @@ const DESCRIPTION = {
 const ROUTING_NOTE = 'Placement follows explicit metadata, never the price currency: a listed product by its listing venue\'s country, a derivative by its underlying, an unlisted instrument by its jurisdiction. '
   + 'Global FX, crypto and OTC products with no US listing and no US jurisdiction are routed by convention to the Foreign views, so a US view never implies a US listing. Each row says what placed it; a non-listed instrument can be moved by hand under Instruments.';
 const FINANCING_FAMILIES = new Set(['loan', 'repo', 'secloan']);
+const LAST_TAB = 'sdt.mk.tab.';
+const lastTab = (view) => { try { return localStorage.getItem(LAST_TAB + view) || ''; } catch { return ''; } };
+const keepTab = (view, tab) => { try { localStorage.setItem(LAST_TAB + view, tab); } catch { /* per-browser convenience only */ } };
+/** The Marketplace address of an instrument: its view and tab, with the row picked out. */
+export const marketHref = (i) => `#/markets/${i.marketView}/${i.classification?.tab || ''}/show/${encodeURIComponent(i.id)}`;
 
 export default function Markets({ args, book, status }) {
   const view = VIEW_LABEL[args[0]] ? args[0] : 'US_CASH';
   const cls = view.endsWith('DERIV') ? 'deriv' : 'cash';
   const [list, setList] = useState('all');
   const [across, setAcross] = useState(false);
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState(args[2] === 'find' && args[3] ? decodeURIComponent(args[3]) : '');
+  const focusId = args[2] === 'show' && args[3] ? decodeURIComponent(args[3]) : '';
   const [asset, setAsset] = useState('all');
   const [strategyId, setStrategyId] = useState('');
-  useEffect(() => { setList('all'); setQ(''); setAsset('all'); setAcross(false); }, [view]);
+  useEffect(() => { setList('all'); setQ(args[2] === 'find' && args[3] ? decodeURIComponent(args[3]) : ''); setAsset('all'); setAcross(false); }, [view, args[2] === 'find' ? args[3] : '']);
 
   const cat = useLive(() => get('/api/catalog'), [], { interval: false });
   const tabs = (cat.data?.marketTabs || []).filter((t) => t.cls === cls);
@@ -51,10 +60,26 @@ export default function Markets({ args, book, status }) {
   }, [instruments, wl, q]);
   const countOf = (tabId) => filtered.filter((i) => i.classification?.tab === tabId).length;
   const firstWithRows = tabs.find((t) => instruments.some((i) => i.classification?.tab === t.id));
-  const tab = tabs.find((t) => t.id === args[1]) || firstWithRows || tabs[0] || null;
-  // The tab is in the URL: a Marketplace opened without one shows its first family with instruments.
+  const remembered = tabs.find((t) => t.id === lastTab(view));
+  const tab = tabs.find((t) => t.id === args[1]) || remembered || firstWithRows || tabs[0] || null;
+  // The tab is in the URL: a Marketplace opened without one shows the tab last used here, else its first family with
+  // instruments, and the address is completed without adding a step to Back.
   useEffect(() => { if (tab && args[1] !== tab.id && base.data) history.replaceState(null, '', `#/markets/${view}/${tab.id}`); }, [tab?.id, view, Boolean(base.data)]);
+  useEffect(() => { if (tab && args[1] === tab.id) keepTab(view, tab.id); }, [tab?.id, view, args[1]]);
   const goTab = (id) => { setAsset('all'); setAcross(false); setQ(''); location.hash = `#/markets/${view}/${id}`; };
+  // A row picked out by the address (from a search, the registry or an instrument page) is marked and scrolled to.
+  useEffect(() => {
+    if (!focusId || !base.data) return undefined;
+    const t = setTimeout(() => { const el = document.querySelector(`[data-inst="${CSS.escape(focusId)}"]`)?.closest('tr'); if (el) { el.classList.add('mk-focus'); el.scrollIntoView({ block: 'center' }); } }, 150);
+    return () => clearTimeout(t);
+  }, [focusId, Boolean(base.data), tab?.id]);
+  // A search also looks in the other three Marketplaces; each match says its view and tab and links there.
+  const needle = q.trim();
+  const elsewhere = useLive(async () => {
+    if (needle.length < 2) return [];
+    const r = await get('/api/instruments', { q: needle, limit: 200, bookId: book?.id });
+    return r.items.filter((i) => i.marketView !== view);
+  }, [needle, view, book?.id], { interval: false });
 
   const inTab = tab ? filtered.filter((i) => i.classification?.tab === tab.id) : [];
   const assetsHere = cls === 'deriv' ? (cat.data?.assetClasses || []).map((a) => ({ ...a, n: inTab.filter((i) => i.classification?.assetClass === a.id).length })).filter((a) => a.n > 0) : [];
@@ -113,9 +138,24 @@ export default function Markets({ args, book, status }) {
     ${sections ? html`<p class="note mk-holds">${searching ? `Matches for "${q.trim()}" in every family of ${VIEW_LABEL[view]}${wl ? ` on ${wl.name}` : ''}` : `${wl.name} across every family in ${VIEW_LABEL[view]}`}, one table per family. Choose a tab to see one family.${analyticsAwaiting ? ` Fair price and Gap %: ${status.data.awaitingMessage}.` : ''}</p>
         ${sections.length ? sections.map((s) => table(s.tab, s.rows, { title: s.tab.label })) : html`<div class="panel"><div class="body"><${Empty} title=${searching ? `Nothing in ${VIEW_LABEL[view]}${wl ? ` on ${wl.name}` : ''} matches "${q.trim()}"` : `Nothing on ${wl.name}`}>${searching ? 'Check the symbol, or look in another Marketplace: an instrument sits in the view its listing venue, underlying or jurisdiction gives it.' : 'Open an instrument and choose Add to watchlist.'}<//></div></div>`}`
       : tab ? table(tab, shownRows) : html`<${Empty}>Loading product families…<//>`}
+    ${searching ? html`<${Elsewhere} q=${q.trim()} hits=${elsewhere.data} tabsAll=${cat.data?.marketTabs || []} />` : null}
     ${tab?.id === 'money' && !sections ? html`<${FinancingPanel} book=${book} products=${(cat.data?.products || []).filter((p) => p.tab === 'money' && FINANCING_FAMILIES.has(p.family))} />` : null}
     <p class="note" style="margin-top:8px">Choose a row to open its instrument page and trade ticket. Fair price and Gap % show the fundamental value above the realistic one; they are analytical values and never fill an order. ${ROUTING_NOTE}</p>
   </div>`;
+}
+
+/** Matches for the search in the other Marketplaces, grouped by view and tab, each group linked to its place. */
+function Elsewhere({ q, hits, tabsAll }) {
+  if (!hits) return null;
+  const groups = new Map();
+  for (const i of hits) { const k = `${i.marketView}/${i.classification?.tab || ''}`; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(i); }
+  const label = (k) => { const [v, t] = k.split('/'); return `${VIEW_LABEL[v]}, ${tabsAll.find((x) => x.id === t)?.label || t}`; };
+  return html`<div class="panel mk-panel mk-elsewhere"><div class="body">
+    <h4 style="margin:0 0 4px">In the other Marketplaces</h4>
+    ${groups.size ? html`<ul class="mk-hits">${[...groups].map(([k, list]) => html`<li><a href=${list.length === 1 ? marketHref(list[0]) : `#/markets/${k}/find/${encodeURIComponent(q)}`}>${label(k)}</a>
+      <span class="muted">${list.slice(0, 6).map((i) => i.symbol || i.name).join(', ')}${list.length > 6 ? ` and ${list.length - 6} more` : ''}</span></li>`)}</ul>`
+      : html`<p class="note" style="margin:0">Nothing in US Based, US Derivatives, Foreign Based or Foreign Derivatives other than this view matches "${q}".</p>`}
+  </div></div>`;
 }
 
 // ---- empty states ---------------------------------------------------------------------------------------------------
@@ -138,7 +178,7 @@ const date = (d) => d || html`<${Missing} reason="Not in the contract terms" />`
 const pct = (x, dp = 3) => (isNum(x) ? `${fmtNum(x * 100, dp).replace(/0+$/, '').replace(/\.$/, '')}%` : null);
 
 function instCell(i) {
-  return html`<div class="sym">${sym(i)}</div><div class="sub clip" style="max-width:190px" title=${i.name}>${i.symbol ? i.name : i.id}</div>
+  return html`<div class="sym" data-inst=${i.id}>${sym(i)}</div><div class="sub clip" style="max-width:190px" title=${i.name}>${i.symbol ? i.name : i.id}</div>
     <div class="sub mk-route" title=${`Market view, ${(i.classification?.routing?.basisLabel || '').toLowerCase()}: ${i.classification?.routing?.text || ''}`}>${i.classification?.routing?.short}</div>
     ${i.calendar?.flag ? html`<div class="calflag" style="max-width:240px" title=${i.calendar.flagText}><span class="pill warn">${i.calendar.flag === 'weekends-only' ? 'weekends-only calendar' : 'approximate calendar'}</span> ${i.calendar.flag === 'weekends-only' ? 'Its dates ignore local holidays.' : 'Some closing days are missing from its dates.'}</div>` : null}`;
 }

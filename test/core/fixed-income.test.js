@@ -124,8 +124,10 @@ test('repo pledges collateral and repurchases with interest; reverse repo earns 
   assert.equal(app.positions.get(bondPos).pledged_qty, 0);
   near(app.ledger.cash(treasury.id, 'USD').settled, cashBefore - 980_000 * 0.045 * 7 / 360 + 0, 0.02);
   near(app.accounting.pnl(book.id, treasury.id).categories.find((x) => x.key === 'borrowFunding').rc, -857.5, 0.02);
-  // Reverse repo: lend cash against collateral received.
-  const rev = { kind: 'repo_open', action: 'reverse_repo', qty: 500_000, contract: { productId: 'reverse_repo', name: 'Reverse repo SIMCORP29', marketView: 'US_CASH', venueType: 'otc', tradingCcy: 'USD', terms: { collateralInstrumentId: inst.SIMCORP29.id, collateralQty: 520_000, haircut: 0.03, rateType: 'fixed', rate: 0.04, term: 'term', endDate: '2026-03-20' } } };
+  // Reverse repo: lend cash against collateral received. The cash lent is limited by the collateral's value less the
+  // haircut (520,000 face at 100 plus accrued, less 3%: above 504,400), so the collateral needs a price.
+  pin(app, inst.SIMCORP29.id, 100);
+  const rev ={ kind: 'repo_open', action: 'reverse_repo', qty: 500_000, contract: { productId: 'reverse_repo', name: 'Reverse repo SIMCORP29', marketView: 'US_CASH', venueType: 'otc', tradingCcy: 'USD', terms: { collateralInstrumentId: inst.SIMCORP29.id, collateralQty: 520_000, haircut: 0.03, rateType: 'fixed', rate: 0.04, term: 'term', endDate: '2026-03-20' } } };
   await trade(app, { bookId: book.id, unitId: treasury.id, template: 'custom', legs: [rev] });
   assert.equal(app.accounting.treasury(book.id).collateralReceived[0].qty, 520_000);
   await goTo(app, clock, '2026-03-20T22:30:00.000Z');

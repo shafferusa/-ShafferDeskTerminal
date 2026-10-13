@@ -752,6 +752,17 @@ function loanMark(app, underlyingId, date) {
   return p && p.value !== null ? p : null;
 }
 
+/**
+ * The market value of `qty` of a security lent or borrowed at `price` on `date`: for a debt security its dirty value (the
+ * interest accrued to `date` added), on which a bond loan's cash collateral and fee are worked out.
+ */
+function loanValue(und, qty, price, date) {
+  const bond = und.family === 'bond';
+  const factor = bond ? und.terms.factor ?? 1 : 1;
+  const ai = bond ? ((accruedPer100(und.terms, date) ?? 0) * qty * factor) / 100 : 0;
+  return qty * price * und.multiplier * factor + ai;
+}
+
 export const secloan = {
   family: 'secloan',
   kind: 'arrangement',
@@ -779,6 +790,15 @@ export const secloan = {
     return rows;
   },
   qtyStep: () => 1,
+  /** What the preview shows for securities lent: the cash collateral received, at its share of the market value (dirty for a bond). */
+  previewDetail(app, { inst, action, qty }) {
+    if (action !== 'lend_sec') return null;
+    const und = app.instruments.get(inst.underlying_id);
+    const mark = und ? loanMark(app, und.id, app.clock.today()) : null;
+    const value = mark && und ? money(loanValue(und, qty, mark.value, app.clock.today()), inst.trading_ccy) : null;
+    const stated = num(inst.terms.collateralAmount);
+    return { value, collateralPct: inst.terms.collateralPct, collateralCash: stated ?? (value !== null ? money(inst.terms.collateralPct * value, inst.trading_ccy) : null) };
+  },
   checkOpen(app, { unit, inst, action, qty, sourcePositionId }) {
     const out = [];
     if (action === 'lend_sec') {
@@ -806,7 +826,7 @@ export const secloan = {
       const src = positions.get(c.sourcePositionId);
       positions.change(src, { dOnLoan: c.qty });
       data.sourcePositionId = src.id;
-      collateral = money(num(inst.terms.collateralAmount) ?? inst.terms.collateralPct * c.qty * mark.value * und.multiplier, ccy);
+      collateral = money(num(inst.terms.collateralAmount) ?? inst.terms.collateralPct * loanValue(und, c.qty, mark.value, today), ccy);
       entries.push({ account: 'cash.restricted', ccy, amount: collateral, positionId: pos.id }, { account: 'coll.received', ccy, amount: -collateral, positionId: pos.id });
     }
     const eventId = ledger.post({
@@ -876,7 +896,7 @@ export const secloan = {
     return {
       price: null, mv: null, cost: 0, unrealized: 0, ledgerCarried: true, carrying: null,
       accrued: app.ledger.positionBalance(pos.id, borrowed ? 'accrued.liab' : 'accrued.asset', ccy),
-      notional: p && p.value !== null ? money(Math.abs(pos.qty) * p.value * (und?.multiplier || 1), ccy) : null,
+      notional: p && p.value !== null && und ? money(loanValue(und, Math.abs(pos.qty), p.value, app.clock.today()), ccy) : null,
       exposure: null,
       collateral: borrowed ? null : -app.ledger.positionBalance(pos.id, 'coll.received', ccy),
       recall: pos.data.recall || null,
@@ -907,7 +927,7 @@ export const secloan = {
     }
     app.alerts.resolve({ refType: 'position', refId: pos.id, code: 'secloan.noprice' });
     const days = Math.max(0, diffDays(through, date));
-    if (days > 0) accrued += (Math.abs(pos.qty) * price * und.multiplier * inst.terms.feeRate * days) / 360;
+    if (days > 0) accrued += (loanValue(und, Math.abs(pos.qty), price, date) * inst.terms.feeRate * days) / 360;
     trueUpAccrual(app, {
       book, unit, pos, inst, ccy, type: 'accrual.fee', account: borrowed ? 'accrued.liab' : 'accrued.asset', pnlAccount: borrowed ? 'pnl.borrow' : 'pnl.lending',
       target: money(borrowed ? -accrued : accrued, ccy), summary: `${borrowed ? 'Borrow fee' : 'Lending fee'} accrued on ${fmtQty(Math.abs(pos.qty))} ${und.symbol || und.name}`,
@@ -915,7 +935,7 @@ export const secloan = {
     positions.change(positions.get(pos.id), { data: { accrued, accruedThrough: days > 0 ? date : through, lastPrice: price } });
     if (!borrowed) {
       // Cash collateral we hold against securities lent is marked to the current value.
-      const target = money(inst.terms.collateralPct * Math.abs(pos.qty) * price * und.multiplier, ccy);
+      const target = money(inst.terms.collateralPct * loanValue(und, Math.abs(pos.qty), price, date), ccy);
       const held = -ledger.positionBalance(pos.id, 'coll.received', ccy);
       const delta = money(target - held, ccy);
       if (Math.abs(delta) >= 0.01) {

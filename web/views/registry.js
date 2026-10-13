@@ -138,6 +138,13 @@ function keyTerms(i) {
   }
 }
 
+/** ui1: the Marketplace view (and tab) an instrument is in, linked to that tab with its row picked out. */
+function MarketLink({ i, tabToo = true }) {
+  if (i.arrangement) return html`<span class="muted">Financing arrangement</span>`;
+  const href = `#/markets/${i.marketView}/${i.classification?.tab || ''}/show/${encodeURIComponent(i.id)}`;
+  return html`<a href=${href} onClick=${(e) => e.stopPropagation()} title="Open this Marketplace tab with the instrument picked out">${VIEW_LABEL[i.marketView]}${tabToo && i.classification?.tabLabel ? `, ${i.classification.tabLabel}` : ''}</a>`;
+}
+
 // ---- reference-data search ------------------------------------------------------------------------------------
 function ReferenceSearch({ onRegister }) {
   const [q, setQ] = useState('');
@@ -169,7 +176,7 @@ function ReferenceSearch({ onRegister }) {
       <div class="stack"><h4>Already in the registry (${res.registry.length})</h4>
         ${res.registry.length ? html`<${Table} onRowClick=${(i) => openInstrument(i.id, { tab: 'overview' })} rowKey=${(i) => i.id} columns=${[
             { label: 'Instrument', render: (i) => html`<span class="sym">${i.symbol || i.name}</span> <span class="sub">${i.symbol ? i.name : ''}</span>` },
-            { label: 'Product', render: (i) => short(i.support.productName) }, { label: 'Market view', render: (i) => VIEW_LABEL[i.marketView] }, { label: 'Terminal ID', render: (i) => i.id },
+            { label: 'Product', render: (i) => short(i.support.productName) }, { label: 'Market view and tab', render: (i) => html`<${MarketLink} i=${i} />` }, { label: 'Terminal ID', render: (i) => i.id },
           ]} rows=${res.registry.slice(0, 8)} />${res.registry.length > 8 ? html`<p class="note">Showing 8 of ${res.registry.length}. Use the filter below to see them all.</p>` : null}`
           : html`<p class="note">Nothing registered matches "${q.trim()}". Register it by hand with New instrument.</p>`}
       </div></div>` : null}
@@ -225,7 +232,7 @@ function RegistryTab({ book, status, create }) {
       ? html`<div><span class="sym">${i.symbol}</span> <span class="sub">${i.id}</span></div><div class="sub clip" style="max-width:175px" title=${i.name}>${i.name}</div>`
       : html`<div class="sym clip" style="max-width:175px" title=${i.name}>${i.name}</div><div class="sub">${i.id}</div>`) },
     { label: 'Product and venue', render: (i) => html`<div class="clip" style="max-width:150px" title=${i.support.productName}>${short(i.support.productName)}</div><div class="sub clip" style="max-width:150px" title=${venue(i)}>${venue(i)}</div>` },
-    { label: 'Market view', title: 'The Marketplace and product-family tab the instrument sits in, then what placed it there (listing venue, underlying, jurisdiction, the routing convention, or set by hand)', render: (i) => html`<div>${VIEW_LABEL[i.marketView]}</div>${i.classification?.tabLabel ? html`<div class="sub">${i.classification.tabLabel}</div>` : null}<div class="sub clip" style="max-width:170px" title=${i.classification?.routing?.text || ''}>${i.classification?.routing?.short || ''}</div>` },
+    { label: 'Market view', title: 'The Marketplace and product-family tab the instrument sits in, then what placed it there (listing venue, underlying, jurisdiction, the routing convention, or set by hand)', render: (i) => html`<div><${MarketLink} i=${i} tabToo=${false} /></div>${i.classification?.tabLabel && !i.arrangement ? html`<div class="sub">${i.classification.tabLabel}</div>` : null}<div class="sub clip" style="max-width:170px" title=${i.classification?.routing?.text || ''}>${i.classification?.routing?.short || ''}</div>` },
     { label: 'Ccy, calendar', title: 'Trading currency (and the settlement currency where it differs), then the settlement calendar. Hover the calendar for how it was chosen. "Weekends only" means no holiday calendar exists for the market.',
       render: (i) => html`<div>${i.tradingCcy}${i.settleCcy && i.settleCcy !== i.tradingCcy ? html` <span class="sub">settles ${i.settleCcy}</span>` : null}</div>${calendar(i)}` },
     // Key terms and the holding share one column, terms on the left and the holding on the right, so a gross

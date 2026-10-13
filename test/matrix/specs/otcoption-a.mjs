@@ -307,7 +307,8 @@ const otcOption = {
     },
     {
       // The shares delivered are sold at the bid, 55.98: 5,000 x 55.98 = 279,900; realized 279,900 - 260,000.
-      id: 'sell-delivered-shares', covers: 'close', action: 'ticket', instrument: 'stock', side: 'sell', qty: 5_000, from: 'calls',
+      id: 'sell-delivered-shares', covers: 'close', action: 'ticket', ticketOf: 'equity', settlementCheck: false, // shares settle T+1 (Thursday 5 to Friday 6 March), not the option's T+2
+      instrument: 'stock', side: 'sell', qty: 5_000, from: 'calls',
       expect: {
         preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'stock', qty: 5_000, estimate: 55.98, model: 'quoted-bid-ask', settleDate: '2026-03-06', cash: 279_900, fees: 0 }] },
         result: { orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 5_000, avgPrice: 55.98 }] },

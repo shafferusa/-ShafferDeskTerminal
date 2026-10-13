@@ -350,7 +350,7 @@ function Analytics({ a, state }) {
   </div>`;
 }
 
-function Overview({ inst, detail, reload }) {
+function Overview({ inst, detail, reload, onClose }) {
   const obs = detail.observation;
   return html`<div class="stack">
     <${Panel} title="Current market price">
@@ -380,7 +380,7 @@ function Overview({ inst, detail, reload }) {
           ${detail.settlement ? html`<div class="sub">${detail.trading && !detail.trading.open ? `${detail.trading.reason} That trade settles ${detail.settlement.date}.` : `A trade today (${detail.settlement.tradeDate}) settles ${detail.settlement.date}.`}${inst.settlement.configurable ? 'A date or lag can be stated for one trade on the ticket.' : inst.settlement.reason}</div>` : null}`],
         ['Listing venue country', inst.venueCountry || html`<${Missing} reason="Not recorded. It selects the calendars unless they are set on the instrument." />`],
         // ui1: where the instrument sits in the Marketplaces and what placed it there (catalog.js routing convention).
-        ['Market view', html`${VIEW_LABEL[inst.marketView]}${inst.classification?.tabLabel ? `, ${inst.classification.tabLabel}` : ''}
+        ['Market view', html`${inst.arrangement ? html`Not a Marketplace row: a financing arrangement, arranged on the Treasury and Account pages` : html`<a href=${`#/markets/${inst.marketView}/${inst.classification?.tab || ''}/show/${encodeURIComponent(inst.id)}`} onClick=${() => onClose?.()} title="Open the Marketplace tab this instrument is in, with its row picked out">${VIEW_LABEL[inst.marketView]}${inst.classification?.tabLabel ? `, ${inst.classification.tabLabel}` : ''}</a>`}
           ${inst.classification?.routing ? html`<div class="sub">${inst.classification.routing.basisLabel}: ${inst.classification.routing.text}.${inst.classification.routing.basis === 'convention' ? ' No US listing or US jurisdiction is recorded; state a jurisdiction or set the view by hand under Edit.' : ''}</div>` : null}`],
         ['Jurisdiction', inst.jurisdiction || html`<${Missing} reason="Not stated. For an instrument that is not listed it decides US or Foreign." />`],
         ['Venue', inst.venue ? `${inst.venue} (${inst.venueType === 'otc' ? 'OTC' : inst.venueType === 'global' ? 'global platform' : 'exchange'})` : inst.venueType === 'otc' ? 'OTC' : inst.venueType === 'global' ? 'Global, no listing venue' : null],
@@ -523,11 +523,11 @@ function InstrumentDrawer({ id, initialTab, onClose }) {
     } catch (err) { toastError(err); }
   };
   const edit = async () => { const m = await import('./registry.js'); m.openEditInstrument(inst, { onDone: res.reload }); };
-  return html`<${Drawer} wide onClose=${onClose} title=${inst.symbol ? `${inst.symbol}  ${inst.name}` : inst.name} sub=${`${inst.support.productName}, ${VIEW_LABEL[inst.marketView]}, ${inst.tradingCcy}`}
+  return html`<${Drawer} wide onClose=${onClose} title=${inst.symbol ? `${inst.symbol}  ${inst.name}` : inst.name} sub=${`${inst.support.productName}, ${inst.arrangement ? 'financing arrangement' : `${VIEW_LABEL[inst.marketView]}${inst.classification?.tabLabel ? `, ${inst.classification.tabLabel}` : ''}`}, ${inst.tradingCcy}`}
     actions=${html`<${Button} small onClick=${addToList}>Add to watchlist<//><${Button} small onClick=${edit}>Edit<//>`}>
     <${Tabs} tabs=${tabs} value=${tab} onChange=${setTab} />
     ${tab === 'trade' ? html`<${Ticket} inst=${inst} detail=${d} book=${book} onDone=${res.reload} />` : null}
-    ${tab === 'overview' ? html`<${Overview} inst=${inst} detail=${d} reload=${res.reload} />` : null}
+    ${tab === 'overview' ? html`<${Overview} inst=${inst} detail=${d} reload=${res.reload} onClose=${onClose} />` : null}
     ${tab === 'chain' ? html`<${Chain} inst=${inst} />` : null}
     ${tab === 'positions' ? html`<${Positions} detail=${d} reload=${res.reload} book=${book} />` : null}
     ${tab === 'history' ? html`<${History} inst=${inst} />` : null}

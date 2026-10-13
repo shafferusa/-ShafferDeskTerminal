@@ -108,6 +108,7 @@ export async function runCase(level, kase, extra = {}) {
     const limit = kase.timeoutMs || (level === 'browser' ? 240_000 : 120_000);
     let timer;
     await Promise.race([fn(w, c), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`The case did not finish within ${limit / 1000} seconds.`)), limit); })]).finally(() => clearTimeout(timer));
+    if (!kase.noSweep) await sweep(w, c);
     for (const e of w.serverErrors) c.fail(`server error: ${e}`);
     for (const e of w.pageErrors || []) c.fail(`browser console error: ${e}`);
     if (!c.count) c.fail('The case made no check.');
@@ -123,6 +124,28 @@ export async function runCase(level, kase, extra = {}) {
     id, area: kase.area, case: kase.id, title: kase.title, status: failed ? 'failed' : 'passed',
     message: failed ? c.problems.join('\n') : c.notes.join('\n'), ms: Date.now() - started, checks: c.count,
   };
+}
+
+/**
+ * After every case, whatever it was about: the integrity read of every Book of the case's Terminal is clean (its
+ * duplicate checks: fills, settlements, dividend / interest / fee payments, accruals, orders, strategies, hedge
+ * requests and holds, server/core/integrity.js), and no independent amount holds more than its terms require (an
+ * independent amount is trued up exactly, with no threshold or minimum transfer, so a collateral movement made twice
+ * would leave an "ok" requirement over-collateralised; variation margin is left out because a minimum transfer
+ * legitimately leaves it off the mark).
+ */
+async function sweep(w, c) {
+  let books;
+  try { books = (await w.req('GET', '/api/books'))?.body; } catch { return; }
+  const list = Array.isArray(books) ? books : books?.items || books?.books || [];
+  for (const b of list) {
+    const r = await w.req('GET', `/api/books/${b.id}/integrity`);
+    if (!r.ok) { c.fail(`end of case: the integrity read of Book "${b.name}" was refused (${r.status} ${r.error})`); continue; }
+    c.ok(r.body.ok, `end of case: the integrity read of Book "${b.name}" is clean (nothing recorded twice)`, (r.body.problems || []).join(' | '));
+  }
+  let over = [];
+  try { over = w.sql(`SELECT key, required, held FROM collateral_state WHERE kind = 'independent' AND status = 'ok' AND required IS NOT NULL AND held IS NOT NULL AND ABS(held) > ABS(required) + 0.005`); } catch { return; }
+  c.ok(over.length === 0, 'end of case: no independent amount holds more than its terms require (no collateral movement twice)', over.map((x) => `${x.key}: required ${x.required}, held ${x.held}`).join(' | '));
 }
 
 // ---- results ------------------------------------------------------------------------------------------

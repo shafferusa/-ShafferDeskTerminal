@@ -267,6 +267,11 @@ export function createPackages(app) {
       if (l.inst.underlying_id) { const u = instruments.get(l.inst.underlying_id); if (u) insts.set(u.id, u); }
       if (l.kind === 'borrow_sec') borrow.set(l.inst.id, l.inst);
       if (l.inst.trading_ccy !== rc) pairs.add(`${l.inst.trading_ccy}/${rc}`);
+      // r1: a repo or reverse repo is checked against its collateral's value: its price (and conversion rate) are needed.
+      if (l.inst.terms?.collateralInstrumentId) {
+        const c = instruments.get(l.inst.terms.collateralInstrumentId);
+        if (c) { insts.set(c.id, c); if (c.trading_ccy !== l.inst.trading_ccy) pairs.add(`${c.trading_ccy}/${l.inst.trading_ccy}`); }
+      }
       // A floating loan or repo: the reference-rate fixings its daily interest needs, from the last day it accrued
       // (a repayment) or of the last week (a new arrangement). Without them the preview would report a missing fixing.
       if (l.inst.terms?.rateType === 'floating' && l.inst.terms.referenceRate) {

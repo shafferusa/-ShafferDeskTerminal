@@ -129,3 +129,4 @@
 - 2026-10-13T17:17Z | r1 | +0.2 | repo passes at engine, API and browser
 - 2026-10-13T17:26Z | ui1 | +0.5 | Marketplace item 1: instrument-to-financing links (drawer and holdings) open the Treasury/Account dialogs prefilled, with reasons where not applicable
 - 2026-10-13T17:26Z | s8 | +0.5 | step 1: engine 41/41, API 47/47, browser 32/32 from clean (incomplete-terms case updated to the routing convention); level-mapping check enforced by loadCases
+- 2026-10-13T17:28Z | o2 | +0.2 | otc_option passes at engine, API and browser
