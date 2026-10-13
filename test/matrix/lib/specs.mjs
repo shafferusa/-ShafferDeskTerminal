@@ -83,11 +83,11 @@ export async function loadSpecs({ family, product } = {}) {
     }
     if (families && !families.includes(mod.family)) continue;
     for (const spec of mod.default) {
-      if (products && !products.includes(spec.productId || `T:${spec.template}`)) continue;
+      if (products && !products.includes(spec.productId || `T:${spec.template}${spec.path ? `/${spec.path}` : ''}`)) continue;
       out.push(validateSpec({ ...spec, family: mod.family, file: name }, name));
     }
   }
-  const ids = out.map((s) => s.productId || `T:${s.template}`);
+  const ids = out.map((s) => s.productId || `T:${s.template}${s.path ? `/${s.path}` : ''}`);
   const dup = ids.find((x, i) => ids.indexOf(x) !== i);
   if (dup) throw new Error(`Two specs exist for ${dup}. One product, one scenario.`);
   return out;

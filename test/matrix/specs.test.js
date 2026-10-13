@@ -20,7 +20,7 @@ const BUYS = new Set(['buy', 'buy_to_cover']);
 
 test('matrix specs: every spec loads and names a catalog product once', () => {
   assert.ok(specs.length > 0);
-  const ids = specs.map((s) => s.productId || `T:${s.template}`);
+  const ids = specs.map((s) => s.productId || `T:${s.template}${s.path ? `/${s.path}` : ''}`);
   assert.equal(new Set(ids).size, ids.length);
 });
 

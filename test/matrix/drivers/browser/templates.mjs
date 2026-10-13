@@ -473,4 +473,103 @@ export const actions = {
     const loan = await import('./loan.mjs');
     return loan.actions.repay(ui, t, ctx, step, tools);
   },
+
+  /**
+   * t2 (Workflow 2): the Hedge popup of a lot's post-trade request. It must have opened by itself after the fill (the
+   * runner closes it after the cycle and records it); it is opened again from the Hedge review queue on the Strategies
+   * page, its "Complete the request" form is filled (Investment Strategy by its listed ID, holding period, objective)
+   * and saved, and the popup shows the answer. Nothing is traded.
+   */
+  async hedge_complete(ui, t, ctx, step) {
+    const { hedgeRequestOfLot, hedgeRequestView } = await import('../../lib/actions.mjs');
+    const r = await hedgeRequestOfLot(t, ctx, step.lot);
+    const problems = [];
+    const seen = (ctx.hedgePopups || []).find((p) => p.requestId === r.id);
+    if (!seen) problems.push(`Hedge popup: it did not open by itself after the fill for request ${r.id}.`);
+    else if (seen.state !== r.state && seen.state !== 'incomplete') problems.push(`Hedge popup: it opened in state "${seen.state}".`);
+    const pop = await openHedgeFromQueue(ui, r.id);
+    const form = pop.locator('[data-testid=hedge-complete-form]').first();
+    const f = ui.field(form, 'Investment Strategy');
+    await f.locator('select, input:enabled').first().waitFor();
+    if (await f.locator('select').count()) await f.locator('select').selectOption(step.investmentStrategy); else await f.locator('input').fill(step.investmentStrategy);
+    await ui.input(form, 'Intended holding period').fill(String(step.holdingDays));
+    await ui.select(form, 'Hedge objective').selectOption(step.objective);
+    await ui.button(form, 'Save request').click();
+    await ui.page.locator('[data-testid=hedge-popup]:not([data-state=incomplete])').waitFor();
+    const after = await t.http.get(`/api/hedge/requests/${r.id}`);
+    const shown = await pop.getAttribute('data-state');
+    if (shown !== after.state) problems.push(`Hedge popup: shows state "${shown}", the request is "${after.state}".`);
+    if (after.source && !(await pop.locator('[data-testid=hedge-status]').innerText()).includes(after.source.label)) problems.push(`Hedge popup: does not name the source of the recommendation (${after.source.label}).`);
+    await pop.locator('header').getByRole('button', { name: 'Close' }).click();
+    return { result: hedgeRequestView(after, ctx), problems };
+  },
+
+  /**
+   * t2 (Workflow 2): Execute now in the Hedge popup, opened from the Hedge review queue. With `moveQuote` the quote
+   * fixture moves after the package is displayed: Execute now is refused, the popup lists what changed (was / now),
+   * and with `reconfirm` "I have checked the new figures" is ticked and "Execute the new figures" pressed.
+   */
+  async hedge_execute(ui, t, ctx, step, { expectsRefusal }) {
+    const { hedgeRequestOfLot } = await import('../../lib/actions.mjs');
+    const { normalizePreview, normalizeResult } = await import('../../lib/normalize.mjs');
+    const { page } = ui;
+    const r = await hedgeRequestOfLot(t, ctx, step.lot);
+    const priced = page.waitForResponse((res) => res.request().method() === 'POST' && new URL(res.url()).pathname === `/api/hedge/requests/${r.id}/preview`);
+    const pop = await openHedgeFromQueue(ui, r.id);
+    let pv = await (await priced).json();
+    const problems = [];
+    const exec = pop.getByRole('button', { name: /^Execute (now|the new figures)$/ });
+    const ready = async () => { for (let i = 0; i < 100 && await exec.isDisabled(); i++) { const read = pop.getByText(/^I have read the /); if (await read.count() && !(await read.locator('input').isChecked())) await read.locator('input').check(); await page.waitForTimeout(150); } };
+    await ready();
+    let firstAttempt = null;
+    let res;
+    if (step.moveQuote) await t.fixture('quote', { instrumentId: ctx.inst(step.moveQuote.instrument).id, ...step.moveQuote.quote });
+    res = await ui.respondsTo('POST', /^\/api\/strategies$/, () => exec.click());
+    if (step.moveQuote) {
+      if (res.ok) firstAttempt = { refused: null };
+      else {
+        const changes = res.body?.details?.changes || [];
+        firstAttempt = { refused: res.body?.error ?? null, code: res.body?.code ?? null, changes: changes.filter((c) => c.scope === 'leg').map((c) => ({ leg: c.n, field: c.field, was: c.was, now: c.now })) };
+        const panel = pop.locator('[data-testid=changes]');
+        await panel.waitFor();
+        const text = await panel.innerText();
+        if (!/\bWas\b/.test(text) || !/\bNow\b/.test(text)) problems.push('Hedge popup: the refusal does not list what changed as was / now.');
+        if (!(await pop.getByText(/Nothing was submitted\./).count())) problems.push('Hedge popup: the refusal does not say that nothing was submitted.');
+        if (!step.reconfirm || expectsRefusal) {
+          await pop.locator('header').getByRole('button', { name: 'Close' }).click();
+          return { preview: normalizePreview(pv, ctx), refusal: { message: res.body?.error, status: res.status, code: res.body?.code ?? null, where: 'confirmation' }, problems };
+        }
+        pv = res.body.details.preview;
+        await pop.getByText(/^I have checked the new figures/).locator('input').check();
+        await ready();
+        res = await ui.respondsTo('POST', /^\/api\/strategies$/, () => pop.getByRole('button', { name: 'Execute the new figures' }).click());
+      }
+    }
+    if (!res.ok) return { preview: normalizePreview(pv, ctx), refusal: { message: res.body?.error, status: res.status, code: res.body?.code ?? null, where: 'confirmation' }, problems };
+    await pop.waitFor({ state: 'hidden' });
+    return { preview: normalizePreview(pv, ctx), result: { ...normalizeResult(res.body.strategy, pv.token, ctx), ...(firstAttempt ? { firstAttempt } : {}) }, problems };
+  },
+
+  /** t2: the lot's hedge picture through the API (lib/actions.mjs, hedgeCheckView), and the Hedge review queue as the Strategies page shows it. */
+  async hedge_check(ui, t, ctx, step) {
+    const { hedgeCheckView } = await import('../../lib/actions.mjs');
+    const view = await hedgeCheckView(t, ctx, step.lot);
+    const problems = [];
+    await ui.reloadAt('#/strategy');
+    const rows = await ui.page.locator('[data-testid=hedge-queue] tbody tr[data-request]').evaluateAll((trs) => trs.map((tr) => tr.dataset.state));
+    if (rows.length !== view.queue.length) problems.push(`Hedge review queue: the page lists ${rows.length} request(s), the API ${view.queue.length}.`);
+    else view.queue.forEach((q, i) => { if (rows[i] !== q.state) problems.push(`Hedge review queue: row ${i + 1} shows "${rows[i]}", the API "${q.state}".`); });
+    return { result: view, problems };
+  },
 };
+
+/** t2: the Hedge popup of a request, opened from its row in the Hedge review queue on the Strategies page. */
+async function openHedgeFromQueue(ui, requestId) {
+  await ui.reloadAt('#/strategy');
+  const row = ui.page.locator(`[data-testid=hedge-queue] tr[data-request="${requestId}"]`);
+  await row.waitFor();
+  await row.getByRole('button').first().click();
+  const pop = ui.page.locator('[data-testid=hedge-popup]');
+  await pop.waitFor();
+  return pop;
+}

@@ -24,7 +24,8 @@ export const LEVELS = { engine: 'E', api: 'A', browser: 'B' };
 export const REQUIRED_SECTIONS = ['cash', 'positions', 'pending', 'pnl', 'nav', 'balance'];
 
 /** What a scenario is about: a catalog product id, or `T:<template id>` for an execution template. */
-export const specKey = (spec) => (spec.template ? `T:${spec.template}` : spec.productId);
+// t2: a template scenario may also name its `path` (one of the two trading paths), so two scenarios can drive one template.
+export const specKey = (spec) => (spec.template ? `T:${spec.template}${spec.path ? `/${spec.path}` : ''}` : spec.productId);
 export const testId = (level, spec, stepId) => `${LEVELS[level]}:${specKey(spec)}:${stepId}`;
 
 const matches = (pattern, text) => (pattern instanceof RegExp ? pattern.test(text) : String(text).includes(String(pattern)));

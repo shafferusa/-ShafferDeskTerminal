@@ -25,7 +25,7 @@ import { eventsSince, normalizePreview, normalizeResult, observeState } from './
 
 const SECURITY = new Set(['equity', 'fund', 'spot', 'crypto', 'bond', 'manual']);
 // t1/t2 (templates): 'recover' (how: 'retry' | 'unwind') is a recovery action of a strategy instance that needs attention; it opens a preview.
-export const TRADE_ACTIONS = new Set(['ticket', 'close', 'resize', 'package', 'repay', 'roll', 'recover']);
+export const TRADE_ACTIONS = new Set(['ticket', 'close', 'resize', 'package', 'repay', 'roll', 'recover', 'hedge_execute']);
 export const FIXTURE_ACTIONS = new Set(['quote', 'close_price', 'fx_rate', 'rate', 'borrow']);
 /** The cash requirement a confirmation sends back, as web/views/preview.js builds it. */
 export const expectedOf = (pv) => ({ cash: Object.fromEntries(Object.values(pv.totals.cash || {}).map((r) => [r.ccy, r.required])) });
@@ -282,7 +282,70 @@ async function previewFor(t, ctx, step) {
     if (!['retry', 'unwind'].includes(step.how)) throw new Error(`Step "${step.id}": recover needs how: 'retry' or 'unwind'.`);
     return { lot: lot.name, pv: await restated(t, await t.previewAction(lot.strategyId, step.how, {}), step) };
   }
+  if (step.action === 'hedge_execute') {
+    // t2: "Execute now" in the Hedge popup (web/views/hedge.js): the package of the lot's hedge request (the recommended
+    // one unless `packageId` names another), priced for execution by POST /api/hedge/requests/:id/preview.
+    const lot = ctx.lot(step.lot);
+    const r = await hedgeRequestOfLot(t, ctx, step.lot);
+    const pv = await t.http.post(`/api/hedge/requests/${r.id}/preview`, { packageId: step.packageId || r.response?.recommendedId || r.response?.packages?.[0]?.id });
+    return { lot: lot.name, opens: false, instrument: step.instrument || lot.instrument, pv };
+  }
   throw new Error(`Not a trade step: ${step.action}`);
+}
+
+/** t2: the newest hedge request of a lot's strategy instance (the post-trade request of a Marketplace fill, or one linked on submission). */
+export async function hedgeRequestOfLot(t, ctx, lotName) {
+  const lot = ctx.lot(lotName);
+  const r = (await t.http.get('/api/hedge/requests', { bookId: ctx.bookId })).items.find((x) => x.strategyId === lot.strategyId);
+  if (!r) throw new Error(`"${lotName}" has no hedge request.`);
+  return r;
+}
+
+/** t2: the figures a confirmation carries, as the Hedge popup sends them with Execute now (web/views/preview.js, expectedOf). */
+const displayedOf = (pv) => ({ ...(pv.confirmation || {}), cash: Object.fromEntries(Object.values(pv.totals.cash || {}).map((r) => [r.ccy, r.required])) });
+
+/**
+ * t2: Execute now. The package is submitted exactly as displayed (its legs, its token and every figure shown). With
+ * `moveQuote: { instrument, quote }` the quote fixture moves between display and Execute now: the confirmation is
+ * refused with what changed (was / now) and nothing is submitted (`firstAttempt` in the result); with `reconfirm: true`
+ * the new figures are then confirmed in turn, as "I have checked the new figures" and "Execute the new figures" do.
+ */
+async function hedgeExecute(t, ctx, step, built, preview) {
+  let pv = built.pv;
+  let firstAttempt = null;
+  if (step.moveQuote) {
+    await t.fixture('quote', { instrumentId: ctx.inst(step.moveQuote.instrument).id, ...step.moveQuote.quote });
+    try {
+      await t.submit({ ...pv.input, legs: pv.legs, clientToken: pv.token, confirm: true, expected: displayedOf(pv) });
+      firstAttempt = { refused: null };
+    } catch (err) {
+      if (!err.status) throw err;
+      firstAttempt = { refused: err.message, code: err.code ?? null, changes: (err.details?.changes || []).filter((c) => c.scope === 'leg').map((c) => ({ leg: c.n, field: c.field, was: c.was, now: c.now })) };
+      if (!step.reconfirm || !err.details?.preview) return { preview, refusal: { ...refusalOf(err), where: 'confirmation' } };
+      pv = err.details.preview;
+    }
+  }
+  const out = await t.submit({ ...pv.input, legs: pv.legs, clientToken: pv.token, confirm: true, expected: displayedOf(pv) });
+  return { preview: normalizePreview(pv, ctx), result: { ...normalizeResult(out.strategy, pv.token, ctx), ...(firstAttempt ? { firstAttempt } : {}) } };
+}
+
+/** t2: a lot's hedge picture: its requests, the queue rows of the Book, the protection of its positions, its hedge legs. */
+export async function hedgeCheckView(t, ctx, lotName) {
+  const lot = ctx.lot(lotName);
+  const s = await t.strategy(lot.strategyId);
+  const h = s.hedge || {};
+  const own = new Set((h.requests || []).map((r) => r.id));
+  const lotOf = (strategyId) => [...ctx.lots.entries()].find(([, v]) => v.strategyId === strategyId)?.[0] ?? null;
+  const queue = (await t.http.get('/api/hedge/queue', { bookId: ctx.bookId })).items;
+  return {
+    requests: (h.requests || []).map((r) => ({ state: r.state, trigger: r.trigger, packages: r.packages, selectedPackage: r.selectedPackage ?? null, source: r.source ? r.source.kind : null })),
+    queue: queue.map((x) => ({ lot: lotOf(x.strategyId), state: x.state, trigger: x.trigger, packages: x.packages, message: x.message ?? null, primary: x.primary ? { direction: x.primary.direction, quantity: x.primary.quantity, symbol: x.primary.symbol } : null })),
+    protection: (h.protection || []).filter((x) => x.protection).map((x) => ({
+      position: x.label, exposureUnits: x.protection.exposureUnits, protectedUnits: x.protection.protectedUnits, remainingUnits: x.protection.remainingUnits,
+      linked: x.protection.linked.map((a) => ({ hedge: a.hedge, units: a.units, basis: a.basis, request: a.requestId ? (own.has(a.requestId) ? 'this instance' : 'another') : null })),
+    })),
+    legs: (h.links?.legs || []).map((l) => ({ legNo: l.legNo, purpose: l.purpose, request: l.hedgeRequestId ? (own.has(l.hedgeRequestId) ? 'this instance' : 'another') : null, protectsLegs: l.protectsLegs || [], fundsLegs: l.fundsLegs || [] })),
+  };
 }
 
 /** t1: the facts of a hedge request a spec states: its state, who answered, the packages, and the context that was sent. */
@@ -334,6 +397,7 @@ export async function actThroughClient(t, ctx, step) {
     const { pv } = built;
     const preview = normalizePreview(pv, ctx);
     if (pv.blocking) return { preview, refusal: { message: pv.checks.filter((c) => c.level === 'error').map((c) => c.message).join(' | '), status: null, code: pv.checks.find((c) => c.level === 'error').code, where: 'preview' } };
+    if (step.action === 'hedge_execute') return hedgeExecute(t, ctx, step, built, preview); // t2
     if (expectsRefusal) return { preview }; // nothing refused it: the runner reports that
     let out;
     try {
@@ -460,6 +524,16 @@ export async function actThroughClient(t, ctx, step) {
         // It stands in for Shaffer Hedge; '$inst:key' in the responses names an instrument of the spec.
         await t.http.post('/api/demo/hedge-script', resolveRefs(step.script, ctx));
         return {};
+      case 'hedge_complete': {
+        // t2: the Hedge popup's "Complete the request" form (Investment Strategy by its listed ID, holding period,
+        // objective), saved: the request is sent and the answer comes back. Nothing is traded.
+        const r = await hedgeRequestOfLot(t, ctx, step.lot);
+        const after = await t.http.post(`/api/hedge/requests/${r.id}/complete`, { investmentStrategy: { id: step.investmentStrategy }, holdingPeriod: { days: step.holdingDays }, objective: { type: step.objective }, scope: { type: step.scope || 'trade' } });
+        return { result: hedgeRequestView(after, ctx) };
+      }
+      case 'hedge_check':
+        // t2: the lot's hedge picture (requests, the Book's hedge review queue, protection of its positions, hedge legs). Nothing is changed.
+        return { result: await hedgeCheckView(t, ctx, step.lot) };
       case 'strategy_action': {
         // t2: an action on a strategy instance that submits nothing: Accept as it stands (after failed legs) or Cancel working legs.
         const after = await t.http.post(`/api/strategies/${ctx.lot(step.lot).strategyId}/action`, { action: step.how });

@@ -196,6 +196,10 @@ async function readPreview(ui, modal) {
     });
   }
   const blocks = (await modal.locator('.checks .notice.err').allInnerTexts()).map((x) => x.trim());
+  // t1: protection already in place is not listed with the checks: the dialog states it in its own notice, with "Add this
+  // protection deliberately" (web/views/preview.js, needsAck). That notice is the blocking message the user reads.
+  const ack = modal.locator('.notice', { hasText: 'Protection is already in place.' });
+  if (await ack.count()) blocks.push((await ack.first().innerText()).replace(/\s*Add this protection deliberately[\s\S]*$/, '').trim());
   return { legs, cash, blocks };
 }
 
@@ -887,6 +891,9 @@ export function browserDriver(browser, { shotsDir } = {}) {
     for (let i = 0; i < 20; i++) {
       const popup = page.getByRole('dialog', { name: /^Hedge/ });
       if (await popup.count()) {
+        // t2: what opened, for a step that states the popup must have opened after a fill (templates driver, hedge_complete).
+        const note = await popup.locator('header .note').first().innerText().catch(() => '');
+        (ctx.hedgePopups ||= []).push({ title: await popup.getAttribute('aria-label'), state: await popup.getAttribute('data-state'), requestId: /request (HDG-[A-Z0-9]+)/.exec(note)?.[1] || null });
         await popup.locator('header').getByRole('button', { name: 'Close' }).click();
         await popup.waitFor({ state: 'hidden' });
         continue;

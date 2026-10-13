@@ -3130,7 +3130,8 @@ const lcExisting = (extra = {}) => ({
   strategyPage: { ...PAGE_CONTEXT, template: 'Long Collar', underlying: 'main', mode: 'existing', existing: { lot: 'kept', instrument: 'main' }, expiration: '2026-03-20', strikes: { 'Put strike': 48, 'Call strike': 52 }, hedge: 'Scripted package' },
   hedge: { packageId: 'scripted-1' }, ...extra,
 });
-const LC_PROTECTION = 'Protection is already in place: Buy 1 KSTL260320P48. The hedge package adds Buy 1 KSTL260320P46. The long exposure in KSTL is 100 units, of which 100 are already protected, leaving 0; the package adds puts on 100.';
+// The dialog writes "in place." in its notice heading where the API check reads "in place:"; the rest is the same text.
+const LC_PROTECTION = /^Protection is already in place[.:] Buy 1 KSTL260320P48\. The hedge package adds Buy 1 KSTL260320P46\. The long exposure in KSTL is 100 units, of which 100 are already protected, leaving 0; the package adds puts on 100\./;
 
 const longCollar = {
   template: 'long_collar',
@@ -3293,7 +3294,7 @@ const longCollar = {
     { id: 'cancel-kept', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'kept', expect: { result: { status: 'attention' }, events: [{ type: 'order.cancelled', summary: 'Leg 2 cancelled: buy 1 KSTL260320P48. Cancelled by user' }, { type: 'order.cancelled', summary: 'Leg 3 cancelled: sell 1 KSTL260320C52. Cancelled by user' }], openOrders: [], failed: { orders: 6 }, alerts: ['hedge.review', 'strategy.attention'] } },
     { id: 'accept-kept', covers: ['accept as it stands'], action: 'strategy_action', how: 'accept', lot: 'kept', expect: { result: { status: 'open' }, events: [{ type: 'strategy.accepted', summary: 'Long Collar KSTL: accepted as it stands with 2 legs unexecuted. The position no longer matches its template.' }], alerts: ['hedge.review'] } },
     // The scripted hedge service (labelled "Test fixture" wherever shown) will propose one 46 put as a hedge package.
-    { id: 'hedge-script', action: 'hedge_script', script: { responses: [{ packages: [SCRIPTED_PUT] }] }, expect: {} },
+    { id: 'hedge-script', action: 'hedge_script', script: { responses: [{ packages: [SCRIPTED_PUT] }], strategies: [{ id: 'DEMO-IS-002', name: 'Core Equity', version: 'demo-1' }] }, expect: {} },
     {
       // A collar on 'kept''s 100 shares with the proposed hedge package added: the collar's own put already covers all
       // 100 units, so the extra put is refused until it is made deliberate.
