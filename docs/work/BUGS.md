@@ -367,3 +367,20 @@ Open (t1b, not fixed, outside templates.js/packages.js):
   stays "incomplete: amount" although contracts are entered. Right: the exposure is contracts x deliverable on the underlying, long for
   a bought call or written put, short for a bought put or written call. Repro: Strategies page, Cash-Secured Put, any contracts; the Hedge
   panel shows "incomplete". The option-only template specs therefore have no hedge-request step.
+
+## s9 (whole-interface check, 2026-10-13)
+Open (s9, not fixed: larger than a small interface fix):
+- Wide ledger tables scroll sideways inside their panel. No page-level horizontal scroll anywhere (0 of 400+ screens), and every
+  control is reachable by scrolling the table, but at 1440x900 four tables are 40 to 90 px too wide (Accounting Open positions
+  1233/1190, Account page Open positions 1277/1190, Strategy instances 1235/1190, Instruments registry 1263/1190), and at 1024x768 and
+  390x844 most Accounting, Treasury, Account, Strategies, Books, Instruments and Settings tables scroll (e.g. Accounting Pending
+  "Executed trades awaiting settlement" 1073 px in a 774 px panel at 1024). Repro: demo server, any of those routes at 1024x768;
+  $SP/s9/pages.mjs reports TABLE-SCROLL. The Marketplaces, the preview dialog, the collateral desk and (s9) the hedge review queue
+  stack into labelled blocks; the other tables need the same treatment, screen by screen.
+- Failed settlement "Attempts" grows by one every engine cycle (111 after about ten minutes of demo time: Accounting, Failed and
+  cancelled trades, Failed settlements). server/core/settlement.js settleDue retries each cycle and increments attempts each time.
+  Not wrong, but the number reads as user-visible retries; consider counting per business day or showing "retried every cycle since".
+  Repro: $SP/s9/seed-demo.mjs + seed-demo2.mjs (Global Macro, Granite Partners Fund IV, due 2026-10-16).
+- Balance-sheet column choices (grouping, combined, filters) are kept in sessionStorage (web/views/accounting.js bsLoad/bsSave): they
+  survive a reload and a server restart in the same tab, but not a new tab or a browser restart. If they are meant to persist like the
+  theme and the Marketplace tab, they need localStorage.

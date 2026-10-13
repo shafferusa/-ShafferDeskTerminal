@@ -1263,7 +1263,19 @@ export function createPackages(app) {
       const u = instruments.get(l.instrumentId).underlying_id;
       if (u && legs.some((x) => x.role === `add_${u}` && x.purpose !== 'hedge')) l.dependsOnRole = `add_${u}`;
     }
-    legs.sort((a, b) => Number(Boolean(a.dependsOnRole && a.purpose === 'hedge')) - Number(Boolean(b.dependsOnRole && b.purpose === 'hedge')));
+    // t1b: as in a vertical spread's template, an added written option waits for the added bought option of the same right
+    // on the same underlying that covers it, and is scaled to what of it fills: a part-filled resize never leaves written
+    // options uncovered (sold first, they would also be refused for the cash an uncovered option needs).
+    const optOf = (l) => (l.instrumentId ? instruments.get(l.instrumentId) : null);
+    for (const l of legs) {
+      const o = optOf(l);
+      if (l.dependsOnRole || l.action !== 'sell' || o?.family !== 'option') continue;
+      const cover = legs.find((x) => x.action === 'buy' && optOf(x)?.family === 'option' && optOf(x).underlying_id === o.underlying_id && optOf(x).terms.right === o.terms.right);
+      if (cover) { l.dependsOnRole = cover.role; l.coverDep = true; }
+    }
+    const later = (l) => Number(Boolean(l.dependsOnRole && (l.purpose === 'hedge' || l.coverDep)));
+    legs.sort((a, b) => later(a) - later(b));
+    for (const l of legs) delete l.coverDep;
     const roleN = new Map(legs.map((l, i) => [l.role, i + 1]));
     return legs.map((l) => { const { dependsOnRole, ...rest } = l; return { ...rest, dependsOn: dependsOnRole ? [roleN.get(dependsOnRole)] : [] }; });
   }
@@ -1304,6 +1316,27 @@ export function createPackages(app) {
       }
     }
     need(legs.length, 'Choose option or futures positions to roll.');
+    // t1b: rolling a spread (a written option covered by a bought option of the same right on the same underlying): the
+    // written options are bought back first and the covering options are sold only after them; the new written options wait
+    // for the new covering options. Otherwise the roll sells the cover first and leaves the written leg uncovered (and its
+    // reserve at the uncovered figure) while the other legs execute. Rolls of anything else keep their order.
+    const optLeg = (l) => l.group === 'options';
+    const rightOf = (l) => (l.option ? l.option.right : instruments.get(l.instrumentId).terms.right);
+    const undOf = (l) => (l.option ? l.option.underlyingId : instruments.get(l.instrumentId).underlying_id);
+    const same = (a, b) => undOf(a) === undOf(b) && rightOf(a) === rightOf(b);
+    const closing = (l) => l.role.startsWith('close_');
+    const buyBacks = legs.filter((l) => optLeg(l) && closing(l) && l.action === 'buy');
+    const coverSales = legs.filter((l) => optLeg(l) && closing(l) && l.action === 'sell' && buyBacks.some((b) => same(b, l)));
+    if (coverSales.length) {
+      const newCovers = legs.filter((l) => optLeg(l) && !closing(l) && l.action === 'buy');
+      const newWritten = legs.filter((l) => optLeg(l) && !closing(l) && l.action === 'sell');
+      const rest = legs.filter((l) => ![...buyBacks, ...coverSales, ...newCovers, ...newWritten].includes(l));
+      for (const l of coverSales) l.dependsOnRoles = buyBacks.filter((b) => same(b, l)).map((b) => b.role);
+      for (const l of newWritten) l.dependsOnRoles = newCovers.filter((c) => same(c, l)).map((c) => c.role);
+      const ordered = [...buyBacks, ...coverSales, ...newCovers, ...newWritten, ...rest];
+      const roleN = new Map(ordered.map((l, i) => [l.role, i + 1]));
+      return ordered.map((l) => { const { dependsOnRoles, ...x } = l; return { ...x, dependsOn: (dependsOnRoles || []).map((r) => roleN.get(r)) }; });
+    }
     return legs.map((l) => ({ ...l, dependsOn: [] }));
   }
 

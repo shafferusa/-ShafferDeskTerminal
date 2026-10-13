@@ -301,3 +301,4 @@
 - 2026-10-13T21:48Z | t1b | +0.2 | T:cash_secured_put passes at engine, API and browser (fixes: put secured by its reservation; reservation released as puts close)
 - 2026-10-13T21:54Z | t1b | +0.2 | T:long_call passes at engine, API and browser
 - 2026-10-13T21:59Z | t1b | +0.2 | T:long_put passes at engine, API and browser
+- 2026-10-13T22:04Z | s9 | +1 | s9: demo-mode interface check complete (sweeps, tickets, previews, hedge states, fixes)

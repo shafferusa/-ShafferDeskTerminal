@@ -5438,4 +5438,61 @@ const longPut = {
   ],
 };
 
-export default [longTemplate, shortTemplate, protectivePut, protectiveCall, coveredCall, coveredPut, longCollar, shortCollar, cashSecuredPut, longCall, longPut];
+// ---------------------------------------------------------------------------------------------
+// bull_call_spread
+// ---------------------------------------------------------------------------------------------
+const bcs = (contracts, lower, upper, extra = {}) => pageInput('bull_call_spread', { hedgeRatio: undefined, options: { expiration: '2026-03-20', strikes: { lower, upper }, contracts }, ...extra });
+const bcsPage = (contracts, lower, upper, extra = {}) => ({ template: 'Bull Call Spread', underlying: 'main', expiration: '2026-03-20', strikes: { 'Lower strike (bought)': lower, 'Upper strike (sold)': upper }, contracts, ...extra });
+
+const bullCallSpread = {
+  template: 'bull_call_spread',
+  title: 'Bull call spread on Kestrel Logistics: buy the 50 call, sell the 55 call; partial fills, failed written leg, financing, roll, netting at expiry',
+  matrix: { ...TEMPLATE_MATRIX, ticket: 'x', settlement: 'x', lifecycle: 'x', accounting: 'x', collateral: 'x', manualInputs: [] },
+  start: MAR(2),
+  settlementCheck: { lag: 1, holidays: [] },
+  book: book('Matrix template bull call spread'),
+  instruments: { main: STOCK, call50: option('C', 50), call55: option('C', 55), call60: option('C', 60), call65: option('C', 65), call50apr: option('C', 50, '2026-04-17'), call55apr: option('C', 55, '2026-04-17') },
+  quotes: {
+    main: { bid: 49.95, ask: 50.05, last: 50.00, bidSize: 10000, askSize: 10000 },
+    call50: { bid: 1.80, ask: 1.90, last: 1.85, bidSize: 100, askSize: 3 },
+    call55: { bid: 0.40, ask: 0.50, last: 0.45, bidSize: 100, askSize: 100 },
+    call60: { bid: 0.10, ask: 0.15, last: 0.12, bidSize: 100, askSize: 100 },
+    call65: { bid: 0.03, ask: 0.05, last: 0.04, bidSize: 100, askSize: 100 },
+    call50apr: { bid: 2.60, ask: 2.70, last: 2.65, bidSize: 100, askSize: 100 },
+    call55apr: { bid: 0.90, ask: 1.00, last: 0.95, bidSize: 100, askSize: 100 },
+  },
+  expectAtStart: startState(),
+  steps: [
+    { id: 'open-partial', covers: ['open', 'partial fill', 'dependent leg scaled'], action: 'package', as: 'core', instrument: 'call50', input: bcs(10, 50, 55), strategyPage: bcsPage(10, 50, 55), expect: {} },
+    { id: 'cancel-remainder', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'core', expect: {} },
+    { id: 'retry', covers: ['retry'], action: 'recover', how: 'retry', lot: 'core', expect: {} },
+    { id: 'deep-book', action: 'quote', instrument: 'call50', quote: { bid: 1.80, ask: 1.90, last: 1.85, bidSize: 100, askSize: 100 }, expect: {} },
+    { id: 'kept-limit', covers: ['failed dependent leg'], action: 'package', as: 'kept', instrument: 'call50', input: bcs(6, 50, 55), strategyPage: bcsPage(6, 50, 55), editLegs: { 2: { orderType: 'limit', limitPrice: 0.9 } }, expect: {} },
+    { id: 'cancel-kept', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'kept', expect: {} },
+    { id: 'accept-kept', covers: ['accept as it stands'], action: 'strategy_action', how: 'accept', lot: 'kept', expect: {} },
+    { id: 'unwound-limit', covers: ['failed dependent leg'], action: 'package', as: 'unwound', instrument: 'call50', input: bcs(6, 50, 55), strategyPage: bcsPage(6, 50, 55), editLegs: { 2: { orderType: 'limit', limitPrice: 0.9 } }, expect: {} },
+    { id: 'cancel-unwound', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'unwound', expect: {} },
+    { id: 'unwind', covers: ['unwind'], action: 'recover', how: 'unwind', lot: 'unwound', expect: {} },
+    { id: 'resize-up', covers: ['resize', 'increase'], action: 'resize', lot: 'core', factor: 1.2, expect: {} },
+    { id: 'roll', covers: ['roll'], action: 'roll', lot: 'core', newExpiration: '2026-04-17', expect: {} },
+    { id: 'next-day', covers: ['settlement'], action: 'clock', to: MAR(3), expect: {} },
+    { id: 'sweep-to-treasury', covers: ['transfer'], action: 'transfer', from: 'account', to: 'treasury', ccy: 'USD', amount: 196_000, expect: {} },
+    { id: 'cash-short-not-financed', covers: ['financing: not financed'], action: 'package', instrument: 'call50', input: bcs(4, 50, 55), strategyPage: bcsPage(4, 50, 55), status: 'blocked', reason: 'x', expect: { refused: 'short' } },
+    { id: 'funded-from-treasury', covers: ['financing: Treasury funding'], action: 'package', as: 'funded', instrument: 'call50', input: bcs(4, 50, 55, { financing: { mode: 'treasury' } }), strategyPage: bcsPage(4, 50, 55, { financing: { mode: 'treasury' } }), expect: {} },
+    { id: 'funded-by-loan', covers: ['financing: borrow'], action: 'package', as: 'levered', instrument: 'call60', contractAs: 'loan', input: bcs(40, 60, 65, { financing: { mode: 'loan', rateType: 'fixed', rate: 0.06 } }), strategyPage: bcsPage(40, 60, 65, { financing: { mode: 'loan', rate: 0.06 } }), expect: {} },
+    { id: 'settle-financed', covers: ['settlement'], action: 'clock', to: MAR(4), expect: {} },
+    { id: 'treasury-top-up', covers: ['transfer'], action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 40_000, expect: {} },
+    { id: 'repay-loan', covers: ['repay'], action: 'repay', lot: 'levered', instrument: 'loan', expect: {} },
+    { id: 'expiry-close', action: 'close_price', instrument: 'main', date: '2026-03-20', value: 57, expect: {} },
+    { id: 'expiry-quote', action: 'quote', instrument: 'main', quote: { bid: 56.95, ask: 57.05, last: 57.00, bidSize: 10000, askSize: 10000 }, expect: {} },
+    { id: 'expiry', covers: ['expiry', 'exercise', 'assignment', 'lapse'], action: 'clock', to: MAR(20, '17:30'), expect: {} },
+    { id: 'after-expiry-funded', covers: ['package state after expiry'], action: 'strategy_check', lot: 'funded', expect: {} },
+    { id: 'settle-expiry', covers: ['settlement'], action: 'clock', to: MAR(23), expect: {} },
+    { id: 'close-kept', covers: ['close'], action: 'close', lot: 'kept', instrument: 'main', scope: 'strategy', expect: {} },
+    { id: 'close-share', covers: ['reduce', 'close share'], action: 'close', lot: 'core', instrument: 'call50apr', scope: 'strategy', percent: 50, expect: {} },
+    { id: 'close-all', covers: ['close'], action: 'close', lot: 'core', instrument: 'call50apr', scope: 'strategy', expect: {} },
+    { id: 'settle-closes', covers: ['settlement'], action: 'clock', to: MAR(24), expect: {} },
+  ],
+};
+
+export default [longTemplate, shortTemplate, protectivePut, protectiveCall, coveredCall, coveredPut, longCollar, shortCollar, cashSecuredPut, longCall, longPut, bullCallSpread];
