@@ -5412,4 +5412,487 @@ const pairsTrade = {
   ],
 };
 
-export default [bearCall, longStraddle, longStrangle, ironCondor, ironButterfly, longButterfly, longCalendar, longDiagonal, syntheticLong, syntheticShort, pairsTrade];
+// =====================================================================================================================
+// futures_hedge
+// =====================================================================================================================
+// Halvorsen Energy (NYSE) shares held, hedged with its single-stock future (Lakeshore Futures Exchange, 100 shares a
+// contract, cash-settled, March 2026, initial margin 1,000 USD a contract). The hedge uses the existing position: the
+// shares are linked into the hedge's strategy instance, not bought again. Variation margin is paid or received at each
+// end-of-day pass against the day's settlement price (close fixtures).
+//   stock   1,000 shares bought with the Long template.
+//   hedge   refused short of cash, then Treasury funding: the shares linked, 10 futures sold (6 fill first: 6 displayed
+//           at the bid). Variation margin over three days; the stock falls and the futures gain; the hedge is closed on
+//           both sides (shares sold, futures bought back, margin released).
+//   retry / accept / unwind  100 shares bought with 1 future sold each (a new exposure), when the future has no fresh
+//           quote: the futures legs expire unfilled; Retry sells the future; Accept keeps the shares; Unwind sells them.
+const fut = { productId: 'equity_future', name: 'Halvorsen Energy single-stock future, March 2026', symbol: 'HVEH6', marketView: 'US_DERIV', venue: 'Lakeshore Futures Exchange', venueType: 'exchange', venueCountry: 'US', underlying: 'stock', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 100, terms: { root: 'HVE', expiration: '2026-03-20', tickSize: 0.01, initialMargin: 1_000, settlement: 'cash', priceUnits: 'USD per share' } };
+const FH_PAGE = (financing) => ({ template: 'Futures Hedge', underlying: 'stock', mode: 'existing', existing: { lot: 'stock', instrument: 'stock' }, hedgeRatio: 1, futures: { buy: 'fut', contracts: 10 }, ...(financing ? { financing } : {}) });
+const fhInput = (financing) => templateInput('futures_hedge', { underlyingId: '$inst:stock', mode: 'existing', existingPositionId: '$pos:stock:stock', quantity: 1_000, hedgeRatio: 1, futures: { instrumentId: '$inst:fut', contracts: 10 }, financing });
+const fhOne = (as) => ({ action: 'package', as, instrument: 'stock', input: templateInput('futures_hedge', { underlyingId: '$inst:stock', mode: 'new', quantity: 100, direction: 'long', hedgeRatio: 1, futures: { instrumentId: '$inst:fut', contracts: 1 }, financing: null }), strategyPage: { template: 'Futures Hedge', underlying: 'stock', quantity: 100, direction: 'long', hedgeRatio: 1, futures: { buy: 'fut', contracts: 1 } } });
+const futuresHedge = {
+  template: 'futures_hedge',
+  title: 'Futures hedge: Halvorsen Energy shares already held, hedged with 10 March 2026 single-stock futures (cash-settled)',
+  matrix: {
+    ticket: 'Strategies page: Trading owner, Execution template (Futures Hedge), Ticker or instrument, Underlying position (hedge an existing position: the position, quantity to cover; or establish a new one: quantity and exposure), Hedge ratio, Futures contract for the hedge, Contracts, Financing; the package preview and one confirmation. Retry, Unwind, Accept and Close on the strategy instance',
+    requiredFields: ['Trading owner', 'Execution template', 'Underlying', 'Existing position or quantity', 'Futures contract', 'Contracts or hedge ratio'],
+    automaticInputs: ['bid, ask, last of the shares and the future (quote fixtures)', 'daily settlement prices of the future (close fixtures)', 'initial margin from the contract terms', 'commission from the Book fee schedule (shares and futures)', 'Treasury funding sized to the shortfall'],
+    manualInputs: ['the existing position to hedge', 'Retry, Unwind or Accept as it stands after the futures leg fails', 'Close of the hedge'],
+    settlement: 'Shares T+1; futures: no purchase cash, initial margin posted on the trade date, variation margin in cash at each end-of-day pass; Treasury funding at once',
+    lifecycle: 'Daily variation margin on the futures (automatic, from the settlement price); the existing shares are linked into the hedge instance, not bought again; a failed futures leg leaves the instance needing attention: Retry, Unwind or Accept; Close sells the shares and buys the futures back, releasing the margin',
+    accounting: 'Shares at average cost; futures at nil cost with open trade equity since the last settlement; variation margin and closes realized; commissions expensed',
+    collateral: 'Initial margin 1,000 USD a contract posted in cash, not spendable, released on close; the futures leg is marked as the hedge of the linked shares',
+  },
+  start: MAR(2),
+  settlementCheck: { lag: 1, holidays: [] },
+  book: book('Templates futures hedge', { funding: [{ ccy: 'USD', amount: 55_000 }] }),
+  instruments: { stock: stockDraft('Halvorsen Energy Corp.', 'HVE'), fut },
+  quotes: {
+    stock: { bid: 49.98, ask: 50.02, last: 50.00, bidSize: 10000, askSize: 10000 },
+    fut: { bid: 50.10, ask: 50.12, last: 50.11, bidSize: 6, askSize: 20 }, // 6 contracts displayed at the bid
+  },
+  closes: { fut: { '2026-03-02': 50.20, '2026-03-03': 49.90, '2026-03-04': 49.70, '2026-03-05': 49.80 } },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 55_000, unsettled: 0, reserved: 0, margin: 0, availableToTrade: 55_000, availableToWithdraw: 55_000 } },
+      treasury: { USD: { settled: 945_000, unsettled: 0, reserved: 0, availableToTrade: 945_000, availableToWithdraw: 945_000 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 55_000, treasury: 945_000, book: 1_000_000 },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+  },
+  steps: [
+    {
+      // The existing position: 1,000 shares at the ask 50.02 = 50,020, commission 5.
+      id: 'buy-shares', covers: ['existing position'], action: 'package', as: 'stock', instrument: 'stock',
+      input: templateInput('long', { underlyingId: '$inst:stock', mode: 'new', quantity: 1_000, financing: null }), strategyPage: { template: 'Long', underlying: 'stock', quantity: 1_000 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'stock', qty: 1_000, estimate: 50.02, settleDate: '2026-03-03', cash: -50_020, fees: 5 }] },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 1_000, avgPrice: 50.02 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1,000 HVE @ 50.02 USD', date: '2026-03-02' }],
+        cash: { account: { USD: { settled: 55_000, unsettled: -50_025, availableToTrade: 4_975, availableToWithdraw: 4_975 } } },
+        positions: [{ instrument: 'stock', lot: 'stock', owner: 'account', direction: 'long', qty: 1_000, avgCost: 50.02, cost: 50_020, price: 50, value: 50_000, unrealized: -20 }],
+        holdings: { stock: { long: 1_000, short: 0, net: 1_000 } },
+        pending: [{ instrument: 'stock', lot: 'stock', dueDate: '2026-03-03', amount: -50_025, into: 'cash' }],
+        pnl: { account: { realized: 0, commissions: -5, unrealized: -20, total: -25 }, book: { realized: 0, commissions: -5, unrealized: -20, total: -25 }, treasury: { total: 0 } },
+        nav: { account: 54_975, treasury: 945_000, book: 999_975 },
+        balance: {
+          account: { cash: 55_000, payable: 50_025, positions: 50_000, assets: 105_000, liabilities: 50_025, netAssets: 54_975 },
+          treasury: { cash: 945_000, assets: 945_000, netAssets: 945_000 },
+          book: { cash: 1_000_000, payable: 50_025, positions: 50_000, assets: 1_050_000, liabilities: 50_025, netAssets: 999_975 },
+        },
+      },
+    },
+    {
+      // Hedge the 1,000 shares held: 10 futures sold, initial margin 10 x 1,000 = 10,000 and commission 10 x 2.25 =
+      // 22.50; nothing else is bought. 4,975 is free: short by 5,047.50.
+      id: 'hedge-short-of-cash', covers: 'financing', action: 'package', as: 'refused', instrument: 'stock',
+      input: fhInput(null), strategyPage: FH_PAGE(null),
+      status: 'blocked', reason: 'The Account cannot post the initial margin: the preview is blocked until financing is chosen.',
+      expect: {
+        refused: 'Alpha is short 5,047.50 USD',
+        preview: {
+          blocking: 1, errors: ['cash'],
+          legs: [
+            { kind: 'link', action: 'use_existing', purpose: 'primary', instrument: 'stock', qty: 1_000, dependsOn: [] },
+            { kind: 'trade', action: 'sell', purpose: 'hedge', instrument: 'fut', qty: 10, estimate: 50.10, settleDate: '2026-03-02', notional: 50_100, initialMargin: 10_000, fees: 22.50, dependsOn: [] }, // 10 x 50.10 x 100
+          ],
+          cash: { USD: { purchases: 0, fees: 22.50, margin: 10_000, required: 10_022.50, available: 4_975, shortfall: 5_047.50 } },
+        },
+      },
+    },
+    {
+      // Treasury funding 5,047.50 first; the shares are linked; the futures sell 6 at 50.10 (margin 6,000, commission
+      // 13.50), then 4 on the next cycle (4,000 and 9.00).
+      id: 'hedge', covers: ['open', 'financing', 'existing position', 'initial margin', 'partial fill'], action: 'package', as: 'hedge', instrument: 'stock',
+      input: fhInput({ mode: 'treasury' }), strategyPage: FH_PAGE({ mode: 'treasury' }),
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [
+            { kind: 'funding', purpose: 'financing', qty: 5_047.50, cash: 5_047.50, dependsOn: [] },
+            { kind: 'link', action: 'use_existing', instrument: 'stock', qty: 1_000, dependsOn: [] },
+            { kind: 'trade', action: 'sell', purpose: 'hedge', instrument: 'fut', qty: 10, estimate: 50.10, model: 'quoted-bid-ask', settleDate: '2026-03-02', notional: 50_100, initialMargin: 10_000, fees: 22.50, dependsOn: [1] },
+          ],
+          cash: { USD: { fees: 22.50, margin: 10_000, financingIn: 5_047.50, required: 10_022.50, available: 4_975, shortfall: 0 } },
+        },
+        result: {
+          status: 'partial',
+          orders: [
+            { kind: 'funding', status: 'filled' },
+            { kind: 'link', status: 'filled', filledQty: 1_000 },
+            { kind: 'trade', action: 'sell', instrument: 'fut', status: 'partial', qty: 10, filledQty: 6, avgPrice: 50.10 },
+          ],
+        },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'transfer.funding', summary: 'Treasury funding: 5,047.50 USD from Treasury to Alpha' },
+          { type: 'position.linked', summary: 'Linked existing long position of 1,000 HVE to this strategy (no trade)' },
+          { type: 'trade.fill', summary: 'Sold 6 HVEH6 @ 50.10 (notional 30,060.00 USD; margin posted 6,000.00 USD)', cash: { USD: -6_013.50 } },
+          { type: 'trade.fill', summary: 'Sold 4 HVEH6 @ 50.10 (notional 20,040.00 USD; margin posted 4,000.00 USD)', cash: { USD: -4_009 } },
+        ],
+        cash: {
+          // 55,000 + 5,047.50 - 10,022.50 = 50,025 settled, all of it owed for the shares tomorrow; margin 10,000.
+          account: { USD: { settled: 50_025, unsettled: -50_025, margin: 10_000, availableToTrade: 0, availableToWithdraw: 0 } },
+          treasury: { USD: { settled: 939_952.50, availableToTrade: 939_952.50, availableToWithdraw: 939_952.50 } },
+        },
+        positions: [
+          { instrument: 'fut', lot: 'hedge', owner: 'account', direction: 'short', qty: -10, avgCost: 50.10, cost: 0, price: 50.11, value: -10, unrealized: -10, notional: 50_110, margin: 10_000 }, // (50.11 - 50.10) x 100 x -10
+          { instrument: 'stock', lot: 'hedge', owner: 'account', direction: 'long', qty: 1_000, avgCost: 50.02, cost: 50_020, price: 50, value: 50_000, unrealized: -20 }, // linked, not bought again
+        ],
+        holdings: { fut: { long: 0, short: 10, net: -10 }, stock: { long: 1_000, short: 0, net: 1_000 } },
+        pending: [{ instrument: 'stock', lot: 'stock', dueDate: '2026-03-03', amount: -50_025, into: 'cash' }],
+        lifecycle: [{ type: 'future.expiry', instrument: 'fut', dueDate: '2026-03-20', status: 'pending' }],
+        pnl: { account: { commissions: -27.50, unrealized: -30, total: -57.50 }, book: { commissions: -27.50, unrealized: -30, total: -57.50 } },
+        nav: { account: 59_990, treasury: 939_952.50, book: 999_942.50 },
+        balance: {
+          account: { cash: 50_025, margin: 10_000, payable: 50_025, positions: 49_990, assets: 110_015, liabilities: 50_025, netAssets: 59_990 },
+          treasury: { cash: 939_952.50, assets: 939_952.50, netAssets: 939_952.50 },
+          book: { cash: 989_977.50, margin: 10_000, payable: 50_025, positions: 49_990, assets: 1_049_967.50, liabilities: 50_025, netAssets: 999_942.50 },
+        },
+      },
+    },
+    {
+      // A cushion for variation margin before the shares are paid for tomorrow.
+      id: 'fund-cushion', covers: 'internal funding', action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 5_000,
+      expect: {
+        events: [{ type: 'transfer.funding', summary: 'Treasury funding: 5,000.00 USD from Treasury to Alpha' }],
+        cash: { account: { USD: { settled: 55_025, availableToTrade: 5_000, availableToWithdraw: 5_000 } }, treasury: { USD: { settled: 934_952.50, availableToTrade: 934_952.50, availableToWithdraw: 934_952.50 } } },
+        nav: { account: 64_990, treasury: 934_952.50 },
+        balance: { account: { cash: 55_025, assets: 115_015, netAssets: 64_990 }, treasury: { cash: 934_952.50, assets: 934_952.50, netAssets: 934_952.50 } },
+      },
+    },
+    {
+      // End of 2 March: settlement 50.20 against the fill 50.10: the short pays 0.10 x 100 x 10 = 100.
+      id: 'variation-day-1', covers: 'variation margin', action: 'clock', to: MAR(2, '17:30'),
+      expect: {
+        events: [{ type: 'future.variation', summary: 'Variation margin paid on -10 HVEH6: 100.00 USD (settlement 50.20 vs 50.10)', cash: { USD: -100 }, date: '2026-03-02' }],
+        cash: { account: { USD: { settled: 54_925, availableToTrade: 4_900, availableToWithdraw: 4_900 } } },
+        positions: [{ instrument: 'fut', lot: 'hedge', avgCost: 50.20, value: 90, unrealized: 90 }, { instrument: 'stock', lot: 'hedge', value: 50_000 }], // (50.11 - 50.20) x 100 x -10
+        pnl: { account: { realized: -100, unrealized: 70, total: -57.50 }, book: { realized: -100, unrealized: 70, total: -57.50 } },
+        balance: { account: { cash: 54_925, positions: 50_090, assets: 115_015, netAssets: 64_990 }, book: { cash: 989_877.50, positions: 50_090, assets: 1_049_967.50, netAssets: 999_942.50 } },
+      },
+    },
+    {
+      id: 'shares-settle', covers: 'settlement', action: 'clock', to: MAR(3),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 50,025.00 USD from settled cash', date: '2026-03-03' }],
+        cash: { account: { USD: { settled: 4_900, unsettled: 0, availableToTrade: 4_900, availableToWithdraw: 4_900 } } },
+        pending: [],
+        balance: { account: { cash: 4_900, payable: null, assets: 64_990, liabilities: 0 }, book: { cash: 939_852.50, payable: null, assets: 999_942.50, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'fund-account', covers: 'internal funding', action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 20_000,
+      expect: {
+        events: [{ type: 'transfer.funding', summary: 'Treasury funding: 20,000.00 USD from Treasury to Alpha' }],
+        cash: { account: { USD: { settled: 24_900, availableToTrade: 24_900, availableToWithdraw: 24_900 } }, treasury: { USD: { settled: 914_952.50, availableToTrade: 914_952.50, availableToWithdraw: 914_952.50 } } },
+        nav: { account: 84_990, treasury: 914_952.50 },
+        balance: { account: { cash: 24_900, assets: 84_990, netAssets: 84_990 }, treasury: { cash: 914_952.50, assets: 914_952.50, netAssets: 914_952.50 } },
+      },
+    },
+    { id: 'fut-quote-stops', action: 'quote', instrument: 'fut', quote: { bid: 50.10, ask: 50.12, last: 50.11, bidSize: 20, askSize: 20, asOf: MAR(3, '09:50') }, expect: {} },
+    {
+      // A new exposure hedged: 100 shares at 50.02 (5,002, commission 1.00 minimum) and 1 future (no fresh quote: margin
+      // 1,000 and commission 2.25 estimated, it will wait).
+      ...fhOne('retry'), id: 'open-retry', covers: ['open', 'failed leg'],
+      expect: {
+        preview: {
+          blocking: 0, warnings: ['not-executable', 'already-held', 'unbounded'], // unbounded: shares against a future carry basis risk
+          legs: [
+            { kind: 'trade', action: 'buy', purpose: 'primary', instrument: 'stock', qty: 100, estimate: 50.02, settleDate: '2026-03-04', cash: -5_002, fees: 1, dependsOn: [] },
+            { kind: 'trade', action: 'sell', purpose: 'hedge', instrument: 'fut', qty: 1, estimate: null, reference: 50.11, executable: false, notional: 5_011, initialMargin: 1_000, fees: 2.25, dependsOn: [] },
+          ],
+          cash: { USD: { purchases: 5_002, fees: 3.25, margin: 1_000, required: 6_005.25, available: 24_900, shortfall: 0 } },
+        },
+        result: { status: 'partial', orders: [{ action: 'buy', instrument: 'stock', status: 'filled', filledQty: 100 }, { action: 'sell', instrument: 'fut', status: 'working', filledQty: 0 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 100 HVE @ 50.02 USD', date: '2026-03-03' }],
+        cash: { account: { USD: { settled: 24_900, unsettled: -5_003, availableToTrade: 19_897, availableToWithdraw: 19_897 } } },
+        positions: [
+          { instrument: 'fut', lot: 'hedge', value: 90 },
+          { instrument: 'stock', lot: 'hedge', value: 50_000 },
+          { instrument: 'stock', lot: 'retry', owner: 'account', direction: 'long', qty: 100, avgCost: 50.02, cost: 5_002, price: 50, value: 5_000, unrealized: -2 },
+        ],
+        holdings: { stock: { long: 1_100, short: 0, net: 1_100 } },
+        pending: [{ instrument: 'stock', lot: 'retry', dueDate: '2026-03-04', amount: -5_003, into: 'cash' }],
+        openOrders: [{ instrument: 'fut', kind: 'trade', action: 'sell', status: 'working', qty: 1, filledQty: 0 }],
+        pnl: { account: { commissions: -28.50, unrealized: 68, total: -60.50 }, book: { commissions: -28.50, unrealized: 68, total: -60.50 } },
+        nav: { account: 84_987, book: 999_939.50 },
+        balance: {
+          account: { cash: 24_900, margin: 10_000, payable: 5_003, positions: 55_090, assets: 89_990, liabilities: 5_003, netAssets: 84_987 },
+          book: { cash: 939_852.50, margin: 10_000, payable: 5_003, positions: 55_090, assets: 1_004_942.50, liabilities: 5_003, netAssets: 999_939.50 },
+        },
+      },
+    },
+    {
+      ...fhOne('accept'), id: 'open-accept', covers: ['open', 'failed leg'],
+      expect: {
+        preview: { blocking: 0, legs: [{ instrument: 'stock', qty: 100 }, { instrument: 'fut', qty: 1, estimate: null }], cash: { USD: { required: 6_005.25, available: 19_897, shortfall: 0 } } },
+        result: { status: 'partial', orders: [{ instrument: 'stock', status: 'filled' }, { instrument: 'fut', status: 'working' }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 100 HVE @ 50.02 USD' }],
+        cash: { account: { USD: { settled: 24_900, unsettled: -10_006, availableToTrade: 14_894, availableToWithdraw: 14_894 } } },
+        positions: [{ instrument: 'fut', lot: 'hedge' }, { instrument: 'stock', lot: 'accept', qty: 100, value: 5_000 }, { instrument: 'stock', lot: 'hedge' }, { instrument: 'stock', lot: 'retry' }],
+        holdings: { stock: { long: 1_200, short: 0, net: 1_200 } },
+        pending: [{ lot: 'accept', amount: -5_003 }, { lot: 'retry', amount: -5_003 }],
+        openOrders: [{ instrument: 'fut', status: 'working' }, { instrument: 'fut', status: 'working' }],
+        pnl: { account: { commissions: -29.50, unrealized: 66, total: -63.50 }, book: { commissions: -29.50, unrealized: 66, total: -63.50 } },
+        nav: { account: 84_984, book: 999_936.50 },
+        balance: {
+          account: { cash: 24_900, margin: 10_000, payable: 10_006, positions: 60_090, assets: 94_990, liabilities: 10_006, netAssets: 84_984 },
+          book: { cash: 939_852.50, margin: 10_000, payable: 10_006, positions: 60_090, assets: 1_009_942.50, liabilities: 10_006, netAssets: 999_936.50 },
+        },
+      },
+    },
+    {
+      ...fhOne('unwind'), id: 'open-unwind', covers: ['open', 'failed leg'],
+      expect: {
+        preview: { blocking: 0, legs: [{ instrument: 'stock', qty: 100 }, { instrument: 'fut', qty: 1, estimate: null }], cash: { USD: { required: 6_005.25, available: 14_894, shortfall: 0 } } },
+        result: { status: 'partial', orders: [{ instrument: 'stock', status: 'filled' }, { instrument: 'fut', status: 'working' }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 100 HVE @ 50.02 USD' }],
+        cash: { account: { USD: { settled: 24_900, unsettled: -15_009, availableToTrade: 9_891, availableToWithdraw: 9_891 } } },
+        positions: [{ instrument: 'fut', lot: 'hedge' }, { instrument: 'stock', lot: 'accept' }, { instrument: 'stock', lot: 'hedge' }, { instrument: 'stock', lot: 'retry' }, { instrument: 'stock', lot: 'unwind', qty: 100, value: 5_000 }],
+        holdings: { stock: { long: 1_300, short: 0, net: 1_300 } },
+        pending: [{ lot: 'accept' }, { lot: 'retry' }, { lot: 'unwind', amount: -5_003 }],
+        openOrders: [{ instrument: 'fut', status: 'working' }, { instrument: 'fut', status: 'working' }, { instrument: 'fut', status: 'working' }],
+        pnl: { account: { commissions: -30.50, unrealized: 64, total: -66.50 }, book: { commissions: -30.50, unrealized: 64, total: -66.50 } },
+        nav: { account: 84_981, book: 999_933.50 },
+        balance: {
+          account: { cash: 24_900, margin: 10_000, payable: 15_009, positions: 65_090, assets: 99_990, liabilities: 15_009, netAssets: 84_981 },
+          book: { cash: 939_852.50, margin: 10_000, payable: 15_009, positions: 65_090, assets: 1_014_942.50, liabilities: 15_009, netAssets: 999_933.50 },
+        },
+      },
+    },
+    {
+      // End of 3 March: settlement 49.90 against 50.20, the short receives 0.30 x 100 x 10 = 300; the three futures legs
+      // expire unfilled; the share purchases settle on 4 March.
+      id: 'futures-legs-expire', covers: ['failed leg', 'variation margin', 'settlement'], action: 'clock', to: MAR(4),
+      expect: {
+        events: [
+          { type: 'future.variation', summary: 'Variation margin received on -10 HVEH6: 300.00 USD (settlement 49.90 vs 50.20)', cash: { USD: 300 }, date: '2026-03-03' },
+          { type: 'settlement.pay', summary: 'paid 5,003.00 USD from settled cash', date: '2026-03-04' },
+          { type: 'settlement.pay', summary: 'paid 5,003.00 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 5,003.00 USD from settled cash' },
+          { type: 'order.expired', summary: 'Leg 2 expired: sell 1 HVEH6. Day order did not fill before the end of the business day' },
+          { type: 'order.expired', summary: 'Leg 2 expired: sell 1 HVEH6. Day order did not fill before the end of the business day' },
+          { type: 'order.expired', summary: 'Leg 2 expired: sell 1 HVEH6. Day order did not fill before the end of the business day' },
+        ],
+        cash: { account: { USD: { settled: 10_191, unsettled: 0, availableToTrade: 10_191, availableToWithdraw: 10_191 } } }, // 24,900 + 300 - 15,009
+        positions: [{ instrument: 'fut', lot: 'hedge', avgCost: 49.90, value: -210, unrealized: -210 }, { instrument: 'stock', lot: 'accept' }, { instrument: 'stock', lot: 'hedge' }, { instrument: 'stock', lot: 'retry' }, { instrument: 'stock', lot: 'unwind' }], // (50.11 - 49.90) x -1,000
+        pending: [], openOrders: [],
+        failed: { orders: 3 },
+        alerts: ['strategy.attention', 'strategy.attention', 'strategy.attention'],
+        pnl: { account: { realized: 200, unrealized: -236, total: -66.50 }, book: { realized: 200, unrealized: -236, total: -66.50 } },
+        balance: {
+          account: { cash: 10_191, payable: null, positions: 64_790, assets: 84_981, liabilities: 0 },
+          book: { cash: 925_143.50, payable: null, positions: 64_790, assets: 999_933.50, liabilities: 0 },
+        },
+      },
+    },
+    {
+      id: 'fut-quote-day3', action: 'quote', instrument: 'fut', quote: { bid: 49.85, ask: 49.87, last: 49.86, bidSize: 20, askSize: 20 },
+      expect: {
+        positions: [{ instrument: 'fut', lot: 'hedge', price: 49.86, value: 40, unrealized: 40 }, { instrument: 'stock', lot: 'accept' }, { instrument: 'stock', lot: 'hedge' }, { instrument: 'stock', lot: 'retry' }, { instrument: 'stock', lot: 'unwind' }], // (49.86 - 49.90) x -1,000
+        pnl: { account: { unrealized: 14, total: 183.50 }, book: { unrealized: 14, total: 183.50 } },
+        nav: { account: 85_231, book: 1_000_183.50 },
+        balance: { account: { positions: 65_040, assets: 85_231, netAssets: 85_231 }, book: { positions: 65_040, assets: 1_000_183.50, netAssets: 1_000_183.50 } },
+      },
+    },
+    {
+      // Retry sells the future at 49.85: margin 1,000 and commission 2.25 from settled cash.
+      id: 'retry', covers: ['retry', 'failed leg'], action: 'recover', how: 'retry', lot: 'retry',
+      expect: {
+        preview: { blocking: 0, errors: [], intent: 'retry', legs: [{ kind: 'trade', action: 'sell', instrument: 'fut', qty: 1, estimate: 49.85, settleDate: '2026-03-04', notional: 4_985, initialMargin: 1_000, fees: 2.25 }], cash: { USD: { fees: 2.25, margin: 1_000, required: 1_002.25, available: 10_191, shortfall: 0 } } },
+        result: { status: 'open', complete: true, orders: [{ action: 'sell', instrument: 'fut', status: 'filled', filledQty: 1, avgPrice: 49.85 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 1 HVEH6 @ 49.85 (notional 4,985.00 USD; margin posted 1,000.00 USD)', cash: { USD: -1_002.25 }, date: '2026-03-04' }],
+        cash: { account: { USD: { settled: 9_188.75, margin: 11_000, availableToTrade: 9_188.75, availableToWithdraw: 9_188.75 } } },
+        positions: [
+          { instrument: 'fut', lot: 'hedge', value: 40 }, { instrument: 'fut', lot: 'retry', owner: 'account', direction: 'short', qty: -1, avgCost: 49.85, cost: 0, price: 49.86, value: -1, unrealized: -1, margin: 1_000 },
+          { instrument: 'stock', lot: 'accept' }, { instrument: 'stock', lot: 'hedge' }, { instrument: 'stock', lot: 'retry' }, { instrument: 'stock', lot: 'unwind' },
+        ],
+        holdings: { fut: { long: 0, short: 11, net: -11 } },
+        lifecycle: [{ type: 'future.expiry', instrument: 'fut' }, { type: 'future.expiry', instrument: 'fut' }],
+        alerts: ['strategy.attention', 'strategy.attention'],
+        pnl: { account: { commissions: -32.75, unrealized: 13, total: 180.25 }, book: { commissions: -32.75, unrealized: 13, total: 180.25 } },
+        nav: { account: 85_227.75, book: 1_000_180.25 },
+        balance: {
+          account: { cash: 9_188.75, margin: 11_000, positions: 65_039, assets: 85_227.75, netAssets: 85_227.75 },
+          book: { cash: 924_141.25, margin: 11_000, positions: 65_039, assets: 1_000_180.25, netAssets: 1_000_180.25 },
+        },
+      },
+    },
+    {
+      id: 'accept', covers: ['accept', 'failed leg'], action: 'strategy_action', lot: 'accept', how: 'accept',
+      expect: { events: [{ type: 'strategy.accepted', summary: 'accepted as it stands with 1 leg unexecuted. The position no longer matches its template.' }], alerts: ['strategy.attention'] },
+    },
+    {
+      // Unwind sells the 100 shares at 49.98 (4,998, commission 1.00): realized 100 x (49.98 - 50.02) = -4.
+      id: 'unwind', covers: ['unwind', 'close'], action: 'recover', how: 'unwind', lot: 'unwind',
+      expect: {
+        preview: { blocking: 0, errors: [], intent: 'unwind', legs: [{ kind: 'trade', action: 'sell', instrument: 'stock', qty: 100, estimate: 49.98, settleDate: '2026-03-05', cash: 4_998, fees: 1 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', instrument: 'stock', status: 'filled', filledQty: 100, avgPrice: 49.98 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 100 HVE @ 49.98 USD (realized -4.00 USD)' }],
+        cash: { account: { USD: { settled: 9_188.75, unsettled: 4_997, availableToTrade: 14_185.75, availableToWithdraw: 9_188.75 } } },
+        positions: [{ instrument: 'fut', lot: 'hedge' }, { instrument: 'fut', lot: 'retry' }, { instrument: 'stock', lot: 'accept' }, { instrument: 'stock', lot: 'hedge' }, { instrument: 'stock', lot: 'retry' }],
+        holdings: { stock: { long: 1_200, short: 0, net: 1_200 } },
+        pending: [{ instrument: 'stock', lot: 'unwind', dueDate: '2026-03-05', amount: 4_997, into: 'cash' }],
+        alerts: [],
+        pnl: { account: { realized: 196, commissions: -33.75, unrealized: 15, total: 177.25 }, book: { realized: 196, commissions: -33.75, unrealized: 15, total: 177.25 } },
+        nav: { account: 85_224.75, book: 1_000_177.25 },
+        balance: {
+          account: { cash: 9_188.75, receivable: 4_997, margin: 11_000, positions: 60_039, assets: 85_224.75, netAssets: 85_224.75 },
+          book: { cash: 924_141.25, receivable: 4_997, margin: 11_000, positions: 60_039, assets: 1_000_177.25, netAssets: 1_000_177.25 },
+        },
+      },
+    },
+    {
+      // End of 4 March: settlement 49.70. The hedge's 10 receive (49.90 - 49.70) x 1,000 = 200; the retried 1 receives
+      // (49.85 - 49.70) x 100 = 15. The sale of the unwound shares settles.
+      id: 'variation-day-3', covers: ['variation margin', 'settlement'], action: 'clock', to: MAR(5),
+      expect: {
+        events: [
+          { type: 'future.variation', summary: 'Variation margin received on -10 HVEH6: 200.00 USD (settlement 49.70 vs 49.90)', cash: { USD: 200 }, date: '2026-03-04' },
+          { type: 'future.variation', summary: 'Variation margin received on -1 HVEH6: 15.00 USD (settlement 49.70 vs 49.85)', cash: { USD: 15 } },
+          { type: 'settlement.receive', summary: 'received 4,997.00 USD into settled cash', date: '2026-03-05' },
+        ],
+        cash: { account: { USD: { settled: 14_400.75, unsettled: 0, availableToTrade: 14_400.75, availableToWithdraw: 14_400.75 } } },
+        positions: [
+          { instrument: 'fut', lot: 'hedge', avgCost: 49.70, value: -160, unrealized: -160 }, { instrument: 'fut', lot: 'retry', avgCost: 49.70, value: -16, unrealized: -16 },
+          { instrument: 'stock', lot: 'accept' }, { instrument: 'stock', lot: 'hedge' }, { instrument: 'stock', lot: 'retry' },
+        ],
+        pending: [],
+        pnl: { account: { realized: 411, unrealized: -200, total: 177.25 }, book: { realized: 411, unrealized: -200, total: 177.25 } },
+        balance: {
+          account: { cash: 14_400.75, receivable: null, positions: 59_824, assets: 85_224.75 },
+          book: { cash: 929_353.25, receivable: null, positions: 59_824, assets: 1_000_177.25 },
+        },
+      },
+    },
+    {
+      // Close "retry": 100 shares sold at 49.98 (realized -4), the future bought back at 49.87 (realized (49.70 - 49.87)
+      // x 100 = -17), its margin released: 1,000 - 17 - 2.25 = 980.75 back in settled cash at once.
+      id: 'close-retry', covers: ['close', 'margin release'], action: 'close', lot: 'retry', instrument: 'stock', scope: 'strategy', percent: 100,
+      expect: {
+        preview: {
+          blocking: 0, errors: [], intent: 'close',
+          legs: [
+            { kind: 'trade', action: 'sell', instrument: 'stock', qty: 100, estimate: 49.98, settleDate: '2026-03-06', cash: 4_998, fees: 1 },
+            { kind: 'trade', action: 'buy', instrument: 'fut', qty: 1, estimate: 49.87, settleDate: '2026-03-05', notional: 4_987, initialMargin: -1_000, fees: 2.25 },
+          ],
+        },
+        result: { status: 'closed', orders: [{ action: 'sell', instrument: 'stock', status: 'filled' }, { action: 'buy', instrument: 'fut', status: 'filled', avgPrice: 49.87 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 100 HVE @ 49.98 USD (realized -4.00 USD)' },
+          { type: 'trade.fill', summary: 'Bought 1 HVEH6 @ 49.87 (notional 4,987.00 USD; margin released 1,000.00 USD; realized -17.00 USD)', cash: { USD: 980.75 } },
+        ],
+        cash: { account: { USD: { settled: 15_381.50, unsettled: 4_997, margin: 10_000, availableToTrade: 20_378.50, availableToWithdraw: 15_381.50 } } },
+        positions: [{ instrument: 'fut', lot: 'hedge', value: -160 }, { instrument: 'stock', lot: 'accept', value: 5_000 }, { instrument: 'stock', lot: 'hedge', value: 50_000 }],
+        holdings: { fut: { long: 0, short: 10, net: -10 }, stock: { long: 1_100, short: 0, net: 1_100 } },
+        pending: [{ instrument: 'stock', lot: 'retry', dueDate: '2026-03-06', amount: 4_997, into: 'cash' }],
+        lifecycle: [{ type: 'future.expiry', instrument: 'fut' }],
+        pnl: { account: { realized: 390, commissions: -37, unrealized: -182, total: 171 }, book: { realized: 390, commissions: -37, unrealized: -182, total: 171 } },
+        nav: { account: 85_218.50, book: 1_000_171 },
+        balance: {
+          account: { cash: 15_381.50, receivable: 4_997, margin: 10_000, positions: 54_840, assets: 85_218.50, netAssets: 85_218.50 },
+          book: { cash: 930_334, receivable: 4_997, margin: 10_000, positions: 54_840, assets: 1_000_171, netAssets: 1_000_171 },
+        },
+      },
+    },
+    {
+      // End of 5 March: settlement 49.80 against 49.70: the hedge's short pays 0.10 x 1,000 = 100.
+      id: 'variation-day-4', covers: ['variation margin', 'settlement'], action: 'clock', to: MAR(6),
+      expect: {
+        events: [
+          { type: 'future.variation', summary: 'Variation margin paid on -10 HVEH6: 100.00 USD (settlement 49.80 vs 49.70)', cash: { USD: -100 }, date: '2026-03-05' },
+          { type: 'settlement.receive', summary: 'received 4,997.00 USD into settled cash', date: '2026-03-06' },
+        ],
+        cash: { account: { USD: { settled: 20_278.50, unsettled: 0, availableToTrade: 20_278.50, availableToWithdraw: 20_278.50 } } },
+        positions: [{ instrument: 'fut', lot: 'hedge', avgCost: 49.80, value: -60, unrealized: -60 }, { instrument: 'stock', lot: 'accept' }, { instrument: 'stock', lot: 'hedge' }],
+        pending: [],
+        pnl: { account: { realized: 290, unrealized: -82, total: 171 }, book: { realized: 290, unrealized: -82, total: 171 } },
+        balance: { account: { cash: 20_278.50, receivable: null, positions: 54_940, assets: 85_218.50 }, book: { cash: 935_231, receivable: null, positions: 54_940, assets: 1_000_171 } },
+      },
+    },
+    {
+      id: 'stock-falls', action: 'quote', instrument: 'stock', quote: { bid: 49.48, ask: 49.52, last: 49.50, bidSize: 10000, askSize: 10000 },
+      expect: {
+        positions: [{ instrument: 'fut', lot: 'hedge', value: -60 }, { instrument: 'stock', lot: 'accept', price: 49.50, value: 4_950, unrealized: -52 }, { instrument: 'stock', lot: 'hedge', price: 49.50, value: 49_500, unrealized: -520 }],
+        pnl: { account: { unrealized: -632, total: -379 }, book: { unrealized: -632, total: -379 } },
+        nav: { account: 84_668.50, book: 999_621 },
+        balance: { account: { positions: 54_390, assets: 84_668.50, netAssets: 84_668.50 }, book: { positions: 54_390, assets: 999_621, netAssets: 999_621 } },
+      },
+    },
+    {
+      // ...and the future with it: the hedge gains what the shares lose, less the basis.
+      id: 'future-falls', action: 'quote', instrument: 'fut', quote: { bid: 49.38, ask: 49.40, last: 49.39, bidSize: 20, askSize: 20 },
+      expect: {
+        positions: [{ instrument: 'fut', lot: 'hedge', price: 49.39, value: 410, unrealized: 410 }, { instrument: 'stock', lot: 'accept' }, { instrument: 'stock', lot: 'hedge' }], // (49.39 - 49.80) x -1,000
+        pnl: { account: { unrealized: -162, total: 91 }, book: { unrealized: -162, total: 91 } },
+        nav: { account: 85_138.50, book: 1_000_091 },
+        balance: { account: { positions: 54_860, assets: 85_138.50, netAssets: 85_138.50 }, book: { positions: 54_860, assets: 1_000_091, netAssets: 1_000_091 } },
+      },
+    },
+    {
+      // Close the hedge on both sides: 1,000 shares sold at 49.48 (49,480, commission 5; realized 1,000 x (49.48 -
+      // 50.02) = -540), 10 futures bought back at 49.40 (realized (49.80 - 49.40) x 1,000 = 400; margin 10,000 released:
+      // 10,000 + 400 - 22.50 = 10,377.50 at once).
+      id: 'close-hedge', covers: ['close', 'margin release'], action: 'close', lot: 'hedge', instrument: 'stock', scope: 'strategy', percent: 100,
+      expect: {
+        preview: {
+          blocking: 0, errors: [], intent: 'close',
+          legs: [
+            { kind: 'trade', action: 'sell', instrument: 'stock', qty: 1_000, estimate: 49.48, settleDate: '2026-03-09', cash: 49_480, fees: 5 },
+            { kind: 'trade', action: 'buy', instrument: 'fut', qty: 10, estimate: 49.40, settleDate: '2026-03-06', notional: 49_400, initialMargin: -10_000, fees: 22.50 },
+          ],
+        },
+        result: { status: 'closed', orders: [{ action: 'sell', instrument: 'stock', status: 'filled', filledQty: 1_000 }, { action: 'buy', instrument: 'fut', status: 'filled', filledQty: 10, avgPrice: 49.40 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 1,000 HVE @ 49.48 USD (realized -540.00 USD)' },
+          { type: 'trade.fill', summary: 'Bought 10 HVEH6 @ 49.40 (notional 49,400.00 USD; margin released 10,000.00 USD; realized 400.00 USD)', cash: { USD: 10_377.50 } },
+        ],
+        cash: { account: { USD: { settled: 30_656, unsettled: 49_475, margin: 0, availableToTrade: 80_131, availableToWithdraw: 30_656 } } },
+        positions: [{ instrument: 'stock', lot: 'accept', value: 4_950 }],
+        holdings: { fut: null, stock: { long: 100, short: 0, net: 100 } },
+        pending: [{ instrument: 'stock', lot: 'hedge', dueDate: '2026-03-09', amount: 49_475, into: 'cash' }],
+        lifecycle: [],
+        pnl: { account: { realized: 150, commissions: -64.50, unrealized: -52, total: 33.50 }, book: { realized: 150, commissions: -64.50, unrealized: -52, total: 33.50 } },
+        nav: { account: 85_081, book: 1_000_033.50 },
+        balance: {
+          account: { cash: 30_656, receivable: 49_475, margin: null, positions: 4_950, assets: 85_081, netAssets: 85_081 },
+          book: { cash: 945_608.50, receivable: 49_475, margin: null, positions: 4_950, assets: 1_000_033.50, netAssets: 1_000_033.50 },
+        },
+      },
+    },
+    {
+      id: 'close-accept', covers: ['close'], action: 'close', lot: 'accept', instrument: 'stock', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'sell', instrument: 'stock', qty: 100, estimate: 49.48, settleDate: '2026-03-09', cash: 4_948, fees: 1 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 100 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 100 HVE @ 49.48 USD (realized -54.00 USD)' }],
+        cash: { account: { USD: { settled: 30_656, unsettled: 54_422, availableToTrade: 85_078, availableToWithdraw: 30_656 } } },
+        positions: [],
+        holdings: { stock: null },
+        pending: [{ instrument: 'stock', lot: 'accept', dueDate: '2026-03-09', amount: 4_947 }, { instrument: 'stock', lot: 'hedge', dueDate: '2026-03-09', amount: 49_475 }],
+        pnl: { account: { realized: 96, commissions: -65.50, unrealized: 0, total: 30.50 }, book: { realized: 96, commissions: -65.50, unrealized: 0, total: 30.50 } },
+        nav: { account: 85_078, book: 1_000_030.50 },
+        balance: {
+          account: { cash: 30_656, receivable: 54_422, positions: null, assets: 85_078, netAssets: 85_078 },
+          book: { cash: 945_608.50, receivable: 54_422, positions: null, assets: 1_000_030.50, netAssets: 1_000_030.50 },
+        },
+      },
+    },
+    {
+      // Nothing left: 55,000 + 5,047.50 + 5,000 + 20,000 funded, plus 30.50.
+      id: 'settle-final', covers: 'settlement', action: 'clock', to: MAR(9),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 49,475.00 USD into settled cash', date: '2026-03-09' }, { type: 'settlement.receive', summary: 'received 4,947.00 USD into settled cash' }],
+        cash: { account: { USD: { settled: 85_078, unsettled: 0, margin: 0, availableToTrade: 85_078, availableToWithdraw: 85_078 } } },
+        pending: [],
+        balance: { account: { cash: 85_078, receivable: null, assets: 85_078 }, book: { cash: 1_000_030.50, receivable: null, assets: 1_000_030.50 } },
+      },
+    },
+  ],
+};
+
+export default [bearCall, longStraddle, longStrangle, ironCondor, ironButterfly, longButterfly, longCalendar, longDiagonal, syntheticLong, syntheticShort, pairsTrade, futuresHedge];

@@ -988,4 +988,205 @@ const callableSwap = {
   ],
 };
 
-export default [dividendSwap, cmsSpreadSwap, nonDeliverableSwap, quantoSwap, callableSwap];
+// ---------------------------------------------------------------------------------------------
+// puttable_swap
+// ---------------------------------------------------------------------------------------------
+// Five-year USD swap written as pay 3.60% fixed semi-annual 30/360, receive 3-month Term SOFR quarterly ACT/360, on
+// 10,000,000 from Mon 15 June 2026; the side entered opposite (the fixed receiver) may put it back at no cost on
+// 1 February 2027 or 15 June 2028. We enter the opposite side: we receive the fixed rate, pay Term SOFR and hold the put.
+// Position-level terms: independent amount 0.5% of notional; no variation margin. Commission 20.00 per million; T+2 (USD).
+//   float paid 15 June to 15 September (92 days) at 4.30%: 10,000,000 x 4.30% x 92/360 = 109,888.89
+//   4,000,000 terminated on Thu 15 October at -0.30 (we buy back the opposite side): 4,000,000 x 0.30 / 100 = 12,000.00
+//     received (all-in), commission 80.00, settles Mon 19 October; independent amount trued down to 30,000.00
+//   Tue 15 December on 6,000,000: fixed 15 June to 15 December (30/360, 180 days) 6,000,000 x 3.60% x 180/360 =
+//     108,000.00 received; float 15 September to 15 December (91 days) at 4.15%: 6,000,000 x 4.15% x 91/360 = 62,941.67 paid
+//   put exercised by us on Mon 1 February 2027: fixed 15 December to 1 February (30/360, 46 days) 6,000,000 x 3.60% x
+//     46/360 = 27,600.00 received; float 15 December to 1 February (48 days) at 3.95%: 6,000,000 x 3.95% x 48/360 =
+//     31,600.00 paid; the swap ends at 0.00 and the 30,000.00 comes back
+//   cash: 1,000,000 - 200 - 109,888.89 + 11,920 + 108,000 - 62,941.67 + 27,600 - 31,600 = 942,889.44
+const PS_NAME = 'USD 3.60% v TSFR3M puttable swap 15 Jun 2031';
+const puttableSwap = {
+  productId: 'puttable_swap',
+  title: 'Puttable swap entered on the opposite side: receive fixed with a Bermudan right to put, partly terminated, put exercised by hand',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'Exercise dates (the put dates)', 'Right held by (the opposite side here)'],
+    automaticInputs: ['payment schedule from the contract terms and the USD calendar', 'Term SOFR fixings (rate fixtures standing in for Shaffer MarketData)', 'the amounts accrued on each leg at exercise, on the notional left', 'settlement date T+2', 'commission from the Book fee schedule', 'independent amount from the position-level terms, trued to the notional left'],
+    manualInputs: ['upfront and termination amounts (stated fill prices)', 'marks entered by hand', 'the exercise of the put, recorded by hand on the position on a put date (Lifecycle, "Put exercised")'],
+    settlement: 'Upfront, termination and commission T+2 on the USD calendar; legs paid on their payment dates; the accrued amounts settled on the exercise date',
+    lifecycle: 'Floating paid quarterly, fixed received half-yearly; partial termination at a stated amount; the put exercised by the opposite side on a put date in the middle of both periods: accrued amounts settled, swap ended at no cost; nothing scheduled afterwards',
+    accounting: 'Carried at the mark less the upfront; leg payments, the termination result and the accrued amounts settled at exercise realized; commission expensed',
+    collateral: 'Position-level terms: independent amount 0.5% of notional posted at entry, trued down on the partial termination and returned on exercise',
+  },
+  start: at('2026-06-11'),
+  settlementCheck: { lag: 2, holidays: [] },
+  book: {
+    name: 'Matrix puttable swap', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 3_000_000 }],
+    account: { name: 'Rates', funding: [{ ccy: 'USD', amount: 1_000_000 }] },
+    settings: { fees: { swap: { perUnit: 0.00002, minimum: 0, bps: 0 } }, fill: FILL, settlement: { swap: 2 } },
+  },
+  instruments: {
+    main: {
+      productId: 'puttable_swap', name: PS_NAME, symbol: 'PUT-360-0631', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { tradingCalendar: 'USD', settlementCalendar: 'USD', paymentCalendar: 'USD' },
+      terms: {
+        effective: '2026-06-15', maturity: '2031-06-15', counterparty: 'Dealer P',
+        collateralBasis: { type: 'position', independentAmount: { type: 'pct', pct: 0.005 }, variationMargin: false },
+        callRight: { kind: 'put', by: 'opposite', dates: '2027-02-01; 2028-06-15' },
+        legs: [
+          { side: 'pay', type: 'fixed', ccy: 'USD', rate: 0.036, months: 6, dayCount: '30/360' },
+          { side: 'receive', type: 'float', ccy: 'USD', index: 'TSFR3M', months: 3, dayCount: 'ACT/360' },
+        ],
+      },
+    },
+  },
+  rates: { TSFR3M: { byDate: { '2026-06-15': 4.30, '2026-09-15': 4.15, '2026-12-15': 3.95 } } },
+  expectAtStart: usdStart(1_000_000, 2_000_000),
+  steps: [
+    {
+      id: 'open-opposite', covers: ['open', 'collateral'], action: 'ticket', instrument: 'main', side: 'sell', qty: 10_000_000, as: 'ps', order: { statedPrice: 0 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 10_000_000, estimate: 0, model: 'stated-price', settleDate: '2026-06-15', calendar: 'USD', cash: 0, fees: 200 }], // 10,000,000 x 0.00002
+          cash: { USD: { fees: 200, margin: 50_000, shortfall: 0 } }, // 0.5% x 10,000,000
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 10_000_000, avgPrice: 0 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Entered on the opposite side: 10,000,000 notional of PUT-360-0631 at 0.00 per 100 notional', owner: 'account', date: '2026-06-11' },
+          { type: 'swap.collateral', summary: `Collateral posted on ${PS_NAME} under its position-level terms: 50,000.00 USD (independent amount, 0.50% of 10,000,000.00 USD notional)`, cash: { USD: -50_000 } },
+        ],
+        cash: { account: { USD: { settled: 950_000, unsettled: -200, margin: 50_000, availableToTrade: 949_800, availableToWithdraw: 949_800 } } },
+        positions: [{ instrument: 'main', lot: 'ps', owner: 'account', direction: 'opposite side', qty: -10_000_000, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, notional: 10_000_000, margin: 50_000 }],
+        holdings: { main: { long: 0, short: 10_000_000, net: -10_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-06-15', amount: -200, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-09-15', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-12-15', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2031-06-16', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', lot: 'ps', owner: 'account', qty: -10_000_000, basis: 'position', iaRequired: 50_000, iaPosted: 50_000, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: -200, unrealized: 0, total: -200 } },
+        nav: { account: 999_800, book: 2_999_800 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 950_000, margin: 50_000, payable: 200, positions: null, assets: 1_000_000, liabilities: 200, netAssets: 999_800 } },
+      },
+    },
+    {
+      id: 'mark-at-par', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 0, note: 'Dealer P mark, by hand',
+      expect: { positions: [{ instrument: 'main', lot: 'ps', price: 0, value: 0, unrealized: 0, provisional: false }], otc: [{ instrument: 'main', mark: 0, markValue: 0 }], provisional: { account: false, book: false } },
+    },
+    {
+      id: 'settle-commission', covers: 'settlement', action: 'clock', to: at('2026-06-15'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 200.00 USD from settled cash', cash: { USD: -200 } }],
+        cash: { account: { USD: { settled: 949_800, unsettled: 0, availableToTrade: 949_800, availableToWithdraw: 949_800 } } },
+        pending: [],
+        balance: { account: { cash: 949_800, payable: null, assets: 999_800, liabilities: 0 } },
+      },
+    },
+    {
+      // We pay the floating leg (opposite side): 10,000,000 x 4.30% x 92/360 = 109,888.89.
+      id: 'first-quarter', covers: 'floating payment', action: 'clock', to: at('2026-09-15'),
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Swap payment on ${PS_NAME}, leg B (float), period 2026-06-15 to 2026-09-15: 109,888.89 USD`, cash: { USD: -109_888.89 }, date: '2026-09-15' }],
+        cash: { account: { USD: { settled: 839_911.11, availableToTrade: 839_911.11, availableToWithdraw: 839_911.11 } } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-12-15', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-12-15', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2031-06-16', status: 'pending' },
+        ],
+        pnl: { account: { realized: -109_888.89, total: -110_088.89 } },
+        nav: { account: 889_911.11, book: 2_889_911.11 },
+        balance: { account: { cash: 839_911.11, assets: 889_911.11, netAssets: 889_911.11 } },
+      },
+    },
+    { id: 'mid-october', action: 'clock', to: at('2026-10-15'), expect: {} },
+    {
+      // The written side is marked at -0.30: worth +0.30 to the opposite side: -10,000,000 x -0.30 / 100 = +30,000.
+      id: 'mark-before-termination', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: -0.30, note: 'Dealer P mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'ps', price: -0.3, value: 30_000, unrealized: 30_000 }],
+        otc: [{ instrument: 'main', mark: -0.3, markValue: 30_000 }],
+        pnl: { account: { unrealized: 30_000, total: -80_088.89 } },
+        nav: { account: 919_911.11, book: 2_919_911.11 },
+        balance: { account: { positions: 30_000, assets: 919_911.11, netAssets: 919_911.11 } },
+      },
+    },
+    {
+      // Buy back 4,000,000 at -0.30: 12,000.00 received, commission 80.00; the independent amount on 6,000,000 is 30,000.
+      id: 'partial-termination', covers: ['reduce', 'partial termination', 'collateral'], action: 'close', lot: 'ps', scope: 'strategy', percent: 40, order: { statedPrice: -0.30 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 4_000_000, estimate: -0.3, model: 'stated-price', settleDate: '2026-10-19', cash: 12_000, fees: 80 }] },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 4_000_000, avgPrice: -0.3 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Terminated in part: 4,000,000 of 10,000,000 notional of PUT-360-0631 at -0.30 per 100 notional (realized 12,000.00 USD)' },
+          { type: 'swap.collateral', summary: `Collateral returned on ${PS_NAME} under its position-level terms: 20,000.00 USD (independent amount, 0.50% of 6,000,000.00 USD notional)`, cash: { USD: 20_000 } },
+        ],
+        cash: { account: { USD: { settled: 859_911.11, unsettled: 11_920, margin: 30_000, availableToTrade: 871_831.11, availableToWithdraw: 859_911.11 } } },
+        positions: [{ instrument: 'main', lot: 'ps', qty: -6_000_000, cost: 0, price: -0.3, value: 18_000, unrealized: 18_000, notional: 6_000_000, margin: 30_000 }],
+        holdings: { main: { long: 0, short: 6_000_000, net: -6_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-10-19', amount: 11_920, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: -6_000_000, iaRequired: 30_000, iaPosted: 30_000, markValue: 18_000 }],
+        pnl: { account: { realized: -97_888.89, commissions: -280, unrealized: 18_000, total: -80_168.89 } },
+        nav: { account: 919_831.11, book: 2_919_831.11 },
+        balance: { account: { cash: 859_911.11, margin: 30_000, receivable: 11_920, positions: 18_000, assets: 919_831.11, liabilities: 0, netAssets: 919_831.11 } },
+      },
+    },
+    {
+      id: 'settle-termination', covers: 'settlement', action: 'clock', to: at('2026-10-19'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 11,920.00 USD into settled cash', cash: { USD: 11_920 } }],
+        cash: { account: { USD: { settled: 871_831.11, unsettled: 0, availableToTrade: 871_831.11, availableToWithdraw: 871_831.11 } } },
+        pending: [],
+        balance: { account: { cash: 871_831.11, receivable: null, assets: 919_831.11 } },
+      },
+    },
+    {
+      // On 6,000,000: fixed 108,000.00 received, float 62,941.67 paid (see the header).
+      id: 'december-payments', covers: ['fixed payment', 'floating payment'], action: 'clock', to: at('2026-12-15'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap receipt on ${PS_NAME}, leg A (fixed), period 2026-06-15 to 2026-12-15: 108,000.00 USD`, cash: { USD: 108_000 }, date: '2026-12-15' },
+          { type: 'swap.payment', summary: `Swap payment on ${PS_NAME}, leg B (float), period 2026-09-15 to 2026-12-15: 62,941.67 USD`, cash: { USD: -62_941.67 }, date: '2026-12-15' },
+        ],
+        cash: { account: { USD: { settled: 916_889.44, availableToTrade: 916_889.44, availableToWithdraw: 916_889.44 } } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-03-15', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-06-15', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2031-06-16', status: 'pending' },
+        ],
+        pnl: { account: { realized: -52_830.56, total: -35_110.56 } },
+        nav: { account: 964_889.44, book: 2_964_889.44 },
+        balance: { account: { cash: 916_889.44, assets: 964_889.44, netAssets: 964_889.44 } },
+      },
+    },
+    { id: 'put-date', action: 'clock', to: at('2027-02-01'), expect: {} },
+    {
+      // Fixed 27,600.00 received, float 31,600.00 paid (see the header); ended at 0.00 against a cost of 0.00; the 30,000.00
+      // independent amount comes back. Realized -52,830.56 + 27,600 - 31,600 = -56,830.56.
+      id: 'put-exercised', covers: ['put exercise', 'close', 'collateral'], action: 'lifecycle', lot: 'ps', body: { action: 'put_exercise', by: 'us' },
+      expect: {
+        events: [
+          { type: 'swap.exercise', summary: 'Put of PUT-360-0631 exercised by us on 2027-02-01, recorded by hand: accrued amounts settled, leg A (fixed) 2026-12-15 to 2027-02-01 received 27,600.00 USD; leg B (float) 2026-12-15 to 2027-02-01 paid 31,600.00 USD', cash: { USD: -4_000 } },
+          { type: 'swap.terminated', summary: 'Terminated on the exercise of the put by us: 6,000,000 notional of PUT-360-0631 at 0.00 per 100 notional' },
+          { type: 'swap.collateral', summary: `Collateral returned on ${PS_NAME} under its position-level terms: 30,000.00 USD (independent amount, the position ended)`, cash: { USD: 30_000 } },
+        ],
+        cash: { account: { USD: { settled: 942_889.44, margin: 0, unsettled: 0, availableToTrade: 942_889.44, availableToWithdraw: 942_889.44 } } },
+        positions: [], holdings: { main: null }, pending: [], lifecycle: [], otc: [],
+        pnl: { account: { realized: -56_830.56, commissions: -280, unrealized: 0, total: -57_110.56 } },
+        nav: { account: 942_889.44, book: 2_942_889.44 },
+        balance: { account: { cash: 942_889.44, margin: null, positions: null, assets: 942_889.44, liabilities: 0, netAssets: 942_889.44 } },
+      },
+    },
+    {
+      id: 'after-the-exercise', covers: 'close', action: 'clock', to: eod('2027-03-15'),
+      expect: { events: [], cash: { account: { USD: { settled: 942_889.44 } } }, positions: [], pending: [], lifecycle: [], otc: [], alerts: [] },
+    },
+  ],
+};
+
+export default [dividendSwap, cmsSpreadSwap, nonDeliverableSwap, quantoSwap, callableSwap, puttableSwap];

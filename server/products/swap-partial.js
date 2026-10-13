@@ -80,7 +80,8 @@ export function normalizePartialTerms(productId, t, errors) {
   if (productId === 'non_deliverable_swap' && !t.settlementCcy) errors.push('A non-deliverable swap states its settlement currency (the currency every payment is made in).');
   if (t.callRight) {
     const r = { ...t.callRight };
-    r.kind = r.kind === 'put' ? 'put' : 'call';
+    // The product says which right it is; the registry form sends no kind (a puttable swap registered there was a call).
+    r.kind = productId === 'puttable_swap' ? 'put' : productId === 'callable_swap' ? 'call' : r.kind === 'put' ? 'put' : 'call';
     r.by = r.by === 'opposite' ? 'opposite' : 'written';
     const dates = Array.isArray(r.dates) ? r.dates : String(r.dates || '').split(/[;,\s]+/).filter(Boolean);
     r.dates = [...new Set(dates.map(String))].sort();

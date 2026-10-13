@@ -276,3 +276,4 @@
 - 2026-10-13T20:34Z | t1 | +0.2 | T:protective_call template passes at engine, API and browser
 - 2026-10-13T20:34Z | b4 | +0 | core tests for structured group B engine features (test/core/bond-structured-b.test.js, 4 tests)
 - 2026-10-13T20:37Z | s3 | +0.2 | callable_swap passes at engine, API and browser
+- 2026-10-13T20:42Z | s3 | +0.2 | puttable_swap passes at engine, API and browser
