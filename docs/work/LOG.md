@@ -153,3 +153,4 @@
 - 2026-10-13T17:52Z | b3 | +0.2 | convertible_bond passes at engine, API and browser
 - 2026-10-13T17:53Z | o2 | +0.2 | crypto_option passes at engine, API and browser
 - 2026-10-13T17:55Z | fw | +0.2 | fw: ndf passes at engine, API and browser
+- 2026-10-13T17:55Z | b3 | +0.2 | exchangeable_bond passes at engine, API and browser

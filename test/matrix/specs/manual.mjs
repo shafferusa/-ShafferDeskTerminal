@@ -577,7 +577,14 @@ const hedgeFund = {
       status: 'blocked', reason: 'All 2,000 shares are already under notice.',
       expect: { refused: '2,000 shares are held and 2,000 are already under notice' },
     },
-    { id: 'april-statement-date', action: 'clock', to: '2026-05-11T14:00:00.000Z', expect: {} }, // Monday 11 May 2026
+    {
+      // Monday 11 May 2026: the March NAV (31 March) is 41 days old, past the 35-day limit, until the April NAV is entered.
+      id: 'april-statement-date', covers: 'valuation', action: 'clock', to: '2026-05-11T14:00:00.000Z',
+      expect: {
+        positions: [{ ...HF_POS, qty: 2000, cost: 2_500_000, value: 2_602_500, freshness: 'stale', manual: hfM({ redemptions: HF_NOTICE, noticed: 2000, valuation: { date: '2026-03-31', source: 'Harbourside Fund Services, March 2026 NAV statement', stale: true } }) }],
+        provisional: { account: true, book: true },
+      },
+    },
     {
       id: 'valuation-apr', covers: 'valuation', action: 'lifecycle', lot: 'shares', body: { action: 'valuation', value: 1288, asOf: '2026-04-30', source: 'Harbourside Fund Services, April 2026 NAV statement' },
       expect: {
@@ -586,6 +593,7 @@ const hedgeFund = {
           manual: hfM({ redemptions: HF_NOTICE, noticed: 2000, valuation: { date: '2026-04-30', source: 'Harbourside Fund Services, April 2026 NAV statement', stale: false } }) }],
         pnl: { account: { unrealized: 76_000, total: 76_000 } },
         nav: { account: 4_076_000, book: 6_076_000 },
+        provisional: { account: false, book: false },
         balance: { account: { positions: 2_576_000, assets: 4_076_000, netAssets: 4_076_000 } },
       },
     },

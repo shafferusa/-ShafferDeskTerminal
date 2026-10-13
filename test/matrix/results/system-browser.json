@@ -330,9 +330,42 @@
    "title": "Double click on \"Confirm paper trade\"",
    "commit": "66c0da6+changes",
    "at": "2026-10-13T17:55:31.722Z"
+  },
+  "SB:stress:double-click-transfer": {
+   "status": "passed",
+   "message": "",
+   "ms": 3012,
+   "checks": 10,
+   "area": "stress",
+   "case": "double-click-transfer",
+   "title": "Double click on \"Record transfer\" and \"Record deposit\"",
+   "commit": "0e3d779",
+   "at": "2026-10-13T17:55:34.806Z"
+  },
+  "SB:stress:double-click-records": {
+   "status": "passed",
+   "message": "Confirm repayment double-clicked: 1 request left the page\nRecord (corporate action) double-clicked: 1 request left the page",
+   "ms": 6871,
+   "checks": 14,
+   "area": "stress",
+   "case": "double-click-records",
+   "title": "Double click on the other recording buttons: repayment, manual cash flow, lender recall, corporate action",
+   "commit": "0e3d779",
+   "at": "2026-10-13T17:55:41.721Z"
+  },
+  "SB:stress:double-click-treasury": {
+   "status": "passed",
+   "message": "loan Confirm double-clicked: 1 request left the page\nrepo Confirm double-clicked: 1 request left the page\nsecurities loan Confirm double-clicked: 1 request left the page",
+   "ms": 6102,
+   "checks": 19,
+   "area": "stress",
+   "case": "double-click-treasury",
+   "title": "Double click on the Treasury confirming buttons: withdrawal, borrowing, repo, securities loan",
+   "commit": "0e3d779+changes",
+   "at": "2026-10-13T17:55:47.834Z"
   }
  },
- "updatedAt": "2026-10-13T17:55:31.722Z",
+ "updatedAt": "2026-10-13T17:55:47.834Z",
  "environment": {
   "node": "v22.22.0",
   "platform": "linux",
