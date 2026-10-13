@@ -283,3 +283,7 @@ start fixing never asked of the data service; a return or price fixing asked for
   and its borrow, but its restricted collateral stays booked to the old strategy instance: the next mark releases it
   there and posts the same amount again for the new one (net cash effect nil; the audit trail shows release + post
   instead of a transfer). Reproduce: T:protective_call, step next-day (released 4,999 / posted 5,100).
+- OPEN, wording (t1, covered call): the interim-cash refusal (server/core/packages.js, "short ... while the legs
+  execute") always explains "(the cash reserved against a written option is needed before the premium of a later leg
+  arrives)". For a covered call the deficit is the share purchase (leg 1) paid before the written call's premium; no
+  cash is reserved. Reproduce: T:covered_call, cash-short-not-financed. The figure (3,164.50) is right; the reason is not.
