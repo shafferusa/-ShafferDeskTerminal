@@ -49,3 +49,22 @@ test('a resized short holds two borrows; closing half returns half of each, as t
   assert.ok(tooMuch.checks.some((c) => c.level === 'error' && /still sold short against this borrow/.test(c.message)));
   assert.deepEqual(ledgerImbalance(app), []);
 });
+
+test('a protective put waits for its shares: the put is not bought while the stock leg is unfilled, and a retry keeps that link', async () => {
+  const { app, inst } = makeApp();
+  const { book, acct } = makeBook(app);
+  pin(app, inst.ALFA, 200, 200.04);
+  const input = { bookId: book.id, unitId: acct.id, template: 'protective_put', underlyingId: inst.ALFA.id, quantity: 100, options: { expiration: '2026-04-17', strikes: { put: 190 } } };
+  const first = await app.packages.preview(input);
+  assert.deepEqual(first.legs.map((l) => l.dependsOn), [[], [1]], 'the put depends on the stock leg');
+  // The stock at a limit the market never reaches: no shares, so no put either.
+  const legs = first.legs.map((l, i) => (i === 0 ? { ...l, orderType: 'limit', limitPrice: 150, tif: 'gtc' } : l));
+  const pv = await app.packages.preview({ ...input, legs, clientToken: first.token });
+  const r = await app.packages.submit({ ...input, legs: pv.legs, clientToken: pv.token, confirm: true });
+  assert.deepEqual(r.strategy.orders.map((o) => o.filledQty || 0), [0, 0], r.strategy.orders.map((o) => `${o.status} ${o.statusReason || ''}`).join(' | '));
+  assert.equal(r.strategy.positions.length, 0, 'an unprotected put on shares not held is never bought');
+  const v = app.packages.applyAction(r.strategy.id, 'cancel_working');
+  const retry = await app.packages.previewAction(v.id, 'retry');
+  assert.deepEqual(retry.legs.map((l) => l.dependsOn), [[], [1]], 'the retried put still waits for the retried shares');
+  assert.deepEqual(ledgerImbalance(app), []);
+});

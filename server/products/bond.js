@@ -20,7 +20,7 @@
 import { fmt } from '../core/books.js';
 import { addBusinessDays, adjust } from '../quant/calendar.js';
 import { accruedPer100, couponPeriod, couponPer100, nextCouponDate } from '../quant/bond.js';
-import { DAY_COUNTS } from '../quant/daycount.js';
+import { DAY_COUNTS, yearFraction } from '../quant/daycount.js';
 import { AppError, ISO_DATE_RE, isZero, money, need, num } from '../core/util.js';
 import { bookSecurityFill, dqOf, fmtPx, fmtQty, trueUpAccrual } from './common.js';
 import { calendarFor, paymentCalendarFor, standardSettleDate } from './security.js';
@@ -42,6 +42,12 @@ function factorOn(inst, date) {
 
 /** Catalog products that are inflation-linked: they must be registered with an index ratio. */
 const LINKERS = new Set(['tips', 'foreign_inflation_linked']);
+/**
+ * b4: loans held at a price and traded by assignment (or sub-participation). A loan cannot be borrowed, so it cannot be sold
+ * short: the ticket offers buy and sell only.
+ */
+const LOANS = new Set(['syndicated_loan', 'leveraged_loan', 'private_credit', 'loan_participation']);
+const productOf = (inst) => inst?.product_id || inst?.productId || null;
 /** Catalog products that convert or exchange into shares: they must be registered with the shares and a ratio. */
 const CONVERTIBLES = new Set(['convertible_bond', 'exchangeable_bond']);
 
@@ -190,7 +196,7 @@ export const bond = {
   shortRule: 'borrow',
   label: 'Debt security',
   qtyLabel: 'Face amount',
-  actions: () => ['buy', 'sell', 'sell_short', 'buy_to_cover'],
+  actions: (inst) => (LOANS.has(productOf(inst)) ? ['buy', 'sell'] : ['buy', 'sell', 'sell_short', 'buy_to_cover']),
   priceUnits: () => '% of par (clean)',
   calendar: calendarFor,
   normalize(app, draft) {
@@ -284,6 +290,11 @@ export const bond = {
       }
       if (t.observations && typeof t.observations !== 'object') delete t.observations;
     } else { delete t.couponBarrier; delete t.initialLevel; delete t.principalProtected; delete t.principalBarrier; delete t.observations; if (!t.linkedTo) delete t.linkedTo; }
+    // b4: the trading documentation of a loan traded by assignment: LSTA/LMA par (settles T+7 by market practice, with delayed
+    // compensation to the buyer when it settles later) or distressed (T+20, no delayed compensation). The lag itself is the
+    // instrument's settlement convention.
+    if (t.tradingDocs === undefined || t.tradingDocs === null || t.tradingDocs === '') delete t.tradingDocs;
+    else if (!['par', 'distressed'].includes(t.tradingDocs)) errors.push('Trading documentation must be par or distressed.');
     // b4: a catastrophe bond: the issue's principal sits in a collateral trust account (its assets and custodian are a term), the
     // sponsor (the ceding insurer) is paid out of it when a covered event triggers a principal loss, and the trigger is stated.
     for (const k of ['collateralAccount', 'sponsor', 'trigger']) { if (typeof t[k] === 'string') t[k] = t[k].trim(); if (!t[k]) delete t[k]; }
@@ -338,6 +349,7 @@ export const bond = {
     if (t.paymentDelayDays) rows.push(['Payment delay', `${t.paymentDelayDays} days after each accrual period ends`]);
     if (t.guarantor) rows.push(['Guarantor', `${t.guarantor} (principal and interest guaranteed; no loss allocation)`]);
     if (t.poolCharacteristics) rows.push(['Pool characteristics', `${t.poolCharacteristics} (stated at registration)`]);
+    if (t.tradingDocs) rows.push(['Trading documentation', t.tradingDocs === 'par' ? 'Par (assignment): delayed compensation to the buyer for the days a trade settles after the standard date' : 'Distressed (assignment): no delayed compensation']);
     if (t.collateralAccount) rows.push(['Collateral account', `${t.collateralAccount}${t.issueSize ? `; holds the outstanding principal, ${fmtQty(money(t.issueSize * (t.factor ?? 1), inst.trading_ccy))} of the ${fmtQty(t.issueSize)} issued` : ''}${t.collateralReleased ? `; released to the sponsor so far ${fmtQty(t.collateralReleased)}` : ''}`]);
     if (t.sponsor) rows.push(['Sponsor (ceding insurer)', t.sponsor]);
     if (t.trigger) rows.push(['Trigger', `${t.trigger} (a covered event and its principal loss are recorded by hand)`]);
@@ -389,7 +401,7 @@ export const bond = {
     const ai = accruedPer100(schedTerms(inst), date);
     return ai === null ? null : (qty * scaleOn(inst, date) * ai) / 100;
   },
-  economics(app, { inst, action, qty, price, settleDate }) {
+  economics(app, { inst, action, qty, price, settleDate, tradeDate, book }) {
     const ccy = inst.trading_ccy;
     const scale = scaleOn(inst, settleDate);
     const principal = (qty * scale * price) / 100;
@@ -399,6 +411,8 @@ export const bond = {
     if (ai === null) notes.push('Accrued interest cannot be computed: the floating coupon has no fixing. It is booked as zero until the fixing is supplied.');
     if (inst.terms.couponSuspended) notes.push('Coupons are suspended: the bond trades flat, without accrued interest.');
     if (isContingent(inst)) notes.push('Contingent coupon: nothing accrues between coupon dates, so the note trades flat.');
+    const dc = price > 0 ? delayedComp(app, { inst, action, qty, price, settleDate, tradeDate, book }) : null;
+    if (dc) notes.push(`Delayed compensation (par documentation): settling ${dc.days} days after the standard date ${dc.standard}, the seller pays the buyer the interest for those days, ${fmt(dc.interest, ccy)}, less the cost of carry on the purchase price, ${fmt(dc.carry, ccy)}: ${fmt(Math.abs(dc.net), ccy)} ${buy ? (dc.net >= 0 ? 'received' : 'paid') : (dc.net >= 0 ? 'paid' : 'received')} at settlement, separately from the trade.`);
     // Principal and accrued interest are each rounded to the cent, as the fill books them, so the previewed
     // settlement amount is the amount that settles.
     const total = money(principal, ccy) + money(ai || 0, ccy);
@@ -407,12 +421,27 @@ export const bond = {
   fill(app, c) {
     const f = scaleOn(c.inst, c.settleDate);
     const ai = bond.accruedAmount(c.inst, c.qty, c.settleDate) || 0;
-    return bookSecurityFill(app, c, {
+    const r = bookSecurityFill(app, c, {
       unitCost: (c.price * f) / 100,
       accrued: ai,
       receiveAccounts: c.action === 'sell_short' ? ['cash.restricted'] : ['cash'],
       payAccounts: c.action === 'buy_to_cover' ? ['cash.restricted', 'cash'] : ['cash'],
     });
+    // b4: delayed compensation of a par loan trade settling after its standard date, settled with the trade.
+    const dc = delayedComp(app, { inst: c.inst, action: c.action, qty: c.qty, price: c.price, settleDate: c.settleDate, tradeDate: c.tradeDate, book: c.book });
+    if (dc && dc.net !== 0) {
+      const ccy = c.inst.trading_ccy;
+      const buy = c.action === 'buy' || c.action === 'buy_to_cover';
+      const amount = buy ? dc.net : -dc.net; // + the holder receives
+      app.ledger.post({
+        bookId: c.book.id, unitId: c.unit.id, type: 'loan.delayed_compensation', instrumentId: c.inst.id, strategyId: c.strategyId, orderId: c.order?.id, positionId: r.position.id, actor: 'engine',
+        summary: `Delayed compensation on ${c.inst.symbol || c.inst.name} (par trade settling ${c.settleDate}, ${dc.days} days after the standard date ${dc.standard}): interest ${fmt(dc.interest, ccy)} less cost of carry ${fmt(dc.carry, ccy)} on the purchase price, ${fmt(Math.abs(amount), ccy)} ${amount >= 0 ? 'receivable from the seller' : 'payable to the buyer'} at settlement`,
+        data: { ...dc, settleDate: c.settleDate },
+        entries: [{ account: amount >= 0 ? 'recv.settle' : 'pay.settle', ccy, amount, positionId: r.position.id }, { account: 'pnl.coupon', ccy, amount: -amount, positionId: r.position.id }],
+      });
+      app.settle.create({ bookId: c.book.id, unitId: c.unit.id, fillId: c.fillId, orderId: c.order?.id, instrumentId: c.inst.id, strategyId: c.strategyId, positionId: r.position.id, kind: 'delayed_comp', dueDate: c.settleDate, ccy, amount, accounts: ['cash'] });
+    }
+    return r;
   },
   value(app, inst, pos, obs, mark) {
     const ccy = inst.trading_ccy;
@@ -1069,6 +1098,32 @@ export const bond = {
     return { eventIds: out };
   },
 };
+
+/**
+ * b4: delayed compensation of a loan trade on par documentation (LSTA): when a trade settles after its standard settlement date
+ * (T+7 by market practice: the instrument's convention), the buyer is put in the position it would have had from that date: the
+ * seller pays it the interest on the principal for the days between the standard and the actual settlement date, and the buyer
+ * pays the seller the cost of carry, the purchase price at the reference rate for the same days. Net, in the buyer's favour:
+ * `net` (negative when the carry is larger). Null when it does not apply.
+ */
+function delayedComp(app, { inst, action, qty, price, settleDate, tradeDate, book }) {
+  if (inst.terms?.tradingDocs !== 'par' || !settleDate) return null;
+  const today = tradeDate || app.clock.today();
+  let standard = null;
+  try { standard = standardSettleDate(inst, today, book || null); } catch { standard = null; }
+  if (!ISO_DATE_RE.test(standard || '') || settleDate <= standard) return null;
+  const t = schedTerms(inst);
+  const rate = t.couponType === 'float' ? t.currentCoupon : t.couponRate;
+  if (rate === null || rate === undefined) return null;
+  const base = t.couponType === 'float' ? (inst.terms.currentCouponFixing?.value !== undefined ? inst.terms.currentCouponFixing.value / 100 : rate - (t.spread || 0)) : 0;
+  const ccy = inst.trading_ccy;
+  const principal = Math.abs(qty) * scaleOn(inst, settleDate);
+  const yf = yearFraction(standard, settleDate, t.dayCount || 'ACT/360');
+  const interest = money(principal * rate * yf, ccy);
+  const carry = money(((principal * price) / 100) * base * yf, ccy);
+  const days = Math.round((Date.parse(settleDate) - Date.parse(standard)) / 86400000);
+  return { standard, days, interest, carry, net: money(interest - carry, ccy), rate, base };
+}
 
 /**
  * Terms for the coupon of `couponDate` (b4). A floating coupon is reset to the next period's rate when it is paid; when an

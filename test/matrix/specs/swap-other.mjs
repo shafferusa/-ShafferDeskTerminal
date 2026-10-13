@@ -2492,4 +2492,199 @@ const commodityIndexSwap = {
   ],
 };
 
-export default [amortizingSwap, accretingSwap, equitySwap, equityIndexSwap, equityTrs, bondTrs, indexTrs, commoditySwap, commodityBasisSwap, commodityIndexSwap];
+// ---------------------------------------------------------------------------------------------
+// energy_swap
+// ---------------------------------------------------------------------------------------------
+// A natural gas swap in MMBtu a day: 10,000 MMBtu a day for September and October 2026, written "pay a fixed 3.20 USD per
+// MMBtu, receive the average of the daily Henry Hub index". The Account (a producer) enters the opposite side: it receives the
+// fixed price and pays the average. Quantity of a month = 10,000 x its calendar days (300,000 in September, 310,000 in
+// October). Net settlement, 5 USD business days after each month. Position-level collateral terms: variation margin only (no
+// independent amount), no threshold, minimum transfer 5,000. Terminated in full in October.
+//
+// Pricing days: US business days (the US calendar): September 2026 has 22 weekdays less Labor Day (7 September): 21.
+//   September  21 fixings summing to 61.950: average 2.95 (18 September not supplied; entered by hand as 2.900)
+//              paid Thursday 8 October (1 October + 5 USD business days)
+const HH = { productId: 'natural_gas', name: 'Henry Hub daily gas index (reference price)', symbol: 'HH-DAILY', marketView: 'US_CASH', venue: 'Price assessment (OTC)', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', terms: { quantityUnit: 'MMBtu', priceUnits: 'USD per MMBtu' } };
+const HH_SEPT = { '2026-09-01': 2.985, '2026-09-02': 2.930, '2026-09-03': 3.005, '2026-09-04': 2.905, '2026-09-08': 2.960, '2026-09-09': 3.030, '2026-09-10': 2.885, '2026-09-11': 2.975, '2026-09-14': 2.935, '2026-09-15': 2.990, '2026-09-16': 2.920, '2026-09-17': 3.010, /* 18 September by hand: 2.900 */ '2026-09-21': 2.955, '2026-09-22': 3.020, '2026-09-23': 2.910, '2026-09-24': 2.970, '2026-09-25': 2.925, '2026-09-28': 2.995, '2026-09-29': 2.940, '2026-09-30': 2.805 };
+const NGS_NAME = 'Henry Hub gas swap 3.20 x 10,000 MMBtu/day Sep-Oct 2026';
+const energySwap = {
+  productId: 'energy_swap',
+  title: 'Natural gas swap, 10,000 MMBtu a day for two months against the daily Henry Hub average, opposite side (producer), net settled, variation margin only, terminated early',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'Net settlement', 'both legs: Delivery hours "Per calendar day (gas)", Units per unit of notional 1 (MMBtu a day), Payment monthly, Payment lag 5', 'fixed leg: Fixed price 3.20', 'floating leg: Reference asset (the index), Floating price "Average of each pricing day", Pricing calendar US'],
+    automaticInputs: ['monthly periods and quantities (MMBtu a day x calendar days)', 'US pricing days (Labor Day excluded)', 'daily index fixings (close fixtures standing in for Shaffer MarketData) and their average', 'net amount of each month', 'settlement date, T+2 USD', 'commission from the Book fee schedule', 'variation margin from the position-level terms'],
+    manualInputs: ['the reference index, registered as a natural gas spot instrument (never traded)', 'a fixing the data service did not supply, entered by hand', 'settlement amount of the termination (stated fill price)', 'mark of the contract, entered by hand'],
+    settlement: 'Termination amount and commission settle T+2 USD; each month settles net 5 USD business days after it ends',
+    lifecycle: 'September: 300,000 MMBtu, the average of 21 US pricing days against the fixed price, held for a missing day until entered by hand, one net amount received; full termination in October at a stated amount: October is not settled; nothing left afterwards',
+    accounting: 'Carried at the mark; the net September amount and the termination result are realized P&L; commission expensed',
+    collateral: 'Position-level terms: no independent amount; variation margin on the mark entered by hand, no threshold, minimum transfer 5,000: posted, partly returned, the rest returned at once on the termination',
+  },
+  start: at('2026-08-27'),
+  settlementCheck: { lag: 2, holidays: [] }, // no Federal Reserve holiday between 27 and 31 August or 15 and 19 October 2026
+  book: bookOf('Matrix energy swap', 'Gas marketing', 'USD', 2_000_000, 800_000, { perUnit: 0.50, minimum: 0, bps: 0 }, { spot: NO_FEE }), // 0.50 per MMBtu a day
+  instruments: {
+    hh: HH,
+    main: {
+      productId: 'energy_swap', name: NGS_NAME, symbol: 'NGS-HH-1026', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: USD_CALENDARS,
+      terms: {
+        effective: '2026-09-01', maturity: '2026-11-01', counterparty: 'Gas dealer X', netSettlement: true,
+        collateralBasis: { type: 'position', independentAmount: { type: 'none' }, variationMargin: true, threshold: 0, minimumTransfer: 5_000 },
+        legs: [
+          { side: 'pay', type: 'price', ccy: 'USD', months: 1, units: 1, fixedPrice: 3.20, hours: 'day', paymentLag: 5 },
+          { side: 'receive', type: 'price', ccy: 'USD', months: 1, units: 1, underlyingId: '$inst:hh', averaging: 'daily', pricingCalendar: 'US', hours: 'day', paymentLag: 5 },
+        ],
+      },
+    },
+  },
+  closes: { hh: HH_SEPT },
+  expectAtStart: startOf('USD', 2_000_000, 800_000),
+  steps: [
+    {
+      // Opposite side, 10,000 MMBtu a day, no upfront. Commission 10,000 x 0.50 = 5,000, settling Monday 31 August. No independent amount.
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'sell', qty: 10_000, as: 'ngs', order: { statedPrice: 0 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 10_000, estimate: 0, model: 'stated-price', settleDate: '2026-08-31', calendar: 'USD', cash: 0, fees: 5_000 }],
+          cash: { USD: { fees: 5_000, margin: 0, available: 800_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 10_000, avgPrice: 0, fills: [{ qty: 10_000, price: 0, model: 'stated-price', settleDate: '2026-08-31' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Entered on the opposite side: 10,000 notional of NGS-HH-1026 at 0.00 per 100 notional', owner: 'account', date: '2026-08-27' }],
+        cash: { account: { USD: { settled: 800_000, unsettled: -5_000, margin: 0, restricted: 0, availableToTrade: 795_000, availableToWithdraw: 795_000 } } },
+        positions: [{ instrument: 'main', lot: 'ngs', owner: 'account', direction: 'opposite side', qty: -10_000, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, notional: 10_000, margin: 0 }],
+        holdings: { main: { long: 0, short: 10_000, net: -10_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-08-31', amount: -5_000, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-10-08', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-10-08', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2026-11-06', status: 'pending' }, // Sunday 1 November + 5 business days
+        ],
+        otc: [{ instrument: 'main', lot: 'ngs', owner: 'account', qty: -10_000, basis: 'position', mark: null, iaRequired: 0, iaPosted: 0, vmPosted: 0, vmHeld: 0, vmStatus: 'not_valued_yet' }],
+        pnl: { account: { realized: 0, commissions: -5_000, unrealized: 0, total: -5_000 } },
+        nav: { account: 795_000, book: 1_995_000 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 800_000, payable: 5_000, positions: null, assets: 800_000, liabilities: 5_000, netAssets: 795_000 } },
+      },
+    },
+    {
+      id: 'settle-commission', covers: 'settlement', action: 'clock', to: at('2026-08-31'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 5,000.00 USD from settled cash', cash: { USD: -5_000 }, date: '2026-08-31' }],
+        cash: { account: { USD: { settled: 795_000, unsettled: 0, availableToTrade: 795_000, availableToWithdraw: 795_000 } } },
+        pending: [],
+        otc: [{ instrument: 'main', vmStatus: 'cannot_value', vmReason: /NGS-HH-1026 has no mark/ }], alerts: ['collateral.unvalued'],
+        balance: { account: { cash: 795_000, payable: null, assets: 795_000, liabilities: 0 } },
+      },
+    },
+    {
+      // Gas has rallied: the contract as written is marked 900 per 100 (MMBtu a day). Opposite side: -10,000 x 900 / 100 = -90,000.
+      id: 'mark', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 900, note: 'Dealer mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'ngs', price: 900, value: -90_000, unrealized: -90_000, provisional: false, priceSource: 'Manual entry', priceStatus: 'manual' }],
+        otc: [{ instrument: 'main', mark: 900, markValue: -90_000 }],
+        pnl: { account: { unrealized: -90_000, total: -95_000 } },
+        nav: { account: 705_000, book: 1_905_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: -90_000, assets: 705_000, netAssets: 705_000 } },
+      },
+    },
+    {
+      id: 'variation-margin-posted', covers: 'variation margin', action: 'clock', to: eod('2026-08-31'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under position-level terms: 90,000.00 USD posted. Netting set of 1 position marked at -90,000.00 USD; threshold 0.00 USD.', cash: { USD: -90_000 }, owner: 'account' }],
+        cash: { account: { USD: { settled: 705_000, margin: 90_000, availableToTrade: 705_000, availableToWithdraw: 705_000 } } },
+        otc: [{ instrument: 'main', vmPosted: 90_000, vmExposure: -90_000, vmStatus: 'ok' }],
+        alerts: [],
+        balance: { account: { cash: 705_000, margin: 90_000 } },
+      },
+    },
+    {
+      // Thursday 8 October. The September average needs 21 fixings; 18 September's is missing. Nothing moves.
+      id: 'september-blocked-fixing-missing', covers: ['missing fixing', 'averaging'], action: 'clock', to: at('2026-10-08'),
+      expect: {
+        events: [],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-10-08', status: 'blocked', reason: /Awaiting the averaging fixings of HH-DAILY for 2026-09-18 \(1 of the 21 pricing days of the period 2026-09-01 to 2026-10-01\)/ },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-10-08', status: 'blocked', reason: /Awaiting the averaging fixings of HH-DAILY for 2026-09-18/ },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2026-11-06', status: 'pending' },
+        ],
+      },
+    },
+    {
+      // 2.900 for 18 September, by hand. September: 21 fixings summing to 61.950, average 2.95; quantity 10,000 x 30 days = 300,000 MMBtu.
+      //   leg A, fixed 3.20, received (opposite side): 960,000.00; leg B, average 2.95, paid: 885,000.00; net received 300,000 x 0.25 = 75,000.00.
+      id: 'fixing-entered-september-settled', covers: ['missing fixing', 'averaging', 'net settlement', 'quantity per day', 'holiday in the pricing period'], action: 'manual_price', instrument: 'hh', value: 2.900, forDate: '2026-09-18', note: 'Published index, entered by hand',
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Net swap receipt on ${NGS_NAME}, period 2026-09-01 to 2026-10-01: 75,000.00 USD (leg A, fixed price 3.20 x 300,000 (30 days): 960,000.00 USD received; leg B, average of 21 fixings 2.95 x 300,000 (30 days): 885,000.00 USD paid)`, cash: { USD: 75_000 }, owner: 'account', date: '2026-10-08' }],
+        cash: { account: { USD: { settled: 780_000, availableToTrade: 780_000, availableToWithdraw: 780_000 } } },
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2026-11-06', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-11-06', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-11-06', status: 'pending' },
+        ],
+        pnl: { account: { realized: 75_000, total: -20_000 } },
+        nav: { account: 780_000, book: 1_980_000 },
+        balance: { account: { cash: 780_000, assets: 780_000, netAssets: 780_000 } },
+      },
+    },
+    {
+      // -10,000 x 400 / 100 = -40,000.
+      id: 'mark-lower', action: 'manual_price', instrument: 'main', value: 400, note: 'Dealer mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'ngs', price: 400, value: -40_000, unrealized: -40_000 }],
+        otc: [{ instrument: 'main', mark: 400, markValue: -40_000 }],
+        pnl: { account: { unrealized: -40_000, total: 30_000 } },
+        nav: { account: 830_000, book: 2_030_000 },
+        balance: { account: { positions: -40_000, assets: 830_000, netAssets: 830_000 } },
+      },
+    },
+    {
+      id: 'variation-margin-returned', covers: 'variation margin', action: 'clock', to: eod('2026-10-08'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under position-level terms: 50,000.00 USD returned to us. Netting set of 1 position marked at -40,000.00 USD; threshold 0.00 USD.', cash: { USD: 50_000 }, owner: 'account' }],
+        cash: { account: { USD: { settled: 830_000, margin: 40_000, availableToTrade: 830_000, availableToWithdraw: 830_000 } } },
+        otc: [{ instrument: 'main', vmPosted: 40_000, vmExposure: -40_000 }],
+        balance: { account: { cash: 830_000, margin: 40_000 } },
+      },
+    },
+    { id: 'mid-october', action: 'clock', to: at('2026-10-15'), expect: {} },
+    {
+      // Terminated in full at 350 per 100 as written: closing the opposite side pays 10,000 x 350 / 100 = 35,000; commission 5,000; realized -35,000.
+      // October is not settled: the termination amount is all-in. Settles Monday 19 October; the 40,000 posted comes back at once.
+      id: 'full-termination', covers: ['close', 'full termination', 'collateral'], action: 'close', lot: 'ngs', scope: 'position', percent: 100, order: { statedPrice: 350 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 10_000, estimate: 350, model: 'stated-price', settleDate: '2026-10-19', cash: -35_000, fees: 5_000 }] },
+        result: { status: 'closed', orders: [{ action: 'buy', status: 'filled', filledQty: 10_000, avgPrice: 350 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Terminated: 10,000 notional of NGS-HH-1026 at 350.00 per 100 notional (realized -35,000.00 USD)' },
+          { type: 'collateral.variation', summary: 'Variation margin under position-level terms: 40,000.00 USD returned to us. The last position of the netting set ended.', cash: { USD: 40_000 } },
+        ],
+        cash: { account: { USD: { settled: 870_000, unsettled: -40_000, margin: 0, restricted: 0, availableToTrade: 830_000, availableToWithdraw: 830_000 } } },
+        positions: [], holdings: { main: null }, lifecycle: [], otc: [],
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-10-19', amount: -40_000, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: 40_000, commissions: -10_000, unrealized: 0, total: 30_000 } },
+        nav: { account: 830_000, book: 2_030_000 },
+        balance: { account: { cash: 870_000, margin: null, positions: null, payable: 40_000, assets: 870_000, liabilities: 40_000, netAssets: 830_000 } },
+      },
+    },
+    {
+      id: 'settle-termination', covers: 'settlement', action: 'clock', to: at('2026-10-19'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 40,000.00 USD from settled cash', cash: { USD: -40_000 } }],
+        cash: { account: { USD: { settled: 830_000, unsettled: 0, availableToTrade: 830_000, availableToWithdraw: 830_000 } } },
+        pending: [],
+        balance: { account: { cash: 830_000, payable: null, assets: 830_000, liabilities: 0 } },
+      },
+    },
+    {
+      // The contract's last payment date: nothing is paid, posted or scheduled. 800,000 - 5,000 + 75,000 - 35,000 - 5,000 = 830,000.
+      id: 'nothing-left-at-maturity', covers: 'close', action: 'clock', to: at('2026-11-06'),
+      expect: { events: [], lifecycle: [], positions: [], pending: [], otc: [], alerts: [], cash: { account: { USD: { settled: 830_000, margin: 0, restricted: 0 } }, treasury: { USD: { settled: 1_200_000 } } }, nav: { account: 830_000, treasury: 1_200_000, book: 2_030_000 } },
+    },
+  ],
+};
+
+export default [amortizingSwap, accretingSwap, equitySwap, equityIndexSwap, equityTrs, bondTrs, indexTrs, commoditySwap, commodityBasisSwap, commodityIndexSwap, energySwap];

@@ -1536,4 +1536,252 @@ const loanCds = {
   ],
 };
 
-export default [cdsSingleName, cdsSovereign, cdsIndex, cdsBasket, cdsTranche, loanCds];
+// ---------------------------------------------------------------------------------------------
+// abs_cds
+// ---------------------------------------------------------------------------------------------
+// A pay-as-you-go CDS on the class M5 notes of Harrow Mortgage Trust 2006-HE2 (subprime RMBS mezzanine), 500 bp, effective
+// Thursday 25 June 2026, legal final 25 June 2036. ABS conventions: the premium is paid MONTHLY on the 25th (the
+// reference obligation's distribution day; the next business day when the 25th is not one), on the outstanding notional
+// (notional x the factor of the reference obligation); the reference obligation's writedowns, principal and interest
+// shortfalls are paid by the protection seller as they happen, their reimbursements by the buyer, and its amortization
+// reduces the notional with nothing paid: each recorded by hand. Bespoke: accrual dates not adjusted, premium from the
+// effective date, terminations all-in. Dealer R; position-level terms: independent amount 20% of the notional outstanding.
+// Commission 20.00 per million of notional; T+3 (USD calendar).
+//   bought 5,000,000 on Wed 24 June at 10.00: 500,000.00; settles Mon 29 June
+//   premium Mon 27 July (25th a Saturday): 25 June to 25 July, 30 days: 5,000,000 x 5% x 30/360 = 20,833.33
+//   interest shortfall 0.12 per 100 (10 August): 5,000,000 x 0.12 / 100 = 6,000.00 from the seller
+//   premium Tue 25 August: 31 days: 21,527.78; writedown of 4.00 per 100 with the 25 August distribution: 200,000.00 from
+//     the seller, factor 0.96 (no premium accrued since that day's payment); cost 500,000 x 4% = 20,000 realized
+//   writedown reimbursement 1.00 per 100 (10 September): 50,000.00 to the seller, factor back to 0.97
+//   premium Fri 25 September on 4,850,000, 31 days: 4,850,000 x 5% x 31/360 = 20,881.94; the reference obligation amortizes
+//     from 0.97 to 0.90 with that distribution: nothing paid; the cost of the amortized part, 480,000 x 0.07/0.97 =
+//     34,639.18, realized
+//   terminated on Wed 14 October at 30.00 per 100 of the 4,500,000 outstanding, all-in: 1,350,000.00 received against the
+//     445,360.82 of cost left: realized 904,639.18; settles Mon 19 October
+const ABS_NAME = 'Harrow Mortgage Trust 2006-HE2 M5 PAYGO CDS 500bp';
+const absCds = {
+  productId: 'abs_cds',
+  title: 'Pay-as-you-go ABS CDS: monthly premium on the outstanding notional; interest shortfall, writedown, reimbursement and amortization recorded by hand; terminated',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'Reference obligation', 'Monthly payment day'],
+    automaticInputs: ['monthly premium dates on the 25th (next business day) and the amount on the outstanding notional', 'premium from the effective date', 'settlement date T+3', 'commission', 'independent amount trued up on the outstanding notional'],
+    manualInputs: ['reference obligation and the monthly payment day', 'upfront and the all-in termination amount (stated fill prices)', 'marks per 100 of the outstanding notional entered by hand', 'each pay-as-you-go event: kind, amount per 100 of original notional (or the new factor), date'],
+    settlement: 'Upfront and termination T+3 on the USD calendar; monthly premium on the 25th or the next business day; pay-as-you-go amounts in cash on the day they are recorded',
+    lifecycle: 'Buy protection; monthly premiums; an interest shortfall paid by the seller; a writedown paid by the seller (factor down); its partial reimbursement paid by the buyer (factor up); amortization of the reference obligation (factor down, nothing paid); termination at a stated amount; nothing scheduled afterwards',
+    accounting: 'Carried at the mark per 100 of the outstanding notional less the upfront; shortfalls, writedowns, reimbursements and premiums realized; the cost of written-down and amortized notional realized; commission expensed',
+    collateral: 'Position-level terms: independent amount 20% of the notional outstanding, trued up after each change of factor (40,000 back, 10,000 posted, 70,000 back) and returned on termination; no variation margin',
+  },
+  start: at('2026-06-24'),
+  settlementCheck: { lag: 3, holidays: [] },
+  book: {
+    name: 'Matrix ABS CDS', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 5_000_000 }],
+    account: { name: 'Securitised credit', funding: [{ ccy: 'USD', amount: 3_000_000 }] },
+    settings: { fees: { cds: { perUnit: 0.00002, minimum: 0, bps: 0 } }, fill: FILL, settlement: { cds: 3 } },
+  },
+  instruments: {
+    main: {
+      productId: 'abs_cds', name: ABS_NAME, symbol: 'HMT06-M5-CDS', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { tradingCalendar: 'USD', settlementCalendar: 'USD', paymentCalendar: 'USD' },
+      terms: {
+        referenceEntity: 'Harrow Mortgage Trust 2006-HE2', referenceObligation: 'Harrow Mortgage Trust 2006-HE2 class M5 notes (subprime RMBS mezzanine)', coupon: 0.05, effective: '2026-06-25', maturity: '2036-06-25', recovery: 0.4,
+        convention: 'bespoke', firstStub: 'short', paymentDay: 25, creditEventSet: 'abs', settlement: 'cash', counterparty: 'Dealer R',
+        collateralBasis: { type: 'position', independentAmount: { type: 'pct', pct: 0.20 }, variationMargin: false, threshold: 0, minimumTransfer: 0 },
+      },
+    },
+  },
+  expectAtStart: {
+    cash: { account: { USD: { settled: 3_000_000, unsettled: 0, margin: 0, restricted: 0, availableToTrade: 3_000_000, availableToWithdraw: 3_000_000 } }, treasury: { USD: { settled: 2_000_000 } } },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [], otc: [], alerts: [],
+    nav: { account: 3_000_000, treasury: 2_000_000, book: 5_000_000 },
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+  },
+  steps: [
+    otcTicket({
+      id: 'buy-abs-protection', covers: ['open', 'buy protection', 'collateral'], instrument: 'main', side: 'buy', qty: 5_000_000, upfront: 10.00, as: 'abs',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 5_000_000, estimate: 10, model: 'stated-price', settleDate: '2026-06-29', calendar: 'USD', cash: -500_000, accrued: 0, fees: 100 }],
+          cash: { USD: { fees: 100, margin: 1_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 5_000_000, avgPrice: 10 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Bought 5,000,000 HMT06-M5-CDS @ 10.00 USD', owner: 'account', date: '2026-06-24' },
+          { type: 'cds.collateral', summary: `Collateral posted on ${ABS_NAME} under its position-level terms: 1,000,000.00 USD (independent amount, 20.00% of 5,000,000.00 USD notional)`, cash: { USD: -1_000_000 } },
+        ],
+        cash: { account: { USD: { settled: 2_000_000, unsettled: -500_100, margin: 1_000_000, availableToTrade: 1_499_900, availableToWithdraw: 1_499_900 } } },
+        positions: [{ instrument: 'main', lot: 'abs', owner: 'account', direction: 'protection bought', qty: 5_000_000, avgCost: 10, cost: 500_000, price: null, value: null, unrealized: null, provisional: true, notional: 5_000_000, margin: 1_000_000, accrued: 0 }],
+        holdings: { main: { long: 5_000_000, short: 0, net: 5_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-06-29', amount: -500_100, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'cds.premium', instrument: 'main', dueDate: '2026-07-27', status: 'pending' }, // 25 July is a Saturday
+          { type: 'cds.maturity', instrument: 'main', dueDate: '2036-06-25', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', lot: 'abs', owner: 'account', qty: 5_000_000, basis: 'position', iaRequired: 1_000_000, iaPosted: 1_000_000, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: -100, unrealized: 0, total: -100 } },
+        nav: { account: 2_999_900, book: 4_999_900 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 2_000_000, margin: 1_000_000, positions: 500_000, payable: 500_100, assets: 3_500_000, liabilities: 500_100, netAssets: 2_999_900 } },
+      },
+    }),
+    {
+      id: 'mark-at-trade', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 10.00, note: 'Dealer R upfront per 100 of the outstanding notional, by hand',
+      expect: { positions: [{ instrument: 'main', lot: 'abs', price: 10, value: 500_000, unrealized: 0, provisional: false }], otc: [{ instrument: 'main', mark: 10, markValue: 500_000 }], provisional: { account: false, book: false } },
+    },
+    {
+      id: 'settle-upfront', covers: 'settlement', action: 'clock', to: at('2026-06-29'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 500,100.00 USD from settled cash', cash: { USD: -500_100 } }],
+        cash: { account: { USD: { settled: 1_499_900, unsettled: 0, availableToTrade: 1_499_900, availableToWithdraw: 1_499_900 } } },
+        pending: [],
+        balance: { account: { cash: 1_499_900, payable: null, assets: 2_999_900, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'july-premium', covers: ['premium', 'monthly payment'], action: 'clock', to: at('2026-07-27'),
+      expect: {
+        events: [{ type: 'cds.premium', summary: `CDS premium paid on ${ABS_NAME} for 2026-06-25 to 2026-07-25: 20,833.33 USD`, cash: { USD: -20_833.33 }, date: '2026-07-27' }],
+        cash: { account: { USD: { settled: 1_479_066.67, availableToTrade: 1_479_066.67, availableToWithdraw: 1_479_066.67 } } },
+        lifecycle: [
+          { type: 'cds.premium', instrument: 'main', dueDate: '2026-08-25', status: 'pending' },
+          { type: 'cds.maturity', instrument: 'main', dueDate: '2036-06-25', status: 'pending' },
+        ],
+        pnl: { account: { realized: -20_833.33, total: -20_933.33 } },
+        nav: { account: 2_979_066.67, book: 4_979_066.67 },
+        balance: { account: { cash: 1_479_066.67, assets: 2_979_066.67, netAssets: 2_979_066.67 } },
+      },
+    },
+    { id: 'early-august', action: 'clock', to: at('2026-08-10'), expect: {} },
+    {
+      id: 'interest-shortfall', covers: ['pay-as-you-go', 'interest shortfall'], action: 'instrument_lifecycle', instrument: 'main', body: { action: 'paygo', kind: 'interest_shortfall', amount: 0.12, date: '2026-08-10' },
+      expect: {
+        events: [{ type: 'cds.paygo', summary: 'Interest shortfall on Harrow Mortgage Trust 2006-HE2 class M5 notes (subprime RMBS mezzanine) recorded by hand for HMT06-M5-CDS (2026-08-10); 6,000.00 USD (0.12 per 100 of 5,000,000.00 USD) paid by the protection seller; received 6,000.00 USD', cash: { USD: 6_000 }, owner: 'account' }],
+        cash: { account: { USD: { settled: 1_485_066.67, availableToTrade: 1_485_066.67, availableToWithdraw: 1_485_066.67 } } },
+        pnl: { account: { realized: -14_833.33, total: -14_933.33 } },
+        nav: { account: 2_985_066.67, book: 4_985_066.67 },
+        balance: { account: { cash: 1_485_066.67, assets: 2_985_066.67, netAssets: 2_985_066.67 } },
+      },
+    },
+    {
+      id: 'august-premium', covers: ['premium', 'monthly payment'], action: 'clock', to: at('2026-08-25'),
+      expect: {
+        events: [{ type: 'cds.premium', summary: `CDS premium paid on ${ABS_NAME} for 2026-07-25 to 2026-08-25: 21,527.78 USD`, cash: { USD: -21_527.78 } }], // 5,000,000 x 5% x 31/360
+        cash: { account: { USD: { settled: 1_463_538.89, availableToTrade: 1_463_538.89, availableToWithdraw: 1_463_538.89 } } },
+        lifecycle: [
+          { type: 'cds.premium', instrument: 'main', dueDate: '2026-09-25', status: 'pending' },
+          { type: 'cds.maturity', instrument: 'main', dueDate: '2036-06-25', status: 'pending' },
+        ],
+        pnl: { account: { realized: -36_361.11, total: -36_461.11 } },
+        nav: { account: 2_963_538.89, book: 4_963_538.89 },
+        balance: { account: { cash: 1_463_538.89, assets: 2_963_538.89, netAssets: 2_963_538.89 } },
+      },
+    },
+    { id: 'distribution-report', action: 'clock', to: at('2026-08-26'), expect: {} },
+    {
+      id: 'writedown', covers: ['pay-as-you-go', 'writedown', 'collateral'], action: 'instrument_lifecycle', instrument: 'main', body: { action: 'paygo', kind: 'writedown', amount: 4, date: '2026-08-25' },
+      expect: {
+        events: [
+          { type: 'cds.paygo', summary: 'Writedown on Harrow Mortgage Trust 2006-HE2 class M5 notes (subprime RMBS mezzanine) recorded by hand for HMT06-M5-CDS (2026-08-25); 200,000.00 USD (4 per 100 of 5,000,000.00 USD) paid by the protection seller; factor 1 to 0.96; received 200,000.00 USD', cash: { USD: 200_000 } },
+          { type: 'cds.collateral', summary: `Collateral returned on ${ABS_NAME} under its position-level terms: 40,000.00 USD (independent amount, 20.00% of 4,800,000.00 USD notional)`, cash: { USD: 40_000 } },
+        ],
+        cash: { account: { USD: { settled: 1_703_538.89, margin: 960_000, availableToTrade: 1_703_538.89, availableToWithdraw: 1_703_538.89 } } },
+        positions: [{ instrument: 'main', lot: 'abs', cost: 480_000, avgCost: 10, value: 480_000, unrealized: 0, notional: 4_800_000, margin: 960_000 }], // 5,000,000 x 0.96 x 10 / 100
+        otc: [{ instrument: 'main', markValue: 480_000, iaRequired: 960_000, iaPosted: 960_000 }],
+        pnl: { account: { realized: 143_638.89, total: 143_538.89 } }, // -36,361.11 + 200,000 - 20,000
+        nav: { account: 3_143_538.89, book: 5_143_538.89 },
+        balance: { account: { cash: 1_703_538.89, margin: 960_000, positions: 480_000, assets: 3_143_538.89, netAssets: 3_143_538.89 } },
+      },
+    },
+    { id: 'september', action: 'clock', to: at('2026-09-10'), expect: {} },
+    {
+      id: 'writedown-reimbursement', covers: ['pay-as-you-go', 'writedown reimbursement', 'collateral'], action: 'instrument_lifecycle', instrument: 'main', body: { action: 'paygo', kind: 'writedown_reimbursement', amount: 1, date: '2026-09-10' },
+      expect: {
+        events: [
+          { type: 'cds.paygo', summary: 'Writedown reimbursement on Harrow Mortgage Trust 2006-HE2 class M5 notes (subprime RMBS mezzanine) recorded by hand for HMT06-M5-CDS (2026-09-10); 50,000.00 USD (1 per 100 of 5,000,000.00 USD) paid by the protection buyer; factor 0.96 to 0.97; paid 50,000.00 USD', cash: { USD: -50_000 } },
+          { type: 'cds.collateral', summary: `Collateral posted on ${ABS_NAME} under its position-level terms: 10,000.00 USD (independent amount, 20.00% of 4,850,000.00 USD notional)`, cash: { USD: -10_000 } },
+        ],
+        cash: { account: { USD: { settled: 1_643_538.89, margin: 970_000, availableToTrade: 1_643_538.89, availableToWithdraw: 1_643_538.89 } } },
+        positions: [{ instrument: 'main', lot: 'abs', cost: 480_000, avgCost: 9.896907, value: 485_000, unrealized: 5_000, notional: 4_850_000, margin: 970_000 }], // 480,000 / 48,500
+        otc: [{ instrument: 'main', markValue: 485_000, iaRequired: 970_000, iaPosted: 970_000 }],
+        pnl: { account: { realized: 93_638.89, unrealized: 5_000, total: 98_538.89 } },
+        nav: { account: 3_098_538.89, book: 5_098_538.89 },
+        balance: { account: { cash: 1_643_538.89, margin: 970_000, positions: 485_000, assets: 3_098_538.89, netAssets: 3_098_538.89 } },
+      },
+    },
+    {
+      id: 'september-premium', covers: ['premium', 'monthly payment'], action: 'clock', to: at('2026-09-25'),
+      expect: {
+        events: [{ type: 'cds.premium', summary: `CDS premium paid on ${ABS_NAME} for 2026-08-25 to 2026-09-25: 20,881.94 USD`, cash: { USD: -20_881.94 } }],
+        cash: { account: { USD: { settled: 1_622_656.95, availableToTrade: 1_622_656.95, availableToWithdraw: 1_622_656.95 } } },
+        lifecycle: [
+          { type: 'cds.premium', instrument: 'main', dueDate: '2026-10-26', status: 'pending' }, // 25 October is a Sunday
+          { type: 'cds.maturity', instrument: 'main', dueDate: '2036-06-25', status: 'pending' },
+        ],
+        pnl: { account: { realized: 72_756.95, total: 77_656.95 } },
+        nav: { account: 3_077_656.95, book: 5_077_656.95 },
+        balance: { account: { cash: 1_622_656.95, assets: 3_077_656.95, netAssets: 3_077_656.95 } },
+      },
+    },
+    { id: 'amortization-reported', action: 'clock', to: at('2026-09-28'), expect: {} },
+    {
+      id: 'amortization', covers: ['pay-as-you-go', 'amortization', 'collateral'], action: 'instrument_lifecycle', instrument: 'main', body: { action: 'paygo', kind: 'amortization', amount: 0.90, date: '2026-09-25' },
+      expect: {
+        events: [
+          { type: 'cds.paygo', summary: 'Amortization of the reference obligation on Harrow Mortgage Trust 2006-HE2 class M5 notes (subprime RMBS mezzanine) recorded by hand for HMT06-M5-CDS (2026-09-25); factor 0.97 to 0.9, nothing paid for it; nothing to settle' },
+          { type: 'cds.collateral', summary: `Collateral returned on ${ABS_NAME} under its position-level terms: 70,000.00 USD (independent amount, 20.00% of 4,500,000.00 USD notional)`, cash: { USD: 70_000 } },
+        ],
+        cash: { account: { USD: { settled: 1_692_656.95, margin: 900_000, availableToTrade: 1_692_656.95, availableToWithdraw: 1_692_656.95 } } },
+        positions: [{ instrument: 'main', lot: 'abs', cost: 445_360.82, avgCost: 9.896907, value: 450_000, unrealized: 4_639.18, notional: 4_500_000, margin: 900_000 }],
+        otc: [{ instrument: 'main', markValue: 450_000, iaRequired: 900_000, iaPosted: 900_000 }],
+        pnl: { account: { realized: 38_117.77, unrealized: 4_639.18, total: 42_656.95 } }, // 72,756.95 - 34,639.18
+        nav: { account: 3_042_656.95, book: 5_042_656.95 },
+        balance: { account: { cash: 1_692_656.95, margin: 900_000, positions: 450_000, assets: 3_042_656.95, netAssets: 3_042_656.95 } },
+      },
+    },
+    { id: 'mid-october', action: 'clock', to: at('2026-10-14'), expect: {} },
+    {
+      id: 'mark-wider', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 30.00, note: 'Dealer R upfront per 100 of the outstanding notional, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'abs', price: 30, value: 1_350_000, unrealized: 904_639.18 }], // 5,000,000 x 0.90 x 30 / 100
+        otc: [{ instrument: 'main', mark: 30, markValue: 1_350_000 }],
+        pnl: { account: { unrealized: 904_639.18, total: 942_656.95 } },
+        nav: { account: 3_942_656.95, book: 5_942_656.95 },
+        balance: { account: { positions: 1_350_000, assets: 3_942_656.95, netAssets: 3_942_656.95 } },
+      },
+    },
+    {
+      id: 'terminate', covers: ['close', 'full termination', 'collateral'], action: 'close', lot: 'abs', scope: 'position', percent: 100, order: { statedPrice: 30.00 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 5_000_000, estimate: 30, model: 'stated-price', settleDate: '2026-10-19', cash: 1_350_000, accrued: 0, fees: 100, notional: 4_500_000 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 5_000_000, avgPrice: 30 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 5,000,000 HMT06-M5-CDS @ 30.00 USD (realized 904,639.18 USD)' },
+          { type: 'cds.collateral', summary: `Collateral returned on ${ABS_NAME} under its position-level terms: 900,000.00 USD (independent amount, the position ended)`, cash: { USD: 900_000 } },
+        ],
+        cash: { account: { USD: { settled: 2_592_656.95, unsettled: 1_349_900, margin: 0, availableToTrade: 3_942_556.95, availableToWithdraw: 2_592_656.95 } } },
+        positions: [], holdings: { main: null }, lifecycle: [], otc: [],
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-10-19', amount: 1_349_900, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: 942_756.95, commissions: -200, unrealized: 0, total: 942_556.95 } },
+        nav: { account: 3_942_556.95, book: 5_942_556.95 },
+        balance: { account: { cash: 2_592_656.95, margin: null, positions: null, receivable: 1_349_900, assets: 3_942_556.95, liabilities: 0, netAssets: 3_942_556.95 } },
+      },
+    },
+    {
+      // -500,100 - 20,833.33 + 6,000 - 21,527.78 + 200,000 - 50,000 - 20,881.94 + 1,349,900 = +942,556.95 on 3,000,000.
+      id: 'settle-termination', covers: ['settlement', 'close'], action: 'clock', to: at('2026-10-19'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 1,349,900.00 USD into settled cash', cash: { USD: 1_349_900 } }],
+        cash: { account: { USD: { settled: 3_942_556.95, unsettled: 0, availableToTrade: 3_942_556.95, availableToWithdraw: 3_942_556.95 } } },
+        pending: [], lifecycle: [], otc: [], alerts: [],
+        balance: { account: { cash: 3_942_556.95, receivable: null } },
+      },
+    },
+  ],
+};
+
+export default [cdsSingleName, cdsSovereign, cdsIndex, cdsBasket, cdsTranche, loanCds, absCds];
