@@ -181,3 +181,4 @@
 - 2026-10-13T18:17Z | r1 | +0.2 | buy_sell_back passes at engine, API and browser
 - 2026-10-13T18:17Z | b3 | +0.2 | mbs passes at engine, API and browser
 - 2026-10-13T18:17Z | m1 | +0.2 | correlation_swap passes at engine, API and browser
+- 2026-10-13T18:18Z | fw | +0.2 | fw: fx_swap passes at engine, API and browser

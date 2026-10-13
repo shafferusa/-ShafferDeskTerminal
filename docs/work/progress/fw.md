@@ -39,7 +39,7 @@
   underlying's; quantity/price labels from the underlying (qtyLabelFor, terms.quantityUnit/priceUnits); delivery
   against payment ON the value date (was the underlying's lag from it). bond.js fillsOf counts 'forward.delivery' and
   'option.delivery' events as fills (accrued interest bought on delivery was reversed by the next EOD).
-- bond_forward passes E/A/B; equity_forward re-passes E/A/B with same-day delivery. commodity_forward passes E/A/B. Remaining: fx_swap, tba_mortgage.
+- bond_forward passes E/A/B; equity_forward re-passes E/A/B with same-day delivery. commodity_forward passes E/A/B. fx_swap passes E/A/B (package on the Strategies page: driver actions.package). Remaining: tba_mortgage.
 - test/core/forwards.test.js (4 tests) passes. equity_forward passes E/A/B (delivery from holdings fix in fx.js settleForwardTask).
   then equity_forward (agreement basis? physical delivery), bond_forward, commodity_forward, fx_swap, tba_mortgage.
 

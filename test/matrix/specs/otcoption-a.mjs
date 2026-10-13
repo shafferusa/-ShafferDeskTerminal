@@ -1970,7 +1970,7 @@ const swaption = {
     requiredFields: [...OTC_TICKET.requiredFields, 'Underlying instrument: the registered swap the swaption is exercised into', 'Payoff: Swaption', 'Multiplier 0.01 (premium per 100 of notional)'],
     automaticInputs: ['premium settlement date, T+2 on the US dollar calendar', 'commission per unit of notional from the Book fee schedule', 'variation margin and independent amount from the position-level terms of each contract', 'after exercise: the swap\'s payment schedule and independent amount from its own registered terms'],
     manualInputs: ['premium per 100 of notional (stated fill price)', 'marks entered by hand (Manual entry)', 'exercise decision at expiry: exercise into the swap with its entry price per 100 (Lifecycle, Exercise), or 0 as the settlement amount', 'settlement amount of the cash-settled receiver swaption, agreed with the dealer (Accounting, Pending)', 'termination of the swap at a stated amount per 100'],
-    settlement: 'Premium and commission T+2 on the US dollar calendar; the swap entered on exercise settles T+2 (effective 19 June); the receiver\'s cash settlement T+1; the swap termination T+2',
+    settlement: 'Premium and commission T+2 on the US dollar calendar; the swap entered on exercise settles T+2 (effective 19 June); the receiver\'s cash settlement T+1; the swap termination T+2, across Juneteenth',
     lifecycle: 'At expiry both items wait for an input: the payer for the exercise decision, the receiver for its settlement amount. Exercise into the swap by hand opens the swap with its own payment schedule and maturity; terminated at a stated amount; nothing scheduled afterwards',
     accounting: 'Premium per 100 x notional x 0.01; premium realized on exercise and on cash settlement; the swap entered at its stated entry price and carried at its mark; commission expensed. The swaption is not valued by the Terminal',
     collateral: 'Payer (bought): position-level terms, variation margin over a 50,000 threshold, received from the dealer and returned on exercise. Receiver (written): fixed independent amount 50,000, returned at settlement. The swap: its own basis, independent amount 1% of notional, posted on exercise and returned on termination',
@@ -2150,7 +2150,7 @@ const swaption = {
           { type: 'option.expiry', instrument: 'receiver', dueDate: '2026-06-17', status: 'blocked' },
           { type: 'swap.payment', instrument: 'swap', dueDate: '2026-09-21', status: 'pending' }, // floating, 19 Jun to 19 Sep (a Saturday)
           { type: 'swap.payment', instrument: 'swap', dueDate: '2026-12-21', status: 'pending' }, // fixed, 19 Jun to 19 Dec (a Saturday)
-          { type: 'swap.maturity', instrument: 'swap', dueDate: '2028-06-19', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'swap', dueDate: '2028-06-20', status: 'pending' }, // 19 June 2028 is Juneteenth, a Federal Reserve holiday
         ],
         otc: [{ instrument: 'receiver', lot: 'receivers' }, { instrument: 'swap', lot: 'payers', qty: 10_000_000, basis: 'position', mark: null, iaRequired: 100_000, iaPosted: 100_000, vmPosted: 0, vmHeld: 0 }],
         pnl: { account: { realized: -85_000, unrealized: 15_000, total: -70_200 } },
@@ -2175,7 +2175,7 @@ const swaption = {
         lifecycle: [
           { type: 'swap.payment', instrument: 'swap', dueDate: '2026-09-21', status: 'pending' },
           { type: 'swap.payment', instrument: 'swap', dueDate: '2026-12-21', status: 'pending' },
-          { type: 'swap.maturity', instrument: 'swap', dueDate: '2028-06-19', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'swap', dueDate: '2028-06-20', status: 'pending' },
         ],
         otc: [{ instrument: 'swap', lot: 'payers' }],
         pnl: { account: { realized: -57_000, unrealized: 0, total: -57_200 } }, // -85,000 + 28,000
@@ -2204,11 +2204,12 @@ const swaption = {
       },
     },
     {
-      // The swap terminated with Dealer J at 0.30 per 100: 30,000 received T+2 (Monday 22 June). Its 100,000 comes back and
+      // The swap terminated with Dealer J at 0.30 per 100: 30,000 received T+2, Tuesday 23 June (Friday 19 June is
+      // Juneteenth, closed on the US dollar calendar). Its 100,000 comes back and
       // its payments are no longer scheduled.
-      id: 'terminate-swap', covers: ['termination at a stated amount', 'close'], action: 'close', lot: 'payers', scope: 'strategy', percent: 100, order: { statedPrice: 0.30 },
+      id: 'terminate-swap', covers: ['termination at a stated amount', 'close'], action: 'close', lot: 'payers', instrument: 'swap', scope: 'strategy', percent: 100, order: { statedPrice: 0.30 },
       expect: {
-        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'swap', qty: 10_000_000, estimate: 0.3, model: 'stated-price', settleDate: '2026-06-22', cash: 30_000, fees: 0 }] },
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'swap', qty: 10_000_000, estimate: 0.3, model: 'stated-price', settleDate: '2026-06-23', cash: 30_000, fees: 0 }] },
         result: { orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 10_000_000, avgPrice: 0.3 }] },
         events: [
           { type: 'strategy.legs_added' },
@@ -2217,14 +2218,14 @@ const swaption = {
         ],
         cash: { account: { USD: { settled: 942_800, margin: 0, unsettled: 30_000, availableToTrade: 972_800, availableToWithdraw: 942_800 } } },
         positions: [], holdings: { swap: null }, otc: [], lifecycle: [],
-        pending: [{ instrument: 'swap', owner: 'account', dueDate: '2026-06-22', amount: 30_000, ccy: 'USD', into: 'cash' }],
+        pending: [{ instrument: 'swap', owner: 'account', dueDate: '2026-06-23', amount: 30_000, ccy: 'USD', into: 'cash' }],
         pnl: { account: { realized: -27_000, unrealized: 0, total: -27_200 } },
         nav: { account: 972_800, book: 2_972_800 },
         balance: { account: { cash: 942_800, margin: null, receivable: 30_000, positions: null, assets: 972_800, liabilities: 0, netAssets: 972_800 } },
       },
     },
     {
-      id: 'settle-termination', covers: 'settlement', action: 'clock', to: at('2026-06-22'),
+      id: 'settle-termination', covers: ['settlement', 'holiday'], action: 'clock', to: at('2026-06-23'),
       expect: {
         events: [{ type: 'settlement.receive', summary: 'received 30,000.00 USD into settled cash', cash: { USD: 30_000 } }],
         cash: { account: { USD: { settled: 972_800, unsettled: 0, availableToTrade: 972_800, availableToWithdraw: 972_800 } } },
