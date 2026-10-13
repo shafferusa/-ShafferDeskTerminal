@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 84.8% of the pass** (last milestone 2026-10-13T19:42Z, b4: bond floating coupon with several holders paid at the period's own rate (fix + regression test); PIK engine in progress)
+**Completeness: about 85.0% of the pass** (last milestone 2026-10-13T19:44Z, s2: equity_trs passes at engine, API and browser (first-period dividend pass-through fixed; EUR contract in a USD Book))
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 

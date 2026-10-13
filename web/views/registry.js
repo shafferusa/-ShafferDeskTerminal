@@ -709,6 +709,13 @@ function LifecycleAdmin({ inst, onChanged }) {
       text: r === 0 ? `${t.seniorTranche} is retired, recorded by hand. ${name} receives principal from now on: record its own factor as a paydown. No cash moves now; every holder gets a history line.`
         : `${t.seniorTranche} has ${fmtNum(r, 0)} outstanding (was ${fmtNum(t.seniorRemaining, 0)}), recorded by hand. ${name} still receives no principal: its paydowns stay refused until ${t.seniorTranche} is retired. No cash moves; every holder gets a history line.` };
   };
+  // b4: a coupon of a deferrable tranche or a PIK-toggle loan, elected to be paid in kind.
+  const pik = () => {
+    const d = v.pikDate || '';
+    if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) return { invalid: 'Enter the coupon date as YYYY-MM-DD, or leave it empty for the next coupon.' };
+    return { action: 'pik', body: { couponDate: d || undefined }, confirm: 'Record coupon paid in kind', done: 'Coupon to be paid in kind recorded.',
+      text: `The coupon of ${d || 'the next coupon date'} on ${name} is paid in kind, recorded by hand: interest goes on being earned, and on the payment date it is added to principal for every holder, in every Book, instead of being paid in cash. The factor rises by the coupon, each position's cost rises by its coupon, and later interest runs on the larger principal.` };
+  };
   const suspend = (on) => ({ action: 'suspend_coupon', body: { suspended: on }, confirm: on ? 'Suspend coupons' : 'Resume coupons', done: on ? 'Coupons suspended.' : 'Coupons resumed.',
     text: on ? `No coupon accrues or is paid on ${name} for any holder, in any Book, until coupons are resumed. Coupon dates that pass while suspended are listed in the history as not paid and are not paid later. Interest accrued and not yet received is reversed out of coupon and interest income for every holder (non-accrual), and the bond trades flat, without accrued interest, until coupons are resumed.`
       : `Coupon accrual and payment restart on ${name} for every holder, in every Book. Coupon dates that passed while suspended are not paid afterwards; record any catch-up payment by hand.` });
@@ -735,6 +742,9 @@ function LifecycleAdmin({ inst, onChanged }) {
       <${Field} label="Kind of write-down"><${Select} value=${v.wdKind || (inst.productId === 'coco_bond' ? 'writedown' : 'loss')} onChange=${(x) => { setV({ ...v, wdKind: x }); setStep(null); }} options=${[{ value: 'writedown', label: 'Trigger event: write-down' }, { value: 'loss', label: 'Realized loss allocated' }]} /><//>
       <${Field} label="Write-down effective from" hint="Today if empty; for a monthly pool, the first day of the period"><${Text} type="date" value=${v.wdFrom || ''} onInput=${(x) => { setV({ ...v, wdFrom: x }); setStep(null); }} /><//>
       ${button('Review write-down', writeDown)}</div>` : null}
+    ${inst.family === 'bond' && t.pikAllowed ? html`<div class="grid-form" style=${GRID}>
+      <${Field} label="Coupon paid in kind" hint=${`Deferrable: the coupon date to capitalise. The next coupon if empty.${t.pikCoupons?.length ? ` Paid in kind so far: ${t.pikCoupons.join(', ')}.` : ''}`}><${Text} type="date" value=${v.pikDate || ''} onInput=${(x) => { setV({ ...v, pikDate: x }); setStep(null); }} /><//>
+      ${button('Review coupon paid in kind', pik)}</div>` : null}
     ${inst.family === 'bond' && t.seniorTranche ? html`<div class="grid-form" style=${GRID}>
       <${Field} label="Senior tranche now outstanding" hint=${t.seniorRemaining > 0 ? `${t.seniorTranche}: ${fmtNum(t.seniorRemaining, 0)} outstanding of ${fmtNum(t.seniorBalance, 0)}. From the remittance report; 0 when retired.` : `${t.seniorTranche} is retired: this tranche receives principal.`}><${Num} value=${v.srRemaining ?? null} onInput=${(x) => { setV({ ...v, srRemaining: x }); setStep(null); }} /><//>
       ${t.seniorRemaining > 0 ? button('Review senior tranche balance', seniorBalance) : null}</div>` : null}

@@ -399,4 +399,10 @@ export const actions = {
     await t.http.post('/api/demo/hedge-script', resolveRefs(step.script, ctx));
     return {};
   },
+
+  /** t2: repay a loan that a package's financing leg drew: the Repay button on the Account's borrowings (drivers/browser/loan.mjs). */
+  async repay(ui, t, ctx, step, tools) {
+    const loan = await import('./loan.mjs');
+    return loan.actions.repay(ui, t, ctx, step, tools);
+  },
 };

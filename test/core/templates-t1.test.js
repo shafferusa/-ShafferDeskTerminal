@@ -27,3 +27,25 @@ test('a cover is paid from the short\'s restricted collateral: the preview does 
   assert.equal(r.strategy.status, 'closed', 'the order engine pays the cover from restricted cash, as the preview said');
   assert.deepEqual(ledgerImbalance(app), []);
 });
+
+test('a resized short holds two borrows; closing half returns half of each, as together they support what is still short', async () => {
+  const { app, inst } = makeApp();
+  const { book, acct } = makeBook(app);
+  pin(app, inst.ALFA, 200, 200.04);
+  const s = await trade(app, { bookId: book.id, unitId: acct.id, template: 'short', underlyingId: inst.ALFA.id, quantity: 100 });
+  const grow = await app.packages.previewAction(s.id, 'resize', { factor: 2 });
+  assert.deepEqual(grow.legs.map((l) => [l.kind, l.qty]), [['borrow_sec', 100], ['trade', 100]], 'the resize borrows again');
+  await app.packages.submit({ bookId: book.id, unitId: acct.id, template: 'custom', attachTo: s.id, intent: 'resize', legs: grow.legs, clientToken: grow.token, confirm: true });
+  const half = await app.packages.previewAction(s.id, 'close', { fraction: 0.5 });
+  assert.deepEqual(half.legs.map((l) => [l.kind, l.qty]), [['trade', 100], ['return_sec', 50], ['return_sec', 50]]);
+  const r = await app.packages.submit({ bookId: book.id, unitId: acct.id, template: 'custom', attachTo: s.id, intent: 'close', legs: half.legs, clientToken: half.token, confirm: true });
+  const last = r.strategy.orders.filter((o) => o.submission === half.token);
+  assert.deepEqual(last.map((o) => [o.kind, o.status]), [['trade', 'filled'], ['return_sec', 'filled'], ['return_sec', 'filled']], last.map((o) => o.statusReason).join(' | '));
+  const left = r.strategy.positions.filter((p) => p.family === 'secloan').reduce((a, p) => a + p.qty, 0);
+  assert.equal(left, 100, '200 borrowed, 100 returned: 100 still borrowed against the 100 still short');
+  assert.equal(r.strategy.positions.find((p) => p.family === 'equity').qty, -100);
+  // A return beyond what the short leaves free is still refused.
+  const tooMuch = await app.packages.preview({ bookId: book.id, unitId: acct.id, template: 'custom', attachTo: s.id, legs: [{ kind: 'return_sec', action: 'return_sec', purpose: 'financing', targetPositionId: r.strategy.positions.find((p) => p.family === 'secloan').positionId, qty: 50 }] });
+  assert.ok(tooMuch.checks.some((c) => c.level === 'error' && /still sold short against this borrow/.test(c.message)));
+  assert.deepEqual(ledgerImbalance(app), []);
+});

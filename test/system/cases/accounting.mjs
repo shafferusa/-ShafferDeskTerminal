@@ -778,15 +778,12 @@ async function readScreensAt(b, c, name, ctx) {
   const { shown } = await import('../../matrix/drivers/browser.mjs');
   const near2 = (s, want, label) => c.ok(s && s.value !== null && Math.abs(s.value - want) <= 0.5 * 10 ** -s.dp + 1e-9, L(label), `expected ${want}, the screen shows "${s?.text}"`);
 
-  // The Book selector, as a user does.
-  if (!b.entered) {
-    await ui.goto('#/books');
-    const selector = page.locator('.topbar select').first();
-    await selector.selectOption({ label: 'Verification Book' });
-    b.entered = true;
-  }
+  // The Book selector, as a user does; the post-trade hedge prompts of the Marketplace trades are closed as a user closes them.
+  const { enter, closeHedgePopup } = await import('../lib/browser-cases.mjs');
+  const go = async (hash) => { await ui.goto(hash); await closeHedgePopup(b); };
+  if (!b.entered) await enter(b, { id: ctx.ids.book, name: 'Verification Book' }, '#/accounting');
   // Balance sheet, whole Book: the consolidation worksheet.
-  await ui.goto('#/accounting/balance/book');
+  await go('#/accounting/balance/book');
   await page.locator('main .bs-body table').first().waitFor();
   await ui.drawn();
   const grid = await page.evaluate(() => {
@@ -821,7 +818,7 @@ async function readScreensAt(b, c, name, ctx) {
 
   // P&L statement, whole Book.
   if (X.pnl?.book) {
-    await ui.goto('#/accounting/pnl/book');
+    await go('#/accounting/pnl/book');
     await page.locator('main header h3', { hasText: /^Statement for/ }).first().waitFor();
     await ui.drawn();
     const stmt = (await ui.tables(page.locator('main'))).find((t) => /^Statement for/.test(t.title));
@@ -834,7 +831,7 @@ async function readScreensAt(b, c, name, ctx) {
   }
 
   // Positions, whole Book: the net asset value and what makes it provisional; gross holdings.
-  await ui.goto('#/accounting/positions/book');
+  await go('#/accounting/positions/book');
   await page.locator('main .stat .k', { hasText: /^Net asset value/ }).first().waitFor();
   await page.locator('main table thead th', { hasText: /^Cash, \d+ owners/ }).first().waitFor();
   await ui.drawn();
@@ -858,7 +855,7 @@ async function readScreensAt(b, c, name, ctx) {
 
   // Treasury alone: its own balances, and the Accounts' borrowings under oversight, not in its liabilities.
   if (X.units?.T?.liabilities !== undefined) {
-    await ui.goto('#/accounting/balance/treasury');
+    await go('#/accounting/balance/treasury');
     await page.locator('main .bs-body table').first().waitFor();
     await ui.drawn();
     const tl = await page.evaluate(() => [...document.querySelectorAll('main .bs-body tbody tr')].map((tr) => [...tr.children].map((td) => td.innerText.trim())));

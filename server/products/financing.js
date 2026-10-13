@@ -851,7 +851,12 @@ export const secloan = {
       // Borrowed securities can only go back once the short they support has been covered.
       const short = app.positions.find(unit.id, inst.underlying_id, pos.strategy_id);
       const shortQty = short && short.qty < 0 ? -short.qty : 0;
-      if (pos.qty - qty < shortQty - 1e-9) out.push(`${fmtQty(shortQty)} is still sold short against this borrow. Buy to cover before returning the securities.`);
+      // t1: a strategy can hold more than one borrow of the same security (a resized short borrows again): together they
+      // support the short, so what may go back is what all of them hold beyond it, not what this one record holds alone.
+      const others = app.positions.list({ unitIds: [unit.id], strategyId: pos.strategy_id })
+        .filter((p) => p.id !== pos.id && p.qty > 0 && app.instruments.get(p.instrument_id)?.family === 'secloan' && app.instruments.get(p.instrument_id)?.underlying_id === inst.underlying_id)
+        .reduce((a, p) => a + p.qty, 0);
+      if (pos.qty + others - qty < shortQty - 1e-9) out.push(`${fmtQty(shortQty)} is still sold short against this borrow. Buy to cover before returning the securities.`);
     }
     return out;
   },

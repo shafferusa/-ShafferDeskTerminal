@@ -68,7 +68,8 @@ const otcTicket = ({ instrument, side, qty, upfront, ...rest }) => ({ action: 't
 //   coupon Mon 22 June: 15,000,000 x 1% x 94/360 = 39,166.67 paid; the 8,888.89 received at trade is settled with it,
 //     so the premium cost is 30,277.78 = 10,000,000 x 75/360 x 1% (8 April to 22 June) + 5,000,000 x 68/360 x 1%
 //   40% terminated on Wed 15 July at 0.90: 6,000,000 x 0.90 / 100 = 54,000.00 received; step-in 16 July, 24 days:
-//     6,000,000 x 1% x 24/360 = 4,000.00 paid; settles Mon 20 July
+//     6,000,000 x 1% x 24/360 = 4,000.00 paid, the premium for the time the 6,000,000 was held: realized at once;
+//     settles Mon 20 July
 //   failure to pay on Thu 27 August, auction final price 32.5 recorded on Tue 15 September, settling Fri 18 September:
 //     protection 9,000,000 x (1 - 0.325) = 6,075,000.00; accrued premium 22 June to 27 August included = 67 days:
 //     9,000,000 x 1% x 67/360 = 16,750.00; net receivable 6,058,250.00
@@ -274,7 +275,8 @@ const cdsSingleName = {
     },
     {
       // 6,000,000 terminated at 0.90: 54,000.00 received; cost out 220,000 x 6/15 = 88,000.00; realized -34,000.00.
-      // Accrued 22 June to the step-in date 16 July, 24 days, paid: 6,000,000 x 1% x 24/360 = 4,000.00. Settles Mon 20 July.
+      // Accrued 22 June to the step-in date 16 July, 24 days, paid: 6,000,000 x 1% x 24/360 = 4,000.00, premium for the time
+      // the terminated part was held: realized with the termination (nothing is carried to the next coupon). Settles Mon 20 July.
       id: 'partial-termination', covers: ['reduce', 'partial termination', 'accrued at trade', 'collateral'], action: 'close', lot: 'cds', scope: 'strategy', percent: 40, order: { statedPrice: 0.90 },
       expect: {
         preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 6_000_000, estimate: 0.9, model: 'stated-price', settleDate: '2026-07-20', cash: 50_000, accrued: -4_000, fees: 120 }] }, // 54,000 - 4,000 accrued paid by the closing buyer; 6,000,000 x 0.00002
@@ -282,16 +284,17 @@ const cdsSingleName = {
         events: [
           { type: 'strategy.legs_added' },
           { type: 'trade.fill', summary: 'Sold 6,000,000 HFL-CDS-0631 @ 0.90 USD (realized -34,000.00 USD); premium accrued from 2026-06-22 to the step-in date 2026-07-16 (24 days), 4,000.00 USD, paid to the counterparty with the settlement' },
+          { type: 'cds.accrued', summary: 'Premium accrued on the 6,000,000 terminated on HFL-CDS-0631, 4,000.00 USD, paid with the termination: realized as premium for the time it was held' },
           { type: 'cds.collateral', summary: `Collateral returned on ${HFL_NAME} under its position-level terms: 60,000.00 USD (independent amount, 1.00% of 9,000,000.00 USD notional)`, cash: { USD: 60_000 } },
         ],
         cash: { account: { USD: { settled: 1_659_422.22, unsettled: 49_880, margin: 90_000, availableToTrade: 1_709_302.22, availableToWithdraw: 1_659_422.22 } } }, // 50,000 - 120
-        positions: [{ instrument: 'main', lot: 'cds', qty: 9_000_000, cost: 132_000, avgCost: 1.4666667, price: 0.9, value: 81_000, unrealized: -51_000, notional: 9_000_000, margin: 90_000, accrued: 4_000 }],
+        positions: [{ instrument: 'main', lot: 'cds', qty: 9_000_000, cost: 132_000, avgCost: 1.4666667, price: 0.9, value: 81_000, unrealized: -51_000, notional: 9_000_000, margin: 90_000, accrued: 0 }],
         holdings: { main: { long: 9_000_000, short: 0, net: 9_000_000 } },
         pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-07-20', amount: 49_880, ccy: 'USD', into: 'cash' }],
         otc: [{ instrument: 'main', qty: 9_000_000, markValue: 81_000, iaRequired: 90_000, iaPosted: 90_000 }],
-        pnl: { account: { realized: -64_277.78, commissions: -420, unrealized: -51_000, total: -115_697.78 } },
-        nav: { account: 1_884_302.22, book: 4_884_302.22 },
-        balance: { account: { cash: 1_659_422.22, margin: 90_000, receivable: 49_880, positions: 81_000, accruedIncome: 4_000, assets: 2_116_802.22, liabilities: 232_500, netAssets: 1_884_302.22 } },
+        pnl: { account: { realized: -68_277.78, commissions: -420, unrealized: -51_000, total: -119_697.78 } }, // -30,277.78 - 34,000 - 4,000
+        nav: { account: 1_880_302.22, book: 4_880_302.22 },
+        balance: { account: { cash: 1_659_422.22, margin: 90_000, receivable: 49_880, positions: 81_000, assets: 2_112_802.22, liabilities: 232_500, netAssets: 1_880_302.22 } },
       },
     },
     {
@@ -300,7 +303,7 @@ const cdsSingleName = {
         events: [{ type: 'collateral.variation', summary: 'Variation margin under position-level terms: 151,500.00 USD returned to the counterparty. Netting set of 1 position marked at 81,000.00 USD; threshold 0.00 USD.' }], // 232,500 - 81,000
         cash: { account: { USD: { restricted: 81_000 } } },
         otc: [{ instrument: 'main', vmHeld: 81_000, vmExposure: 81_000 }],
-        balance: { account: { restricted: 81_000, collateralReceived: 81_000, assets: 1_965_302.22, liabilities: 81_000 } },
+        balance: { account: { restricted: 81_000, collateralReceived: 81_000, assets: 1_961_302.22, liabilities: 81_000 } },
       },
     },
     {
@@ -326,8 +329,8 @@ const cdsSingleName = {
     {
       // Failure to pay on 27 August; auction final price 32.5 (recovery 0.325); auction settlement Friday 18 September.
       // Protection 9,000,000 x 0.675 = 6,075,000.00; accrued premium 22 June to 27 August included, 67 days:
-      // 9,000,000 x 1% x 67/360 = 16,750.00; receivable 6,058,250.00. Cost 132,000 and the 4,000 of accrued income
-      // paid at the termination are realized with it: 6,058,250 - 132,000 - 4,000 = 5,922,250.00 realized.
+      // 9,000,000 x 1% x 67/360 = 16,750.00; receivable 6,058,250.00. The cost left, 132,000, is realized with it:
+      // 6,058,250 - 132,000 = 5,926,250.00 realized.
       id: 'failure-to-pay', covers: ['credit event', 'cash settlement', 'collateral'], action: 'instrument_lifecycle', instrument: 'main',
       body: { action: 'credit_event', eventType: 'failure_to_pay', eventDate: '2026-08-27', recovery: 0.325, settlement: 'auction', settleDate: '2026-09-18' },
       expect: {
@@ -340,9 +343,9 @@ const cdsSingleName = {
         cash: { account: { USD: { settled: 1_799_302.22, unsettled: 6_058_250, margin: 0, restricted: 0, availableToTrade: 7_857_552.22, availableToWithdraw: 1_799_302.22 } } },
         positions: [], holdings: { main: null }, lifecycle: [], otc: [],
         pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-09-18', amount: 6_058_250, ccy: 'USD', into: 'cash' }],
-        pnl: { account: { realized: 5_857_972.22, commissions: -420, unrealized: 0, total: 5_857_552.22 } }, // -64,277.78 + 5,922,250
+        pnl: { account: { realized: 5_857_972.22, commissions: -420, unrealized: 0, total: 5_857_552.22 } }, // -68,277.78 + 5,926,250
         nav: { account: 7_857_552.22, book: 10_857_552.22 },
-        balance: { account: { cash: 1_799_302.22, receivable: 6_058_250, margin: null, restricted: null, collateralReceived: null, positions: null, accruedIncome: null, assets: 7_857_552.22, liabilities: 0, netAssets: 7_857_552.22 } },
+        balance: { account: { cash: 1_799_302.22, receivable: 6_058_250, margin: null, restricted: null, collateralReceived: null, positions: null, assets: 7_857_552.22, liabilities: 0, netAssets: 7_857_552.22 } },
       },
     },
     {

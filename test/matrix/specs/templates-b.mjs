@@ -1603,7 +1603,8 @@ const longStrangle = {
         events: [
           { type: 'strategy.legs_added' },
           { type: 'accrual.interest', summary: `Interest accrued on ${LOAN}: 0.60 USD`, date: '2026-03-23' },
-          { type: 'loan.repayment', summary: /^Repaid 1,440\.00 USD of principal/, owner: 'account', date: '2026-03-23' },
+          { type: 'loan.repayment', summary: /^Repaid 1,440\.00 USD of principal on Margin loan USD \(Long Strangle NFX\) \(in full\)/, cash: { USD: -1_440 }, owner: 'account', date: '2026-03-23' },
+          { type: 'interest.payment', summary: `Interest paid on ${LOAN}: 4.20 USD`, cash: { USD: -4.20 }, owner: 'account' },
         ],
         cash: { account: { USD: { settled: 3_271.25, unsettled: 0, availableToTrade: 3_271.25, availableToWithdraw: 3_271.25, borrowed: 0 } } }, // 4,715.45 - 1,444.20
         positions: [],

@@ -521,16 +521,16 @@
   "SA:accounting:verification-book": {
    "status": "passed",
    "message": "transfer that would use restricted proceeds and reserved cash: \"South has 515,216.70 USD of settled USD available; 520,000.00 USD requested.\"\ntransfer that would use posted margin and cash collateral received: \"North has 1,007,657.50 USD of settled USD available; 1,050,000.00 USD requested.\"",
-   "ms": 1496,
+   "ms": 1908,
    "checks": 1154,
    "area": "accounting",
    "case": "verification-book",
    "title": "Accounting verified against hand-worked figures: one Book, Treasury and two Accounts, every situation of section 7",
-   "commit": "a719298+changes",
-   "at": "2026-10-13T19:41:30.876Z"
+   "commit": "00467ff+changes",
+   "at": "2026-10-13T19:44:04.870Z"
   }
  },
- "updatedAt": "2026-10-13T19:41:30.876Z",
+ "updatedAt": "2026-10-13T19:44:04.870Z",
  "environment": {
   "node": "v22.22.0",
   "platform": "linux",
