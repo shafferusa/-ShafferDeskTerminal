@@ -175,7 +175,7 @@ const ROWS = [
   ['treasury_future', 'Treasury future', 'Futures', 'future', 'deriv', F, 'Closed out in cash at final settlement; delivery is not simulated.'],
   ['stir_future', 'Short-term interest-rate future', 'Futures', 'future', 'deriv', F, ''],
   ['fx_future', 'FX future', 'Futures', 'future', 'deriv', F, 'Closed out in cash at final settlement; currency delivery is not simulated.'],
-  ['commodity_future', 'Commodity future', 'Futures', 'future', 'deriv', F, 'Closed out in cash at final settlement; physical delivery is not simulated.'],
+  ['commodity_future', 'Commodity future', 'Futures', 'future', 'deriv', F, 'Daily variation margin. A physically delivered contract with its deliverable set as Underlying is delivered on paper (simulated) at final settlement, or earlier on a short\'s delivery notice inside the delivery window: goods received or given up at the invoice amount. Cash-settled contracts, or physical ones without a deliverable, are closed out in cash.'],
   ['volatility_future', 'Volatility future', 'Futures', 'future', 'deriv', F, ''],
   ['dividend_future', 'Dividend future', 'Futures', 'future', 'deriv', F, ''],
   ['crypto_future', 'Cryptocurrency future', 'Futures', 'future', 'deriv', F, ''],

@@ -14,7 +14,7 @@
 import { html, useEffect, useState } from '../vendor/preact-htm.js';
 import { bump, fmtMoney, fmtNum, fmtQty, fmtTime, get, isNum, openOverlay, post, refreshStatus, setUnit, toast, toastError, useLive } from '../lib/core.js';
 import { Awaiting, Button, Empty, ErrorNote, Field, Missing, Modal, Money, NavAffected, NavValue, Notice, Num, Panel, Pill, Price, Prov, Seg, Select, Stat, Table, Tabs, Text } from '../lib/ui.js';
-import { ContractFields, draftToContract, newDraft, PositionPicker } from '../lib/contracts.js';
+import { ContractFields, draftToContract, InstrumentPicker, newDraft, PositionPicker } from '../lib/contracts.js';
 import { openPreview } from './preview.js';
 import { CollateralDesk } from './agreements.js';
 
@@ -436,7 +436,36 @@ const closeArrangement = (a, onDone) => {
     { openOverlay, toastError, onDone, confirmLabel: c.confirm });
 };
 const arrangementActions = (a, onDone) => html`${a.family !== 'secloan' ? html`<${Button} small onClick=${() => openOverlay((close) => html`<${RateDialog} a=${a} onClose=${close} onDone=${onDone} />`)}>Set rate<//> ` : null}
-  <${Button} small title="Opens the preview. A part repayment can be entered there." onClick=${() => closeArrangement(a, onDone)}>${CLOSE[a.family](a).label}<//>`;
+  <${Button} small title="Opens the preview. A part repayment can be entered there." onClick=${() => closeArrangement(a, onDone)}>${CLOSE[a.family](a).label}<//>
+  ${a.family === 'repo' && a.rawTerms && !BSB.includes(a.instrument?.productId) ? html` <${Button} small title="A margin call met, excess collateral returned, or a substitution" onClick=${() => openOverlay((close) => html`<${CollateralDialog} a=${a} onClose=${close} onDone=${onDone} />`)}>Collateral<//>` : null}`;
+
+// ---- repo collateral changes (r1) --------------------------------------------------------------------------------
+const BSB = ['buy_sell_back', 'sell_buy_back'];
+const COLL_CHANGES = [{ value: 'pledge', label: 'More collateral (margin call)' }, { value: 'release', label: 'Return of excess collateral' }, { value: 'substitute', label: 'Substitution' }];
+/**
+ * A change of collateral on an open repo or reverse repo, agreed with the counterparty and recorded by hand. A repo pledges
+ * the borrower's own positions; a reverse repo records what the counterparty delivers. The cover after a return or a
+ * substitution must still meet what is owed with repo interest: the Terminal refuses otherwise and says by how much.
+ */
+function CollateralDialog({ a, onClose, onDone }) {
+  const repoSide = a.qty < 0;
+  const [f, setF] = useState({ change: 'pledge', qty: null, pos: null, instrumentId: '' });
+  const t = useTicket(onClose, onDone);
+  const held = a.rawTerms?.collateralQty;
+  const sym = a.related?.symbol || a.related?.name || 'collateral';
+  const go = () => t.record(() => post(`/api/positions/${a.positionId}/lifecycle`, { action: 'collateral', change: f.change, qty: f.qty, positionId: f.pos?.positionId, instrumentId: f.instrumentId || undefined }), 'Collateral change recorded.');
+  const ready = f.qty > 0 && (f.change !== 'substitute' || (repoSide ? f.pos : f.instrumentId));
+  return html`<${Modal} title=${`Collateral on ${a.name}`} sub=${`${unitName(a.owner)}, ${a.direction}: ${fmtQty(held)} ${sym} ${repoSide ? 'pledged' : 'held'}`} onClose=${onClose} footer=${foot(t, onClose, 'Record collateral change', go, !ready)}>
+    <div ...${t.form}><${ErrorNote} error=${t.error} />
+      <div class="grid-form">
+        <${Field} label="Change" span=${2}><${Select} value=${f.change} onChange=${(v) => setF({ ...f, change: v })} options=${COLL_CHANGES} /><//>
+        ${f.change === 'substitute' && repoSide ? html`<${Field} label="Position pledged instead" span=${2} hint="A long position of the same owner, not pledged or on loan."><${PositionPicker} value=${f.pos?.positionId || ''} onChange=${(v, p) => setF({ ...f, pos: p || null })} bookId=${a.bookId} unitId=${a.unitId} families=${['bond', 'equity', 'fund']} direction="long" /><//>` : null}
+        ${f.change === 'substitute' && !repoSide ? html`<${Field} label="Security received instead" span=${2}><${InstrumentPicker} value=${f.instrumentId} onChange=${(v) => setF({ ...f, instrumentId: v || '' })} families=${['bond', 'equity', 'fund']} /><//>` : null}
+        <${Field} label=${f.change === 'substitute' ? 'Quantity of the new security' : f.change === 'pledge' ? (repoSide ? 'Quantity pledged in addition' : 'Quantity received in addition') : 'Quantity returned'}><${Num} value=${f.qty} onInput=${(v) => setF({ ...f, qty: v })} /><//>
+      </div>
+      <p class="note">${repoSide ? 'The securities are this owner\'s own: more collateral is pledged from the same position and cannot be sold or lent; a return releases it.' : 'The securities are held, not owned: only the record of what the counterparty has delivered changes.'} After a return or a substitution the collateral, less the haircut, must still cover the principal and the repo interest owed.</p>
+    </div><//>`;
+}
 
 /**
  * The borrowing register as a table: one row per external borrowing, each with its one ID and its owner.

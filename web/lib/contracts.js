@@ -8,6 +8,9 @@ import { Button, Check, Field, Holdings, Num, Select, Text } from './ui.js';
 
 const DAY_COUNTS = ['ACT/360', 'ACT/365', 'ACT/ACT', '30/360', '30E/360'].map((d) => ({ value: d, label: d }));
 const yes = () => true;
+const LINKER_IDS = ['tips', 'foreign_inflation_linked'];
+const CONVERTIBLE_IDS = ['convertible_bond', 'exchangeable_bond'];
+const SECURITISED_IDS = ['mbs', 'rmbs', 'cmbs', 'agency_mbs', 'non_agency_mbs', 'specified_pool', 'abs', 'cmo', 'clo', 'cdo'];
 const opt = (list) => list.map((x) => (Array.isArray(x) ? { value: x[0], label: x[1] } : { value: x, label: x }));
 
 /**
@@ -104,22 +107,28 @@ const F = {
     { path: 'terms.payout', label: 'Digital payout per unit', type: 'number', show: (d) => d.terms.optionType === 'digital' },
     { path: 'terms.barrier.type', label: 'Barrier', type: 'select', options: opt([['up-in', 'Up and in'], ['up-out', 'Up and out'], ['down-in', 'Down and in'], ['down-out', 'Down and out']]), show: (d) => d.terms.optionType === 'barrier' },
     { path: 'terms.barrier.level', label: 'Barrier level', type: 'number', show: (d) => d.terms.optionType === 'barrier' },
-    { path: 'terms.exercise', label: 'Exercise style', type: 'select', options: opt([['european', 'European'], ['american', 'American']]), default: 'european' },
+    { path: 'terms.exercise', label: 'Exercise style', type: 'select', options: opt([['european', 'European'], ['american', 'American'], ['bermudan', 'Bermudan']]), default: 'european' },
+    { path: 'terms.exerciseDates', label: 'Bermudan exercise dates', type: 'text', span: 2, hint: 'YYYY-MM-DD, separated by commas. Exercise is refused on any other day before expiration.', show: (d) => d.terms.exercise === 'bermudan' },
     { path: 'terms.settlement', label: 'Settlement', type: 'select', options: opt([['cash', 'Cash'], ['physical', 'Physical delivery']]), default: 'cash' },
-    { path: 'multiplier', label: 'Multiplier', type: 'number', hint: 'Usually 1: quantity is underlying units' },
+    { path: 'multiplier', label: 'Multiplier', type: 'number', hint: 'Usually 1: quantity is underlying units (0.01 for a bond option quoted per 100 of face)' },
+    { path: 'terms.deliverable.units', label: 'Deliverable units per unit of quantity', type: 'number', hint: 'Physical settlement. Empty: worked out from the multipliers (1 share a share; 1 of face a unit of face for a bond option)', show: (d) => d.terms.settlement === 'physical' },
     { path: 'terms.counterparty', label: 'Counterparty', type: 'text' },
     { path: 'terms.collateralBasis', type: 'collateral' },
     { path: 'terms.collateral', label: 'Other collateral terms', type: 'text', span: 2, hint: 'Free text. Recorded, not simulated.' },
   ],
   future: [
-    { path: 'underlyingId', label: 'Underlying', type: 'instrument', span: 2, hint: 'Optional' },
+    { path: 'underlyingId', label: 'Underlying', type: 'instrument', span: 2, hint: 'Optional. For a physically delivered contract, the deliverable asset: delivery is then simulated on paper at final settlement.' },
     { path: 'terms.root', label: 'Contract root', type: 'text', hint: 'Shared by all months of one contract' },
     { path: 'terms.perpetual', label: 'Perpetual (no expiry)', type: 'check' },
     { path: 'terms.expiration', label: 'Last trading day', type: 'date', show: (d) => !d.terms.perpetual, required: true },
     { path: 'multiplier', label: 'Contract multiplier (point value)', type: 'number', required: true },
     { path: 'terms.tickSize', label: 'Tick size', type: 'number' },
     { path: 'terms.initialMargin', label: 'Initial margin per contract', type: 'number', hint: 'From contract data. None is posted if left empty.' },
-    { path: 'terms.settlement', label: 'Settlement', type: 'select', options: opt([['cash', 'Cash'], ['physical', 'Physical (closed out in cash here)']]), default: 'cash' },
+    { path: 'terms.settlement', label: 'Settlement', type: 'select', options: opt([['cash', 'Cash'], ['physical', 'Physical delivery']]), default: 'cash', hint: 'Physical: delivered on paper (simulated) when the deliverable is set as Underlying; otherwise, and for bond futures, closed out in cash.' },
+    { path: 'terms.delivery.units', label: 'Deliverable units per contract', type: 'number', show: (d) => d.terms.settlement === 'physical' && !d.terms.perpetual, hint: 'In the deliverable\'s quantity unit. Defaults to the multiplier.' },
+    { path: 'terms.delivery.firstNotice', label: 'First notice day', type: 'date', show: (d) => d.terms.settlement === 'physical' && !d.terms.perpetual, hint: 'The delivery window opens. Defaults to the last trading day.' },
+    { path: 'terms.delivery.grade', label: 'Deliverable grade', type: 'text', show: (d) => d.terms.settlement === 'physical' && !d.terms.perpetual },
+    { path: 'terms.delivery.location', label: 'Delivery location', type: 'text', show: (d) => d.terms.settlement === 'physical' && !d.terms.perpetual },
     { path: 'terms.priceUnits', label: 'Quoted in', type: 'text', span: 2, hint: 'The unit of its price, shown on the ticket: index points, % of par, 100 minus the rate, JPY per EUR, USD per barrel. "Contract price" if left empty.' },
   ],
   fx: [
@@ -161,6 +170,15 @@ const F = {
     { path: 'terms.factor', label: 'Pool factor', type: 'number', hint: 'For securitised paper. 1 otherwise.' },
     { path: 'terms.minDenomination', label: 'Minimum denomination (face)', type: 'number', hint: 'A trade must be a multiple of it. 1 if left empty.' },
     { path: 'terms.seniority', label: 'Seniority', type: 'text' },
+    // Terms particular to structured debt (inflation-linked, callable, puttable, convertible and exchangeable bonds, securitised paper).
+    { path: 'terms.indexRatio', label: 'Index ratio', type: 'number', hint: 'Reference index today / on the dated date, e.g. 1.03514. Entered by hand; no index feed.', show: (d) => LINKER_IDS.includes(d.productId), required: true },
+    { path: 'terms.inflationFloor', label: 'Deflation floor (par at maturity)', type: 'check', hint: 'US TIPS: yes. UK index-linked gilts: no.', show: (d) => LINKER_IDS.includes(d.productId) },
+    { path: 'terms.callSchedule', label: 'Call schedule', type: 'text', span: 2, hint: 'Callable from each date at its price, % of par: 2028-06-15 101; 2029-06-15 100', show: (d) => ['callable_bond', 'coco_bond', 'perpetual_bond'].includes(d.productId) },
+    { path: 'terms.putSchedule', label: 'Put dates and prices', type: 'text', span: 2, hint: 'The holder may put on each date at its price, % of par: 2028-06-15 100', show: (d) => d.productId === 'puttable_bond' },
+    { path: 'underlyingId', label: 'Shares delivered on conversion', type: 'instrument', families: ['equity'], span: 2, hint: 'The issuer\'s own shares (convertible) or another company\'s (exchangeable)', show: (d) => CONVERTIBLE_IDS.includes(d.productId), required: true },
+    { path: 'terms.conversionRatio', label: 'Conversion ratio (shares per 1,000 face)', type: 'number', show: (d) => CONVERTIBLE_IDS.includes(d.productId), required: true },
+    { path: 'terms.paymentDelayDays', label: 'Payment delay (days after the period end)', type: 'number', hint: 'Interest and principal are paid this many days after the accrual period ends: Fannie Mae 24, Ginnie Mae I 14. 0 if empty.', show: (d) => SECURITISED_IDS.includes(d.productId) },
+    { path: 'terms.guarantor', label: 'Guarantor', type: 'text', hint: 'Agency guaranteeing principal and interest. Losses cannot be allocated to a guaranteed pool.', show: (d) => SECURITISED_IDS.includes(d.productId) },
   ],
   loan: [
     { path: 'terms.loanType', label: 'Arrangement', type: 'select', default: 'unsecured', options: opt([['unsecured', 'Unsecured'], ['margin', 'Margin loan'], ['secured', 'Secured'], ['deposit', 'Deposit'], ['cd', 'Certificate of deposit'], ['facility', 'Credit facility drawing']]) },

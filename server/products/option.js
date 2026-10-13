@@ -8,6 +8,7 @@
 import { addBusinessDays } from '../quant/calendar.js';
 import { intrinsic } from '../quant/options.js';
 import { AppError, ISO_DATE_RE, money, need, num } from '../core/util.js';
+import { fmt } from '../core/books.js';
 import { normalizeBasis } from '../core/agreements.js';
 import { bookSecurityFill, fmtQty, valueSecurity } from './common.js';
 import { calendarFor, standardSettleDate } from './security.js';
@@ -22,7 +23,15 @@ function normalizeOption(app, draft, listed) {
   t.strike = num(t.strike);
   if (!(t.strike > 0)) errors.push('Strike must be a positive number.');
   if (!ISO_DATE_RE.test(t.expiration || '')) errors.push('Expiration date is required (YYYY-MM-DD).');
-  t.exercise = ['american', 'european'].includes(t.exercise) ? t.exercise : listed ? 'american' : 'european';
+  // A Bermudan style is OTC only: exercisable on the stated exercise dates and at expiration.
+  t.exercise = (listed ? ['american', 'european'] : ['american', 'european', 'bermudan']).includes(t.exercise) ? t.exercise : listed ? 'american' : 'european';
+  if (t.exercise === 'bermudan') {
+    const raw = Array.isArray(t.exerciseDates) ? t.exerciseDates : String(t.exerciseDates || '').split(/[\s,;]+/);
+    t.exerciseDates = [...new Set(raw.map((x) => String(x).trim()).filter(Boolean))].sort();
+    if (!t.exerciseDates.length) errors.push('A Bermudan option needs its exercise dates (YYYY-MM-DD, separated by commas).');
+    if (t.exerciseDates.some((x) => !ISO_DATE_RE.test(x))) errors.push('Each Bermudan exercise date is a date (YYYY-MM-DD).');
+    else if (ISO_DATE_RE.test(t.expiration || '') && t.exerciseDates.some((x) => x > t.expiration)) errors.push('A Bermudan exercise date cannot be after the expiration date.');
+  } else delete t.exerciseDates;
   t.settlement = ['physical', 'cash'].includes(t.settlement) ? t.settlement : listed ? 'physical' : 'cash';
   t.optionType = t.optionType || 'vanilla';
   let multiplier = num(draft.multiplier);
@@ -38,7 +47,15 @@ function normalizeOption(app, draft, listed) {
     t.deliverable = d;
   } else {
     multiplier = multiplier > 0 ? multiplier : 1;
-    t.deliverable = { units: multiplier, cash: 0 };
+    // Units of the underlying INSTRUMENT that one unit of quantity delivers on physical exercise: the amount that moves
+    // by the same value for one unit of price. The multiplier converts the premium (and the strike) into money; the
+    // underlying's own multiplier does the same for it, and a bond's price is per 100 of face. So an option on 1 share
+    // (multiplier 1) delivers 1 share, a bond option on 1 of face (premium per 100, multiplier 0.01) delivers 1 of face,
+    // and an option on 1 barrel delivers 1/1,000 of a 1,000-barrel future. A stated figure overrides this.
+    const und = draft.underlying_id ? app.instruments.get(draft.underlying_id) : null;
+    const stated = num(t.deliverable?.units);
+    if (stated !== null && !(stated > 0)) errors.push('Deliverable units per unit of quantity must be positive.');
+    t.deliverable = { units: stated ?? (und ? multiplier / ((und.multiplier || 1) * (und.family === 'bond' ? 0.01 : 1)) : multiplier), cash: 0 };
     if (t.optionType === 'digital') {
       t.payout = num(t.payout);
       if (!(t.payout > 0)) errors.push('A digital option needs its fixed payout per unit.');
@@ -125,27 +142,56 @@ export function settleOption(app, { book, unit, inst, pos, S, date, contracts, m
   // Physical settlement: the option closes at zero and the deliverable changes hands at the strike.
   const und = app.instruments.get(inst.underlying_id);
   if (!und) throw new AppError('The option\'s underlying instrument is not in the registry.');
-  const r = bookSecurityFill(app, { ...base, action: closeAction, price: 0, settleDate: date, eventType: long ? 'option.exercised' : 'option.assigned', summary: `${long ? 'Exercised' : 'Assigned'}: ${label} at strike ${t.strike}`, data: { fixing: S ?? null, fixingObsId: obsId, strike: t.strike } }, { unitCost: 0 });
   const units = q * t.deliverable.units;
   // long call / short put receive the underlying; long put / short call deliver it.
   const receives = (t.right === 'C') === long;
+  // A currency pair is delivered by exchanging both currencies at the strike, and only when the side that pays holds the
+  // cash: nothing is borrowed or overdrawn to deliver. Checked before anything is booked, so a refusal changes nothing.
+  if (und.family === 'fx') {
+    const { base: bCcy, quote: qCcy } = und.terms;
+    const payCcy = receives ? qCcy : bCcy, payAmt = money(receives ? units * t.strike : units, payCcy);
+    const have = app.ledger.cash(unit.id, payCcy).availableToTrade;
+    if (have < payAmt - 0.004) {
+      throw new AppError(`${long ? 'Exercise' : 'Assignment'} of ${label} needs ${fmt(payAmt, payCcy)} to deliver against ${fmt(receives ? units : units * t.strike, receives ? bCcy : qCcy)}, and ${unit.kind === 'treasury' ? 'Treasury' : unit.name} has ${fmt(Math.max(have, 0), payCcy)} of ${payCcy} available. Fund it first: the currencies are exchanged only when the paying side holds the cash.`, { code: 'delivery_unfunded' });
+    }
+  }
+  const r = bookSecurityFill(app, { ...base, action: closeAction, price: 0, settleDate: date, eventType: long ? 'option.exercised' : 'option.assigned', summary: `${long ? 'Exercised' : 'Assigned'}: ${label} at strike ${t.strike}`, data: { fixing: S ?? null, fixingObsId: obsId, strike: t.strike } }, { unitCost: 0 });
   const undPlugin = app.products.get(und.family);
   const undPos = app.positions.find(unit.id, und.id, pos.strategy_id);
   let action = receives ? 'buy' : 'sell';
-  if (!receives && und.family !== 'future' && (!undPos || undPos.qty < units - 1e-9)) {
+  if (!receives && !['future', 'fx'].includes(und.family) && (!undPos || undPos.qty < units - 1e-9)) {
     app.alerts.raise({ bookId: book.id, unitId: unit.id, level: 'warning', code: 'delivery.short', refType: 'position', refId: pos.id, message: `${long ? 'Exercise' : 'Assignment'} of ${label} delivered ${fmtQty(units)} ${und.symbol || und.name} that the strategy did not hold. The resulting short position has no securities borrow arranged.` });
   }
   if (receives && undPos && undPos.qty < 0) action = 'buy_to_cover';
   const undSettle = undPlugin.settleDate(app, und, date, book);
+  const how = `${long ? 'exercise' : 'assignment'} of ${inst.symbol || inst.name}`;
+  const deliverySummary = und.family === 'fx'
+    ? `Simulated currency exchange on ${how}: ${receives ? 'bought' : 'sold'} ${fmt(units, und.terms.base)} against ${fmt(units * t.strike, und.terms.quote)} at strike ${t.strike}, value ${undSettle}`
+    : `Simulated delivery: ${receives ? 'received' : 'delivered'} ${fmtQty(units)} ${und.symbol || und.name} at strike ${t.strike}${und.family === 'bond' ? ' plus accrued interest' : ''} on ${how}`;
   const d = undPlugin.fill(app, {
     book, unit, inst: und, action, qty: units, price: t.strike, fees: [], strategyId: pos.strategy_id, tradeDate: date, settleDate: undSettle, actor: mode === 'user' ? 'user' : 'engine',
     // The delivery is a paper entry: the Terminal moves nothing outside its own books, and the history says so.
-    eventType: 'option.delivery', summary: `Simulated delivery: ${receives ? 'received' : 'delivered'} ${fmtQty(units)} ${und.symbol || und.name} at strike ${t.strike} on ${long ? 'exercise' : 'assignment'} of ${inst.symbol || inst.name}`,
+    eventType: 'option.delivery', summary: deliverySummary,
     data: { fromOption: inst.id, simulated: true },
   });
   const undNow = app.positions.find(unit.id, und.id, pos.strategy_id);
   if (undNow && undPlugin.onPositionChange) undPlugin.onPositionChange(app, { book, unit, inst: und, pos: undNow });
   return { outcome: long ? 'exercised' : 'assigned', eventId: r.eventId, realized: r.realized, deliveryEventId: d.eventId };
+}
+
+/**
+ * Whether the holder may exercise today: an American option any day up to expiration, a European one at expiration
+ * only, a Bermudan one (OTC) on its stated exercise dates and at expiration. Refuses with the reason otherwise.
+ */
+function exerciseAllowed(app, inst, verb) {
+  const t = inst.terms;
+  const today = app.clock.today();
+  if (t.exercise === 'american' || today >= t.expiration) return;
+  if (t.exercise === 'bermudan') {
+    need((t.exerciseDates || []).includes(today), `This option is Bermudan: it can only be ${verb} on its exercise dates (${(t.exerciseDates || []).join(', ')}) or at expiration (${t.expiration}). Today is ${today}.`);
+    return;
+  }
+  need(false, 'This option is European: it can only be exercised at expiration.');
 }
 
 function makeOptionPlugin(family, listed) {
@@ -169,8 +215,12 @@ function makeOptionPlugin(family, listed) {
       if (!listed && app?.agreements) rows.push(...app.agreements.describeRows(inst));
       return rows;
     },
-    /** Notional on which a percentage independent amount is worked out: the deliverable at the strike. */
-    collateralNotional: (app, inst, { qtyAfter }) => Math.abs(qtyAfter) * inst.terms.deliverable.units * inst.terms.strike,
+    /**
+     * Notional on which a percentage independent amount is worked out: the deliverable at the strike (quantity x
+     * strike x multiplier, in the trading currency). Only the writer of an option has an obligation to secure: the
+     * buyer has paid the premium and owes nothing more, so a long position calls for no independent amount.
+     */
+    collateralNotional: (app, inst, { qtyAfter }) => (qtyAfter < 0 ? Math.abs(qtyAfter) * inst.terms.strike * inst.multiplier : 0),
     qtyStep: () => (listed ? 1 : 1e-6),
     settleDate: (app, inst, tradeDate, book) => standardSettleDate(inst, tradeDate, book),
     economics(app, { inst, action, qty, price, unit, strategyId, book }) {
@@ -183,7 +233,8 @@ function makeOptionPlugin(family, listed) {
       return {
         ccy: inst.trading_ccy, principal: gross, cash: buy ? -gross : gross, accrued: 0,
         // Notional is the value of the deliverable, which is not the premium paid.
-        notional: qty * (listed ? underlyingUnits(app, inst) : inst.terms.deliverable.units) * (undPx !== null ? undPx : inst.terms.strike),
+        // (OTC: quantity x multiplier x price, the multiplier turning the underlying's price into money as it does the premium.)
+        notional: listed ? qty * underlyingUnits(app, inst) * (undPx !== null ? undPx : inst.terms.strike) : qty * inst.multiplier * (undPx !== null ? undPx : inst.terms.strike),
         notionalBasis: undPx !== null ? 'underlying price' : 'strike (no underlying price available)',
         exposure: null, initialMargin: coll ? coll.initialMargin : 0, ...(coll ? { collateral: coll } : {}), notes: coll ? [...coll.notes] : [],
       };
@@ -195,7 +246,7 @@ function makeOptionPlugin(family, listed) {
       const v = valueSecurity(inst, pos, obs, mark);
       const und = inst.underlying_id ? app.data.price(inst.underlying_id) : null;
       const px = und?.value ?? null;
-      v.notional = px !== null ? money(Math.abs(pos.qty) * (listed ? underlyingUnits(app, inst) : inst.terms.deliverable.units) * px, inst.trading_ccy) : null;
+      v.notional = px !== null ? money(Math.abs(pos.qty) * (listed ? underlyingUnits(app, inst) : inst.multiplier) * px, inst.trading_ccy) : null;
       v.exposure = null;
       return v;
     },
@@ -233,14 +284,21 @@ function makeOptionPlugin(family, listed) {
           needs: [inst.terms.fixingRate ? { kind: 'rate', subject: inst.terms.fixingRate, date: t.expiration } : { kind: 'price', subject: inst.underlying_id, date: t.expiration }],
         };
       }
-      const r = settleOption(app, { book, unit, inst, pos, S: fx.value, date: t.expiration, obs: fx.obs, mode: 'engine' });
+      let r;
+      try {
+        r = settleOption(app, { book, unit, inst, pos, S: fx.value, date: t.expiration, obs: fx.obs, mode: 'engine' });
+      } catch (err) {
+        // A physical currency exchange the paying side cannot fund: nothing was booked; the item fails visibly and is retried.
+        if (err.code === 'delivery_unfunded') return { failed: err.message };
+        throw err;
+      }
       if (!listed) app.agreements.onPositionChange({ pos }); // the option ended: its collateral is released
       return { done: true, eventId: r?.eventId };
     },
     /** User-initiated early exercise of a long American option. */
     exercise(app, { book, unit, inst, pos, contracts }) {
       need(pos.qty > 0, 'Only a long option can be exercised.');
-      need(inst.terms.exercise === 'american' || app.clock.today() >= inst.terms.expiration, 'This option is European: it can only be exercised at expiration.');
+      exerciseAllowed(app, inst, 'exercised');
       const q = num(contracts) ?? pos.qty;
       need(q > 0 && q <= pos.qty + 1e-9, `You hold ${fmtQty(pos.qty)}; cannot exercise ${fmtQty(q)}.`);
       let S = null, obs = null;
@@ -254,7 +312,8 @@ function makeOptionPlugin(family, listed) {
     /** Simulated early assignment of a short American option (never happens on its own). */
     assign(app, { book, unit, inst, pos, contracts }) {
       need(pos.qty < 0, 'Only a short option can be assigned.');
-      need(inst.terms.exercise === 'american', 'A European option cannot be assigned before expiration.');
+      if (inst.terms.exercise === 'bermudan') exerciseAllowed(app, inst, 'assigned');
+      else need(inst.terms.exercise === 'american', 'A European option cannot be assigned before expiration.');
       const q = num(contracts) ?? -pos.qty;
       need(q > 0 && q <= -pos.qty + 1e-9, `You are short ${fmtQty(-pos.qty)}; cannot assign ${fmtQty(q)}.`);
       let S = null, obs = null;

@@ -82,7 +82,7 @@ export default [
         c.near(await commission(w, book), 7.90, 'commission in all: 6.90 + 1.00');
         await w.clean(c, book.id);
       }),
-      browser: 'partial fills are produced by the engine against displayed size, not by a user action; the partly filled order is read on the Pending tab in SB:stress:cancel-partial',
+      browser: 'partial fills are produced by the engine against displayed size, not by a user action; the partly filled order is read on the Pending tab and cancelled from there in SB:stress:cancellations',
     },
   },
 
@@ -776,21 +776,21 @@ export default [
     title: 'Double click on "Confirm paper trade"',
     proves: 'Double-clicking the confirmation of a trade preview submits the package once.',
     expected: 'A purchase of 100 shares at the ask 50.02 is previewed from the ticket and its Confirm button is double-clicked. Whatever the page sends, there is one strategy instance, one order and one fill of 100 at 50.02, and the Account owes 5,003.00 once.',
-    levels: { engine: 'a click is a browser event', api: 'a click is a browser event', browser: (b, c) => b.cases.doubleClickConfirm(b, c) },
+    levels: { engine: 'a double click is a browser event: no engine call or HTTP request can make one; what a program can send twice is SE/SA:stress:repeated-requests and SE/SA:nodup:concurrent-confirmations', api: 'a double click is a browser event: no engine call or HTTP request can make one; what a program can send twice is SE/SA:stress:repeated-requests and SE/SA:nodup:concurrent-confirmations', browser: (b, c) => b.cases.doubleClickConfirm(b, c) },
   },
   {
     id: 'double-click-transfer',
     title: 'Double click on "Record transfer" and "Record deposit"',
     proves: 'Double-clicking a button that records a cash movement records it once.',
     expected: 'A transfer of 25,000.00 from Treasury to the Account is entered and "Record transfer" is double-clicked: one request leaves the page, one transfer is recorded, the Account holds 525,000.00. A deposit of 40,000.00 with "Record deposit" double-clicked: one request, one deposit, Treasury holds 515,000.00.',
-    levels: { engine: 'a click is a browser event', api: 'a click is a browser event', browser: (b, c) => b.cases.doubleClickTransfer(b, c) },
+    levels: { engine: 'a double click is a browser event: no engine call or HTTP request can make one; what a program can send twice is SE/SA:stress:repeated-requests and SE/SA:nodup:concurrent-confirmations', api: 'a double click is a browser event: no engine call or HTTP request can make one; what a program can send twice is SE/SA:stress:repeated-requests and SE/SA:nodup:concurrent-confirmations', browser: (b, c) => b.cases.doubleClickTransfer(b, c) },
   },
   {
     id: 'double-click-records',
     title: 'Double click on the other recording buttons: repayment, manual cash flow, lender recall, corporate action',
     proves: 'Each button that records something by hand records it once when it is double-clicked.',
     expected: 'On Tuesday 3 March an Account that borrowed 100,000.00 at 5% on Monday repays from Treasury\'s Borrowings page with "Confirm repayment" double-clicked: the loan is repaid once, cash falls by 100,013.89 (one day of interest, 100,000 x 5% / 360 = 13.89). A manual dividend of 125.00 on a holding of 100 shares, "Record cash flow" double-clicked: one request, one event, cash up 125.00. A lender recall on the borrow behind a short sale, "Record lender recall" double-clicked: one request, one recall deadline and one notice. A cash dividend of 0.50 per share recorded by hand on the instrument page, "Record" double-clicked: one corporate action, which pays 50.00 once on its date (dividend income 175.00 in all).',
-    levels: { engine: 'a click is a browser event', api: 'a click is a browser event; the routes behind these buttons are repeated in SE/SA:stress:repeated-requests', browser: (b, c) => b.cases.doubleClickRecords(b, c) },
+    levels: { engine: 'a double click is a browser event: no engine call or HTTP request can make one; what a program can send twice is SE/SA:stress:repeated-requests and SE/SA:nodup:concurrent-confirmations', api: 'a double click is a browser event: no engine call or HTTP request can make one; what a program can send twice is SE/SA:stress:repeated-requests and SE/SA:nodup:concurrent-confirmations', browser: (b, c) => b.cases.doubleClickRecords(b, c) },
   },
   {
     id: 'confirm-changed',

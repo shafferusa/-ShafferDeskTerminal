@@ -125,13 +125,18 @@ async function learnBorrows(t, ctx) {
   for (const p of pos.positions) if (p.family === 'secloan' && p.instrument.underlyingId) ctx.borrowOf.set(p.instrument.id, p.instrument.underlyingId);
 }
 
-async function positionIn(t, ctx, lotName, instrumentKey) {
+async function positionIn(t, ctx, lotName, instrumentKey, { allowClosed = false } = {}) {
   const lot = ctx.lot(lotName);
   const key = instrumentKey || lot.instrument;
   const s = await t.strategy(lot.strategyId);
   const want = key.startsWith('borrow:') ? null : ctx.inst(key).id;
   const p = s.positions.find((x) => (want ? x.instrument.id === want : x.family === 'secloan'));
+  const seen = (ctx.seenPositions ||= new Map());
+  // A request that the spec expects to be refused may name a position that has since closed (a delivery notice on a
+  // delivered future): it is sent for the position last seen open in that lot, so the Terminal's own refusal is tested.
+  if (!p && allowClosed && seen.has(`${lotName}|${key}`)) return { lot, strategy: s, position: { positionId: seen.get(`${lotName}|${key}`), closed: true } };
   if (!p) throw new Error(`"${lotName}" holds no open position in ${key}.`);
+  seen.set(`${lotName}|${key}`, p.positionId);
   return { lot, strategy: s, position: p };
 }
 
@@ -306,7 +311,7 @@ export async function actThroughClient(t, ctx, step) {
         return {};
       }
       case 'lifecycle': {
-        const { position } = await positionIn(t, ctx, step.lot, step.instrument);
+        const { position } = await positionIn(t, ctx, step.lot, step.instrument, { allowClosed: step.status === 'blocked' || step.status === 'unsupported' });
         await t.positionLifecycle(position.positionId, step.body);
         return {};
       }

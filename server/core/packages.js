@@ -456,6 +456,11 @@ export function createPackages(app) {
           const fx0 = inst.terms.rateType === 'floating' ? app.data.rate(inst.terms.referenceRate) : null;
           row.financing = { amount: row.cash ?? null, ccy, rateType: inst.terms.rateType || null, rate: inst.terms.rateType === 'fixed' ? inst.terms.rate ?? null : null, referenceRate: inst.terms.rateType === 'floating' ? inst.terms.referenceRate || null : null, spread: inst.terms.rateType === 'floating' ? inst.terms.spread ?? 0 : null, fixing: fx0 ? fx0.value : null, maturity: inst.terms.maturity || inst.terms.endDate || null, dailyCost: row.dailyCost ?? null, interestFrom: inst.terms.startDate || tradeDate };
         }
+        // r1: what the arrangement reconciles to (a repo: collateral value, haircut, buffer and the cash it supports; a
+        // buy/sell-back: its forward price; securities lent: the cash collateral received), as displayed in the preview.
+        const detail = plugin.previewDetail ? plugin.previewDetail(app, { unit, inst, action: l.action, qty: l.qty, collateralPositionId: l.collateralPositionId, sourcePositionId: l.sourcePositionId }) : null;
+        if (detail && row.financing) Object.assign(row.financing, { collateral: detail.collateral ?? null, forward: detail.forward ?? null });
+        else if (detail) row.lending = detail;
       } else if (ARR_CLOSE.has(l.kind)) {
         const p = l.targetPosition;
         // A cash repayment or withdrawal is checked at the amount asked for, so more than is outstanding is refused

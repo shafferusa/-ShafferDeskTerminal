@@ -115,7 +115,7 @@ export function createInstruments(app) {
     need(view.cls === product.cls, `${product.name} is a ${product.cls === 'cash' ? 'cash-market' : 'derivative'} product, so it belongs in ${product.cls === 'cash' ? 'US Based or Foreign Based' : 'US Derivatives or Foreign Derivatives'}.`);
     const norm = plugin.normalize(app, {
       terms: draft.terms || {}, multiplier: draft.multiplier ?? existing?.multiplier, underlying_id: draft.underlyingId || null,
-      trading_ccy: draft.tradingCcy, settle_ccy: draft.settleCcy,
+      trading_ccy: draft.tradingCcy, settle_ccy: draft.settleCcy, productId: product.id,
     });
     const tradingCcy = String(norm.tradingCcy || draft.tradingCcy || '').toUpperCase();
     const settleCcy = String(norm.settleCcy || draft.settleCcy || tradingCcy).toUpperCase();

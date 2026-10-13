@@ -37,7 +37,7 @@ export function createValuation(app) {
     const denom = pos.qty * inst.multiplier;
     const avgCost = inst.family === 'future' ? pos.data.mark ?? null
       : inst.family === 'forward' ? pos.data.avgStrike ?? null
-        : v.ledgerCarried ? null : isZero(denom) ? null : round(pos.cost / denom, 6);
+        : v.ledgerCarried ? null : v.avgCost !== undefined ? v.avgCost /* the plugin's own units (a bond with a pool factor or index ratio: per 100 of principal outstanding) */ : isZero(denom) ? null : round(pos.cost / denom, 6);
     const missing = !v.ledgerCarried && (v.mv === null || v.mv === undefined);
     return {
       positionId: pos.id, bookId: pos.book_id, unitId: pos.unit_id, strategyId: pos.strategy_id || null,

@@ -643,7 +643,7 @@ function InstrumentForm({ inst: given, view, preset, onDone, onClose }) {
 function LifecycleAdmin({ inst, onChanged }) {
   const t = inst.terms || {};
   const name = inst.symbol || inst.name;
-  const [v, setV] = useState({ recovery: null, weight: 1, newFactor: null, rate: null });
+  const [v, setV] = useState({ recovery: null, weight: 1, newFactor: null, rate: null, ratio: null, ratioAsOf: '' });
   const [step, setStep] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -654,7 +654,7 @@ function LifecycleAdmin({ inst, onChanged }) {
     setBusy(true); setError(null);
     try {
       await post(`/api/instruments/${inst.id}/lifecycle`, { action: step.action, ...step.body });
-      toast(step.done); setStep(null); setV({ recovery: null, weight: 1, newFactor: null, rate: null });
+      toast(step.done); setStep(null); setV({ recovery: null, weight: 1, newFactor: null, rate: null, ratio: null, ratioAsOf: '' });
       bump(); await onChanged();
     } catch (err) { setError(err); }
     setBusy(false);
@@ -675,6 +675,13 @@ function LifecycleAdmin({ inst, onChanged }) {
     return { action: 'paydown', body: { newFactor: nf }, confirm: 'Record paydown', done: 'Paydown recorded.',
       text: `The pool factor of ${name} falls from ${factor} to ${nf}. Every holder, in every Book, is paid down: a long holder receives ${Number((factor - nf).toFixed(8))} of its face amount at the redemption price (${t.redemption ?? 100}% of par) in cash, and a short holder pays it. Each position's cost falls in proportion and the difference is booked as realized profit or loss. Later coupons follow the reduced face.` };
   };
+  const indexRatio = () => {
+    const r = v.ratio, old = t.indexRatio;
+    if (!(r > 0 && r < 20)) return { invalid: 'Enter the index ratio as a positive number, for example 1.03514.' };
+    if (Math.abs(r - old) < 1e-12) return { invalid: `The index ratio is already ${fmtNum(old, 5)}.` };
+    return { action: 'index_ratio', body: { ratio: r, asOf: v.ratioAsOf || undefined }, confirm: 'Record index ratio', done: 'Index ratio recorded.',
+      text: `The index ratio of ${name} changes from ${fmtNum(old, 5)} to ${fmtNum(r, 5)}${v.ratioAsOf ? ` (as of ${v.ratioAsOf})` : ''}, recorded by hand. For every holder, in every Book, principal is face x index ratio: the change at par, face x ${fmtNum(r - old, 5)}, is booked as inflation accretion in coupon and interest income and added to the position's cost (a fall is a negative accretion). Accrued interest is trued up to today on the adjusted principal; later trades, coupons and the redemption use the new ratio${t.inflationFloor ? ', and the principal repaid at maturity is never less than par' : ''}.` };
+  };
   const suspend = (on) => ({ action: 'suspend_coupon', body: { suspended: on }, confirm: on ? 'Suspend coupons' : 'Resume coupons', done: on ? 'Coupons suspended.' : 'Coupons resumed.',
     text: on ? `No coupon accrues or is paid on ${name} for any holder, in any Book, until coupons are resumed. Coupon dates that pass while suspended are listed in the history as not paid and are not paid later. Interest accrued and not yet received is reversed out of coupon and interest income for every holder (non-accrual), and the bond trades flat, without accrued interest, until coupons are resumed.`
       : `Coupon accrual and payment restart on ${name} for every holder, in every Book. Coupon dates that passed while suspended are not paid afterwards; record any catch-up payment by hand.` });
@@ -691,6 +698,10 @@ function LifecycleAdmin({ inst, onChanged }) {
       <${Field} label="Recovery rate (decimal)" hint="0.4 = 40%. From the settlement, not assumed."><${Num} value=${v.recovery} onInput=${(x) => { setV({ ...v, recovery: x }); setStep(null); }} /><//>
       <${Field} label="Share of notional affected" hint="1 for a single name. For an index, the weight of the defaulted name."><${Num} value=${v.weight} onInput=${(x) => { setV({ ...v, weight: x }); setStep(null); }} /><//>
       ${button('Review credit event', creditEvent)}</div>` : null}
+    ${inst.family === 'bond' && isNum(t.indexRatio) ? html`<div class="grid-form" style=${GRID}>
+      <${Field} label="New index ratio" hint=${`Current ${fmtNum(t.indexRatio, 5)}${t.indexRatioAsOf ? `, as of ${t.indexRatioAsOf}` : ', from registration'}. Entered by hand: no index feed.`}><${Num} value=${v.ratio} onInput=${(x) => { setV({ ...v, ratio: x }); setStep(null); }} /><//>
+      <${Field} label="Index ratio as of" hint="The date it applies to. Today if empty."><${Text} type="date" value=${v.ratioAsOf || ''} onInput=${(x) => { setV({ ...v, ratioAsOf: x }); setStep(null); }} /><//>
+      ${button('Review index ratio', indexRatio)}</div>` : null}
     ${inst.family === 'bond' ? html`<div class="grid-form" style=${GRID}>
       <${Field} label="New pool factor" hint=${`Current factor ${factor}`}><${Num} value=${v.newFactor} onInput=${(x) => { setV({ ...v, newFactor: x }); setStep(null); }} /><//>
       ${button('Review paydown', paydown)}

@@ -53,7 +53,7 @@ export default [
         c.eq(pos.positions.find((p) => p.positionId === L.positions.long)?.price, 73.1, 'current valuation does use the new price');
         await w.clean(c, L.book.id);
       }),
-      browser: 'data refreshes are not user actions; the screens after them are the ordinary Accounting screens',
+      browser: 'a data refresh is made by the engine on its timer, not by anything done in the interface; the user\'s side of it (refresh timings changed on the Data connection page, then the Full history compared row by row, word for word) is SB:history:reference-edits',
     },
   },
   {

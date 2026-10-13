@@ -26,6 +26,7 @@ const LIFECYCLE = {
   barrier: { title: 'Barrier event', button: 'Record barrier event', done: 'Barrier event recorded.', note: 'Records that the barrier was touched. The option is settled at expiration with the barrier taken into account.' },
   redeem: { title: 'Early redemption', button: 'Record early redemption', done: 'Early redemption recorded.', note: 'Issuer call, investor put or tender at a stated price. Accrued interest to today is paid with it.' },
   recall: { title: 'Lender recall', button: 'Record lender recall', done: 'Lender recall recorded.', note: 'The lender asks for the borrowed securities back. Cover the short or arrange a new borrow by the deadline; otherwise a buy-in is forced on that date.' },
+  deliver: { title: 'Delivery notice', button: 'Give delivery notice', done: 'Simulated delivery recorded.', note: 'For a physically delivered future during its delivery window: the short gives notice, the contracts close at today\'s settlement price and the deliverable changes hands at the invoice amount, on paper only (no goods move). The Terminal refuses a notice the contract\'s terms do not allow and says why.' },
   cashflow: { title: 'Manual cash flow', button: 'Record cash flow', done: 'Cash flow recorded.', note: 'A cash amount received or paid on this position that the engine does not generate. Positive is cash received, negative is cash paid.' },
 };
 const words = (s) => String(s || '').replace(/[._]/g, ' ');
@@ -149,6 +150,7 @@ function lifecycleFor(p, terms) {
   if (['option', 'otcoption'].includes(p.family)) a.push(p.qty > 0 ? 'exercise' : 'assign');
   if (p.family === 'otcoption' && terms?.barrier && !p.data?.barrierHit) a.push('barrier');
   if (p.family === 'bond') a.push('redeem');
+  if (p.family === 'future' && terms && !terms.perpetual) a.push('deliver');
   if (p.family === 'secloan' && p.qty > 0) a.push('recall');
   // A cash loan or facility drawing can carry a fee or other cash flow the engine does not generate (a commitment fee).
   if (!FINANCING_FAMILIES.includes(p.family) || p.family === 'loan') a.push('cashflow');
@@ -161,8 +163,8 @@ function LifecycleDialog({ p, action, terms, onClose, onDone }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const set = (patch) => setF({ ...f, ...patch });
-  const body = { exercise: { contracts: f.contracts }, assign: { contracts: f.contracts }, barrier: { note: f.note }, redeem: { price: f.price, face: f.face, label: f.label || undefined }, recall: { qty: f.qty, days: f.days ?? undefined }, cashflow: { category: f.category, amount: f.amount, note: f.note } }[action];
-  const ready = { exercise: f.contracts > 0, assign: f.contracts > 0, barrier: true, redeem: isNum(f.price) && f.price >= 0 && f.face > 0, recall: f.qty > 0, cashflow: isNum(f.amount) && f.amount !== 0 }[action];
+  const body = { exercise: { contracts: f.contracts }, assign: { contracts: f.contracts }, deliver: { contracts: f.contracts }, barrier: { note: f.note }, redeem: { price: f.price, face: f.face, label: f.label || undefined }, recall: { qty: f.qty, days: f.days ?? undefined }, cashflow: { category: f.category, amount: f.amount, note: f.note } }[action];
+  const ready = { exercise: f.contracts > 0, assign: f.contracts > 0, deliver: f.contracts > 0, barrier: true, redeem: isNum(f.price) && f.price >= 0 && f.face > 0, recall: f.qty > 0, cashflow: isNum(f.amount) && f.amount !== 0 }[action];
   const go = async () => {
     setBusy(true); setError(null);
     try {
@@ -176,8 +178,10 @@ function LifecycleDialog({ p, action, terms, onClose, onDone }) {
     footer=${html`<span class="grow"></span><${Button} onClick=${onClose}>Cancel<//><${Button} kind="primary" busy=${busy} disabled=${!ready} onClick=${go}>${L.button}<//>`}>
     <div class="stack"><${ErrorNote} error=${error} /><p class="note" style="margin:0">${L.note}</p>
       ${['exercise', 'assign'].includes(action) && european ? html`<${Notice} tone="warn">This option is European. It can only be ${action === 'exercise' ? 'exercised' : 'assigned'} at expiration${terms.expiration ? ` (${terms.expiration})` : ''}.<//>` : null}
+      ${action === 'deliver' && terms ? html`<${Notice}>Settlement terms: ${terms.settlement === 'physical' ? 'physical delivery' : 'cash'}${terms.delivery?.units ? `; ${fmtQty(terms.delivery.units)} units of the deliverable per contract` : ''}${terms.delivery?.grade ? `; ${terms.delivery.grade}` : ''}${terms.delivery?.location ? `; ${terms.delivery.location}` : ''}; delivery window ${terms.delivery?.firstNotice || terms.expiration} to ${terms.expiration} (last trading day).<//>` : null}
       ${action === 'barrier' && terms?.barrier ? html`<${Notice}>Barrier: ${words(terms.barrier.type)} at ${fmtPrice(terms.barrier.level)}.<//>` : null}
       <div class="grid-form">
+        ${action === 'deliver' ? html`<${Field} label="Contracts to deliver" hint=${`Up to ${fmtQty(size)}`}><${Num} value=${f.contracts} onInput=${(v) => set({ contracts: v })} /><//>` : null}
         ${['exercise', 'assign'].includes(action) ? html`<${Field} label=${action === 'exercise' ? 'Contracts to exercise' : 'Contracts assigned'} hint=${`Up to ${fmtQty(size)}`}><${Num} value=${f.contracts} onInput=${(v) => set({ contracts: v })} /><//>` : null}
         ${action === 'redeem' ? html`<${Field} label="Redemption price (% of par)"><${Num} value=${f.price} onInput=${(v) => set({ price: v })} /><//>
           <${Field} label="Face amount redeemed" hint=${`Up to ${fmtQty(size)}`}><${Num} value=${f.face} onInput=${(v) => set({ face: v })} /><//>
@@ -195,7 +199,7 @@ function valueCell(p) {
   return html`<${Money} value=${p.mv} ccy=${p.ccy} reason=${p.missingReason} />${['option', 'otcoption'].includes(p.family) && isNum(p.notional) ? html`<div class="sub">notional ${fmtMoney(p.notional, p.ccy)}</div>` : null}`;
 }
 function Positions({ s, rc, after }) {
-  const optionIds = s.positions.filter((p) => ['option', 'otcoption'].includes(p.family)).map((p) => p.instrument.id);
+  const optionIds = s.positions.filter((p) => ['option', 'otcoption', 'future'].includes(p.family)).map((p) => p.instrument.id);
   const terms = useLive(async () => Object.fromEntries(await Promise.all(optionIds.map(async (id) => [id, (await get(`/api/instruments/${id}`)).terms]))), [optionIds.join(',')], { interval: false });
   const [pick, setPick] = useState(0); // remounts the action menus so they return to their placeholder
   const act = (p, action) => { setPick((n) => n + 1); openOverlay((close) => html`<${LifecycleDialog} p=${p} action=${action} terms=${terms.data?.[p.instrument.id]} onClose=${close} onDone=${after} />`); };

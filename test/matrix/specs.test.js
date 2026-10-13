@@ -60,7 +60,10 @@ for (const spec of specs) {
         const inst = spec.instruments[key] || registered.get(key);
         assert.ok(inst, `${step.id}: instrument "${key}" is not in the spec`);
         const ccy = inst.tradingCcy;
-        const principal = leg.qty * px * (inst.multiplier ?? 1);
+        // A debt security with a pool factor or an index ratio settles on its principal outstanding (current face, or face x
+        // index ratio): the leg states it as `notional`, and the spec works it out by hand from the factor or ratio it states.
+        const units = getProduct(inst.productId)?.family === 'bond' && typeof leg.notional === 'number' ? leg.notional : leg.qty;
+        const principal = units * px * (inst.multiplier ?? 1);
         const where = `${spec.productId}:${step.id}`;
         if (typeof leg.cash === 'number') {
           const action = leg.action || step.side;

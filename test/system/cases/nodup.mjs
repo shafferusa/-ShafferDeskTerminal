@@ -78,7 +78,7 @@ export default [
         await checkLife(w, c, L, 'catch-up with restarts');
         sameLife(c, ref, await lifeDigest(w, L), 'catch-up with restarts');
       }),
-      browser: 'a restart is an operation on the server process (see SE/SA:stress:restart-stages)',
+      browser: 'stopping and starting the server process is not something done in the interface (the server side is SE/SA:stress:restart-stages); what the user then sees, the screens after downtime across two server stops and after restarts at each stage of a trade, is SB:nodup:catch-up',
     },
   },
   {
@@ -109,7 +109,7 @@ export default [
         await checkLife(w, c, L, 'overlapping cycles');
         sameLife(c, ref, await lifeDigest(w, L), 'overlapping cycles');
       }),
-      browser: 'engine cycles are not a user action',
+      browser: 'overlapping engine cycles are started by the engine timer and by programs, never from the interface; the screens after many cycles are read in SB:nodup:catch-up, and with the timer running in SB:stress:connection-loss and SB:hedge:reconnection',
     },
   },
 

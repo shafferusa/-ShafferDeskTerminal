@@ -43,7 +43,7 @@ async function pickInstrument(ui, scope, label, inst) {
 /** The option fields of the registration form. A spec states them on the draft: `underlying`, `multiplier`, `terms`. */
 export async function contractTerms(ui, dialog, draft, ctx) {
   const t = draft.terms || {};
-  if (draft.underlying) await pickInstrument(ui, dialog, /^\s*Underlying\s*\(required\)/, ctx.inst(draft.underlying));
+  if (draft.underlying) await pickInstrument(ui, dialog, /^\s*Underlying(\s*\(required\))?\s*$/, ctx.inst(draft.underlying));
   await ui.select(dialog, /^\s*Type\b/).selectOption({ label: t.right === 'P' ? 'Put' : 'Call' });
   await ui.input(dialog, /^\s*Strike\b/).fill(String(t.strike));
   await ui.input(dialog, /^\s*Expiration\b/).fill(t.expiration);

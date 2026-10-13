@@ -20,11 +20,13 @@
 
 - Milestone 4: Trading owner. instrument.js UnitSelect (optgroups "Accounts" / "Treasury (the Book's own balance sheet)", disabled "No Accounts in this Book yet", placeholder "Choose an owner"), defaultUnit without Treasury fallback, ownerHint; ticket + option ticket label "Trading owner" (option Preview needs an owner). core.js pickUnit no longer falls back to units[0]. strategy.js panel "Trading owner and intent", notice + New Account (AccountDialog) / Use Treasury buttons in a Book with no Accounts, hedge panel waits for a trading owner. Driver aliases verified by $SP/ui1/drvcheck.mjs (old names 'Account'/'Account and intent' select Treasury; openInstrument for 11 instruments across 4 views/8 tabs). System browser cases double-click-confirm, collateral-independent-amount, ticket-blocks pass. npm test 432/432.
 
+- Session 2 (resumed 2026-10-13): item 1 financing links rebuilt in web/views/instrument.js (FINANCEABLE, holdingBlock, notFinanceable, openFinancing, HoldingFinancing, FinancingLinks: Borrow this security / Repo this holding / Lend this holding / Finance this position / Reverse repo, each disabled with its reason; holding-level Repo/Lend/Finance column in the ticket's positions table and the Positions tab; derivatives and other families show the reason and the Treasury/Account link). treasury.js (ui1 regions): preset.positionId picks the named holding; viewFor no longer infers a view from the currency. catalog.js conventionRoute financing: jurisdiction > stated view > security lent/pledged > Foreign convention (collateral passed from instruments.js routeFor). npm test 462/463 (only fw's commodity_future). Verified in browser (demo 8881): ALFA drawer links, Repo dialog prefilled with the Account and ALFA 100, Lend from the Positions-tab holding -> preview -> confirm -> 'Lend ALFA executed', links then disabled with 'All 100 held are on loan'. Browser 8 products: all pass (equity_option needed test/matrix/drivers/browser/option.mjs Underlying label regex made tolerant: someone's uncommitted contracts.js edit made the option Underlying optional).
+
 ## In progress
-- nothing half-edited.
+- Item 2 (tab memory, show-in-Marketplace links, cross-Marketplace search), item 3 (205-product routing test, docs), item 4 screens, item 5 browser driver.
 
 ## Next
-1. Save milestone 1 (done above). 2. Registry form: Jurisdiction field + routing (By convention / set by hand) using /api/instruments/routing; instrument page Overview shows routing basis. Save (1 pt).
-3. Product columns polish (done mostly) + preview/accounting bond price via fmtPriceUnits. Save (1 pt).
-4. Trading owner: UnitSelect/defaultUnit in instrument.js (no Treasury fallback; optgroups Accounts / Treasury (the Book's own balance sheet)), label "Trading owner" on tickets + strategy.js panel "Trading owner and intent", prompt to create Account. Save (0.5).
-5. Financing links from instrument drawer -> Treasury/Account ArrangementDialog with instrument; screens all states. Save (0.5). Report.
+1. markets.js: remember last tab per view; #/markets/<view>/<tab>/show/<id> highlights a row; search hits in other Marketplaces with links. registry.js search + drawer Overview: link to the view and tab.
+2. test/core/marketplaces.test.js: every product routed US and Foreign to one tab of one view; API registration never US from currency. Docs: ARCHITECTURE, README, COVERAGE (npm run coverage).
+3. Screens (multi.mjs) every view/tab, demo+normal, light/dark, 1440/1024/390, empty Book, no-Accounts Book; register instruments in every tab via API.
+4. npm run test:browser -- --product=common_stock,treasury_note,equity_option,equity_index_future,interest_rate_swap,unsecured_loan,fx_spot,crude_oil ; save-note ui1 per milestone (0.5 each for items 1-4).

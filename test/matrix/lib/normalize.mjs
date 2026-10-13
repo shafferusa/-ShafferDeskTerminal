@@ -153,7 +153,12 @@ export function normalizePreview(pv, ctx) {
       notional: l.notional ?? null, initialMargin: l.initialMargin ?? null,
       // Cash the leg moves in other currencies at its settlement (an FX conversion's other side, the principal exchanged on a cross-currency swap): + received, - paid.
       otherCash: Object.fromEntries((l.otherCash || []).map((o) => [o.ccy, o.amount])),
-      financing: l.financing ? { amount: l.financing.amount ?? null, principal: l.financing.principal ?? null, interest: l.financing.interest ?? null, full: l.financing.full ?? null, rateType: l.financing.rateType ?? null, rate: l.financing.rate ?? null, referenceRate: l.financing.referenceRate ?? null, spread: l.financing.spread ?? null, fixing: l.financing.fixing ?? null, maturity: l.financing.maturity ?? null, interestFrom: l.financing.interestFrom ?? null, interestThrough: l.financing.interestThrough ?? null } : null,
+      financing: l.financing ? { amount: l.financing.amount ?? null, principal: l.financing.principal ?? null, interest: l.financing.interest ?? null, full: l.financing.full ?? null, rateType: l.financing.rateType ?? null, rate: l.financing.rate ?? null, referenceRate: l.financing.referenceRate ?? null, spread: l.financing.spread ?? null, fixing: l.financing.fixing ?? null, maturity: l.financing.maturity ?? null, interestFrom: l.financing.interestFrom ?? null, interestThrough: l.financing.interestThrough ?? null,
+        // r1: a repo's reconciliation (collateral value, haircut, buffer, the most cash it supports) and a buy/sell-back's forward.
+        collateral: l.financing.collateral ? { qty: l.financing.collateral.qty, clean: l.financing.collateral.clean, accrued: l.financing.collateral.accrued, worth: l.financing.collateral.worth, haircutAmount: l.financing.collateral.haircutAmount, buffer: l.financing.collateral.buffer, supports: l.financing.collateral.supports } : null,
+        forward: l.financing.forward ? { amount: l.financing.forward.amount, endDate: l.financing.forward.endDate, cleanPer100: l.financing.forward.cleanPer100, dirtyPer100: l.financing.forward.dirtyPer100, coupons: l.financing.forward.coupons.map((c) => ({ payDate: c.payDate, amount: c.amount })) } : null } : null,
+      // r1: securities lent: the cash collateral the lender receives.
+      lending: l.lending ? { collateralCash: l.lending.collateralCash ?? null, value: l.lending.value ?? null } : null,
     })),
     cash: Object.fromEntries(Object.values(pv.totals.cash || {}).map((c) => [c.ccy, {
       purchases: c.purchases, proceeds: c.proceeds, restrictedProceeds: c.restrictedProceeds, fees: c.fees, margin: c.margin, collateral: c.collateral, reserved: c.reserved,

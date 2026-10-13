@@ -21,12 +21,73 @@ import { fmt } from '../core/books.js';
 import { addBusinessDays, adjust } from '../quant/calendar.js';
 import { accruedPer100, couponPeriod, couponPer100, nextCouponDate } from '../quant/bond.js';
 import { DAY_COUNTS } from '../quant/daycount.js';
-import { ISO_DATE_RE, isZero, money, need, num } from '../core/util.js';
+import { AppError, ISO_DATE_RE, isZero, money, need, num } from '../core/util.js';
 import { bookSecurityFill, dqOf, fmtPx, fmtQty, trueUpAccrual } from './common.js';
 import { calendarFor, paymentCalendarFor, standardSettleDate } from './security.js';
 
-/** Face outstanding per unit of original face (pool factor for securitised paper). */
+/** Face outstanding per unit of original face (pool factor for securitised paper), as it stands now. */
 const factorOf = (inst) => inst.terms.factor ?? 1;
+
+/**
+ * The pool factor in force on `date`. A paydown or loss recorded by hand with an effective date keeps the history in
+ * `terms.factorHistory` ([{ from, factor, prior }], oldest first): a date before the first change has the factor that
+ * stood before it. Without a history the current factor applies to every date.
+ */
+function factorOn(inst, date) {
+  const h = inst.terms.factorHistory;
+  if (!Array.isArray(h) || !h.length || !date) return factorOf(inst);
+  for (let i = h.length - 1; i >= 0; i--) if (date >= h[i].from) return h[i].factor;
+  return h[0].prior ?? factorOf(inst);
+}
+
+/** Catalog products that are inflation-linked: they must be registered with an index ratio. */
+const LINKERS = new Set(['tips', 'foreign_inflation_linked']);
+/** Catalog products that convert or exchange into shares: they must be registered with the shares and a ratio. */
+const CONVERTIBLES = new Set(['convertible_bond', 'exchangeable_bond']);
+
+/**
+ * A call or put schedule: an array of { date, price } or text such as "2028-06-15 101; 2029-06-15 100". Returns null when
+ * nothing is stated, { error } when it cannot be read, else the entries sorted by date.
+ */
+function parseSchedule(v) {
+  if (v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length)) return null;
+  let rows;
+  if (Array.isArray(v)) rows = v.map((x) => ({ date: String(x?.date || ''), price: num(x?.price) }));
+  else {
+    const text = String(v).trim();
+    if (!text) return null;
+    rows = text.split(/[;\n]+/).map((x) => x.trim()).filter(Boolean).map((x) => {
+      const m = /^(\d{4}-\d{2}-\d{2})\s*(?:@|at|:|,)?\s*(-?[\d.]+)\s*%?$/i.exec(x);
+      return m ? { date: m[1], price: num(m[2]) } : { date: '', price: null, text: x };
+    });
+  }
+  const bad = rows.find((r) => !ISO_DATE_RE.test(r.date) || !(r.price > 0));
+  if (bad) return { error: `"${bad.text || `${bad.date} ${bad.price}`}" is not a date (YYYY-MM-DD) followed by a price in % of par.` };
+  rows.sort((a, b) => (a.date < b.date ? -1 : 1));
+  if (rows.some((r, i) => i && r.date === rows[i - 1].date)) return { error: 'two entries have the same date.' };
+  return rows.map((r) => ({ date: r.date, price: r.price }));
+}
+const scheduleText = (rows) => rows.map((r) => `${r.date} at ${fmtPx(r.price)}`).join('; ');
+
+/** An inflation-linked bond carries an index ratio (reference index on the date / reference index on the dated date). */
+const isLinker = (inst) => typeof inst.terms.indexRatio === 'number';
+/** The index ratio in force: the last one recorded by hand (1 for a nominal bond). */
+const ratioOf = (inst) => (isLinker(inst) ? inst.terms.indexRatio : 1);
+/** Principal outstanding per unit of face on `date`: pool factor times index ratio. */
+const scaleOn = (inst, date) => factorOn(inst, date) * ratioOf(inst);
+/**
+ * Principal per unit of face on which the coupon of `couponDate` is paid: the factor in force on the last day of the
+ * coupon period (a paydown effective from the coupon date itself belongs to the next period) times the index ratio.
+ */
+const couponScale = (inst, couponDate) => factorOn(inst, addBusinessDays(couponDate, -1, 'ALLDAYS')) * ratioOf(inst);
+/** Words for a coupon or accrual line when the principal is not the face: current face, or adjusted principal. */
+function principalNote(inst, face, scale) {
+  const ccy = inst.trading_ccy;
+  if (isLinker(inst)) return ` (index ratio ${fmtRatio(ratioOf(inst))}: adjusted principal ${fmt(money(Math.abs(face) * scale, ccy), ccy)})`;
+  if (Math.abs(scale - 1) > 1e-12) return ` (factor ${Number(scale.toFixed(10))}: current face ${fmtQty(money(Math.abs(face) * scale, ccy))})`;
+  return '';
+}
+const fmtRatio = (r) => Number(r).toFixed(5);
 
 /** The trades booked on a position: signed face, trade date and settlement date of each fill. */
 function fillsOf(app, positionId) {
@@ -55,7 +116,7 @@ function accrualTarget(app, inst, pos, date, { paying = null } = {}) {
     if (c.couponDate > date || c.couponDate === paying) continue;
     const per100 = couponPer100(schedTerms(inst), c.couponDate);
     if (per100 === null) return null;
-    total += (entitledFace(app, pos, c.couponDate) * factorOf(inst) * per100) / 100;
+    total += (entitledFace(app, pos, c.couponDate) * couponScale(inst, c.couponDate) * per100) / 100;
   }
   return total;
 }
@@ -128,6 +189,39 @@ export const bond = {
     t.redemption = num(t.redemption) ?? 100;
     t.factor = num(t.factor) ?? 1;
     if (!(t.factor > 0 && t.factor <= 1)) errors.push('Pool factor must be between 0 and 1.');
+    // Inflation-linked bonds: principal = face x index ratio (reference index on the date / reference index on the dated
+    // date). The Terminal has no inflation index feed: the ratio is entered at registration and recorded by hand after.
+    if (LINKERS.has(draft.productId) && (t.indexRatio === undefined || t.indexRatio === null || t.indexRatio === '')) errors.push('An inflation-linked bond needs its index ratio (reference index today / reference index on the dated date), for example 1.03514. It is not assumed.');
+    if (t.indexRatio === undefined || t.indexRatio === null || t.indexRatio === '') { delete t.indexRatio; delete t.inflationFloor; } else {
+      t.indexRatio = num(t.indexRatio);
+      if (!(t.indexRatio > 0 && t.indexRatio < 20)) errors.push('Index ratio must be a positive number such as 1.03514.');
+      t.inflationFloor = Boolean(t.inflationFloor);
+    }
+    // Call and put schedules: [{ date, price }], entered as "2028-06-15 101; 2029-06-15 100".
+    for (const [key, label] of [['callSchedule', 'Call schedule'], ['putSchedule', 'Put schedule']]) {
+      const parsed = parseSchedule(t[key]);
+      if (parsed === null) { delete t[key]; continue; }
+      if (parsed.error) errors.push(`${label}: ${parsed.error}`);
+      else t[key] = parsed;
+    }
+    // Conversion into shares (convertible and exchangeable bonds): the shares are the instrument's underlying.
+    if (CONVERTIBLES.has(draft.productId) && !draft.underlying_id) errors.push('A convertible or exchangeable bond needs the shares it converts into (Shares delivered on conversion).');
+    if (t.conversionRatio === undefined || t.conversionRatio === null || t.conversionRatio === '') {
+      delete t.conversionRatio;
+      if (CONVERTIBLES.has(draft.productId)) errors.push('A convertible or exchangeable bond needs its conversion ratio: shares per 1,000 face.');
+    } else {
+      t.conversionRatio = num(t.conversionRatio);
+      if (!(t.conversionRatio > 0)) errors.push('Conversion ratio must be a positive number of shares per 1,000 face.');
+      if (!draft.underlying_id) errors.push('A conversion ratio needs the shares it converts into (Shares delivered on conversion).');
+    }
+    // Securitised paper: payment delay after the accrual period ends, and the guarantor of an agency pool.
+    if (t.paymentDelayDays === undefined || t.paymentDelayDays === null || t.paymentDelayDays === '') delete t.paymentDelayDays;
+    else {
+      t.paymentDelayDays = num(t.paymentDelayDays);
+      if (!(Number.isInteger(t.paymentDelayDays) && t.paymentDelayDays >= 0 && t.paymentDelayDays <= 60)) errors.push('Payment delay must be a whole number of days from 0 to 60.');
+    }
+    if (typeof t.guarantor === 'string') t.guarantor = t.guarantor.trim();
+    if (!t.guarantor) delete t.guarantor;
     if (t.issueDate && !ISO_DATE_RE.test(t.issueDate)) errors.push('Issue date must be YYYY-MM-DD.');
     // Minimum denomination: trades are in multiples of it (the quantity step of the ticket and the preview).
     if (t.minDenomination === undefined || t.minDenomination === null || t.minDenomination === '') delete t.minDenomination;
@@ -143,7 +237,18 @@ export const bond = {
     if (t.frequency) rows.push(['Payments per year', t.frequency]);
     rows.push(['Maturity', t.perpetual ? 'Perpetual' : t.maturity], ['Day count', t.dayCount], ['Redemption', `${t.redemption}% of par`]);
     if (t.factor !== 1) rows.push(['Pool factor', t.factor]);
+    if (typeof t.indexRatio === 'number') {
+      rows.push(['Index ratio', `${fmtRatio(t.indexRatio)} (entered by hand${t.indexRatioAsOf ? `, as of ${t.indexRatioAsOf}` : ', at registration'})`]);
+      rows.push(['Principal at maturity', t.inflationFloor ? 'Face x index ratio, never less than par (deflation floor)' : 'Face x index ratio (no deflation floor)']);
+    }
     if (t.minDenomination > 1) rows.push(['Minimum denomination', `${fmtQty(t.minDenomination)} face`]);
+    if (t.callSchedule) rows.push(['Issuer call', `${scheduleText(t.callSchedule)} (callable from each date at its price; recorded by hand)`]);
+    if (t.putSchedule) rows.push(['Holder put', `${scheduleText(t.putSchedule)} (on each date at its price; recorded by hand)`]);
+    if (t.calledOn) rows.push(['Called', `Redeemed in full on ${t.calledOn}`]);
+    if (t.conversionRatio) rows.push(['Conversion', `${t.conversionRatio} shares per 1,000 face (recorded by hand; accrued interest is forfeited)`]);
+    if (t.paymentDelayDays) rows.push(['Payment delay', `${t.paymentDelayDays} days after each accrual period ends`]);
+    if (t.guarantor) rows.push(['Guarantor', `${t.guarantor} (principal and interest guaranteed; no loss allocation)`]);
+    if (t.writtenDown) rows.push(['Written down', `${t.writtenDown.kind === 'loss' ? 'Losses allocated' : 'Principal written down'} to factor ${t.factor} on ${t.writtenDown.date}`]);
     if (t.issueDate) rows.push(['Issue date', t.issueDate]);
     if (t.seniority) rows.push(['Seniority', t.seniority]);
     return rows;
@@ -174,11 +279,12 @@ export const bond = {
     // flat, without accrued interest, until coupons are resumed.
     if (inst.terms.couponSuspended) return 0;
     const ai = accruedPer100(schedTerms(inst), date);
-    return ai === null ? null : (qty * factorOf(inst) * ai) / 100;
+    return ai === null ? null : (qty * scaleOn(inst, date) * ai) / 100;
   },
   economics(app, { inst, action, qty, price, settleDate }) {
     const ccy = inst.trading_ccy;
-    const principal = (qty * factorOf(inst) * price) / 100;
+    const scale = scaleOn(inst, settleDate);
+    const principal = (qty * scale * price) / 100;
     const ai = bond.accruedAmount(inst, qty, settleDate);
     const buy = action === 'buy' || action === 'buy_to_cover';
     const notes = [];
@@ -187,10 +293,10 @@ export const bond = {
     // Principal and accrued interest are each rounded to the cent, as the fill books them, so the previewed
     // settlement amount is the amount that settles.
     const total = money(principal, ccy) + money(ai || 0, ccy);
-    return { ccy, principal, cash: buy ? -total : total, accrued: ai || 0, notional: qty * factorOf(inst), exposure: buy ? principal : -principal, initialMargin: 0, notes };
+    return { ccy, principal, cash: buy ? -total : total, accrued: ai || 0, notional: qty * scale, exposure: buy ? principal : -principal, initialMargin: 0, notes };
   },
   fill(app, c) {
-    const f = factorOf(c.inst);
+    const f = scaleOn(c.inst, c.settleDate);
     const ai = bond.accruedAmount(c.inst, c.qty, c.settleDate) || 0;
     return bookSecurityFill(app, c, {
       unitCost: (c.price * f) / 100,
@@ -202,14 +308,17 @@ export const bond = {
   value(app, inst, pos, obs, mark) {
     const ccy = inst.trading_ccy;
     const known = mark !== null && mark !== undefined;
-    const clean = known ? money((pos.qty * factorOf(inst) * mark) / 100, ccy) : null;
+    const scale = factorOf(inst) * ratioOf(inst);
+    const clean = known ? money((pos.qty * scale * mark) / 100, ccy) : null;
     return {
       price: known ? mark : null,
       mv: clean, // clean value; accrued interest is carried in the ledger's accrued account
       cost: pos.cost,
       unrealized: known ? money(clean - pos.cost, ccy) : null,
       accrued: app.ledger.positionBalance(pos.id, 'accrued.asset', ccy),
-      notional: money(Math.abs(pos.qty) * factorOf(inst), ccy),
+      notional: money(Math.abs(pos.qty) * scale, ccy),
+      // Average cost per 100 of the principal outstanding (current face, or adjusted principal), the units the price is quoted in.
+      ...(Math.abs(scale - 1) > 1e-12 && !isZero(pos.qty) ? { avgCost: Math.round((pos.cost / (pos.qty * scale * 0.01)) * 1e6) / 1e6 } : {}),
       exposure: clean,
     };
   },
@@ -230,7 +339,7 @@ export const bond = {
         app.tasks.schedule({ ...common, type: 'bond.coupon', dueDate: c.dueDate, data: { key: c.couponDate, couponDate: c.couponDate } });
         const per100 = couponPer100(t, c.couponDate);
         if (per100 === null) owed = null; // a floating coupon without its fixing: the balance waits for it
-        else if (owed !== null) owed += (face * factorOf(inst) * per100) / 100;
+        else if (owed !== null) owed += (face * couponScale(inst, c.couponDate) * per100) / 100;
       }
       if (owed !== null) trueUp(app, { book, unit, inst, pos, target: owed, disposal: true });
       return undefined;
@@ -294,11 +403,12 @@ export const bond = {
       if (per100 === null) {
         return { blocked: `Awaiting the ${inst.terms.referenceRate} fixing of ${periodStart} for the coupon period ${periodStart} to ${couponDate}. ${app.data.describe().awaitingMessage}, or enter the fixing manually.`, needs: [{ kind: 'rate', subject: inst.terms.referenceRate, date: periodStart }] };
       }
-      const amount = money((face * factorOf(inst) * per100) / 100, ccy);
+      const cScale = couponScale(inst, couponDate);
+      const amount = money((face * cScale * per100) / 100, ccy);
       const eventId = ledger.post({
         // A short owes the coupon to the lender of the securities: it is paid, on the face sold short.
-        ...base, type: 'bond.coupon', summary: `Coupon ${amount >= 0 ? 'received' : 'paid'} on ${fmtQty(Math.abs(face))} ${inst.symbol || inst.name}${face < 0 ? ' sold short' : ''}: ${fmt(Math.abs(amount), ccy)}`,
-        data: { couponDate, per100, face },
+        ...base, type: 'bond.coupon', summary: `Coupon ${amount >= 0 ? 'received' : 'paid'} on ${fmtQty(Math.abs(face))} ${inst.symbol || inst.name}${face < 0 ? ' sold short' : ''}${principalNote(inst, face, cScale)}: ${fmt(Math.abs(amount), ccy)}`,
+        data: { couponDate, per100, face, ...(Math.abs(cScale - 1) > 1e-12 ? { scale: cScale } : {}) },
         entries: [{ account: 'cash', ccy, amount, positionId: pos.id }, { account: 'accrued.asset', ccy, amount: -amount, positionId: pos.id }],
       });
       if (inst.terms.couponType === 'float') resetFloat(app, inst, couponDate);
@@ -319,7 +429,15 @@ export const bond = {
       // Final coupon first if it has not been paid yet.
       const pendingCoupon = app.db.get(`SELECT id FROM tasks WHERE position_id = ? AND type = 'bond.coupon' AND status IN ('pending','blocked') AND due_date <= ?`, pos.id, task.due_date);
       if (pendingCoupon) return { blocked: 'Waiting for the final coupon to be paid first.', needs: [] };
-      const r = redeem(app, { book, unit, inst, pos: live, price: inst.terms.redemption, face: Math.abs(live.qty), date: inst.terms.maturity, type: 'bond.redemption', label: 'Redeemed at maturity' });
+      // An inflation-linked bond repays its adjusted principal (face x index ratio); with a deflation floor (US TIPS) never
+      // less than the face.
+      const ratio = ratioOf(inst);
+      const floored = isLinker(inst) && inst.terms.inflationFloor && ratio < 1;
+      const face = Math.abs(live.qty);
+      const note = !isLinker(inst) ? '' : floored
+        ? ` on index ratio ${fmtRatio(ratio)}, below 1: principal floored at par, ${fmt(money(face * factorOf(inst) * inst.terms.redemption / 100, inst.trading_ccy), inst.trading_ccy)}`
+        : ` on index ratio ${fmtRatio(ratio)}: adjusted principal ${fmt(money(face * factorOf(inst) * ratio * inst.terms.redemption / 100, inst.trading_ccy), inst.trading_ccy)}`;
+      const r = redeem(app, { book, unit, inst, pos: live, price: inst.terms.redemption, face, date: inst.terms.maturity, type: 'bond.redemption', label: 'Redeemed at maturity', scale: factorOf(inst) * (floored ? 1 : ratio), note });
       bond.onPositionChange(app, { book, unit, inst, pos: positions.get(pos.id) });
       return { done: true, eventId: r.eventId };
     }
@@ -355,6 +473,56 @@ export const bond = {
       if (id) eventIds.push(id);
     }
     return { suspended: true, eventIds };
+  },
+  /** Instrument-level events recorded by hand (POST /api/instruments/:id/lifecycle). */
+  manualEvent(app, { inst, action, body }) {
+    if (action === 'index_ratio') return bond.recordIndexRatio(app, { inst, ratio: body.ratio, asOf: body.asOf });
+    if (action === 'call') return bond.callIssue(app, { inst, price: body.price, share: body.share, note: body.note });
+    if (action === 'writedown') return bond.writeDown(app, { inst, newFactor: body.newFactor, effective: body.effective, kind: body.kind, note: body.note });
+    throw new AppError(`Unknown debt-security event "${action}".`);
+  },
+  /** Position-level events recorded by hand (POST /api/positions/:id/lifecycle). */
+  positionEvent(app, ctx) {
+    if (ctx.action === 'put') return bond.exercisePut(app, { ...ctx, face: ctx.body.face, label: ctx.body.label });
+    if (ctx.action === 'convert') return bond.convert(app, { ...ctx, face: ctx.body.face, sharePrice: ctx.body.sharePrice, settlement: ctx.body.settlement });
+    throw new AppError(`Unknown debt-security event "${ctx.action}".`);
+  },
+  /**
+   * Index ratio of an inflation-linked bond recorded by hand (the Terminal has no inflation index feed).
+   * The rule: principal outstanding = face x index ratio. For every holder, in every Book, the change in principal at par
+   * (face x pool factor x (new ratio - old ratio)) is inflation accretion: it is added to the position's carrying cost and
+   * booked as coupon and interest income (a fall in the ratio, deflation, is a negative accretion). The accrued interest,
+   * which runs on the adjusted principal, is trued up to today at the new ratio. Later trades settle at the new ratio,
+   * coupons are paid on face x ratio, and redemption repays face x ratio (floored at par when the bond has a deflation floor).
+   */
+  recordIndexRatio(app, { inst, ratio, asOf }) {
+    const name = inst.symbol || inst.name;
+    need(isLinker(inst), `${name} is not an inflation-linked bond: it was registered without an index ratio.`);
+    const r = num(ratio);
+    need(r !== null && r > 0 && r < 20, 'Enter the index ratio as a positive number, for example 1.03514.');
+    const old = ratioOf(inst);
+    need(Math.abs(r - old) > 1e-12, `The index ratio of ${name} is already ${fmtRatio(old)}.`);
+    const today = app.clock.today();
+    const date = asOf ? String(asOf) : today;
+    need(ISO_DATE_RE.test(date), 'The date the index ratio applies to must be YYYY-MM-DD.');
+    app.instruments.update(inst.id, { terms: { ...inst.terms, indexRatio: r, indexRatioAsOf: date } }, { system: true });
+    const fresh = app.instruments.get(inst.id);
+    const ccy = inst.trading_ccy;
+    const eventIds = [];
+    for (const p of app.positions.heldAround(inst.id)) {
+      if (isZero(p.qty)) continue;
+      const book = app.books.getBook(p.book_id), unit = app.books.getUnit(p.unit_id);
+      const accretion = money(p.qty * factorOf(inst) * (r - old), ccy);
+      eventIds.push(app.ledger.post({
+        bookId: book.id, unitId: unit.id, type: 'bond.index_ratio', instrumentId: inst.id, strategyId: p.strategy_id, positionId: p.id, actor: 'user',
+        summary: `Index ratio of ${name} recorded by hand: ${fmtRatio(old)} to ${fmtRatio(r)} (as of ${date}). Principal of ${fmtQty(Math.abs(p.qty))} face${p.qty < 0 ? ' sold short' : ''} ${p.qty * (r - old) >= 0 ? 'up' : 'down'} ${fmt(Math.abs(accretion), ccy)}: inflation ${accretion >= 0 ? 'accretion earned' : 'accretion lost'}`,
+        data: { from: old, to: r, asOf: date, accretion, manual: true },
+        entries: [{ account: 'pos', ccy, amount: accretion, positionId: p.id }, { account: 'pnl.coupon', ccy, amount: -accretion, positionId: p.id }],
+      }));
+      const after = app.positions.change(p, { dCost: accretion });
+      if (!fresh.terms.couponSuspended) accrueTo(app, { book, unit, inst: fresh, pos: after, date: today });
+    }
+    return { indexRatio: r, eventIds };
   },
   /** Principal paydown by hand: the pool factor falls and the paid-down face is redeemed at par. */
   paydown(app, { book, unit, inst, newFactor }) {
@@ -395,13 +563,17 @@ function schedTerms(inst) {
   return { ...t, maturity: `${y + 200}${t.anchorDate.slice(4)}` };
 }
 
-function redeem(app, { book, unit, inst, pos, price, face, date, type, label, actor = 'engine', accrued = 0 }) {
+function redeem(app, { book, unit, inst, pos, price, face, date, type, label, actor = 'engine', accrued = 0, scale = null, note = '' }) {
   const long = pos.qty > 0;
+  // Principal per unit of face: the pool factor times the index ratio, unless the caller states it (an inflation floor).
+  const s = scale ?? factorOf(inst) * ratioOf(inst);
+  const ccy = inst.trading_ccy;
+  const extra = note || (isLinker(inst) ? ` on index ratio ${fmtRatio(ratioOf(inst))}: ${fmt(money(face * s * price / 100, ccy), ccy)}` : Math.abs(s - 1) > 1e-12 ? ` on current face ${fmtQty(money(face * s, ccy))}` : '');
   // Settle the outstanding accrued interest to zero against cash before closing the principal.
   return bookSecurityFill(app, {
     book, unit, inst, action: long ? 'sell' : 'buy_to_cover', qty: face, price, fees: [], strategyId: pos.strategy_id, tradeDate: date, settleDate: app.clock.today(),
-    eventType: type, actor, summary: `${label}: ${fmtQty(face)} ${inst.symbol || inst.name} at ${fmtPx(price)}% of par`,
-  }, { unitCost: (price * factorOf(inst)) / 100, accrued });
+    eventType: type, actor, summary: `${label}: ${fmtQty(face)} ${inst.symbol || inst.name} at ${fmtPx(price)}% of par${extra}`,
+  }, { unitCost: (price * s) / 100, accrued });
 }
 
 /** The reference-rate fixing of a floating coupon period, set on its first day (or up to five days before it). */

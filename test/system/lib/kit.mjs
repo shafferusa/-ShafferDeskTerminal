@@ -18,6 +18,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { commitStamp, RESULTS_DIR } from '../../matrix/lib/results.mjs';
+import { checkMapping } from './mapping.mjs';
 import { openWorld } from './world.mjs';
 
 export const LEVEL_LETTER = { engine: 'SE', api: 'SA', browser: 'SB' };
@@ -48,12 +49,13 @@ export async function loadCases({ area, id } = {}) {
       if (seen.has(k.id)) throw new Error(`${file}: case id "${k.id}" is used twice.`);
       seen.add(k.id);
       for (const l of LEVELS) if (typeof k.levels[l] !== 'function' && typeof k.levels[l] !== 'string') throw new Error(`${file}: case "${k.id}" must give a function or a reason for the ${l} level.`);
-      if (wantArea && !wantArea.has(mod.area)) continue;
-      if (wantCase && !wantCase.has(k.id)) continue;
       out.push({ ...k, area: mod.area, file });
     }
   }
-  return out;
+  // The level mapping is checked over every case, whatever the filter: a runner does not start on an incomplete map.
+  const problems = checkMapping(out);
+  if (problems.length) throw new Error(`The level mapping of the system suite is incomplete (test/system/lib/mapping.mjs):\n  ${problems.join('\n  ')}`);
+  return out.filter((k) => (!wantArea || wantArea.has(k.area)) && (!wantCase || wantCase.has(k.id)));
 }
 
 const show = (x) => { try { return typeof x === 'string' ? JSON.stringify(x) : JSON.stringify(x); } catch { return String(x); } };

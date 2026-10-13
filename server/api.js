@@ -379,10 +379,17 @@ export function createApi(app) {
         case 'exercise': need(plugin.exercise, 'This position cannot be exercised.'); result = plugin.exercise(app, { ...ctx, contracts: body.contracts }); break;
         case 'assign': need(plugin.assign, 'Assignment does not apply to this position.'); result = plugin.assign(app, { ...ctx, contracts: body.contracts }); break;
         case 'redeem': need(plugin.redeemEarly, 'Early redemption does not apply to this position.'); result = plugin.redeemEarly(app, { ...ctx, price: body.price, face: body.face, label: body.label }); break;
+        // A holder's put and a conversion or exchange into shares, recorded by hand (server/products/bond.js).
+        case 'put': case 'convert': need(plugin.positionEvent, 'This event applies to debt securities.'); result = plugin.positionEvent(app, { ...ctx, action: body.action, body }); break;
         case 'recall': need(plugin.recall, 'A lender recall does not apply to this position.'); result = plugin.recall(app, { ...ctx, qty: body.qty, days: num(body.days) ?? 2 }); break;
+        // r1: a repo's collateral changed by agreement (margin call met, excess returned, substitution).
+        case 'collateral': need(plugin.collateralChange, 'A collateral change applies to repos and reverse repos.'); result = plugin.collateralChange(app, { ...ctx, change: body.change, qty: body.qty, positionId: body.positionId, instrumentId: body.instrumentId }); break;
         case 'cashflow': result = app.accounting.manualCashflow({ positionId: pos.id, category: body.category, amount: body.amount, note: body.note }); break;
         // Physical delivery of goods is not simulated for a spot asset: the Terminal moves no goods. Say so plainly.
-        case 'deliver': throw new AppError(inst.family === 'spot'
+        // A future's delivery notice: the plugin decides from the contract's own settlement terms (simulated on paper
+        // for a physically delivered contract with a configured deliverable; refused with the specific reason otherwise).
+        case 'deliver': if (plugin.deliver) { result = plugin.deliver(app, { ...ctx, contracts: body.contracts }); break; }
+          throw new AppError(inst.family === 'spot'
           ? `Physical delivery is not simulated for ${inst.symbol || inst.name}: the Terminal moves no goods. Record delivery, storage and transport costs as manual cash flows on the position, and the goods leaving as a sale at the agreed price (or at 0.00 when they are consumed or lost).`
           : 'Physical delivery does not apply to this position.', { code: 'delivery_not_simulated' });
         case 'barrier': {
@@ -412,11 +419,15 @@ export function createApi(app) {
         case 'paydown': {
           need(plugin.paydown, 'A principal paydown applies to debt securities.');
           const holder = positions.heldAround(inst.id)[0];
-          return plugin.paydown(app, { book: holder ? books.getBook(holder.book_id) : null, unit: holder ? books.getUnit(holder.unit_id) : null, inst, newFactor: body.newFactor });
+          return plugin.paydown(app, { book: holder ? books.getBook(holder.book_id) : null, unit: holder ? books.getUnit(holder.unit_id) : null, inst, newFactor: body.newFactor, effective: body.effective, payDate: body.payDate, scheduledFactor: body.scheduledFactor, note: body.note });
         }
+        // Debt-security events recorded by hand: an index ratio, an issuer call, a write-down or loss allocation (server/products/bond.js).
+        case 'index_ratio': case 'call': case 'writedown': need(inst.family === 'bond' && plugin.manualEvent, 'This event applies to debt securities.'); return plugin.manualEvent(app, { inst, action: body.action, body });
         case 'suspend_coupon': need(inst.family === 'bond' && plugin.suspendCoupons, 'Coupon suspension applies to debt securities.'); return plugin.suspendCoupons(app, { inst, suspended: Boolean(body.suspended) });
         case 'set_rate': {
           need(['repo', 'loan'].includes(inst.family), 'A rate reset applies to loans and repos.');
+          const fixed = plugin.checkSetRate ? plugin.checkSetRate(inst) : null; // r1: a buy/sell-back's forward price is fixed
+          need(!fixed, fixed);
           const rate = num(body.rate);
           need(rate !== null && Math.abs(rate) <= 1, 'Enter the new rate as a decimal (0.045 = 4.5%).');
           for (const p of positions.heldAround(inst.id)) {

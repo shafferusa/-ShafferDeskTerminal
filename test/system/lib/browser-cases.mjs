@@ -967,7 +967,24 @@ export async function incompleteTerms(b, c) {
   await enter(b, book, '#/instruments');
   const count = () => b.sql('SELECT COUNT(*) AS n FROM instruments')[0].n;
   const n0 = count();
-  let first = true;
+  // Nothing decides the market view (routing convention, server/core/catalog.js conventionRoute): a note marked as
+  // exchange-traded with no venue country, no jurisdiction and no view chosen. The form itself stops, before anything is sent.
+  {
+    await ui.button(page.locator('main'), 'New instrument').first().click();
+    const dlg = ui.dialog('New instrument');
+    await ui.select(dlg, 'Product type').selectOption('treasury_note');
+    await ui.drawn();
+    await ui.input(dlg, 'Name').fill('Note with nothing but a name');
+    await ui.option(dlg, 'Traded on', 'Exchange').click();
+    const sent = watchRequests(page, 'POST', /^\/api\/instruments$/);
+    await ui.button(dlg, 'Register instrument').click();
+    await dlg.getByText(/Nothing decides the market view/).first().waitFor();
+    sent.stop();
+    c.eq(sent.seen.length, 0, 'nothing but a name, no venue country: the form sends nothing');
+    c.match(flat(await dlg.innerText()), /Not saved\./, 'and says "Not saved"');
+    await ui.button(dlg, 'Cancel').click();
+    await dlg.waitFor({ state: 'hidden' });
+  }
   const attempt = async (label, productId, name, text, otc = false) => {
     await ui.closeOverlays();
     await ui.goto('#/instruments');
@@ -976,16 +993,6 @@ export async function incompleteTerms(b, c) {
     await ui.select(dlg, 'Product type').selectOption(productId);
     await ui.drawn();
     await ui.input(dlg, 'Name').fill(name);
-    if (first) {
-      // Nothing but a name: the form itself stops, before anything is sent.
-      first = false;
-      const sent = watchRequests(page, 'POST', /^\/api\/instruments$/);
-      await ui.button(dlg, 'Register instrument').click();
-      await dlg.getByText('Choose the primary market view.').waitFor();
-      sent.stop();
-      c.eq(sent.seen.length, 0, `${label}: with no market view the form sends nothing`);
-      c.match(flat(await dlg.locator('footer, .foot, .modal-foot').last().innerText().catch(() => dlg.innerText())), /Not saved\./, `${label}: and says "Not saved"`);
-    }
     await ui.input(dlg, 'Venue country').fill('US');
     const view = ui.option(dlg, 'Primary view', 'US Based'); // an OTC product is not placed by its venue: the view is chosen
     if (otc && await view.count()) await view.click();

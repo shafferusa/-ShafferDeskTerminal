@@ -378,7 +378,7 @@ export default [
         w.sameRows(c, end, await w.books(book.id), 'later cycles');
         await w.clean(c, book.id);
       }),
-      browser: 'a lender recall is recorded by hand on the borrow position; the form is exercised with the other hand-recorded events in SB:stress:double-click-event, and the buy-in itself is produced by time passing',
+      browser: 'a lender recall is recorded by hand on the borrow position; the form is exercised with the other hand-recorded events in SB:stress:double-click-records, and the buy-in itself is produced by time passing',
     },
   },
 
@@ -743,7 +743,7 @@ export default [
       }),
       browser: async (b, c) => b.cases.incompleteTerms(b, c),
     },
-    expectedBrowser: 'In the registry form (New instrument): with nothing but a name the form sends nothing and says "Not saved", asking for the primary market view. An equity option with no strike, a US Treasury note with no maturity and an index future with no expiration are each refused by the server: the form says "The instrument was not saved." and names the missing term, stays open with what was typed, and nothing is registered. (Loans, repos and swaps are not registered in this form; their incomplete terms are the engine and API cases.)',
+    expectedBrowser: 'In the registry form (New instrument): a US Treasury note with nothing but a name, marked exchange-traded with no venue country, jurisdiction or view (so nothing decides its market view under the routing convention): the form sends nothing, says "Not saved" and that nothing decides the market view. An equity option with no strike, a US Treasury note with no maturity and an index future with no expiration are each refused by the server: the form says "The instrument was not saved." and names the missing term, stays open with what was typed, and nothing is registered. (Loans, repos and swaps are not registered in this form; their incomplete terms are the engine and API cases.)',
   },
 
   // ---------------------------------------------------------------------------------------------------

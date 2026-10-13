@@ -12,10 +12,10 @@
 import { fmt } from '../core/books.js';
 import { addBusinessDays, adjust } from '../quant/calendar.js';
 import { addDays, addMonths, diffDays, makeDate, ymd } from '../quant/dates.js';
-import { CCY_RE, ISO_DATE_RE, isZero, money, need, num } from '../core/util.js';
+import { AppError, CCY_RE, ISO_DATE_RE, isZero, money, need, num } from '../core/util.js';
 import { fmtQty, trueUpAccrual } from './common.js';
 import { markOf } from '../data/observation.js';
-import { accruedPer100 } from '../quant/bond.js';
+import { accruedPer100, couponDates, couponPer100 } from '../quant/bond.js';
 import { calendarFor, paymentCalendarFor } from './security.js';
 
 const basisDays = (dc) => (dc === 'ACT/365' ? 365 : 360);
@@ -333,6 +333,87 @@ function collateralWorth(app, coll, qty, ccy, date) {
   return { price: px, clean: money(clean * fx.rate, ccy), accrued: money(ai * fx.rate, ccy), worth: money((clean + ai) * fx.rate, ccy) };
 }
 
+// Products that exist on one side only: a repo and a sell/buy-back raise cash, a reverse repo and a buy/sell-back lend it.
+const REPO_SIDE_ONLY = { repo: 'repo', sell_buy_back: 'repo', reverse_repo: 'reverse_repo', buy_sell_back: 'reverse_repo' };
+const BSB_PRODUCTS = new Set(['buy_sell_back', 'sell_buy_back']);
+const isBsb = (inst) => BSB_PRODUCTS.has(inst.product_id);
+const REPO_LABEL = { repo: 'A repo', reverse_repo: 'A reverse repo', sell_buy_back: 'A sell/buy-back', buy_sell_back: 'A buy/sell-back' };
+const symOf = (i) => (i ? i.symbol || i.name : 'collateral');
+
+/**
+ * The cover a quantity of collateral gives: its value (dirty for a debt security), less the haircut, less the additional
+ * buffer the terms state (a negative buffer adds to it). { worth, clean, accrued, haircut, afterHaircut, buffer, cover } or { error }.
+ */
+function coverFor(app, inst, coll, qty, date) {
+  const ccy = inst.trading_ccy;
+  const w = collateralWorth(app, coll, qty, ccy, date);
+  if (w.error) return w;
+  const h = inst.terms.haircut || 0;
+  const buffer = money(inst.terms.buffer || 0, ccy);
+  const afterHaircut = money(w.worth * (1 - h), ccy);
+  return { ...w, qty, haircut: h, haircutAmount: money(w.worth - afterHaircut, ccy), afterHaircut, buffer, cover: money(afterHaircut - buffer, ccy) };
+}
+const bufferText = (c, ccy) => (c.buffer > 0 ? `, less the additional buffer of ${fmt(c.buffer, ccy)}` : c.buffer < 0 ? `, plus the additional funding of ${fmt(-c.buffer, ccy)} the terms state` : '');
+const coverText = (c, coll, ccy) => `${fmtQty(c.qty)} ${symOf(coll)} is worth ${fmt(c.worth, ccy)}${c.accrued ? ` (${fmt(c.clean, ccy)} clean plus ${fmt(c.accrued, ccy)} accrued interest)` : ''} and the haircut is ${(c.haircut * 100).toFixed(2)}%${bufferText(c, ccy)}`;
+
+/** What is owed on an open repo (principal and the repo interest accrued), from the borrower's or the lender's side. */
+const owedOn = (app, inst, pos) => money(Math.abs(pos.qty) + Math.abs(app.ledger.positionBalance(pos.id, pos.qty < 0 ? 'accrued.liab' : 'accrued.asset', inst.trading_ccy)), inst.trading_ccy);
+
+/**
+ * A buy/sell-back or sell/buy-back is two outright trades in one debt security: a spot trade for the cash principal and a
+ * forward trade the other way, its price fixed at inception. The forward amount is the principal with repo interest to
+ * the forward date, less each coupon paid on the security during the term with repo interest from its payment date (the
+ * buyer keeps the coupon; the forward price is reduced by it). Prices are per 100 face, dirty and clean.
+ */
+function forwardOf(app, inst, coll, P, start) {
+  const t = inst.terms;
+  const ccy = inst.trading_ccy;
+  const basis = basisDays(t.dayCount);
+  const end = adjust(t.endDate, 'following', paymentCalendarFor(inst));
+  const face = t.collateralQty * (coll.terms.factor ?? 1);
+  const coupons = couponDates(coll.terms, start)
+    .map((d) => ({ couponDate: d, payDate: adjust(d, 'following', paymentCalendarFor(coll)) }))
+    .filter((c) => c.payDate > start && c.payDate <= end)
+    .map((c) => ({ ...c, amount: money((face * (couponPer100(coll.terms, c.couponDate) ?? 0)) / 100, ccy) }));
+  let amount = P * (1 + (t.rate * diffDays(start, end)) / basis);
+  for (const c of coupons) amount -= c.amount * (1 + (t.rate * diffDays(c.payDate, end)) / basis);
+  amount = money(amount, ccy);
+  const r6 = (x) => Math.round(x * 1e6) / 1e6;
+  const dirty = r6((amount / face) * 100);
+  return { endDate: end, amount, spotDirtyPer100: r6((P / face) * 100), dirtyPer100: dirty, cleanPer100: r6(dirty - (accruedPer100(coll.terms, end) ?? 0)), coupons };
+}
+
+/**
+ * A coupon paid on the security of a buy/sell-back or sell/buy-back during the term belongs to the buyer: the seller of
+ * the bonds (who still carries them, the sale being a financing) receives it from the issuer and passes it on, which
+ * reduces what it pays back at the forward date; the buyer receives it, which reduces what it is paid back. Interest is
+ * brought to the payment date first, so the principal reduced bears interest from then on. Idempotent per coupon date.
+ */
+function passCoupons(app, { book, unit, inst, pos, upTo }) {
+  const f = inst.terms.forward;
+  let p = pos;
+  if (!f?.coupons?.length || isZero(p.qty)) return p;
+  const ccy = inst.trading_ccy;
+  const coll = app.instruments.get(inst.terms.collateralInstrumentId);
+  for (const c of f.coupons) {
+    if (c.payDate > upTo || (p.data.couponsPassed || []).includes(c.couponDate)) continue;
+    p = trueUpInterest(app, { book, unit, inst, pos: p, date: c.payDate, label: `Repo interest accrued on ${inst.name}` });
+    const sold = p.qty < 0;
+    app.ledger.post({
+      bookId: book.id, unitId: unit.id, type: 'repo.coupon', instrumentId: inst.id, strategyId: p.strategy_id, positionId: p.id, actor: 'engine',
+      summary: sold
+        ? `Coupon of ${c.couponDate} on the ${fmtQty(inst.terms.collateralQty)} ${symOf(coll)} sold under ${inst.name} passed to the buyer: ${fmt(c.amount, ccy)}; it reduces the amount paid back at the forward date`
+        : `Coupon of ${c.couponDate} on the ${fmtQty(inst.terms.collateralQty)} ${symOf(coll)} bought under ${inst.name} received: ${fmt(c.amount, ccy)}; it reduces the amount received back at the forward date`,
+      data: { couponDate: c.couponDate, payDate: c.payDate, amount: c.amount },
+      entries: sold
+        ? [{ account: 'cash', ccy, amount: -c.amount, positionId: p.id }, { account: 'loan.liab', ccy, amount: c.amount, positionId: p.id }]
+        : [{ account: 'cash', ccy, amount: c.amount, positionId: p.id }, { account: 'loan.asset', ccy, amount: -c.amount, positionId: p.id }],
+    });
+    p = app.positions.change(app.positions.get(p.id), { dQty: sold ? c.amount : -c.amount, data: { couponsPassed: [...(p.data.couponsPassed || []), c.couponDate] } });
+  }
+  return p;
+}
+
 export const repo = {
   family: 'repo',
   kind: 'arrangement',
@@ -351,6 +432,9 @@ export const repo = {
     if (!(t.collateralQty > 0)) errors.push('Collateral quantity must be positive.');
     t.haircut = num(t.haircut) ?? 0;
     if (t.haircut < 0 || t.haircut >= 1) errors.push('Haircut must be a decimal between 0 and 1 (0.02 = 2%).');
+    // An additional funding buffer the terms state, in the repo currency: positive takes cash off what the collateral
+    // supports after the haircut, negative adds to it. Empty is none.
+    t.buffer = num(t.buffer) ?? 0;
     t.term = ['overnight', 'term', 'open'].includes(t.term) ? t.term : t.endDate ? 'term' : 'open';
     if (t.term === 'open') t.endDate = null;
     else if (t.endDate && !ISO_DATE_RE.test(t.endDate)) errors.push('End date must be YYYY-MM-DD.');
@@ -362,7 +446,10 @@ export const repo = {
   },
   describe(inst) {
     const t = inst.terms;
-    const rows = [['Rate', describeRate(t)], ['Term', t.term === 'open' ? 'Open (until terminated)' : `${t.term}${t.endDate ? `, ends ${t.endDate}` : ''}`], ['Collateral quantity', fmtQty(t.collateralQty)], ['Haircut', `${(t.haircut * 100).toFixed(2)}%`], ['Collateral type', t.collateralType === 'special' ? 'Special' : 'General collateral'], ['Structure', `${t.style === 'buy_sell_back' ? 'Buy/sell-back' : 'Classic repo'}${t.triparty ? ', tri-party' : ', bilateral'}`]];
+    const rows = [['Rate', describeRate(t)], ['Term', t.term === 'open' ? 'Open (until terminated)' : `${t.term}${t.endDate ? `, ends ${t.endDate}` : ''}`], ['Collateral quantity', fmtQty(t.collateralQty)], ['Haircut', `${(t.haircut * 100).toFixed(2)}%`]];
+    if (t.buffer) rows.push(['Additional buffer', `${t.buffer > 0 ? 'less' : 'plus'} ${fmt(Math.abs(t.buffer), inst.trading_ccy)}`]);
+    rows.push(['Collateral type', t.collateralType === 'special' ? 'Special' : 'General collateral'], ['Structure', `${isBsb(inst) || t.style === 'buy_sell_back' ? 'Buy/sell-back' : 'Classic repo'}${t.triparty ? ', tri-party' : ', bilateral'}`]);
+    if (t.forward) rows.push(['Forward price', `${t.forward.cleanPer100.toFixed(6)} clean, ${t.forward.dirtyPer100.toFixed(6)} dirty, on ${t.forward.endDate}: ${fmt(t.forward.amount, inst.trading_ccy)}`]);
     if (t.agent) rows.push(['Tri-party agent', t.agent]);
     if (t.counterparty) rows.push(['Counterparty', t.counterparty]);
     return rows;
@@ -371,30 +458,51 @@ export const repo = {
   checkOpen(app, { unit, inst, action, qty, collateralPositionId }) {
     const out = [];
     const ccy = inst.trading_ccy;
+    const t = inst.terms;
     const today = app.clock.today();
-    if (inst.terms.term === 'term' && inst.terms.endDate && inst.terms.endDate <= today) out.push(`The end date ${inst.terms.endDate} is not after today (${today}).`);
+    const side = REPO_SIDE_ONLY[inst.product_id];
+    if (side && side !== action) out.push(side === 'repo'
+      ? `${REPO_LABEL[inst.product_id]} raises cash against securities: it is entered on the Repo side. To lend cash against collateral, use a reverse repo or a buy/sell-back.`
+      : `${REPO_LABEL[inst.product_id]} lends cash against securities: it is entered on the Reverse repo side. To raise cash against securities, use a repo or a sell/buy-back.`);
+    if (t.term === 'term' && t.endDate && t.endDate <= today) out.push(`The end date ${t.endDate} is not after today (${today}).`);
+    const coll = app.instruments.get(t.collateralInstrumentId);
+    // Buy/sell-back and sell/buy-back: the forward price is fixed at inception, so the rate is fixed, the forward date
+    // stated, and the security one whose coupons are known in advance, in the repo currency.
+    if (isBsb(inst)) {
+      if (t.rateType !== 'fixed') out.push(`${REPO_LABEL[inst.product_id]} fixes its forward price at inception: the repo rate must be fixed.`);
+      if (t.term !== 'term' || !t.endDate) out.push(`${REPO_LABEL[inst.product_id]} runs to a stated forward date: choose Term and enter the end date.`);
+      if (coll && (coll.family !== 'bond' || coll.terms.couponType === 'float')) out.push(`${REPO_LABEL[inst.product_id]} is done in a debt security whose coupons are known at inception; ${symOf(coll)} is not one.`);
+      if (coll && coll.trading_ccy !== ccy) out.push(`${REPO_LABEL[inst.product_id]} is in the currency of its security (${coll.trading_ccy}).`);
+    } else if (t.style === 'buy_sell_back') out.push('Structure Buy/sell-back belongs to the Buy/sell-back and Sell/buy-back products: choose one of them as the product, or Classic repo as the structure.');
+    // The cash cannot exceed what the collateral supports: its market value (a debt security at its dirty value: clean
+    // price plus the interest accrued to today) less the haircut and any additional buffer the terms state. This holds
+    // for the cash raised on a repo and for the cash lent on a reverse repo. Without a price, or without a conversion
+    // rate when the collateral is in another currency, that cannot be worked out and nothing is assumed.
+    const supports = (c) => {
+      if (c.error) { out.push(c.error); return; }
+      if (qty > c.cover + 0.004) out.push(`The collateral${action === 'reverse_repo' ? ' received' : ''} supports at most ${fmt(Math.max(0, c.cover), ccy)}: ${coverText(c, coll, ccy)}; ${fmt(qty, ccy)} requested.`);
+    };
     if (action === 'repo') {
       const p = collateralPositionId ? app.positions.get(collateralPositionId) : null;
-      if (!p || p.unit_id !== unit.id || p.instrument_id !== inst.terms.collateralInstrumentId) out.push('Choose a position in this Treasury/Account that holds the collateral security.');
-      else if (app.positions.freeQty(p) < inst.terms.collateralQty - 1e-9) out.push(`Only ${fmtQty(app.positions.freeQty(p))} of the collateral is unencumbered; ${fmtQty(inst.terms.collateralQty)} is needed.`);
-      else {
-        // The cash raised cannot exceed what the pledged collateral supports: its market value (a debt security at its
-        // dirty value: clean price plus the interest accrued to today) less the haircut. Without a price, or without a
-        // conversion rate when the collateral is in another currency, that cannot be worked out and nothing is assumed.
-        const coll = app.instruments.get(p.instrument_id);
-        const cq = inst.terms.collateralQty;
-        const w = collateralWorth(app, coll, cq, ccy, today);
-        if (w.error) out.push(w.error);
-        else {
-          const max = money(w.worth * (1 - (inst.terms.haircut || 0)), ccy);
-          if (qty > max + 0.004) out.push(`The collateral supports at most ${fmt(max, ccy)}: ${fmtQty(cq)} ${coll.symbol || coll.name} is worth ${fmt(w.worth, ccy)}${w.accrued ? ` (${fmt(w.clean, ccy)} clean plus ${fmt(w.accrued, ccy)} accrued interest)` : ''} and the haircut is ${((inst.terms.haircut || 0) * 100).toFixed(2)}%; ${fmt(qty, ccy)} requested.`);
-        }
-      }
+      if (!p || p.unit_id !== unit.id || p.instrument_id !== t.collateralInstrumentId) out.push('Choose a position in this Treasury/Account that holds the collateral security.');
+      else if (app.positions.freeQty(p) < t.collateralQty - 1e-9) out.push(`Only ${fmtQty(app.positions.freeQty(p))} of the collateral is unencumbered; ${fmtQty(t.collateralQty)} is needed.`);
+      else supports(coverFor(app, inst, coll, t.collateralQty, today));
     } else {
+      if (!coll) out.push('Choose the collateral security.');
+      else supports(coverFor(app, inst, coll, t.collateralQty, today));
       const c = app.ledger.cash(unit.id, ccy);
       if (c.availableToWithdraw < qty - 0.004) out.push(`${unit.name} has ${fmt(c.availableToWithdraw, ccy)} of settled ${ccy} available to lend; ${fmt(qty, ccy)} requested.`);
     }
     return out;
+  },
+  /** The reconciliation the preview shows: collateral value, haircut, buffer and the most cash it supports. */
+  previewDetail(app, { inst, qty, collateralPositionId }) {
+    const coll = app.instruments.get(inst.terms.collateralInstrumentId);
+    if (!coll) return null;
+    const c = coverFor(app, inst, coll, inst.terms.collateralQty, app.clock.today());
+    const collateral = c.error ? null : { qty: c.qty, price: c.price, clean: c.clean, accrued: c.accrued, worth: c.worth, haircut: c.haircut, haircutAmount: c.haircutAmount, afterHaircut: c.afterHaircut, buffer: c.buffer, supports: c.cover, symbol: symOf(coll) };
+    const forward = isBsb(inst) && collateral && inst.terms.rateType === 'fixed' && inst.terms.endDate && coll.family === 'bond' ? forwardOf(app, inst, coll, money(qty, inst.trading_ccy), inst.terms.startDate || app.clock.today()) : null;
+    return { collateral, forward, positionId: collateralPositionId || null };
   },
   open(app, c) {
     const { ledger, positions } = app;
@@ -405,22 +513,29 @@ export const repo = {
     const today = c.tradeDate;
     const coll = app.instruments.get(inst.terms.collateralInstrumentId);
     const termEnd = inst.terms.term === 'overnight' && !inst.terms.endDate ? addBusinessDays(today, 1, paymentCalendarFor(inst)) : inst.terms.endDate;
-    app.instruments.update(inst.id, { terms: { ...inst.terms, startDate: inst.terms.startDate || today, endDate: termEnd || null } }, { system: true });
+    const bsb = isBsb(inst);
+    let terms = { ...inst.terms, startDate: inst.terms.startDate || today, endDate: termEnd || null, ...(bsb ? { style: 'buy_sell_back' } : {}) };
+    if (bsb) terms = { ...terms, forward: forwardOf(app, { ...inst, terms }, coll, P, terms.startDate) };
+    app.instruments.update(inst.id, { terms }, { system: true });
+    const fresh = app.instruments.get(inst.id);
     let pos = positions.ensure({ bookId: c.book.id, unitId: c.unit.id, instrumentId: inst.id, strategyId: c.strategyId });
+    const f = terms.forward;
+    const summary = bsb
+      ? `${isRepo ? 'Sell/buy-back: sold' : 'Buy/sell-back: bought'} ${fmtQty(terms.collateralQty)} ${symOf(coll)} spot for ${fmt(P, ccy)} and ${isRepo ? 'bought it back' : 'sold it back'} forward for ${f.endDate} at ${fmt(f.amount, ccy)} (forward price ${f.cleanPer100.toFixed(6)} clean, ${f.dirtyPer100.toFixed(6)} dirty; ${describeRate(terms)})`
+      : `${isRepo ? 'Repo' : 'Reverse repo'}: ${isRepo ? 'received' : 'paid'} ${fmt(P, ccy)} against ${fmtQty(terms.collateralQty)} ${symOf(coll)} at ${describeRate(terms)}${termEnd ? ` to ${termEnd}` : ', open'}`;
     const eventId = ledger.post({
       bookId: c.book.id, unitId: c.unit.id, type: isRepo ? 'repo.open' : 'repo.reverse_open', instrumentId: inst.id, strategyId: c.strategyId, orderId: c.order?.id, positionId: pos.id,
-      summary: `${isRepo ? 'Repo' : 'Reverse repo'}: ${isRepo ? 'received' : 'paid'} ${fmt(P, ccy)} against ${fmtQty(inst.terms.collateralQty)} ${coll?.symbol || coll?.name || 'collateral'} at ${describeRate(inst.terms)}${termEnd ? ` to ${termEnd}` : ', open'}`,
-      data: { principal: P, terms: inst.terms, collateralPositionId: c.collateralPositionId || null, ...(c.data || {}) },
+      summary, data: { principal: P, terms: fresh.terms, collateralPositionId: c.collateralPositionId || null, ...(c.data || {}) },
       entries: isRepo
         ? [{ account: 'cash', ccy, amount: P, positionId: pos.id }, { account: 'loan.liab', ccy, amount: -P, positionId: pos.id }]
         : [{ account: 'cash', ccy, amount: -P, positionId: pos.id }, { account: 'loan.asset', ccy, amount: P, positionId: pos.id }],
     });
-    const data = { accrued: 0, accruedThrough: today, side: isRepo ? 'borrow' : 'lend' };
+    const data = { accrued: 0, accruedThrough: today, side: isRepo ? 'borrow' : 'lend', ...(bsb ? { couponsPassed: [] } : {}) };
     if (isRepo) {
       const cp = positions.get(c.collateralPositionId);
-      positions.change(cp, { dPledged: inst.terms.collateralQty });
+      positions.change(cp, { dPledged: terms.collateralQty });
       data.collateralPositionId = cp.id;
-    } else data.collateralHeld = { instrumentId: inst.terms.collateralInstrumentId, qty: inst.terms.collateralQty };
+    } else data.collateralHeld = { instrumentId: terms.collateralInstrumentId, qty: terms.collateralQty };
     pos = positions.change(pos, { dQty: isRepo ? -P : P, data });
     return { eventId, position: pos, realized: 0, cashNet: isRepo ? P : -P };
   },
@@ -449,14 +564,18 @@ export const repo = {
     const { ledger, positions } = app;
     const inst = c.inst;
     const ccy = inst.trading_ccy;
-    let pos = trueUpInterest(app, { book: c.book, unit: c.unit, inst, pos: c.pos, date: c.tradeDate, label: `Repo interest accrued on ${inst.name}` });
+    let pos = passCoupons(app, { book: c.book, unit: c.unit, inst, pos: c.pos, upTo: c.tradeDate });
+    pos = trueUpInterest(app, { book: c.book, unit: c.unit, inst, pos, date: c.tradeDate, label: `Repo interest accrued on ${inst.name}` });
     const isRepo = pos.qty < 0;
     const P = Math.abs(pos.qty);
     const interest = settleInterest(app, { book: c.book, unit: c.unit, inst, pos, label: 'Repo interest' });
+    const coll = app.instruments.get(inst.terms.collateralInstrumentId);
+    const summary = isBsb(inst)
+      ? `${isRepo ? 'Sell/buy-back completed: bought back' : 'Buy/sell-back completed: sold back'} ${fmtQty(inst.terms.collateralQty)} ${symOf(coll)} for ${fmt(money(P + (interest.amount || 0), ccy), ccy)} (principal ${fmt(P, ccy)}, repo interest ${fmt(interest.amount, ccy)})`
+      : `${isRepo ? 'Repo repurchase' : 'Reverse repo matured'}: ${isRepo ? 'paid' : 'received'} ${fmt(P, ccy)} principal (interest ${fmt(interest.amount, ccy)}); collateral ${isRepo ? 'released' : 'returned'}`;
     const eventId = ledger.post({
       bookId: c.book.id, unitId: c.unit.id, type: isRepo ? 'repo.close' : 'repo.reverse_close', instrumentId: inst.id, strategyId: pos.strategy_id, orderId: c.order?.id, positionId: pos.id, actor: c.actor || 'user',
-      summary: `${isRepo ? 'Repo repurchase' : 'Reverse repo matured'}: ${isRepo ? 'paid' : 'received'} ${fmt(P, ccy)} principal (interest ${fmt(interest.amount, ccy)}); collateral ${isRepo ? 'released' : 'returned'}`,
-      data: { principal: P, interest: interest.amount },
+      summary, data: { principal: P, interest: interest.amount },
       entries: isRepo
         ? [{ account: 'cash', ccy, amount: -P, positionId: pos.id }, { account: 'loan.liab', ccy, amount: P, positionId: pos.id }]
         : [{ account: 'cash', ccy, amount: P, positionId: pos.id }, { account: 'loan.asset', ccy, amount: -P, positionId: pos.id }],
@@ -471,6 +590,81 @@ export const repo = {
     app.alerts.resolve({ refType: 'position', refId: pos.id, code: 'repo.margin' });
     return { eventId, position: pos, realized: 0, cashNet: isRepo ? -P : P, interestPaid: isRepo ? -(interest.amount || 0) : interest.amount || 0 };
   },
+  /** A buy/sell-back's forward price is fixed at inception: its rate cannot be reset. */
+  checkSetRate(inst) {
+    return isBsb(inst) ? `${REPO_LABEL[inst.product_id]} fixed its forward price at inception (${inst.terms.forward ? fmt(inst.terms.forward.amount, inst.trading_ccy) : 'on its terms'}): the rate cannot be reset. Close it and enter a new one at the new rate.` : null;
+  },
+  /**
+   * A change of collateral agreed with the counterparty, recorded by hand: more collateral (a margin call met after the
+   * collateral fell), a return of excess collateral (after it rose), or a substitution by another security. The cover
+   * after a return or a substitution must still meet what is owed with repo interest. On a repo the securities are the
+   * borrower's own positions (pledged or released); on a reverse repo they are held, not owned, and only the record of
+   * what is held changes. A buy/sell-back or sell/buy-back has no collateral to change: its securities were sold outright.
+   */
+  collateralChange(app, { book, unit, inst, pos, change, qty, positionId, instrumentId }) {
+    const { positions } = app;
+    const ccy = inst.trading_ccy;
+    const t = inst.terms;
+    need(!isZero(pos.qty), 'This repo is closed.');
+    need(!isBsb(inst), `${REPO_LABEL[inst.product_id]} is two outright trades in one security with the forward price fixed at inception: there is no collateral to top up, return or substitute. Close it and enter a new one to change the securities.`);
+    need(['pledge', 'release', 'substitute'].includes(change), 'Choose the collateral change: more collateral (a margin call), a return of excess collateral, or a substitution.');
+    const q = num(qty);
+    need(q > 0, 'Enter the quantity of collateral as a positive number.');
+    const borrowed = pos.qty < 0;
+    const today = app.clock.today();
+    const coll = app.instruments.get(t.collateralInstrumentId);
+    const owed = owedOn(app, inst, pos);
+    const cp = borrowed ? positions.get(pos.data.collateralPositionId) : null;
+    let newColl = coll, newQty, newPos = null;
+    if (change === 'pledge') {
+      if (borrowed) need(cp && positions.freeQty(cp) >= q - 1e-9, `Only ${fmtQty(cp ? Math.max(0, positions.freeQty(cp)) : 0)} more ${symOf(coll)} is unencumbered in ${unit.name}; ${fmtQty(q)} requested.`);
+      newQty = t.collateralQty + q;
+    } else if (change === 'release') {
+      need(q < t.collateralQty - 1e-9, `${fmtQty(t.collateralQty)} ${symOf(coll)} is ${borrowed ? 'pledged' : 'held'}: to return all of it, ${borrowed ? 'repurchase' : 'terminate'} the repo.`);
+      newQty = t.collateralQty - q;
+    } else {
+      if (borrowed) {
+        newPos = positionId ? positions.get(positionId) : null;
+        need(newPos && newPos.unit_id === unit.id && newPos.qty > 0, `Choose a long position held in ${unit.name} to pledge in substitution.`);
+        need(newPos.id !== cp?.id, `The substitute must be another security than the ${symOf(coll)} already pledged.`);
+        newColl = app.instruments.get(newPos.instrument_id);
+        need(positions.freeQty(newPos) >= q - 1e-9, `Only ${fmtQty(Math.max(0, positions.freeQty(newPos)))} ${symOf(newColl)} is unencumbered in ${unit.name}; ${fmtQty(q)} requested.`);
+      } else {
+        newColl = instrumentId ? app.instruments.get(instrumentId) : null;
+        need(newColl && ['bond', 'equity', 'fund'].includes(newColl.family), 'Choose the security received in substitution.');
+        need(newColl.id !== coll?.id, `The substitute must be another security than the ${symOf(coll)} already held.`);
+      }
+      newQty = q;
+    }
+    const c = coverFor(app, inst, newColl, newQty, today);
+    need(!c.error, c.error);
+    if (change !== 'pledge' && c.cover < owed - 0.004) {
+      throw new AppError(`After the ${change === 'release' ? 'return' : 'substitution'} the cover would be ${fmt(money(owed - c.cover, ccy), ccy)} short: ${coverText(c, newColl, ccy)}, so it covers ${fmt(c.cover, ccy)} against ${fmt(owed, ccy)} owed with repo interest.`);
+    }
+    if (borrowed) {
+      if (change === 'pledge') positions.change(cp, { dPledged: q });
+      else if (change === 'release') positions.change(cp, { dPledged: -q });
+      else {
+        if (cp) positions.change(cp, { dPledged: -Math.min(t.collateralQty, cp.pledged_qty) });
+        positions.change(newPos, { dPledged: q });
+      }
+    }
+    app.instruments.update(inst.id, { terms: { ...t, collateralInstrumentId: newColl.id, collateralQty: newQty } }, { system: true });
+    const after = `now ${fmtQty(newQty)} ${symOf(newColl)} ${borrowed ? 'pledged' : 'held'}, worth ${fmt(c.worth, ccy)}: cover ${fmt(c.cover, ccy)} against ${fmt(owed, ccy)} owed`;
+    const summary = {
+      pledge: borrowed ? `Margin call met on ${inst.name}: pledged ${fmtQty(q)} more ${symOf(coll)} (${after})` : `Margin call on ${inst.name}: received ${fmtQty(q)} more ${symOf(coll)} from the counterparty (${after})`,
+      release: borrowed ? `Excess collateral returned on ${inst.name}: ${fmtQty(q)} ${symOf(coll)} released (${after})` : `Excess collateral returned to the counterparty on ${inst.name}: ${fmtQty(q)} ${symOf(coll)} (${after})`,
+      substitute: `Collateral substituted on ${inst.name}: ${fmtQty(t.collateralQty)} ${symOf(coll)} ${borrowed ? 'released' : 'returned'}, ${fmtQty(q)} ${symOf(newColl)} ${borrowed ? 'pledged' : 'received'} (${after})`,
+    }[change];
+    let fresh = positions.get(pos.id);
+    fresh = positions.change(fresh, { data: borrowed ? (newPos ? { collateralPositionId: newPos.id } : {}) : { collateralHeld: { instrumentId: newColl.id, qty: newQty } } });
+    const eventId = app.ledger.post({
+      bookId: book.id, unitId: unit.id, type: 'repo.collateral', instrumentId: inst.id, strategyId: pos.strategy_id, positionId: pos.id,
+      summary, data: { change, qty: q, from: { instrumentId: coll?.id || null, qty: t.collateralQty }, to: { instrumentId: newColl.id, qty: newQty }, worth: c.worth, cover: c.cover, owed },
+    });
+    checkCover(app, { book, unit, inst: app.instruments.get(inst.id), pos: fresh, date: today });
+    return { eventId, collateralQty: newQty, cover: c.cover, owed };
+  },
   value(app, inst, pos) {
     const ccy = inst.trading_ccy;
     const borrowed = pos.qty < 0;
@@ -483,7 +677,12 @@ export const repo = {
   onPositionChange(app, { book, unit, inst, pos }) {
     if (isZero(pos.qty)) return app.tasks.cancelFor(pos.id);
     const fresh = app.instruments.get(inst.id);
-    if (fresh.terms.endDate) app.tasks.schedule({ bookId: book.id, unitId: unit.id, positionId: pos.id, instrumentId: inst.id, strategyId: pos.strategy_id, type: 'repo.end', dueDate: adjust(fresh.terms.endDate, 'following', paymentCalendarFor(inst)) });
+    const common = { bookId: book.id, unitId: unit.id, positionId: pos.id, instrumentId: inst.id, strategyId: pos.strategy_id };
+    if (fresh.terms.endDate) app.tasks.schedule({ ...common, type: 'repo.end', dueDate: adjust(fresh.terms.endDate, 'following', paymentCalendarFor(inst)) });
+    // The coupons a buy/sell-back or sell/buy-back passes over during its term, each on its payment date.
+    for (const c of fresh.terms.forward?.coupons || []) {
+      if (!(pos.data.couponsPassed || []).includes(c.couponDate)) app.tasks.schedule({ ...common, type: 'repo.coupon', dueDate: c.payDate, data: { key: c.couponDate, couponDate: c.couponDate } });
+    }
   },
   /** The fixings a floating repo needs, and the collateral's price for the daily check of its cover. */
   dataNeeds(app, args) {
@@ -493,47 +692,51 @@ export const repo = {
   },
   eod(app, { book, unit, inst, pos, date }) {
     if (isZero(pos.qty)) return;
-    const p = trueUpInterest(app, { book, unit, inst, pos, date, label: `Repo interest accrued on ${inst.name}` });
+    let p = passCoupons(app, { book, unit, inst, pos, upTo: date });
+    p = trueUpInterest(app, { book, unit, inst, pos: p, date, label: `Repo interest accrued on ${inst.name}` });
     checkCover(app, { book, unit, inst, pos: p, date });
   },
   runTask(app, task, { book, unit, inst, pos }) {
-    if (task.type !== 'repo.end') return { failed: `Unknown task ${task.type}` };
     if (!pos || isZero(pos.qty)) return 'done';
+    if (task.type === 'repo.coupon') {
+      passCoupons(app, { book, unit, inst, pos, upTo: task.due_date });
+      return 'done';
+    }
+    if (task.type !== 'repo.end') return { failed: `Unknown task ${task.type}` };
     // As for a loan: a repurchase date reached for the first time after the day itself is settled as of that date.
     const today = app.clock.today();
     const asOf = task.status === 'pending' && task.due_date < today ? task.due_date : today;
-    const p = trueUpInterest(app, { book, unit, inst, pos, date: asOf, label: `Repo interest accrued on ${inst.name}` });
+    let p = passCoupons(app, { book, unit, inst, pos, upTo: asOf });
+    p = trueUpInterest(app, { book, unit, inst, pos: p, date: asOf, label: `Repo interest accrued on ${inst.name}` });
     if (p.data.rateMissing) return { blocked: waitingForFixing(inst, p.data.rateMissing, pos.qty < 0 ? 'Repo repurchase' : 'Reverse repo termination') };
     const problems = repo.checkClose(app, { unit, inst, pos: p, date: asOf });
     if (problems.length) return fundingFailure(app, { book, unit, inst, pos, what: 'Repo repurchase', detail: problems[0] });
-    const r = repo.close(app, { book, unit, inst, pos, tradeDate: asOf, actor: 'engine' });
+    const r = repo.close(app, { book, unit, inst, pos: p, tradeDate: asOf, actor: 'engine' });
     app.alerts.resolve({ refType: 'position', refId: pos.id, code: 'funding.failed' });
     return { done: true, eventId: r.eventId };
   },
 };
 
 /**
- * The daily check of a repo's cover: the collateral at its value today (dirty for a debt security), less the haircut,
- * against what is owed (principal and repo interest). A shortfall is raised, with its amount; a margin call, a return of
- * excess collateral and a substitution are not simulated, and the alert says so and what to do instead. It clears when
- * the cover is restored.
+ * The daily check of a repo's cover: the collateral at its value today (dirty for a debt security), less the haircut and
+ * any additional buffer, against what is owed (principal and repo interest). A shortfall is raised, with its amount, and
+ * says what to do: record the margin call (more collateral) with Collateral on the repo's row; it clears when the cover is
+ * restored. A buy/sell-back has no margin: its securities were sold outright at a fixed forward price.
  */
 function checkCover(app, { book, unit, inst, pos, date }) {
   const coll = app.instruments.get(inst.terms.collateralInstrumentId);
-  if (!coll) return;
+  if (!coll || isBsb(inst)) return;
   const ccy = inst.trading_ccy;
-  const w = collateralWorth(app, coll, inst.terms.collateralQty, ccy, date);
-  if (w.error) return;
+  const c = coverFor(app, inst, coll, inst.terms.collateralQty, date);
+  if (c.error) return;
   const borrowed = pos.qty < 0;
-  const owed = money(Math.abs(pos.qty) + Math.abs(app.ledger.positionBalance(pos.id, borrowed ? 'accrued.liab' : 'accrued.asset', ccy)), ccy);
-  const h = inst.terms.haircut || 0;
-  const cover = money(w.worth * (1 - h), ccy);
-  const short = money(owed - cover, ccy);
+  const owed = owedOn(app, inst, pos);
+  const short = money(owed - c.cover, ccy);
   if (short < 0.01) { app.alerts.resolve({ refType: 'position', refId: pos.id, code: 'repo.margin' }); return; }
-  const what = `${fmtQty(inst.terms.collateralQty)} ${coll.symbol || coll.name} ${borrowed ? 'pledged' : 'received'}`;
+  const what = `${fmtQty(inst.terms.collateralQty)} ${symOf(coll)} ${borrowed ? 'pledged' : 'received'}`;
   app.alerts.raise({
     bookId: book.id, unitId: unit.id, level: 'warning', code: 'repo.margin', refType: 'position', refId: pos.id,
-    message: `${inst.name}: the ${what} are worth ${fmt(w.worth, ccy)} on ${date}, ${fmt(cover, ccy)} after the ${(h * 100).toFixed(2)}% haircut, against ${fmt(owed, ccy)} ${borrowed ? 'owed' : 'lent'} with repo interest: the cover is ${fmt(short, ccy)} short. Margin calls are not simulated on repos: ${borrowed ? 'to restore the cover, repurchase and open a new repo on more collateral or for less cash' : 'the counterparty is not called; terminate and open a new reverse repo to restore the cover'}.`,
+    message: `${inst.name}: the ${what} are worth ${fmt(c.worth, ccy)} on ${date}, ${fmt(c.cover, ccy)} after the ${(c.haircut * 100).toFixed(2)}% haircut${bufferText(c, ccy)}, against ${fmt(owed, ccy)} ${borrowed ? 'owed' : 'lent'} with repo interest: the cover is ${fmt(short, ccy)} short. ${borrowed ? 'The counterparty may call for more collateral: record the securities pledged with Collateral on the repo, or repurchase it.' : 'Call the counterparty for more collateral and record what it delivers with Collateral on the reverse repo, or terminate it.'}`,
   });
 }
 

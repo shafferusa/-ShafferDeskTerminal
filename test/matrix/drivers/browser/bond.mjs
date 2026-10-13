@@ -45,8 +45,23 @@ const ORDER_TYPE = { market: 'Market', limit: 'Limit', stop: 'Stop', stop_limit:
 const TIF = { day: 'Day', gtc: 'Until cancelled' };
 const VIEW = { US_CASH: 'US Based', FOREIGN_CASH: 'Foreign Based', US_DERIV: 'US Derivatives', FOREIGN_DERIV: 'Foreign Derivatives' };
 /** Contract terms the registration form has a field for. `calendar` and `settleDays` are engine terms with no field: use `conventions`. */
-const FORM_TERMS = new Set(['couponType', 'couponRate', 'referenceRate', 'spread', 'currentCoupon', 'frequency', 'perpetual', 'maturity', 'anchorDate', 'issueDate', 'dayCount', 'redemption', 'factor', 'minDenomination', 'seniority']);
+const FORM_TERMS = new Set(['couponType', 'couponRate', 'referenceRate', 'spread', 'currentCoupon', 'frequency', 'perpetual', 'maturity', 'anchorDate', 'issueDate', 'dayCount', 'redemption', 'factor', 'minDenomination', 'seniority',
+  // structured debt (added by b3): inflation-linked, callable, puttable, convertible and exchangeable bonds, securitised paper
+  'indexRatio', 'inflationFloor', 'callSchedule', 'putSchedule', 'conversionRatio', 'paymentDelayDays', 'guarantor']);
 const has = (v) => v !== undefined && v !== null && v !== '';
+const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** A call or put schedule as the form takes it: "2028-06-15 101; 2029-06-15 100". */
+const scheduleText = (rows) => (Array.isArray(rows) ? rows.map((r) => `${r.date} ${r.price}`).join('; ') : String(rows));
+
+/** Choose a registered instrument in an instrument picker of the form. */
+async function pickInstrument(ui, scope, label, inst) {
+  const field = ui.field(scope, label);
+  const change = field.getByRole('button', { name: /^\s*Change\s*$/ });
+  if (await change.count()) await change.click();
+  await field.getByPlaceholder('Type a ticker or name').fill(inst.symbol || inst.name);
+  await field.getByRole('button', { name: new RegExp(`^\\s*${esc(inst.symbol || inst.name)}(\\s|$)`) }).first().click();
+  await field.locator('b', { hasText: inst.symbol || inst.name }).first().waitFor();
+}
 
 /** One calendar role of "Calendars and settlement": a built-in calendar by its id, or a joint calendar typed as A+B. */
 async function chooseCalendar(ui, dialog, label, id) {
@@ -59,7 +74,7 @@ async function chooseCalendar(ui, dialog, label, id) {
 }
 
 /** The parts of the registration form that are particular to a debt security. */
-export async function contractTerms(ui, dialog, draft) {
+export async function contractTerms(ui, dialog, draft, ctx) {
   const t = draft.terms || {};
   const unknown = Object.keys(t).filter((k) => !FORM_TERMS.has(k));
   if (unknown.length) throw new Error(`The registration form has no field for the bond term${unknown.length > 1 ? 's' : ''} ${unknown.join(', ')}. A scenario may only state terms a user can enter (see the header of drivers/browser/bond.mjs).`);
@@ -96,6 +111,15 @@ export async function contractTerms(ui, dialog, draft) {
   if (has(t.factor)) await ui.input(dialog, 'Pool factor').fill(String(t.factor));
   if (has(t.minDenomination)) await ui.input(dialog, 'Minimum denomination').fill(String(t.minDenomination));
   if (has(t.seniority)) await ui.input(dialog, 'Seniority').fill(String(t.seniority));
+  // ---- structured debt (b3) ----
+  if (has(t.indexRatio)) await ui.input(dialog, 'Index ratio').fill(String(t.indexRatio));
+  if (t.inflationFloor) await ui.field(dialog, 'Deflation floor').locator('input[type=checkbox]').check();
+  if (has(t.callSchedule)) await ui.input(dialog, 'Call schedule').fill(scheduleText(t.callSchedule));
+  if (has(t.putSchedule)) await ui.input(dialog, 'Put dates and prices').fill(scheduleText(t.putSchedule));
+  if (draft.underlying) await pickInstrument(ui, dialog, /^\s*Shares delivered on conversion/, ctx.inst(draft.underlying));
+  if (has(t.conversionRatio)) await ui.input(dialog, 'Conversion ratio').fill(String(t.conversionRatio));
+  if (has(t.paymentDelayDays)) await ui.input(dialog, 'Payment delay').fill(String(t.paymentDelayDays));
+  if (has(t.guarantor)) await ui.input(dialog, 'Guarantor').fill(String(t.guarantor));
 }
 
 /** The security ticket in the instrument drawer, for a debt security. */
@@ -174,6 +198,14 @@ export async function ticket(ui, t, ctx, step) {
  *   P&L, balance sheet, borrowings, history) and every figure is compared with the API's figures for Treasury, to the
  *   decimals shown. The spec's own figures are compared with the API after every step as always, so the three agree.
  */
+/**
+ * Lifecycle events recorded by hand on the instrument form (b3): the fields each fills, its Review and confirm buttons
+ * and the toast that says it was recorded. Spec step: `{ action: 'instrument_lifecycle', instrument, body: { action, ... } }`.
+ */
+const MANUAL_FORMS = {
+  index_ratio: { fields: (b) => [['New index ratio', b.ratio], ['Index ratio as of', b.asOf]], review: 'Review index ratio', confirm: 'Record index ratio', done: /Index ratio recorded/ },
+};
+
 export const actions = {
   /**
    * An early redemption recorded by hand from the position's Lifecycle menu. Any other lifecycle event is handed
@@ -211,14 +243,32 @@ export const actions = {
    */
   async instrument_lifecycle(ui, t, ctx, step) {
     const kind = step.body?.action;
-    if (!['suspend_coupon', 'paydown'].includes(kind)) return undefined;
+    if (!['suspend_coupon', 'paydown', ...Object.keys(MANUAL_FORMS)].includes(kind)) return undefined;
     const inst = ctx.inst(step.instrument);
     const drawer = await ui.openInstrument(inst);
     await drawer.getByRole('button', { name: /^Edit$/ }).first().click();
     const dlg = ui.dialog(`Edit ${inst.symbol || inst.name}`);
     await dlg.waitFor();
     let review, confirm, done;
-    if (kind === 'paydown') {
+    if (MANUAL_FORMS[kind]) {
+      // A form of the "Lifecycle events recorded by hand" part (b3): fill its fields, then review and confirm.
+      const f = MANUAL_FORMS[kind];
+      for (const [label, value] of f.fields(step.body)) {
+        if (!has(value)) continue;
+        const input = ui.input(dlg, label);
+        if (!await input.count()) {
+          await ui.button(dlg, 'Cancel').click();
+          return { refusal: { message: `The instrument form offers no "${label}" field for ${inst.symbol || inst.name}.`, where: 'instrument form, Lifecycle events recorded by hand' } };
+        }
+        await input.fill(String(value));
+      }
+      if (f.select) for (const [label, value] of f.select(step.body)) if (has(value)) await ui.select(dlg, label).selectOption(value);
+      review = ui.button(dlg, f.review); confirm = f.confirm; done = f.done;
+      if (!await review.count()) {
+        await ui.button(dlg, 'Cancel').click();
+        return { refusal: { message: `The instrument form offers no "${f.review}" for ${inst.symbol || inst.name}.`, where: 'instrument form, Lifecycle events recorded by hand' } };
+      }
+    } else if (kind === 'paydown') {
       await ui.input(dlg, 'New pool factor').fill(String(step.body.newFactor));
       review = ui.button(dlg, 'Review paydown'); confirm = 'Record paydown'; done = /Paydown recorded/;
     } else {
