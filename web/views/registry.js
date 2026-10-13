@@ -650,7 +650,7 @@ function InstrumentForm({ inst: given, view, preset, onDone, onClose }) {
 function LifecycleAdmin({ inst, onChanged }) {
   const t = inst.terms || {};
   const name = inst.symbol || inst.name;
-  const [v, setV] = useState({ recovery: null, weight: 1, newFactor: null, rate: null, ratio: null, ratioAsOf: '' });
+  const [v, setV] = useState({ recovery: null, weight: 1, newFactor: null, rate: null, ratio: null, ratioAsOf: '', callPrice: null, callShare: 1 });
   const [step, setStep] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -661,7 +661,7 @@ function LifecycleAdmin({ inst, onChanged }) {
     setBusy(true); setError(null);
     try {
       await post(`/api/instruments/${inst.id}/lifecycle`, { action: step.action, ...step.body });
-      toast(step.done); setStep(null); setV({ recovery: null, weight: 1, newFactor: null, rate: null, ratio: null, ratioAsOf: '' });
+      toast(step.done); setStep(null); setV({ recovery: null, weight: 1, newFactor: null, rate: null, ratio: null, ratioAsOf: '', callPrice: null, callShare: 1 });
       bump(); await onChanged();
     } catch (err) { setError(err); }
     setBusy(false);
@@ -689,6 +689,15 @@ function LifecycleAdmin({ inst, onChanged }) {
     return { action: 'index_ratio', body: { ratio: r, asOf: v.ratioAsOf || undefined }, confirm: 'Record index ratio', done: 'Index ratio recorded.',
       text: `The index ratio of ${name} changes from ${fmtNum(old, 5)} to ${fmtNum(r, 5)}${v.ratioAsOf ? ` (as of ${v.ratioAsOf})` : ''}, recorded by hand. For every holder, in every Book, principal is face x index ratio: the change at par, face x ${fmtNum(r - old, 5)}, is booked as inflation accretion in coupon and interest income and added to the position's cost (a fall is a negative accretion). Accrued interest is trued up to today on the adjusted principal; later trades, coupons and the redemption use the new ratio${t.inflationFloor ? ', and the principal repaid at maturity is never less than par' : ''}.` };
   };
+  const issuerCall = () => {
+    const p = v.callPrice, sh = v.callShare ?? 1;
+    if (!isNum(p) || p <= 0) return { invalid: 'Enter the call price in % of par, as the call schedule states it.' };
+    if (!(sh > 0 && sh <= 1)) return { invalid: 'The share of the issue called must be above 0 and at most 1 (1 = the whole issue).' };
+    const whole = sh >= 1;
+    return { action: 'call', body: { price: p, share: sh }, confirm: 'Record issuer call', done: 'Issuer call recorded.',
+      text: whole ? `${name} is called by the issuer, recorded by hand: every holder, in every Book, is redeemed today at ${fmtNum(p, 2)}% of par with the accrued interest to today. The positions close, the remaining coupons and the redemption are cancelled, and the bond can no longer be traded. The Terminal checks the price against the call schedule.`
+        : `A partial call of ${name}, recorded by hand: ${fmtNum(sh * 100, 4)}% of every holding, in every Book (in whole minimum denominations), is redeemed today at ${fmtNum(p, 2)}% of par with the accrued interest on it. The rest stays outstanding. The Terminal checks the price against the call schedule.` };
+  };
   const suspend = (on) => ({ action: 'suspend_coupon', body: { suspended: on }, confirm: on ? 'Suspend coupons' : 'Resume coupons', done: on ? 'Coupons suspended.' : 'Coupons resumed.',
     text: on ? `No coupon accrues or is paid on ${name} for any holder, in any Book, until coupons are resumed. Coupon dates that pass while suspended are listed in the history as not paid and are not paid later. Interest accrued and not yet received is reversed out of coupon and interest income for every holder (non-accrual), and the bond trades flat, without accrued interest, until coupons are resumed.`
       : `Coupon accrual and payment restart on ${name} for every holder, in every Book. Coupon dates that passed while suspended are not paid afterwards; record any catch-up payment by hand.` });
@@ -709,6 +718,11 @@ function LifecycleAdmin({ inst, onChanged }) {
       <${Field} label="New index ratio" hint=${`Current ${fmtNum(t.indexRatio, 5)}${t.indexRatioAsOf ? `, as of ${t.indexRatioAsOf}` : ', from registration'}. Entered by hand: no index feed.`}><${Num} value=${v.ratio} onInput=${(x) => { setV({ ...v, ratio: x }); setStep(null); }} /><//>
       <${Field} label="Index ratio as of" hint="The date it applies to. Today if empty."><${Text} type="date" value=${v.ratioAsOf || ''} onInput=${(x) => { setV({ ...v, ratioAsOf: x }); setStep(null); }} /><//>
       ${button('Review index ratio', indexRatio)}</div>` : null}
+    ${inst.family === 'bond' && Array.isArray(t.callSchedule) && t.callSchedule.length && !t.calledOn ? html`<div class="grid-form" style=${GRID}>
+      <${Field} label="Call price (% of par)" hint=${`Call schedule: ${t.callSchedule.map((r) => `${r.date} at ${fmtNum(r.price, 2)}`).join('; ')}`}><${Num} value=${v.callPrice} onInput=${(x) => { setV({ ...v, callPrice: x }); setStep(null); }} /><//>
+      <${Field} label="Share of the issue called" hint="1 = the whole issue; less is a partial call, pro rata"><${Num} value=${v.callShare ?? 1} onInput=${(x) => { setV({ ...v, callShare: x }); setStep(null); }} /><//>
+      ${button('Review issuer call', issuerCall)}</div>` : null}
+    ${inst.family === 'bond' && t.calledOn ? html`<p class="note">Called in full on ${t.calledOn}${isNum(t.calledAt) ? ` at ${fmtNum(t.calledAt, 2)}% of par` : ''}: nothing is outstanding.</p>` : null}
     ${inst.family === 'bond' ? html`<div class="grid-form" style=${GRID}>
       <${Field} label="New pool factor" hint=${`Current factor ${factor}`}><${Num} value=${v.newFactor} onInput=${(x) => { setV({ ...v, newFactor: x }); setStep(null); }} /><//>
       ${button('Review paydown', paydown)}

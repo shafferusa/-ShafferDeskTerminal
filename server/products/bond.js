@@ -266,6 +266,8 @@ export const bond = {
     if (inst.terms?.couponType === 'float' && settleDate && !inst.terms.couponSuspended && bond.accruedAmount(inst, 1, settleDate) === null) {
       return { code: 'no_fixing', message: `${inst.symbol || inst.name} has no ${inst.terms.referenceRate} fixing for its current coupon period, so the accrued interest of this trade cannot be computed. Supply or enter the fixing (Data connection, Manual entries) first.` };
     }
+    // Called in full by the issuer (recorded by hand): nothing is outstanding to trade.
+    if (inst.terms?.calledOn) return { code: 'called', message: `${inst.symbol || inst.name} was called by the issuer and redeemed in full on ${inst.terms.calledOn}. It can no longer be traded.` };
     const m = inst.terms?.perpetual ? null : inst.terms?.maturity;
     if (!m || !settleDate || settleDate < m) return null;
     const name = inst.symbol || inst.name;
@@ -523,6 +525,43 @@ export const bond = {
       if (!fresh.terms.couponSuspended) accrueTo(app, { book, unit, inst: fresh, pos: after, date: today });
     }
     return { indexRatio: r, eventIds };
+  },
+  /**
+   * Issuer call recorded by hand, for the whole issue: every holder, in every Book, is redeemed at the call price in force
+   * today under the call schedule (callable from each date at its price), with the accrued interest to today paid with it.
+   * `share` below 1 is a partial call, pro rata: that share of each holding (in whole minimum denominations) is redeemed and
+   * the rest stays outstanding. A full call closes every holding, cancels the remaining coupons and redemption, and the
+   * bond can no longer be traded. A call before the first call date, or at a price other than the one in force, is refused.
+   * (The call notice period is not modelled: the call is recorded on the redemption date.)
+   */
+  callIssue(app, { inst, price, share, note }) {
+    const name = inst.symbol || inst.name;
+    const sched = inst.terms.callSchedule;
+    need(Array.isArray(sched) && sched.length, `${name} has no call schedule: it was registered as not callable by the issuer. A tender or another early redemption is recorded on a position (Lifecycle, Early redemption).`);
+    need(!inst.terms.calledOn, `${name} was called in full on ${inst.terms.calledOn}; nothing is left outstanding.`);
+    const today = app.clock.today();
+    const inForce = [...sched].reverse().find((r) => r.date <= today);
+    need(inForce, `${name} is not callable before ${sched[0].date}, its first call date (at ${fmtPx(sched[0].price)}% of par).`);
+    const has = (v) => v !== undefined && v !== null && v !== '';
+    const p = has(price) ? num(price) : inForce.price;
+    need(p !== null && Math.abs(p - inForce.price) < 1e-9, `The call price in force on ${today} is ${fmtPx(inForce.price)}% of par (from ${inForce.date} under the call schedule); a call at ${fmtPx(p)} is not in the terms.`);
+    const sh = has(share) ? num(share) : 1;
+    need(sh !== null && sh > 0 && sh <= 1, 'The share of the issue called must be above 0 and at most 1 (1 = the whole issue).');
+    const full = sh >= 1 - 1e-12;
+    const step = inst.terms.minDenomination || 1;
+    const eventIds = [];
+    for (const pos of app.positions.heldAround(inst.id)) {
+      if (isZero(pos.qty)) continue;
+      const book = app.books.getBook(pos.book_id), unit = app.books.getUnit(pos.unit_id);
+      const face = full ? Math.abs(pos.qty) : Math.round((Math.abs(pos.qty) * sh) / step) * step;
+      if (!(face > 0)) continue;
+      const label = full ? 'Issuer call recorded by hand (whole issue)' : `Partial issuer call recorded by hand (${Number((sh * 100).toFixed(6))}% of the issue, pro rata)`;
+      const r = redeem(app, { book, unit, inst, pos, price: p, face, date: today, type: 'bond.call', label: note ? `${label}, ${note}` : label, actor: 'user', accrued: Math.abs(bond.accruedAmount(inst, face, today) || 0) });
+      eventIds.push(r.eventId);
+      bond.onPositionChange(app, { book, unit, inst, pos: app.positions.get(pos.id) });
+    }
+    if (full) app.instruments.update(inst.id, { terms: { ...app.instruments.get(inst.id).terms, calledOn: today, calledAt: p } }, { system: true });
+    return { price: p, share: sh, eventIds };
   },
   /** Principal paydown by hand: the pool factor falls and the paid-down face is redeemed at par. */
   paydown(app, { book, unit, inst, newFactor }) {

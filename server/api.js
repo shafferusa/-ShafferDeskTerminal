@@ -404,8 +404,8 @@ export function createApi(app) {
         // m1: the manual workflow of a holding or contract valued by hand (products/manual.js): valuations, capital calls,
         // distributions, redemptions, loss events, final settlement from a realised value, and the rest.
         default:
-          if (plugin.manualEvent && plugin.manualEvents(inst).includes(body.action)) { result = plugin.manualEvent(app, ctx, body); break; }
-          if (plugin.manualEvent) throw new AppError(`"${body.action}" is not recorded for ${inst.symbol || inst.name}. It records: ${plugin.manualEvents(inst).join(', ')}, and manual cash flows.`);
+          if (inst.family === 'manual' && plugin.manualEvents(inst).includes(body.action)) { result = plugin.manualEvent(app, ctx, body); break; }
+          if (inst.family === 'manual') throw new AppError(`"${body.action}" is not recorded for ${inst.symbol || inst.name}. It records: ${plugin.manualEvents(inst).join(', ')}, and manual cash flows.`);
           throw new AppError(`Unknown lifecycle action "${body.action}".`);
       }
       const fresh = positions.get(pos.id);
