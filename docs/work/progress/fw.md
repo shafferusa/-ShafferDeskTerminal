@@ -31,7 +31,12 @@
 
 ## In progress
 - Part 1 done apart from the 1-point save (retry npm test).
-- ndf: passed engine / API / browser (saved 0.2). Next product: fra.
+- ndf: passed engine / API / browser (saved 0.2).
+- fra: passed E/A/B. Terminal fixes for it: contracts.js shows Fixing date for an FRA; api.js refreshBook also refreshes
+  FX pairs of open positions' currencies (and the engine driver mirror) - NAV was provisional on a stale EUR rate.
+  FRA offset discounting logged in BUGS.md (not fixed).
+- Next: core regression tests test/core/forwards.test.js (terminate, value-date check, position-currency FX refresh);
+  then equity_forward (agreement basis? physical delivery), bond_forward, commodity_forward, fx_swap, tba_mortgage.
 
 ## Next
 1. Part 2: forwards family, 8 products, one at a time, save 0.2 each.

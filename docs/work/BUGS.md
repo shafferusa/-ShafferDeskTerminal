@@ -174,3 +174,13 @@ start fixing never asked of the data service; a return or price fixing asked for
   pattern as the commodity-future `deliver` case: the spec owner should decide what a conversion request on a
   convertible preferred must do (refuse with a specific reason, or convert) and change the step with hand-worked
   figures rather than loosen it. Reproduce: `SDT_MATRIX_PRODUCT=convertible_preferred node --test test/matrix/engine.test.js`.
+
+- (fw, 2026-10-13) FRA reduced by an opposite trade books the locked-in difference undiscounted. server/products/fx.js
+  `forward.fill`: closing part of an FRA realizes closing x (price - dealt) x d/100 and creates a settlement for it on
+  the value date (the period start). Two offsetting FRAs with the same dealer settle at the period start for
+  N x (K2 - K1) x d / (1 + L x d): the locked-in amount must be discounted at the fixing L, which is not known at the
+  time of the offset. Effect: overstated by the factor (1 + L x d), about 0.6% for a 3-month period at 2.4%. Not fixed
+  (needs the closed part's amount held until the fixing, and the maturity task kept alive when the position is flat).
+  The forwards spec avoids it: FRA reductions there use early termination at a stated amount. Reproduce: buy an FRA,
+  sell part of it from the strategy instance, then supply the fixing: the settlement of the closed part equals the
+  undiscounted figure.
