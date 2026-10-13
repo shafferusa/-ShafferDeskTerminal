@@ -227,3 +227,14 @@ start fixing never asked of the data service; a return or price fixing asked for
   later clean runs passed. The Audit trail table appears to be read as soon as its heading is drawn, possibly before its
   rows for the latest events are loaded. Not fixed (shared harness). Reproduce: run `npm run test:browser -- --product=commodity_option`
   under load; look for the message above.
+
+## r1 (repo and secloan families), 2026-10-13
+- secloan plugin, `secloan.fee` task (server/products/financing.js, runTask): when the engine reaches a monthly fee date for
+  the first time after the day itself (the Terminal not running that day, or the clock moved past it), the fee is accrued
+  and paid to the day the task runs, not as of its due date (loans and repos settle as of the due date). The matrix
+  scenarios step onto each fee date, so no expectation depends on it. Not changed because the equity and bond short-sale
+  scenarios of other families also carry secloan fee tasks. Reproduce: lend a security on 2 March, move the clock straight to
+  10 April: the fee paid on 10 April includes 1 to 10 April.
+- Not mine, seen in `npm test`: system cases SE:isolation:book-routes and SE:stress:repeated-requests fail because the route
+  POST /api/tasks/:id/settlement-value (added by someone else) is not classified in those cases; matrix spec audit of
+  cds_swaption fails (o3's spec in progress).

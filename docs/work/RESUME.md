@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 80.6% of the pass** (last milestone 2026-10-13T19:01Z, o2: o2 finished: 16 OTC option products pass at engine, API and browser; catalog notes for the partial products updated)
+**Completeness: about 80.6% of the pass** (last milestone 2026-10-13T19:10Z, r1: repo and secloan: 15 of 15 products pass at engine, API and browser; catalog notes and Collateral dialog subtitle fixed)
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 

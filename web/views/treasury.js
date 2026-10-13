@@ -451,8 +451,12 @@ function CollateralDialog({ a, onClose, onDone }) {
   const repoSide = a.qty < 0;
   const [f, setF] = useState({ change: 'pledge', qty: null, pos: null, instrumentId: '' });
   const t = useTicket(onClose, onDone);
-  const held = a.rawTerms?.collateralQty;
-  const sym = a.related?.symbol || a.related?.name || 'collateral';
+  // The Account page passes summarised terms: the contract and its collateral security are read in full here.
+  const contract = useLive(() => (a.instrument?.id ? get(`/api/instruments/${a.instrument.id}`) : null), [a.instrument?.id], { interval: false }).data;
+  const collId = contract?.terms?.collateralInstrumentId || a.rawTerms?.collateralInstrumentId || a.related?.id;
+  const coll = useLive(() => (collId ? get(`/api/instruments/${collId}`) : null), [collId], { interval: false }).data;
+  const held = contract?.terms?.collateralQty ?? a.rawTerms?.collateralQty;
+  const sym = coll?.symbol || coll?.name || a.related?.symbol || a.related?.name || 'collateral';
   const go = () => t.record(() => post(`/api/positions/${a.positionId}/lifecycle`, { action: 'collateral', change: f.change, qty: f.qty, positionId: f.pos?.positionId, instrumentId: f.instrumentId || undefined }), 'Collateral change recorded.');
   const ready = f.qty > 0 && (f.change !== 'substitute' || (repoSide ? f.pos : f.instrumentId));
   return html`<${Modal} title=${`Collateral on ${a.name}`} sub=${`${unitName(a.owner)}, ${a.direction}: ${fmtQty(held)} ${sym} ${repoSide ? 'pledged' : 'held'}`} onClose=${onClose} footer=${foot(t, onClose, 'Record collateral change', go, !ready)}>
