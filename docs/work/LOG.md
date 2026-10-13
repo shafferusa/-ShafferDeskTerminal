@@ -256,3 +256,4 @@
 - 2026-10-13T20:07Z | t1 | +0.2 | T:protective_put template passes at engine, API and browser
 - 2026-10-13T20:07Z | s3 | +0.2 | abs_cds passes at engine, API and browser
 - 2026-10-13T20:09Z | t2 | +0.2 | long_butterfly passes at engine, API and browser
+- 2026-10-13T20:10Z | s2 | +0.2 | electricity_swap passes at engine, API and browser (peak and off-peak MWh, four legs net, EUR Book)

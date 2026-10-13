@@ -2141,4 +2141,269 @@ const catBondSpec = {
   ],
 };
 
-export default [specifiedPool, absSpec, cmoSpec, cloSpec, cdoSpec, clnSpec, structuredNoteSpec, catBondSpec];
+// ---------------------------------------------------------------------------------------------
+// syndicated_loan
+// ---------------------------------------------------------------------------------------------
+// A syndicated term loan held at a price and traded by assignment on LSTA par documentation: Calloway Freight Holdings Term
+// Loan A due 15 October 2031, 3-month term SOFR (TSOFR3M) + 1.75%, interest quarterly on 15 January, April, July and October,
+// ACT/360 on the principal outstanding (factor 0.95 after earlier amortisation). Par trades settle T+7 by market practice
+// (the instrument's settlement convention); when a trade settles later, the seller pays the buyer delayed compensation: the
+// interest for the days after T+7, less the buyer's cost of carry on the purchase price at the reference rate. A loan cannot be
+// borrowed, so it cannot be sold short. The agent's assignment fee is recorded by hand as a fee.
+//   - Bought on Monday 31 January 2028 at 99.75 for settlement on Monday 14 February (stated on the ticket: the standard date is
+//     Wednesday 9 February), 5 days of delayed compensation. The 3,500 assignment fee is paid on settlement.
+//   - Presidents' Day passes; on Monday 17 April (15 April a Saturday, 14 April Good Friday) the interest is paid and the rate
+//     resets to the April fixing (3.80% + 1.75% = 5.55%). The quarterly amortisation (1.25% of original principal) and a
+//     voluntary prepayment (3.75%) are recorded by hand from the agent's notices, both effective 15 April, paid that day.
+//   - The price rises; 2,000,000 sold on 10 May (settling T+7, Friday 19 May); the rest sold on 19 May, settling T+7 over
+//     Memorial Day on Wednesday 31 May.
+// Commission: 0.5 basis point of clean principal. Days (ACT/360): 15 Jan to 9 Feb 25, 14 Feb 30, 18 Feb 34, 12 Apr 88, 15 Apr 91;
+// from 15 Apr: to 9 May 24, 18 May 33, 19 May 34, 31 May 46. Principal: 5,000,000 x 0.95 = 4,750,000; x 0.90 = 4,500,000;
+// 2,000,000 x 0.90 = 1,800,000; 3,000,000 x 0.90 = 2,700,000.
+const syndicatedLoanSpec = {
+  productId: 'syndicated_loan',
+  title: 'Calloway Freight Term Loan A (TSOFR3M + 1.75%) on par documentation: assignment settling after T+7 with delayed compensation, assignment fee by hand, short sale refused, interest and rate reset over Good Friday, amortisation and voluntary prepayment by hand, partial sale T+7, close over Memorial Day',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action (Buy or Sell: no short sale of a loan)', 'Face amount (original principal)', 'Settlement (a stated date when the assignment settles late)'],
+    automaticInputs: [...BOND_TICKET.automaticInputs, 'TSOFR3M fixing of each interest period (rate fixture standing in for Shaffer MarketData)', 'delayed compensation from the standard (T+7) and actual settlement dates, the coupon rate and the reference rate'],
+    manualInputs: ['Registration: Trading documentation par, Settlement convention 7, Coupon Floating TSOFR3M + spread, Current coupon, Pool factor', 'The settlement date of a late assignment, on the ticket', 'Assignment fee (manual cash flow, Fee)', 'Amortisation and voluntary prepayment recorded by hand as paydowns from the agent\'s notices'],
+    settlement: 'T+7 on the US bond calendar (par documentation); a later settlement date pays delayed compensation to the buyer, settled with the trade',
+    lifecycle: 'Automatic: daily accrual on the principal outstanding, quarterly interest, reset from the fixing, delayed compensation. Manual: amortisation, prepayment, assignment fee. Refused: a short sale (a loan cannot be borrowed). Not modelled: borrower interest-period elections other than quarterly, commitment fees on undrawn amounts, the agent\'s transfer records',
+    accounting: 'Cost per 100 of principal outstanding; delayed compensation and interest in coupon and interest income; amortisation and prepayment at par against cost realized; assignment fee in fees; commission expensed',
+    collateral: 'None for a long position (the loan\'s own security package is the lenders\', not modelled)',
+  },
+  start: EST('2028-01-31'), // Monday
+  settlementCheck: { lag: 7, holidays: ['2028-02-21', '2028-04-14', '2028-05-29'] }, // Presidents' Day, Good Friday, Memorial Day
+  book: {
+    name: 'Matrix syndicated loan', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 7_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 6_000_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.5 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'syndicated_loan', name: 'Calloway Freight Holdings Term Loan A due 15-Oct-2031', symbol: 'CALLOWAY-TLA-31', marketView: 'US_CASH', venueType: 'otc', issuer: 'Calloway Freight Holdings Inc', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { settleLag: 7 },
+      terms: { couponType: 'float', referenceRate: 'TSOFR3M', spread: 0.0175, currentCoupon: 0.057, frequency: 4, maturity: '2031-10-15', issueDate: '2026-10-15', dayCount: 'ACT/360', redemption: 100, factor: 0.95, minDenomination: 1_000, seniority: 'Senior secured first lien', tradingDocs: 'par' } },
+  },
+  quotes: { main: { bid: 99.5, ask: 99.75, last: 99.625, bidSize: 20_000_000, askSize: 20_000_000 } },
+  expectAtStart: { ...startState(6_000_000, 1_000_000), cash: { account: usdCash(6_000_000), treasury: usdCash(1_000_000) } },
+  steps: [
+    {
+      // 5,000,000 at 99.75 for 14 February: principal 4,750,000 x 99.75 / 100 = 4,738,125.00; 30 days at 5.70% 22,562.50; 0.5 bp =
+      // 236.906. Delayed compensation for 9 to 14 February (5 days): interest 4,750,000 x 5.70% x 5/360 = 3,760.42, less carry on
+      // the purchase price 4,738,125 x 3.95% (the reference rate: 5.70% - 1.75%) x 5/360 = 2,599.39: 1,161.03 to the buyer, booked
+      // as interest income and received with the settlement.
+      id: 'open', covers: ['open', 'delayed compensation'], action: 'ticket', instrument: 'main', side: 'buy', qty: 5_000_000, as: 'lot', order: { settle: { date: '2028-02-14' } },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 5_000_000, estimate: 99.75, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2028-02-14', calendar: 'USBOND',
+            notional: 4_750_000, gross: 4_738_125, accrued: 22_562.5, cash: -4_760_687.5, fees: 236.91 }],
+          cash: { USD: { purchases: 4_760_687.5, fees: 236.91, required: 4_760_924.41, available: 6_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 5_000_000, avgPrice: 99.75, fills: [{ qty: 5_000_000, price: 99.75, model: 'quoted-bid-ask', settleDate: '2028-02-14', source: 'Test fixture' }] }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Bought 5,000,000 CALLOWAY-TLA-31 @ 99.75 USD', owner: 'account', date: '2028-01-31' },
+          { type: 'loan.delayed_compensation', summary: 'Delayed compensation on CALLOWAY-TLA-31 (par trade settling 2028-02-14, 5 days after the standard date 2028-02-09): interest 3,760.42 USD less cost of carry 2,599.39 USD on the purchase price, 1,161.03 USD receivable from the seller at settlement', owner: 'account', date: '2028-01-31' },
+        ],
+        cash: { account: { USD: { settled: 6_000_000, unsettled: -4_759_763.38, availableToTrade: 1_240_236.62 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 5_000_000, avgCost: 99.75, cost: 4_738_125, price: 99.625, value: 4_732_187.5, unrealized: -5_937.5, accrued: 22_562.5, priceSource: 'Test fixture' }], // 4,750,000 x 99.625 / 100
+        holdings: { main: { long: 5_000_000, short: 0, net: 5_000_000 } },
+        pending: [
+          { instrument: 'main', owner: 'account', dueDate: '2028-02-14', amount: -4_760_924.41, ccy: 'USD', into: 'cash' },
+          { instrument: 'main', owner: 'account', dueDate: '2028-02-14', amount: 1_161.03, ccy: 'USD', into: 'cash' },
+        ],
+        // 15 April 2028 is a Saturday: interest paid Monday 17 April. 15 October 2031 is a Wednesday.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2028-04-17', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2031-10-15', status: 'pending' }],
+        pnl: { account: { realized: 0, couponInterest: 1_161.03, commissions: -236.91, fees: 0, borrowFunding: 0, unrealized: -5_937.5, total: -5_013.38 } },
+        nav: { account: 5_994_986.62, book: 6_994_986.62 },
+        balance: { account: { cash: 6_000_000, receivable: 1_161.03, accruedIncome: 22_562.5, positions: 4_732_187.5, payable: 4_760_924.41, assets: 10_755_911.03, liabilities: 4_760_924.41, netAssets: 5_994_986.62 } },
+      },
+    },
+    {
+      // Monday 14 February: the assignment settles, with the delayed compensation. (End of day Friday 11 Feb: nothing settled; the
+      // interest bought runs to 14 Feb, as on the books.)
+      id: 'settle-open', covers: ['settlement', 'delayed compensation'], action: 'clock', to: EST('2028-02-14'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 1,161.03 USD into settled cash', cash: { USD: 1_161.03 }, date: '2028-02-14' }, // receipts are settled first
+          { type: 'settlement.pay', summary: 'paid 4,760,924.41 USD from settled cash', cash: { USD: -4_760_924.41 }, date: '2028-02-14' },
+        ],
+        cash: { account: { USD: { settled: 1_240_236.62, unsettled: 0, availableToTrade: 1_240_236.62 } } },
+        pending: [],
+        balance: { account: { cash: 1_240_236.62, receivable: null, payable: null, assets: 5_994_986.62, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'assignment-fee', covers: 'assignment fee (by hand)', action: 'cashflow', lot: 'lot', category: 'fee', amount: -3_500, note: 'Assignment fee to the administrative agent (paid by the buyer)',
+      expect: {
+        events: [{ type: 'manual.cashflow', summary: 'Manual fee on CALLOWAY-TLA-31: paid 3,500.00 USD. Assignment fee to the administrative agent (paid by the buyer)', cash: { USD: -3_500 }, owner: 'account' }],
+        cash: { account: { USD: { settled: 1_236_736.62, availableToTrade: 1_236_736.62 } } },
+        pnl: { account: { fees: -3_500, total: -8_513.38 } },
+        nav: { account: 5_991_486.62, book: 6_991_486.62 },
+        balance: { account: { cash: 1_236_736.62, assets: 5_991_486.62, netAssets: 5_991_486.62 } },
+      },
+    },
+    {
+      id: 'short-sale-refused', covers: 'sell short', action: 'ticket', instrument: 'main', side: 'sell_short', qty: 1_000_000, as: 'short',
+      status: 'unsupported', reason: 'A loan is transferred by assignment and cannot be borrowed: there is no short sale of a loan.',
+      expect: { refused: { engine: 'cannot be traded with "sell short"', api: 'cannot be traded with "sell short"', browser: 'does not offer "Sell short"' } },
+    },
+    {
+      // Tuesday 22 February, after Presidents' Day. End of day Friday 18 Feb: 4,750,000 x 5.70% x 34/360 = 25,570.83; 3,008.33 more.
+      id: 'after-presidents-day', covers: ['accrual', 'market holiday'], action: 'clock', to: EST('2028-02-22'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on CALLOWAY-TLA-31: 3,008.33 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 5_000_000, accrued: 25_570.83 }],
+        pnl: { account: { couponInterest: 4_169.36, total: -5_505.05 } },
+        nav: { account: 5_994_494.95, book: 6_994_494.95 },
+        balance: { account: { accruedIncome: 25_570.83, assets: 5_994_494.95, netAssets: 5_994_494.95 } },
+      },
+    },
+    {
+      // Thursday 13 April. End of day 12 Apr: 88 days = 66,183.33; 40,612.50 more.
+      id: 'accrue', covers: 'accrual', action: 'clock', to: EDT('2028-04-13'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on CALLOWAY-TLA-31: 40,612.50 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 5_000_000, accrued: 66_183.33 }],
+        pnl: { account: { couponInterest: 44_781.86, total: 35_107.45 } },
+        nav: { account: 6_035_107.45, book: 7_035_107.45 },
+        balance: { account: { accruedIncome: 66_183.33, assets: 6_035_107.45, netAssets: 6_035_107.45 } },
+      },
+    },
+    // The April term SOFR fixing, 3.80%, from the fixture: the rate of the next interest period.
+    { id: 'april-fixing', covers: 'rate reset', action: 'rate', code: 'TSOFR3M', value: 3.8, date: '2028-04-13', expect: { events: [] } },
+    {
+      // Monday 17 April: the interest of 15 Jan to 15 Apr, 91 days at 5.70% on 4,750,000 = 68,439.58. The balance stands at 15 April:
+      // 0, so 2,256.25 more. The rate resets to 3.80% + 1.75% = 5.55%.
+      id: 'interest-and-reset', covers: ['coupon', 'rate reset', 'market holiday'], action: 'clock', to: EDT('2028-04-17'),
+      expect: {
+        events: [
+          { type: 'bond.coupon', summary: 'Coupon received on 5,000,000 CALLOWAY-TLA-31 (factor 0.95: current face 4,750,000): 68,439.58 USD', cash: { USD: 68_439.58 }, owner: 'account', date: '2028-04-17' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on CALLOWAY-TLA-31: 2,256.25 USD' },
+        ],
+        cash: { account: { USD: { settled: 1_305_176.2, availableToTrade: 1_305_176.2 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 5_000_000, accrued: 0 }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2028-07-17', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2031-10-15', status: 'pending' }],
+        pnl: { account: { couponInterest: 47_038.11, total: 37_363.7 } },
+        nav: { account: 6_037_363.7, book: 7_037_363.7 },
+        balance: { account: { cash: 1_305_176.2, accruedIncome: null, assets: 6_037_363.7, netAssets: 6_037_363.7 } },
+      },
+    },
+    {
+      // The scheduled amortisation, 1.25% of original principal, from the agent's notice: factor 0.95 to 0.9375 from 15 April, paid
+      // today: 5,000,000 x 0.0125 = 62,500.00. Cost out 4,738,125 x 0.0125 / 0.95 = 62,343.75: realized 156.25.
+      id: 'amortisation', covers: 'amortisation (by hand)', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'paydown', newFactor: 0.9375, effective: '2028-04-15' },
+      expect: {
+        events: [{ type: 'bond.paydown', summary: 'Principal paydown on CALLOWAY-TLA-31: factor 0.95 to 0.9375 from 2028-04-15, 62,500.00 USD received', cash: { USD: 62_500 }, owner: 'account', date: '2028-04-17' }],
+        cash: { account: { USD: { settled: 1_367_676.2, availableToTrade: 1_367_676.2 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 5_000_000, cost: 4_675_781.25, avgCost: 99.75, price: 99.625, value: 4_669_921.88, unrealized: -5_859.37 }], // 4,687,500 x 99.625 / 100 = 4,669,921.875
+        pnl: { account: { realized: 156.25, unrealized: -5_859.37, total: 37_598.08 } },
+        nav: { account: 6_037_598.08, book: 7_037_598.08 },
+        balance: { account: { cash: 1_367_676.2, positions: 4_669_921.88, assets: 6_037_598.08, netAssets: 6_037_598.08 } },
+      },
+    },
+    {
+      // A voluntary prepayment of 3.75% of original principal, at par, on the same date: factor 0.9375 to 0.90, all of it prepaid
+      // (the factor after scheduled principal stays 0.9375). 5,000,000 x 0.0375 = 187,500.00; cost out 4,675,781.25 x 0.0375 /
+      // 0.9375 = 187,031.25: realized 468.75. SMM 0.0375 / 0.9375 = 4.0000%.
+      id: 'prepayment', covers: 'prepayment (by hand)', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'paydown', newFactor: 0.9, effective: '2028-04-15', scheduledFactor: 0.9375 },
+      expect: {
+        events: [{ type: 'bond.paydown', summary: 'Principal paydown on CALLOWAY-TLA-31: factor 0.9375 to 0.9 from 2028-04-15; scheduled principal 0, prepaid 0.0375 of original face (SMM 4.0000%), 187,500.00 USD received', cash: { USD: 187_500 }, owner: 'account', date: '2028-04-17' }],
+        cash: { account: { USD: { settled: 1_555_176.2, availableToTrade: 1_555_176.2 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 5_000_000, cost: 4_488_750, avgCost: 99.75, price: 99.625, value: 4_483_125, unrealized: -5_625 }], // 4,500,000 x 99.625 / 100
+        pnl: { account: { realized: 625, unrealized: -5_625, total: 38_301.2 } },
+        nav: { account: 6_038_301.2, book: 7_038_301.2 },
+        balance: { account: { cash: 1_555_176.2, positions: 4_483_125, assets: 6_038_301.2, netAssets: 6_038_301.2 } },
+      },
+    },
+    {
+      // Wednesday 10 May. End of day 9 May: 4,500,000 x 5.55% x 24/360 = 16,650.00.
+      id: 'accrue-may', covers: 'accrual', action: 'clock', to: EDT('2028-05-10'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on CALLOWAY-TLA-31: 16,650.00 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 5_000_000, accrued: 16_650 }],
+        pnl: { account: { couponInterest: 63_688.11, total: 54_951.2 } },
+        nav: { account: 6_054_951.2, book: 7_054_951.2 },
+        balance: { account: { accruedIncome: 16_650, assets: 6_054_951.2, netAssets: 6_054_951.2 } },
+      },
+    },
+    {
+      id: 'price-rises', action: 'quote', instrument: 'main', quote: { bid: 100, ask: 100.25, last: 100.125, bidSize: 20_000_000, askSize: 20_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 5_000_000, price: 100.125, value: 4_505_625, unrealized: 16_875 }],
+        pnl: { account: { unrealized: 16_875, total: 77_451.2 } },
+        nav: { account: 6_077_451.2, book: 7_077_451.2 },
+        balance: { account: { positions: 4_505_625, assets: 6_077_451.2, netAssets: 6_077_451.2 } },
+      },
+    },
+    {
+      // 2,000,000 sold at par, settling on the standard date (T+7, Friday 19 May): no delayed compensation. 1,800,000 x 100% =
+      // 1,800,000; 34 days at 5.55% 9,435.00; 0.5 bp = 90.00. Cost out 4,488,750 x 2 / 5 = 1,795,500: realized 4,500.
+      id: 'reduce', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 2_000_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 2_000_000, estimate: 100, settleDate: '2028-05-19', notional: 1_800_000, gross: 1_800_000, accrued: 9_435, cash: 1_809_435, fees: 90 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 2_000_000, avgPrice: 100 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 2,000,000 CALLOWAY-TLA-31 @ 100.00 USD (realized 4,500.00 USD)' }],
+        cash: { account: { USD: { settled: 1_555_176.2, unsettled: 1_809_345, availableToTrade: 3_364_521.2 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 3_000_000, cost: 2_693_250, avgCost: 99.75, price: 100.125, value: 2_703_375, unrealized: 10_125, accrued: 7_215 }], // 2,700,000 x 100.125 / 100
+        holdings: { main: { long: 3_000_000, short: 0, net: 3_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2028-05-19', amount: 1_809_345, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: 5_125, commissions: -326.91, unrealized: 10_125, total: 75_111.2 } },
+        nav: { account: 6_075_111.2, book: 7_075_111.2 },
+        balance: { account: { receivable: 1_809_345, accruedIncome: 7_215, positions: 2_703_375, assets: 6_075_111.2, netAssets: 6_075_111.2 } },
+      },
+    },
+    {
+      // Friday 19 May. End of day 18 May: 4,500,000 x 5.55% x 33/360 = 22,893.75 less the 34 days sold 9,435.00: 13,458.75. 6,243.75 more.
+      id: 'settle-reduce', covers: ['settlement', 'accrual'], action: 'clock', to: EDT('2028-05-19'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 1,809,345.00 USD into settled cash', cash: { USD: 1_809_345 } },
+          { type: 'accrual.coupon', summary: 'Interest accrued on CALLOWAY-TLA-31: 6,243.75 USD' },
+        ],
+        cash: { account: { USD: { settled: 3_364_521.2, unsettled: 0, availableToTrade: 3_364_521.2 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 3_000_000, accrued: 13_458.75 }],
+        pending: [],
+        pnl: { account: { couponInterest: 69_931.86, total: 81_354.95 } },
+        nav: { account: 6_081_354.95, book: 7_081_354.95 },
+        balance: { account: { cash: 3_364_521.2, receivable: null, accruedIncome: 13_458.75, assets: 6_081_354.95, netAssets: 6_081_354.95 } },
+      },
+    },
+    {
+      // The rest sold at par for settlement T+7 over Memorial Day (29 May): Wednesday 31 May. 2,700,000; 46 days at 5.55% 19,147.50
+      // (5,688.75 more than on the books); 0.5 bp = 135.00. Realized 2,700,000 - 2,693,250 = 6,750.
+      id: 'close', covers: ['close', 'market holiday'], action: 'close', lot: 'lot', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 3_000_000, estimate: 100, settleDate: '2028-05-31', notional: 2_700_000, gross: 2_700_000, accrued: 19_147.5, cash: 2_719_147.5, fees: 135 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 3_000_000, avgPrice: 100 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 3,000,000 CALLOWAY-TLA-31 @ 100.00 USD (realized 6,750.00 USD)' },
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of CALLOWAY-TLA-31: 5,688.75 USD' },
+        ],
+        cash: { account: { USD: { settled: 3_364_521.2, unsettled: 2_719_012.5, availableToTrade: 6_083_533.7 } } },
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2028-05-31', amount: 2_719_012.5, ccy: 'USD', into: 'cash' }],
+        lifecycle: [],
+        pnl: { account: { realized: 11_875, couponInterest: 75_620.61, commissions: -461.91, fees: -3_500, unrealized: 0, total: 83_533.7 } },
+        nav: { account: 6_083_533.7, book: 7_083_533.7 },
+        balance: { account: { cash: 3_364_521.2, receivable: 2_719_012.5, positions: null, accruedIncome: null, assets: 6_083_533.7, liabilities: 0, netAssets: 6_083_533.7 } },
+      },
+    },
+    {
+      id: 'settle-close', covers: ['settlement', 'market holiday'], action: 'clock', to: EDT('2028-05-31'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 2,719,012.50 USD into settled cash', cash: { USD: 2_719_012.5 } }],
+        cash: { account: { USD: { settled: 6_083_533.7, unsettled: 0, availableToTrade: 6_083_533.7 } }, treasury: usdCash(1_000_000) },
+        pending: [],
+        balance: { account: { cash: 6_083_533.7, receivable: null, assets: 6_083_533.7, liabilities: 0 } },
+      },
+    },
+  ],
+};
+
+export default [specifiedPool, absSpec, cmoSpec, cloSpec, cdoSpec, clnSpec, structuredNoteSpec, catBondSpec, syndicatedLoanSpec];
