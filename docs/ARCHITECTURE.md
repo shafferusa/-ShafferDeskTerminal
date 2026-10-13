@@ -244,6 +244,32 @@ the collateral is then on that unit's balance sheet, once, and the Accounts see 
 Listed futures and options are cleared products whose margin follows the Book's paper-desk
 assumptions (`core/defaults.js`) and each contract's own initial margin, not these agreements.
 
+A mark past its freshness limit (a model-derived or end-of-day value older than the limits under
+Data connection, Refresh and freshness) still values a netting set, but the call made on it is
+provisional: the movement's summary, the netting set and the position say "based on a stale mark
+(as of ...)" and carry `provisional: true` with the stale observations (`staleMarks`) until a
+current mark replaces it. A missing mark still stops the call. Manual marks are never stale.
+
+Where collateral is shown:
+- Accounting, Open positions: each OTC row carries `otcCollateral` (`accounting.openPositions`): the
+  basis on record (agreement name, position-level terms, uncollateralized assumption, or "no
+  collateral terms recorded"), the independent amount posted for it, and the variation margin of
+  its netting set. Variation margin belongs to the netting set; where the set has several positions
+  the amount is the set's and the row says "for its netting set of N positions".
+- Treasury, Collateral and an Account's OTC collateral section (`web/views/agreements.js`); below
+  1100 px their tables turn into one labelled block per row.
+- The borrowing register (`accounting.borrowings`) carries the cash collateral of a securities
+  borrow (`collateral.cash`, null while none is held); the Treasury and Account borrowing tables
+  show it.
+
+The no-basis block (`collateral-basis`) names the three choices and says where the basis is
+recorded, as `collateral.basis.fix` on the preview leg: `draft` (a new contract on the package: its
+terms), `position` (a position opened before bases were required, typically met through "Add legs":
+`PUT /api/books/:id/positions/:positionId/collateral-basis`), `contract` (a registered contract
+not yet traded: its terms) or `locked` (a traded contract: a new contract is needed). The preview
+dialog offers the fix in place for the first three, from a Strategies-page template, "Add legs",
+or any other package.
+
 ## Calendars (`quant/calendar.js`)
 
 Holiday rules are built in for `US` (NYSE), `USBOND` (SIFMA), `USD` (Federal Reserve), `UK`,
@@ -259,6 +285,12 @@ paid. A role with no real calendar falls back to `WEEKEND`; `calendarInfo(inst).
 Marketplaces row and the preview leg as a badge and a sentence. `fxValueDate` uses both
 currencies' calendars (and US dollar days for crosses). Holidays entered by hand are stored as a
 setting and applied on start. These are stand-ins until Shaffer MarketData supplies calendars.
+`GET /api/calendars` lists the calendars, their holidays and the payment calendar of each currency;
+`PUT /api/calendars/:id/holidays` stores hand-entered closures (Settings, Market calendars). An
+instrument's own calendars and settlement lag are its `conventions` (`tradingCalendar`,
+`settlementCalendar`, `paymentCalendar`, `settleLag`), set on the registry form or, for a new OTC
+contract, on the Strategies page leg ticket (same "Calendars and settlement" group); they stay
+editable after the instrument has traded and apply to dates worked out from then on.
 
 Settlement of a trade (`core/settlement.js`, `resolveSettlement`): the lag set on the instrument,
 else the Book's assumption for the product, counted on the settlement calendar; or a settlement
@@ -451,6 +483,82 @@ in plain words while anything is missing or blocking; warnings are acknowledged 
 | `GET /api/strategies/:id` | A strategy instance with `hedge` (requests, relationship lines, protection) |
 | `POST /api/demo/hedge-fixture` , `GET/POST /api/demo/hedge-script` | Demo only: switch the demo fixture; load or clear a scripted service |
 
+## Repeated requests (`server/http/once.js`)
+
+Every mutating route accepts an optional client token (body field `clientToken`, or the
+`Idempotency-Key` header). The first request with a token runs and its answer is stored
+(`request_tokens`, kept 14 days); the same request again returns the stored answer with
+`duplicate: true` and does nothing; another body under the same token is refused (409
+`token_reused`). For a synchronous handler the effect and the stored answer commit in one
+transaction. A refused request stores nothing. The web client sends a token with every mutating
+request (`web/lib/core.js`), so a double click, a retry after a lost connection or a restart cannot
+record anything twice. Exempt: the package confirmation (its own one-time preview token), the
+read-only previews and connection test, and engine cycles, which are idempotent by construction.
+
+## Integrity check (`core/integrity.js`)
+
+`GET /api/books/:id/integrity` re-reads one Book's events, entries, fills, settlements, positions and
+tasks and reports whether they agree with each other and with the accounting views: Book isolation,
+balanced events, trial balance, net assets, Book equals its owners, settlements against the ledger,
+positions against the ledger, gross holdings, and no duplicate fills, settlements, payments,
+accruals or postings (the keys are listed in the file). Nothing is written. The product matrix
+calls it after every step of every scenario.
+
+## Demo and test fixtures (`data/demo.js`, `api.js`)
+
+Demo mode only (403 otherwise):
+
+| Route | What it does |
+|---|---|
+| `POST /api/demo/advance` | moves the demo clock (`{ ms }` or `{ to }`) and runs one engine cycle; the offset persists |
+| `GET /api/demo/fixtures`, `POST /api/demo/fixtures/:kind` | controlled values for `quote`, `close`, `fx`, `rate`, `borrow`, each labelled "Test fixture" wherever it appears; a null value removes one |
+| `POST /api/demo/hedge-fixture` | switches the labelled demo hedge fixture on or off (on plays the service reconnecting) |
+| `GET`/`POST /api/demo/hedge-script` | a scripted hedge "service" for tests: responses in order, an optional Strategy list, stamped test-fixture |
+
+## Routes added since the first edition
+
+| Route | Module |
+|---|---|
+| `GET/POST /api/books/:id/agreements`, `GET/PUT /api/books/:id/agreements/:agreementId`, `POST .../close` | agreements as records |
+| `GET /api/books/:id/collateral?scope=` | the collateral desk of a Book or of Treasury / Accounts: agreements, positions, netting sets, movements, failures, totals |
+| `POST /api/books/:id/collateral/retry` | retries failed calls now (they are retried every cycle anyway) |
+| `PUT /api/books/:id/positions/:positionId/collateral-basis` | records the basis of a position that has none |
+| `GET /api/books/:id/integrity` | integrity report (above) |
+| `GET /api/calendars`, `PUT /api/calendars/:id/holidays` | calendars and hand-entered closures |
+| `GET /api/instruments/:id/settlement` | the settlement convention and calendars that apply to an instrument |
+| `GET /api/books/:id/protection` | hedges with capacity and allocations, and each position's protection |
+| `GET /api/hedge/service`, hedge request routes | hedge requests (see Hedge and protection) |
+
+Confirmation tolerances are Book settings (`settings.confirmation`, defaults in `core/defaults.js`:
+leg price 0.5%, leg amounts 0.5%, package totals 0.5%, gross cash and notional 0.5%, preview age
+300 s), changed under Settings (`PUT /api/books/:id` with `settings`) and shown on every preview.
+
+## Conventions (stated where the user sees them)
+
+- Swap trades are worded with their legs: "Enter as written: pay fixed 4.000%, receive SIM-3M on
+  10,000,000 IRS-X", or "Enter the opposite side: ..." with every leg's pay and receive swapped. A
+  swap is never "bought" or "sold" (preview, order rows, Strategies page legs).
+- A notional that changes inside a period: an increase earns and pays the whole current period on
+  the added notional (the stated price is all-in); a position first opened inside a period pays
+  from its trade date. Stated on the preview of an increase.
+- Fixing dates are business days of the contract's joint payment calendar, not of each index's own
+  market. Stated in the swap's contract terms ("Fixing dates").
+- Principal a forward-starting cross-currency swap will exchange is announced in the preview, not
+  set aside; if it has been spent the exchange fails visibly on the day and waits. A shortfall at
+  settlement names "principal exchanged when the trade settles" apart from purchases.
+- A swap's mark is its value per 100 notional including interest accrued since the last payment
+  (the ledger accrues nothing between payment dates) and excluding principal already exchanged on a
+  cross-currency swap. Stated on both manual price forms.
+- Balance-sheet lines in a foreign currency are converted and rounded one by one, net assets once per
+  currency, so lines can differ from net assets by a cent. Stated on the balance sheet.
+- An FX forward's notional before a rate is known is its base-currency amount, labelled in that
+  currency and counted in that currency's gross notional.
+- A blocked lifecycle task of a position is looked at again in the engine pass in which another task
+  of the same position completed (a swap matures in the pass that makes its final payment).
+- An option on a published index can name the index and an index level code instead of a registry
+  underlying; it settles in cash on the level for its expiration date. A catalog kind for a
+  non-tradable reference index does not exist: inflation legs still use a stand-in instrument.
+
 ## Engine (`core/engine.js`)
 
 One cycle: refresh what working orders need, match orders, settle what is due, run due lifecycle
@@ -464,7 +572,7 @@ observation it is waiting for.
 
 | File | Role |
 |---|---|
-| `app.js` | Shell, routing, Book selector, sidebar (Accounting, Treasury and its Accounts, Strategies, Marketplaces, Reference), Account in use, connection state, demo clock |
+| `app.js` | Shell, routing, Book selector, sidebar (Accounting, Treasury and its Accounts, Strategies, Marketplaces, Reference), Account in use, connection state, demo clock. Below 1100 px the top bar takes a second line; below 820 px the sidebar is a drawer behind a Menu button, with Manage Books, the connection chips, the clock and the theme control at its top |
 | `lib/core.js` | API helpers, shared state, live reload, number formatting |
 | `lib/ui.js` | The UI kit: prices with provenance, missing values, waiting states, tables, dialogs, charts |
 | `lib/contracts.js` | Instrument picker (with the Book's holdings) and schema-driven contract forms per family |
@@ -493,3 +601,28 @@ uncollateralized assumption; threshold and minimum transfer; per-position agains
 netting; collateral received that cannot be spent; release on reduction, close, maturity and credit
 event; a shared agreement and its allocations; Book isolation; a failed call retried without double
 posting; a missing mark; and each amount once on Account, Treasury and Book balance sheets.
+
+`test/core/collateral-followup.test.js` covers calls on stale marks (provisional, named on the
+movement, set and position; a missing mark still stops the call), collateral on Accounting position
+rows, the cash collateral of a securities borrow, and where the no-basis block says the basis is
+recorded. `test/core/labels-conventions.test.js` covers the conventions above with hand-worked
+figures.
+
+### Product test matrix (`test/matrix/`)
+
+One scenario per catalog product, written once as data (`test/matrix/specs/*.mjs`) and run at three
+levels against disposable databases: engine (`npm test`, or `node --disable-warning=ExperimentalWarning
+--test test/matrix/engine.test.js`), API (`npm run test:api`) and browser (`npm run test:browser`,
+Playwright and Chromium outside the repository). Options: `-- --family=equity`, `-- --product=adr,etf`,
+browser `--workers=1 --headed --slow=150`. After every step the whole expected state is compared and
+the integrity report must be clean; the browser level also reads the Accounting screens. `npm run
+matrix` writes `docs/TEST-MATRIX.md` from the catalog, the specs and `test/matrix/results/*.json`.
+Details in `test/matrix/README.md`.
+
+### Failure and recovery suite (`test/system/`)
+
+Cases in `test/system/cases/` (refusals, stress, no duplicates, history, Book isolation, hedge
+reconnection) run at engine level inside `npm test` (`test/system/engine.test.js`), at API level
+with `npm run test:system:api` and in the browser with `npm run test:system:browser` (options
+`-- --area=refusals --case=cash-trade`, browser `--headed --slow=150`). Each case gets its own server
+process and database; some kill and restart it. Results go to `test/matrix/results/system-*.json`.

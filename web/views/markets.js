@@ -218,7 +218,7 @@ function columnsFor(tab, ctx) {
       { label: 'Agreed terms', align: 'r', render: (i) => { const t = i.terms || {}; return isNum(t.forwardRate) ? fmtPrice(t.forwardRate) : isNum(t.forwardPrice) ? fmtPrice(t.forwardPrice) : isNum(t.fixedRate) ? pct(t.fixedRate) : html`<${Missing} reason="Stated on the trade" />`; } },
       C.held('Notional held'), C.price(ctx, 'Current market price', 'A dealer or model mark (Analytics Lab), or a manual mark meanwhile: the chip says which.'), C.fair(ctx), C.gap(ctx), C.life()];
     case 'swaps': return [C.inst('Contract'),
-      { label: 'Legs', render: (i) => { const legs = (i.details || []).filter(([k]) => /^Leg /.test(k)); return legs.length ? legs.map(([k, v]) => html`<div class="clip" style="max-width:340px" title=${`${k}: ${v}`}><span class="muted">${k.replace('Leg ', '')}</span> ${v}</div>`) : html`<${Missing} reason="No legs in the contract terms" />`; } },
+      { label: 'Legs', render: (i) => { const legs = (i.details || []).filter(([k]) => /^Leg /.test(k)); return legs.length ? legs.map(([k, v]) => html`<div class="clip mk-legs" title=${`${k}: ${v}`}><span class="muted">${k.replace('Leg ', '')}</span> ${v}</div>`) : html`<${Missing} reason="No legs in the contract terms" />`; } },
       { label: 'Maturity', render: (i) => date(i.terms?.maturity) }, C.held('Notional held'),
       C.price(ctx, 'Current market price', 'Mark per 100 notional and its kind: dealer or model mark (Analytics Lab), or manual. The chip says which.'), C.fair(ctx), C.gap(ctx), C.life()];
     case 'credit': return [C.inst('Contract'),

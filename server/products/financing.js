@@ -424,11 +424,16 @@ export const repo = {
     pos = positions.change(pos, { dQty: isRepo ? -P : P, data });
     return { eventId, position: pos, realized: 0, cashNet: isRepo ? P : -P };
   },
-  checkClose(app, { unit, inst, pos }) {
+  checkClose(app, { unit, inst, pos, qty, date = app.clock.today() }) {
     const out = [];
+    const ccy = inst.trading_ccy;
+    // A repurchase (or the termination of a reverse repo) is for the whole principal: a part is not simulated, and it is
+    // refused rather than quietly turned into a repurchase in full.
+    if (qty !== undefined && qty !== null && qty < Math.abs(pos.qty) - 0.004) out.push(`A repo is repurchased or terminated in full: ${fmt(Math.abs(pos.qty), ccy)} is outstanding and ${fmt(qty, ccy)} was asked for. A partial repurchase is not simulated; repurchase in full and open a new repo for the amount that stays.`);
+    const missing = inst.terms.rateType === 'floating' ? accruePrincipal(app, { inst, pos, date }).rateMissing : null;
+    if (missing) out.push(`Repo interest on ${inst.name} cannot be worked out: no ${inst.terms.referenceRate} fixing from ${missing}. Enter the fixing by hand or set the rate before the repurchase.`);
     if (pos.qty < 0) {
-      const ccy = inst.trading_ccy;
-      const due = Math.abs(pos.qty) + accruePrincipal(app, { inst, pos, date: app.clock.today() }).accrued;
+      const due = Math.abs(pos.qty) + accruePrincipal(app, { inst, pos, date }).accrued;
       const have = app.ledger.cash(unit.id, ccy).availableToWithdraw;
       if (have < due - 0.004) out.push(`Repurchase needs ${fmt(due, ccy)} (principal plus repo interest); ${unit.name} has ${fmt(have, ccy)} of settled ${ccy} available.`);
     }
@@ -463,6 +468,7 @@ export const repo = {
     }
     pos = positions.change(pos, { dQty: isRepo ? P : -P, data: { collateralHeld: null } });
     app.tasks.cancelFor(pos.id);
+    app.alerts.resolve({ refType: 'position', refId: pos.id, code: 'repo.margin' });
     return { eventId, position: pos, realized: 0, cashNet: isRepo ? -P : P, interestPaid: isRepo ? -(interest.amount || 0) : interest.amount || 0 };
   },
   value(app, inst, pos) {
@@ -479,24 +485,57 @@ export const repo = {
     const fresh = app.instruments.get(inst.id);
     if (fresh.terms.endDate) app.tasks.schedule({ bookId: book.id, unitId: unit.id, positionId: pos.id, instrumentId: inst.id, strategyId: pos.strategy_id, type: 'repo.end', dueDate: adjust(fresh.terms.endDate, 'following', paymentCalendarFor(inst)) });
   },
-  dataNeeds: floatingNeeds,
+  /** The fixings a floating repo needs, and the collateral's price for the daily check of its cover. */
+  dataNeeds(app, args) {
+    const coll = app.instruments.get(args.inst.terms.collateralInstrumentId);
+    const f = floatingNeeds(app, args);
+    return coll ? { ...f, instruments: [coll] } : f;
+  },
   eod(app, { book, unit, inst, pos, date }) {
     if (isZero(pos.qty)) return;
-    trueUpInterest(app, { book, unit, inst, pos, date, label: `Repo interest accrued on ${inst.name}` });
+    const p = trueUpInterest(app, { book, unit, inst, pos, date, label: `Repo interest accrued on ${inst.name}` });
+    checkCover(app, { book, unit, inst, pos: p, date });
   },
   runTask(app, task, { book, unit, inst, pos }) {
     if (task.type !== 'repo.end') return { failed: `Unknown task ${task.type}` };
     if (!pos || isZero(pos.qty)) return 'done';
-    const problems = repo.checkClose(app, { unit, inst, pos });
-    if (problems.length) return fundingFailure(app, { book, unit, inst, pos, what: 'Repo repurchase', detail: problems[0] });
     // As for a loan: a repurchase date reached for the first time after the day itself is settled as of that date.
     const today = app.clock.today();
     const asOf = task.status === 'pending' && task.due_date < today ? task.due_date : today;
+    const p = trueUpInterest(app, { book, unit, inst, pos, date: asOf, label: `Repo interest accrued on ${inst.name}` });
+    if (p.data.rateMissing) return { blocked: waitingForFixing(inst, p.data.rateMissing, pos.qty < 0 ? 'Repo repurchase' : 'Reverse repo termination') };
+    const problems = repo.checkClose(app, { unit, inst, pos: p, date: asOf });
+    if (problems.length) return fundingFailure(app, { book, unit, inst, pos, what: 'Repo repurchase', detail: problems[0] });
     const r = repo.close(app, { book, unit, inst, pos, tradeDate: asOf, actor: 'engine' });
     app.alerts.resolve({ refType: 'position', refId: pos.id, code: 'funding.failed' });
     return { done: true, eventId: r.eventId };
   },
 };
+
+/**
+ * The daily check of a repo's cover: the collateral at its value today (dirty for a debt security), less the haircut,
+ * against what is owed (principal and repo interest). A shortfall is raised, with its amount; a margin call, a return of
+ * excess collateral and a substitution are not simulated, and the alert says so and what to do instead. It clears when
+ * the cover is restored.
+ */
+function checkCover(app, { book, unit, inst, pos, date }) {
+  const coll = app.instruments.get(inst.terms.collateralInstrumentId);
+  if (!coll) return;
+  const ccy = inst.trading_ccy;
+  const w = collateralWorth(app, coll, inst.terms.collateralQty, ccy, date);
+  if (w.error) return;
+  const borrowed = pos.qty < 0;
+  const owed = money(Math.abs(pos.qty) + Math.abs(app.ledger.positionBalance(pos.id, borrowed ? 'accrued.liab' : 'accrued.asset', ccy)), ccy);
+  const h = inst.terms.haircut || 0;
+  const cover = money(w.worth * (1 - h), ccy);
+  const short = money(owed - cover, ccy);
+  if (short < 0.01) { app.alerts.resolve({ refType: 'position', refId: pos.id, code: 'repo.margin' }); return; }
+  const what = `${fmtQty(inst.terms.collateralQty)} ${coll.symbol || coll.name} ${borrowed ? 'pledged' : 'received'}`;
+  app.alerts.raise({
+    bookId: book.id, unitId: unit.id, level: 'warning', code: 'repo.margin', refType: 'position', refId: pos.id,
+    message: `${inst.name}: the ${what} are worth ${fmt(w.worth, ccy)} on ${date}, ${fmt(cover, ccy)} after the ${(h * 100).toFixed(2)}% haircut, against ${fmt(owed, ccy)} ${borrowed ? 'owed' : 'lent'} with repo interest: the cover is ${fmt(short, ccy)} short. Margin calls are not simulated on repos: ${borrowed ? 'to restore the cover, repurchase and open a new repo on more collateral or for less cash' : 'the counterparty is not called; terminate and open a new reverse repo to restore the cover'}.`,
+  });
+}
 
 // ---------------------------------------------------------------------------------------------
 // Securities borrowing and lending

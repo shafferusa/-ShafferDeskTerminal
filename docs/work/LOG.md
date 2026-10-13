@@ -109,3 +109,4 @@
 - 2026-10-13T16:59Z | fix | +1 | B complete: every BUGS.md finding fixed, stated as a convention, or explained (except ui1's two)
 - 2026-10-13T16:59Z | fix | +0.5 | C complete: shell fits 1024x768 and 390x844 in demo and normal mode, light and dark (sidebar drawer behind Menu)
 - 2026-10-13T17:00Z | b2 | +0.2 | abcp passes at engine, API and browser
+- 2026-10-13T17:01Z | c2 | +0.2 | physical_commodity passes at engine, API and browser
