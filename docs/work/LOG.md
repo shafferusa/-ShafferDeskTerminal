@@ -306,3 +306,4 @@
 - 2026-10-13T22:13Z | t1b | +0.2 | T:bear_put_spread passes at engine, API and browser
 - 2026-10-13T22:23Z | t1b | +0.2 | T:bull_put_spread passes at engine, API and browser (fix: same-day spread expiries net, receive before deliver)
 - 2026-10-13T22:25Z | s9 | +1 | s9: normal mode and persistence checks complete
+- 2026-10-13T22:56Z | t1b | +0.5 | templates family complete: 28 templates + 2 paths pass at engine, API and browser from clean; npm test 808/808

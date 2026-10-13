@@ -26,8 +26,12 @@ Results/tmp: SDT_MATRIX_RESULTS=$SP/t1b/results SDT_MATRIX_TMP=$SP/t1b/tmp. Prob
 
 - T:bull_put_spread passes engine, API, browser (29 passed, 1 blocked). Fix: server/core/engine.js orders same-day physical option expiries of one strategy receive-before-deliver (option.js expiryDelivery helper); test 5 in templates-t1b.test.js.
 
+- Step 3 done: all 28 templates + 2 paths from clean ($SP/t1b/final/results): engine 30/30 scenarios, API 30/30, browser 30/30
+  (1418 s), no failed step. bull_call_spread expiry events reordered (written 55 calls settle after the receiving legs).
+  npm test 808/808.
+
 ## In progress
-- Step 3: full family run at 3 levels from clean, npm test.
+- (none) Final report.
 
 ## Next
-3. Fix audit failures (add leg actions; futures_hedge settlementCheck), full family run at 3 levels, npm test green, save 0.5
+- Nothing open in templates. Open (not mine): hedge.js request amount for option-only templates (BUGS.md).
