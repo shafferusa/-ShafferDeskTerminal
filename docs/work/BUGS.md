@@ -137,3 +137,21 @@ start fixing never asked of the data service; a return or price fixing asked for
 - `npm test`: "matrix E: commodity_future" fails at its delivery-refusal step: the spec expects `Unknown lifecycle action "deliver"`,
   the Terminal now answers "Physical delivery does not apply to this position." Someone has added a `deliver` lifecycle action
   (server/api.js or a plugin); the futures spec (test/matrix/specs/future*.mjs) needs its expected refusal updated by its owner.
+
+## ui1 (Marketplaces, classification, trading owner), 2026-10-13
+
+- **b1 #1 (bond prices shown to three decimals): fixed.** `web/lib/core.js` `fmtPriceUnits(x, units)` keeps every
+  decimal (up to 6) of a price in % of par or per 100 notional; `Price` uses the observation's units; the trade
+  preview (estimate, reference, indicative, linked average cost), Accounting positions (average cost, price) and the
+  instrument drawer (bid / ask, price, average cost) use it. Checked in the browser: 99.53125 and 99.515625 are shown
+  in full. Order and fill tables in Accounting (limit, stop and average fill prices) still use `fmtPrice`: not changed.
+- **Open, not mine: `equity_option` browser setup fails** at "Underlying (required)": commit d955ccf made the option
+  underlying optional (index options), so the label no longer carries "(required)" and
+  `test/matrix/drivers/browser/option.mjs` (registration of the option) times out. Every option and option-template
+  browser scenario stops at setup until the driver matches `/^\s*Underlying/`. Reproduce:
+  `npm run test:browser -- --product=equity_option`.
+- **Open, not mine: the shell overflows at 390 px** on some screens (top bar and demo band 416 px wide, seen on
+  Accounting and the Marketplaces on 2026-10-13 earlier in the day; later runs measured 390). `web/app.js` / `web/app.css` shell.
+- **Note for treasury.js (fixer):** `ArrangementDialog` still sends `marketView: viewFor(ccy)`, a view chosen by
+  currency. It is harmless now (a financing arrangement is stored with routing basis "financing" and is never a
+  Marketplace row), but the currency-based `viewFor` could be dropped.

@@ -122,3 +122,4 @@
 - 2026-10-13T17:05Z | c2 | +0.2 | lng passes at engine, API and browser
 - 2026-10-13T17:06Z | c2 | +0.2 | coal passes at engine, API and browser
 - 2026-10-13T17:06Z | c2 | +0.2 | electricity passes at engine, API and browser
+- 2026-10-13T17:07Z | c2 | +0.2 | agricultural_commodity passes at engine, API and browser
