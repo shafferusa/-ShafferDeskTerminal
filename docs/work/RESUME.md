@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 92.0% of the pass** (last milestone 2026-10-13T20:07Z, s2: energy_swap passes at engine, API and browser (MMBtu a day, Labor Day excluded from pricing, early termination))
+**Completeness: about 92.2% of the pass** (last milestone 2026-10-13T20:07Z, t1: T:protective_put template passes at engine, API and browser)
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 
