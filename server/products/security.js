@@ -72,7 +72,8 @@ export function calendarInfo(inst) {
   const c = inst.conventions || {};
   const market = marketCalendar(inst);
   const set = (id) => (id && isKnownCalendar(id) ? one(id, 'explicit') : null);
-  const trading = set(c.tradingCalendar) || { ...market };
+  // A currency pair trades on the global FX market (Monday to Friday); its two payment calendars decide value dates.
+  const trading = set(c.tradingCalendar) || (inst.family === 'fx' ? one('FX', 'product') : { ...market });
   let settlement = set(c.settlementCalendar) || { ...market };
   if (inst.family === 'fx' && c.settlementCalendar && isKnownCalendar(c.settlementCalendar)) {
     // A currency pair always keeps its two payment calendars; a calendar set on it is added to them.

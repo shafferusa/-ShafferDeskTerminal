@@ -173,6 +173,9 @@ export const CALENDARS = {
   CA: { id: 'CA', label: 'Toronto markets and Canadian dollar payments', approximate: false },
   WEEKEND: { id: 'WEEKEND', label: 'Weekends only: no holiday calendar for this market', approximate: true },
   ALLDAYS: { id: 'ALLDAYS', label: 'Every calendar day (24/7 markets)', approximate: false },
+  // The global spot FX market deals Monday to Friday around the clock. A bank holiday of one currency moves value
+  // dates (the payment calendars of the two currencies decide those); it does not stop the pair from trading.
+  FX: { id: 'FX', label: 'Global FX market (Monday to Friday, around the clock)', approximate: false },
 };
 
 /** Payment calendar of a currency, or null when the Terminal has none (the caller must say so). */

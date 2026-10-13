@@ -37,7 +37,13 @@ export async function closeHedgePopup(b) {
   const { page } = b;
   const popup = page.getByRole('dialog', { name: /^Hedge/ });
   for (let i = 0; i < 12; i++) {
-    if (await popup.count()) { await popup.locator('header').getByRole('button', { name: 'Close' }).click(); await popup.waitFor({ state: 'hidden' }); continue; }
+    if (await popup.count()) {
+      // Wait for this popup to go, not for every popup: the next waiting prompt may open as soon as it closes.
+      const one = await popup.first().elementHandle();
+      await popup.first().locator('header').getByRole('button', { name: 'Close' }).click();
+      await one.waitForElementState('hidden');
+      continue;
+    }
     if (!b.entered || await page.getByRole('dialog').count()) return;
     const waiting = (await b.get('/api/hedge/prompts', { bookId: b.entered.id })).items;
     if (!waiting.length) return;

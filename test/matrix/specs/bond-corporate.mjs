@@ -951,4 +951,209 @@ const foreignMarketBond = {
   ],
 };
 
-export default [corporateBondIg, highYieldBond, eurobond, foreignMarketBond];
+// ---------------------------------------------------------------------------------------------
+// corporate_sukuk
+// ---------------------------------------------------------------------------------------------
+// US dollar trust certificates (an ijara sukuk) of a Gulf logistics company's issuing vehicle, listed on
+// Nasdaq Dubai and settled through the international depositories: periodic distributions at a profit rate
+// of 5.10% a year paid QUARTERLY on 5 January, April, July and October, 30/360, T+2 on the US dollar
+// calendar (instrument conventions: settlement and payment calendars USD, lag 2), pieces of 200,000.
+// The Terminal books a sukuk on the bond engine: the periodic distribution is the "coupon" (the history says
+// "Coupon received"), the dissolution amount at the scheduled dissolution date is the "redemption".
+//   - Bought on Tuesday 29 June 2027 for settlement on Thursday 1 July.
+//   - The 5 July distribution date is Independence Day observed (Federal Reserve and New York closed): the
+//     distribution is paid on Tuesday 6 July, and on 30/360 the day of waiting earns nothing.
+//   - 400,000 sold on Wednesday 7 July; the next quarterly distribution, 5 October, is paid on the 600,000 left,
+//     which is then sold.
+// A quarterly distribution is 5.10% / 4 = 1.275 per 100. One 30/360 day on 1,000,000 is 141.6667.
+// Days of 30/360 from 5 April 2027: to 1 Jul 86. From 5 Jul: to 6 Jul 1, to 8 Jul 3, to 9 Jul 4. From 5 Oct: to 7 Oct 2.
+// Commission: 0.6 basis point of clean principal.
+const corporateSukuk = {
+  productId: 'corporate_sukuk',
+  title: 'Al Noor Logistics 5.10% US dollar trust certificates due 5 April 2030 (corporate sukuk, Nasdaq Dubai): quarterly distributions, one on Independence Day, a partial sale, closed',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount (a multiple of 200,000)'],
+    manualInputs: ['none (the Terminal calls the periodic distribution a coupon and the dissolution a redemption)'],
+    settlement: 'T+2 on the US dollar calendar from the instrument conventions (listing venue Nasdaq Dubai has no holiday calendar in the Terminal; the certificates settle in dollars through the international depositories)',
+    lifecycle: 'Daily accrual of the profit rate on 30/360; quarterly periodic distribution to the face settled before the distribution date, paid on the next US dollar business day after a holiday; next distribution and dissolution scheduled',
+    accounting: 'Clean cost at average; distributions and the profit accrued on them are coupon and interest income, apart from realized P&L; commission expensed',
+    collateral: 'None for a long position',
+  },
+  start: EDT('2027-06-29'), // Tuesday
+  settlementCheck: { lag: 2, holidays: ['2027-07-05'] }, // Independence Day observed
+  book: {
+    name: 'Matrix corporate sukuk', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 3_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 2_000_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.6 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'corporate_sukuk', name: 'Al Noor Logistics Sukuk Ltd 5.10% Trust Certificates 5-Apr-2030', symbol: 'ALNOOR-5.1-APR30', marketView: 'FOREIGN_CASH', venueType: 'exchange', venue: 'Nasdaq Dubai', venueCountry: 'AE', issuer: 'Al Noor Logistics Sukuk Ltd', domicile: 'AE', underlyingGeo: 'AE', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { settlementCalendar: 'USD', paymentCalendar: 'USD', settleLag: 2 },
+      terms: { couponType: 'fixed', couponRate: 0.051, frequency: 4, maturity: '2030-04-05', issueDate: '2025-04-05', dayCount: '30/360', redemption: 100, minDenomination: 200_000, seniority: 'Senior unsecured (ijara)' } },
+  },
+  quotes: { main: { bid: 101.1, ask: 101.25, last: 101.175, bidSize: 10_000_000, askSize: 10_000_000 } },
+  expectAtStart: { ...startState(2_000_000, 1_000_000), cash: { account: usdCash(2_000_000), treasury: usdCash(1_000_000) } },
+  steps: [
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 1_000_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 1_000_000, estimate: 101.25, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2027-07-01', calendar: 'USD',
+            gross: 1_012_500, // 1,000,000 x 101.25 / 100
+            accrued: 12_183.33, // settles 1 Jul, 86 days of 30/360 from 5 Apr: 1,000,000 x 5.1% x 86/360 = 12,183.333
+            cash: -1_024_683.33, fees: 60.75 }], // 0.6 bp of 1,012,500
+          cash: { USD: { purchases: 1_024_683.33, fees: 60.75, required: 1_024_744.08, available: 2_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 1_000_000, avgPrice: 101.25, fills: [{ qty: 1_000_000, price: 101.25, model: 'quoted-bid-ask', settleDate: '2027-07-01', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1,000,000 ALNOOR-5.1-APR30 @ 101.25 USD', owner: 'account', date: '2027-06-29' }],
+        cash: { account: { USD: { settled: 2_000_000, unsettled: -1_024_744.08, availableToTrade: 975_255.92 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 1_000_000, avgCost: 101.25, cost: 1_012_500, price: 101.175,
+          value: 1_011_750, unrealized: -750, accrued: 12_183.33, priceSource: 'Test fixture' }],
+        holdings: { main: { long: 1_000_000, short: 0, net: 1_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2027-07-01', amount: -1_024_744.08, ccy: 'USD', into: 'cash' }],
+        // 5 Jul 2027 is Independence Day observed: the distribution is due Tuesday 6 July. 5 Apr 2030 is a Friday.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-07-06', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2030-04-05', status: 'pending' }],
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -60.75, fees: 0, borrowFunding: 0, unrealized: -750, total: -810.75 } },
+        nav: { account: 1_999_189.25, book: 2_999_189.25 },
+        balance: { account: { cash: 2_000_000, accruedIncome: 12_183.33, positions: 1_011_750, payable: 1_024_744.08, assets: 3_023_933.33, liabilities: 1_024_744.08, netAssets: 1_999_189.25 } },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EDT('2027-07-01'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 1,024,744.08 USD from settled cash', cash: { USD: -1_024_744.08 }, date: '2027-07-01' }],
+        cash: { account: { USD: { settled: 975_255.92, unsettled: 0, availableToTrade: 975_255.92 } } },
+        pending: [],
+        balance: { account: { cash: 975_255.92, payable: null, assets: 1_999_189.25, liabilities: 0 } },
+      },
+    },
+    {
+      // Tuesday 6 July. The quarterly distribution of 5 July on 1,000,000: 1.275% = 12,750.00. On the books 12,183.33: 566.67 more
+      // (four 30/360 days, 1 to 5 July). The end of day of Friday 2 July is older than the distribution date: skipped.
+      id: 'distribution', covers: ['periodic distribution', 'market holiday'], action: 'clock', to: EDT('2027-07-06'),
+      expect: {
+        events: [
+          { type: 'bond.coupon', summary: 'Coupon received on 1,000,000 ALNOOR-5.1-APR30: 12,750.00 USD', cash: { USD: 12_750 }, owner: 'account', date: '2027-07-06' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on ALNOOR-5.1-APR30: 566.67 USD' },
+        ],
+        cash: { account: { USD: { settled: 988_005.92, availableToTrade: 988_005.92 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_000_000, accrued: 0 }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-10-05', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2030-04-05', status: 'pending' }], // a Tuesday
+        pnl: { account: { couponInterest: 566.67, total: -244.08 } },
+        nav: { account: 1_999_755.92, book: 2_999_755.92 }, // 988,005.92 + 1,011,750
+        balance: { account: { cash: 988_005.92, accruedIncome: null, assets: 1_999_755.92, netAssets: 1_999_755.92 } },
+      },
+    },
+    {
+      // End of day 6 July: one 30/360 day on 1,000,000: 141.67.
+      id: 'accrue', covers: 'accrual', action: 'clock', to: EDT('2027-07-07'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on ALNOOR-5.1-APR30: 141.67 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_000_000, accrued: 141.67 }],
+        pnl: { account: { couponInterest: 708.34, total: -102.41 } },
+        nav: { account: 1_999_897.59, book: 2_999_897.59 },
+        balance: { account: { accruedIncome: 141.67, assets: 1_999_897.59, netAssets: 1_999_897.59 } },
+      },
+    },
+    {
+      id: 'reduce', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 400_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 400_000, estimate: 101.1, settleDate: '2027-07-09', calendar: 'USD',
+          gross: 404_400, // 400,000 x 101.10 / 100
+          accrued: 226.67, // settles 9 Jul, 4 days: 400,000 x 5.1% x 4/360 = 226.667
+          cash: 404_626.67, fees: 24.26 }] }, // 0.6 bp of 404,400 = 24.264
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 400_000, avgPrice: 101.1 }] },
+        // Realized 404,400 - 400,000 x 101.25% = -600.
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: /^Sold 400,000 ALNOOR-5\.1-APR30 @ 101\.10 USD \(realized [-−]600\.00 USD\)$/ }],
+        cash: { account: { USD: { settled: 988_005.92, unsettled: 404_602.41, availableToTrade: 1_392_608.33 } } }, // 404,626.67 - 24.26
+        positions: [{ instrument: 'main', lot: 'lot', qty: 600_000, cost: 607_500, avgCost: 101.25, price: 101.175, value: 607_050, unrealized: -450, accrued: -85 }], // 141.67 - 226.67
+        holdings: { main: { long: 600_000, short: 0, net: 600_000 } },
+        pending: [{ instrument: 'main', dueDate: '2027-07-09', amount: 404_602.41, into: 'cash' }],
+        pnl: { account: { realized: -600, commissions: -85.01, unrealized: -450, total: -426.67 } }, // 708.34 - 600 - 85.01 - 450
+        nav: { account: 1_999_573.33, book: 2_999_573.33 },
+        balance: { account: { cash: 988_005.92, receivable: 404_602.41, accruedIncome: -85, positions: 607_050, assets: 1_999_573.33, liabilities: 0, netAssets: 1_999_573.33 } },
+      },
+    },
+    {
+      // End of day 8 July: 1,000,000 settled, 3 days, 425.00; less the 226.67 sold to 9 July: 198.33. On the books -85.00: income 283.33.
+      id: 'settle-reduce', covers: ['settlement', 'accrual'], action: 'clock', to: EDT('2027-07-09'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 404,602.41 USD into settled cash', cash: { USD: 404_602.41 } },
+          { type: 'accrual.coupon', summary: 'Interest accrued on ALNOOR-5.1-APR30: 283.33 USD' },
+        ],
+        cash: { account: { USD: { settled: 1_392_608.33, unsettled: 0, availableToTrade: 1_392_608.33 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 600_000, accrued: 198.33 }],
+        pending: [],
+        pnl: { account: { couponInterest: 991.67, total: -143.34 } },
+        nav: { account: 1_999_856.66, book: 2_999_856.66 },
+        balance: { account: { cash: 1_392_608.33, receivable: null, accruedIncome: 198.33, assets: 1_999_856.66, netAssets: 1_999_856.66 } },
+      },
+    },
+    {
+      // Tuesday 5 October: the next quarterly distribution, on the 600,000 settled before it: 1.275% = 7,650.00. On the books 198.33:
+      // 7,451.67 more. (Three months pass in one move: the distribution is paid first and the older end of day is skipped.)
+      id: 'next-distribution', covers: 'periodic distribution', action: 'clock', to: EDT('2027-10-05'),
+      expect: {
+        events: [
+          { type: 'bond.coupon', summary: 'Coupon received on 600,000 ALNOOR-5.1-APR30: 7,650.00 USD', cash: { USD: 7_650 }, owner: 'account', date: '2027-10-05' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on ALNOOR-5.1-APR30: 7,451.67 USD' },
+        ],
+        cash: { account: { USD: { settled: 1_400_258.33, availableToTrade: 1_400_258.33 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 600_000, accrued: 0 }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2028-01-05', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2030-04-05', status: 'pending' }], // a Wednesday
+        pnl: { account: { couponInterest: 8_443.34, total: 7_308.33 } },
+        nav: { account: 2_007_308.33, book: 3_007_308.33 }, // 1,400,258.33 + 607,050
+        balance: { account: { cash: 1_400_258.33, accruedIncome: null, assets: 2_007_308.33, netAssets: 2_007_308.33 } },
+      },
+    },
+    {
+      id: 'quote-up', action: 'quote', instrument: 'main', quote: { bid: 101.6, ask: 101.75, last: 101.675, bidSize: 10_000_000, askSize: 10_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 600_000, price: 101.675, value: 610_050, unrealized: 2_550 }], // 600,000 x 101.675% - 607,500
+        pnl: { account: { unrealized: 2_550, total: 10_308.33 } },
+        nav: { account: 2_010_308.33, book: 3_010_308.33 },
+        balance: { account: { positions: 610_050, assets: 2_010_308.33, netAssets: 2_010_308.33 } },
+      },
+    },
+    {
+      id: 'close', covers: 'close', action: 'close', lot: 'lot', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 600_000, estimate: 101.6, settleDate: '2027-10-07', calendar: 'USD',
+          gross: 609_600, // 600,000 x 101.60 / 100
+          accrued: 170, // settles 7 Oct, 2 days: 600,000 x 5.1% x 2/360
+          cash: 609_770, fees: 36.58 }] }, // 0.6 bp of 609,600 = 36.576
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 600_000, avgPrice: 101.6 }] },
+        // Realized 609,600 - 607,500 = 2,100. Interest sold 170.00 against nothing on the books: 170.00 income.
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 600,000 ALNOOR-5.1-APR30 @ 101.60 USD (realized 2,100.00 USD)' },
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of ALNOOR-5.1-APR30: 170.00 USD' },
+        ],
+        cash: { account: { USD: { settled: 1_400_258.33, unsettled: 609_733.42, availableToTrade: 2_009_991.75 } } }, // 609,770 - 36.58
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', dueDate: '2027-10-07', amount: 609_733.42, into: 'cash' }],
+        lifecycle: [],
+        // Profit in all: 12,750 + 7,650 distributions + 226.67 + 170 sold - 12,183.33 bought = 8,613.34.
+        pnl: { account: { realized: 1_500, couponInterest: 8_613.34, commissions: -121.59, unrealized: 0, total: 9_991.75 } }, // -600 + 2,100; 85.01 + 36.58
+        nav: { account: 2_009_991.75, book: 3_009_991.75 },
+        balance: { account: { cash: 1_400_258.33, receivable: 609_733.42, positions: null, accruedIncome: null, assets: 2_009_991.75, liabilities: 0, netAssets: 2_009_991.75 } },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: EDT('2027-10-07'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 609,733.42 USD into settled cash', cash: { USD: 609_733.42 } }],
+        cash: { account: { USD: { settled: 2_009_991.75, unsettled: 0, availableToTrade: 2_009_991.75 } }, treasury: { USD: { settled: 1_000_000 } } },
+        pending: [],
+        balance: { account: { cash: 2_009_991.75, receivable: null, assets: 2_009_991.75, liabilities: 0, netAssets: 2_009_991.75 } },
+      },
+    },
+  ],
+};
+
+export default [corporateBondIg, highYieldBond, eurobond, foreignMarketBond, corporateSukuk];
