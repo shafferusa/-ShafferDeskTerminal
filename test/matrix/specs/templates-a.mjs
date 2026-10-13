@@ -582,6 +582,7 @@ const shortTemplate = {
     { id: 'settle-funded', covers: ['settlement', 'collateral mark'], action: 'clock', to: MAR(4), expect: {} },
     { id: 'funded-by-loan', covers: ['financing: borrow'], action: 'package', as: 'levered', instrument: 'main', contractAs: 'loan', input: pageInput('short', { quantity: 600, financing: { mode: 'loan', rateType: 'fixed', rate: 0.06 } }), strategyPage: { template: 'Short', underlying: 'main', quantity: 600, financing: { mode: 'loan', rate: 0.06 } }, expect: {} },
     { id: 'settle-levered', covers: ['settlement', 'borrow fee'], action: 'clock', to: MAR(5), expect: {} },
+    { id: 'treasury-top-up', covers: ['transfer'], action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 400_000, expect: {} },
     { id: 'price-down', action: 'quote', instrument: 'main', quote: { bid: 48.00, ask: 48.10, last: 48.00, bidSize: 10000, askSize: 10000 }, expect: {} },
     { id: 'close-share', covers: ['reduce', 'close share', 'return'], action: 'close', lot: 'core', scope: 'strategy', percent: 50, expect: {} },
     { id: 'close-exact', covers: ['reduce', 'close exact amount', 'return'], action: 'close', lot: 'core', instrument: 'main', qty: 300, expect: {} },
@@ -591,6 +592,7 @@ const shortTemplate = {
     { id: 'close-kept', covers: ['close', 'return'], action: 'close', lot: 'kept', scope: 'strategy', expect: {} },
     { id: 'settle-covers', covers: ['settlement'], action: 'clock', to: MAR(6), expect: {} },
     { id: 'repay-loan', covers: ['repay'], action: 'repay', lot: 'levered', instrument: 'loan', expect: {} },
+    { id: 'return-to-treasury', covers: ['transfer'], action: 'transfer', from: 'account', to: 'treasury', ccy: 'USD', amount: 400_000, expect: {} },
   ],
 };
 
