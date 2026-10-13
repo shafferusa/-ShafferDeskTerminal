@@ -59,9 +59,9 @@ the named engine and API case; or a click, a dialog or a page is a browser matte
 
 | Level | Cases | Run at this level | Not applicable (reason given) | Passed | Failed | Not run | Results as of |
 |---|---:|---:|---:|---:|---:|---:|---|
-| Engine | 57 | 41 | 16 | 41 | 0 | 0 | 2026-10-13T17:27:51.243Z |
-| API | 57 | 47 | 10 | 47 | 0 | 0 | 2026-10-13T17:17:26.802Z |
-| Browser | 57 | 37 | 20 | 37 | 0 | 0 | 2026-10-13T17:46:27.695Z |
+| Engine | 57 | 41 | 16 | 41 | 0 | 0 | 2026-10-13T18:00:30.169Z |
+| API | 57 | 47 | 10 | 47 | 0 | 0 | 2026-10-13T17:50:36.630Z |
+| Browser | 57 | 37 | 20 | 37 | 0 | 0 | 2026-10-13T18:04:23.533Z |
 
 Each row adds up: run + not applicable = 57 at every level; passed + failed + not run = run. 20 of the 47 API cases have no browser run of their own; each names the browser test(s) that cover what the user sees of it (the Browser column below). 10 browser cases have no API run (a click, a dialog or a screen is a browser matter; the routes behind them are covered by the tests their API reason names).
 

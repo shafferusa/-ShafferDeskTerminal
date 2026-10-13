@@ -12373,398 +12373,6 @@
     "restart"
    ]
   },
-  "B:equity_option:setup": {
-   "status": "passed",
-   "message": "",
-   "ms": 4345,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:33.575Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "setup",
-   "covers": []
-  },
-  "B:equity_option:buy-to-open": {
-   "status": "passed",
-   "message": "",
-   "ms": 1999,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:33.575Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "buy-to-open",
-   "covers": [
-    "open"
-   ]
-  },
-  "B:equity_option:settle-open": {
-   "status": "passed",
-   "message": "",
-   "ms": 734,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:33.575Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "settle-open",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "B:equity_option:stock-up": {
-   "status": "passed",
-   "message": "",
-   "ms": 650,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:33.575Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "stock-up",
-   "covers": []
-  },
-  "B:equity_option:premium-up": {
-   "status": "passed",
-   "message": "",
-   "ms": 749,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:33.575Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "premium-up",
-   "covers": []
-  },
-  "B:equity_option:increase": {
-   "status": "passed",
-   "message": "",
-   "ms": 1384,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:33.575Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "increase",
-   "covers": [
-    "increase"
-   ]
-  },
-  "B:equity_option:settle-increase": {
-   "status": "passed",
-   "message": "",
-   "ms": 769,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:33.575Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "settle-increase",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "B:equity_option:premium-up-2": {
-   "status": "passed",
-   "message": "",
-   "ms": 767,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:33.575Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "premium-up-2",
-   "covers": []
-  },
-  "B:equity_option:sell-to-close-part": {
-   "status": "passed",
-   "message": "",
-   "ms": 1430,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:33.575Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "sell-to-close-part",
-   "covers": [
-    "reduce"
-   ]
-  },
-  "B:equity_option:settle-reduce": {
-   "status": "passed",
-   "message": "",
-   "ms": 753,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:33.575Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "settle-reduce",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "B:equity_option:exercise-early": {
-   "status": "passed",
-   "message": "",
-   "ms": 1501,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:33.575Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "exercise-early",
-   "covers": [
-    "exercise"
-   ]
-  },
-  "B:equity_option:settle-exercise": {
-   "status": "passed",
-   "message": "",
-   "ms": 646,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:33.575Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "settle-exercise",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "B:equity_option:write-uncovered": {
-   "status": "passed",
-   "message": "",
-   "ms": 1954,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:33.575Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "write-uncovered",
-   "covers": [
-    "write",
-    "gross long and short"
-   ]
-  },
-  "B:equity_option:stock-up-2": {
-   "status": "passed",
-   "message": "",
-   "ms": 780,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:33.575Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "stock-up-2",
-   "covers": []
-  },
-  "B:equity_option:settle-write": {
-   "status": "passed",
-   "message": "",
-   "ms": 750,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:33.575Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "settle-write",
-   "covers": [
-    "settlement",
-    "reserve mark"
-   ]
-  },
-  "B:equity_option:premium-up-3": {
-   "status": "passed",
-   "message": "",
-   "ms": 900,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:33.575Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "premium-up-3",
-   "covers": []
-  },
-  "B:equity_option:withdraw-reserved-cash": {
-   "status": "blocked",
-   "message": "Cash reserved against the written calls cannot leave the Account: 488,952.20 is settled but only 486,791.40 is free. Terminal: \"Alpha has 486,791.40 USD of settled USD available; 487,000.00 USD requested.\"",
-   "ms": 1500,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:33.575Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "withdraw-reserved-cash",
-   "covers": [
-    "reserve"
-   ]
-  },
-  "B:equity_option:buy-to-close": {
-   "status": "passed",
-   "message": "",
-   "ms": 1733,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:33.575Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "buy-to-close",
-   "covers": [
-    "close",
-    "reserve release"
-   ]
-  },
-  "B:equity_option:settle-close-written": {
-   "status": "passed",
-   "message": "",
-   "ms": 1034,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:33.575Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "settle-close-written",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "B:equity_option:expiry-close-known-later": {
-   "status": "passed",
-   "message": "",
-   "ms": 833,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:33.575Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "expiry-close-known-later",
-   "covers": []
-  },
-  "B:equity_option:expiry-morning-stock": {
-   "status": "passed",
-   "message": "",
-   "ms": 783,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:33.575Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "expiry-morning-stock",
-   "covers": []
-  },
-  "B:equity_option:expiry-morning-premium": {
-   "status": "passed",
-   "message": "",
-   "ms": 683,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:33.575Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "expiry-morning-premium",
-   "covers": []
-  },
-  "B:equity_option:expiry-day-before-the-close": {
-   "status": "passed",
-   "message": "",
-   "ms": 868,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:33.575Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "expiry-day-before-the-close",
-   "covers": [
-    "expiry"
-   ]
-  },
-  "B:equity_option:expiry-in-the-money": {
-   "status": "passed",
-   "message": "",
-   "ms": 1198,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:33.575Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "expiry-in-the-money",
-   "covers": [
-    "expiry",
-    "exercise"
-   ]
-  },
-  "B:equity_option:settle-delivery": {
-   "status": "passed",
-   "message": "",
-   "ms": 717,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:33.575Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "settle-delivery",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "B:equity_option:trade-after-expiry": {
-   "status": "blocked",
-   "message": "The contract expired on 20 March 2026; nothing can be traded in it. Terminal: \"Leg 1: HRSI260320C50 expired on 2026-03-20.\"",
-   "ms": 1700,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:33.575Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "trade-after-expiry",
-   "covers": [
-    "expired contract"
-   ]
-  },
-  "B:equity_option:sell-shares": {
-   "status": "passed",
-   "message": "",
-   "ms": 1750,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:33.575Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "sell-shares",
-   "covers": [
-    "close"
-   ]
-  },
-  "B:equity_option:settle-shares": {
-   "status": "passed",
-   "message": "",
-   "ms": 716,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:33.575Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "settle-shares",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "B:equity_option:restart": {
-   "status": "passed",
-   "message": "",
-   "ms": 3500,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:33.575Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "restart",
-   "covers": [
-    "restart"
-   ]
-  },
   "B:crude_oil:setup": {
    "status": "passed",
    "message": "",
@@ -14732,6 +14340,398 @@
    "covers": [
     "restart"
    ]
+  },
+  "B:equity_option:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 7097,
+   "commit": "f7192a3",
+   "at": "2026-10-13T18:04:42.920Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "setup",
+   "covers": []
+  },
+  "B:equity_option:buy-to-open": {
+   "status": "passed",
+   "message": "",
+   "ms": 2664,
+   "commit": "f7192a3",
+   "at": "2026-10-13T18:04:42.920Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "buy-to-open",
+   "covers": [
+    "open"
+   ]
+  },
+  "B:equity_option:settle-open": {
+   "status": "passed",
+   "message": "",
+   "ms": 1115,
+   "commit": "f7192a3",
+   "at": "2026-10-13T18:04:42.920Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "settle-open",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:equity_option:stock-up": {
+   "status": "passed",
+   "message": "",
+   "ms": 1399,
+   "commit": "f7192a3",
+   "at": "2026-10-13T18:04:42.920Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "stock-up",
+   "covers": []
+  },
+  "B:equity_option:premium-up": {
+   "status": "passed",
+   "message": "",
+   "ms": 988,
+   "commit": "f7192a3",
+   "at": "2026-10-13T18:04:42.920Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "premium-up",
+   "covers": []
+  },
+  "B:equity_option:increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 1897,
+   "commit": "f7192a3",
+   "at": "2026-10-13T18:04:42.920Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "increase",
+   "covers": [
+    "increase"
+   ]
+  },
+  "B:equity_option:settle-increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 986,
+   "commit": "f7192a3",
+   "at": "2026-10-13T18:04:42.920Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "settle-increase",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:equity_option:premium-up-2": {
+   "status": "passed",
+   "message": "",
+   "ms": 979,
+   "commit": "f7192a3",
+   "at": "2026-10-13T18:04:42.920Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "premium-up-2",
+   "covers": []
+  },
+  "B:equity_option:sell-to-close-part": {
+   "status": "passed",
+   "message": "",
+   "ms": 1667,
+   "commit": "f7192a3",
+   "at": "2026-10-13T18:04:42.920Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "sell-to-close-part",
+   "covers": [
+    "reduce"
+   ]
+  },
+  "B:equity_option:settle-reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 702,
+   "commit": "f7192a3",
+   "at": "2026-10-13T18:04:42.920Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "settle-reduce",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:equity_option:exercise-early": {
+   "status": "passed",
+   "message": "",
+   "ms": 1399,
+   "commit": "f7192a3",
+   "at": "2026-10-13T18:04:42.920Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "exercise-early",
+   "covers": [
+    "exercise"
+   ]
+  },
+  "B:equity_option:settle-exercise": {
+   "status": "passed",
+   "message": "",
+   "ms": 766,
+   "commit": "f7192a3",
+   "at": "2026-10-13T18:04:42.920Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "settle-exercise",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:equity_option:write-uncovered": {
+   "status": "passed",
+   "message": "",
+   "ms": 1866,
+   "commit": "f7192a3",
+   "at": "2026-10-13T18:04:42.920Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "write-uncovered",
+   "covers": [
+    "write",
+    "gross long and short"
+   ]
+  },
+  "B:equity_option:stock-up-2": {
+   "status": "passed",
+   "message": "",
+   "ms": 735,
+   "commit": "f7192a3",
+   "at": "2026-10-13T18:04:42.920Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "stock-up-2",
+   "covers": []
+  },
+  "B:equity_option:settle-write": {
+   "status": "passed",
+   "message": "",
+   "ms": 782,
+   "commit": "f7192a3",
+   "at": "2026-10-13T18:04:42.920Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "settle-write",
+   "covers": [
+    "settlement",
+    "reserve mark"
+   ]
+  },
+  "B:equity_option:premium-up-3": {
+   "status": "passed",
+   "message": "",
+   "ms": 783,
+   "commit": "f7192a3",
+   "at": "2026-10-13T18:04:42.920Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "premium-up-3",
+   "covers": []
+  },
+  "B:equity_option:withdraw-reserved-cash": {
+   "status": "blocked",
+   "message": "Cash reserved against the written calls cannot leave the Account: 488,952.20 is settled but only 486,791.40 is free. Terminal: \"Alpha has 486,791.40 USD of settled USD available; 487,000.00 USD requested.\"",
+   "ms": 985,
+   "commit": "f7192a3",
+   "at": "2026-10-13T18:04:42.920Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "withdraw-reserved-cash",
+   "covers": [
+    "reserve"
+   ]
+  },
+  "B:equity_option:buy-to-close": {
+   "status": "passed",
+   "message": "",
+   "ms": 1365,
+   "commit": "f7192a3",
+   "at": "2026-10-13T18:04:42.920Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "buy-to-close",
+   "covers": [
+    "close",
+    "reserve release"
+   ]
+  },
+  "B:equity_option:settle-close-written": {
+   "status": "passed",
+   "message": "",
+   "ms": 867,
+   "commit": "f7192a3",
+   "at": "2026-10-13T18:04:42.920Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "settle-close-written",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:equity_option:expiry-close-known-later": {
+   "status": "passed",
+   "message": "",
+   "ms": 803,
+   "commit": "f7192a3",
+   "at": "2026-10-13T18:04:42.920Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "expiry-close-known-later",
+   "covers": []
+  },
+  "B:equity_option:expiry-morning-stock": {
+   "status": "passed",
+   "message": "",
+   "ms": 767,
+   "commit": "f7192a3",
+   "at": "2026-10-13T18:04:42.920Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "expiry-morning-stock",
+   "covers": []
+  },
+  "B:equity_option:expiry-morning-premium": {
+   "status": "passed",
+   "message": "",
+   "ms": 766,
+   "commit": "f7192a3",
+   "at": "2026-10-13T18:04:42.920Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "expiry-morning-premium",
+   "covers": []
+  },
+  "B:equity_option:expiry-day-before-the-close": {
+   "status": "passed",
+   "message": "",
+   "ms": 1153,
+   "commit": "f7192a3",
+   "at": "2026-10-13T18:04:42.920Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "expiry-day-before-the-close",
+   "covers": [
+    "expiry"
+   ]
+  },
+  "B:equity_option:expiry-in-the-money": {
+   "status": "passed",
+   "message": "",
+   "ms": 2029,
+   "commit": "f7192a3",
+   "at": "2026-10-13T18:04:42.920Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "expiry-in-the-money",
+   "covers": [
+    "expiry",
+    "exercise"
+   ]
+  },
+  "B:equity_option:settle-delivery": {
+   "status": "passed",
+   "message": "",
+   "ms": 1256,
+   "commit": "f7192a3",
+   "at": "2026-10-13T18:04:42.920Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "settle-delivery",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:equity_option:trade-after-expiry": {
+   "status": "blocked",
+   "message": "The contract expired on 20 March 2026; nothing can be traded in it. Terminal: \"Leg 1: HRSI260320C50 expired on 2026-03-20.\"",
+   "ms": 2150,
+   "commit": "f7192a3",
+   "at": "2026-10-13T18:04:42.920Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "trade-after-expiry",
+   "covers": [
+    "expired contract"
+   ]
+  },
+  "B:equity_option:sell-shares": {
+   "status": "passed",
+   "message": "",
+   "ms": 1894,
+   "commit": "f7192a3",
+   "at": "2026-10-13T18:04:42.920Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "sell-shares",
+   "covers": [
+    "close"
+   ]
+  },
+  "B:equity_option:settle-shares": {
+   "status": "passed",
+   "message": "",
+   "ms": 931,
+   "commit": "f7192a3",
+   "at": "2026-10-13T18:04:42.920Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "settle-shares",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:equity_option:restart": {
+   "status": "passed",
+   "message": "",
+   "ms": 4002,
+   "commit": "f7192a3",
+   "at": "2026-10-13T18:04:42.920Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "restart",
+   "covers": [
+    "restart"
+   ]
   }
  },
  "runs": {
@@ -15515,9 +15515,9 @@
    }
   },
   "equity_option": {
-   "at": "2026-10-13T17:37:33.575Z",
-   "commit": "8e99315+changes",
-   "ms": 37126,
+   "at": "2026-10-13T18:04:42.920Z",
+   "commit": "f7192a3",
+   "ms": 44794,
    "family": "option",
    "steps": 29,
    "ran": 29,
@@ -15857,5 +15857,5 @@
    }
   }
  },
- "updatedAt": "2026-10-13T18:03:57.977Z"
+ "updatedAt": "2026-10-13T18:04:42.920Z"
 }

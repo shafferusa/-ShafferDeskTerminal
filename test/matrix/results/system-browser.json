@@ -396,9 +396,20 @@
    "title": "A confirmation refused because the price moved, then confirmed on the new figures",
    "commit": "28011ab",
    "at": "2026-10-13T18:04:11.553Z"
+  },
+  "SB:stress:connection-loss": {
+   "status": "passed",
+   "message": "with the server gone the Transfer dialog cannot be opened (its data cannot be loaded)",
+   "ms": 11964,
+   "checks": 17,
+   "area": "stress",
+   "case": "connection-loss",
+   "title": "The browser loses the server mid-session and recovers",
+   "commit": "f7192a3",
+   "at": "2026-10-13T18:04:23.533Z"
   }
  },
- "updatedAt": "2026-10-13T18:04:11.553Z",
+ "updatedAt": "2026-10-13T18:04:23.533Z",
  "environment": {
   "node": "v22.22.0",
   "platform": "linux",

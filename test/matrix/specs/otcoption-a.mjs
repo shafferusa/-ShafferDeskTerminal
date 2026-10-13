@@ -380,7 +380,7 @@ const otcOption = {
       id: 'expires-out-of-the-money', covers: ['expiry', 'lapse', 'collateral'], action: 'clock', to: eod('2026-06-18'),
       expect: {
         events: [
-          { type: 'option.expired', summary: 'Expired worthless: 10,000 HALV-OTC-P48 (fixing 50.4)', owner: 'account', date: '2026-06-18' },
+          { type: 'option.expired', summary: 'Expired worthless: 10,000 HALV-OTC-P48 (fixing 50.40)', owner: 'account', date: '2026-06-18' },
           { type: 'otcoption.collateral', summary: 'Collateral returned on HALV 18 Jun 2026 48 put, European, cash (Dealer B, CSA) under "CSA Dealer B" (Dealer B): 48,000.00 USD (independent amount, the position ended)', cash: { USD: 48_000 }, owner: 'account' },
           { type: 'collateral.variation', summary: 'Variation margin under "CSA Dealer B" (Dealer B): 4,000.00 USD returned to us. The last position of the netting set ended.', cash: { USD: 4_000 }, owner: 'account' },
         ],
@@ -1490,7 +1490,7 @@ const cryptoOption = {
       id: 'expires-on-sunday', covers: ['expiry', 'lapse', 'weekend', 'collateral'], action: 'clock', to: '2026-05-31T21:30:00.000Z',
       expect: {
         events: [
-          { type: 'option.expired', summary: 'Expired worthless: 2.5 MRD-P70K-31MAY26 (fixing 72500)', owner: 'account', date: '2026-05-31' },
+          { type: 'option.expired', summary: 'Expired worthless: 2.5 MRD-P70K-31MAY26 (fixing 72,500.00)', owner: 'account', date: '2026-05-31' },
           { type: 'otcoption.collateral', summary: `Collateral returned on ${MRD_PUT} under its position-level terms: 20,000.00 USD (independent amount, the position ended)`, cash: { USD: 20_000 } },
           { type: 'collateral.variation', summary: 'Variation margin under position-level terms: 1,500.00 USD returned to us. The last position of the netting set ended.', cash: { USD: 1_500 } },
         ],
@@ -1710,7 +1710,7 @@ const digitalOption = {
         events: [
           { type: 'option.cash_settled', summary: 'Exercised (cash settlement): 10,000 CCEN-DC52 at 10.00 USD per unit (fixing 53.40)', owner: 'account', date: '2026-06-18' },
           { type: 'collateral.variation', summary: 'Variation margin under position-level terms: 22,000.00 USD returned to the counterparty. The last position of the netting set ended.', owner: 'account' },
-          { type: 'option.expired', summary: 'Expired worthless: 20,000 CCEN-DP45 (fixing 53.4)', owner: 'account', date: '2026-06-18' },
+          { type: 'option.expired', summary: 'Expired worthless: 20,000 CCEN-DP45 (fixing 53.40)', owner: 'account', date: '2026-06-18' },
           { type: 'otcoption.collateral', summary: `Collateral returned on ${DPUT} under its position-level terms: 200,000.00 USD (independent amount, the position ended)`, cash: { USD: 200_000 } },
         ],
         cash: { account: { USD: { settled: 821_000, restricted: 0, margin: 0, unsettled: 100_000, availableToTrade: 921_000, availableToWithdraw: 821_000 } } },

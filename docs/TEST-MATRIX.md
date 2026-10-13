@@ -27,47 +27,49 @@ data is in `docs/test-matrix.json`. How the harness works, and how to add a fami
 
 | | In the catalog | Specified | Not yet specified |
 |---|---:|---:|---:|
-| Products | 205 | 57 | 148 |
+| Products | 205 | 124 | 81 |
 | Execution templates | 28 | 0 | 28 |
 
 Steps of the specified product scenarios, by level and status:
 
 | Level | Results as of | Steps specified | Passed | Failed | Blocked (asserted) | Unsupported (asserted) | Not run |
 |---|---|---:|---:|---:|---:|---:|---:|
-| Engine | 2026-10-13T15:14:02.344Z | 1039 | 981 | 0 | 49 | 9 | 0 |
-| API | 2026-10-13T15:15:17.236Z | 1039 | 981 | 0 | 49 | 9 | 0 |
-| Browser | 2026-10-13T15:36:14.771Z | 1039 | 981 | 0 | 49 | 9 | 0 |
+| Engine | 2026-10-13T18:00:15.816Z | 2023 | 1784 | 3 | 107 | 41 | 88 |
+| API | 2026-10-13T16:37:38.014Z | 2023 | 978 | 0 | 49 | 8 | 988 |
+| Browser | 2026-10-13T18:04:42.920Z | 2023 | 1001 | 0 | 52 | 10 | 960 |
 
 Product scenarios, by level:
 
 | Level | Every step run, none failed | With a failed step | Partly run | Not run | Not yet specified |
 |---|---:|---:|---:|---:|---:|
-| Engine | 57 | 0 | 0 | 0 | 148 |
-| API | 57 | 0 | 0 | 0 | 148 |
-| Browser | 57 | 0 | 0 | 0 | 148 |
+| Engine | 117 | 3 | 0 | 4 | 81 |
+| API | 52 | 0 | 5 | 67 | 81 |
+| Browser | 55 | 0 | 4 | 65 | 81 |
 
 By engine family:
 
 | Family | Products | Specified | Engine complete | API complete | Browser complete |
 |---|---:|---:|---:|---:|---:|
-| Equity-like security (`equity`) | 12 | 12 | 12 | 12 | 12 |
-| Fund (NAV-priced) (`fund`) | 2 | 0 | 0 | 0 | 0 |
-| Manually valued holding (`manual`) | 16 | 0 | 0 | 0 | 0 |
-| Debt security (`bond`) | 51 | 13 | 13 | 13 | 13 |
-| Forward / FRA (`forward`) | 8 | 0 | 0 | 0 | 0 |
-| Cash loan / deposit (`loan`) | 9 | 4 | 4 | 4 | 4 |
-| Currency balance (`cash`) | 1 | 0 | 0 | 0 | 0 |
-| Spot FX (`fx`) | 1 | 0 | 0 | 0 | 0 |
+| Equity-like security (`equity`) | 12 | 12 | 11 | 12 | 12 |
+| Fund (NAV-priced) (`fund`) | 2 | 2 | 2 | 0 | 0 |
+| Manually valued holding (`manual`) | 16 | 5 | 3 | 0 | 0 |
+| Debt security (`bond`) | 51 | 33 | 32 | 13 | 13 |
+| Forward / FRA (`forward`) | 8 | 4 | 2 | 0 | 0 |
+| Cash loan / deposit (`loan`) | 9 | 9 | 9 | 4 | 4 |
+| Currency balance (`cash`) | 1 | 1 | 1 | 0 | 0 |
+| Spot FX (`fx`) | 1 | 1 | 1 | 0 | 1 |
 | Securities loan (`secloan`) | 4 | 0 | 0 | 0 | 0 |
-| Repo / reverse repo (`repo`) | 11 | 0 | 0 | 0 | 0 |
-| Spot asset (`spot`) | 14 | 0 | 0 | 0 | 0 |
-| Digital asset (`crypto`) | 3 | 0 | 0 | 0 | 0 |
-| Future (`future`) | 11 | 11 | 11 | 11 | 11 |
+| Repo / reverse repo (`repo`) | 11 | 6 | 5 | 0 | 0 |
+| Spot asset (`spot`) | 14 | 14 | 14 | 0 | 1 |
+| Digital asset (`crypto`) | 3 | 3 | 3 | 0 | 0 |
+| Future (`future`) | 11 | 11 | 11 | 6 | 7 |
 | Listed option (`option`) | 5 | 5 | 5 | 5 | 5 |
-| OTC option (`otcoption`) | 16 | 0 | 0 | 0 | 0 |
+| OTC option (`otcoption`) | 16 | 6 | 6 | 0 | 0 |
 | Swap (`swap`) | 34 | 12 | 12 | 12 | 12 |
 | Credit default swap (`cds`) | 7 | 0 | 0 | 0 | 0 |
-| **Total** | **205** | **57** | **57** | **57** | **57** |
+| **Total** | **205** | **124** | **117** | **52** | **55** |
+
+Results ignored because their step is no longer in any spec: Engine 1, API 4, Browser 4.
 
 ## Equity-like security (`equity`)
 
@@ -77,18 +79,18 @@ By engine family:
 
 | Product | Scenario | Steps | Engine | API | Browser |
 |---|---|---:|---|---|---|
-| Common stock (domestic and foreign) (`common_stock`) | Northfield Tool Works, NYSE-listed common stock | 18 | complete, 0.3 s | complete, 1.2 s | complete, 19.9 s |
-| Preferred stock (`preferred_stock`) | Harbor Mutual Financial 6.25% Series A preferred, NYSE-listed, 25.00 par | 14 | complete, 0.3 s | complete, 1.1 s | complete, 17.0 s |
+| Common stock (domestic and foreign) (`common_stock`) | Northfield Tool Works, NYSE-listed common stock | 18 | complete, 0.4 s | complete, 1.2 s | complete, 30.5 s |
+| Preferred stock (`preferred_stock`) | Harbor Mutual Financial 6.25% Series A preferred, NYSE-listed, 25.00 par | 14 | complete, 0.4 s | complete, 1.1 s | complete, 17.0 s |
 | American depositary receipt (ADR) (`adr`) | Kobori Precision Instruments ADR, NASDAQ-listed, Japanese issuer | 14 | complete, 0.3 s | complete, 1.0 s | complete, 16.8 s |
-| Global depositary receipt (GDR) (`gdr`) | Anatolia Cement GDR, London-listed in US dollars, Turkish issuer | 16 | complete, 0.3 s | complete, 1.0 s | complete, 17.8 s |
+| Global depositary receipt (GDR) (`gdr`) | Anatolia Cement GDR, London-listed in US dollars, Turkish issuer | 16 | complete, 0.4 s | complete, 1.0 s | complete, 17.8 s |
 | Exchange-traded fund (ETF) (`etf`) | Meridian Total Market ETF, NYSE Arca-listed | 16 | complete, 0.3 s | complete, 1.1 s | complete, 19.6 s |
-| Exchange-traded note (ETN) (`etn`) | Calder Bank Commodity Index ETN due 2031, NYSE Arca-listed | 13 | complete, 0.2 s | complete, 1.0 s | complete, 16.2 s |
+| Exchange-traded note (ETN) (`etn`) | Calder Bank Commodity Index ETN due 2031, NYSE Arca-listed | 13 | complete, 0.3 s | complete, 1.0 s | complete, 16.2 s |
 | Closed-end fund (`closed_end_fund`) | Granite Peak Municipal Income Fund, NYSE-listed closed-end fund | 14 | complete, 0.3 s | complete, 1.1 s | complete, 16.6 s |
-| REIT (`reit`) | Hanazono Logistics REIT, Tokyo-listed, in yen, in a US dollar Book | 17 | complete, 0.3 s | complete, 1.2 s | complete, 19.1 s |
-| Warrant (`warrant`) | Solvane Energy warrants (one share at 11.50), NYSE American-listed | 17 | complete, 0.3 s | complete, 1.1 s | complete, 20.8 s |
+| REIT (`reit`) | Hanazono Logistics REIT, Tokyo-listed, in yen, in a US dollar Book | 17 | complete, 0.5 s | complete, 1.2 s | complete, 19.1 s |
+| Warrant (`warrant`) | Solvane Energy warrants (one share at 11.50), NYSE American-listed | 17 | complete, 0.5 s | complete, 1.1 s | complete, 20.8 s |
 | Subscription right (`subscription_right`) | Ardent Paper Holdings subscription rights (4 rights and 20.00 buy one share), NASDAQ-listed | 15 | complete, 0.3 s | complete, 1.0 s | complete, 20.5 s |
-| Convertible security (preferred) (`convertible_preferred`) | Tallgrass Biosciences 5.75% Series B convertible preferred (2.5 common shares each), NASDAQ-listed | 19 | complete, 0.4 s | complete, 1.2 s | complete, 22.3 s |
-| Short sale (`short_sale`) | Brightwater Retail Group, NYSE-listed, sold short against a securities borrow. A short sale is placed from the Sell short action on the ticket of a registered security (here a common stock); the registry refuses to register a "Short sale" instrument, which the first step asserts. | 19 | complete, 0.4 s | complete, 1.2 s | complete, 21.1 s |
+| Convertible security (preferred) (`convertible_preferred`) | Tallgrass Biosciences 5.75% Series B convertible preferred (2.5 common shares each), NASDAQ-listed | 19 | **FAILED** (1 step) | complete, 1.2 s | complete, 22.3 s |
+| Short sale (`short_sale`) | Brightwater Retail Group, NYSE-listed, sold short against a securities borrow. A short sale is placed from the Sell short action on the ticket of a registered security (here a common stock); the registry refuses to register a "Short sale" instrument, which the first step asserts. | 19 | complete, 0.5 s | complete, 1.2 s | complete, 21.1 s |
 
 ### Ticket, inputs and behaviour
 
@@ -207,14 +209,14 @@ By engine family:
 | `subscription_right` | restart: persistence of everything above | `restart` | passed | passed | passed |  |
 | `convertible_preferred` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | passed | passed |  |
 | `convertible_preferred` | open | `open` | passed | passed | passed |  |
-| `convertible_preferred` | settlement | `settle-open` `settle-increase` `settle-reduce` `settle-conversion` `settle-close` | passed | passed | passed |  |
+| `convertible_preferred` | settlement | `settle-open` `settle-increase` `settle-reduce` `settle-conversion` `settle-close` | passed 2, not run 3 | passed | passed |  |
 | `convertible_preferred` | increase | `increase` | passed | passed | passed |  |
 | `convertible_preferred` | dividend | `dividend-recorded` `dividend-paid` | passed | passed | passed |  |
 | `convertible_preferred` | market data or clock move (no product action) | `shares-rally` `preferred-rallies` | passed | passed | passed |  |
 | `convertible_preferred` | reduce | `reduce` | passed | passed | passed |  |
-| `convertible_preferred` | conversion | `automatic-conversion` `conversion-preferred-given-up` `conversion-shares-received` | passed 2, unsupported 1 | passed 2, unsupported 1 | passed 2, unsupported 1 | automatic-conversion: unsupported by design. Conversion into common shares is not simulated; the catalog says it is recorded by hand. |
-| `convertible_preferred` | close | `close-preferred` `close-shares` | passed | passed | passed |  |
-| `convertible_preferred` | restart: persistence of everything above | `restart` | passed | passed | passed |  |
+| `convertible_preferred` | conversion | `automatic-conversion` `conversion-preferred-given-up` `conversion-shares-received` | **FAILED 1, NOT RUN 2** | passed 2, unsupported 1 | passed 2, unsupported 1 | automatic-conversion: unsupported by design. Conversion into common shares is not simulated; the catalog says it is recorded by hand. E:convertible_preferred:automatic-conversion failed: Refused, but not for the stated reason. Terminal said: "This event applies to debt securities."; expected Unknown lifecycle action "convert" |
+| `convertible_preferred` | close | `close-preferred` `close-shares` | not run | passed | passed |  |
+| `convertible_preferred` | restart: persistence of everything above | `restart` | not run | passed | passed |  |
 | `short_sale` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | passed | passed |  |
 | `short_sale` | registration | `register-a-short-sale` | unsupported | unsupported | unsupported | register-a-short-sale: unsupported by design. A short sale is not an instrument. It is the Sell short action on the security, with its borrow leg. |
 | `short_sale` | short | `short-without-borrow-data` `short` | passed 1, blocked 1 | passed 1, blocked 1 | passed 1, blocked 1 | short-without-borrow-data: blocked by design. No borrow availability or fee is supplied for CWFL and none was stated: a short sale cannot proceed without a securities borrow. |
@@ -233,24 +235,128 @@ By engine family:
 
 ## Fund (NAV-priced) (`fund`)
 
-2 products, 0 specified.
+2 products, 2 specified in `test/matrix/specs/fund.mjs`.
 
-| Product | Catalog support | Scenario | Engine | API | Browser |
+### Scenarios
+
+| Product | Scenario | Steps | Engine | API | Browser |
+|---|---|---:|---|---|---|
+| Mutual fund (`mutual_fund`) | Lakemont Balanced Fund, Investor Class: US open-ended mutual fund dealt at the next NAV | 27 | complete, 0.6 s | not run | not run |
+| Money-market fund (`money_market_fund`) | Harborline Treasury Money Market Fund, Institutional Shares: constant NAV 1.00, T+0, held by Treasury | 16 | complete, 0.4 s | not run | not run |
+
+### Ticket, inputs and behaviour
+
+| Product | Ticket and required fields | Automatic inputs | Manual inputs | Settlement and lifecycle events | Accounting and collateral |
 |---|---|---|---|---|---|
-| Mutual fund (`mutual_fund`) | Full lifecycle | not yet specified | not run | not run | not run |
-| Money-market fund (`money_market_fund`) | Full lifecycle | not yet specified | not run | not run | not run |
+| `mutual_fund` | Instrument drawer, Trade tab (security ticket: Buy subscribes, Sell redeems), then the trade preview. Required: Account (trading owner); Action; Shares | dealing date from the order time, the 16:00 New York cut-off and the fund dealing calendar; NAV of the dealing date (close fixture standing in for Shaffer MarketData); last published NAV for the estimate and for valuation (price fixture); settlement date counted from the dealing date; commission from the Book fee schedule (none for a no-load class) | income distribution (ex-date, amount per share), recorded by hand as a cash dividend | T+1 from the dealing date on the US calendar (Book setting settlement.fund = 1); the dealing date is the day of the order before 16:00 New York, else the next dealing day. Orders wait for the NAV of their dealing date (never filled at a live quote, never expired at the end of the day); distribution paid on its ex-date; NAV drops by the distribution | Average cost; subscription cost reserved while waiting; payable or receivable until settlement; realized P&L on redemption; distribution income; valued at the latest published NAV. Collateral: None; limit orders and short sales do not apply to a fund and are refused |
+| `money_market_fund` | Instrument drawer, Trade tab (security ticket: Buy subscribes, Sell redeems), then the trade preview. Required: Account (trading owner: Treasury); Action; Shares | dealing date from the order time, the 16:00 New York cut-off and the fund dealing calendar; NAV of the dealing date (close fixture standing in for Shaffer MarketData); last published NAV for the estimate and for valuation (price fixture); settlement date counted from the dealing date; commission from the Book fee schedule (none for a no-load class) | monthly dividend (ex-date, amount per share), recorded by hand as a cash distribution; the daily accrual is the fund's own and is not simulated | Same day (T+0, the instrument's settlement lag) from the dealing date, on the US calendar. Subscription and redemptions wait for the NAV of their dealing date; a redemption after the cut-off deals the next dealing day; monthly dividend paid on its ex-date | Average cost at 1.00; reserved subscription cash not transferable; no realized P&L at a constant NAV; dividend income in Treasury. Collateral: None |
+
+### Product by action
+
+| Product | Action | Steps (test ids) | Engine | API | Browser | Notes |
+|---|---|---|---|---|---|---|
+| `mutual_fund` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `mutual_fund` | open | `subscribe` `dealt-at-nav` `limit-order` `short-sale` | passed 2, unsupported 2 | not run | not run | limit-order: unsupported by design. A fund deals at the next NAV, whatever it is: a limit order does not apply to it. short-sale: unsupported by design. Fund shares are subscribed and redeemed with the fund; they are not borrowed and sold short. |
+| `mutual_fund` | market data or clock move (no product action) | `nav-before-close` `nav-published` `nav-ex-distribution` `nav-thursday` `thursday-after-cutoff` `thursday-nav-supplied` `good-friday` `monday-nav-supplied` `monday-nav-published` `tuesday-nav` `tuesday-nav-published` | passed | not run | not run |  |
+| `mutual_fund` | settlement | `dealt-at-nav` `settle-subscription` `redeemed-at-monday-nav` `settle-redemption` `redeemed-in-full` `settle-final` | passed | not run | not run |  |
+| `mutual_fund` | distribution | `distribution-recorded` `distribution-paid` | passed | not run | not run |  |
+| `mutual_fund` | reduce | `redeem-after-cutoff` `redeemed-at-monday-nav` `over-redeem` | passed 2, blocked 1 | not run | not run | over-redeem: blocked by design. The Account holds 600 shares and cannot redeem 700. |
+| `mutual_fund` | close | `redeem-all` `redeemed-in-full` | passed | not run | not run |  |
+| `mutual_fund` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `money_market_fund` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `money_market_fund` | open | `subscribe` `dealt-and-settled` | passed | not run | not run |  |
+| `money_market_fund` | reserved | `reserved-not-transferable` | blocked | not run | not run | reserved-not-transferable: blocked by design. 200,000 of Treasury's 500,000 is reserved for the waiting subscription; only 300,000 can leave. |
+| `money_market_fund` | market data or clock move (no product action) | `nav-supplied` `wednesday-after-cutoff` `thursday-nav` `month-end-nav` | passed | not run | not run |  |
+| `money_market_fund` | settlement | `dealt-and-settled` `redeemed-and-settled` `redeemed-in-full` | passed | not run | not run |  |
+| `money_market_fund` | reduce | `redeem-after-cutoff` `redeemed-and-settled` `over-redeem` | passed 2, blocked 1 | not run | not run | over-redeem: blocked by design. Treasury holds 150,000 shares. |
+| `money_market_fund` | distribution | `dividend-recorded` `dividend-paid` | passed | not run | not run |  |
+| `money_market_fund` | close | `redeem-all` `redeemed-in-full` | passed | not run | not run |  |
+| `money_market_fund` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
 
 ## Manually valued holding (`manual`)
 
-16 products, 0 specified.
+16 products, 5 specified in `test/matrix/specs/manual.mjs`.
+
+### Scenarios
+
+| Product | Scenario | Steps | Engine | API | Browser |
+|---|---|---:|---|---|---|
+| Private equity interest (`private_equity`) | Harrow Peak Capital Partners VII: 10,000,000 commitment to a buyout fund, calls, GP valuations, distributions, secondary sale and wind-up, all by hand | 22 | complete, 0.6 s | not run | not run |
+| Venture capital interest (`venture_capital`) | Nordlicht Ventures Fund III (Luxembourg): EUR 3,000,000 commitment in a USD Book, calls, write-downs, an exit and the wind-up, by hand | 20 | complete, 0.8 s | not run | not run |
+| Hedge fund interest (`hedge_fund`) | Kestrel Point Global Macro Fund (Cayman), Class A USD: subscription at NAV, monthly NAVs by hand, lock-up, notice, 50% investor gate, redemption over two quarters | 24 | complete, 0.5 s | not run | not run |
+| Infrastructure investment (`infrastructure`) | Ridgeline Toll Road Holdings: a 40% equity stake held by Treasury, bought and sold at stated prices, distributions, capex, appraisals by hand | 22 | not run | not run | not run |
+| Direct real estate (`direct_real_estate`) | 14 Albion Wharf, London SE1: an office building bought in GBP in a USD Book, rent, costs, capex, appraisals, a 49% joint-venture sale and the final sale, by hand | 21 | not run | not run | not run |
+
+### Ticket, inputs and behaviour
+
+| Product | Ticket and required fields | Automatic inputs | Manual inputs | Settlement and lifecycle events | Accounting and collateral |
+|---|---|---|---|---|---|
+| `private_equity` | Instrument drawer, Trade tab (security ticket; Buy and Sell carry the product's own labels), always with "State a fill price"; then the trade preview. Events by hand: the position's Lifecycle menu in the strategy instance. Required: Trading owner; Action (Commit or acquire, Sell (secondary)); Share of the interest; State a fill price; Commitment (registration); Valuation goes stale after (registration) | settlement date from the Book's manual lag on the instrument's calendar (or a date stated on the ticket); cost, realized P&L and the manual workflow figures worked out from what is entered | commitment and fund terms at registration; capital calls (amount, management-fee part); valuations (value of the holding, valuation date, source); distributions (return of capital, realized gain, income, carried interest withheld); secondary sale price and transfer date; final wind-up | Capital calls and distributions in cash when recorded; the secondary sale on the transfer date stated on the ticket (13 November 2026). Nothing automated. Calls, valuations, distributions and the wind-up recorded by hand to completion; a call above the uncalled commitment is refused | Cost = investment part of calls less return of capital; fee parts and carried interest in Fees; gains in Realized P&L; income in Dividends; valued at the GP valuation rolled forward for later calls and distributions; stale after 120 days (NAV provisional). Collateral: None: a fund interest held long, no counterparty exposure beyond the fund itself |
+| `venture_capital` | Instrument drawer, Trade tab (security ticket; Buy and Sell carry the product's own labels), always with "State a fill price"; then the trade preview. Events by hand: the position's Lifecycle menu in the strategy instance. Required: Trading owner; Action (Commit or acquire); Share of the interest; State a fill price; Commitment (registration); Valuation goes stale after (registration) | settlement date from the Book's manual lag on the instrument's calendar (or a date stated on the ticket); cost, realized P&L and the manual workflow figures worked out from what is entered | commitment and fund terms at registration; capital calls with their management-fee part; fund expenses billed outside the calls; valuations with date and source; distributions (return of capital, realized gain); final wind-up | Calls, expenses and distributions in EUR cash when recorded; nothing waits for settlement. Nothing automated; calls, valuations, distributions and the wind-up by hand. A redemption notice is not offered (closed-end fund) | In EUR, reported in USD at the fixture rate in force when each entry is posted; FX effect on the EUR balances at the current rate; cost, fees, realized and unrealized as for private equity. Collateral: None: a fund interest held long |
+| `hedge_fund` | Instrument drawer, Trade tab (security ticket; Buy and Sell carry the product's own labels), always with "State a fill price"; then the trade preview. Events by hand: the position's Lifecycle menu in the strategy instance. Required: Trading owner; Action (Subscribe); Shares; State a fill price (the dealing NAV); Dealing frequency, notice, payment days (registration); Valuation goes stale after (registration) | settlement date from the Book's manual lag on the instrument's calendar (or a date stated on the ticket); cost, realized P&L and the manual workflow figures worked out from what is entered; dealing date from the notice period and the dealing frequency; gate cap and the shares carried to the next dealing date; payment date of redemption proceeds on the payment calendar | subscription NAV (stated fill price); monthly NAV per share with date and source; redemption notice (shares); NAV per share struck for each dealing date | Subscription T+2 on the USD payment calendar; redemption proceeds 10 business days after the dealing date (14 July and 15 October 2026). Redemption only by notice: dealt on the first quarter end at least 45 days after the notice, at most 50% of the shares held at the first dealing date each time; each dealing date waits (blocked, visible) until its NAV is entered by hand. Lock-up refused before 31 March 2026; a sale on the ticket is refused | Average cost per share; realized P&L on each redemption at the dealing NAV; valued at the latest NAV per share, stale after 35 days (NAV provisional). Collateral: None: a fund interest held long |
+| `infrastructure` | Instrument drawer, Trade tab (security ticket; Buy and Sell carry the product's own labels), always with "State a fill price"; then the trade preview. Events by hand: the position's Lifecycle menu in the strategy instance. Required: Trading owner (Treasury); Action (Acquire, Sell); Share of the asset; State a fill price (price for the whole asset); Settlement date (financial close); Asset (registration); Valuation goes stale after (registration) | settlement date from the Book's manual lag on the instrument's calendar (or a date stated on the ticket); cost, realized P&L and the manual workflow figures worked out from what is entered | purchase and sale prices with their closing dates; valuations (value of the stake, date, source); project distributions (income); capital expenditure; operating expenses | Purchase and sales on the closing dates stated on the ticket (16 March, 16 November, 29 December 2026), on the US calendar. Nothing automated; distributions, capex, expenses and valuations by hand; the valuation goes stale after 190 days | Cost = purchase price plus capital expenditure; distributions in Dividends; expenses in Fees; valued at the appraisal plus capex since; realized P&L on each sale at average cost. Collateral: None: an equity stake held long |
+| `direct_real_estate` | Instrument drawer, Trade tab (security ticket; Buy and Sell carry the product's own labels), always with "State a fill price"; then the trade preview. Events by hand: the position's Lifecycle menu in the strategy instance. Required: Trading owner; Action (Acquire, Sell); Share of the asset; State a fill price (price for the whole asset); Settlement date (completion); Asset (registration); Valuation goes stale after (registration) | settlement date from the Book's manual lag on the instrument's calendar (or a date stated on the ticket); cost, realized P&L and the manual workflow figures worked out from what is entered | purchase and sale prices with completion dates; acquisition costs and capital expenditure (added to cost); rent received; operating expenses; valuations with date and source | Purchase and sales on the completion dates stated on the ticket, checked against the UK calendar (7 April after Easter; 30 December after Christmas and 28 December). Nothing automated; rent, expenses, capex and appraisals by hand; valuation stale after 180 days | In GBP, reported in USD at 1.25; cost = price + capitalised costs and capex; rent in Dividends; expenses in Fees; valued at the appraisal plus capex since; realized P&L on each sale at average cost. Collateral: None: a building owned outright |
+
+### Product by action
+
+| Product | Action | Steps (test ids) | Engine | API | Browser | Notes |
+|---|---|---|---|---|---|---|
+| `private_equity` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `private_equity` | open | `commit` | passed | not run | not run |  |
+| `private_equity` | market data or clock move (no product action) | `call-date` `statement-q1-date` `call-2-date` `distribution-1-date` `statement-q3-date` `final-date` | passed | not run | not run |  |
+| `private_equity` | capital call | `call-1` `call-2` `over-call` | passed 2, blocked 1 | not run | not run | over-call: blocked by design. After the secondary sale 4,500,000 of the commitment is uncalled; a call of 5,000,000 cannot be met from it. |
+| `private_equity` | valuation | `valuation-q1` `statement-q2-date` `valuation-q2` `valuation-stale` `valuation-q3` | passed | not run | not run |  |
+| `private_equity` | distribution | `distribution-1` `distribution-final` | passed | not run | not run |  |
+| `private_equity` | reduce | `secondary-sale` | passed | not run | not run |  |
+| `private_equity` | settlement | `sale-settles` | passed | not run | not run |  |
+| `private_equity` | close | `wind-up` | passed | not run | not run |  |
+| `private_equity` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `venture_capital` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `venture_capital` | open | `commit` | passed | not run | not run |  |
+| `venture_capital` | market data or clock move (no product action) | `after-easter` `eur-up` `statement-q2-date` `call-2-date` `eur-down` `statement-q3-date` `final-date` | passed | not run | not run |  |
+| `venture_capital` | capital call | `call-1` `call-2` | passed | not run | not run |  |
+| `venture_capital` | fee | `fund-expense` | passed | not run | not run |  |
+| `venture_capital` | redeem | `redemption-not-offered` | unsupported | not run | not run | redemption-not-offered: unsupported by design. A closed-end venture fund interest has no redemption: it ends with the fund's wind-up, or is sold on the secondary market. |
+| `venture_capital` | valuation | `valuation-q2` `valuation-stale` `valuation-q3` | passed | not run | not run |  |
+| `venture_capital` | distribution | `distribution-exit` `distribution-final` | passed | not run | not run |  |
+| `venture_capital` | close | `wind-up` | passed | not run | not run |  |
+| `venture_capital` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `hedge_fund` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `hedge_fund` | open | `subscribe` | passed | not run | not run |  |
+| `hedge_fund` | settlement | `settle-subscription` `redemption-q2-paid` `redemption-q3-paid` | passed | not run | not run |  |
+| `hedge_fund` | market data or clock move (no product action) | `february-statement-date` `june-nav-date` | passed | not run | not run |  |
+| `hedge_fund` | valuation | `valuation-feb` `march-statement-date` `valuation-mar` `april-statement-date` `valuation-apr` `august-statement-date` `valuation-aug` `september-nav-date` | passed | not run | not run |  |
+| `hedge_fund` | reduce | `sale-on-ticket` | unsupported | not run | not run | sale-on-ticket: unsupported by design. A hedge fund interest is redeemed by notice on the fund's dealing dates, not sold. |
+| `hedge_fund` | redeem | `notice-in-lockup` `notice` `over-notice` `dealing-date-waits` `redemption-q2` `second-dealing-date-waits` | passed 4, blocked 2 | not run | not run | notice-in-lockup: blocked by design. The shares are locked up until 31 March 2026. over-notice: blocked by design. All 2,000 shares are already under notice. |
+| `hedge_fund` | close | `redemption-q3` | passed | not run | not run |  |
+| `hedge_fund` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `infrastructure` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | not run | not run | not run |  |
+| `infrastructure` | open | `acquire` | not run | not run | not run |  |
+| `infrastructure` | market data or clock move (no product action) | `treasury-screens-after-purchase` `q2-distribution-date` `capex-date` `appraisal-date` `treasury-screens-after-appraisal` `year-end-date` `treasury-screens-at-the-end` | not run | not run | not run |  |
+| `infrastructure` | settlement | `financial-close` `partial-sale-closes` `final-sale-closes` | not run | not run | not run |  |
+| `infrastructure` | valuation | `valuation-at-close` `valuation-stale` `appraisal` | not run | not run | not run |  |
+| `infrastructure` | income | `distribution-q2` `distribution-q4` | not run | not run | not run |  |
+| `infrastructure` | capital expenditure | `capex` | not run | not run | not run |  |
+| `infrastructure` | fee | `operating-expense` | not run | not run | not run |  |
+| `infrastructure` | reduce | `partial-sale` | not run | not run | not run |  |
+| `infrastructure` | close | `final-sale` | not run | not run | not run |  |
+| `infrastructure` | restart: persistence of everything above | `restart` | not run | not run | not run |  |
+| `direct_real_estate` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | not run | not run | not run |  |
+| `direct_real_estate` | open | `acquire` | not run | not run | not run |  |
+| `direct_real_estate` | settlement | `completion` `joint-venture-completes` `final-completion` | not run | not run | not run |  |
+| `direct_real_estate` | capital expenditure | `acquisition-costs` `roof` | not run | not run | not run |  |
+| `direct_real_estate` | valuation | `valuation-at-acquisition` `valuation-stale` `appraisal` | not run | not run | not run |  |
+| `direct_real_estate` | market data or clock move (no product action) | `april-rent-date` `may-rent-date` `roof-date` `jv-sale-date` `final-sale-date` | not run | not run | not run |  |
+| `direct_real_estate` | income | `rent-april` `rent-may` | not run | not run | not run |  |
+| `direct_real_estate` | fee | `operating-costs` | not run | not run | not run |  |
+| `direct_real_estate` | reduce | `joint-venture-sale` | not run | not run | not run |  |
+| `direct_real_estate` | close | `final-sale` | not run | not run | not run |  |
+| `direct_real_estate` | restart: persistence of everything above | `restart` | not run | not run | not run |  |
+
+### Not yet specified
 
 | Product | Catalog support | Scenario | Engine | API | Browser |
 |---|---|---|---|---|---|
-| Private equity interest (`private_equity`) | Manual inputs | not yet specified | not run | not run | not run |
-| Venture capital interest (`venture_capital`) | Manual inputs | not yet specified | not run | not run | not run |
-| Hedge fund interest (`hedge_fund`) | Manual inputs | not yet specified | not run | not run | not run |
-| Infrastructure investment (`infrastructure`) | Manual inputs | not yet specified | not run | not run | not run |
-| Direct real estate (`direct_real_estate`) | Manual inputs | not yet specified | not run | not run | not run |
 | Insurance-linked security (`insurance_linked_security`) | Manual inputs | not yet specified | not run | not run | not run |
 | Securities collateral swap (`collateral_swap`) | Manual inputs | not yet specified | not run | not run | not run |
 | Freight contract (`freight_contract`) | Manual inputs | not yet specified | not run | not run | not run |
@@ -265,25 +371,45 @@ By engine family:
 
 ## Debt security (`bond`)
 
-51 products, 13 specified in `test/matrix/specs/bond-government.mjs`.
+51 products, 33 specified in `test/matrix/specs/bond-government.mjs`, `test/matrix/specs/bond-structured-a.mjs`, `test/matrix/specs/bond-corporate.mjs`.
 
 ### Scenarios
 
 | Product | Scenario | Steps | Engine | API | Browser |
 |---|---|---:|---|---|---|
 | US Treasury bill (`treasury_bill`) | US Treasury bill due 10 December 2026, held by Treasury: bought at a discount, part sold, the rest redeemed at par | 18 | complete, 0.3 s | complete, 1.2 s | complete, 21.3 s |
-| US Treasury note (`treasury_note`) | US Treasury 4% note due 15 November 2030, bought between coupons, held over a bond-market holiday and a coupon | 16 | complete, 0.5 s | complete, 1.3 s | complete, 19.8 s |
-| US Treasury bond (`treasury_bond`) | US Treasury 4.5% bond due 15 February 2052, sold short against a securities borrow, carried over a coupon and covered | 13 | complete, 0.3 s | complete, 1.1 s | complete, 15.8 s |
+| US Treasury note (`treasury_note`) | US Treasury 4% note due 15 November 2030, bought between coupons, held over a bond-market holiday and a coupon | 16 | complete, 0.3 s | complete, 1.3 s | complete, 40.2 s |
+| US Treasury bond (`treasury_bond`) | US Treasury 4.5% bond due 15 February 2052, sold short against a securities borrow, carried over a coupon and covered | 13 | complete, 0.5 s | complete, 1.1 s | complete, 15.8 s |
+| US TIPS (`tips`) | US TIPS 0.375% due 15 January 2027: index ratios recorded by hand (up, then below 1), partial sale over Christmas, final coupon on adjusted principal, redemption floored at par | 16 | complete, 0.4 s | not run | not run |
 | US Treasury STRIPS (`strips`) | US Treasury STRIPS due 15 May 2036: stated fill price, manual mark, Columbus Day settlement, a resting limit sale | 15 | complete, 0.3 s | complete, 1.2 s | complete, 17.3 s |
 | Foreign government bill (`foreign_gov_bill`) | UK Treasury bill due 18 January 2027 in sterling, reported in US dollars: UK holidays, a refused settlement date, FX effects, redemption at par | 12 | complete, 0.3 s | complete, 1.0 s | complete, 14.7 s |
 | Foreign government bond (`foreign_gov_bond`) | Japanese government bond 1.4% due 20 December 2035 in yen, reported in US dollars: ACT/365 accrual, a Tokyo holiday, a coupon, FX effects | 12 | complete, 0.3 s | complete, 1.0 s | complete, 15.0 s |
-| Emerging-market local-currency debt (`em_local_debt`) | South African government bond 8.875% due 28 February 2035 in rand: JSE-listed, T+3 on a weekends-only calendar, month-end coupons, a currency fall | 12 | complete, 0.4 s | complete, 1.0 s | complete, 15.4 s |
-| Emerging-market hard-currency debt (`em_hard_debt`) | Republic of Colombia 6.25% US dollar bond due 15 March 2034: 30/360, T+2 over Labor Day, a cash shortfall funded by Treasury from the ticket | 13 | complete, 0.3 s | complete, 1.0 s | complete, 15.8 s |
+| Foreign inflation-linked bond (`foreign_inflation_linked`) | UK 0.75% index-linked gilt 2033 in sterling, reported in dollars: RPI index ratios recorded by hand (up and down, no deflation floor), coupon on adjusted principal, sale over the English Christmas bank holidays, close | 16 | complete, 0.4 s | not run | not run |
+| Emerging-market local-currency debt (`em_local_debt`) | South African government bond 8.875% due 28 February 2035 in rand: JSE-listed, T+3 on a weekends-only calendar, month-end coupons, a currency fall | 12 | complete, 0.3 s | complete, 1.0 s | complete, 15.4 s |
+| Emerging-market hard-currency debt (`em_hard_debt`) | Republic of Colombia 6.25% US dollar bond due 15 March 2034: 30/360, T+2 over Labor Day, a cash shortfall funded by Treasury from the ticket | 13 | complete, 0.2 s | complete, 1.0 s | complete, 15.8 s |
 | Agency debt (`agency_debt`) | Federal National Mortgage Association 4.25% note due 22 January 2030: a limit order filled in pieces on displayed size, a day order that expires, a coupon | 14 | complete, 0.3 s | complete, 1.1 s | complete, 15.8 s |
-| Supranational bond (`supranational_bond`) | International Bank for Reconstruction and Development 2.75% euro bond due 30 April 2031: annual coupon, T+2 over the 1 May TARGET holiday, FX effects | 11 | complete, 0.3 s | complete, 1.0 s | complete, 14.4 s |
+| Supranational bond (`supranational_bond`) | International Bank for Reconstruction and Development 2.75% euro bond due 30 April 2031: annual coupon, T+2 over the 1 May TARGET holiday, FX effects | 11 | complete, 0.2 s | complete, 1.0 s | complete, 14.4 s |
 | Municipal bond (domestic and foreign) (`municipal_bond`) | State of California general obligation 5% due 1 December 2034: 5,000 denominations, a stop order, a sale settling on the coupon date | 13 | complete, 0.3 s | complete, 1.0 s | complete, 16.8 s |
-| Sovereign sukuk (`sovereign_sukuk`) | Republic of Indonesia 4.40% US dollar trust certificates due 20 March 2027: periodic distributions, a sale across Columbus Day, held to dissolution on a weekend date | 14 | complete, 0.3 s | complete, 1.0 s | complete, 16.0 s |
-| Corporate bond (domestic and foreign) (`corporate_bond`) | Halden Energy 5.40% senior notes due 1 March 2032: a new issue with a short first coupon, two lots, 30/360 across February and the 31st, a tender offer | 18 | complete, 0.4 s | complete, 1.2 s | complete, 20.4 s |
+| Sovereign sukuk (`sovereign_sukuk`) | Republic of Indonesia 4.40% US dollar trust certificates due 20 March 2027: periodic distributions, a sale across Columbus Day, held to dissolution on a weekend date | 14 | complete, 0.2 s | complete, 1.0 s | complete, 16.0 s |
+| Corporate bond (domestic and foreign) (`corporate_bond`) | Halden Energy 5.40% senior notes due 1 March 2032: a new issue with a short first coupon, two lots, 30/360 across February and the 31st, a tender offer | 18 | complete, 0.5 s | complete, 1.2 s | complete, 20.4 s |
+| Investment-grade bond (`corporate_bond_ig`) | Marlow Industries 4.85% senior notes due 18 January 2034 (investment grade): two purchases at average cost, a partial sale, a coupon on a market holiday, closed | 14 | complete, 0.4 s | not run | not run |
+| High-yield bond (`high_yield_bond`) | Corvane Holdings 8.50% senior notes due 1 June 2031 (high yield): bought distressed, coupon suspended on default, a missed coupon, a flat sale, a cash restructuring | 12 | complete, 0.3 s | not run | not run |
+| Eurobond (`eurobond`) | Brennvik Telecom 3.625% euro notes due 15 March 2033 (Eurobond, Luxembourg-listed): annual coupon, 30E/360, T+2 on TARGET across Easter, reported in US dollars | 14 | complete, 0.4 s | not run | not run |
+| Foreign-market bond (Yankee, Samurai, Bulldog …) (`foreign_market_bond`) | Compagnie Valmont 5.25% sterling bonds due 2035 (Bulldog: French issuer, London listing, UK conventions): ACT/ACT, T+1 over a UK bank holiday and Labor Day, reported in US dollars | 15 | complete, 0.3 s | not run | not run |
+| Corporate sukuk (`corporate_sukuk`) | Al Noor Logistics 5.10% US dollar trust certificates due 5 April 2030 (corporate sukuk, Nasdaq Dubai): quarterly distributions, one on Independence Day, a partial sale, closed | 12 | complete, 0.3 s | not run | not run |
+| Floating-rate note (`floating_rate_note`) | Kestrel Bancorp floating-rate senior notes due 20 October 2029 (3M term SOFR + 0.95%): a missing fixing stops accrual and blocks a coupon, the fixing entered by hand pays it | 16 | complete, 0.3 s | not run | not run |
+| Zero-coupon bond (`zero_coupon_bond`) | Halvorsen Pharma zero-coupon notes due 26 November 2026: bought at a discount, part sold over Veterans Day, the rest redeemed at par after Thanksgiving | 11 | complete, 0.3 s | not run | not run |
+| Callable bond (`callable_bond`) | Halden Industrial 5.75% callable notes 2033: a call before the first call date and one at the wrong price refused, coupon, 25% partial call at 101 on the first call date, the rest called on 15 August with accrued interest | 16 | complete, 0.4 s | not run | not run |
+| Puttable bond (`puttable_bond`) | Corran Energy 4.25% puttable notes 2035: bought at a discount, increased over Presidents' Day, partial sale, coupon, holder put at par on the put date recorded by hand, puts on other days refused, rest sold | 17 | complete, 0.4 s | not run | not run |
+| Convertible bond (`convertible_bond`) | Veridian Systems 1.50% convertible notes 2031: opened, increased, partly sold, converted by hand into the issuer's shares at 22.8571 per 1,000 (fraction in cash, accrued forfeited), then notes and shares closed together | 13 | complete, 0.3 s | not run | not run |
+| Exchangeable bond (`exchangeable_bond`) | Aldermoor Holdings 0% bonds 2030 exchangeable into Pell Mineral shares: bought over Columbus Day, increased, partly sold, exchanged by hand into the other issuer's shares, the rest settled in cash at the issuer's election, shares sold | 15 | complete, 0.4 s | not run | not run |
+| Perpetual bond (`perpetual_bond`) | Ardent Utilities 6.125% perpetual hybrid notes: no maturity scheduled, a partial sale, a coupon, the issuer call recorded by hand at par | 7 | complete, 0.2 s | not run | not run |
+| Subordinated debt (`subordinated_debt`) | Brightwater Bank 5.875% Tier 2 subordinated notes due 15 June 2034: sold short against a borrow, coupon paid to the lender, covered in two parts | 11 | complete, 0.4 s | not run | not run |
+| Contingent convertible bond (CoCo) (`coco_bond`) | Nordhavn Bank 7.25% perpetual AT1 CoCo: pieces of 200,000 (odd lot refused), T+2, opened, increased, partly sold, coupon cancelled by hand, coupon date missed, trigger write-down of 75% by hand, sold on the reduced principal | 15 | **FAILED** (1 step) | not run | not run |
+| Covered bond (`covered_bond`) | Hanseatische Pfandbriefbank 2.50% mortgage Pfandbrief due 12 February 2032 (covered bond), held by Treasury in a euro Book: annual coupon, T+2 TARGET over Presidents' Day | 13 | complete, 0.3 s | not run | not run |
+| Commercial paper (`commercial_paper`) | Larchmont Funding commercial paper due 11 October 2027: bought at a 4.80% discount with same-day settlement, part sold, redeemed at par after Columbus Day | 7 | complete, 0.2 s | not run | not run |
+| Asset-backed commercial paper (`abcp`) | Meridian Receivables Funding asset-backed commercial paper due 11 November 2027: quoted on yield, two same-day purchases at average cost, redeemed at par after Veterans Day | 8 | complete, 0.2 s | not run | not run |
+| Bankers' acceptance (`bankers_acceptance`) | Ridgefield National Bank bankers' acceptance due 17 January 2028: bought at a discount, a good-until-cancelled limit sale across Thanksgiving, redeemed at par after Martin Luther King Jr. Day | 9 | complete, 0.2 s | not run | not run |
 
 ### Ticket, inputs and behaviour
 
@@ -292,9 +418,11 @@ By engine family:
 | `treasury_bill` | Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview. Required: Account (Treasury); Action; Face amount; Settlement, when a trade must settle sooner than the convention | bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData); fill price and fill model; accrued interest to the settlement date from the registered coupon terms; settlement date from the instrument convention and settlement calendar; commission from the Book fee schedule | the bank discount rate is converted to a price in % of par by hand (the Terminal has no discount-yield quotation); same-day settlement stated on the ticket for a purchase on the day before maturity | T+1 on the US bond calendar; a trade must settle before the maturity date, so the day before maturity only a same-day settlement stated on the ticket is accepted. No coupon and no accrual; redemption at par on the maturity date, automatic; a trade in the matured bill is refused | Clean cost at average; no accrued interest; discount earned is unrealized P&L while held and realized P&L at sale and at redemption; owned by Treasury, so the figures are Treasury's and the Book's, not an Account's. Collateral: None for a long position; a short sale is refused without securities-borrow data |
 | `treasury_note` | Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview. Required: Account; Action; Face amount | bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData); fill price and fill model; accrued interest to the settlement date from the registered coupon terms; settlement date from the instrument convention and settlement calendar; commission from the Book fee schedule | none: coupon schedule, accrued interest and settlement follow from the registered terms | T+1 on the US bond calendar (Book setting settlement.bond = 1); Veterans Day is skipped; an order placed on the holiday waits and is matched the next bond-market day. Daily accrual into coupon income; semi-annual coupon paid on the next payment day after a Sunday coupon date to the face settled before it; next coupon and maturity scheduled | Clean cost at average; accrued interest bought and sold through Accrued income; coupon income separate from realized and unrealized P&L; commission expensed. Collateral: None for a long position |
 | `treasury_bond` | Instrument drawer, Trade tab: Sell short (adds the securities borrow leg), then Buy to cover; the Close button of the short position. Required: Account; Action (Sell short / Buy to cover); Face amount; borrow assumption only when no borrow data is supplied | bid, ask, last in % of par (quote fixture); borrow availability and fee (borrow fixture standing in for Shaffer MarketData); accrued interest received on the short sale and paid on the cover; collateral and margin from the Book short assumptions; settlement date; commission | none | T+1 on the US bond calendar; sale proceeds (principal plus accrued) settle into restricted cash; a cover is paid from restricted cash first. Daily interest cost on the short and daily borrow fee; collateral marked each end of day to 102% of clean value plus accrued; coupon paid to the lender on the next payment day after a holiday coupon date; fee paid when the borrow is returned | Short position at negative clean cost; accrued coupon owed as a negative accrued balance; the coupon paid and the accrued received and paid net to an interest cost in coupon and interest income; borrow fee under borrowing and funding; realized P&L on the covers. Collateral: Restricted cash = 102% of market value including accrued interest, marked daily; 30% margin reserve on the clean value; neither is buying power or withdrawable |
+| `tips` | Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview. Required: Account; Action; Face amount (a multiple of 100) | bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData); fill price and fill model; accrued interest to the settlement date from the registered coupon terms; settlement date from the instrument convention and settlement calendar; commission from the Book fee schedule | Registration: Index ratio (required; no inflation index feed) and Deflation floor; Index ratio recorded by hand on the instrument form (Edit, Lifecycle events recorded by hand: New index ratio, Index ratio as of, Review, Record index ratio) | T+1 on the US bond calendar; principal = face x index ratio x clean price; accrued on the adjusted principal; Christmas skipped. Daily accrual on the adjusted principal; index ratio changes by hand book inflation accretion (income or loss) and true up accrued; final coupon on face x ratio; redemption at face x ratio floored at par (deflation floor) | Cost includes inflation accretion; accretion and coupon in coupon and interest income; realized P&L on the sale and on the floored redemption; commission expensed. Collateral: None for a long position |
 | `strips` | Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview. Required: Account; Action; Face amount; a stated fill price or a manual price while no quote exists; Order type, Limit price and Time in force for the resting sale | settlement date; commission; bid, ask and last once a quote is supplied (quote fixture) | fill price stated on the ticket for the first purchase (no quote exists); price entered by hand on the instrument, used to value the position and to fill the second purchase with the assumed half spread | T+1 on the US bond calendar; Columbus Day is skipped; a limit order that fills on a later day settles T+1 from the day it fills. No coupon and no accrual; maturity scheduled; without a price the position is carried at cost and the net asset value is provisional | Clean cost at average across a stated-price fill and a manual-mark fill; no accrued interest; realized P&L on each sale; minimum commission. Collateral: None for a long position |
 | `foreign_gov_bill` | Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview. Required: Account; Action; Face amount | bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData); fill price and fill model; accrued interest to the settlement date from the registered coupon terms; settlement date from the instrument convention and settlement calendar; commission from the Book fee schedule | the money-market yield is converted to a price in % of par by hand (the Terminal has no yield quotation) | T+1 on the London calendar (venue country GB); UK bank holidays are skipped; a settlement date stated on a UK holiday is refused on the ticket. No coupon and no accrual; redemption at par on the maturity date by the London payment calendar, on a day New York is closed | Sterling position, cash and settlement; US dollar figures at the current rate for balances and unrealized P&L, at the booking rate for commission and realized P&L; the difference is reported as FX effects. Collateral: None for a long position |
 | `foreign_gov_bond` | Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview. Required: Account; Action; Face amount | bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData); fill price and fill model; accrued interest to the settlement date from the registered coupon terms; settlement date from the instrument convention and settlement calendar; commission from the Book fee schedule | none | T+1 on the Tokyo calendar (venue country JP); amounts in whole yen. Daily accrual on ACT/365, on a Tokyo holiday too; semi-annual coupon of exactly half the annual rate, paid on the next Tokyo business day after a Sunday coupon date | Yen position, cash, accrued interest and settlement; US dollar figures at the current rate for balances and unrealized P&L, at the booking rate for income, commission and realized P&L; FX effects reported separately. Collateral: None for a long position |
+| `foreign_inflation_linked` | Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview. Required: Account; Action; Face amount | bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData); fill price and fill model; accrued interest to the settlement date from the registered coupon terms; settlement date from the instrument convention and settlement calendar; commission from the Book fee schedule | Registration: Index ratio (required; no inflation index feed), Deflation floor left off (UK index-linked gilts have none); Index ratio recorded by hand on the instrument form (Edit, Lifecycle events recorded by hand) | T+1 on the London calendar (venue country GB); principal = face x index ratio x clean price; English bank holidays skipped; New York holiday does not stop a London trade; ex-dividend period not modelled. Daily accrual on the adjusted principal (New York end of day); index ratio changes book inflation accretion (positive or negative) and true up accrued; coupon on face x ratio; no floor at maturity | Sterling position, cost including accretion, accrued, coupon, sale proceeds; US dollar figures at the current rate for balances and unrealized P&L, at the booking rate for income, commission and realized P&L. Collateral: None for a long position |
 | `em_local_debt` | Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview. Required: Account; Action; Face amount | bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData); fill price and fill model; accrued interest to the settlement date from the registered coupon terms; settlement date from the instrument convention and settlement calendar; commission from the Book fee schedule | none (local holidays would have to be added by hand in Settings: the calendar is weekends only) | T+3 from the instrument's own settlement convention, counted on weekends only because no South African calendar exists; every preview carries the calendar-fallback warning. Daily accrual on ACT/365; month-end semi-annual coupons of half the annual rate; the books-closed period before a coupon is not modelled | Rand position, cash, accrued interest and settlement; US dollar figures at the current rate for balances and unrealized P&L, at the booking rate for income, commission and realized P&L; FX effects reported separately. Collateral: None for a long position |
 | `em_hard_debt` | Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview. Required: Account; Action; Face amount; "If cash is short": Fund the shortfall from Treasury, when the Account cannot pay | bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData); fill price and fill model; accrued interest to the settlement date from the registered coupon terms; settlement date from the instrument convention and settlement calendar; commission from the Book fee schedule | none | T+2 from the instrument's own convention on the US dollar payment calendar (OTC, no venue country); Labor Day is skipped. Daily accrual on 30/360; semi-annual coupon to the face settled before the coupon date; next coupon and maturity scheduled | Clean cost at average; accrued interest bought and sold through Accrued income; Treasury funding of the shortfall is an internal transfer (no P&L in the Book, no borrowing), returned by a transfer at the end. Collateral: None for a long position |
 | `agency_debt` | Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview. Required: Account; Action; Face amount; Order type Limit with a Limit price; Time in force | bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData); fill price and fill model; accrued interest to the settlement date from the registered coupon terms; settlement date from the instrument convention and settlement calendar; commission from the Book fee schedule | none | T+1 on the US bond calendar; each partial fill settles on its own; Martin Luther King Jr. Day is skipped. Working and partly filled orders across matching cycles; a Day order expires at the end of the business day; daily accrual on 30/360; semi-annual coupon | Average cost across partial fills; the commission minimum is carried by the order, not by each fill; accrued interest bought fill by fill; each fill is reconciled with the confirmed figures in the history. Collateral: None for a long position |
@@ -302,6 +430,24 @@ By engine family:
 | `municipal_bond` | Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview. Required: Account; Action; Face amount (a multiple of 5,000); Order type Stop with a Stop price, for the protective sale | bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData); fill price and fill model; accrued interest to the settlement date from the registered coupon terms; settlement date from the instrument convention and settlement calendar; commission from the Book fee schedule | none (tax treatment is not modelled: no tax-equivalent yield, no tax lot) | T+1 on the US bond calendar; Thanksgiving is skipped; a stop order that triggers later settles T+1 from the day it fills. Daily accrual on 30/360; semi-annual coupon to the face settled before the coupon date (a sale settling on the coupon date leaves the coupon with the seller); a resting stop order triggers on the last price | Clean cost at average, premium included and not amortised; realized P&L on each sale; coupon income separate; per-bond commission. Collateral: None for a long position |
 | `sovereign_sukuk` | Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview. Required: Account; Action; Face amount (a multiple of 200,000) | bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData); fill price and fill model; accrued interest to the settlement date from the registered coupon terms; settlement date from the instrument convention and settlement calendar; commission from the Book fee schedule | none (the Terminal calls the periodic distribution a coupon and the dissolution a redemption) | T+2 from the instrument's own convention on the US dollar payment calendar; Columbus Day is skipped; a sale that would settle after the dissolution date is refused. Daily accrual of the profit rate on 30/360; periodic distribution on the coupon schedule, paid on the next business day when the date is a weekend; final distribution and face amount paid together at dissolution | Clean cost at average; the premium paid over par is a realized loss at dissolution, not amortised; distributions are coupon income, apart from realized P&L. Collateral: None for a long position |
 | `corporate_bond` | Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview. Required: Account; Action; Face amount (a multiple of 1,000); Sell from: the lot to reduce, when the Account holds two | bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData); fill price and fill model; accrued interest to the settlement date from the registered coupon terms; settlement date from the instrument convention and settlement calendar; commission from the Book fee schedule | Tender offer: redemption price, face amount and label, recorded by hand on the position (Lifecycle, Early redemption) | T+1 on the US bond calendar; Good Friday is skipped; an early redemption is paid on the day it is recorded. Daily accrual on 30/360 (US) from the dated date; a short first coupon to the face settled before the coupon date; a lot bought for settlement on the coupon date starts its schedule with the next coupon; early redemption by hand | Each lot at its own clean average cost; realized P&L on a sale and on the tender; interest income separate, including the accrued interest paid with the tender. Collateral: None for a long position |
+| `corporate_bond_ig` | Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview. Required: Account; Action; Face amount (a multiple of 1,000) | bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData); fill price and fill model; accrued interest to the settlement date from the registered coupon terms; settlement date from the instrument convention and settlement calendar; commission from the Book fee schedule | none: coupon schedule, 30/360 accrued interest and settlement follow from the registered terms | T+1 on the US bond calendar (Book setting settlement.bond = 1); a coupon date on Martin Luther King Jr. Day is paid the next business day. Daily accrual on 30/360 (US); semi-annual coupon to the face settled before the coupon date, paid on the next payment day after a holiday; next coupon and maturity scheduled | Clean cost at average across two purchases; cost removed at the average on the sale; accrued interest bought and sold through Accrued income; coupon income separate from realized and unrealized P&L; commission expensed. Collateral: None for a long position |
+| `high_yield_bond` | Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview. Required: Account; Action; Face amount (a multiple of 1,000) | bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData); fill price and fill model; accrued interest to the settlement date from the registered coupon terms; settlement date from the instrument convention and settlement calendar; commission from the Book fee schedule | Default: coupon suspension recorded on the instrument (Edit, Lifecycle events recorded by hand, Review coupon suspension, Suspend coupons); Restructuring: early redemption at the cash distribution price, face and label, recorded on the position (Lifecycle, Early redemption) | T+1 on the US bond calendar; a sale of the defaulted bond settles flat (no accrued interest); the restructuring distribution is paid on the day it is recorded. Daily accrual on 30/360 until the coupon suspension; on suspension, accrued interest reversed (non-accrual); a coupon date passing while suspended is listed as not paid; restructuring by hand closes the position | Clean cost at average; accrued interest reversed out of coupon and interest income on suspension; realized losses on the flat sale and on the restructuring distribution; commission expensed. Collateral: None for a long position |
+| `eurobond` | Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview. Required: Account; Action; Face amount (a multiple of 100,000) | bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData); fill price and fill model; accrued interest to the settlement date from the registered coupon terms; settlement date from the instrument convention and settlement calendar; commission from the Book fee schedule | none: annual coupon, 30E/360 accrued interest and T+2 TARGET settlement follow from the registered terms and conventions | T+2 on the TARGET calendar (instrument convention, settlement lag 2); Good Friday and Easter Monday are skipped; amounts in euro. Daily accrual on 30E/360 (a 31st counts as the 30th); one coupon a year on 15 March; next coupon and maturity scheduled | Euro position, cash, accrued interest and settlement; US dollar figures at the current rate for balances and unrealized P&L, at the booking rate for income, commission and realized P&L; FX effects reported separately. Collateral: None for a long position |
+| `foreign_market_bond` | Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview. Required: Account; Action; Face amount (a multiple of 1,000) | bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData); fill price and fill model; accrued interest to the settlement date from the registered coupon terms; settlement date from the instrument convention and settlement calendar; commission from the Book fee schedule | none: the UK market conventions follow from the London listing (venue country GB) and the registered terms | T+1 on the London calendar (venue country GB); the Summer bank holiday is skipped; Labor Day in New York does not move a sterling settlement; no ex-dividend period (not modelled by the Terminal). Daily accrual on ACT/ACT, on a London holiday too; semi-annual coupon to the face settled before the coupon date | Sterling position, cash, accrued interest and settlement; US dollar figures at the current rate for balances and unrealized P&L, at the booking rate for income, commission and realized P&L; FX effects reported separately. Collateral: None for a long position |
+| `corporate_sukuk` | Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview. Required: Account; Action; Face amount (a multiple of 200,000) | bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData); fill price and fill model; accrued interest to the settlement date from the registered coupon terms; settlement date from the instrument convention and settlement calendar; commission from the Book fee schedule | none (the Terminal calls the periodic distribution a coupon and the dissolution a redemption) | T+2 on the US dollar calendar from the instrument conventions (listing venue Nasdaq Dubai has no holiday calendar in the Terminal; the certificates settle in dollars through the international depositories). Daily accrual of the profit rate on 30/360; quarterly periodic distribution to the face settled before the distribution date, paid on the next US dollar business day after a holiday; next distribution and dissolution scheduled | Clean cost at average; distributions and the profit accrued on them are coupon and interest income, apart from realized P&L; commission expensed. Collateral: None for a long position |
+| `floating_rate_note` | Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview. Required: Account; Action; Face amount (a multiple of 1,000) | bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData); fill price and fill model; accrued interest to the settlement date from the registered coupon terms; settlement date from the instrument convention and settlement calendar; commission from the Book fee schedule; reference-rate fixing of each coupon period (rate fixture standing in for Shaffer MarketData) | Current coupon of the running period on the registration form; a missing fixing entered by hand (Data connection, Manual entries, Reference or funding rate, with its fixing date) | T+1 on the US bond calendar; a trade is refused while the coupon rate of the current period is unknown (its accrued interest cannot be computed). Accrual on ACT/360 at the period rate; quarterly coupon for the actual days at the fixing of the period start plus the spread; reset after each coupon; a missing fixing raises an alert, stops accrual and blocks the coupon until it is supplied or entered; a later fixing is never used for an earlier period | Clean cost at average; accrued interest bought and sold through Accrued income; coupon income separate from realized and unrealized P&L; the coupon of a period accrued without a rate is income when it is paid. Collateral: None for a long position |
+| `zero_coupon_bond` | Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview. Required: Account; Action; Face amount (a multiple of 1,000) | bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData); fill price and fill model; settlement date from the instrument convention and settlement calendar; commission from the Book fee schedule | none | T+1 on the US bond calendar; Veterans Day is skipped; a trade must settle before the maturity date, so a purchase the day before Thanksgiving (settling after maturity) is refused. No coupon and no accrual; redemption at par on the maturity date, moved to the next business day after Thanksgiving, automatic | Clean cost at average; no accrued interest; the discount is unrealized P&L while held and realized P&L at sale and redemption (no accretion into interest income). Collateral: None for a long position |
+| `callable_bond` | Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview. Required: Account; Action; Face amount (a multiple of 1,000) | bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData); fill price and fill model; accrued interest to the settlement date from the registered coupon terms; settlement date from the instrument convention and settlement calendar; commission from the Book fee schedule | Registration: Call schedule (dates and call prices); Issuer call recorded by hand on the instrument form: Call price (% of par), Share of the issue called (1 = whole issue), Review, Record issuer call | T+1 on the US bond calendar; a call is paid on the day it is recorded, principal at the call price plus accrued interest to that day. Daily accrual on 30/360; semi-annual coupon; partial call pro rata to every holder; full call closes every holding and cancels the next coupon and the maturity; call date and price checked against the schedule | Clean cost at average; realized P&L on the sale and on each call (call price against average cost); accrued interest paid with the call is income; commission expensed. Collateral: None for a long position |
+| `puttable_bond` | Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview. Required: Account; Action; Face amount (a multiple of 1,000) | bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData); fill price and fill model; accrued interest to the settlement date from the registered coupon terms; settlement date from the instrument convention and settlement calendar; commission from the Book fee schedule | Registration: Put dates and prices; Holder put recorded by hand from the position's Lifecycle menu (Holder put: Face amount put, Label) | T+1 on the US bond calendar (Presidents' Day skipped); a put is paid on the put date, principal at the put price plus accrued interest to that day. Daily accrual on 30/360; semi-annual coupon; holder put accepted only on a put date of the schedule, at its price; puts on any other day refused with the put dates named | Clean cost at average; realized P&L on the sale, on the put (par against average cost) and on the close; commission expensed. Collateral: None for a long position |
+| `convertible_bond` | Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview. Required: Account; Action; Face amount (a multiple of 1,000) | bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData); fill price and fill model; accrued interest to the settlement date from the registered coupon terms; settlement date from the instrument convention and settlement calendar; commission from the Book fee schedule | Registration: Shares delivered on conversion (the issuer's stock, a registered instrument) and Conversion ratio (shares per 1,000 face); Conversion recorded by hand from the position's Lifecycle menu (Conversion into shares: Face amount converted, Settlement, Share price for the fraction) | Notes T+1 on the US bond calendar; shares T+1 on the US stock calendar; the conversion moves no cash except the fraction of a share, paid at once. Daily accrual on 30/360; conversion closes the notes converted and opens the shares in the same strategy instance (simulated delivery); accrued interest on the notes converted forfeited | Shares carried at the notes' carrying cost (no realized P&L on conversion except the cash fraction); forfeited accrued interest reverses coupon and interest income; realized P&L on the sales; commissions expensed. Collateral: None for long positions |
+| `exchangeable_bond` | Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview. Required: Account; Action; Face amount (a multiple of 1,000) | bid, ask, last in % of par and the shares' bid, ask, last (quote fixtures standing in for Shaffer MarketData); fill price and fill model; settlement date from the instrument convention and settlement calendar; commission from the Book fee schedule | Registration: Shares delivered on conversion (another issuer's stock) and Conversion ratio (shares per 1,000 face); Exchange recorded by hand from the position's Lifecycle menu (Conversion into shares: Face amount converted, Settlement shares or cash, Share price) | Bonds T+1 on the US bond calendar (Columbus Day skipped); shares T+1 on the US stock calendar; a cash-settled exchange is paid at once. Zero coupon: no accrual or coupon; redemption at par scheduled at maturity and cancelled once all is exchanged; exchange into shares (simulated delivery) or into cash at the issuer's election | Shares carried at the bonds' carrying cost; a cash-settled exchange realizes the shares' value against the bonds' cost; realized P&L on the sales; commissions expensed. Collateral: None for long positions |
+| `perpetual_bond` | Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview. Required: Account; Action; Face amount (a multiple of 1,000) | bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData); fill price and fill model; accrued interest to the settlement date from the registered coupon terms; settlement date from the instrument convention and settlement calendar; commission from the Book fee schedule | Registration: Perpetual (no maturity) and one coupon date to anchor the schedule; Issuer call: early redemption price 100, face amount and label, recorded on the position (Lifecycle, Early redemption) | T+1 on the US bond calendar; the call is paid on the day it is recorded. Daily accrual on 30/360; semi-annual coupons scheduled one at a time with no end; no maturity or redemption task; a call recorded by hand closes the position and cancels the next coupon | Clean cost at average; accrued interest bought and sold through Accrued income; coupon income separate; realized P&L on the sale and on the call. Collateral: None for a long position |
+| `subordinated_debt` | Instrument drawer, Trade tab: Sell short (adds the securities borrow leg), then Buy to cover; the Close button of the short position. Required: Account; Action (Sell short / Buy to cover); Face amount (a multiple of 1,000) | bid, ask, last in % of par (quote fixture); borrow availability and fee (borrow fixture standing in for Shaffer MarketData); accrued interest received on the short sale and paid on the covers; collateral and margin from the Book short assumptions; settlement date; commission | none | T+1 on the US bond calendar; sale proceeds (principal plus accrued) settle into restricted cash; covers are paid from restricted cash first. Coupon paid to the lender on the face sold short; daily borrow fee; collateral marked each end of day to 102% of clean value plus accrued owed; fee paid when the borrow is returned | Short position at negative clean cost; accrued coupon owed as a negative accrued balance; coupon paid and accrued received and paid net to an interest cost; borrow fee under borrowing and funding; realized P&L on the covers. Collateral: Restricted cash = 102% of market value including accrued owed, marked daily; 30% margin reserve; neither is buying power or withdrawable |
+| `coco_bond` | Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview. Required: Account; Action; Face amount (a multiple of 200,000) | bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData); fill price and fill model; accrued interest to the settlement date from the registered coupon terms; settlement date from the instrument convention and settlement calendar; commission from the Book fee schedule | Registration: Perpetual, a coupon date, Call schedule, Minimum denomination 200,000, Settlement convention 2; Coupon cancellation recorded by hand (instrument form, Review coupon suspension, Suspend coupons); Trigger event recorded by hand (instrument form: Principal written down to 0.25, Kind of write-down: Trigger event, Review write-down, Record write-down) | T+2 on the US bond calendar (the instrument's own convention); after the write-down a trade settles face x factor x price, flat. Daily accrual on 30/360 until the coupon is cancelled; accrued interest reversed on cancellation; coupon date passes unpaid (history); permanent write-down of principal; no maturity | Clean cost at average; cancelled accrued interest reverses coupon income; the cost written down is a realized loss; realized P&L on the sales; commission expensed. Collateral: None for a long position |
+| `covered_bond` | Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview. Required: Account (Treasury); Action; Face amount (a multiple of 1,000) | bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData); fill price and fill model; accrued interest to the settlement date from the registered coupon terms; settlement date from the instrument convention and settlement calendar; commission from the Book fee schedule | none: annual coupon on ACT/ACT and T+2 TARGET settlement follow from the registered terms and conventions | T+2 on the TARGET calendar (instrument convention, settlement lag 2); a US holiday does not move it; amounts in euro, the Book's reporting currency. Daily accrual on ACT/ACT (annual); one coupon a year to the face settled before the coupon date; next coupon (on a weekend date, paid the next TARGET day) and maturity scheduled | Owned by Treasury: the figures are Treasury's and the Book's, not the Account's; clean cost at average; accrued interest through Accrued income; coupon income separate; realized P&L on the sales. Collateral: None for a long position (the cover pool secures the issuer's obligation; nothing is posted by the holder) |
+| `commercial_paper` | Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview. Required: Account; Action; Face amount (a multiple of 100,000) | bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData); fill price and fill model; same-day settlement from the instrument convention; commission from the Book fee schedule | the bank discount rate is converted to a price in % of par by hand (the Terminal has no discount-rate quotation) | Same day (instrument convention, settlement lag 0): the purchase is paid and the sale received the day they are made. No coupon and no accrual; redemption at par on the maturity date, moved to the next business day after Columbus Day, automatic | Clean cost at average; no accrued interest; the discount is unrealized P&L while held and realized P&L at sale and redemption (no accretion into interest income). Collateral: None for a long position |
+| `abcp` | Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview. Required: Account; Action; Face amount (a multiple of 10,000) | bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData); fill price and fill model; same-day settlement from the instrument convention; commission from the Book fee schedule | the money-market (investment) yield is converted to a price in % of par by hand (the Terminal has no yield quotation) | Same day (instrument convention, settlement lag 0). No coupon and no accrual; redemption at par on the maturity date, moved to the next business day after Veterans Day, automatic | Clean cost at average across two purchases; no accrued interest; the discount is unrealized P&L while held and realized P&L at redemption. Collateral: None for a long position (the receivables back the conduit, not the holder); a short sale needs a securities borrow and none is available |
+| `bankers_acceptance` | Instrument drawer, Trade tab (security ticket: Account, Action, Face amount, order terms, Settlement), then the trade preview. Required: Account; Action; Face amount (a multiple of 100,000); Order type, Limit price, Time in force for the resting sale | bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData); fill price and fill model (a resting limit order fills at the bid once the bid reaches it); settlement date from the instrument convention and settlement calendar; commission from the Book fee schedule | the bank discount rate is converted to a price in % of par by hand (the Terminal has no discount-rate quotation) | T+1 on the US bond calendar; the resting order settles T+1 from the day it fills, and the history says it differs from what was confirmed. No coupon and no accrual; a good-until-cancelled limit order rests across days; redemption at par on the next business day after a holiday maturity, automatic | Clean cost at average; no accrued interest; the discount is unrealized P&L while held and realized P&L at sale and redemption. Collateral: None for a long position |
 
 ### Product by action
 
@@ -345,6 +491,20 @@ By engine family:
 | `treasury_bond` | close | `cover-rest` | passed | passed | passed |  |
 | `treasury_bond` | collateral release | `settle-cover-rest` | passed | passed | passed |  |
 | `treasury_bond` | restart: persistence of everything above | `restart` | passed | passed | passed |  |
+| `tips` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `tips` | registration | `register-without-ratio` | blocked | not run | not run | register-without-ratio: blocked by design. An inflation-linked bond cannot be registered without its index ratio. |
+| `tips` | open | `open` | passed | not run | not run |  |
+| `tips` | settlement | `settle-open` `settle-increase` `settle-after-christmas` | passed | not run | not run |  |
+| `tips` | index ratio (by hand) | `index-ratio-up` `ratio-zero-refused` `index-ratio-below-one` | passed 2, blocked 1 | not run | not run | ratio-zero-refused: blocked by design. An index ratio of zero is not a ratio of two index levels. |
+| `tips` | increase | `increase` | passed | not run | not run |  |
+| `tips` | market data or clock move (no product action) | `quote-up` | passed | not run | not run |  |
+| `tips` | accrual | `christmas-eve` `january` | passed | not run | not run |  |
+| `tips` | reduce | `reduce-over-christmas` | passed | not run | not run |  |
+| `tips` | market holiday | `reduce-over-christmas` `settle-after-christmas` | passed | not run | not run |  |
+| `tips` | coupon | `maturity` | passed | not run | not run |  |
+| `tips` | maturity | `maturity` | passed | not run | not run |  |
+| `tips` | close | `maturity` | passed | not run | not run |  |
+| `tips` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
 | `strips` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | passed | passed |  |
 | `strips` | open | `open-at-stated-price` | passed | passed | passed |  |
 | `strips` | stated fill price | `open-at-stated-price` | passed | passed | passed |  |
@@ -379,6 +539,18 @@ By engine family:
 | `foreign_gov_bond` | reduce | `reduce` | passed | passed | passed |  |
 | `foreign_gov_bond` | close | `close` | passed | passed | passed |  |
 | `foreign_gov_bond` | restart: persistence of everything above | `restart` | passed | passed | passed |  |
+| `foreign_inflation_linked` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `foreign_inflation_linked` | open | `open` | passed | not run | not run |  |
+| `foreign_inflation_linked` | settlement | `settle-open` `settle-increase` `settle-reduce` `settle-close` | passed | not run | not run |  |
+| `foreign_inflation_linked` | index ratio (by hand) | `index-ratio-up` `index-ratio-down` | passed | not run | not run |  |
+| `foreign_inflation_linked` | increase | `increase` | passed | not run | not run |  |
+| `foreign_inflation_linked` | coupon | `coupon` | passed | not run | not run |  |
+| `foreign_inflation_linked` | accrual | `december` `christmas-eve` | passed | not run | not run |  |
+| `foreign_inflation_linked` | market data or clock move (no product action) | `quote-up` | passed | not run | not run |  |
+| `foreign_inflation_linked` | reduce | `reduce-over-uk-holidays` | passed | not run | not run |  |
+| `foreign_inflation_linked` | market holiday | `reduce-over-uk-holidays` `settle-reduce` | passed | not run | not run |  |
+| `foreign_inflation_linked` | close | `close` | passed | not run | not run |  |
+| `foreign_inflation_linked` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
 | `em_local_debt` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | passed | passed |  |
 | `em_local_debt` | minimum denomination | `odd-lot` | blocked | blocked | blocked | odd-lot: blocked by design. The bond trades in lots of 1,000,000 rand face; 50,500,000 is not a whole number of them. |
 | `em_local_debt` | open | `open` | passed | passed | passed |  |
@@ -457,28 +629,208 @@ By engine family:
 | `corporate_bond` | early redemption | `tender-more-than-held` `tender` | passed 1, blocked 1 | passed 1, blocked 1 | passed 1, blocked 1 | tender-more-than-held: blocked by design. The second lot is 300,000 face: 400,000 cannot be tendered from it. |
 | `corporate_bond` | close | `tender` `close-first` | passed | passed | passed |  |
 | `corporate_bond` | restart: persistence of everything above | `restart` | passed | passed | passed |  |
+| `corporate_bond_ig` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `corporate_bond_ig` | minimum denomination | `odd-denomination` | blocked | not run | not run | odd-denomination: blocked by design. The notes trade in pieces of 1,000 face; 800,500 is not a multiple of 1,000. |
+| `corporate_bond_ig` | open | `open` | passed | not run | not run |  |
+| `corporate_bond_ig` | settlement | `settle-open` `settle-increase` `coupon` `settle-close` | passed | not run | not run |  |
+| `corporate_bond_ig` | market data or clock move (no product action) | `quote-up` `quote-down` | passed | not run | not run |  |
+| `corporate_bond_ig` | increase | `increase` | passed | not run | not run |  |
+| `corporate_bond_ig` | reduce | `reduce` | passed | not run | not run |  |
+| `corporate_bond_ig` | coupon | `coupon` | passed | not run | not run |  |
+| `corporate_bond_ig` | market holiday | `coupon` | passed | not run | not run |  |
+| `corporate_bond_ig` | accrual | `accrue` | passed | not run | not run |  |
+| `corporate_bond_ig` | close | `close` | passed | not run | not run |  |
+| `corporate_bond_ig` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `high_yield_bond` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `high_yield_bond` | open | `open` | passed | not run | not run |  |
+| `high_yield_bond` | settlement | `settle-open` `settle-sale` | passed | not run | not run |  |
+| `high_yield_bond` | accrual | `accrue` | passed | not run | not run |  |
+| `high_yield_bond` | market data or clock move (no product action) | `quote-distress` `quote-default` | passed | not run | not run |  |
+| `high_yield_bond` | default (by hand) | `default-suspend-coupons` | passed | not run | not run |  |
+| `high_yield_bond` | missed coupon | `coupon-missed` | passed | not run | not run |  |
+| `high_yield_bond` | market holiday | `coupon-missed` | passed | not run | not run |  |
+| `high_yield_bond` | reduce | `sell-flat` | passed | not run | not run |  |
+| `high_yield_bond` | flat trading | `sell-flat` | passed | not run | not run |  |
+| `high_yield_bond` | restructuring (by hand) | `restructuring` | passed | not run | not run |  |
+| `high_yield_bond` | close | `restructuring` | passed | not run | not run |  |
+| `high_yield_bond` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `eurobond` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `eurobond` | minimum denomination | `below-denomination` | blocked | not run | not run | below-denomination: blocked by design. The notes are issued in pieces of 100,000; 150,000 cannot be delivered. |
+| `eurobond` | open | `open` | passed | not run | not run |  |
+| `eurobond` | settlement | `settle-open` `settle-reduce` `settle-close` | passed | not run | not run |  |
+| `eurobond` | coupon | `coupon` | passed | not run | not run |  |
+| `eurobond` | fx | `euro-rises` | passed | not run | not run |  |
+| `eurobond` | accrual | `accrue` `easter` `settle-reduce` | passed | not run | not run |  |
+| `eurobond` | market data or clock move (no product action) | `quote-up` | passed | not run | not run |  |
+| `eurobond` | reduce | `reduce` | passed | not run | not run |  |
+| `eurobond` | market holiday | `reduce` `easter` | passed | not run | not run |  |
+| `eurobond` | close | `close` | passed | not run | not run |  |
+| `eurobond` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `foreign_market_bond` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `foreign_market_bond` | open | `open` | passed | not run | not run |  |
+| `foreign_market_bond` | settlement | `settle-open` `uk-holiday` `settle-reduce` `settle-close` | passed | not run | not run |  |
+| `foreign_market_bond` | market data or clock move (no product action) | `friday` `quote-up` | passed | not run | not run |  |
+| `foreign_market_bond` | increase | `increase` | passed | not run | not run |  |
+| `foreign_market_bond` | market holiday | `increase` `uk-holiday` | passed | not run | not run |  |
+| `foreign_market_bond` | accrual | `uk-holiday` `accrue` `settle-reduce` | passed | not run | not run |  |
+| `foreign_market_bond` | coupon | `coupon` | passed | not run | not run |  |
+| `foreign_market_bond` | fx | `sterling-weakens` | passed | not run | not run |  |
+| `foreign_market_bond` | reduce | `reduce` | passed | not run | not run |  |
+| `foreign_market_bond` | close | `close` | passed | not run | not run |  |
+| `foreign_market_bond` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `corporate_sukuk` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `corporate_sukuk` | open | `open` | passed | not run | not run |  |
+| `corporate_sukuk` | settlement | `settle-open` `settle-reduce` `settle-close` | passed | not run | not run |  |
+| `corporate_sukuk` | periodic distribution | `distribution` `next-distribution` | passed | not run | not run |  |
+| `corporate_sukuk` | market holiday | `distribution` | passed | not run | not run |  |
+| `corporate_sukuk` | accrual | `accrue` `settle-reduce` | passed | not run | not run |  |
+| `corporate_sukuk` | reduce | `reduce` | passed | not run | not run |  |
+| `corporate_sukuk` | market data or clock move (no product action) | `quote-up` | passed | not run | not run |  |
+| `corporate_sukuk` | close | `close` | passed | not run | not run |  |
+| `corporate_sukuk` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `floating_rate_note` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `floating_rate_note` | open | `open` | passed | not run | not run |  |
+| `floating_rate_note` | settlement | `settle-open` `settle-reduce` `settle-close` | passed | not run | not run |  |
+| `floating_rate_note` | coupon | `coupon` `coupon-blocked` `april-fixing-entered` | passed | not run | not run |  |
+| `floating_rate_note` | reset | `coupon` `july-fixing-arrives` | passed | not run | not run |  |
+| `floating_rate_note` | missing fixing | `no-fixing` `sell-without-fixing` `coupon-blocked` | passed 2, blocked 1 | not run | not run | sell-without-fixing: blocked by design. The accrued interest of the sale cannot be computed without the period's fixing; it is not booked as zero. |
+| `floating_rate_note` | reduce | `sell-without-fixing` `reduce` | passed 1, blocked 1 | not run | not run | sell-without-fixing: blocked by design. The accrued interest of the sale cannot be computed without the period's fixing; it is not booked as zero. |
+| `floating_rate_note` | fixing by hand | `april-fixing-entered` | passed | not run | not run |  |
+| `floating_rate_note` | accrual | `accrue` `settle-reduce` | passed | not run | not run |  |
+| `floating_rate_note` | market data or clock move (no product action) | `quote-up` | passed | not run | not run |  |
+| `floating_rate_note` | close | `close` | passed | not run | not run |  |
+| `floating_rate_note` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `zero_coupon_bond` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `zero_coupon_bond` | open | `open` | passed | not run | not run |  |
+| `zero_coupon_bond` | settlement | `settle-open` `settle-reduce` | passed | not run | not run |  |
+| `zero_coupon_bond` | accrual | `week-on` | passed | not run | not run |  |
+| `zero_coupon_bond` | market data or clock move (no product action) | `quote-pull-to-par` `thanksgiving-eve` | passed | not run | not run |  |
+| `zero_coupon_bond` | reduce | `reduce` | passed | not run | not run |  |
+| `zero_coupon_bond` | market holiday | `reduce` `settle-reduce` `maturity` | passed | not run | not run |  |
+| `zero_coupon_bond` | maturity | `buy-settling-after-maturity` `maturity` | passed 1, blocked 1 | not run | not run | buy-settling-after-maturity: blocked by design. A debt security trades only for settlement before its maturity date; this purchase would settle after it is redeemed. |
+| `zero_coupon_bond` | close | `maturity` | passed | not run | not run |  |
+| `zero_coupon_bond` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `callable_bond` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `callable_bond` | open | `open` `trade-after-call` | passed 1, blocked 1 | not run | not run | trade-after-call: blocked by design. The whole issue has been called and redeemed: nothing is left to trade. |
+| `callable_bond` | settlement | `settle-open` `settle-increase` `coupon` | passed | not run | not run |  |
+| `callable_bond` | call (by hand) | `call-before-first-call-date` `call-at-wrong-price` `partial-call` `full-call` | passed 2, blocked 2 | not run | not run | call-before-first-call-date: blocked by design. The notes are not callable before 15 June 2028, their first call date. call-at-wrong-price: blocked by design. From 15 June 2028 the call price is 101; 100.50 applies only from 15 June 2029. |
+| `callable_bond` | increase | `increase` | passed | not run | not run |  |
+| `callable_bond` | market data or clock move (no product action) | `quote-up` | passed | not run | not run |  |
+| `callable_bond` | accrual | `june-8` `august` | passed | not run | not run |  |
+| `callable_bond` | reduce | `reduce` `partial-call` | passed | not run | not run |  |
+| `callable_bond` | coupon | `coupon` | passed | not run | not run |  |
+| `callable_bond` | close | `full-call` | passed | not run | not run |  |
+| `callable_bond` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `puttable_bond` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `puttable_bond` | open | `open` | passed | not run | not run |  |
+| `puttable_bond` | settlement | `settle-open` `settle-after-presidents-day` `coupon` `settle-close` | passed | not run | not run |  |
+| `puttable_bond` | put (by hand) | `put-before-put-date` `holder-put` `put-after-put-date` | passed 1, blocked 2 | not run | not run | put-before-put-date: blocked by design. The holder may put only on a put date of the schedule; the next is 1 March 2028. put-after-put-date: blocked by design. The put date has passed; the next is 1 March 2031. |
+| `puttable_bond` | accrual | `friday` `feb-24` | passed | not run | not run |  |
+| `puttable_bond` | increase | `increase` | passed | not run | not run |  |
+| `puttable_bond` | market holiday | `increase` `settle-after-presidents-day` | passed | not run | not run |  |
+| `puttable_bond` | reduce | `reduce` `holder-put` | passed | not run | not run |  |
+| `puttable_bond` | market data or clock move (no product action) | `credit-weakens` `day-after-put` | passed | not run | not run |  |
+| `puttable_bond` | coupon | `coupon` | passed | not run | not run |  |
+| `puttable_bond` | close | `close` | passed | not run | not run |  |
+| `puttable_bond` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `convertible_bond` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `convertible_bond` | open | `open` | passed | not run | not run |  |
+| `convertible_bond` | settlement | `settle-open` `settle-increase` `monday` `settle-close` | passed | not run | not run |  |
+| `convertible_bond` | increase | `increase` | passed | not run | not run |  |
+| `convertible_bond` | reduce | `reduce` `convert` | passed | not run | not run |  |
+| `convertible_bond` | accrual | `monday` | passed | not run | not run |  |
+| `convertible_bond` | conversion (by hand) | `convert-without-share-price` `convert-more-than-held` `convert` | passed 1, blocked 2 | not run | not run | convert-without-share-price: blocked by design. 1,000,000 face converts into 22,857.1 shares: the cash for the 0.1 of a share needs a share price, which is not assumed. convert-more-than-held: blocked by design. The position holds 1,200,000 face. |
+| `convertible_bond` | close | `close` | passed | not run | not run |  |
+| `convertible_bond` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `exchangeable_bond` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `exchangeable_bond` | open | `open` | passed | not run | not run |  |
+| `exchangeable_bond` | market holiday | `open` `settle-after-columbus-day` | passed | not run | not run |  |
+| `exchangeable_bond` | settlement | `settle-after-columbus-day` `settle-increase` `settle-reduce` `settle-shares` | passed | not run | not run |  |
+| `exchangeable_bond` | increase | `increase` | passed | not run | not run |  |
+| `exchangeable_bond` | market data or clock move (no product action) | `shares-rally` `bonds-follow` | passed | not run | not run |  |
+| `exchangeable_bond` | reduce | `reduce` `exchange-into-shares` | passed | not run | not run |  |
+| `exchangeable_bond` | exchange (by hand) | `exchange-into-shares` `cash-settlement-without-price` `exchange-settled-in-cash` | passed 2, blocked 1 | not run | not run | cash-settlement-without-price: blocked by design. A cash settlement is the shares' value at a price that must be stated; none is assumed. |
+| `exchangeable_bond` | close | `exchange-settled-in-cash` `sell-shares` | passed | not run | not run |  |
+| `exchangeable_bond` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `perpetual_bond` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `perpetual_bond` | open | `open` | passed | not run | not run |  |
+| `perpetual_bond` | settlement | `settle-open` `coupon` | passed | not run | not run |  |
+| `perpetual_bond` | reduce | `reduce` | passed | not run | not run |  |
+| `perpetual_bond` | coupon | `coupon` | passed | not run | not run |  |
+| `perpetual_bond` | call (by hand) | `issuer-call` | passed | not run | not run |  |
+| `perpetual_bond` | close | `issuer-call` | passed | not run | not run |  |
+| `perpetual_bond` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `subordinated_debt` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `subordinated_debt` | borrow | `short` | passed | not run | not run |  |
+| `subordinated_debt` | short | `short` | passed | not run | not run |  |
+| `subordinated_debt` | settlement | `settle-short` `settle-cover-part` `settle-cover-rest` | passed | not run | not run |  |
+| `subordinated_debt` | collateral mark | `settle-short` `coupon-paid-to-lender` `settle-cover-part` | passed | not run | not run |  |
+| `subordinated_debt` | coupon | `coupon-paid-to-lender` | passed | not run | not run |  |
+| `subordinated_debt` | borrow fee | `coupon-paid-to-lender` `cover-part` `cover-rest` | passed | not run | not run |  |
+| `subordinated_debt` | restricted proceeds | `withdraw-restricted-cash` | blocked | not run | not run | withdraw-restricted-cash: blocked by design. Restricted collateral and the margin reserve cannot leave the Account. |
+| `subordinated_debt` | market data or clock move (no product action) | `quote-down` | passed | not run | not run |  |
+| `subordinated_debt` | cover | `cover-part` `cover-rest` | passed | not run | not run |  |
+| `subordinated_debt` | return | `cover-part` `cover-rest` | passed | not run | not run |  |
+| `subordinated_debt` | close | `cover-rest` | passed | not run | not run |  |
+| `subordinated_debt` | collateral release | `settle-cover-rest` | passed | not run | not run |  |
+| `subordinated_debt` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `coco_bond` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `coco_bond` | minimum denomination | `odd-lot` | **FAILED** | not run | not run | odd-lot: blocked by design. AT1 notes trade in multiples of 200,000 face. E:coco_bond:odd-lot failed: Refused, but not for the stated reason. Terminal said: "Leg 1: quantity must be a multiple of 200000."; expected quantity must be a multiple of 200,000 |
+| `coco_bond` | open | `open` | not run | not run | not run |  |
+| `coco_bond` | settlement | `settle-open` `settle-increase` `settle-reduce` `settle-close` | not run | not run | not run |  |
+| `coco_bond` | increase | `increase` | not run | not run | not run |  |
+| `coco_bond` | accrual | `settle-increase` `settle-reduce` | not run | not run | not run |  |
+| `coco_bond` | reduce | `reduce` | not run | not run | not run |  |
+| `coco_bond` | coupon cancellation (by hand) | `coupon-cancelled` `coupon-date-missed` | not run | not run | not run |  |
+| `coco_bond` | trigger event (by hand) | `trigger-write-down` | not run | not run | not run |  |
+| `coco_bond` | market data or clock move (no product action) | `written-down-quote` | not run | not run | not run |  |
+| `coco_bond` | close | `close` | not run | not run | not run |  |
+| `coco_bond` | restart: persistence of everything above | `restart` | not run | not run | not run |  |
+| `covered_bond` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `covered_bond` | open | `open` `treasury-screens` | passed | not run | not run |  |
+| `covered_bond` | settlement | `settle-open` `settle-reduce` `settle-close` | passed | not run | not run |  |
+| `covered_bond` | coupon | `coupon` | passed | not run | not run |  |
+| `covered_bond` | market data or clock move (no product action) | `quote-up` | passed | not run | not run |  |
+| `covered_bond` | reduce | `reduce` | passed | not run | not run |  |
+| `covered_bond` | market holiday | `settle-reduce` | passed | not run | not run |  |
+| `covered_bond` | accrual | `accrue` | passed | not run | not run |  |
+| `covered_bond` | close | `close` `treasury-screens-at-close` | passed | not run | not run |  |
+| `covered_bond` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `commercial_paper` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `commercial_paper` | open | `open` | passed | not run | not run |  |
+| `commercial_paper` | settlement | `open` `reduce` | passed | not run | not run |  |
+| `commercial_paper` | accrual | `four-weeks-on` | passed | not run | not run |  |
+| `commercial_paper` | market data or clock move (no product action) | `quote-rates-fall` | passed | not run | not run |  |
+| `commercial_paper` | reduce | `reduce` | passed | not run | not run |  |
+| `commercial_paper` | maturity | `maturity` | passed | not run | not run |  |
+| `commercial_paper` | close | `maturity` | passed | not run | not run |  |
+| `commercial_paper` | market holiday | `maturity` | passed | not run | not run |  |
+| `commercial_paper` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `abcp` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `abcp` | short | `short-without-borrow` | blocked | not run | not run | short-without-borrow: blocked by design. No borrow availability or fee is supplied for the paper and none was stated: a short sale cannot proceed without a securities borrow. |
+| `abcp` | open | `open` | passed | not run | not run |  |
+| `abcp` | settlement | `open` `increase` | passed | not run | not run |  |
+| `abcp` | accrual | `week-on` | passed | not run | not run |  |
+| `abcp` | market data or clock move (no product action) | `quote-23-days` | passed | not run | not run |  |
+| `abcp` | increase | `increase` | passed | not run | not run |  |
+| `abcp` | maturity | `maturity` | passed | not run | not run |  |
+| `abcp` | close | `maturity` | passed | not run | not run |  |
+| `abcp` | market holiday | `maturity` | passed | not run | not run |  |
+| `abcp` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `bankers_acceptance` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `bankers_acceptance` | open | `open` | passed | not run | not run |  |
+| `bankers_acceptance` | settlement | `settle-open` `settle-sale` | passed | not run | not run |  |
+| `bankers_acceptance` | reduce | `limit-sell-rests` `limit-sell-fills` | passed | not run | not run |  |
+| `bankers_acceptance` | limit order | `limit-sell-rests` `order-rests-over-thanksgiving` `limit-sell-fills` | passed | not run | not run |  |
+| `bankers_acceptance` | market holiday | `order-rests-over-thanksgiving` `maturity` | passed | not run | not run |  |
+| `bankers_acceptance` | maturity | `maturity` | passed | not run | not run |  |
+| `bankers_acceptance` | close | `maturity` | passed | not run | not run |  |
+| `bankers_acceptance` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
 
 ### Not yet specified
 
 | Product | Catalog support | Scenario | Engine | API | Browser |
 |---|---|---|---|---|---|
-| US TIPS (`tips`) | Partly manual | not yet specified | not run | not run | not run |
-| Foreign inflation-linked bond (`foreign_inflation_linked`) | Partly manual | not yet specified | not run | not run | not run |
-| Investment-grade bond (`corporate_bond_ig`) | Full lifecycle | not yet specified | not run | not run | not run |
-| High-yield bond (`high_yield_bond`) | Full lifecycle | not yet specified | not run | not run | not run |
-| Eurobond (`eurobond`) | Full lifecycle | not yet specified | not run | not run | not run |
-| Foreign-market bond (Yankee, Samurai, Bulldog …) (`foreign_market_bond`) | Full lifecycle | not yet specified | not run | not run | not run |
-| Corporate sukuk (`corporate_sukuk`) | Full lifecycle | not yet specified | not run | not run | not run |
-| Floating-rate note (`floating_rate_note`) | Full lifecycle | not yet specified | not run | not run | not run |
-| Zero-coupon bond (`zero_coupon_bond`) | Full lifecycle | not yet specified | not run | not run | not run |
-| Callable bond (`callable_bond`) | Partly manual | not yet specified | not run | not run | not run |
-| Puttable bond (`puttable_bond`) | Partly manual | not yet specified | not run | not run | not run |
-| Convertible bond (`convertible_bond`) | Partly manual | not yet specified | not run | not run | not run |
-| Exchangeable bond (`exchangeable_bond`) | Partly manual | not yet specified | not run | not run | not run |
-| Perpetual bond (`perpetual_bond`) | Full lifecycle | not yet specified | not run | not run | not run |
-| Subordinated debt (`subordinated_debt`) | Full lifecycle | not yet specified | not run | not run | not run |
-| Contingent convertible bond (CoCo) (`coco_bond`) | Partly manual | not yet specified | not run | not run | not run |
-| Covered bond (`covered_bond`) | Full lifecycle | not yet specified | not run | not run | not run |
 | Mortgage-backed security (`mbs`) | Partly manual | not yet specified | not run | not run | not run |
 | Residential MBS (`rmbs`) | Partly manual | not yet specified | not run | not run | not run |
 | Commercial MBS (`cmbs`) | Partly manual | not yet specified | not run | not run | not run |
@@ -492,9 +844,6 @@ By engine family:
 | Credit-linked note (`credit_linked_note`) | Partly manual | not yet specified | not run | not run | not run |
 | Structured note (`structured_note`) | Partly manual | not yet specified | not run | not run | not run |
 | Catastrophe bond (`catastrophe_bond`) | Partly manual | not yet specified | not run | not run | not run |
-| Commercial paper (`commercial_paper`) | Full lifecycle | not yet specified | not run | not run | not run |
-| Asset-backed commercial paper (`abcp`) | Full lifecycle | not yet specified | not run | not run | not run |
-| Bankers' acceptance (`bankers_acceptance`) | Full lifecycle | not yet specified | not run | not run | not run |
 | Syndicated loan (`syndicated_loan`) | Partly manual | not yet specified | not run | not run | not run |
 | Leveraged loan (`leveraged_loan`) | Partly manual | not yet specified | not run | not run | not run |
 | Private credit (`private_credit`) | Partly manual | not yet specified | not run | not run | not run |
@@ -503,31 +852,107 @@ By engine family:
 
 ## Forward / FRA (`forward`)
 
-8 products, 0 specified.
+8 products, 4 specified in `test/matrix/specs/forward.mjs`.
+
+### Scenarios
+
+| Product | Scenario | Steps | Engine | API | Browser |
+|---|---|---:|---|---|---|
+| Equity forward (`equity_forward`) | Equity forward: 10,000 Ridgeway Industrial shares held and sold forward at 52.40, physically delivered (simulated) on 17 April 2026, fixed independent amount | 10 | not run | not run | not run |
+| FX forward (`fx_forward`) | EUR/USD deliverable forward, bought and sold for value 22 June 2026, position-level collateral, held across Juneteenth, unfunded then funded on the value date | 16 | complete, 0.5 s | not run | not run |
+| Non-deliverable forward (`ndf`) | USD/INR non-deliverable forward sold by Treasury, cash-settled in USD against the 30 April 2026 fixing, partly terminated early, uncollateralized | 10 | complete, 0.3 s | not run | not run |
+| Forward-rate agreement (`fra`) | EUR 3x6 FRA on 3M EURIBOR, bought at 2.15% under a Book collateral agreement, partly terminated early, settled at the start of the period against the fixing. The contract names a collateral agreement of the Book, so a step registers it (Instruments, New instrument) once the agreement exists; it is then traded from the instrument drawer. | 14 | **FAILED** (1 step) | not run | not run |
+
+### Ticket, inputs and behaviour
+
+| Product | Ticket and required fields | Automatic inputs | Manual inputs | Settlement and lifecycle events | Accounting and collateral |
+|---|---|---|---|---|---|
+| `equity_forward` | Registry form (Instruments, New instrument) for the contract: kind of forward, its terms and the required Collateral terms group; then the instrument drawer, Trade tab (Account, Buy / Sell, quantity, State a fill price); the strategy instance for early termination. Required: Kind of forward (Forward on an asset); Underlying (the stock); Settlement (Physical delivery); Multiplier (shares per unit); Value date; Counterparty; Collateral basis and its terms; Account; Action (Sell); quantity (shares); State a fill price | stock bid and ask (quote fixture); forward mark (quote fixture standing in for a dealer indication); commission from the Book fee schedule; independent amount from the position-level terms | dealt forward price (stated fill price) | No cash at entry other than the independent amount; on the value date the shares held are delivered at the dealt price (simulated, labelled), the proceeds settling T+1; forward commission paid on the value date. Physical delivery on the value date (automatic), from the shares the Account holds; without them the delivery waits visibly (engine test) | Nil cost; forward value = quantity x (mark - dealt); the delivery is a sale of the shares at the dealt price, realizing against their cost. Collateral: Position-level terms: fixed independent amount 20,000 USD posted at entry and returned at delivery; no variation margin |
+| `fx_forward` | Registry form (Instruments, New instrument) for the contract: kind of forward, its terms and the required Collateral terms group; then the instrument drawer, Trade tab (Account, Buy / Sell, quantity, State a fill price); the strategy instance for early termination. Required: Kind of forward (Deliverable FX forward); Base currency; Quote currency; Value date; Counterparty; Collateral basis and its terms; Account; Action (Buy / Sell); Base-currency amount; State a fill price | value-date check on the joint calendar of both currencies; independent amount and variation margin from the position-level terms; commission from the Book fee schedule; mark (quote fixture standing in for a dealer indication); EUR/USD rate for the reporting currency (FX fixture) | dealt forward rate (stated fill price); early termination amount (position Lifecycle menu, "Early termination") | No cash at entry other than the independent amount; commission and the exchange of 1,000,000 EUR against 1,085,000 USD on the value date, only when the USD is in settled cash; otherwise a visible failure retried each cycle. Daily variation margin on the mark (automatic); early termination of the short at a stated amount (manual); settlement by exchange of both currencies on the value date (automatic), failed while unfunded and completed once funded | Nil cost; value and unrealized P&L = quantity x (mark - dealt rate) in USD; the termination amount is realized; after delivery the EUR is a cash balance valued at the EUR/USD fixture in the reporting currency. Collateral: Position-level terms: independent amount 2% of notional posted at entry and returned at termination or settlement; variation margin, threshold 0, minimum transfer 2,000 USD; collateral received is restricted cash with a liability |
+| `ndf` | Registry form (Instruments, New instrument) for the contract: kind of forward, its terms and the required Collateral terms group; then the instrument drawer, Trade tab (Account, Buy / Sell, quantity, State a fill price); the strategy instance for early termination. Required: Kind of forward (Non-deliverable forward); Base currency; Quote currency; Value date; Fixing date; Settlement currency; Fixing source (currency pair); Counterparty; Collateral basis (Uncollateralized); Trading owner (Treasury); Action (Sell); quantity; State a fill price | mark (quote fixture standing in for a dealer indication); USD/INR rate for the reporting currency (FX fixture); the fixing: close of the USD/INR pair on the fixing date (fixture standing in for the reference rate) | dealt forward rate (stated fill price); early termination of 2,000,000 at a stated amount in USD (position Lifecycle menu) | No cash at entry; cash settlement in USD on the value date of quantity x (fixing - dealt) / fixing, booked when the fixing arrives; the termination amount settles two business days after it is agreed. Settlement against the fixing (automatic), waiting visibly while the fixing is missing and completed when it arrives; early termination of part of the notional at a stated amount (manual) | Nil cost; value and unrealized P&L in INR = quantity x (mark - dealt), converted to USD at the fixture; termination amount and settlement amount realized in USD. Collateral: Explicitly uncollateralized: no independent amount, no variation margin |
+| `fra` | Registry form (Instruments, New instrument) for the contract: kind of forward, its terms and the required Collateral terms group; then the instrument drawer, Trade tab (Account, Buy / Sell, quantity, State a fill price); the strategy instance for early termination. Required: Kind of forward (Forward-rate agreement); Interest period start; Interest period end; Fixing date; Reference rate code; Day count; Counterparty; Collateral basis (Agreement); Account; Action (Buy / Sell); Notional; State a fill price (contract rate) | mark (quote fixture standing in for a dealer indication, % a year); EURIBOR3M fixing (rate fixture standing in for Shaffer MarketData); EUR/USD rate (FX fixture) for the collateral exposure and the reporting currency; variation margin from the agreement | contract rate (stated fill price); collateral agreement (Treasury, Collateral, New agreement); early termination of 5,000,000 at a stated amount | No cash at entry; at the start of the period N x (L - K) x d / (1 + L x d) in EUR against the fixing of 1 June, waiting visibly while the fixing is missing; the termination amount settles on the date agreed. Variation margin under the agreement (automatic); early termination of part of the notional (manual); settlement at the period start against the fixing (automatic) | Nil cost; value = N x (mark - K) / 100 x 92/360 in EUR, converted to USD at the fixture; termination and settlement amounts realized in EUR. Collateral: Book agreement CSA Dealer C: no independent amount; variation margin in USD, threshold 0, minimum transfer 5,000 USD; received collateral is restricted cash with a liability; returned when the contract ends |
+
+### Product by action
+
+| Product | Action | Steps (test ids) | Engine | API | Browser | Notes |
+|---|---|---|---|---|---|---|
+| `equity_forward` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | not run | not run | not run |  |
+| `equity_forward` | underlying | `buy-shares` | not run | not run | not run |  |
+| `equity_forward` | open short | `sell-forward` | not run | not run | not run |  |
+| `equity_forward` | collateral | `sell-forward` `value-date-delivery` | not run | not run | not run |  |
+| `equity_forward` | settlement | `shares-settle` `value-date-delivery` `proceeds-settle` | not run | not run | not run |  |
+| `equity_forward` | market data or clock move (no product action) | `day-before-value-date` `stock-up` | not run | not run | not run |  |
+| `equity_forward` | mark | `forward-mark` | not run | not run | not run |  |
+| `equity_forward` | physical delivery | `value-date-delivery` | not run | not run | not run |  |
+| `equity_forward` | restart: persistence of everything above | `restart` | not run | not run | not run |  |
+| `fx_forward` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `fx_forward` | value date | `register-value-date-on-holiday` | blocked | not run | not run | register-value-date-on-holiday: blocked by design. The value date of an FX forward must be a business day for both currencies. |
+| `fx_forward` | open | `open-buy` | passed | not run | not run |  |
+| `fx_forward` | collateral | `open-buy` `open-sell` `variation-margin` `terminate-short` `variation-margin-call` `fund-and-settle` | passed | not run | not run |  |
+| `fx_forward` | open short | `open-sell` | passed | not run | not run |  |
+| `fx_forward` | mark | `mark-up` `mark-up-again` | passed | not run | not run |  |
+| `fx_forward` | variation margin | `variation-margin` `variation-margin-call` | passed | not run | not run |  |
+| `fx_forward` | market data or clock move (no product action) | `tuesday` `thursday-18-june` `spot-on-value-date` | passed | not run | not run |  |
+| `fx_forward` | early termination | `terminate-short` | passed | not run | not run |  |
+| `fx_forward` | close | `terminate-short` | passed | not run | not run |  |
+| `fx_forward` | settlement | `termination-settles` `value-date-unfunded` `fund-and-settle` | passed | not run | not run |  |
+| `fx_forward` | failed settlement | `value-date-unfunded` | passed | not run | not run |  |
+| `fx_forward` | holiday | `value-date-unfunded` | passed | not run | not run |  |
+| `fx_forward` | funding | `fund-and-settle` | passed | not run | not run |  |
+| `fx_forward` | reporting currency | `fund-and-settle` | passed | not run | not run |  |
+| `fx_forward` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `ndf` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `ndf` | open short | `open-sell` | passed | not run | not run |  |
+| `ndf` | treasury | `open-sell` | passed | not run | not run |  |
+| `ndf` | mark | `mark` | passed | not run | not run |  |
+| `ndf` | reporting currency | `mark` | passed | not run | not run |  |
+| `ndf` | early termination | `terminate-part` | passed | not run | not run |  |
+| `ndf` | reduce | `terminate-part` | passed | not run | not run |  |
+| `ndf` | settlement | `termination-settles` `fixing-arrives` `value-date` | passed | not run | not run |  |
+| `ndf` | fixing | `fixing-date-no-fixing` `fixing-arrives` | passed | not run | not run |  |
+| `ndf` | holiday | `fixing-date-no-fixing` | passed | not run | not run |  |
+| `ndf` | market data or clock move (no product action) | `fixing-date-evening` | passed | not run | not run |  |
+| `ndf` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `fra` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `fra` | collateral | `record-agreement` `open` `variation-margin` `variation-below-minimum` `fixing-arrives` | passed 4, not run 1 | not run | not run |  |
+| `fra` | registration | `register` | passed | not run | not run |  |
+| `fra` | market data or clock move (no product action) | `indication` `tuesday` | passed | not run | not run |  |
+| `fra` | open | `open` | passed | not run | not run |  |
+| `fra` | mark | `mark` | passed | not run | not run |  |
+| `fra` | variation margin | `variation-margin` `variation-below-minimum` | passed | not run | not run |  |
+| `fra` | early termination | `terminate-part` | passed | not run | not run |  |
+| `fra` | reduce | `terminate-part` | passed | not run | not run |  |
+| `fra` | settlement | `termination-settles` `fixing-arrives` | **FAILED 1, NOT RUN 1** | not run | not run | E:fra:termination-settles failed: provisional.account: expected true, got false |
+| `fra` | fixing | `period-start-no-fixing` `fixing-arrives` | not run | not run | not run |  |
+| `fra` | holiday | `period-start-no-fixing` | not run | not run | not run |  |
+| `fra` | restart: persistence of everything above | `restart` | not run | not run | not run |  |
+
+### Not yet specified
 
 | Product | Catalog support | Scenario | Engine | API | Browser |
 |---|---|---|---|---|---|
 | TBA mortgage contract (`tba_mortgage`) | Partly manual | not yet specified | not run | not run | not run |
-| Equity forward (`equity_forward`) | Full lifecycle | not yet specified | not run | not run | not run |
 | Bond forward (`bond_forward`) | Full lifecycle | not yet specified | not run | not run | not run |
-| FX forward (`fx_forward`) | Full lifecycle | not yet specified | not run | not run | not run |
-| Non-deliverable forward (`ndf`) | Full lifecycle | not yet specified | not run | not run | not run |
 | Commodity forward (`commodity_forward`) | Full lifecycle | not yet specified | not run | not run | not run |
-| Forward-rate agreement (`fra`) | Full lifecycle | not yet specified | not run | not run | not run |
 | FX swap (`fx_swap`) | Full lifecycle | not yet specified | not run | not run | not run |
 
 ## Cash loan / deposit (`loan`)
 
-9 products, 4 specified in `test/matrix/specs/loan.mjs`.
+9 products, 9 specified in `test/matrix/specs/loan.mjs`.
 
 ### Scenarios
 
 | Product | Scenario | Steps | Engine | API | Browser |
 |---|---|---:|---|---|---|
 | Certificate of deposit (`certificate_of_deposit`) | Meridian Bank certificates of deposit held by an Account: 500,000 USD at 5.10% to 1 June 2026, and 100,000 USD at 4.80% redeemed early. A certificate of deposit is not a registry instrument: it is entered on the Cash loan or deposit ticket (here opened from the Account page, side "Lend or deposit cash") and registers itself when the ticket is confirmed. | 13 | complete, 0.2 s | complete, 0.9 s | complete, 23.9 s |
-| Bank deposit (`bank_deposit`) | Northgate Bank call deposit of an Account: 200,000 USD at 3.60%, open-ended, interest paid monthly. A bank deposit is not a registry instrument: it is entered on the Cash loan or deposit ticket (opened from the Account page, side "Lend or deposit cash") and registers itself when the ticket is confirmed. | 14 | complete, 0.2 s | complete, 1.0 s | complete, 24.3 s |
+| Bank deposit (`bank_deposit`) | Northgate Bank call deposit of an Account: 200,000 USD at 3.60%, open-ended, interest paid monthly. A bank deposit is not a registry instrument: it is entered on the Cash loan or deposit ticket (opened from the Account page, side "Lend or deposit cash") and registers itself when the ticket is confirmed. | 14 | complete, 0.3 s | complete, 1.0 s | complete, 24.3 s |
 | Term deposit (`term_deposit`) | Sterling term deposit placed by Treasury with Kingsway Bank: 400,000 GBP at 4.20% fixed, ACT/365, to Good Friday 3 April 2026 (paid 7 April). A term deposit is not a registry instrument: it is entered on the Cash loan or deposit ticket of the Treasury page (side "Lend or deposit cash") and registers itself when the ticket is confirmed. | 13 | complete, 0.2 s | complete, 0.9 s | complete, 22.3 s |
-| Unsecured loan (`unsecured_loan`) | Harborline Bank unsecured term loan to an Account: 250,000 USD at 6.00% fixed, ACT/360, due 1 April 2026. An unsecured loan is not a registry instrument: the contract is entered on the Cash loan or deposit ticket (here from the Account page, "Borrow cash") and registers itself when the ticket is confirmed. | 19 | complete, 0.4 s | complete, 1.1 s | complete, 31.7 s |
+| Revolving credit facility (`revolving_credit_facility`) | Northbridge Capital 1,000,000 USD revolving facility of an Account: two drawings at 6.30%, a part repayment and a redraw, the commitment fee recorded by hand. A facility drawing is not a registry instrument: each drawing is entered on the Cash loan or deposit ticket (from the Account page, "Borrow cash", product Revolving credit facility) and registers itself when the ticket is confirmed. | 11 | complete, 0.3 s | not run | not run |
+| Cash borrowing and lending (USD or foreign currency) (`cash_loan`) | Treasury borrows 360,000 EUR at 3.00% and converts it to dollars at spot (T+2 over Good Friday and Easter Monday); an Account lends 150,000 USD for two weeks. A cash loan is not a registry instrument: the borrowing is entered on the Borrow and convert ticket of the Treasury page and the lending on the Cash loan or deposit ticket of the Account page; each registers itself when the ticket is confirmed. The EUR/USD pair it converts through is a registered spot FX instrument. | 20 | complete, 0.5 s | not run | not run |
+| Secured loan (`secured_loan`) | Calder Trust Bank loan to an Account, secured on 4,000 of its 5,000 Harrow Ridge shares: 120,000 USD at 5.40%, interest monthly, repaid late for want of cash. A secured loan is not a registry instrument: it is entered on the Cash loan or deposit ticket (from the Account page, "Borrow cash"), with the position it pledges, and registers itself when the ticket is confirmed. The shares are a registered common stock. | 16 | complete, 0.3 s | not run | not run |
+| Unsecured loan (`unsecured_loan`) | Harborline Bank unsecured term loan to an Account: 250,000 USD at 6.00% fixed, ACT/360, due 1 April 2026. An unsecured loan is not a registry instrument: the contract is entered on the Cash loan or deposit ticket (here from the Account page, "Borrow cash") and registers itself when the ticket is confirmed. | 19 | complete, 0.3 s | complete, 1.1 s | complete, 75.3 s |
+| Margin loan (`margin_loan`) | Kestrel Aerospace shares bought on margin by an Account: 50,000 USD borrowed at 7.20% from the security ticket, open-ended; repaid in part and in full. A margin loan is not a registry instrument: it is a leg the security ticket adds when "Borrow the shortfall" is chosen, registered when the package is confirmed. The shares are a registered common stock. | 16 | complete, 0.4 s | not run | not run |
+| Securities-backed loan (`securities_backed_loan`) | Ashcombe Private Bank loan to Treasury against 8,000 Brightwater shares: 300,000 USD at SOFR + 1.50%, open-ended; a missing fixing blocks the interest payment until it is entered by hand. A securities-backed loan is not a registry instrument: it is entered on the Cash loan or deposit ticket of the Treasury page, with the position it pledges, and registers itself when the ticket is confirmed. The shares are a registered common stock. | 16 | complete, 0.4 s | not run | not run |
 
 ### Ticket, inputs and behaviour
 
@@ -536,7 +961,12 @@ By engine family:
 | `certificate_of_deposit` | Treasury page, "New loan or deposit" (or an Account page, "Borrow cash"): the Cash loan or deposit ticket, then the trade preview; Repay or Withdraw and Set rate on the row of the open arrangement. Required: Borrower or Lender (Treasury or an Account); Side (borrow, or lend / deposit); Product; Currency; Principal; Rate (fixed: the rate; floating: reference rate code and spread); Day count; Maturity (empty for open-ended); Interest paid (at maturity or monthly) | interest start date; daily interest accrual at the end-of-day run, ACT/360 (no run on a market holiday; the next run covers the days); principal and interest returned at maturity | every term of the certificate (issuer, principal, rate, day count, maturity), entered on the ticket | None: the cash leaves settled cash on the day the ticket is confirmed and returns at maturity or on redemption. Interest accrues daily; principal and interest are returned at maturity. Early redemption in full is allowed with interest to the day and no penalty. A secondary-market sale is not supported and is refused | Booked as cash lent to the issuing bank: an asset of the Account, carried at principal; interest is income accrued daily. Cash placed in a CD is not available to trade, transfer or withdraw. Collateral: None |
 | `bank_deposit` | Treasury page, "New loan or deposit" (or an Account page, "Borrow cash"): the Cash loan or deposit ticket, then the trade preview; Repay or Withdraw and Set rate on the row of the open arrangement. Required: Borrower or Lender (Treasury or an Account); Side (borrow, or lend / deposit); Product; Currency; Principal; Rate (fixed: the rate; floating: reference rate code and spread); Day count; Maturity (empty for open-ended); Interest paid (at maturity or monthly) | interest start date; daily interest accrual at the end-of-day run; interest paid on the first business day of each month, and the next payment date | every term of the deposit, entered on the ticket (no maturity: open-ended); a change of rate by the bank, entered by hand with Set rate; the amount of a part withdrawal, entered in the preview | None: cash leaves and returns to settled cash at once. Interest accrues daily and is paid monthly on the first business day; part and full withdrawal at any time, with interest to the day settled on a full withdrawal. A deposit is not enlarged: a further deposit is a new record (resizing is refused) | Cash lent is an asset of the Account; interest is income. A transfer between two Accounts is internal to the Book: no P&L, eliminated in the Book balance sheet. Collateral: None |
 | `term_deposit` | Treasury page, "New loan or deposit" (or an Account page, "Borrow cash"): the Cash loan or deposit ticket, then the trade preview; Repay or Withdraw and Set rate on the row of the open arrangement. Required: Borrower or Lender (Treasury or an Account); Side (borrow, or lend / deposit); Product; Currency; Principal; Rate (fixed: the rate; floating: reference rate code and spread); Day count; Maturity (empty for open-ended); Interest paid (at maturity or monthly) | interest start date; daily interest accrual at the end-of-day run, ACT/365; the payment date: the stated maturity moved to the next business day of the sterling payment calendar; principal and interest returned at maturity; conversion of each entry to the reporting currency at the rate in force (GBP/USD from a labelled fixture) | every term of the deposit, entered on the ticket; the amount of an early part withdrawal, entered in the preview | None: the cash leaves settled sterling on the day the ticket is confirmed and returns on the payment date. Interest accrues daily; at maturity principal and interest are returned automatically. A maturity on a bank holiday is paid on the next business day with interest to that day. An early withdrawal, in part or in full, is allowed with interest to its date and no penalty (a break cost would be recorded by hand) | Cash lent is an asset of Treasury; interest is income, accrued daily in sterling and converted at the rate of each day; the change in the dollar value of the sterling balances is the FX effect. Collateral: None |
+| `revolving_credit_facility` | Treasury page, "New loan or deposit" (or an Account page, "Borrow cash"): the Cash loan or deposit ticket, then the trade preview; Repay or Withdraw and Set rate on the row of the open arrangement. Required: Borrower or Lender (Treasury or an Account); Side (borrow, or lend / deposit); Product; Currency; Principal; Rate (fixed: the rate; floating: reference rate code and spread); Day count; Maturity (empty for open-ended); Interest paid (at maturity or monthly) | interest start date of each drawing; daily interest accrual on each drawing at the end-of-day run; repayment of each drawing with its interest at its maturity | every term of each drawing, entered on the ticket; the amount of a part repayment, entered in the preview; the commitment fee on the undrawn amount, worked out by the desk and recorded by hand as a fee on a drawing (strategy instance, position Lifecycle: Manual cash flow); the facility limit: tracked by the desk, not by the Terminal | None: each drawing is settled cash at once; repayments leave settled cash at once. Each drawing is its own loan: interest accrues daily and is paid with the principal at its maturity; part repayment at any time; a redraw is a new drawing (a new record). The facility limit and the commitment fee are not simulated (catalog: partial) | Each drawing is a liability of the Account; interest is a funding expense; the commitment fee is a fee, shown on the drawing it was recorded on (fees to date). Collateral: None (unsecured) |
+| `cash_loan` | Treasury page, "Borrow and convert" (the loan leg and its spot conversion, one preview and one confirmation); "Convert currency" for the conversion back; an Account page, "Borrow cash" with side "Lend or deposit cash" for cash lent; Repay on the row of the borrowing. Required: Borrower (Treasury or an Account); Currency pair and the currency borrowed; Principal; Rate (fixed: the rate; floating: reference rate code and spread); Day count; Maturity (empty for open-ended); Interest paid; Counterparty | interest start date (the confirmation date); the spot value date: two TARGET2 business days, also a US dollar banking day; the conversion price: bid or ask of the quote in force (fixture); daily interest accrual at the end-of-day run; settlement of both currencies on the value date; conversion of each entry to US dollars at the rate in force (fixture); principal and interest returned at maturity | every term of the loan, entered on the ticket; the amount of euros bought back, entered on the Convert currency ticket | The loan has none: borrowed cash is settled cash at once. The conversion settles on its spot value date (T+2 on the joint calendar): until then the currency bought is buying power but cannot be withdrawn or transferred, and the currency sold is committed. Interest accrues daily; early repayment in full with interest to the day; a repayment needs settled cash of the loan currency and is refused without it; cash lent is returned with its interest at maturity | Borrowed euros are a liability of Treasury (carried at principal, converted at the current rate); interest is a funding expense; the cost of crossing the spread is part of the FX effect; cash lent is an asset of the Account and its interest is income. Collateral: None (unsecured) |
+| `secured_loan` | Treasury page, "New loan or deposit" (or an Account page, "Borrow cash"): the Cash loan or deposit ticket, then the trade preview; Repay or Withdraw and Set rate on the row of the open arrangement. Required: Borrower or Lender (Treasury or an Account); Side (borrow, or lend / deposit); Product; Currency; Principal; Rate (fixed: the rate; floating: reference rate code and spread); Day count; Maturity (empty for open-ended); Interest paid (at maturity or monthly); Collateral position (a long position of the borrower); Quantity to pledge | interest start date; daily interest accrual at the end-of-day run; interest paid on the first business day of each month; repayment of principal and interest at maturity, retried each cycle while cash is short; release of the pledged shares on repayment in full | every term of the loan, entered on the ticket; the position pledged and the quantity, entered on the ticket | None for the loan: borrowed cash is settled at once. The shares bought and sold around it settle T+1. Interest accrues daily and is paid monthly; principal is repaid at maturity with the interest since the last payment. A repayment the borrower cannot fund fails visibly, keeps accruing and is retried; it is made once cash arrives | Borrowed cash is a liability of the Account; interest is a funding expense; the pledged shares stay on the Account balance sheet at market value. Collateral: Named shares pledged: the pledged quantity cannot be sold (or lent, or pledged again) until the loan is repaid in full, when it is released |
 | `unsecured_loan` | Treasury page, "New loan or deposit" (or an Account page, "Borrow cash"): the Cash loan or deposit ticket, then the trade preview; Repay or Withdraw and Set rate on the row of the open arrangement. Required: Borrower or Lender (Treasury or an Account); Side (borrow, or lend / deposit); Product; Currency; Principal; Rate (fixed: the rate; floating: reference rate code and spread); Day count; Maturity (empty for open-ended); Interest paid (at maturity or monthly) | interest start date (the day the ticket is confirmed); daily interest accrual at the end-of-day run; repayment of principal and interest at maturity; the interest settled with a repayment in full | every term of the contract (principal, rate, day count, maturity, lender), entered on the ticket; a rate change, entered by hand with Set rate; the amount of a part repayment, entered in the preview | None: borrowed cash is settled cash on the day the ticket is confirmed; a repayment leaves settled cash at once. Interest accrues daily; principal and accrued interest are repaid at maturity (1 April 2026) unless repaid earlier, which is allowed in part or in full with interest to the repayment date | Cash borrowed is a liability of the Account that borrowed it; interest is a funding expense accrued daily; the borrowing is one record, on the Account balance sheet, in Treasury oversight as Account-originated, and once in the Book. Collateral: None (unsecured) |
+| `margin_loan` | Instrument drawer, Trade: the security ticket with "If cash is short: Borrow the shortfall (simulated lender)" and its loan rate; the margin loan is a leg of the same preview and confirmation. Repay and Set rate on the row of the borrowing (Account page). Required: Account; Action (buy); Quantity; If cash is short: borrow the shortfall; Loan rate (fixed, decimal a year) | the amount borrowed: the package's cash shortfall; the lender (simulated); interest start date; daily interest accrual at the end-of-day run; interest paid on the first business day of each month (open-ended) | the loan rate, typed on the ticket; a rate change by the lender, entered with Set rate; the amount of a part repayment, entered in the preview | The loan has none (settled cash at once, ahead of the purchase it funds); the shares settle T+1. A repayment needs settled cash: sale proceeds count only once settled. Open-ended: interest accrues daily and is paid monthly; repaid in part or in full at any time with interest to the day; the rate can be reset by hand | Borrowed cash is a liability of the Account; interest is a funding expense; the shares bought are an asset at market value. Collateral: Secured on the Account's holdings as a whole: no named pledge, so the shares stay sellable (no margin call is simulated) |
+| `securities_backed_loan` | Treasury page, "New loan or deposit" (or an Account page, "Borrow cash"): the Cash loan or deposit ticket, then the trade preview; Repay or Withdraw and Set rate on the row of the open arrangement. Required: Borrower or Lender (Treasury or an Account); Side (borrow, or lend / deposit); Product; Currency; Principal; Rate (fixed: the rate; floating: reference rate code and spread); Day count; Maturity (empty for open-ended); Interest paid (at maturity or monthly); Collateral position (a long position of the borrower); Quantity to pledge | interest start date; the day's reference-rate fixing (fixture; a fixing covers at most a week); daily interest accrual at the end-of-day run; interest paid on the first business day of each month; the stop of accrual, the flag on the row and the block on the payment when no fixing is available; release of the pledged shares on repayment in full | every term of the loan, entered on the ticket (reference rate code and spread); the position pledged and the quantity; a missing fixing, entered by hand (Data connection, Manual entries) | None for the loan; the shares bought and sold settle T+1 on the US calendar (the sale of Thursday 2 April settles Monday 6 April, after Good Friday). Interest accrues daily at the day's fixing plus the spread and is paid monthly; without a fixing interest stops, the payment waits (blocked, with its reason) and repayment is refused until the fixing is entered or the rate is set by hand; repayment in full at any time with interest to the day | Borrowed cash is a liability of Treasury; interest is a funding expense; the pledged shares stay on Treasury's balance sheet at market value. Collateral: Named shares pledged: not sellable until the loan is repaid in full, then released |
 
 ### Product by action
 
@@ -578,6 +1008,52 @@ By engine family:
 | `term_deposit` | holiday | `good-friday-nothing-is-paid` `easter-monday-nothing-is-paid` | passed | passed | passed |  |
 | `term_deposit` | close | `paid-on-the-next-business-day` | passed | passed | passed |  |
 | `term_deposit` | restart: persistence of everything above | `restart` | passed | passed | passed |  |
+| `revolving_credit_facility` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `revolving_credit_facility` | open | `draw-400000` | passed | not run | not run |  |
+| `revolving_credit_facility` | borrow | `draw-400000` `redraw-150000` | passed | not run | not run |  |
+| `revolving_credit_facility` | drawing | `draw-400000` `redraw-150000` | passed | not run | not run |  |
+| `revolving_credit_facility` | lend | `lend-under-a-facility` | unsupported | not run | not run | lend-under-a-facility: unsupported by design. A credit facility drawing is borrowed; the ticket offers no lending under it, and the engine refuses one. |
+| `revolving_credit_facility` | interest accrual | `two-weeks-on` `end-of-march` | passed | not run | not run |  |
+| `revolving_credit_facility` | reduce | `repay-150000` | passed | not run | not run |  |
+| `revolving_credit_facility` | repayment | `repay-150000` | passed | not run | not run |  |
+| `revolving_credit_facility` | increase | `redraw-150000` | passed | not run | not run |  |
+| `revolving_credit_facility` | fee | `commitment-fee-by-hand` | passed | not run | not run |  |
+| `revolving_credit_facility` | commitment fee | `commitment-fee-by-hand` | passed | not run | not run |  |
+| `revolving_credit_facility` | maturity | `drawing-1-matures` `drawing-2-matures` | passed | not run | not run |  |
+| `revolving_credit_facility` | close | `drawing-1-matures` `drawing-2-matures` | passed | not run | not run |  |
+| `revolving_credit_facility` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `cash_loan` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `cash_loan` | open | `borrow-and-convert` `lend-dollars` | passed | not run | not run |  |
+| `cash_loan` | borrow | `borrow-and-convert` | passed | not run | not run |  |
+| `cash_loan` | borrow and convert | `borrow-and-convert` | passed | not run | not run |  |
+| `cash_loan` | market data or clock move (no product action) | `next-morning` `wednesday-morning` | passed | not run | not run |  |
+| `cash_loan` | lend | `lend-dollars` | passed | not run | not run |  |
+| `cash_loan` | interest accrual | `accrue-thursday` `accrue-easter-monday` `accrue-tuesday` `accrue-wednesday` `accrue-the-cash-lent` | passed | not run | not run |  |
+| `cash_loan` | holiday | `easter-monday-morning` `accrue-easter-monday` | passed | not run | not run |  |
+| `cash_loan` | settlement | `move-the-dollars-before-they-settle` `move-the-euros-sold` `value-date` `euros-settle` | passed 2, blocked 2 | not run | not run | move-the-dollars-before-they-settle: blocked by design. The 388,728 USD from the conversion is buying power but has not settled: only 800,000 can leave Treasury. move-the-euros-sold: blocked by design. The borrowed euros are settled but committed to the conversion: none is available to withdraw. |
+| `cash_loan` | conversion | `convert-dollars-back` | passed | not run | not run |  |
+| `cash_loan` | repayment | `repay-before-the-euros-settle` `repay-in-full` | passed 1, blocked 1 | not run | not run | repay-before-the-euros-settle: blocked by design. A repayment is paid from settled cash of the loan currency; the euros bought back settle on 9 April. |
+| `cash_loan` | close | `repay-in-full` `cash-lent-matures` | passed | not run | not run |  |
+| `cash_loan` | early repayment | `repay-in-full` | passed | not run | not run |  |
+| `cash_loan` | maturity | `cash-lent-matures` | passed | not run | not run |  |
+| `cash_loan` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `secured_loan` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `secured_loan` | collateral | `buy-shares` `pledge-more-than-is-held` `borrow-against-shares` | passed 2, blocked 1 | not run | not run | pledge-more-than-is-held: blocked by design. Only 5,000 shares are held and free; 6,000 cannot be pledged. |
+| `secured_loan` | settlement | `shares-settle` `sale-settles` `final-settlement` | passed | not run | not run |  |
+| `secured_loan` | open | `borrow-against-shares` | passed | not run | not run |  |
+| `secured_loan` | borrow | `borrow-against-shares` | passed | not run | not run |  |
+| `secured_loan` | reduce | `sell-pledged-shares` `sell-the-free-shares` | passed 1, blocked 1 | not run | not run | sell-pledged-shares: blocked by design. 4,000 of the 5,000 shares are pledged to the lender; only 1,000 can be sold. |
+| `secured_loan` | pledged collateral not sellable | `sell-pledged-shares` | blocked | not run | not run | sell-pledged-shares: blocked by design. 4,000 of the 5,000 shares are pledged to the lender; only 1,000 can be sold. |
+| `secured_loan` | interest accrual | `accrue-march` | passed | not run | not run |  |
+| `secured_loan` | interest payment | `monthly-interest` | passed | not run | not run |  |
+| `secured_loan` | return to Treasury | `return-cash-to-treasury` | passed | not run | not run |  |
+| `secured_loan` | maturity | `maturity-without-the-cash` | passed | not run | not run |  |
+| `secured_loan` | repayment fails when cash is short | `maturity-without-the-cash` | passed | not run | not run |  |
+| `secured_loan` | funding from Treasury | `fund-and-repay` | passed | not run | not run |  |
+| `secured_loan` | repayment | `fund-and-repay` | passed | not run | not run |  |
+| `secured_loan` | close | `fund-and-repay` `sell-the-released-shares` | passed | not run | not run |  |
+| `secured_loan` | collateral released | `sell-the-released-shares` | passed | not run | not run |  |
+| `secured_loan` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
 | `unsecured_loan` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | passed | passed |  |
 | `unsecured_loan` | open | `borrow-without-a-rate` `borrow` | passed 1, blocked 1 | passed 1, blocked 1 | passed 1, blocked 1 | borrow-without-a-rate: blocked by design. No rate was entered. The Terminal does not assume one. |
 | `unsecured_loan` | borrow | `borrow` | passed | passed | passed |  |
@@ -592,32 +1068,100 @@ By engine family:
 | `unsecured_loan` | early repayment | `repay-early-in-full` | passed | passed | passed |  |
 | `unsecured_loan` | maturity | `original-maturity-passes` | passed | passed | passed |  |
 | `unsecured_loan` | restart: persistence of everything above | `restart` | passed | passed | passed |  |
-
-### Not yet specified
-
-| Product | Catalog support | Scenario | Engine | API | Browser |
-|---|---|---|---|---|---|
-| Revolving credit facility (`revolving_credit_facility`) | Partly manual | not yet specified | not run | not run | not run |
-| Cash borrowing and lending (USD or foreign currency) (`cash_loan`) | Full lifecycle | not yet specified | not run | not run | not run |
-| Secured loan (`secured_loan`) | Full lifecycle | not yet specified | not run | not run | not run |
-| Margin loan (`margin_loan`) | Full lifecycle | not yet specified | not run | not run | not run |
-| Securities-backed loan (`securities_backed_loan`) | Full lifecycle | not yet specified | not run | not run | not run |
+| `margin_loan` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `margin_loan` | open | `buy-without-financing` `buy-on-margin` | passed 1, blocked 1 | not run | not run | buy-without-financing: blocked by design. With "Do not finance", a purchase the Account cannot pay for is refused. |
+| `margin_loan` | borrow | `buy-on-margin` | passed | not run | not run |  |
+| `margin_loan` | settlement | `purchase-settles` `sale-settles` | passed | not run | not run |  |
+| `margin_loan` | interest accrual | `two-weeks-on` | passed | not run | not run |  |
+| `margin_loan` | market data or clock move (no product action) | `price-rises` `next-morning` `thursday-morning` | passed | not run | not run |  |
+| `margin_loan` | reduce | `sell-part` `repay-part` | passed | not run | not run |  |
+| `margin_loan` | repayment | `repay-before-the-sale-settles` `repay-part` `repay-in-full` | passed 2, blocked 1 | not run | not run | repay-before-the-sale-settles: blocked by design. The sale proceeds arrive tomorrow; a repayment is paid from settled cash only. |
+| `margin_loan` | rate change | `lender-raises-the-rate` | passed | not run | not run |  |
+| `margin_loan` | interest payment | `monthly-interest` | passed | not run | not run |  |
+| `margin_loan` | close | `repay-in-full` | passed | not run | not run |  |
+| `margin_loan` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `securities_backed_loan` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `securities_backed_loan` | collateral | `treasury-buys-shares` `borrow-against-shares` | passed | not run | not run |  |
+| `securities_backed_loan` | settlement | `shares-settle` `sale-settles-after-good-friday` | passed | not run | not run |  |
+| `securities_backed_loan` | open | `borrow-against-shares` | passed | not run | not run |  |
+| `securities_backed_loan` | borrow | `borrow-against-shares` | passed | not run | not run |  |
+| `securities_backed_loan` | reduce | `sell-pledged-shares` `sell-released-shares` | passed 1, blocked 1 | not run | not run | sell-pledged-shares: blocked by design. 8,000 of the 10,000 shares are pledged; only 2,000 can be sold. |
+| `securities_backed_loan` | pledged collateral not sellable | `sell-pledged-shares` | blocked | not run | not run | sell-pledged-shares: blocked by design. 8,000 of the 10,000 shares are pledged; only 2,000 can be sold. |
+| `securities_backed_loan` | interest accrual | `accrue-first-day` `accrue-across-a-reset` `fixings-stop` | passed | not run | not run |  |
+| `securities_backed_loan` | floating reset | `accrue-across-a-reset` | passed | not run | not run |  |
+| `securities_backed_loan` | missing fixing | `fixings-stop` | passed | not run | not run |  |
+| `securities_backed_loan` | interest payment | `payment-waits-for-the-fixing` `enter-the-fixing-by-hand` | passed | not run | not run |  |
+| `securities_backed_loan` | missing fixing blocks | `payment-waits-for-the-fixing` `repay-without-the-fixing` | passed 1, blocked 1 | not run | not run | repay-without-the-fixing: blocked by design. Interest to today cannot be worked out without a fixing; the Terminal does not settle the interest accrued so far as if it were all. |
+| `securities_backed_loan` | repayment | `repay-without-the-fixing` `repay-in-full` | passed 1, blocked 1 | not run | not run | repay-without-the-fixing: blocked by design. Interest to today cannot be worked out without a fixing; the Terminal does not settle the interest accrued so far as if it were all. |
+| `securities_backed_loan` | manual fixing | `enter-the-fixing-by-hand` | passed | not run | not run |  |
+| `securities_backed_loan` | market data or clock move (no product action) | `thursday-morning` | passed | not run | not run |  |
+| `securities_backed_loan` | close | `repay-in-full` | passed | not run | not run |  |
+| `securities_backed_loan` | collateral released | `repay-in-full` `sell-released-shares` | passed | not run | not run |  |
+| `securities_backed_loan` | holiday | `sell-released-shares` `sale-settles-after-good-friday` | passed | not run | not run |  |
+| `securities_backed_loan` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
 
 ## Currency balance (`cash`)
 
-1 product, 0 specified.
+1 product, 1 specified in `test/matrix/specs/cash.mjs`.
 
-| Product | Catalog support | Scenario | Engine | API | Browser |
+### Scenarios
+
+| Product | Scenario | Steps | Engine | API | Browser |
+|---|---|---:|---|---|---|
+| USD and foreign currency balances (`currency`) | Euro balances in a USD Book: deposit, Treasury funding, conversion both ways, transfers that never convert, FX effect, withdrawal. A currency balance is ledger cash, not a registry instrument (the registry refuses product "currency", asserted in the first step). The scenario holds euro balances in Treasury and the Account and converts them through a registered EUR/USD spot pair. | 15 | complete, 0.2 s | not run | not run |
+
+### Ticket, inputs and behaviour
+
+| Product | Ticket and required fields | Automatic inputs | Manual inputs | Settlement and lifecycle events | Accounting and collateral |
 |---|---|---|---|---|---|
-| USD and foreign currency balances (`currency`) | Full lifecycle | not yet specified | not run | not run | not run |
+| `currency` | Treasury page: "Deposit or withdraw" (capital), "Transfer cash" (between Treasury and an Account); Account page: "Convert currency" (a spot FX trade in a registered pair, through the trade preview). Required: Currency and amount (deposit, withdrawal, transfer); Source and destination (transfer); Currency pair, direction and base amount (conversion) | conversion price: bid or ask of the pair quote (fixture); value date of a conversion (T+2 on both currencies' payment calendars); reporting-currency amount of every entry at the rate in force (FX fixture standing in for Shaffer MarketData) | every amount, entered on the dialogs | Deposits, withdrawals and transfers move settled cash at once; a conversion settles both currencies on its value date, with pending pay and receive legs until then. None: balances have no lifecycle; the reporting-currency value follows the FX rate | Capital is not P&L; a transfer creates no Book P&L and never converts; FX effect = translation of euro balances plus the dealing cost of each conversion; unsettled currency is not withdrawable or transferable. Collateral: None |
+
+### Product by action
+
+| Product | Action | Steps (test ids) | Engine | API | Browser | Notes |
+|---|---|---|---|---|---|---|
+| `currency` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `currency` | register | `not-a-registry-instrument` | unsupported | not run | not run | not-a-registry-instrument: unsupported by design. A currency is held as ledger cash by currency in Treasury and each Account; it is not registered or traded as an instrument. |
+| `currency` | deposit | `deposit-euros` | passed | not run | not run |  |
+| `currency` | transfer | `fund-account-in-euros` `committed-euros-not-transferable` `unsettled-dollars-not-transferable` `return-euros-to-treasury` | passed 2, blocked 2 | not run | not run | committed-euros-not-transferable: blocked by design. 40,000 of the Account's 100,000 EUR is committed to the conversion until its value date. unsettled-dollars-not-transferable: blocked by design. The 43,192 USD bought settles on 4 March; until then it is buying power, not cash that can leave the Account. |
+| `currency` | convert | `convert-euros-to-dollars` `convert-dollars-to-euros` | passed | not run | not run |  |
+| `currency` | open | `convert-euros-to-dollars` `convert-dollars-to-euros` | passed | not run | not run |  |
+| `currency` | fx effect | `euro-strengthens` | passed | not run | not run |  |
+| `currency` | settlement | `value-date` `buy-back-value-date` | passed | not run | not run |  |
+| `currency` | market data or clock move (no product action) | `quote-after-move` | passed | not run | not run |  |
+| `currency` | withdraw | `withdraw-euros` | passed | not run | not run |  |
+| `currency` | close | `return-euros-to-treasury` | passed | not run | not run |  |
+| `currency` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
 
 ## Spot FX (`fx`)
 
-1 product, 0 specified.
+1 product, 1 specified in `test/matrix/specs/fx.mjs`.
 
-| Product | Catalog support | Scenario | Engine | API | Browser |
+### Scenarios
+
+| Product | Scenario | Steps | Engine | API | Browser |
+|---|---|---:|---|---|---|
+| Spot FX / currency pair (`fx_spot`) | Spot FX in three pairs: USD/CAD (T+1), EUR/GBP cross over TARGET2 and UK holidays, USD/JPY on a Tokyo holiday; both directions | 14 | complete, 0.3 s | not run | complete, 22.4 s |
+
+### Ticket, inputs and behaviour
+
+| Product | Ticket and required fields | Automatic inputs | Manual inputs | Settlement and lifecycle events | Accounting and collateral |
 |---|---|---|---|---|---|
-| Spot FX / currency pair (`fx_spot`) | Full lifecycle | not yet specified | not run | not run | not run |
+| `fx_spot` | Instrument drawer of the pair, Trade tab: trading owner, "Buy <base>" or "Sell <base>", base-currency amount; then the trade preview (the same trade as Convert currency on the Treasury and Account pages). Required: Account (trading owner); Action (Buy or Sell the base currency); Base-currency amount | rate: bid or ask of the pair quote (fixture standing in for Shaffer MarketData); value date from the pair lag and both currencies' payment calendars plus the US dollar; USD amount of every entry at the rate in force (FX fixtures) | none | Both currencies on the value date: T+2 on the joint calendar (T+1 for USD/CAD); pending pay and receive legs until then. None beyond settlement; the pair trades Monday to Friday whatever the holidays of one currency | No position; the receivable and payable of each currency until value date; FX effect = dealing cost of each conversion (and translation, nil here as rates are fixed); unsettled currency not withdrawable. Collateral: None |
+
+### Product by action
+
+| Product | Action | Steps (test ids) | Engine | API | Browser | Notes |
+|---|---|---|---|---|---|---|
+| `fx_spot` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | passed |  |
+| `fx_spot` | open | `sell-usd-for-cad-t1` `sell-eur-for-gbp-over-holidays` `sell-usd-for-jpy-on-tokyo-holiday` `buy-eur-with-gbp` | passed | not run | passed |  |
+| `fx_spot` | sell base | `sell-usd-for-cad-t1` `sell-eur-for-gbp-over-holidays` `sell-usd-for-jpy-on-tokyo-holiday` | passed | not run | passed |  |
+| `fx_spot` | settlement | `sell-usd-for-cad-t1` `value-date-t1` `yen-value-date` `cross-value-date` `buy-usd-with-cad-t1` `last-value-date` | passed | not run | passed |  |
+| `fx_spot` | cross | `sell-eur-for-gbp-over-holidays` `buy-eur-with-gbp` | passed | not run | passed |  |
+| `fx_spot` | buy base | `buy-eur-with-gbp` `buy-eur-gbp-short` `buy-usd-cad-short` `buy-usd-with-cad-t1` | passed 2, blocked 2 | not run | passed 2, blocked 2 | buy-eur-gbp-short: blocked by design. 60,000 EUR at 0.8663 needs 51,978 GBP; only 43,285 GBP is available to trade. buy-usd-cad-short: blocked by design. 100,000 USD at 1.2502 needs 125,020 CAD; the Account holds 124,980 CAD. |
+| `fx_spot` | market data or clock move (no product action) | `uk-bank-holiday` | passed | not run | passed |  |
+| `fx_spot` | close | `buy-usd-with-cad-t1` | passed | not run | passed |  |
+| `fx_spot` | restart: persistence of everything above | `restart` | passed | not run | passed |  |
 
 ## Securities loan (`secloan`)
 
@@ -632,16 +1176,134 @@ By engine family:
 
 ## Repo / reverse repo (`repo`)
 
-11 products, 0 specified.
+11 products, 6 specified in `test/matrix/specs/repo.mjs`.
+
+### Scenarios
+
+| Product | Scenario | Steps | Engine | API | Browser |
+|---|---|---:|---|---|---|
+| Repo (`repo`) | Two-week repo of 2,000,000 Ostrander Rail 5% notes by an Account with Kittering Securities: cash = dirty value less a 2% haircut, 4.40% ACT/360, repurchased on the end date. A repo is not a registry instrument: it is entered on the Repo or reverse repo ticket of the Treasury page (for the Account) and registers itself when the ticket is confirmed. The collateral is a registered corporate bond. | 9 | complete, 0.8 s | not run | not run |
+| Reverse repo (`reverse_repo`) | Two-week reverse repo by Treasury against 5,000,000 US Treasury 3.75% notes: cash capped at dirty value less 2%, collateral held not owned, margin call and return of excess by hand, terminated on the end date. A reverse repo is not a registry instrument: it is entered on the Repo or reverse repo ticket of the Treasury page and registers itself when the ticket is confirmed. The collateral is a registered US Treasury note. | 12 | complete, 0.5 s | not run | not run |
+| Overnight repo (`overnight_repo`) | Overnight repo of 10,000,000 US Treasury bills by Treasury, repurchased the next business day and rolled by hand over Memorial Day. An overnight repo is not a registry instrument: it is entered on the Repo or reverse repo ticket of the Treasury page and registers itself when the ticket is confirmed. The collateral is a registered US Treasury bill. | 9 | complete, 0.5 s | not run | not run |
+| Term repo (`term_repo`) | Sterling term repo of 2,000,000 UK gilts by an Account in a dollar Book: haircut and buffer, ACT/365, coupon in the term kept by the borrower, margin call met, repurchase after Easter with reporting-currency figures. A term repo is not a registry instrument: it is entered on the Repo or reverse repo ticket of the Treasury page (for the Account) and registers itself when the ticket is confirmed. The collateral is a registered UK government bond (gilt). | 12 | complete, 0.8 s | not run | not run |
+| Open repo (`open_repo`) | Open repo of 50,000 shares by an Account: no end date, rate reset by hand, termination on demand refused for want of cash, then terminated with interest at each rate. An open repo is not a registry instrument: it is entered on the Repo or reverse repo ticket of the Treasury page (for the Account) and registers itself when the ticket is confirmed. The collateral is a registered NYSE-listed common stock. | 12 | complete, 0.7 s | not run | not run |
+| Bilateral repo (`bilateral_repo`) | Bilateral repo by an Account with Pemberton Bank: collateral substituted by hand, the automatic repurchase failing for want of cash and made the next day once funded. A bilateral repo is not a registry instrument: it is entered on the Repo or reverse repo ticket of the Treasury page (for the Account) and registers itself when the ticket is confirmed. The collateral is a registered corporate bond, substituted by a registered agency bond. | 11 | not run | not run | not run |
+
+### Ticket, inputs and behaviour
+
+| Product | Ticket and required fields | Automatic inputs | Manual inputs | Settlement and lifecycle events | Accounting and collateral |
+|---|---|---|---|---|---|
+| `repo` | Treasury page, Borrowings and lending, "New repo or reverse repo": the Repo or reverse repo ticket (borrower or lender, side, product, collateral position or security, currency, cash principal, terms), then the trade preview; Set rate and Repurchase (or Terminate) on the row of the open repo. Required: Borrower or Lender (Treasury or an Account); Side (repo or reverse repo); Product; Collateral position (repo) or Collateral security (reverse repo); Collateral quantity; Haircut; Currency; Cash principal; Repo rate (fixed: the rate; floating: reference rate code and spread); Day count; Term (overnight, term with its end date, open) | the collateral's dirty value on the start date (price fixture plus accrued interest from the registered coupon terms); the most cash it supports after the haircut (a larger principal is refused); repo interest accrued daily at the end-of-day run; repurchase on the end date: principal and interest paid, the collateral released; the daily check of the cover | every term of the repo, entered on the ticket (counterparty, haircut, rate, end date); the cash principal, entered on the ticket (at most the collateral value less the haircut) | None for the repo: cash is received on the day it is confirmed and paid back on the end date. The bond bought to pledge settles T+1. Interest accrues daily; on the end date the repo is repurchased automatically with interest and the collateral released; the pledged notes keep accruing their coupon for the Account | Cash borrowed is a liability of the Account; repo interest is a funding expense; the pledged notes stay on the Account's balance sheet at market value with their accrued coupon. Collateral: The notes are pledged for the whole term: not sellable or lendable; released on repurchase. Cover checked daily (margin calls not simulated) |
+| `reverse_repo` | Treasury page, Borrowings and lending, "New repo or reverse repo": the Repo or reverse repo ticket (borrower or lender, side, product, collateral position or security, currency, cash principal, terms), then the trade preview; Set rate and Repurchase (or Terminate) on the row of the open repo. Required: Borrower or Lender (Treasury or an Account); Side (repo or reverse repo); Product; Collateral position (repo) or Collateral security (reverse repo); Collateral quantity; Haircut; Currency; Cash principal; Repo rate (fixed: the rate; floating: reference rate code and spread); Day count; Term (overnight, term with its end date, open) | the collateral's dirty value on the start date (price fixture plus accrued interest from the registered coupon terms); the most cash it supports after the haircut (more is refused); repo interest income accrued daily at the end-of-day run; the daily check of the cover (flagged when short, cleared when restored); termination on the end date: principal and interest received, the collateral returned | every term of the reverse repo, entered on the ticket; the cash lent; a margin call met (collateral delivered) and a return of excess collateral, recorded with Collateral on the reverse repo's row | None: the cash leaves settled cash on the day the ticket is confirmed and comes back on the end date. Interest accrues daily; the cover is checked daily; collateral delivered or returned is recorded by hand; terminated automatically on the end date | Cash lent is an asset of Treasury; repo interest is income ("Coupon and interest income"); the collateral received is held, not owned: never a position, a holding or a balance-sheet asset, listed as collateral received. Collateral: Securities received, valued dirty; cover = value less 2% haircut against principal plus interest; a shortfall is flagged daily; a margin call and a return of excess are recorded by hand, the return refused when it would leave the cover short |
+| `overnight_repo` | Treasury page, Borrowings and lending, "New repo or reverse repo": the Repo or reverse repo ticket (borrower or lender, side, product, collateral position or security, currency, cash principal, terms), then the trade preview; Set rate and Repurchase (or Terminate) on the row of the open repo. Required: Borrower or Lender (Treasury or an Account); Side (repo or reverse repo); Product; Collateral position (repo) or Collateral security (reverse repo); Collateral quantity; Haircut; Currency; Cash principal; Repo rate (fixed: the rate; floating: reference rate code and spread); Day count; Term (overnight, term with its end date, open) | the end date: the next business day of the dollar payment calendar (Tuesday after Memorial Day); the bills' value from the price fixture (a discount bill accrues nothing); the most cash it supports after the haircut; repurchase on the end date with interest for the days run; the daily check of the cover | every term, entered on the ticket; the roll: a new overnight repo entered each day at that day's rate (the Terminal does not renew an overnight repo by itself) | None for the repo: cash received when confirmed, paid back on the next business day. The bills bought settle T+1. Repurchased automatically on the next business day with interest; rolled by entering a new overnight repo; an end date over a holiday runs to the next business day with interest for every day | Cash borrowed is a liability of Treasury; repo interest is a funding expense; the pledged bills stay on Treasury's balance sheet at market value. Collateral: The bills are pledged for each night: not sellable or lendable; released at each repurchase and pledged again by the roll |
+| `term_repo` | Treasury page, Borrowings and lending, "New repo or reverse repo": the Repo or reverse repo ticket (borrower or lender, side, product, collateral position or security, currency, cash principal, terms), then the trade preview; Set rate and Repurchase (or Terminate) on the row of the open repo. Required: Borrower or Lender (Treasury or an Account); Side (repo or reverse repo); Product; Collateral position (repo) or Collateral security (reverse repo); Collateral quantity; Haircut; Currency; Cash principal; Repo rate (fixed: the rate; floating: reference rate code and spread); Day count; Term (overnight, term with its end date, open); Additional buffer (amount), when the terms state one | the gilts' dirty value (price fixture plus ACT/ACT accrued interest from the registered coupon terms); the most cash it supports: value less the haircut less the buffer; repo interest accrued daily on ACT/365; the coupon of the pledged gilts paid to the Account (the borrower keeps it in a classic repo); the daily check of the cover; the repurchase date: the stated end date moved to the next sterling business day; conversion of every entry to dollars at the rate in force (GBP/USD fixture) | every term, entered on the ticket (counterparty, haircut, buffer, rate, end date); the cash principal; the margin call met: more gilts pledged with Collateral on the repo's row | None for the repo: cash received when confirmed and paid back on the repurchase date. The gilts bought settle T+1. Interest accrues daily; the coupon is paid to the borrower during the term; the cover is checked daily; repurchased automatically on the first sterling business day on or after the end date, with interest to that day | Cash borrowed is a liability of the Account, in sterling, shown in dollars at the current rate; repo interest is a funding expense booked in dollars at each day's rate; the pledged gilts stay on the Account's balance sheet with their accrued coupon; the change in the dollar value of the sterling balances is the FX effect. Collateral: The gilts are pledged: not sellable or lendable; cover = dirty value less 3% less 25,000 GBP against principal plus interest; the coupon lowers the dirty value and the shortfall is flagged; more gilts pledged by hand; all released on repurchase |
+| `open_repo` | Treasury page, Borrowings and lending, "New repo or reverse repo": the Repo or reverse repo ticket (borrower or lender, side, product, collateral position or security, currency, cash principal, terms), then the trade preview; Set rate and Repurchase (or Terminate) on the row of the open repo. Required: Borrower or Lender (Treasury or an Account); Side (repo or reverse repo); Product; Collateral position (repo) or Collateral security (reverse repo); Collateral quantity; Haircut; Currency; Cash principal; Repo rate (fixed: the rate; floating: reference rate code and spread); Day count; Term (overnight, term with its end date, open) | the shares' value from the price fixture; the most cash it supports after the haircut; repo interest accrued daily at the rate in force; the daily check of the cover; the cash a termination needs: principal and interest to the day | every term, entered on the ticket (Term: Open, no end date); the new rate, entered with Set rate on the repo's row; the termination on demand, with Repurchase on the repo's row | None for the repo: cash received when confirmed and paid back when terminated. The shares bought settle T+1. Runs until terminated: no end date and nothing scheduled; interest accrues daily at the rate in force; a rate reset accrues to its date at the old rate first; termination on demand pays principal and all interest | Cash borrowed is a liability of the Account; repo interest is a funding expense; the pledged shares stay on the Account's balance sheet at market value. Collateral: The shares are pledged until the repo is terminated: not sellable or lendable; cover checked daily |
+| `bilateral_repo` | Treasury page, Borrowings and lending, "New repo or reverse repo": the Repo or reverse repo ticket (borrower or lender, side, product, collateral position or security, currency, cash principal, terms), then the trade preview; Set rate and Repurchase (or Terminate) on the row of the open repo. Required: Borrower or Lender (Treasury or an Account); Side (repo or reverse repo); Product; Collateral position (repo) or Collateral security (reverse repo); Collateral quantity; Haircut; Currency; Cash principal; Repo rate (fixed: the rate; floating: reference rate code and spread); Day count; Term (overnight, term with its end date, open) | the collateral's dirty value and the cash it supports; repo interest accrued daily; the substitute's cover checked against what is owed; the repurchase on the end date, and its retry each cycle after it failed for want of cash, with interest to the day it is made | every term, entered on the ticket (Tri-party left unticked); the substitution agreed with the counterparty, recorded with Collateral on the repo's row; internal funding of the Account from Treasury | None for the repo: cash received when confirmed and paid back at the repurchase. The bonds bought settle T+1. Interest accrues daily; repurchased automatically on the end date; when the borrower lacks the cash the repurchase fails visibly (failed lifecycle item, alert), interest keeps accruing, and it is retried every cycle until made | Cash borrowed is a liability of the Account; repo interest a funding expense; the pledged notes stay on the Account's balance sheet with their accrued coupon. Collateral: Pledged notes not sellable; substituted by hand (the old notes released, the new pledged, the cover rechecked); released on repurchase. Bilateral and tri-party are simulated alike: the agent of a tri-party repo is recorded as a term only |
+
+### Product by action
+
+| Product | Action | Steps (test ids) | Engine | API | Browser | Notes |
+|---|---|---|---|---|---|---|
+| `repo` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `repo` | collateral | `buy-the-notes` `repo-the-notes` | passed | not run | not run |  |
+| `repo` | settlement | `notes-settle` | passed | not run | not run |  |
+| `repo` | open | `ask-more-than-the-collateral-supports` `repo-the-notes` | passed 1, blocked 1 | not run | not run | ask-more-than-the-collateral-supports: blocked by design. The notes are worth 1,970,833.33 dirty; after the 2% haircut they support 1,931,416.66. |
+| `repo` | haircut | `ask-more-than-the-collateral-supports` `repo-the-notes` | passed 1, blocked 1 | not run | not run | ask-more-than-the-collateral-supports: blocked by design. The notes are worth 1,970,833.33 dirty; after the 2% haircut they support 1,931,416.66. |
+| `repo` | borrow | `repo-the-notes` | passed | not run | not run |  |
+| `repo` | reduce | `sell-pledged-notes` | blocked | not run | not run | sell-pledged-notes: blocked by design. All 2,000,000 face is pledged to the repo. |
+| `repo` | pledged collateral not sellable | `sell-pledged-notes` | blocked | not run | not run | sell-pledged-notes: blocked by design. All 2,000,000 face is pledged to the repo. |
+| `repo` | interest accrual | `accrue-a-day` | passed | not run | not run |  |
+| `repo` | maturity | `repurchase-on-the-end-date` | passed | not run | not run |  |
+| `repo` | close | `repurchase-on-the-end-date` | passed | not run | not run |  |
+| `repo` | repurchase | `repurchase-on-the-end-date` | passed | not run | not run |  |
+| `repo` | collateral released | `repurchase-on-the-end-date` | passed | not run | not run |  |
+| `repo` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `reverse_repo` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `reverse_repo` | open | `lend-more-than-the-collateral-supports` `lend-the-cash` | passed 1, blocked 1 | not run | not run | lend-more-than-the-collateral-supports: blocked by design. The notes delivered are worth 4,970,269.34 dirty; after the 2% haircut they support 4,870,863.95 of cash lent. |
+| `reverse_repo` | haircut | `lend-more-than-the-collateral-supports` `lend-the-cash` | passed 1, blocked 1 | not run | not run | lend-more-than-the-collateral-supports: blocked by design. The notes delivered are worth 4,970,269.34 dirty; after the 2% haircut they support 4,870,863.95 of cash lent. |
+| `reverse_repo` | lend | `lend-the-cash` | passed | not run | not run |  |
+| `reverse_repo` | collateral received | `lend-the-cash` | passed | not run | not run |  |
+| `reverse_repo` | collateral value falls | `notes-fall` | passed | not run | not run |  |
+| `reverse_repo` | interest accrual | `cover-short-at-the-end-of-day` | passed | not run | not run |  |
+| `reverse_repo` | daily cover check | `cover-short-at-the-end-of-day` | passed | not run | not run |  |
+| `reverse_repo` | margin call | `margin-call-met` | passed | not run | not run |  |
+| `reverse_repo` | collateral | `margin-call-met` `return-excess` | passed | not run | not run |  |
+| `reverse_repo` | collateral value rises | `notes-recover` | passed | not run | not run |  |
+| `reverse_repo` | market data or clock move (no product action) | `wednesday-morning` | passed | not run | not run |  |
+| `reverse_repo` | return of excess collateral | `return-too-much` `return-excess` | passed 1, blocked 1 | not run | not run | return-too-much: blocked by design. The cover after the return would be short of what Tidemark owes. |
+| `reverse_repo` | maturity | `terminated-on-the-end-date` | passed | not run | not run |  |
+| `reverse_repo` | close | `terminated-on-the-end-date` | passed | not run | not run |  |
+| `reverse_repo` | termination | `terminated-on-the-end-date` | passed | not run | not run |  |
+| `reverse_repo` | collateral returned | `terminated-on-the-end-date` | passed | not run | not run |  |
+| `reverse_repo` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `overnight_repo` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `overnight_repo` | collateral | `buy-the-bills` `repo-overnight` | passed | not run | not run |  |
+| `overnight_repo` | settlement | `bills-settle` | passed | not run | not run |  |
+| `overnight_repo` | open | `repo-overnight` `roll-over-the-holiday` | passed | not run | not run |  |
+| `overnight_repo` | borrow | `repo-overnight` | passed | not run | not run |  |
+| `overnight_repo` | haircut | `repo-overnight` | passed | not run | not run |  |
+| `overnight_repo` | maturity | `repurchased-next-business-day` `repurchased-after-the-holiday` | passed | not run | not run |  |
+| `overnight_repo` | close | `repurchased-next-business-day` `repurchased-after-the-holiday` | passed | not run | not run |  |
+| `overnight_repo` | repurchase | `repurchased-next-business-day` `repurchased-after-the-holiday` | passed | not run | not run |  |
+| `overnight_repo` | collateral released | `repurchased-next-business-day` `repurchased-after-the-holiday` | passed | not run | not run |  |
+| `overnight_repo` | roll | `roll-over-the-holiday` | passed | not run | not run |  |
+| `overnight_repo` | holiday | `roll-over-the-holiday` `memorial-day-nothing-happens` | passed | not run | not run |  |
+| `overnight_repo` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `term_repo` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `term_repo` | collateral | `buy-the-gilts` `repo-to-the-end-date` `margin-call-met` | passed | not run | not run |  |
+| `term_repo` | settlement | `gilts-settle` | passed | not run | not run |  |
+| `term_repo` | open | `ask-more-than-the-buffer-allows` `repo-to-the-end-date` | passed 1, blocked 1 | not run | not run | ask-more-than-the-buffer-allows: blocked by design. After the 3% haircut and the 25,000 GBP buffer the gilts support 1,977,396.19 GBP. |
+| `term_repo` | haircut | `ask-more-than-the-buffer-allows` `repo-to-the-end-date` | passed 1, blocked 1 | not run | not run | ask-more-than-the-buffer-allows: blocked by design. After the 3% haircut and the 25,000 GBP buffer the gilts support 1,977,396.19 GBP. |
+| `term_repo` | buffer | `ask-more-than-the-buffer-allows` `repo-to-the-end-date` | passed 1, blocked 1 | not run | not run | ask-more-than-the-buffer-allows: blocked by design. After the 3% haircut and the 25,000 GBP buffer the gilts support 1,977,396.19 GBP. |
+| `term_repo` | borrow | `repo-to-the-end-date` | passed | not run | not run |  |
+| `term_repo` | coupon during the term | `coupon-paid-to-the-borrower` | passed | not run | not run |  |
+| `term_repo` | interest accrual | `coupon-paid-to-the-borrower` `good-friday-cover-short` | passed | not run | not run |  |
+| `term_repo` | FX effect | `sterling-falls` | passed | not run | not run |  |
+| `term_repo` | holiday | `good-friday-cover-short` `easter-monday-nothing-happens` `repurchased-after-easter` | passed | not run | not run |  |
+| `term_repo` | daily cover check | `good-friday-cover-short` | passed | not run | not run |  |
+| `term_repo` | margin call | `margin-call-met` | passed | not run | not run |  |
+| `term_repo` | maturity | `repurchased-after-easter` | passed | not run | not run |  |
+| `term_repo` | close | `repurchased-after-easter` | passed | not run | not run |  |
+| `term_repo` | repurchase | `repurchased-after-easter` | passed | not run | not run |  |
+| `term_repo` | collateral released | `repurchased-after-easter` | passed | not run | not run |  |
+| `term_repo` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `open_repo` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `open_repo` | collateral | `buy-the-shares` `repo-open-ended` | passed | not run | not run |  |
+| `open_repo` | settlement | `shares-settle` | passed | not run | not run |  |
+| `open_repo` | open | `repo-open-ended` | passed | not run | not run |  |
+| `open_repo` | borrow | `repo-open-ended` | passed | not run | not run |  |
+| `open_repo` | haircut | `repo-open-ended` | passed | not run | not run |  |
+| `open_repo` | interest accrual | `a-week-runs` `monday-16-march` | passed | not run | not run |  |
+| `open_repo` | rate change | `set-a-new-rate` | passed | not run | not run |  |
+| `open_repo` | set rate | `set-a-new-rate` | passed | not run | not run |  |
+| `open_repo` | return to Treasury | `cash-back-to-treasury` | passed | not run | not run |  |
+| `open_repo` | close | `terminate-without-the-cash` `terminate-on-demand` | passed 1, blocked 1 | not run | not run | terminate-without-the-cash: blocked by design. A termination pays principal and interest at once from settled cash; the Account holds 499,000.00 USD. |
+| `open_repo` | termination | `terminate-without-the-cash` `terminate-on-demand` | passed 1, blocked 1 | not run | not run | terminate-without-the-cash: blocked by design. A termination pays principal and interest at once from settled cash; the Account holds 499,000.00 USD. |
+| `open_repo` | insufficient cash at repurchase | `terminate-without-the-cash` | blocked | not run | not run | terminate-without-the-cash: blocked by design. A termination pays principal and interest at once from settled cash; the Account holds 499,000.00 USD. |
+| `open_repo` | funding from Treasury | `treasury-funds-the-account` | passed | not run | not run |  |
+| `open_repo` | collateral released | `terminate-on-demand` | passed | not run | not run |  |
+| `open_repo` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `bilateral_repo` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | not run | not run | not run |  |
+| `bilateral_repo` | collateral | `buy-kestrel` `buy-the-agency-notes` `repo-the-kestrel-notes` `substitute-the-collateral` | not run | not run | not run |  |
+| `bilateral_repo` | settlement | `bonds-settle` | not run | not run | not run |  |
+| `bilateral_repo` | open | `repo-the-kestrel-notes` | not run | not run | not run |  |
+| `bilateral_repo` | borrow | `repo-the-kestrel-notes` | not run | not run | not run |  |
+| `bilateral_repo` | haircut | `repo-the-kestrel-notes` | not run | not run | not run |  |
+| `bilateral_repo` | substitution | `substitute-the-collateral` | not run | not run | not run |  |
+| `bilateral_repo` | return to Treasury | `cash-back-to-treasury` | not run | not run | not run |  |
+| `bilateral_repo` | maturity | `repurchase-fails-without-the-cash` | not run | not run | not run |  |
+| `bilateral_repo` | insufficient cash at repurchase | `repurchase-fails-without-the-cash` `still-short-next-day` | not run | not run | not run |  |
+| `bilateral_repo` | interest accrual | `still-short-next-day` | not run | not run | not run |  |
+| `bilateral_repo` | funding from Treasury | `fund-and-repurchase` | not run | not run | not run |  |
+| `bilateral_repo` | repurchase | `fund-and-repurchase` | not run | not run | not run |  |
+| `bilateral_repo` | close | `fund-and-repurchase` | not run | not run | not run |  |
+| `bilateral_repo` | collateral released | `fund-and-repurchase` | not run | not run | not run |  |
+| `bilateral_repo` | restart: persistence of everything above | `restart` | not run | not run | not run |  |
+
+### Not yet specified
 
 | Product | Catalog support | Scenario | Engine | API | Browser |
 |---|---|---|---|---|---|
-| Repo (`repo`) | Full lifecycle | not yet specified | not run | not run | not run |
-| Reverse repo (`reverse_repo`) | Full lifecycle | not yet specified | not run | not run | not run |
-| Overnight repo (`overnight_repo`) | Full lifecycle | not yet specified | not run | not run | not run |
-| Term repo (`term_repo`) | Full lifecycle | not yet specified | not run | not run | not run |
-| Open repo (`open_repo`) | Full lifecycle | not yet specified | not run | not run | not run |
-| Bilateral repo (`bilateral_repo`) | Full lifecycle | not yet specified | not run | not run | not run |
 | Tri-party repo (`triparty_repo`) | Full lifecycle | not yet specified | not run | not run | not run |
 | General-collateral repo (`gc_repo`) | Full lifecycle | not yet specified | not run | not run | not run |
 | Special-collateral repo (`special_repo`) | Full lifecycle | not yet specified | not run | not run | not run |
@@ -650,34 +1312,228 @@ By engine family:
 
 ## Spot asset (`spot`)
 
-14 products, 0 specified.
+14 products, 14 specified in `test/matrix/specs/spot-commodities.mjs`, `test/matrix/specs/spot.mjs`.
 
-| Product | Catalog support | Scenario | Engine | API | Browser |
+### Scenarios
+
+| Product | Scenario | Steps | Engine | API | Browser |
+|---|---|---:|---|---|---|
+| Physical / spot commodity (`physical_commodity`) | Uranium concentrate (U3O8) on a converter account: held in kilograms, priced per pound (x 2.2046226 lb/kg), storage and insurance by hand | 12 | complete, 0.6 s | not run | not run |
+| Precious metal (`precious_metal`) | Allocated gold kilobars in a London vault, held by Treasury: kilograms priced per troy ounce (x 32.1507466), settlement over the May bank holiday | 14 | complete, 0.6 s | not run | not run |
+| Industrial metal (`industrial_metal`) | Copper cathode, LME Grade A, in a Rotterdam warehouse: tonnes in 25-tonne lots, warehouse rent by hand | 12 | complete, 0.6 s | not run | not run |
+| Crude oil (`crude_oil`) | WTI crude oil at Cushing (pipeline barrels): tank storage, quality bank credit and pipeline tariff by hand | 13 | complete, 0.5 s | not run | complete, 22.2 s |
+| Refined petroleum product (`refined_product`) | Ultra-low sulphur diesel, New York Harbor barge: barrels priced per US gallon (x 42), barge freight and inspection by hand | 12 | complete, 0.6 s | not run | not run |
+| Natural gas (`natural_gas`) | Natural gas at Henry Hub, held by Treasury in storage: MMBtu, next-day settlement, injection and withdrawal fees by hand | 12 | complete, 0.5 s | not run | not run |
+| LNG (`lng`) | LNG cargo share delivered ex-ship in Japan: tonnes priced per MMBtu (x 51.8 from the cargo's quality certificate), boil-off and port charges by hand | 14 | complete, 0.5 s | not run | not run |
+| Coal (`coal`) | Steam coal CIF ARA in a Rotterdam stockpile: tonnes, calorific-value adjustment and stockpile storage by hand | 13 | complete, 0.5 s | not run | not run |
+| Electricity (`electricity`) | German baseload power for Friday 20 March 2026 on the EPEX SPOT day-ahead auction, in EUR: intraday sale, delivery period recorded by hand | 11 | complete, 0.7 s | not run | not run |
+| Agricultural commodity (`agricultural_commodity`) | Hard red winter wheat at a Kansas City elevator: bushels priced in US cents per bushel (x 0.01), storage and protein premium by hand | 12 | complete, 0.4 s | not run | not run |
+| Livestock (`livestock`) | Live steers at the Oklahoma National Stockyards: pounds of live weight priced per hundredweight (x 0.01), yardage and transit shrink by hand | 12 | complete, 0.6 s | not run | not run |
+| Emissions allowance (`emissions_allowance`) | EU Allowances (EUA, Phase 4) on the EEX spot market in EUR: settlement across Easter, compliance surrender by hand | 14 | complete, 0.8 s | not run | not run |
+| Carbon credit (`carbon_credit`) | Verra VCUs, Rio Verde REDD+ vintage 2023, bought by Treasury over the counter: registry delivery T+3, retirement by hand | 10 | complete, 0.4 s | not run | not run |
+| Renewable energy certificate (`renewable_energy_certificate`) | Texas wind RECs, vintage 2025 (1 MWh each): T+2 over Memorial Day, retirement by hand | 11 | complete, 0.6 s | not run | not run |
+
+### Ticket, inputs and behaviour
+
+| Product | Ticket and required fields | Automatic inputs | Manual inputs | Settlement and lifecycle events | Accounting and collateral |
 |---|---|---|---|---|---|
-| Physical / spot commodity (`physical_commodity`) | Partly manual | not yet specified | not run | not run | not run |
-| Precious metal (`precious_metal`) | Partly manual | not yet specified | not run | not run | not run |
-| Industrial metal (`industrial_metal`) | Partly manual | not yet specified | not run | not run | not run |
-| Crude oil (`crude_oil`) | Partly manual | not yet specified | not run | not run | not run |
-| Refined petroleum product (`refined_product`) | Partly manual | not yet specified | not run | not run | not run |
-| Natural gas (`natural_gas`) | Partly manual | not yet specified | not run | not run | not run |
-| LNG (`lng`) | Partly manual | not yet specified | not run | not run | not run |
-| Coal (`coal`) | Partly manual | not yet specified | not run | not run | not run |
-| Electricity (`electricity`) | Partly manual | not yet specified | not run | not run | not run |
-| Agricultural commodity (`agricultural_commodity`) | Partly manual | not yet specified | not run | not run | not run |
-| Livestock (`livestock`) | Partly manual | not yet specified | not run | not run | not run |
-| Emissions allowance (`emissions_allowance`) | Full lifecycle | not yet specified | not run | not run | not run |
-| Carbon credit (`carbon_credit`) | Full lifecycle | not yet specified | not run | not run | not run |
-| Renewable energy certificate (`renewable_energy_certificate`) | Full lifecycle | not yet specified | not run | not run | not run |
+| `physical_commodity` | Instrument drawer, Trade tab (security ticket: Buy, Sell; no Sell short; quantity in the product's own unit), then the trade preview; position Lifecycle menu for manual cash flows. Required: Account (trading owner); Action; Quantity in the product's own unit | bid, ask, last and size (quote fixture standing in for Shaffer MarketData); fill price and fill model; value and cash = quantity x price x multiplier (unit conversion); settlement date on the venue country's calendar; commission from the Book spot fee schedule | converter storage fee, recorded by hand as a manual cash flow (fee); insurance of material at the converter, recorded by hand (fee) | T+2 (Book setting settlement.spot) on the US calendar, by book transfer at the converter (simulated: the Terminal moves no material). Nothing automated; storage and insurance recorded by hand; delivery out of the converter account is not simulated (refused, visibly) | Value = kilograms x USD per pound x 2.2046226; average cost per pound; broker commission 10 bp expensed; storage and insurance in fees; realized P&L on sale. Collateral: None; no short sale |
+| `precious_metal` | Instrument drawer, Trade tab (security ticket: Buy, Sell; no Sell short; quantity in the product's own unit), then the trade preview; position Lifecycle menu for manual cash flows. Required: Account (trading owner: Treasury); Action; Kilograms (whole bars: lot size 1) | bid, ask, last and size (quote fixture standing in for Shaffer MarketData); fill price and fill model; value and cash = quantity x price x multiplier (unit conversion); settlement date on the venue country's calendar; commission from the Book spot fee schedule | allocated vault storage, recorded by hand (fee); insurance, recorded by hand (fee) | T+2 (Book setting settlement.foreignCash) on the London calendar: over the Early May bank holiday. Nothing automated; storage and insurance recorded by hand; taking the bars out of the vault is not simulated (refused, visibly) | Value = kilograms x USD per troy ounce x 32.1507466; average cost per troy ounce; no commission (dealer spread only); realized P&L on sale; owned by Treasury. Collateral: None; no short sale |
+| `industrial_metal` | Instrument drawer, Trade tab (security ticket: Buy, Sell; no Sell short; quantity in the product's own unit), then the trade preview; position Lifecycle menu for manual cash flows. Required: Account (trading owner); Action; Tonnes (lots of 25) | bid, ask, last and size (quote fixture standing in for Shaffer MarketData); fill price and fill model; value and cash = quantity x price x multiplier (unit conversion); settlement date on the venue country's calendar; commission from the Book spot fee schedule | LME warehouse rent, recorded by hand (fee) | T+2 (Book setting settlement.foreignCash) on the TARGET2 calendar of the Rotterdam venue. Nothing automated; warehouse rent recorded by hand; load-out (physical delivery) is not simulated (refused, visibly) | Value = tonnes x USD per tonne; commission 1.00 per tonne expensed; rent in fees; realized P&L on sale. Collateral: None; no short sale |
+| `crude_oil` | Instrument drawer, Trade tab (security ticket: Buy, Sell; no Sell short; quantity in the product's own unit), then the trade preview; position Lifecycle menu for manual cash flows. Required: Account (trading owner); Action; Quantity in the product's own unit | bid, ask, last and size (quote fixture standing in for Shaffer MarketData); fill price and fill model; value and cash = quantity x price x multiplier (unit conversion); settlement date on the venue country's calendar; commission from the Book spot fee schedule | tank storage, recorded by hand (fee); quality-bank adjustment for API gravity, recorded by hand (realized); pipeline tariff (delivery cost), recorded by hand (fee) | T+2 (Book setting settlement.spot) on the US calendar. Nothing automated; storage, quality and delivery costs recorded by hand; lifting the barrels (physical delivery) is not simulated (refused, visibly) | Value = barrels x USD per barrel; broker fee 0.02 per barrel expensed; storage and tariff in fees; quality credit in realized P&L. Collateral: None; no short sale |
+| `refined_product` | Instrument drawer, Trade tab (security ticket: Buy, Sell; no Sell short; quantity in the product's own unit), then the trade preview; position Lifecycle menu for manual cash flows. Required: Account (trading owner); Action; Quantity in the product's own unit | bid, ask, last and size (quote fixture standing in for Shaffer MarketData); fill price and fill model; value and cash = quantity x price x multiplier (unit conversion); settlement date on the venue country's calendar; commission from the Book spot fee schedule | barge freight (delivery cost), recorded by hand (fee); independent quantity and quality inspection, recorded by hand (fee) | T+2 (Book setting settlement.spot) on the US calendar. Nothing automated; freight and inspection recorded by hand; discharging the barge (physical delivery) is not simulated (refused, visibly) | Value = barrels x 42 x USD per gallon; freight and inspection in fees; realized P&L on sale. Collateral: None; no short sale |
+| `natural_gas` | Instrument drawer, Trade tab (security ticket: Buy, Sell; no Sell short; quantity in the product's own unit), then the trade preview; position Lifecycle menu for manual cash flows. Required: Account (trading owner: Treasury); Action; MMBtu | bid, ask, last and size (quote fixture standing in for Shaffer MarketData); fill price and fill model; value and cash = quantity x price x multiplier (unit conversion); settlement date on the venue country's calendar; commission from the Book spot fee schedule | storage injection fee, recorded by hand (fee); storage withdrawal fee, recorded by hand (fee) | T+1 (the instrument's settlement lag) on the US calendar. Nothing automated; storage fees recorded by hand; nominating the gas out of storage (physical delivery) is not simulated (refused, visibly) | Value = MMBtu x USD per MMBtu; broker fee 0.005 per MMBtu expensed; storage fees in fees; realized P&L on sale; owned by Treasury. Collateral: None; no short sale |
+| `lng` | Instrument drawer, Trade tab (security ticket: Buy, Sell; no Sell short; quantity in the product's own unit), then the trade preview; position Lifecycle menu for manual cash flows. Required: Account (trading owner); Action; Quantity in the product's own unit | bid, ask, last and size (quote fixture standing in for Shaffer MarketData); fill price and fill model; value and cash = quantity x price x multiplier (unit conversion); settlement date on the venue country's calendar; commission from the Book spot fee schedule | heat content (51.8 MMBtu per tonne) from the cargo quality certificate, entered as the multiplier; port and regasification terminal charges (cargo logistics), recorded by hand (fee); boil-off lost on the voyage, recorded by hand as a sale at a stated fill price of 0.00 | T+2 (Book setting settlement.foreignCash) on the Tokyo calendar, over Marine Day. Nothing automated; cargo logistics and boil-off recorded by hand; discharge to the terminal (physical delivery) is not simulated (refused, visibly) | Value = tonnes x 51.8 MMBtu per tonne x USD per MMBtu; port charges in fees; boil-off realizes its cost as a loss; realized P&L on sale. Collateral: None; no short sale |
+| `coal` | Instrument drawer, Trade tab (security ticket: Buy, Sell; no Sell short; quantity in the product's own unit), then the trade preview; position Lifecycle menu for manual cash flows. Required: Account (trading owner); Action; Quantity in the product's own unit | bid, ask, last and size (quote fixture standing in for Shaffer MarketData); fill price and fill model; value and cash = quantity x price x multiplier (unit conversion); settlement date on the venue country's calendar; commission from the Book spot fee schedule | calorific-value (quality) adjustment, recorded by hand (realized); stockpile storage, recorded by hand (fee) | T+2 (Book setting settlement.foreignCash) on the TARGET2 calendar of the Rotterdam venue. Nothing automated; quality adjustment and storage recorded by hand; loading the coal out (physical delivery) is not simulated (refused, visibly) | Value = tonnes x USD per tonne; broker fee 0.10 per tonne expensed; storage in fees; quality adjustment in realized P&L. Collateral: None; no short sale |
+| `electricity` | Instrument drawer, Trade tab (security ticket: Buy, Sell; no Sell short; quantity in the product's own unit), then the trade preview; position Lifecycle menu for manual cash flows. Required: Account (trading owner); Action; MWh | bid, ask, last and size (quote fixture standing in for Shaffer MarketData); fill price and fill model; value and cash = quantity x price x multiplier (unit conversion); settlement date on the venue country's calendar; commission from the Book spot fee schedule | delivery of the energy to the offtaker after the delivery period, recorded by hand as a sale at the agreed price (State a fill price); imbalance charge for the delivery day, recorded by hand (fee) | T+1 (the instrument's settlement lag) on the TARGET2 calendar of the venue. Nothing automated: the Terminal does not end the position at the end of the delivery period (power cannot be stored, but nothing enforces it); the delivery and the imbalance are recorded by hand; physical delivery itself is not simulated (refused, visibly) | Value = MWh x EUR per MWh, reported at EUR/USD 1.10; exchange fee 0.05 per MWh expensed; imbalance in fees; realized P&L on the intraday sale and on the delivery to the offtaker. Collateral: None; no short sale |
+| `agricultural_commodity` | Instrument drawer, Trade tab (security ticket: Buy, Sell; no Sell short; quantity in the product's own unit), then the trade preview; position Lifecycle menu for manual cash flows. Required: Account (trading owner); Action; Quantity in the product's own unit | bid, ask, last and size (quote fixture standing in for Shaffer MarketData); fill price and fill model; value and cash = quantity x price x multiplier (unit conversion); settlement date on the venue country's calendar; commission from the Book spot fee schedule | elevator storage, recorded by hand (fee); protein premium for the delivered grade, recorded by hand (realized) | T+2 (Book setting settlement.spot) on the US calendar. Nothing automated; storage and grade premium recorded by hand; loading out of the elevator (physical delivery) is not simulated (refused, visibly) | Value = bushels x US cents per bushel x 0.01; broker fee 0.01 per bushel expensed; storage in fees; protein premium in realized P&L. Collateral: None; no short sale |
+| `livestock` | Instrument drawer, Trade tab (security ticket: Buy, Sell; no Sell short; quantity in the product's own unit), then the trade preview; position Lifecycle menu for manual cash flows. Required: Account (trading owner); Action; Quantity in the product's own unit | bid, ask, last and size (quote fixture standing in for Shaffer MarketData); fill price and fill model; value and cash = quantity x price x multiplier (unit conversion); settlement date on the venue country's calendar; commission from the Book spot fee schedule | feedlot yardage and feed, recorded by hand (fee); transit shrink (live weight lost), recorded by hand as a sale at a stated fill price of 0.00 | T+2 (Book setting settlement.spot) on the US calendar. Nothing automated; yardage and shrink recorded by hand; shipping the cattle to the packer (physical delivery) is not simulated (refused, visibly) | Value = pounds x USD per hundredweight x 0.01; auction commission 25 bp expensed; yardage in fees; shrink realizes its cost as a loss; realized P&L on sale. Collateral: None; no short sale |
+| `emissions_allowance` | Instrument drawer, Trade tab (security ticket: Buy, Sell; no Sell short; optional Settlement stated for the trade), then the trade preview. Required: Account (trading owner); Action; Quantity in the asset's own unit (whole units: lot size 1) | bid, ask, last and size (quote fixture standing in for Shaffer MarketData); fill price and fill model; settlement date on the venue country's calendar; commission from the Book spot fee schedule (basis points); EUR/USD conversion of every reporting figure (FX fixture) | compliance surrender, recorded by hand as a sale at a stated fill price of 0.00 | T+1 (the instrument's settlement lag) on the TARGET2 calendar of the Leipzig venue: a Thursday purchase settles the next Tuesday across Good Friday and Easter Monday. No automated event; surrender recorded by hand | Average cost in EUR; commission (2 bp) expensed; realized P&L on sale; a surrender realizes the cost of the allowances surrendered as a loss with no cash; reporting figures at EUR/USD 1.10. Collateral: None; no short sale |
+| `carbon_credit` | Instrument drawer, Trade tab (security ticket: Buy, Sell; no Sell short; optional Settlement stated for the trade), then the trade preview. Required: Account (trading owner); Action; Quantity in the asset's own unit (whole units: lot size 1); Settlement stated for the trade (lag 3, registry delivery) | bid, ask, last and size (quote fixture standing in for Shaffer MarketData); fill price and fill model; settlement date on the venue country's calendar; commission from the Book spot fee schedule (basis points) | retirement against the Book's emissions, recorded by hand as a sale at a stated fill price of 0.00; settlement lag of each OTC trade, stated on the ticket | T+3 stated on each trade (registry transfer), on the US calendar; the Book default would be T+2. No automated event; retirement recorded by hand | Average cost; broker commission 50 bp expensed; a retirement realizes the cost retired as a loss with no cash; realized P&L on the sale; owned and reported by Treasury. Collateral: None; no short sale |
+| `renewable_energy_certificate` | Instrument drawer, Trade tab (security ticket: Buy, Sell; no Sell short; optional Settlement stated for the trade), then the trade preview. Required: Account (trading owner); Action; Quantity in the asset's own unit (whole units: lot size 1) | bid, ask, last and size (quote fixture standing in for Shaffer MarketData); fill price and fill model; settlement date on the venue country's calendar; commission from the Book spot fee schedule (basis points) | retirement against electricity consumed, recorded by hand as a sale at a stated fill price of 0.00 | T+2 (Book setting settlement.spot) on the US calendar: a Thursday purchase settles the next Tuesday over Memorial Day. No automated event; retirement recorded by hand | Average cost per certificate (MWh); broker commission 50 bp expensed; a retirement realizes the cost retired as a loss with no cash; realized P&L on sale. Collateral: None; no short sale |
+
+### Product by action
+
+| Product | Action | Steps (test ids) | Engine | API | Browser | Notes |
+|---|---|---|---|---|---|---|
+| `physical_commodity` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `physical_commodity` | open | `buy` `short-sale` | passed 1, unsupported 1 | not run | not run | short-sale: unsupported by design. A physical commodity cannot be borrowed in the Terminal; a short position is not offered. |
+| `physical_commodity` | settlement | `settle-purchase` `settle-sales` | passed | not run | not run |  |
+| `physical_commodity` | storage | `converter-storage` | passed | not run | not run |  |
+| `physical_commodity` | insurance | `insurance` | passed | not run | not run |  |
+| `physical_commodity` | market data or clock move (no product action) | `quote-up` | passed | not run | not run |  |
+| `physical_commodity` | physical delivery | `physical-delivery` | unsupported | not run | not run | physical-delivery: unsupported by design. Moving the material out of the converter account is a physical delivery, which the Terminal does not simulate. |
+| `physical_commodity` | reduce | `reduce` | passed | not run | not run |  |
+| `physical_commodity` | close | `close` | passed | not run | not run |  |
+| `physical_commodity` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `precious_metal` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `precious_metal` | open | `buy` `fractional-bar` | passed 1, blocked 1 | not run | not run | fractional-bar: blocked by design. Kilobars are whole bars (lot size 1). |
+| `precious_metal` | market data or clock move (no product action) | `friday` `uk-bank-holiday` `quote-up` | passed | not run | not run |  |
+| `precious_metal` | settlement | `settle-purchase` `settle-sales` | passed | not run | not run |  |
+| `precious_metal` | storage | `vault-storage` | passed | not run | not run |  |
+| `precious_metal` | insurance | `insurance` | passed | not run | not run |  |
+| `precious_metal` | physical delivery | `physical-delivery` | unsupported | not run | not run | physical-delivery: unsupported by design. Taking the bars out of the vault is a physical delivery, which the Terminal does not simulate. |
+| `precious_metal` | reduce | `reduce` | passed | not run | not run |  |
+| `precious_metal` | close | `close` | passed | not run | not run |  |
+| `precious_metal` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `industrial_metal` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `industrial_metal` | open | `buy` `odd-lot` `short-sale` | passed 1, blocked 1, unsupported 1 | not run | not run | odd-lot: blocked by design. Copper is dealt in lots of 25 tonnes. short-sale: unsupported by design. A physical commodity cannot be borrowed in the Terminal; a short position is not offered. |
+| `industrial_metal` | settlement | `settle-purchase` `settle-sales` | passed | not run | not run |  |
+| `industrial_metal` | storage | `warehouse-rent` | passed | not run | not run |  |
+| `industrial_metal` | market data or clock move (no product action) | `quote-up` | passed | not run | not run |  |
+| `industrial_metal` | physical delivery | `physical-delivery` | unsupported | not run | not run | physical-delivery: unsupported by design. Load-out of the cathode from the warehouse is a physical delivery, which the Terminal does not simulate. |
+| `industrial_metal` | reduce | `reduce` | passed | not run | not run |  |
+| `industrial_metal` | close | `close` | passed | not run | not run |  |
+| `industrial_metal` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `crude_oil` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | passed |  |
+| `crude_oil` | open | `buy` `short-sale` | passed 1, unsupported 1 | not run | passed 1, unsupported 1 | short-sale: unsupported by design. A physical commodity cannot be borrowed in the Terminal; a short position is not offered. |
+| `crude_oil` | settlement | `settle-purchase` `settle-sales` | passed | not run | passed |  |
+| `crude_oil` | storage | `tank-storage` | passed | not run | passed |  |
+| `crude_oil` | quality adjustment | `quality-bank` | passed | not run | passed |  |
+| `crude_oil` | delivery cost | `pipeline-tariff` | passed | not run | passed |  |
+| `crude_oil` | market data or clock move (no product action) | `quote-up` | passed | not run | passed |  |
+| `crude_oil` | physical delivery | `physical-delivery` | unsupported | not run | unsupported | physical-delivery: unsupported by design. Lifting the barrels from the tank is a physical delivery, which the Terminal does not simulate. |
+| `crude_oil` | reduce | `reduce` | passed | not run | passed |  |
+| `crude_oil` | close | `close` | passed | not run | passed |  |
+| `crude_oil` | restart: persistence of everything above | `restart` | passed | not run | passed |  |
+| `refined_product` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `refined_product` | open | `buy` `short-sale` | passed 1, unsupported 1 | not run | not run | short-sale: unsupported by design. A physical commodity cannot be borrowed in the Terminal; a short position is not offered. |
+| `refined_product` | settlement | `settle-purchase` `settle-sales` | passed | not run | not run |  |
+| `refined_product` | delivery cost | `barge-freight` | passed | not run | not run |  |
+| `refined_product` | inspection | `inspection` | passed | not run | not run |  |
+| `refined_product` | market data or clock move (no product action) | `quote-up` | passed | not run | not run |  |
+| `refined_product` | physical delivery | `physical-delivery` | unsupported | not run | not run | physical-delivery: unsupported by design. Discharging the barge into the buyer tank is a physical delivery, which the Terminal does not simulate. |
+| `refined_product` | reduce | `reduce` | passed | not run | not run |  |
+| `refined_product` | close | `close` | passed | not run | not run |  |
+| `refined_product` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `natural_gas` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `natural_gas` | open | `buy` `short-sale` | passed 1, unsupported 1 | not run | not run | short-sale: unsupported by design. A physical commodity cannot be borrowed in the Terminal; a short position is not offered. |
+| `natural_gas` | settlement | `settle-purchase` `settle-sales` | passed | not run | not run |  |
+| `natural_gas` | storage | `storage-injection` `storage-withdrawal` | passed | not run | not run |  |
+| `natural_gas` | market data or clock move (no product action) | `quote-up` | passed | not run | not run |  |
+| `natural_gas` | physical delivery | `physical-delivery` | unsupported | not run | not run | physical-delivery: unsupported by design. Nominating the gas out of storage to a pipeline is a physical delivery, which the Terminal does not simulate. |
+| `natural_gas` | reduce | `reduce` | passed | not run | not run |  |
+| `natural_gas` | close | `close` | passed | not run | not run |  |
+| `natural_gas` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `lng` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `lng` | open | `buy` `short-sale` | passed 1, unsupported 1 | not run | not run | short-sale: unsupported by design. A physical commodity cannot be borrowed in the Terminal; a short position is not offered. |
+| `lng` | market data or clock move (no product action) | `friday` `marine-day` `quote-up` | passed | not run | not run |  |
+| `lng` | settlement | `settle-purchase` `settle-sales` | passed | not run | not run |  |
+| `lng` | cargo logistics | `port-charges` | passed | not run | not run |  |
+| `lng` | boil-off | `boil-off-by-hand` | passed | not run | not run |  |
+| `lng` | physical delivery | `physical-delivery` | unsupported | not run | not run | physical-delivery: unsupported by design. Discharging the cargo to the terminal is a physical delivery, which the Terminal does not simulate. |
+| `lng` | reduce | `reduce` | passed | not run | not run |  |
+| `lng` | close | `close` | passed | not run | not run |  |
+| `lng` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `coal` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `coal` | open | `buy` `short-sale` | passed 1, unsupported 1 | not run | not run | short-sale: unsupported by design. A physical commodity cannot be borrowed in the Terminal; a short position is not offered. |
+| `coal` | market data or clock move (no product action) | `friday` `quote-up` | passed | not run | not run |  |
+| `coal` | settlement | `settle-purchase` `settle-sales` | passed | not run | not run |  |
+| `coal` | quality adjustment | `calorific-value-adjustment` | passed | not run | not run |  |
+| `coal` | storage | `stockpile-storage` | passed | not run | not run |  |
+| `coal` | physical delivery | `physical-delivery` | unsupported | not run | not run | physical-delivery: unsupported by design. Loading the coal out of the stockpile is a physical delivery, which the Terminal does not simulate. |
+| `coal` | reduce | `reduce` | passed | not run | not run |  |
+| `coal` | close | `close` | passed | not run | not run |  |
+| `coal` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `electricity` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `electricity` | open | `buy-day-ahead` `short-sale` | passed 1, unsupported 1 | not run | not run | short-sale: unsupported by design. A physical commodity cannot be borrowed in the Terminal; a short position is not offered. |
+| `electricity` | market data or clock move (no product action) | `intraday-quote` | passed | not run | not run |  |
+| `electricity` | reduce | `sell-back-intraday` | passed | not run | not run |  |
+| `electricity` | settlement | `delivery-day` `settle-offtake` | passed | not run | not run |  |
+| `electricity` | imbalance | `imbalance-charge` | passed | not run | not run |  |
+| `electricity` | physical delivery | `physical-delivery` | unsupported | not run | not run | physical-delivery: unsupported by design. The physical flow of the power during the delivery day is not simulated. |
+| `electricity` | delivery period | `delivered-to-offtaker` | passed | not run | not run |  |
+| `electricity` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `agricultural_commodity` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `agricultural_commodity` | open | `buy` `short-sale` | passed 1, unsupported 1 | not run | not run | short-sale: unsupported by design. A physical commodity cannot be borrowed in the Terminal; a short position is not offered. |
+| `agricultural_commodity` | settlement | `settle-purchase` `settle-sales` | passed | not run | not run |  |
+| `agricultural_commodity` | storage | `elevator-storage` | passed | not run | not run |  |
+| `agricultural_commodity` | quality adjustment | `protein-premium` | passed | not run | not run |  |
+| `agricultural_commodity` | market data or clock move (no product action) | `quote-up` | passed | not run | not run |  |
+| `agricultural_commodity` | physical delivery | `physical-delivery` | unsupported | not run | not run | physical-delivery: unsupported by design. Loading the wheat out of the elevator is a physical delivery, which the Terminal does not simulate. |
+| `agricultural_commodity` | reduce | `reduce` | passed | not run | not run |  |
+| `agricultural_commodity` | close | `close` | passed | not run | not run |  |
+| `agricultural_commodity` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `livestock` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `livestock` | open | `buy` `short-sale` | passed 1, unsupported 1 | not run | not run | short-sale: unsupported by design. A physical commodity cannot be borrowed in the Terminal; a short position is not offered. |
+| `livestock` | settlement | `settle-purchase` `settle-sales` | passed | not run | not run |  |
+| `livestock` | storage | `feedlot-yardage` | passed | not run | not run |  |
+| `livestock` | weight loss | `transit-shrink-by-hand` | passed | not run | not run |  |
+| `livestock` | market data or clock move (no product action) | `quote-up` | passed | not run | not run |  |
+| `livestock` | physical delivery | `physical-delivery` | unsupported | not run | not run | physical-delivery: unsupported by design. Shipping the cattle to the packer is a physical delivery, which the Terminal does not simulate. |
+| `livestock` | reduce | `reduce` | passed | not run | not run |  |
+| `livestock` | close | `close` | passed | not run | not run |  |
+| `livestock` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `emissions_allowance` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `emissions_allowance` | open | `buy` `fractional-allowance` `short-sale` | passed 1, blocked 1, unsupported 1 | not run | not run | fractional-allowance: blocked by design. An allowance is indivisible (lot size 1). short-sale: unsupported by design. There is no securities borrow for allowances in the Terminal; a short position is not offered. |
+| `emissions_allowance` | market data or clock move (no product action) | `good-friday` `easter-monday` `quote-up` | passed | not run | not run |  |
+| `emissions_allowance` | settlement | `settle-purchase` `settle-reduce` `settle-close` | passed | not run | not run |  |
+| `emissions_allowance` | reduce | `reduce` | passed | not run | not run |  |
+| `emissions_allowance` | surrender | `surrender-by-hand` | passed | not run | not run |  |
+| `emissions_allowance` | close | `close` | passed | not run | not run |  |
+| `emissions_allowance` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `carbon_credit` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `carbon_credit` | open | `buy-t3` `fractional-credit` `short-sale` | passed 1, blocked 1, unsupported 1 | not run | not run | fractional-credit: blocked by design. A carbon credit is one tonne and indivisible (lot size 1). short-sale: unsupported by design. Carbon credits cannot be borrowed in the Terminal; a short position is not offered. |
+| `carbon_credit` | settlement | `registry-delivery` `settle-sale` | passed | not run | not run |  |
+| `carbon_credit` | retirement | `retire-by-hand` | passed | not run | not run |  |
+| `carbon_credit` | market data or clock move (no product action) | `quote-up` | passed | not run | not run |  |
+| `carbon_credit` | close | `sell-rest-t3` | passed | not run | not run |  |
+| `carbon_credit` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `renewable_energy_certificate` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `renewable_energy_certificate` | open | `buy` `fractional-certificate` | passed 1, blocked 1 | not run | not run | fractional-certificate: blocked by design. A certificate stands for one whole MWh (lot size 1). |
+| `renewable_energy_certificate` | market data or clock move (no product action) | `friday` `memorial-day` `quote-up` | passed | not run | not run |  |
+| `renewable_energy_certificate` | settlement | `settle-purchase` `settle-sale` | passed | not run | not run |  |
+| `renewable_energy_certificate` | retirement | `retire-by-hand` | passed | not run | not run |  |
+| `renewable_energy_certificate` | close | `sell-rest` | passed | not run | not run |  |
+| `renewable_energy_certificate` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
 
 ## Digital asset (`crypto`)
 
-3 products, 0 specified.
+3 products, 3 specified in `test/matrix/specs/crypto.mjs`.
 
-| Product | Catalog support | Scenario | Engine | API | Browser |
+### Scenarios
+
+| Product | Scenario | Steps | Engine | API | Browser |
+|---|---|---:|---|---|---|
+| Cryptocurrency (`cryptocurrency`) | Halcyon (HLC), a native cryptocurrency on a crypto trading platform: weekend fills, fractional units, bps fees | 15 | complete, 0.4 s | not run | not run |
+| Stablecoin (`stablecoin`) | Eurolink euro token (EURL), a EUR stablecoin on a Belgian crypto platform, in a USD-reporting Book | 9 | complete, 0.3 s | not run | not run |
+| Tokenized asset (`tokenized_asset`) | Meridian On-chain Treasury Token (MOTT): a tokenized short-term Treasury fund, income recorded by hand | 10 | complete, 0.3 s | not run | not run |
+
+### Ticket, inputs and behaviour
+
+| Product | Ticket and required fields | Automatic inputs | Manual inputs | Settlement and lifecycle events | Accounting and collateral |
 |---|---|---|---|---|---|
-| Cryptocurrency (`cryptocurrency`) | Full lifecycle | not yet specified | not run | not run | not run |
-| Stablecoin (`stablecoin`) | Full lifecycle | not yet specified | not run | not run | not run |
-| Tokenized asset (`tokenized_asset`) | Full lifecycle | not yet specified | not run | not run | not run |
+| `cryptocurrency` | Instrument drawer, Trade tab (security ticket: Buy, Sell; no Sell short), then the trade preview. Required: Account (trading owner); Action; Units (fractional to 1e-8) | bid, ask, last and size (quote fixture standing in for Shaffer MarketData); fill price and fill model; settlement date on the 24x7 calendar (same day); commission from the Book crypto fee schedule (basis points) | staking reward (units received), recorded by hand as a purchase at a stated fill price of 0.00; forks and airdrops the same way | Same day (Book setting settlement.crypto = 0) on the 24x7 calendar (ALLDAYS): weekend trades settle on the weekend. None automated; staking rewards, forks and airdrops recorded by hand | Average cost; commission in basis points expensed; realized P&L on sale; valued at the last price; units received for nothing carried at zero cost (their value is unrealized gain, not income). Collateral: None; no securities borrow, so no short sale |
+| `stablecoin` | Instrument drawer, Trade tab (security ticket: Buy, Sell; no Sell short), then the trade preview. Required: Account (trading owner); Action; Units (fractional to 1e-8) | bid, ask, last and size (quote fixture standing in for Shaffer MarketData); fill price and fill model; settlement date on the 24x7 calendar (same day); commission from the Book crypto fee schedule (basis points); EUR/USD conversion for every reporting figure (FX fixture standing in for Shaffer MarketData) | none (the peg is observed in the quote, not assumed) | Same day on the 24x7 calendar, in EUR from the Account's euro balance; the Sunday sale settles on the Sunday. None automated | Average cost in EUR; commission in EUR converted at the posting rate; realized P&L in EUR converted at the sale date rate; FX effect = translation of euro balances at cost. Collateral: None; no short sale |
+| `tokenized_asset` | Instrument drawer, Trade tab (security ticket: Buy, Sell; no Sell short), then the trade preview. Required: Account (trading owner); Action; Units (fractional to 1e-8) | bid, ask, last and size (quote fixture standing in for Shaffer MarketData); fill price and fill model; settlement date on the 24x7 calendar (same day); commission from the Book crypto fee schedule (basis points) | income on the underlying (the fund's monthly distribution), recorded by hand as a manual cash flow (dividend) on the position; network (gas) fee of an on-chain transfer, recorded by hand as a manual cash flow (fee) | Same day on the 24x7 calendar (Book setting settlement.crypto = 0). No event automated; income of the underlying and network fees recorded by hand | Average cost; commission in basis points expensed; manual income in dividends, network fee in fees; realized P&L on sale; valued at the last price. Collateral: None; no short sale |
+
+### Product by action
+
+| Product | Action | Steps (test ids) | Engine | API | Browser | Notes |
+|---|---|---|---|---|---|---|
+| `cryptocurrency` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `cryptocurrency` | open | `buy-saturday` `short-sale` | passed 1, unsupported 1 | not run | not run | short-sale: unsupported by design. A digital asset has no securities borrow in the Terminal, so it cannot be sold short. |
+| `cryptocurrency` | market data or clock move (no product action) | `sunday` `quote-sunday` `monday` `quote-monday` | passed | not run | not run |  |
+| `cryptocurrency` | increase | `buy-fraction-sunday` | passed | not run | not run |  |
+| `cryptocurrency` | staking reward | `staking-reward-by-hand` | passed | not run | not run |  |
+| `cryptocurrency` | reduce | `reduce` `oversell` | passed 1, blocked 1 | not run | not run | oversell: blocked by design. The second lot holds 0.12345678 HLC. |
+| `cryptocurrency` | close | `close-lot` `close-fraction` `sell-reward` | passed | not run | not run |  |
+| `cryptocurrency` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `stablecoin` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `stablecoin` | open | `buy` `short-sale` | passed 1, unsupported 1 | not run | not run | short-sale: unsupported by design. A digital asset has no securities borrow in the Terminal, so it cannot be sold short. |
+| `stablecoin` | fx effect | `euro-strengthens` | passed | not run | not run |  |
+| `stablecoin` | market data or clock move (no product action) | `sunday` `re-pegged` | passed | not run | not run |  |
+| `stablecoin` | reduce | `oversell` | blocked | not run | not run | oversell: blocked by design. The Account holds 40,000 EURL. |
+| `stablecoin` | close | `sell-sunday` | passed | not run | not run |  |
+| `stablecoin` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `tokenized_asset` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `tokenized_asset` | open | `buy` `short-sale` | passed 1, unsupported 1 | not run | not run | short-sale: unsupported by design. A digital asset has no securities borrow in the Terminal, so it cannot be sold short. |
+| `tokenized_asset` | manual fee | `network-fee-by-hand` | passed | not run | not run |  |
+| `tokenized_asset` | market data or clock move (no product action) | `saturday` `quote-saturday` | passed | not run | not run |  |
+| `tokenized_asset` | income | `income-by-hand` | passed | not run | not run |  |
+| `tokenized_asset` | reduce | `reduce-saturday` | passed | not run | not run |  |
+| `tokenized_asset` | close | `close` | passed | not run | not run |  |
+| `tokenized_asset` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
 
 ## Future (`future`)
 
@@ -687,29 +1543,29 @@ By engine family:
 
 | Product | Scenario | Steps | Engine | API | Browser |
 |---|---|---:|---|---|---|
-| Equity (single-stock) future (`equity_future`) | Calloway Freight Lines single-stock future (100 shares, physical delivery), March 2026 | 27 | complete, 0.5 s | complete, 1.3 s | complete, 26.6 s |
-| Equity-index future (`equity_index_future`) | Meridian 500 Index future (50 USD a point), March and June 2026, CME | 28 | complete, 0.5 s | complete, 1.4 s | complete, 29.5 s |
-| Government-bond future (`gov_bond_future`) | Euro-Bund future (100,000 EUR face, 10 EUR a tick), June 2026, Eurex, held short across 1 May | 18 | complete, 0.4 s | complete, 1.2 s | complete, 19.8 s |
-| Treasury future (`treasury_future`) | 10-Year US Treasury Note future (100,000 USD face, 1/64 tick), March 2026, CBOT, held to its last trading day | 19 | complete, 0.3 s | complete, 1.1 s | complete, 18.9 s |
-| Short-term interest-rate future (`stir_future`) | Three-Month SOFR future (100 minus the rate, 25 USD a basis point), December 2025 contract, CME, owned by Treasury | 17 | complete, 0.3 s | complete, 1.0 s | complete, 17.5 s |
+| Equity (single-stock) future (`equity_future`) | Calloway Freight Lines single-stock future (100 shares, physical delivery), March 2026 | 26 | complete, 0.6 s | incomplete (1 of 26 not run) | incomplete (1 of 26 not run) |
+| Equity-index future (`equity_index_future`) | Meridian 500 Index future (50 USD a point), March and June 2026, CME | 29 | complete, 0.6 s | incomplete (1 of 29 not run) | complete, 37.3 s |
+| Government-bond future (`gov_bond_future`) | Euro-Bund future (100,000 EUR face, 10 EUR a tick), June 2026, Eurex, held short across 1 May | 19 | complete, 0.4 s | incomplete (1 of 19 not run) | incomplete (1 of 19 not run) |
+| Treasury future (`treasury_future`) | 10-Year US Treasury Note future (100,000 USD face, 1/64 tick), March 2026, CBOT, held to its last trading day | 20 | complete, 0.4 s | incomplete (1 of 20 not run) | incomplete (1 of 20 not run) |
+| Short-term interest-rate future (`stir_future`) | Three-Month SOFR future (100 minus the rate, 25 USD a basis point), December 2025 contract, CME, owned by Treasury | 17 | complete, 0.5 s | complete, 1.0 s | complete, 17.5 s |
 | FX future (`fx_future`) | Euro / Japanese yen future (125,000 EUR, quoted and margined in JPY), March 2026, CME, held to its last trading day | 17 | complete, 0.3 s | complete, 1.2 s | complete, 18.6 s |
-| Commodity future (`commodity_future`) | Light sweet crude oil future (1,000 barrels), May 2026 rolled into June 2026, NYMEX, held over Good Friday | 19 | complete, 0.3 s | complete, 1.2 s | complete, 19.9 s |
-| Volatility future (`volatility_future`) | Volatility index future (1,000 USD a point), March 2026, Cboe Futures Exchange, short through a spike | 21 | complete, 0.4 s | complete, 1.1 s | complete, 21.4 s |
-| Dividend future (`dividend_future`) | Meridian 500 Annual Dividend Index future (250 USD a point), December 2026, CME | 20 | complete, 0.4 s | complete, 1.4 s | complete, 19.7 s |
-| Cryptocurrency future (`crypto_future`) | Bitcoin future (5 BTC, cash settled to a reference rate), March 2026, CME | 21 | complete, 0.4 s | complete, 1.1 s | complete, 20.4 s |
-| Perpetual future (`perpetual_future`) | Bitcoin / US dollar perpetual future (0.1 BTC, funding recorded by hand), traded every day | 18 | complete, 0.4 s | complete, 1.0 s | complete, 20.9 s |
+| Commodity future (`commodity_future`) | Light sweet crude oil future (1,000 barrels, physically delivered at Cushing), May 2026 rolled into June 2026, NYMEX, held over Good Friday and to delivery | 30 | complete, 0.6 s | incomplete (13 of 30 not run) | incomplete (13 of 30 not run) |
+| Volatility future (`volatility_future`) | Volatility index future (1,000 USD a point), March 2026, Cboe Futures Exchange, short through a spike | 21 | complete, 0.3 s | complete, 1.1 s | complete, 21.4 s |
+| Dividend future (`dividend_future`) | Meridian 500 Annual Dividend Index future (250 USD a point), December 2026, CME | 20 | complete, 0.3 s | complete, 1.4 s | complete, 19.7 s |
+| Cryptocurrency future (`crypto_future`) | Bitcoin future (5 BTC, cash settled to a reference rate), March 2026, CME | 21 | complete, 0.6 s | complete, 1.1 s | complete, 20.4 s |
+| Perpetual future (`perpetual_future`) | Bitcoin / US dollar perpetual future (0.1 BTC, funding recorded by hand), traded every day | 18 | complete, 0.6 s | complete, 1.0 s | complete, 20.9 s |
 
 ### Ticket, inputs and behaviour
 
 | Product | Ticket and required fields | Automatic inputs | Manual inputs | Settlement and lifecycle events | Accounting and collateral |
 |---|---|---|---|---|---|
-| `equity_future` | Instrument drawer, Trade tab (futures ticket: Account, Buy or Sell, Contracts), then the trade preview; the strategy instance for Resize, Close and Roll. Required: Account; Action (Buy / Sell); Contracts; for the delivery recorded by hand: the stock ticket with "State a fill price" | bid, ask and last (quote fixture standing in for Shaffer MarketData); fill price and fill model; initial margin from the contract terms; commission per contract from the Book fee schedule; daily settlement price (close fixture) | final settlement price, entered by hand on the contract (Overview, "Enter a price by hand", closing price for the last trading day); physical delivery: purchase of 100 shares a contract at the final settlement price, on the stock ticket with a stated fill price | No purchase cash; initial margin 1,500 USD a contract; daily variation margin; at expiry closed out in cash at the final settlement price (physical delivery is not simulated); the shares delivered by hand settle T+1 like any stock purchase. Daily variation margin (automatic); final settlement waits, visibly blocked, until a final settlement price exists, then closes the contract in cash (automatic) and states that delivery is not simulated; delivery by hand | Nil cost; variation margin and closes are realized P&L; commission 0.75 USD a contract with a 5.00 USD minimum an order; without a price the position is unpriced and the net asset value provisional; delivered shares carried at the final settlement price. Collateral: Initial margin per contract, posted in cash, released on reduction, close and final settlement |
+| `equity_future` | Instrument drawer, Trade tab (futures ticket: Account, Buy or Sell, Contracts), then the trade preview; the strategy instance for Resize, Close and Roll. Required: Account; Action (Buy / Sell); Contracts; registration: Underlying (the deliverable stock), Settlement Physical delivery | bid, ask and last (quote fixture standing in for Shaffer MarketData); fill price and fill model; initial margin from the contract terms; commission per contract from the Book fee schedule; daily settlement price (close fixture) | final settlement price, entered by hand on the contract (Overview, "Enter a price by hand", closing price for the last trading day) | No purchase cash; initial margin 1,500 USD a contract; daily variation margin; at expiry the contracts close at the final settlement price and 100 shares a contract are delivered (simulated, paper entry) at that price; the invoice settles T+1 like any stock purchase. Daily variation margin (automatic); final settlement waits, visibly blocked, until a final settlement price exists, then closes the contracts and simulates the delivery of the shares (automatic, labelled simulated) | Nil cost; variation margin and closes are realized P&L; commission 0.75 USD a contract with a 5.00 USD minimum an order; without a price the position is unpriced and the net asset value provisional; delivered shares carried at the final settlement price. Collateral: Initial margin per contract, posted in cash, released on reduction, close and final settlement |
 | `equity_index_future` | Instrument drawer, Trade tab (futures ticket: Account, Buy or Sell, Contracts), then the trade preview; the strategy instance for Resize, Close and Roll. Required: Account; Action (Buy / Sell); Contracts | bid, ask and last (quote fixture standing in for Shaffer MarketData); fill price and fill model; initial margin from the contract terms; commission per contract from the Book fee schedule; daily settlement price (close fixture) | none: the final settlement price is supplied as the close of the last trading day (it can be entered by hand, see equity_future) | No purchase cash. Initial margin 22,000 USD a contract is posted on the trade date; variation margin is paid or received in cash at each end-of-day pass; cash final settlement on the last trading day. Daily variation margin (automatic); final settlement in cash at the final settlement price on the last trading day (automatic); roll to the next contract month from the strategy instance; a contract past its last trading day refuses trades | Nil cost; value is open trade equity since the last settlement; variation margin and closes are realized P&L; commission 2.25 USD a contract expensed; margin posted is the Account's own asset. Collateral: Initial margin per contract from the contract terms, held in "Margin and collateral posted": not available to trade or to withdraw; released pro rata on reduction, close and final settlement. An order whose margin is not covered is refused |
-| `gov_bond_future` | Instrument drawer, Trade tab (futures ticket: Account, Buy or Sell, Contracts), then the trade preview; the strategy instance for Resize, Close and Roll. Required: Account; Action (Buy / Sell); Contracts | bid, ask and last (quote fixture standing in for Shaffer MarketData); fill price and fill model; initial margin from the contract terms; commission per contract from the Book fee schedule; daily settlement price (close fixture) | none in this scenario (delivery of a deliverable bond is not simulated: the position is closed before the last trading day) | No purchase cash; initial margin 2,600 EUR a contract and daily variation margin, both in euros; no variation on a TARGET holiday. Daily variation margin on the contract's own business days (automatic); none on 1 May 2026 (TARGET holiday, US business day); the first settlement after the holiday is against the last settlement before it | Euro cash, margin and open trade equity translated to USD at the current fixture rate; realized P&L and commission at the rate of their day; the rest is FX effects; commission 1.50 EUR a contract. Collateral: Initial margin per contract in EUR, posted from the Account's EUR cash; released pro rata |
-| `treasury_future` | Instrument drawer, Trade tab (futures ticket: Account, Buy or Sell, Contracts), then the trade preview; the strategy instance for Resize, Close and Roll. Required: Account; Action (Buy / Sell); Contracts | bid, ask and last (quote fixture standing in for Shaffer MarketData); fill price and fill model; initial margin from the contract terms; commission per contract from the Book fee schedule; daily settlement price (close fixture) | none in this scenario; delivery of a Treasury note against the invoice amount is not simulated and would be recorded by hand on the note's own ticket | No purchase cash; initial margin 2,200 USD a contract; daily variation margin at 15.625 USD a sixty-fourth; closed out in cash on the last trading day. Daily variation margin (automatic); on the last trading day closed in cash at the final settlement price, labelled "physical delivery is not simulated" (automatic); a contract past that day refuses trades | Nil cost; prices in sixty-fourths carried exactly; variation margin and closes are realized P&L; commission 0.85 USD a contract. Collateral: Initial margin per contract, released pro rata on reduction and at final settlement |
+| `gov_bond_future` | Instrument drawer, Trade tab (futures ticket: Account, Buy or Sell, Contracts), then the trade preview; the strategy instance for Resize, Close and Roll. Required: Account; Action (Buy / Sell); Contracts | bid, ask and last (quote fixture standing in for Shaffer MarketData); fill price and fill model; initial margin from the contract terms; commission per contract from the Book fee schedule; daily settlement price (close fixture) | none in this scenario (delivery of a deliverable bond is not simulated: a delivery notice is refused with that reason, and the position is closed before the last trading day) | No purchase cash; initial margin 2,600 EUR a contract and daily variation margin, both in euros; no variation on a TARGET holiday. Daily variation margin on the contract's own business days (automatic); none on 1 May 2026 (TARGET holiday, US business day); the first settlement after the holiday is against the last settlement before it | Euro cash, margin and open trade equity translated to USD at the current fixture rate; realized P&L and commission at the rate of their day; the rest is FX effects; commission 1.50 EUR a contract. Collateral: Initial margin per contract in EUR, posted from the Account's EUR cash; released pro rata |
+| `treasury_future` | Instrument drawer, Trade tab (futures ticket: Account, Buy or Sell, Contracts), then the trade preview; the strategy instance for Resize, Close and Roll. Required: Account; Action (Buy / Sell); Contracts | bid, ask and last (quote fixture standing in for Shaffer MarketData); fill price and fill model; initial margin from the contract terms; commission per contract from the Book fee schedule; daily settlement price (close fixture) | none in this scenario; delivery of a Treasury note against the invoice amount is not simulated and would be recorded by hand on the note's own ticket | No purchase cash; initial margin 2,200 USD a contract; daily variation margin at 15.625 USD a sixty-fourth; closed out in cash on the last trading day. Daily variation margin (automatic); a delivery notice is refused because the deliverable basket, conversion factors and accrued interest are not modelled; on the last trading day closed in cash at the final settlement price, labelled "physical delivery is not simulated" (automatic); a contract past that day refuses trades | Nil cost; prices in sixty-fourths carried exactly; variation margin and closes are realized P&L; commission 0.85 USD a contract. Collateral: Initial margin per contract, released pro rata on reduction and at final settlement |
 | `stir_future` | Instrument drawer, Trade tab (futures ticket: Account, Buy or Sell, Contracts), then the trade preview; the strategy instance for Resize, Close and Roll. Required: Account (here: Treasury); Action (Buy / Sell); Contracts | bid, ask and last (quote fixture standing in for Shaffer MarketData); fill price and fill model; initial margin from the contract terms; commission per contract from the Book fee schedule; daily settlement price (close fixture) | none: the final settlement price (100 minus the compounded rate) is supplied as the close of the last trading day | No purchase cash; initial margin 550 USD a contract from Treasury's cash; daily variation margin at 25 USD a basis point; cash final settlement at 100 minus the rate. Daily variation margin (automatic); cash final settlement on the last trading day (automatic); a contract past that day refuses trades | Treasury's own position, P&L and margin; the Account is untouched; the Book total includes it once; commission 1.20 USD a contract. Collateral: Initial margin per contract posted from Treasury's settled cash: not transferable to an Account while posted |
 | `fx_future` | Instrument drawer, Trade tab (futures ticket: Account, Buy or Sell, Contracts), then the trade preview; the strategy instance for Resize, Close and Roll. Required: Account; Action (Buy / Sell); Contracts | bid, ask and last (quote fixture standing in for Shaffer MarketData); fill price and fill model; initial margin from the contract terms; commission per contract from the Book fee schedule; daily settlement price (close fixture) | none in this scenario; the delivery of 125,000 EUR a contract against yen is not simulated and would be recorded by hand as a currency conversion | No purchase cash; initial margin 600,000 JPY a contract and daily variation margin in yen from the Account's JPY cash; closed out in cash on the last trading day. Daily variation margin (automatic); on the last trading day closed in cash at the final settlement price, labelled "physical delivery is not simulated" (automatic); a contract past that day refuses trades | Yen cash, margin and open trade equity translated to USD at the current USD/JPY fixture; realized P&L and commission at the rate of their day; the rest is FX effects; commission 240 JPY a contract. Collateral: Initial margin per contract in JPY; released pro rata on reduction and at final settlement |
-| `commodity_future` | Instrument drawer, Trade tab (futures ticket: Account, Buy or Sell, Contracts), then the trade preview; the strategy instance for Resize, Close and Roll. Required: Account; Action (Buy / Sell); Contracts | bid, ask and last (quote fixture standing in for Shaffer MarketData); fill price and fill model; initial margin from the contract terms; commission per contract from the Book fee schedule; daily settlement price (close fixture) | none in this scenario; storage, delivery and inspection costs of a delivered commodity are not simulated | No purchase cash; initial margin 6,000 USD a contract; daily variation margin at 10 USD a cent; no pass on Good Friday. Daily variation margin (automatic); no end-of-day pass on a US market holiday; roll from the strategy instance (close May, open June, one confirmation); taking delivery is not offered and is refused | Nil cost; variation margin and the roll's closing leg are realized P&L; the June leg starts its own reference price; commission 1.50 USD a contract. Collateral: Initial margin per contract; the roll releases the May margin and posts the June margin in one package, and the preview requires the June margin in free cash |
+| `commodity_future` | Instrument drawer, Trade tab (futures ticket: Account, Buy or Sell, Contracts), then the trade preview; the strategy instance for Resize, Close and Roll. Required: Account; Action (Buy / Sell); Contracts; registration: Underlying (the deliverable), Settlement Physical delivery, Deliverable units per contract, First notice day, Deliverable grade, Delivery location; delivery notice: Contracts to deliver | bid, ask and last (quote fixture standing in for Shaffer MarketData); fill price and fill model; initial margin from the contract terms; commission per contract from the Book fee schedule; daily settlement price (close fixture) | delivery notice (position Lifecycle menu, "Delivery notice"): refused here for the long side, before the window, for more than held and on a closed position; storage, transport and inspection costs of delivered oil are not simulated (would be manual cash flows) | No purchase cash; initial margin 6,000 USD a contract; daily variation margin at 10 USD a cent; no pass on Good Friday; held to the last trading day: simulated physical delivery at the final settlement price, invoice owed T+2 on the deliverable's own settlement terms; the delivered barrels sold and settled T+2 across Memorial Day. Daily variation margin (automatic); no end-of-day pass on a US market holiday; roll from the strategy instance (close May, open June, one confirmation); partial close; at the last trading day simulated delivery (automatic, labelled simulated); delivery notices refused with a specific reason when outside the contract's terms | Nil cost; variation margin, closes and the final settlement are realized P&L; delivered barrels carried at the invoice amount and then sold (realized); commission 1.50 USD a contract and 0.01 USD a barrel. Collateral: Initial margin per contract; the roll releases the May margin and posts the June margin in one package; the partial close and the final settlement release margin |
 | `volatility_future` | Instrument drawer, Trade tab (futures ticket: Account, Buy or Sell, Contracts), then the trade preview; the strategy instance for Resize, Close and Roll. Required: Account; Action (Buy / Sell); Contracts | bid, ask and last (quote fixture standing in for Shaffer MarketData); fill price and fill model; initial margin from the contract terms; commission per contract from the Book fee schedule; daily settlement price (close fixture) | funding of a cash deficit after variation margin: a Treasury transfer made by the user (the Terminal never funds it by itself) | No purchase cash; initial margin 8,000 USD a contract; daily variation margin at 1,000 USD a point; cash final settlement on the Wednesday. Daily variation margin (automatic), paid even when it exceeds free cash: settled cash goes negative and a cash-deficit alert is raised; cash final settlement at the special opening quotation (automatic) | Nil cost; variation margin and closes are realized P&L; a deficit is shown as negative settled cash, never as a silent loan or transfer; commission 1.80 USD a contract. Collateral: Initial margin per contract; a variation call beyond free cash is a visible deficit; new orders are refused while it stands; the funding transfer creates no P&L |
 | `dividend_future` | Instrument drawer, Trade tab (futures ticket: Account, Buy or Sell, Contracts), then the trade preview; the strategy instance for Resize, Close and Roll. Required: Account; Action (Buy / Sell); Contracts | bid, ask and last (quote fixture standing in for Shaffer MarketData); fill price and fill model; initial margin from the contract terms; commission per contract from the Book fee schedule; daily settlement price (close fixture) | none: the final value of the dividend index is supplied as the close of the last trading day | No purchase cash; initial margin 1,100 USD a contract; daily variation margin at 250 USD a dividend point; cash final settlement at the realized dividend index. Daily variation margin (automatic); cash final settlement on the third Friday of December (automatic); a contract past that day refuses trades | Nil cost; no dividend income is booked (the dividends are the price); variation margin and closes are realized P&L; commission 1.10 USD a contract. Collateral: Initial margin per contract; released pro rata on reduction and at final settlement |
 | `crypto_future` | Instrument drawer, Trade tab (futures ticket: Account, Buy or Sell, Contracts), then the trade preview; the strategy instance for Resize, Close and Roll. Required: Account; Action (Buy / Sell); Contracts | bid, ask and last (quote fixture standing in for Shaffer MarketData); fill price and fill model; initial margin from the contract terms; commission per contract from the Book fee schedule; daily settlement price (close fixture) | none: the final reference rate is supplied as the close of the last trading day | No purchase cash and no bitcoin: initial margin 95,000 USD a contract; daily variation margin at 5 USD a dollar of price; cash final settlement at the reference rate. Daily variation margin on exchange business days (automatic); cash final settlement on the last Friday of the month (automatic); a contract past that day refuses trades | Nil cost; no digital asset is held; variation margin and closes are realized P&L; commission 6.00 USD a contract. Collateral: Initial margin per contract; an order whose margin is not covered by free cash is refused |
@@ -723,7 +1579,7 @@ By engine family:
 | `equity_future` | open short | `open-short` | passed | passed | passed |  |
 | `equity_future` | initial margin | `open-short` `open-long` | passed | passed | passed |  |
 | `equity_future` | variation margin | `day-1-variation` `day-2-variation` `day-3-variation` `day-4-variation` | passed | passed | passed |  |
-| `equity_future` | market data or clock move (no product action) | `tuesday` `quote-down` `wednesday` `thursday` `quote-up` `stock-close` `monday` `stock-up` | passed | passed | passed |  |
+| `equity_future` | market data or clock move (no product action) | `tuesday` `quote-down` `wednesday` `thursday` `quote-up` `stock-close` `tuesday-after-expiry` `stock-up` | passed | passed 7, not run 1 | passed 7, not run 1 |  |
 | `equity_future` | reduce | `reduce-short` | passed | passed | passed |  |
 | `equity_future` | margin release | `reduce-short` `cover-rest` `final-price-by-hand` | passed | passed | passed |  |
 | `equity_future` | close short | `cover-rest` | passed | passed | passed |  |
@@ -732,14 +1588,14 @@ By engine family:
 | `equity_future` | missing price | `quote-ends` `expiry-without-a-price` | passed | passed | passed |  |
 | `equity_future` | manual price | `final-price-by-hand` | passed | passed | passed |  |
 | `equity_future` | expiry | `final-price-by-hand` | passed | passed | passed |  |
+| `equity_future` | settlement | `monday` `sale-settles` | passed | passed | passed |  |
 | `equity_future` | expired contract | `trade-after-expiry` | blocked | blocked | blocked | trade-after-expiry: blocked by design. The contract's last trading day was 20 March 2026. |
-| `equity_future` | physical delivery | `delivery-by-hand` | passed | passed | passed |  |
-| `equity_future` | settlement | `delivery-settles` `sale-settles` | passed | passed | passed |  |
 | `equity_future` | close | `sell-delivered-shares` | passed | passed | passed |  |
 | `equity_future` | restart: persistence of everything above | `restart` | passed | passed | passed |  |
 | `equity_index_future` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | passed | passed |  |
 | `equity_index_future` | open | `open` `open-to-expiry` | passed | passed | passed |  |
 | `equity_index_future` | initial margin | `open` | passed | passed | passed |  |
+| `equity_index_future` | physical delivery | `request-delivery-cash-settled` | blocked | not run | blocked | request-delivery-cash-settled: blocked by design. A cash-settled index future has no delivery. |
 | `equity_index_future` | margin shortfall | `order-beyond-margin` | blocked | blocked | blocked | order-beyond-margin: blocked by design. Initial margin for 10 more contracts is not covered by the Account's free cash. It is refused, not funded. |
 | `equity_index_future` | margin not spendable | `withdraw-posted-margin` | blocked | blocked | blocked | withdraw-posted-margin: blocked by design. Margin posted is not available to withdraw. |
 | `equity_index_future` | variation margin | `day-1-variation` `day-2-variation` `day-3-variation` `day-4-variation` `expiry-cash-settlement` | passed | passed | passed |  |
@@ -760,6 +1616,7 @@ By engine family:
 | `gov_bond_future` | open short | `open-short` | passed | passed | passed |  |
 | `gov_bond_future` | initial margin | `open-short` | passed | passed | passed |  |
 | `gov_bond_future` | variation margin | `day-1-variation` `day-2-variation` `day-3-variation` `exchange-holiday` `day-after-holiday-variation` | passed | passed | passed |  |
+| `gov_bond_future` | physical delivery | `request-delivery-bond-future` | unsupported | not run | not run | request-delivery-bond-future: unsupported by design. Delivery of a bond against a bond future is not simulated: the deliverable basket, conversion factors and accrued interest are not modelled. |
 | `gov_bond_future` | market data or clock move (no product action) | `wednesday` `quote-up` `thursday` `monday` `quote-down` `tuesday` | passed | passed | passed |  |
 | `gov_bond_future` | increase | `increase` | passed | passed | passed |  |
 | `gov_bond_future` | exchange holiday | `exchange-holiday` `day-after-holiday-variation` | passed | passed | passed |  |
@@ -771,13 +1628,13 @@ By engine family:
 | `treasury_future` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | passed | passed |  |
 | `treasury_future` | open | `open` | passed | passed | passed |  |
 | `treasury_future` | initial margin | `open` | passed | passed | passed |  |
+| `treasury_future` | physical delivery | `request-delivery-bond-future` `expiry-physical-contract` | passed 1, unsupported 1 | passed 1, not run 1 | passed 1, not run 1 | request-delivery-bond-future: unsupported by design. Delivery of a Treasury note against a Treasury future is not simulated: the deliverable basket, conversion factors and accrued interest are not modelled. |
 | `treasury_future` | variation margin | `day-1-variation` `day-2-variation` `day-3-variation` `day-4-variation` | passed | passed | passed |  |
 | `treasury_future` | market data or clock move (no product action) | `tuesday` `quote-tuesday` `wednesday` `quote-wednesday` `thursday` `quote-thursday` `monday` | passed | passed | passed |  |
 | `treasury_future` | reduce | `reduce` | passed | passed | passed |  |
 | `treasury_future` | margin release | `reduce` `expiry-physical-contract` | passed | passed | passed |  |
 | `treasury_future` | final settlement | `last-trading-day` `final-settlement-price` `expiry-physical-contract` | passed | passed | passed |  |
 | `treasury_future` | expiry | `expiry-physical-contract` | passed | passed | passed |  |
-| `treasury_future` | physical delivery | `expiry-physical-contract` | passed | passed | passed |  |
 | `treasury_future` | expired contract | `trade-after-expiry` | blocked | blocked | blocked | trade-after-expiry: blocked by design. The contract's last trading day was 20 March 2026. |
 | `treasury_future` | restart: persistence of everything above | `restart` | passed | passed | passed |  |
 | `stir_future` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | passed | passed |  |
@@ -809,13 +1666,17 @@ By engine family:
 | `commodity_future` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | passed | passed |  |
 | `commodity_future` | open | `open` | passed | passed | passed |  |
 | `commodity_future` | initial margin | `open` | passed | passed | passed |  |
-| `commodity_future` | physical delivery | `request-delivery` | unsupported | unsupported | unsupported | request-delivery: unsupported by design. Physical delivery of a future is not simulated: the Terminal offers no delivery action on the position. |
-| `commodity_future` | variation margin | `day-1-variation` `day-2-variation` `good-friday` `day-after-holiday-variation` `day-4-variation` | passed | passed | passed |  |
-| `commodity_future` | market data or clock move (no product action) | `thursday` `quote-down` `monday` `quote-monday` `june-quote` `tuesday` `wednesday` `quote-wednesday` | passed | passed | passed |  |
+| `commodity_future` | physical delivery | `request-delivery-too-many` `request-delivery-before-window` `request-delivery-long-side` `expiry-delivery` `request-delivery-closed` | passed 1, blocked 4 | not run | not run | request-delivery-too-many: blocked by design. A delivery notice cannot be for more contracts than the position holds. request-delivery-before-window: blocked by design. The delivery window of the May contract opens on its last trading day, 21 April 2026. request-delivery-long-side: blocked by design. Only the short side gives notice of delivery; the long takes delivery. request-delivery-closed: blocked by design. The position has been delivered and is closed: there is nothing left to deliver. |
+| `commodity_future` | variation margin | `day-1-variation` `day-2-variation` `good-friday` `day-after-holiday-variation` `day-4-variation` `last-trading-day` | passed | passed 5, not run 1 | passed 5, not run 1 |  |
+| `commodity_future` | market data or clock move (no product action) | `thursday` `quote-down` `monday` `quote-monday` `june-quote` `tuesday` `wednesday` `quote-wednesday` `quote-last-day` `oil-quote-last-day` `oil-quote` | passed | passed 8, not run 3 | passed 8, not run 3 |  |
 | `commodity_future` | exchange holiday | `good-friday` `day-after-holiday-variation` | passed | passed | passed |  |
 | `commodity_future` | roll | `roll` | passed | passed | passed |  |
-| `commodity_future` | close | `close` | passed | passed | passed |  |
-| `commodity_future` | margin release | `close` | passed | passed | passed |  |
+| `commodity_future` | reduce | `close-part` | passed | not run | not run |  |
+| `commodity_future` | margin release | `close-part` `expiry-delivery` | passed | not run | not run |  |
+| `commodity_future` | final settlement | `expiry-delivery` | passed | not run | not run |  |
+| `commodity_future` | expiry | `expiry-delivery` | passed | not run | not run |  |
+| `commodity_future` | settlement | `invoice-paid` `sell-delivered-oil` `sale-settles` | passed | not run | not run |  |
+| `commodity_future` | close | `sell-delivered-oil` | passed | not run | not run |  |
 | `commodity_future` | restart: persistence of everything above | `restart` | passed | passed | passed |  |
 | `volatility_future` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | passed | passed |  |
 | `volatility_future` | open short | `open-short` | passed | passed | passed |  |
@@ -878,11 +1739,11 @@ By engine family:
 
 | Product | Scenario | Steps | Engine | API | Browser |
 |---|---|---:|---|---|---|
-| Listed option (`listed_option`) | Rheintal Maschinenbau 17 April 2026 40 put, Eurex-listed, American, 100 shares, physical delivery, in euros in a US dollar Book | 24 | complete, 0.6 s | complete, 1.5 s | complete, 25.3 s |
-| Equity call / put (`equity_option`) | Halden Rail Systems 20 March 2026 50 call, Cboe-listed, American, 100 shares, physical delivery | 29 | complete, 0.6 s | complete, 1.4 s | complete, 30.2 s |
-| ETF option (`etf_option`) | Corvane Total Market ETF options (17 April 80 put, 17 April 86 call, 15 May 78 put), Cboe-listed, American, 100 shares, physical delivery | 33 | complete, 0.6 s | complete, 1.7 s | complete, 32.6 s |
-| Index option (`index_option`) | Northmark 400 Index options, 17 April 2026 (4000 call, 4050 call, 3900 put), Cboe-listed, European, cash-settled at 100 x the index, AM-settled | 20 | complete, 0.5 s | complete, 1.3 s | complete, 24.9 s |
-| Option on a future (`option_on_future`) | Brennock Light Crude June 2026 options on the future (70 call, 66 put), NYMEX-listed, American, one 1,000-barrel future per contract | 27 | complete, 0.6 s | complete, 1.6 s | complete, 27.0 s |
+| Listed option (`listed_option`) | Rheintal Maschinenbau 17 April 2026 40 put, Eurex-listed, American, 100 shares, physical delivery, in euros in a US dollar Book | 24 | complete, 1.1 s | complete, 1.5 s | complete, 25.3 s |
+| Equity call / put (`equity_option`) | Halden Rail Systems 20 March 2026 50 call, Cboe-listed, American, 100 shares, physical delivery | 29 | complete, 1.3 s | complete, 1.4 s | complete, 44.8 s |
+| ETF option (`etf_option`) | Corvane Total Market ETF options (17 April 80 put, 17 April 86 call, 15 May 78 put), Cboe-listed, American, 100 shares, physical delivery | 33 | complete, 1.6 s | complete, 1.7 s | complete, 32.6 s |
+| Index option (`index_option`) | Northmark 400 Index options, 17 April 2026 (4000 call, 4050 call, 3900 put), Cboe-listed, European, cash-settled at 100 x the index, AM-settled | 20 | complete, 1.2 s | complete, 1.3 s | complete, 24.9 s |
+| Option on a future (`option_on_future`) | Brennock Light Crude June 2026 options on the future (70 call, 66 put), NYMEX-listed, American, one 1,000-barrel future per contract | 27 | complete, 1.1 s | complete, 1.6 s | complete, 27.0 s |
 
 ### Ticket, inputs and behaviour
 
@@ -979,19 +1840,138 @@ By engine family:
 
 ## OTC option (`otcoption`)
 
-16 products, 0 specified.
+16 products, 6 specified in `test/matrix/specs/otcoption-a.mjs`.
+
+### Scenarios
+
+| Product | Scenario | Steps | Engine | API | Browser |
+|---|---|---:|---|---|---|
+| OTC option (`otc_option`) | Halvorsen Robotics OTC options with Dealer B: American 52 call (physical, uncollateralized) bought; European 48 put (cash, under a CSA) written | 25 | complete, 2.0 s | not run | not run |
+| Bond option (`bond_option`) | US Treasury note options owned by Treasury: Bermudan 99.50 call (physical, at the strike plus accrued) bought; European 98.00 put (cash) written | 25 | complete, 1.4 s | not run | not run |
+| FX option (`fx_option`) | EUR call / JPY put 165.00 on 1,000,000 EUR, premium in JPY, European, physical: exchanged at expiry once the yen is funded | 19 | complete, 1.5 s | not run | not run |
+| Commodity option (`commodity_option`) | WTI crude OTC options netted under one CSA: 75 call (European, cash) bought; 68 put (American, physical barrels) written and assigned early | 30 | complete, 2.1 s | not run | not run |
+| Cryptocurrency option (`crypto_option`) | Meridian (MRD) OTC options on the 24x7 calendar: American 90,000 call (physical coins) bought and exercised early; European 70,000 put (cash) written, expiring on a Sunday | 18 | complete, 1.2 s | not run | not run |
+| Digital option (`digital_option`) | Cash-or-nothing digitals on a US ETF paying 10.00 a unit: 52 call bought (pays at expiry), 45 put written (lapses) | 16 | complete, 0.9 s | not run | not run |
+
+### Ticket, inputs and behaviour
+
+| Product | Ticket and required fields | Automatic inputs | Manual inputs | Settlement and lifecycle events | Accounting and collateral |
+|---|---|---|---|---|---|
+| `otc_option` | Registry form (Instruments, New instrument) for the contract: underlying, Type, Strike, Expiration, Payoff, Exercise style, Settlement, Multiplier, Counterparty and the required Collateral terms group; then the instrument drawer, Trade tab (Buy / Sell, quantity, State a fill price); the strategy instance for partial close, termination and the Lifecycle menu (Exercise, Early assignment). Required: Underlying instrument (or a fixing rate code); Type; Strike; Expiration; Collateral basis; Account; Action; Quantity in underlying units; State a fill price (the premium agreed with the dealer: no executable quote exists for an OTC option) | underlying price (quote fixture standing in for Shaffer MarketData) for the notional; premium settlement date, T+2 on the US calendar (settlement.otcoption = 2); commission per underlying unit from the Book fee schedule; independent amount and variation margin from the agreement terms; expiry item on the expiration date, settled against the underlying close for that date (close fixture: the stated settlement price) | premium agreed with the dealer (stated fill price); marks of both options, entered by hand (Manual entry); termination of part of the call at a stated amount per unit (stated fill price in the preview); early exercise of the American call (Lifecycle, Exercise); early assignment of the European put, refused | Premium and commission settle T+2 on the US calendar; shares delivered on exercise settle T+1 at the strike (settlement.equity = 1); a cash settlement at expiry is paid T+1. Early exercise by hand of an American call with a simulated delivery of the shares at the strike; early assignment of a European put refused; expiry item on 18 June 2026: out of the money, the put lapses and its premium is realized; nothing is scheduled afterwards | Average premium; commission expensed; premium realized on termination, on exercise and on lapse; shares delivered carried at the strike; marks by hand drive unrealized P&L; unpriced and provisional until a mark is entered. Collateral: Call: uncollateralized (explicit paper assumption): nothing posted or received. Put (written): agreement "CSA Dealer B", independent amount 10% of 10,000 x 48 = 48,000 posted at entry and returned at expiry; variation margin each end of day against the mark, threshold 0, minimum transfer 1,000, posted and returned |
+| `bond_option` | Registry form (Instruments, New instrument) for the contract: underlying, Type, Strike, Expiration, Payoff, Exercise style, Settlement, Multiplier, Counterparty and the required Collateral terms group; then the instrument drawer, Trade tab (Buy / Sell, quantity, State a fill price); the strategy instance for partial close, termination and the Lifecycle menu (Exercise, Early assignment). Required: Underlying instrument (or a fixing rate code); Type; Strike; Expiration; Collateral basis; Account; Action; Quantity in underlying units; State a fill price (the premium agreed with the dealer: no executable quote exists for an OTC option) | note price (quote fixture standing in for Shaffer MarketData) for the notional and the delivered note; accrued interest on the delivery and on the sale, from the note's registered coupon terms (ACT/ACT); premium settlement date, T+2 on the US calendar; the note settles T+1 (settlement.bond = 1); commission per unit of face from the Book fee schedule; variation margin and independent amount from the position-level terms; expiry item settled against the note's close for the expiration date (close fixture: the stated settlement price) | premium agreed with the dealer, points per 100 of face (stated fill price); marks of both options entered by hand (Manual entry), points per 100 of face; Bermudan exercise on an exercise date (Lifecycle, Exercise); exercise on another date refused | Premium and commission T+2 on the US calendar; the note delivered on exercise, and its sale, T+1 at the clean price plus accrued interest to the settlement date; the cash settlement of the put T+1. Bermudan exercise refused off its dates and recorded by hand on one, with a simulated delivery of 10,000,000 face at 99.50 plus accrued interest; the note sold before its coupon; the put cash-settled in the money at expiry; nothing scheduled afterwards | Premium per 100 of face x face x 0.01; average premium; premium realized on exercise and at expiry; the note carried at the strike with its accrued interest in Accrued income; commission expensed; marks by hand drive unrealized P&L. Collateral: Call (bought): position-level terms, variation margin only, threshold 25,000: collateral received from the dealer is restricted cash with a liability, returned when the call is exercised; no independent amount for a bought option. Put (written): independent amount 2% x 9,800,000 = 196,000, variation margin with no threshold, posted and returned at expiry |
+| `fx_option` | Registry form (Instruments, New instrument) for the contract: underlying, Type, Strike, Expiration, Payoff, Exercise style, Settlement, Multiplier, Counterparty and the required Collateral terms group; then the instrument drawer, Trade tab (Buy / Sell, quantity, State a fill price); the strategy instance for partial close, termination and the Lifecycle menu (Exercise, Early assignment). Required: Underlying instrument (or a fixing rate code); Type; Strike; Expiration; Collateral basis; Account; Action; Quantity in underlying units; State a fill price (the premium agreed with the dealer: no executable quote exists for an OTC option); Trading currency = the premium currency (JPY); quantity = the base-currency notional (EUR) | EUR/JPY rate (pair quote fixture standing in for Shaffer MarketData) for the notional; USD/JPY and EUR/USD rates (FX fixtures) for every reporting-currency figure and for the variation margin in USD; premium settlement date, T+2 on the TARGET2 and Tokyo calendars; commission per EUR of notional (in JPY) from the Book fee schedule; variation margin from the CSA terms, the JPY mark converted to USD; expiry item settled against the EUR/JPY close for the expiration date (close fixture: the stated settlement price); spot value date of the currency exchange on the TARGET2 and Tokyo calendars | premium agreed with the dealer in JPY per EUR (stated fill price); marks in JPY per EUR, entered by hand (Manual entry); early exercise of a European option, refused; yen moved from Treasury to fund the exchange (Transfer cash) | Premium in JPY T+2 on TARGET2 + Tokyo; on exercise 1,000,000 EUR is received and 165,000,000 JPY paid on the spot value date (T+2), only when the yen is held. Early exercise refused (European); expiry item on 3 June: in the money, automatic physical exercise; the exchange fails visibly while the Account lacks the yen and is retried each cycle; it goes through once funded; nothing scheduled afterwards | Premium in JPY on the EUR notional, realized on exercise; the exchange at the strike books EUR and JPY at their USD rates, the difference (the intrinsic value) reported as currency P&L; commission expensed in JPY; all reporting figures in USD at the FX fixtures. Collateral: Agreement "CSA Dealer D" in USD: no independent amount for a bought option; variation margin on the JPY mark converted to USD, threshold 0, minimum transfer 10,000; received as restricted USD with a liability; part returned on a lower mark, the rest when the option is exercised |
+| `commodity_option` | Registry form (Instruments, New instrument) for the contract: underlying, Type, Strike, Expiration, Payoff, Exercise style, Settlement, Multiplier, Counterparty and the required Collateral terms group; then the instrument drawer, Trade tab (Buy / Sell, quantity, State a fill price); the strategy instance for partial close, termination and the Lifecycle menu (Exercise, Early assignment). Required: Underlying instrument (or a fixing rate code); Type; Strike; Expiration; Collateral basis; Account; Action; Quantity in underlying units; State a fill price (the premium agreed with the dealer: no executable quote exists for an OTC option) | crude price per barrel (quote fixture standing in for Shaffer MarketData) for the notional and the barrels delivered; premium settlement date, T+2 on the US calendar; barrels delivered and sold settle T+2 (settlement.spot = 2); commission per barrel from the Book fee schedule; independent amount on the written put and variation margin on the Account netting set, from the CSA terms; expiry item settled against the crude close for the expiration date (close fixture: the stated settlement price) | premium per barrel agreed with the dealer (stated fill price); marks per barrel entered by hand (Manual entry); early assignment of the written American put, recorded by hand (Lifecycle, Early assignment); termination of half the call at a stated amount per barrel | Premium and commission T+2 on the US calendar; barrels delivered at the strike T+2, sold T+2; cash settlement of the call T+1. Early assignment of the American put with a simulated delivery of 50,000 barrels at 68; the call partly terminated, the rest cash-settled in the money at expiry; held across Good Friday and Memorial Day; nothing scheduled afterwards | Premium per barrel x barrels; average premium; premium realized on termination, assignment and expiry; barrels delivered carried at the strike and sold at the bid; commission expensed; marks by hand drive unrealized P&L. Collateral: Agreement "CSA Dealer E", netting scope the Account: the two positions form one netting set; independent amount on the written put only, 10% x 50,000 x 68 = 340,000, returned on assignment; variation margin posted when the set fell 40,000 beyond its 100,000 threshold, returned when it came back inside |
+| `crypto_option` | Registry form (Instruments, New instrument) for the contract: underlying, Type, Strike, Expiration, Payoff, Exercise style, Settlement, Multiplier, Counterparty and the required Collateral terms group; then the instrument drawer, Trade tab (Buy / Sell, quantity, State a fill price); the strategy instance for partial close, termination and the Lifecycle menu (Exercise, Early assignment). Required: Underlying instrument (or a fixing rate code); Type; Strike; Expiration; Collateral basis; Account; Action; Quantity in underlying units; State a fill price (the premium agreed with the dealer: no executable quote exists for an OTC option) | MRD price (quote fixture standing in for Shaffer MarketData) for the notional and the coins delivered; premium settlement date, the next day on the 24x7 calendar (settlement.otcoption = 1); coins settle the same day (settlement.crypto = 0); commission per coin from the Book fee schedule; independent amount and variation margin from the position-level terms; expiry item settled against the MRD close for the expiration date, a Sunday (close fixture: the stated settlement price) | premium per coin agreed with the dealer (stated fill price); marks per coin entered by hand (Manual entry); early exercise of the American call (Lifecycle, Exercise) | Premium and commission the next calendar day (ALLDAYS, Saturday to Sunday); coins delivered on exercise and coins sold settle the same day. Trades on a Saturday; early exercise by hand with a simulated delivery of 1.5 MRD at 90,000; the put lapses out of the money at its Sunday expiry; nothing scheduled afterwards | Premium per coin x coins (fractional); average premium; premium realized on exercise and on lapse; coins delivered carried at the strike; commission expensed; marks by hand drive unrealized P&L. Collateral: Call (bought): position-level terms, variation margin over a 10,000 threshold (never reached); no independent amount for a bought option. Put (written): fixed independent amount 20,000, variation margin with no threshold and a 500 minimum transfer: posted on a Saturday, partly returned, the rest returned at expiry |
+| `digital_option` | Registry form (Instruments, New instrument) for the contract: underlying, Type, Strike, Expiration, Payoff, Exercise style, Settlement, Multiplier, Counterparty and the required Collateral terms group; then the instrument drawer, Trade tab (Buy / Sell, quantity, State a fill price); the strategy instance for partial close, termination and the Lifecycle menu (Exercise, Early assignment). Required: Underlying instrument (or a fixing rate code); Type; Strike; Expiration; Collateral basis; Account; Action; Quantity in underlying units; State a fill price (the premium agreed with the dealer: no executable quote exists for an OTC option); Payoff: Digital (cash or nothing); Digital payout per unit | ETF price (quote fixture standing in for Shaffer MarketData) for the notional; premium settlement date, T+2 on the US calendar; commission per unit from the Book fee schedule; variation margin and independent amount from the position-level terms; expiry item settled against the ETF close for the expiration date (close fixture: the stated settlement price): the fixed payout if beyond the strike, else nothing; payout date T+1 on the US calendar, across Juneteenth | premium agreed with the dealer (stated fill price); marks entered by hand (Manual entry); termination of half the call at a stated amount per unit | Premium and commission T+2 on the US calendar; the digital payout T+1 after expiry (Friday 19 June is Juneteenth: paid Monday 22 June). Expiry item on 18 June: the call pays its fixed 10.00 a unit (not the distance from the strike); the put lapses and its premium is realized; nothing scheduled afterwards | Premium per unit x units; average premium; payout and lapse realized at expiry; commission expensed; marks by hand drive unrealized P&L. Collateral: Call (bought): position-level terms, variation margin over a 20,000 threshold: received from the dealer as restricted cash with a liability, partly returned after the termination, the rest when the call settles. Put (written): fixed independent amount of 200,000, its maximum payout, posted at entry and returned at expiry |
+
+### Product by action
+
+| Product | Action | Steps (test ids) | Engine | API | Browser | Notes |
+|---|---|---|---|---|---|---|
+| `otc_option` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `otc_option` | open | `buy-call` | passed | not run | not run |  |
+| `otc_option` | collateral | `buy-call` `agreement` `write-put` `posted-collateral-not-spendable` `expires-out-of-the-money` | passed 4, blocked 1 | not run | not run | posted-collateral-not-spendable: blocked by design. Collateral posted (independent amount and variation margin) is not settled cash: it cannot be transferred. |
+| `otc_option` | market data or clock move (no product action) | `register-put` `stock-rallies` `thursday-before-good-friday` `settlement-price-known-later` | passed | not run | not run |  |
+| `otc_option` | write | `write-put` | passed | not run | not run |  |
+| `otc_option` | manual mark | `mark-call` `mark-put` `mark-put-lower` | passed | not run | not run |  |
+| `otc_option` | variation margin | `variation-margin-posted` `variation-margin-returned` | passed | not run | not run |  |
+| `otc_option` | settlement | `settle-premiums` `settle-delivery` `settle-sales` | passed | not run | not run |  |
+| `otc_option` | exercise style | `early-assignment-refused` | blocked | not run | not run | early-assignment-refused: blocked by design. The put is European: it cannot be assigned (or exercised) before its expiration date. |
+| `otc_option` | reduce | `terminate-half-call` | passed | not run | not run |  |
+| `otc_option` | termination at a stated amount | `terminate-half-call` | passed | not run | not run |  |
+| `otc_option` | early exercise | `exercise-early` | passed | not run | not run |  |
+| `otc_option` | physical settlement | `exercise-early` | passed | not run | not run |  |
+| `otc_option` | close | `sell-delivered-shares` | passed | not run | not run |  |
+| `otc_option` | holiday | `after-memorial-day` | passed | not run | not run |  |
+| `otc_option` | expiry | `expiry-awaits-fixing` `expires-out-of-the-money` | passed | not run | not run |  |
+| `otc_option` | lapse | `expires-out-of-the-money` | passed | not run | not run |  |
+| `otc_option` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `bond_option` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `bond_option` | open | `buy-call` | passed | not run | not run |  |
+| `bond_option` | collateral | `buy-call` `write-put` `exercise-on-date` `expires-in-the-money` | passed | not run | not run |  |
+| `bond_option` | market data or clock move (no product action) | `half-an-hour-later` `wednesday-15-april` `note-rallies` `friday-12-june` `settlement-price-known-later` | passed | not run | not run |  |
+| `bond_option` | write | `write-put` | passed | not run | not run |  |
+| `bond_option` | manual mark | `mark-call` `mark-put` `mark-put-higher` | passed | not run | not run |  |
+| `bond_option` | variation margin | `variation-margin-both-ways` `variation-margin-call` | passed | not run | not run |  |
+| `bond_option` | owner screens | `treasury-screens-collateral` `treasury-screens-after-delivery` `treasury-screens-closed` | passed | not run | not run |  |
+| `bond_option` | settlement | `settle-premiums` `settle-delivery-and-sale` `settle-cash-settlement` | passed | not run | not run |  |
+| `bond_option` | holiday | `tuesday-14-april` | passed | not run | not run |  |
+| `bond_option` | exercise style | `exercise-off-date-refused` | blocked | not run | not run | exercise-off-date-refused: blocked by design. A Bermudan option is exercised only on its stated exercise dates (15 April, 15 May) or at expiration; 14 April is none of them. |
+| `bond_option` | bermudan exercise | `exercise-on-date` | passed | not run | not run |  |
+| `bond_option` | physical settlement | `exercise-on-date` | passed | not run | not run |  |
+| `bond_option` | close | `sell-delivered-note` | passed | not run | not run |  |
+| `bond_option` | expiry | `expires-in-the-money` | passed | not run | not run |  |
+| `bond_option` | cash settlement | `expires-in-the-money` | passed | not run | not run |  |
+| `bond_option` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `fx_option` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `fx_option` | collateral | `agreement` `buy-call` `fund-yen-then-exchange` | passed | not run | not run |  |
+| `fx_option` | market data or clock move (no product action) | `register-call` `tuesday-2-june` `euro-rises` `pair-rises` `settlement-price-known-later` | passed | not run | not run |  |
+| `fx_option` | open | `buy-call` | passed | not run | not run |  |
+| `fx_option` | manual mark | `mark-call` `mark-call-intrinsic` | passed | not run | not run |  |
+| `fx_option` | variation margin | `variation-margin-received` `variation-margin-returned` | passed | not run | not run |  |
+| `fx_option` | settlement | `settle-premium` `value-date` | passed | not run | not run |  |
+| `fx_option` | exercise style | `early-exercise-refused` | blocked | not run | not run | early-exercise-refused: blocked by design. A European option is exercised at expiration only. |
+| `fx_option` | holiday | `after-golden-week` | passed | not run | not run |  |
+| `fx_option` | expiry | `exercise-unfunded` | passed | not run | not run |  |
+| `fx_option` | physical settlement | `exercise-unfunded` `fund-yen-then-exchange` | passed | not run | not run |  |
+| `fx_option` | funding | `exercise-unfunded` `fund-yen-then-exchange` | passed | not run | not run |  |
+| `fx_option` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `commodity_option` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `commodity_option` | collateral | `agreement` `buy-call` `write-put` `early-assignment` | passed | not run | not run |  |
+| `commodity_option` | market data or clock move (no product action) | `register-call` `register-put` `half-an-hour-later` `monday-16-march` `crude-falls` `tuesday-17-march` `settlement-price-known-later` | passed | not run | not run |  |
+| `commodity_option` | open | `buy-call` | passed | not run | not run |  |
+| `commodity_option` | write | `write-put` | passed | not run | not run |  |
+| `commodity_option` | manual mark | `mark-call` `mark-put` `mark-call-lower` `mark-put-higher` `mark-call-recovers` | passed | not run | not run |  |
+| `commodity_option` | variation margin | `netting-set-inside-threshold` `variation-margin-posted` `variation-margin-returned` | passed | not run | not run |  |
+| `commodity_option` | settlement | `settle-premiums` `settle-delivery` `settle-sale` `settle-termination` `settle-cash-settlement` | passed | not run | not run |  |
+| `commodity_option` | early assignment | `early-assignment` | passed | not run | not run |  |
+| `commodity_option` | physical settlement | `early-assignment` | passed | not run | not run |  |
+| `commodity_option` | close | `sell-delivered-barrels` | passed | not run | not run |  |
+| `commodity_option` | reduce | `terminate-half-call` | passed | not run | not run |  |
+| `commodity_option` | termination at a stated amount | `terminate-half-call` | passed | not run | not run |  |
+| `commodity_option` | holiday | `wednesday-27-may` | passed | not run | not run |  |
+| `commodity_option` | expiry | `expires-in-the-money` | passed | not run | not run |  |
+| `commodity_option` | cash settlement | `expires-in-the-money` | passed | not run | not run |  |
+| `commodity_option` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `crypto_option` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `crypto_option` | open | `buy-call-on-saturday` | passed | not run | not run |  |
+| `crypto_option` | weekend trade | `buy-call-on-saturday` | passed | not run | not run |  |
+| `crypto_option` | market data or clock move (no product action) | `half-an-hour-later` `wednesday-8-april` `mrd-rallies` `friday-29-may` `settlement-price-known-later` | passed | not run | not run |  |
+| `crypto_option` | write | `write-put-on-saturday` | passed | not run | not run |  |
+| `crypto_option` | collateral | `write-put-on-saturday` `expires-on-sunday` | passed | not run | not run |  |
+| `crypto_option` | manual mark | `mark-call` `mark-put` `mark-put-lower` | passed | not run | not run |  |
+| `crypto_option` | settlement | `settle-premiums-on-sunday` | passed | not run | not run |  |
+| `crypto_option` | weekend | `settle-premiums-on-sunday` `expires-on-sunday` | passed | not run | not run |  |
+| `crypto_option` | variation margin | `variation-margin-on-monday` `variation-margin-returned` | passed | not run | not run |  |
+| `crypto_option` | early exercise | `exercise-early` | passed | not run | not run |  |
+| `crypto_option` | physical settlement | `exercise-early` | passed | not run | not run |  |
+| `crypto_option` | close | `sell-delivered-coins` | passed | not run | not run |  |
+| `crypto_option` | expiry | `expires-on-sunday` | passed | not run | not run |  |
+| `crypto_option` | lapse | `expires-on-sunday` | passed | not run | not run |  |
+| `crypto_option` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+| `digital_option` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | not run | not run |  |
+| `digital_option` | open | `buy-digital-call` | passed | not run | not run |  |
+| `digital_option` | collateral | `buy-digital-call` `write-digital-put` `expiry` | passed | not run | not run |  |
+| `digital_option` | market data or clock move (no product action) | `half-an-hour-later` `settlement-price-known-later` | passed | not run | not run |  |
+| `digital_option` | write | `write-digital-put` | passed | not run | not run |  |
+| `digital_option` | manual mark | `mark-call` `mark-put` | passed | not run | not run |  |
+| `digital_option` | variation margin | `variation-margin-received` `variation-margin-returned` | passed | not run | not run |  |
+| `digital_option` | settlement | `settle-premiums` `settle-termination` `payout-after-juneteenth` | passed | not run | not run |  |
+| `digital_option` | reduce | `terminate-half-call` | passed | not run | not run |  |
+| `digital_option` | termination at a stated amount | `terminate-half-call` | passed | not run | not run |  |
+| `digital_option` | holiday | `wednesday-17-june` `payout-after-juneteenth` | passed | not run | not run |  |
+| `digital_option` | expiry | `expiry` | passed | not run | not run |  |
+| `digital_option` | digital payout | `expiry` | passed | not run | not run |  |
+| `digital_option` | lapse | `expiry` | passed | not run | not run |  |
+| `digital_option` | restart: persistence of everything above | `restart` | passed | not run | not run |  |
+
+### Not yet specified
 
 | Product | Catalog support | Scenario | Engine | API | Browser |
 |---|---|---|---|---|---|
-| OTC option (`otc_option`) | Full lifecycle | not yet specified | not run | not run | not run |
-| Bond option (`bond_option`) | Full lifecycle | not yet specified | not run | not run | not run |
 | Interest-rate option (`interest_rate_option`) | Partly manual | not yet specified | not run | not run | not run |
-| FX option (`fx_option`) | Full lifecycle | not yet specified | not run | not run | not run |
-| Commodity option (`commodity_option`) | Full lifecycle | not yet specified | not run | not run | not run |
-| Cryptocurrency option (`crypto_option`) | Full lifecycle | not yet specified | not run | not run | not run |
 | Swaption (`swaption`) | Partly manual | not yet specified | not run | not run | not run |
 | Credit-default swaption (`cds_swaption`) | Partly manual | not yet specified | not run | not run | not run |
-| Digital option (`digital_option`) | Full lifecycle | not yet specified | not run | not run | not run |
 | Barrier option (`barrier_option`) | Partly manual | not yet specified | not run | not run | not run |
 | Asian option (`asian_option`) | Partly manual | not yet specified | not run | not run | not run |
 | Lookback option (`lookback_option`) | Partly manual | not yet specified | not run | not run | not run |
@@ -1008,18 +1988,18 @@ By engine family:
 
 | Product | Scenario | Steps | Engine | API | Browser |
 |---|---|---:|---|---|---|
-| Interest-rate cap (`interest_rate_cap`) | USD 1-year cap at 4.25% on 3-month term SOFR, bought for a premium, uncollateralized, held to maturity | 19 | complete, 0.3 s | complete, 1.1 s | complete, 19.8 s |
-| Interest-rate floor (`interest_rate_floor`) | USD 1-year floor at 3.75% on 3-month term SOFR, sold for a premium, fixed independent amount, held to maturity | 17 | complete, 0.3 s | complete, 1.1 s | complete, 18.4 s |
-| Interest-rate collar (`interest_rate_collar`) | USD 1-year collar on 3-month term SOFR, cap bought at 4.50% and floor sold at 3.50%, variation margin under position-level terms | 23 | complete, 0.4 s | complete, 1.3 s | complete, 23.4 s |
-| Interest-rate swap (`interest_rate_swap`) | USD 1-year swap, pay 4.00% fixed against 3-month term SOFR, position-level collateral terms | 34 | complete, 0.7 s | complete, 1.7 s | complete, 32.6 s |
-| Overnight-index swap (`ois`) | GBP 1-month overnight-index swap, receive 3.80% fixed against compounded SONIA, under a collateral agreement | 19 | complete, 0.4 s | complete, 1.3 s | complete, 23.8 s |
-| Interest-rate basis swap (`basis_swap`) | EUR 1-year 3s6s basis swap in a EUR Book, pay 6-month EURIBOR, receive 3-month EURIBOR + 9.5 bp, uncollateralized | 16 | complete, 0.3 s | complete, 1.0 s | complete, 18.1 s |
-| Cross-currency swap (`cross_currency_swap`) | EUR/USD 1-year fixed-for-fixed cross-currency swap owned by Treasury, principal exchanged at start and maturity, reported in USD | 22 | complete, 0.4 s | complete, 1.3 s | complete, 24.1 s |
-| Cross-currency basis swap (`cross_currency_basis_swap`) | USD/JPY 1-year cross-currency basis swap, yen lent against dollars (opposite side), collateral posted by Treasury under a shared agreement, reported in USD. The contract names a collateral agreement, so a step registers it (Instruments, New instrument) once the agreement exists; it is then traded from the instrument drawer like the other registered swaps of this file. | 24 | complete, 0.5 s | complete, 1.7 s | complete, 25.9 s |
-| Zero-coupon inflation swap (`zc_inflation_swap`) | USD 2-year zero-coupon inflation swap, pay 2.50% compounded against the CPI-U index ratio, held to maturity | 14 | complete, 0.2 s | complete, 1.1 s | complete, 17.0 s |
-| Year-on-year inflation swap (`yoy_inflation_swap`) | EUR 2-year year-on-year inflation swap, receive 2.10% fixed and pay the annual change of HICP ex tobacco (opposite side), in a EUR Book | 18 | complete, 0.4 s | complete, 1.2 s | complete, 19.7 s |
-| Constant-maturity swap (`constant_maturity_swap`) | USD 1-year constant-maturity swap entered on the Strategies page, receive the 5-year CMS rate against 3-month term SOFR + 0.25%, under a cleared agreement. A constant-maturity swap can also be registered under Instruments like the other swaps of this file. This scenario enters it on the Strategies page instead (template Custom, Add a leg, New OTC contract): the contract registers itself when the package is confirmed. | 23 | complete, 0.4 s | complete, 1.3 s | complete, 23.0 s |
-| Forward-starting swap (`forward_starting_swap`) | USD swap starting six months forward, receive 3.60% fixed against 3-month term SOFR, held to maturity | 20 | complete, 0.3 s | complete, 1.2 s | complete, 21.3 s |
+| Interest-rate cap (`interest_rate_cap`) | USD 1-year cap at 4.25% on 3-month term SOFR, bought for a premium, uncollateralized, held to maturity | 19 | complete, 0.8 s | complete, 1.5 s | complete, 29.7 s |
+| Interest-rate floor (`interest_rate_floor`) | USD 1-year floor at 3.75% on 3-month term SOFR, sold for a premium, fixed independent amount, held to maturity | 17 | complete, 1.1 s | complete, 1.1 s | complete, 18.4 s |
+| Interest-rate collar (`interest_rate_collar`) | USD 1-year collar on 3-month term SOFR, cap bought at 4.50% and floor sold at 3.50%, variation margin under position-level terms | 23 | complete, 1.2 s | complete, 1.3 s | complete, 23.4 s |
+| Interest-rate swap (`interest_rate_swap`) | USD 1-year swap, pay 4.00% fixed against 3-month term SOFR, position-level collateral terms | 34 | complete, 2.8 s | complete, 2.4 s | complete, 61.0 s |
+| Overnight-index swap (`ois`) | GBP 1-month overnight-index swap, receive 3.80% fixed against compounded SONIA, under a collateral agreement | 19 | complete, 1.7 s | complete, 1.3 s | complete, 23.8 s |
+| Interest-rate basis swap (`basis_swap`) | EUR 1-year 3s6s basis swap in a EUR Book, pay 6-month EURIBOR, receive 3-month EURIBOR + 9.5 bp, uncollateralized | 16 | complete, 0.6 s | complete, 1.0 s | complete, 18.1 s |
+| Cross-currency swap (`cross_currency_swap`) | EUR/USD 1-year fixed-for-fixed cross-currency swap owned by Treasury, principal exchanged at start and maturity, reported in USD | 22 | complete, 1.3 s | complete, 1.5 s | complete, 34.4 s |
+| Cross-currency basis swap (`cross_currency_basis_swap`) | USD/JPY 1-year cross-currency basis swap, yen lent against dollars (opposite side), collateral posted by Treasury under a shared agreement, reported in USD. The contract names a collateral agreement, so a step registers it (Instruments, New instrument) once the agreement exists; it is then traded from the instrument drawer like the other registered swaps of this file. | 24 | complete, 1.9 s | complete, 1.7 s | complete, 25.9 s |
+| Zero-coupon inflation swap (`zc_inflation_swap`) | USD 2-year zero-coupon inflation swap, pay 2.50% compounded against the CPI-U index ratio, held to maturity | 14 | complete, 1.1 s | complete, 1.1 s | complete, 17.0 s |
+| Year-on-year inflation swap (`yoy_inflation_swap`) | EUR 2-year year-on-year inflation swap, receive 2.10% fixed and pay the annual change of HICP ex tobacco (opposite side), in a EUR Book | 18 | complete, 1.8 s | complete, 1.2 s | complete, 19.7 s |
+| Constant-maturity swap (`constant_maturity_swap`) | USD 1-year constant-maturity swap entered on the Strategies page, receive the 5-year CMS rate against 3-month term SOFR + 0.25%, under a cleared agreement. A constant-maturity swap can also be registered under Instruments like the other swaps of this file. This scenario enters it on the Strategies page instead (template Custom, Add a leg, New OTC contract): the contract registers itself when the package is confirmed. | 23 | complete, 1.3 s | complete, 1.7 s | complete, 25.4 s |
+| Forward-starting swap (`forward_starting_swap`) | USD swap starting six months forward, receive 3.60% fixed against 3-month term SOFR, held to maturity | 20 | complete, 1.4 s | complete, 1.2 s | complete, 21.3 s |
 
 ### Ticket, inputs and behaviour
 
@@ -1055,8 +2035,8 @@ By engine family:
 | `interest_rate_cap` | reduce | `partial-termination` | passed | passed | passed |  |
 | `interest_rate_cap` | partial termination | `partial-termination` | passed | passed | passed |  |
 | `interest_rate_cap` | missing fixing | `last-caplet-blocked` `fixing-entered-by-hand` | passed | passed | passed |  |
-| `interest_rate_cap` | maturity | `matured` | passed | passed | passed |  |
-| `interest_rate_cap` | close | `matured` | passed | passed | passed |  |
+| `interest_rate_cap` | maturity | `fixing-entered-by-hand` `matured` | passed | passed | passed |  |
+| `interest_rate_cap` | close | `fixing-entered-by-hand` `matured` | passed | passed | passed |  |
 | `interest_rate_cap` | restart: persistence of everything above | `restart` | passed | passed | passed |  |
 | `interest_rate_floor` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | passed | passed |  |
 | `interest_rate_floor` | open | `open` | passed | passed | passed |  |
@@ -1210,7 +2190,7 @@ By engine family:
 | `yoy_inflation_swap` | close | `final-payments-and-maturity` | passed | passed | passed |  |
 | `yoy_inflation_swap` | restart: persistence of everything above | `restart` | passed | passed | passed |  |
 | `constant_maturity_swap` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | passed | passed |  |
-| `constant_maturity_swap` | collateral | `record-agreement` `open` `increase` `partial-termination` `matured` | passed | passed | passed |  |
+| `constant_maturity_swap` | collateral | `record-agreement` `open` `increase` `partial-termination` `cms-fixing-entered-by-hand` `matured` | passed | passed | passed |  |
 | `constant_maturity_swap` | open | `open` | passed | passed | passed |  |
 | `constant_maturity_swap` | registration | `open` | passed | passed | passed |  |
 | `constant_maturity_swap` | variation margin | `no-mark-no-call` `variation-margin-received` `variation-margin-swings` `variation-margin-trimmed` | passed | passed | passed |  |
@@ -1224,8 +2204,8 @@ By engine family:
 | `constant_maturity_swap` | settlement | `settle-partial-termination` | passed | passed | passed |  |
 | `constant_maturity_swap` | payment across a holiday | `columbus-day` `third-quarter` | passed | passed | passed |  |
 | `constant_maturity_swap` | missing fixing | `cms-fixing-missing` `cms-fixing-entered-by-hand` | passed | passed | passed |  |
-| `constant_maturity_swap` | maturity | `matured` | passed | passed | passed |  |
-| `constant_maturity_swap` | close | `matured` | passed | passed | passed |  |
+| `constant_maturity_swap` | maturity | `cms-fixing-entered-by-hand` `matured` | passed | passed | passed |  |
+| `constant_maturity_swap` | close | `cms-fixing-entered-by-hand` `matured` | passed | passed | passed |  |
 | `constant_maturity_swap` | restart: persistence of everything above | `restart` | passed | passed | passed |  |
 | `forward_starting_swap` | set up: Book, Account, funding, instrument registration, fixtures | `setup` | passed | passed | passed |  |
 | `forward_starting_swap` | open | `open` | passed | passed | passed |  |
@@ -1319,3 +2299,139 @@ By engine family:
 | Futures Hedge (`futures_hedge`) | Futures | Combine an existing or new underlying exposure with a specified futures position and hedge ratio. | not yet specified | not run | not run | not run |
 | Futures Calendar Spread (`futures_calendar`) | Futures | Buy one contract month and sell another contract month on the same underlying. | not yet specified | not run | not run | not run |
 | Custom Multi-Leg (`custom`) | Custom | Build a validated package of supported instruments, financing, and hedging legs. | not yet specified | not run | not run | not run |
+
+## System behaviour
+
+The failure, recovery and isolation suite (`test/system`, README there): refusals and blocks, execution under stress, no duplicates, history that survives, Book isolation, hedge reconnection. Test ids `SE:`, `SA:`, `SB:<area>:<case>`; statuses come only from `system-engine.json`, `system-api.json` and `system-browser.json`.
+
+57 cases. Each declares, at each level, the test that runs there or the precise reason it does not; the runners refuse to start when a level has neither, when a reason names a test that does not exist or does not run at that level, or when a case that runs at engine or API level names no browser test covering what the user sees of it (test/system/lib/mapping.mjs).
+
+| Level | Cases | Run at this level | Not applicable (reason given) | Passed | Failed | Not run | Results as of |
+|---|---:|---:|---:|---:|---:|---:|---|
+| Engine | 57 | 41 | 16 | 41 | 0 | 0 | 2026-10-13T18:00:30.169Z |
+| API | 57 | 47 | 10 | 47 | 0 | 0 | 2026-10-13T17:50:36.630Z |
+| Browser | 57 | 37 | 20 | 37 | 0 | 0 | 2026-10-13T18:04:23.533Z |
+
+Each row adds up: run + not applicable = 57 at every level; passed + failed + not run = run. 20 of the 47 API cases have no browser run of their own; each names the browser test(s) that cover what the user sees of it (the Browser column below). 10 browser cases have no API run (a click, a dialog or a screen is a browser matter; the routes behind them are covered by the tests their API reason names).
+
+### The owner's list at browser level
+
+Each item is triggered from the interface by these browser tests (the list is data in test/system/lib/mapping.mjs and every id is checked to run in the browser). Every browser test ends with the integrity read of every Book clean: nothing (fills, settlements, payments, accruals, orders, strategies, hedge requests, holds, independent-amount collateral) recorded twice.
+
+| Item | Browser tests | Status |
+|---|---|---|
+| Book isolation | `SB:isolation:book-routes` `SB:isolation:no-netting` `SB:isolation:demo-normal-databases` `SB:isolation:normal-mode-refusals` | passed, passed, passed, passed |
+| Hedge reconnection; a recommendation received is never executed | `SB:hedge:reconnection` `SB:stress:double-click-reference` | passed, passed |
+| Catch-up after downtime | `SB:nodup:catch-up` | passed |
+| Duplicate submission: trade confirm | `SB:stress:double-click-confirm` `SB:stress:confirm-changed` | passed, passed |
+| Duplicate submission: Execute now (hedge package) | `SB:hedge:reconnection` | passed |
+| Duplicate submission: transfers | `SB:stress:double-click-transfer` `SB:stress:connection-loss` | passed, passed |
+| Duplicate submission: deposits and withdrawals | `SB:stress:double-click-transfer` `SB:stress:double-click-treasury` | passed, passed |
+| Duplicate submission: borrow | `SB:stress:double-click-treasury` | passed |
+| Duplicate submission: repay | `SB:stress:double-click-records` | passed |
+| Duplicate submission: repo | `SB:stress:double-click-treasury` | passed |
+| Duplicate submission: lend (securities loan) | `SB:stress:double-click-treasury` | passed |
+| Duplicate submission: record event (manual cash flow, lender recall) | `SB:stress:double-click-records` | passed |
+| Duplicate submission: manual price | `SB:stress:double-click-reference` | passed |
+| Duplicate submission: corporate action | `SB:stress:double-click-records` | passed |
+| Duplicate submission: agreement create and close | `SB:stress:double-click-agreements` | passed |
+| Duplicate submission: collateral retry | `SB:stress:double-click-agreements` | passed |
+| Duplicate submission: hedge request save | `SB:stress:double-click-reference` | passed |
+| Duplicate submission: settings save | `SB:stress:double-click-reference` | passed |
+| Duplicate submission: instrument registration | `SB:stress:double-click-reference` | passed |
+| Duplicate submission: order cancellation | `SB:stress:cancellations` | passed |
+| Interrupted execution as the user experiences it | `SB:stress:kill-mid-confirmation` `SB:stress:connection-loss` `SB:stress:failed-leg-cancel` `SB:stress:failed-leg-retry` `SB:stress:failed-leg-unwind` `SB:stress:failed-leg-accept` | passed, passed, passed, passed, passed, passed |
+| Stale and missing prices and rates | `SB:refusals:quote-missing` `SB:refusals:quote-stale` `SB:refusals:fx-missing` `SB:refusals:fx-stale` `SB:stress:service-stops-answering` | passed, passed, passed, passed, passed |
+| Insufficient funding | `SB:refusals:ticket-blocks` `SB:refusals:cash-transfer` `SB:refusals:cash-withdrawal` `SB:refusals:cash-repayment` `SB:refusals:failed-tab` | passed, passed, passed, passed, passed |
+| Insufficient borrow | `SB:refusals:ticket-blocks` | passed |
+| Insufficient collateral | `SB:refusals:collateral-repo` `SB:refusals:collateral-pledged-position` `SB:refusals:collateral-independent-amount` `SB:refusals:failed-tab` | passed, passed, passed, passed |
+| Cancellations | `SB:stress:cancellations` `SB:stress:failed-leg-cancel` | passed, passed |
+| Persistence across restart | `SB:stress:restart-stages` `SB:nodup:catch-up` `SB:isolation:demo-normal-databases` `SB:stress:service-stops-answering` | passed, passed, passed, passed |
+
+### Hedge reconnection
+
+| Case | What it proves | Engine | API | Browser |
+|---|---|---|---|---|
+| `hedge:reconnection` Hedge requests that waited while positions changed are refreshed against current exposure on reconnection | A request made while the hedge service is away waits; when the service returns it is asked in place for the exposure as it is then; a request whose position was closed is closed and not sent; no request is duplicated; and a recommendation that arrives executes nothing. | not applicable: the engine level of this workflow is test/core/hedge.test.js ("reconnection refreshes waiting requests against current exposure", "one request per primary") | `SA:hedge:reconnection` passed | `SB:hedge:reconnection` passed |
+
+### History survives
+
+| Case | What it proves | Engine | API | Browser |
+|---|---|---|---|---|
+| `history:data-refresh` History survives data refreshes and fixture changes | New prices, FX rates, reference rates, borrow data and closing prices change what things are worth now; they never touch a fill, a posting, a settlement, an accrual already booked or a snapshot already taken. | `SE:history:data-refresh` passed | `SA:history:data-refresh` passed | not applicable: a data refresh is made by the engine on its timer, not by anything done in the interface; the user's side of it (refresh timings changed on the Data connection page, then the Full history compared row by row, word for word) is SB:history:reference-edits |
+| `history:service-reconnection` History survives a service going away and coming back, and a restart | Switching the hedge service off and on, loading and clearing a scripted service, changing the service addresses and restarting the Terminal leave the paper history exactly as it was. | `SE:history:service-reconnection` passed | `SA:history:service-reconnection` passed | not applicable: covered at browser level by SB:hedge:reconnection (the queue and the positions are read before and after) |
+| `history:reference-edits` History survives instrument edits, calendar edits and settings changes | Editing an instrument, a market calendar or the Book's paper-desk assumptions applies from then on; it never re-dates, re-prices or re-fees what is already booked. | `SE:history:reference-edits` passed | `SA:history:reference-edits` passed | `SB:history:reference-edits` passed |
+
+### Isolation
+
+| Case | What it proves | Engine | API | Browser |
+|---|---|---|---|---|
+| `isolation:book-routes` Book isolation through every API route | An id of one Book used in a call scoped to another Book is refused; no read of one Book returns anything of another; a route that takes a single id acts only inside the Book that owns it. | `SE:isolation:book-routes` passed | `SA:isolation:book-routes` passed | `SB:isolation:book-routes` passed |
+| `isolation:no-netting` Nothing nets or consolidates across Books | The same instrument held long in one Book and short in another stays two separate holdings with separate cash, collateral, events and totals; an event of the instrument is booked in each Book for that Book's own holding. | `SE:isolation:no-netting` passed | `SA:isolation:no-netting` passed | `SB:isolation:no-netting` passed |
+| `isolation:normal-mode-refusals` Fixtures and the clock are refused in normal mode | The demo controls (moving the clock, test fixtures, the hedge fixture and scripted service) do not exist outside demo mode, and normal mode starts empty. | `SE:isolation:normal-mode-refusals` passed | `SA:isolation:normal-mode-refusals` passed | `SB:isolation:normal-mode-refusals` passed |
+| `isolation:demo-normal-databases` Demo and normal paper databases are separate files | The demo environment and the normal paper books live in two database files chosen by the mode; a Terminal in one mode never opens, reads or writes the other's file. | not applicable: the choice of file is made by the server at start (server/config.js); the engine level opens a database it is given | `SA:isolation:demo-normal-databases` passed | `SB:isolation:demo-normal-databases` passed |
+
+### No duplicates, ever
+
+| Case | What it proves | Engine | API | Browser |
+|---|---|---|---|---|
+| `nodup:day-by-day` Fifteen days lived one day at a time: every recurring item exactly once | With the Terminal running through fifteen days, each accrual, payment, expiry, settlement, collateral movement and hedge request happens once, and the totals are the hand-calculated ones. | `SE:nodup:day-by-day` passed | `SA:nodup:day-by-day` passed | not applicable: time passing is not a user action; the screens are read after time was moved on with the demo band, across two server stops, in SB:nodup:catch-up |
+| `nodup:catch-up` Catch-up over fifteen missed days in one engine cycle | A Terminal that was not running for fifteen days books, when it next runs, exactly what it would have booked day by day: nothing missed, nothing twice. | `SE:nodup:catch-up` passed | `SA:nodup:catch-up` passed | `SB:nodup:catch-up` passed |
+| `nodup:catch-up-restarts` Catch-up in three stages with a restart between each | Stopping and starting the Terminal between catch-ups neither loses nor repeats what fell due. | `SE:nodup:catch-up-restarts` passed | `SA:nodup:catch-up-restarts` passed | not applicable: stopping and starting the server process is not something done in the interface (the server side is SE/SA:stress:restart-stages); what the user then sees, the screens after downtime across two server stops and after restarts at each stage of a trade, is SB:nodup:catch-up and SB:stress:restart-stages |
+| `nodup:overlapping-cycles` Overlapping engine cycles and requests | Engine cycles that are asked for while one is already running do not run on top of it, and trades confirmed while a cycle runs are booked once. | `SE:nodup:overlapping-cycles` passed | `SA:nodup:overlapping-cycles` passed | not applicable: overlapping engine cycles are started by the engine timer and by programs, never from the interface; the screens after many cycles are read in SB:nodup:catch-up, and with the timer running in SB:stress:connection-loss and SB:hedge:reconnection |
+| `nodup:concurrent-confirmations` The same confirmation sent three times at once, six of them, with engine cycles in between | Confirmations that arrive together, including the same one several times (a triple click, a client retry racing its first attempt), create one order each and fill once. | `SE:nodup:concurrent-confirmations` passed | `SA:nodup:concurrent-confirmations` passed | not applicable: the browser form of this is clicking a confirming button twice: SB:stress:double-click-* |
+| `nodup:timer-on` The engine timer running, with manual cycles on top and a restart on the way | With the engine cycling by itself (as a user's Terminal does) while requests, manual cycles and clock moves arrive, and across a restart, nothing is booked twice. | not applicable: the engine level calls cycles explicitly; the timer exists only in a running server | `SA:nodup:timer-on` passed | not applicable: the browser level runs with the timer on in SB:stress:connection-loss and SB:hedge:reconnection; the books are compared here |
+
+### Refusals and blocks
+
+| Case | What it proves | Engine | API | Browser |
+|---|---|---|---|---|
+| `refusals:cash-trade` Insufficient cash: a purchase larger than the cash available | A trade the Account cannot pay for is blocked before anything is ordered. | `SE:refusals:cash-trade` passed | `SA:refusals:cash-trade` passed | not applicable: covered at browser level by SB:refusals:ticket-blocks (the same preview, read from the dialog) |
+| `refusals:cash-transfer` Insufficient cash: a transfer larger than the settled cash that is free | A transfer cannot overdraw its source, cannot take cash that is committed to an unsettled purchase, and never converts currency. | `SE:refusals:cash-transfer` passed | `SA:refusals:cash-transfer` passed | `SB:refusals:cash-transfer` passed |
+| `refusals:cash-withdrawal` Insufficient cash: a capital withdrawal larger than Treasury holds | Capital cannot be withdrawn beyond the settled cash Treasury has free. | `SE:refusals:cash-withdrawal` passed | `SA:refusals:cash-withdrawal` passed | `SB:refusals:cash-withdrawal` passed |
+| `refusals:cash-repayment` Insufficient cash: repaying a loan early, and at maturity | A repayment the borrower cannot cover is not made in part and never overdraws; it stays visible until cash arrives, and is then made once. | `SE:refusals:cash-repayment` passed | `SA:refusals:cash-repayment` passed | `SB:refusals:cash-repayment` passed |
+| `refusals:cash-settlement-day` Insufficient cash on settlement day | A purchase whose cash has not arrived by its settlement date fails visibly, is never funded silently, and settles exactly once when the cash is there. | `SE:refusals:cash-settlement-day` passed | `SA:refusals:cash-settlement-day` passed | not applicable: the failure is produced by time passing, not by a user action; the Failed tab row it leaves is read at browser level in SB:refusals:failed-tab |
+| `refusals:borrow-unavailable` Securities borrow unavailable: the short sale is blocked | A short sale never executes without its borrow, whether the borrow is refused in the preview or at execution. | `SE:refusals:borrow-unavailable` passed | `SA:refusals:borrow-unavailable` passed | not applicable: covered at browser level by SB:refusals:ticket-blocks (short sale with the borrow unavailable) |
+| `refusals:borrow-exhausted` Securities borrow exhausted: more than is available to borrow | A short sale cannot be larger than the quantity available to borrow. | `SE:refusals:borrow-exhausted` passed | `SA:refusals:borrow-exhausted` passed | not applicable: covered at browser level by SB:refusals:ticket-blocks (quantity above the borrow available) |
+| `refusals:borrow-recalled` Securities borrow recalled by the lender | A recalled borrow is covered once, at the deadline, by one forced buy-in; recalling again does not double it. | `SE:refusals:borrow-recalled` passed | `SA:refusals:borrow-recalled` passed | not applicable: a lender recall is recorded by hand on the borrow position; the form is exercised with the other hand-recorded events in SB:stress:double-click-records, and the buy-in itself is produced by time passing |
+| `refusals:collateral-repo` Insufficient collateral: repo | A repo cannot raise more cash than its collateral supports, pledge more than is held free, or pledge the same holding twice. | `SE:refusals:collateral-repo` passed | `SA:refusals:collateral-repo` passed | `SB:refusals:collateral-repo` passed |
+| `refusals:collateral-pledged-position` Insufficient collateral: selling a pledged position | A holding pledged as repo collateral cannot be sold while it is pledged, and trying to does not disturb the holding. | `SE:refusals:collateral-pledged-position` passed | `SA:refusals:collateral-pledged-position` passed | `SB:refusals:collateral-pledged-position` passed |
+| `refusals:collateral-independent-amount` Insufficient collateral: an OTC independent amount that cannot be posted | An OTC trade whose independent amount exceeds the settled cash that is free is blocked; collateral is never funded silently. | `SE:refusals:collateral-independent-amount` passed | `SA:refusals:collateral-independent-amount` passed | `SB:refusals:collateral-independent-amount` passed |
+| `refusals:collateral-margin-call` Insufficient collateral: a variation-margin call that cannot be met | A margin call the Account cannot meet posts nothing, is recorded once, stays visible, and is delivered exactly once when cash arrives. | `SE:refusals:collateral-margin-call` passed | `SA:refusals:collateral-margin-call` passed | not applicable: the call is produced by the end-of-day pass, not by a user action; the alert it raises is read at browser level in SB:refusals:failed-tab |
+| `refusals:quote-missing` Missing quote: trade preview, order and valuation | Without a price nothing is estimated, filled or valued at an invented figure; the net asset value says it is provisional and names the holding. | `SE:refusals:quote-missing` passed | `SA:refusals:quote-missing` passed | `SB:refusals:quote-missing` passed |
+| `refusals:quote-stale` Stale quote: trade preview, order and valuation | A quote that is too old does not fill an order; a holding valued on it keeps its value but the net asset value is provisional and names it. | `SE:refusals:quote-stale` passed | `SA:refusals:quote-stale` passed | `SB:refusals:quote-stale` passed |
+| `refusals:fx-missing` Missing FX rate: trade preview and valuation | Without a conversion rate nothing is converted at an invented rate: reporting-currency amounts are missing, the preview says so, and the net asset value is provisional and names the currency. | `SE:refusals:fx-missing` passed | `SA:refusals:fx-missing` passed | `SB:refusals:fx-missing` passed |
+| `refusals:fx-stale` Stale FX rate: trade preview and valuation | A conversion rate that is no longer current still converts, but the result is provisional and says which rate is stale. | `SE:refusals:fx-stale` passed | `SA:refusals:fx-stale` passed | `SB:refusals:fx-stale` passed |
+| `refusals:incomplete-terms` Incomplete contract terms | A contract missing a term its product needs cannot be registered or traded; the Terminal never fills the gap with a default. | `SE:refusals:incomplete-terms` passed | `SA:refusals:incomplete-terms` passed | `SB:refusals:incomplete-terms` passed |
+| `refusals:invalid-quantity` Invalid quantities | A quantity that is zero, negative, not a number, fractional where shares are whole, more than is held, or more than is short is refused before anything is ordered. | `SE:refusals:invalid-quantity` passed | `SA:refusals:invalid-quantity` passed | not applicable: covered at browser level by SB:refusals:ticket-blocks (zero, fractional and more-than-held quantities typed into the ticket) |
+| `refusals:expired-contract` Expired contracts | An expired contract cannot be traded, a working order in it never fills after expiry, and its expiry is processed exactly once. | `SE:refusals:expired-contract` passed | `SA:refusals:expired-contract` passed | not applicable: covered at browser level by SB:refusals:ticket-blocks (ticket on an expired option) |
+| `refusals:calendar-settlement` Calendar conflicts: a stated settlement date that cannot be honoured | A settlement date stated for one trade is refused, not moved, when it is not a business day of the settlement calendar or is before the trade date. | `SE:refusals:calendar-settlement` passed | `SA:refusals:calendar-settlement` passed | not applicable: covered at browser level by SB:refusals:ticket-blocks (a settlement date on a Saturday typed into the ticket) |
+| `refusals:calendar-closed-day` Calendar: an order on a day its market is closed waits, visibly, and fills once | An order does not fill on a day that is closed in its instrument's trading calendar; it waits with the reason and is matched once on the next trading day. | `SE:refusals:calendar-closed-day` passed | `SA:refusals:calendar-closed-day` passed | `SB:refusals:calendar-closed-day` passed |
+| `refusals:failed-tab` What time refused is on the Failed tab and under "to review" | A settlement that failed for lack of cash and a margin call that could not be met are in front of the user with their reasons, once each, and disappear when they are made good. | not applicable: the failures themselves are SE:refusals:cash-settlement-day and SE:refusals:collateral-margin-call; this case reads the screen | not applicable: as at engine level: SA:refusals:cash-settlement-day and SA:refusals:collateral-margin-call | `SB:refusals:failed-tab` passed |
+| `refusals:ticket-blocks` Refusals read from the trade ticket and the preview dialog | What the Terminal refuses, it refuses on the screen: the reason is shown, the Confirm button cannot be pressed, and nothing is stored. | not applicable: the same refusals without a screen are SE:refusals:cash-trade, borrow-unavailable, borrow-exhausted, invalid-quantity, expired-contract and calendar-settlement | not applicable: as at engine level: the SA: cases of the same names | `SB:refusals:ticket-blocks` passed |
+
+### Execution under stress
+
+| Case | What it proves | Engine | API | Browser |
+|---|---|---|---|---|
+| `stress:partial-fills` Partial fills: the remainder keeps working, a dependent leg follows, fees total once | An order larger than the displayed size fills in parts over engine cycles; a leg that depends on it is scaled to what filled and never exceeds it; the fee schedule and its minimum apply to the order once, however many fills it takes. | `SE:stress:partial-fills` passed | `SA:stress:partial-fills` passed | not applicable: partial fills are produced by the engine against displayed size, not by a user action; the partly filled order is read on the Pending tab and cancelled from there in SB:stress:cancellations |
+| `stress:failed-leg-cancel` A failed dependent leg: cancelling the working leg | Cancelling the unfilled leg of a package whose other leg filled leaves a package that asks for attention, never one called complete; cancelling again does nothing. | `SE:stress:failed-leg-cancel` passed | `SA:stress:failed-leg-cancel` passed | `SB:stress:failed-leg-cancel` passed |
+| `stress:failed-leg-retry` A failed dependent leg: retry | Retrying re-submits only the leg that failed, through a new preview and confirmation, and completes the package without duplicating anything. | `SE:stress:failed-leg-retry` passed | `SA:stress:failed-leg-retry` passed | `SB:stress:failed-leg-retry` passed |
+| `stress:failed-leg-unwind` A failed dependent leg: unwind | Unwinding sells what did fill, through a preview and confirmation, and leaves the package closed with nothing held. | `SE:stress:failed-leg-unwind` passed | `SA:stress:failed-leg-unwind` passed | `SB:stress:failed-leg-unwind` passed |
+| `stress:failed-leg-accept` A failed dependent leg: accept as it stands | Accepting records, once, that the position no longer matches its template; it moves no money. | `SE:stress:failed-leg-accept` passed | `SA:stress:failed-leg-accept` passed | `SB:stress:failed-leg-accept` passed |
+| `stress:cancellations` Cancellations: a working order, a partly filled order, cancelling twice | A cancelled order never fills afterwards; what had filled stays; a second cancellation, or the cancellation of an order that is already complete, is refused and changes nothing. | `SE:stress:cancellations` passed | `SA:stress:cancellations` passed | `SB:stress:cancellations` passed |
+| `stress:restart-stages` Application restart at each stage of a trade's life | Stopping and starting the Terminal at any stage loses nothing and repeats nothing: a working order is still working, a partly filled order resumes, an unsettled trade settles once, an open lifecycle item runs once. | `SE:stress:restart-stages` passed | `SA:stress:restart-stages` passed | `SB:stress:restart-stages` passed |
+| `stress:repeated-requests` Repeated identical requests to every mutating route | Sending the same mutating request twice has one effect, for every route that changes something: by its client token where the route takes one, by its own nature or state where it needs none. | `SE:stress:repeated-requests` passed | `SA:stress:repeated-requests` passed | not applicable: repeated requests are sent by a program, not typed; what a user can do twice (clicking a confirming button twice) is the browser case SB:stress:double-click-* |
+| `stress:retries` Retries: a refused confirmation, an item waiting for a fixing | Trying again after a refusal or while something is missing never produces a second effect: the retry either does the one thing, or reports that it was already done. | `SE:stress:retries` passed | `SA:stress:retries` passed | not applicable: the refused confirmation and its second confirmation are read from the preview dialog in SB:stress:confirm-changed |
+| `stress:kill-mid-confirmation` The server is killed while a twelve-leg package is being confirmed | An interrupted submission leaves the database consistent: every ledger event is whole or absent, the legs that had not executed resume, nothing is duplicated, and the client can find out what happened by sending the same confirmation again. | not applicable: killing a process needs a process: API level only | `SA:stress:kill-mid-confirmation` passed | `SB:stress:kill-mid-confirmation` passed |
+| `stress:kill-mid-cycle` The server is killed during an engine cycle that catches up fifteen days | An engine cycle interrupted at any point resumes after the restart without repeating what it had already booked and without losing what it had not. | not applicable: killing a process needs a process: API level only | `SA:stress:kill-mid-cycle` passed | not applicable: killing the server process during an engine cycle is not something done in the interface, and an engine cycle has no screen of its own; what the user sees of a server killed and started again (the page says it cannot reach the server, recovers without a reload, nothing is submitted twice) is SB:stress:connection-loss and SB:stress:kill-mid-confirmation, and the screens after a catch-up across server stops are SB:nodup:catch-up |
+| `stress:service-stops-answering` A Shaffer service address that stops answering | When a configured service address stops answering, the Terminal says so within its timeout, keeps showing waiting states, and loses no paper history; when the address answers again nothing has changed. | not applicable: a service that stops answering is a network condition: API level only | `SA:stress:service-stops-answering` passed | `SB:stress:service-stops-answering` passed |
+| `stress:double-click-confirm` Double click on "Confirm paper trade" | Double-clicking the confirmation of a trade preview submits the package once. | not applicable: a double click is a browser event: no engine call or HTTP request can make one; what a program can send twice is SE/SA:stress:repeated-requests and SE/SA:nodup:concurrent-confirmations | not applicable: a double click is a browser event: no engine call or HTTP request can make one; what a program can send twice is SE/SA:stress:repeated-requests and SE/SA:nodup:concurrent-confirmations | `SB:stress:double-click-confirm` passed |
+| `stress:double-click-transfer` Double click on "Record transfer" and "Record deposit" | Double-clicking a button that records a cash movement records it once. | not applicable: a double click is a browser event: no engine call or HTTP request can make one; what a program can send twice is SE/SA:stress:repeated-requests and SE/SA:nodup:concurrent-confirmations | not applicable: a double click is a browser event: no engine call or HTTP request can make one; what a program can send twice is SE/SA:stress:repeated-requests and SE/SA:nodup:concurrent-confirmations | `SB:stress:double-click-transfer` passed |
+| `stress:double-click-records` Double click on the other recording buttons: repayment, manual cash flow, lender recall, corporate action | Each button that records something by hand records it once when it is double-clicked. | not applicable: a double click is a browser event: no engine call or HTTP request can make one; what a program can send twice is SE/SA:stress:repeated-requests and SE/SA:nodup:concurrent-confirmations | not applicable: a double click is a browser event: no engine call or HTTP request can make one; what a program can send twice is SE/SA:stress:repeated-requests and SE/SA:nodup:concurrent-confirmations | `SB:stress:double-click-records` passed |
+| `stress:double-click-treasury` Double click on the Treasury confirming buttons: withdrawal, borrowing, repo, securities loan | Double-clicking the button that records a withdrawal, or the Confirm of a borrowing, a repo or a securities loan, records it once. | not applicable: a double click is a browser event: no engine call or HTTP request can make one; what a program can send twice is SE/SA:stress:repeated-requests and SE/SA:nodup:concurrent-confirmations | not applicable: a double click is a browser event: no engine call or HTTP request can make one; what a program can send twice is SE/SA:stress:repeated-requests and SE/SA:nodup:concurrent-confirmations | `SB:stress:double-click-treasury` passed |
+| `stress:double-click-reference` Double click on Register instrument, Save price, Save assumptions and Save request | Double-clicking the buttons that register an instrument, enter a price by hand, save the Book's assumptions or complete a hedge request does it once. | not applicable: a double click is a browser event: no engine call or HTTP request can make one; what a program can send twice is SE/SA:stress:repeated-requests and SE/SA:nodup:concurrent-confirmations | not applicable: a double click is a browser event: no engine call or HTTP request can make one; what a program can send twice is SE/SA:stress:repeated-requests and SE/SA:nodup:concurrent-confirmations | `SB:stress:double-click-reference` passed |
+| `stress:double-click-agreements` Double click on Record agreement, Close agreement and Retry failed calls | Double-clicking the buttons that record or close a collateral agreement, or retry failed collateral calls, does it once: one agreement, one closing, one collateral movement. | not applicable: a double click is a browser event: no engine call or HTTP request can make one; what a program can send twice is SE/SA:stress:repeated-requests and SE/SA:nodup:concurrent-confirmations | not applicable: a double click is a browser event: no engine call or HTTP request can make one; what a program can send twice is SE/SA:stress:repeated-requests and SE/SA:nodup:concurrent-confirmations | `SB:stress:double-click-agreements` passed |
+| `stress:confirm-changed` A confirmation refused because the price moved, then confirmed on the new figures | When the figures move between preview and confirmation nothing is submitted, the dialog shows what changed, and the second confirmation (even double-clicked) trades once at the new figures. | not applicable: the refusal itself is SE:stress:retries; the dialog is a browser matter | not applicable: the refusal itself is SA:stress:retries | `SB:stress:confirm-changed` passed |
+| `stress:connection-loss` The browser loses the server mid-session and recovers | A lost answer, a server that goes away and a server that comes back never leave a stale screen that looks current, and never turn one instruction into two. | not applicable: a browser losing its server needs a browser and a server | not applicable: the server side of this (kill, restart, same token again) is SA:stress:kill-mid-confirmation and SA:stress:repeated-requests | `SB:stress:connection-loss` passed |
+
