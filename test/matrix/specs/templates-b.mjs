@@ -4991,9 +4991,10 @@ const pairsTrade = {
         },
         nav: { account: 79_971, treasury: 920_000, book: 999_971 },
         balance: {
-          account: { cash: 80_000, receivable: 39_996, payable: 40_025, positions: 0, assets: 119_996, liabilities: 40_025, netAssets: 79_971 },
+          // The positions line nets the long (40,000) and the short (-40,000): zero, so no line is shown.
+          account: { cash: 80_000, receivable: 39_996, payable: 40_025, positions: null, assets: 119_996, liabilities: 40_025, netAssets: 79_971 },
           treasury: { cash: 920_000, assets: 920_000, liabilities: 0, netAssets: 920_000 },
-          book: { cash: 1_000_000, receivable: 39_996, payable: 40_025, positions: 0, assets: 1_039_996, liabilities: 40_025, netAssets: 999_971 },
+          book: { cash: 1_000_000, receivable: 39_996, payable: 40_025, positions: null, assets: 1_039_996, liabilities: 40_025, netAssets: 999_971 },
         },
       },
     },
@@ -5026,7 +5027,8 @@ const pairsTrade = {
       ...pairsOne('retry'), id: 'open-retry', covers: ['open', 'failed dependent leg'],
       expect: {
         preview: {
-          blocking: 0, warnings: ['not-executable'],
+          // ASH is already held in "pair": the preview says this package buys a new position. A short's loss is unbounded.
+          blocking: 0, warnings: ['not-executable', 'already-held', 'unbounded'],
           legs: [
             { kind: 'trade', action: 'buy', instrument: 'long', qty: 100, estimate: 40.02, settleDate: '2026-03-04', cash: -4_002, fees: 1, dependsOn: [] },
             { kind: 'borrow_sec', instrument: 'short', qty: 80, borrow: { available: true, feeRate: 0.009, dailyCost: 0.10 }, dependsOn: [] },
