@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 96.4% of the pass** (last milestone 2026-10-13T20:42Z, s3: puttable_swap passes at engine, API and browser)
+**Completeness: about 96.4% of the pass** (last milestone 2026-10-13T20:44Z, s2: s2: whole swap family re-run at three levels; form screenshots; catalog notes; harness reader fix for IA in another currency)
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 

@@ -5668,10 +5668,11 @@ const futuresHedge = {
       id: 'futures-legs-expire', covers: ['failed leg', 'variation margin', 'settlement'], action: 'clock', to: MAR(4),
       expect: {
         events: [
-          { type: 'future.variation', summary: 'Variation margin received on -10 HVEH6: 300.00 USD (settlement 49.90 vs 50.20)', cash: { USD: 300 }, date: '2026-03-03' },
+          // The clock crosses midnight before the end-of-day pass of 3 March is recorded: the share settlements come first.
           { type: 'settlement.pay', summary: 'paid 5,003.00 USD from settled cash', date: '2026-03-04' },
           { type: 'settlement.pay', summary: 'paid 5,003.00 USD from settled cash' },
           { type: 'settlement.pay', summary: 'paid 5,003.00 USD from settled cash' },
+          { type: 'future.variation', summary: 'Variation margin received on -10 HVEH6: 300.00 USD (settlement 49.90 vs 50.20)', cash: { USD: 300 }, date: '2026-03-03' },
           { type: 'order.expired', summary: 'Leg 2 expired: sell 1 HVEH6. Day order did not fill before the end of the business day' },
           { type: 'order.expired', summary: 'Leg 2 expired: sell 1 HVEH6. Day order did not fill before the end of the business day' },
           { type: 'order.expired', summary: 'Leg 2 expired: sell 1 HVEH6. Day order did not fill before the end of the business day' },
@@ -5750,9 +5751,9 @@ const futuresHedge = {
       id: 'variation-day-3', covers: ['variation margin', 'settlement'], action: 'clock', to: MAR(5),
       expect: {
         events: [
+          { type: 'settlement.receive', summary: 'received 4,997.00 USD into settled cash', date: '2026-03-05' }, // recorded before the 4 March pass, as above
           { type: 'future.variation', summary: 'Variation margin received on -10 HVEH6: 200.00 USD (settlement 49.70 vs 49.90)', cash: { USD: 200 }, date: '2026-03-04' },
           { type: 'future.variation', summary: 'Variation margin received on -1 HVEH6: 15.00 USD (settlement 49.70 vs 49.85)', cash: { USD: 15 } },
-          { type: 'settlement.receive', summary: 'received 4,997.00 USD into settled cash', date: '2026-03-05' },
         ],
         cash: { account: { USD: { settled: 14_400.75, unsettled: 0, availableToTrade: 14_400.75, availableToWithdraw: 14_400.75 } } },
         positions: [
@@ -5803,8 +5804,8 @@ const futuresHedge = {
       id: 'variation-day-4', covers: ['variation margin', 'settlement'], action: 'clock', to: MAR(6),
       expect: {
         events: [
-          { type: 'future.variation', summary: 'Variation margin paid on -10 HVEH6: 100.00 USD (settlement 49.80 vs 49.70)', cash: { USD: -100 }, date: '2026-03-05' },
           { type: 'settlement.receive', summary: 'received 4,997.00 USD into settled cash', date: '2026-03-06' },
+          { type: 'future.variation', summary: 'Variation margin paid on -10 HVEH6: 100.00 USD (settlement 49.80 vs 49.70)', cash: { USD: -100 }, date: '2026-03-05' },
         ],
         cash: { account: { USD: { settled: 20_278.50, unsettled: 0, availableToTrade: 20_278.50, availableToWithdraw: 20_278.50 } } },
         positions: [{ instrument: 'fut', lot: 'hedge', avgCost: 49.80, value: -60, unrealized: -60 }, { instrument: 'stock', lot: 'accept' }, { instrument: 'stock', lot: 'hedge' }],

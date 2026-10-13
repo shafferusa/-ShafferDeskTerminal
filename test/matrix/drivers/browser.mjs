@@ -202,7 +202,10 @@ async function readPreview(ui, modal) {
 /** The displayed preview must show the figures the server sent for it. */
 function previewDisplayProblems(pv, screen) {
   const out = [];
-  const trade = pv.legs.filter((l) => l.kind === 'trade');
+  // t1: the dialog lists legs grouped by purpose (primary, then hedge, then financing and reservations; web/views/preview.js),
+  // so a close that buys back a written call before selling the shares shows the shares first. Compare in that order.
+  const RANK = { primary: 0, hedge: 1, financing: 2, reserve: 2 };
+  const trade = pv.legs.filter((l) => l.kind === 'trade').map((l, i) => ({ l, i })).sort((a, b) => ((RANK[a.l.purpose] ?? 0) - (RANK[b.l.purpose] ?? 0)) || a.i - b.i).map((x) => x.l);
   // Trade legs: "Buy ..." / "Sell ..." for securities, "Enter as written: pay ..., receive ..." / "Enter the opposite side: ..." for a swap.
   const rows = screen.legs.filter((r) => /^(Buy|Sell|Enter as written|Enter the opposite side)/.test(r.label));
   if (rows.length !== trade.length) out.push(`preview screen: ${rows.length} trade legs are displayed, the preview has ${trade.length}`);
@@ -350,7 +353,14 @@ export async function readScreens(ui, ctx, t, info = null) {
       valueIsNotional: /(?:^|\n)\s*notional\s*(?:\n|$)/.test(cellOf(pos, r, 'Value or notional') || ''),
       // An OTC contract shows its collateral in the next cell instead: "independent amount 200,000.00 USD posted" (what is posted for the
       // position itself), beside the variation margin of its netting set.
-      marginShown: (() => { const m = /(?:^|\n)\s*margin\s+([^\n]+)/.exec(cellOf(pos, r, 'Value or notional') || '') || /(?:^|\n)\s*independent amount\s+([\d,.]+\s+[A-Z]{3})\s+posted/.exec(cellOf(pos, r, 'Accrued, collateral') || ''); return m ? shown(m[1]) : undefined; })(),
+      marginShown: (() => {
+        const m = /(?:^|\n)\s*margin\s+([^\n]+)/.exec(cellOf(pos, r, 'Value or notional') || '') || /(?:^|\n)\s*independent amount\s+([\d,.]+\s+([A-Z]{3}))\s+posted/.exec(cellOf(pos, r, 'Accrued, collateral') || '');
+        // s2: an independent amount posted in another currency than the contract's (a GBP swap collateralised in USD) is not the
+        // position's margin in its own currency, which is what the API's figure is: it is compared on the Collateral screen instead.
+        const ccy = /([A-Z]{3})\s*$/.exec(firstLine(cellOf(pos, r, 'Value or notional')) || '')?.[1];
+        if (m && m[2] && ccy && m[2] !== ccy) return undefined;
+        return m ? shown(m[1]) : undefined;
+      })(),
       extra: cellOf(pos, r, 'Accrued, collateral') || '',
     };
   });

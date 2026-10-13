@@ -1189,4 +1189,209 @@ const puttableSwap = {
   ],
 };
 
-export default [dividendSwap, cmsSpreadSwap, nonDeliverableSwap, quantoSwap, callableSwap, puttableSwap];
+// ---------------------------------------------------------------------------------------------
+// equity_basket_swap
+// ---------------------------------------------------------------------------------------------
+// One-year total-return swap on a custom basket of four US consumer stocks (weights 30/30/25/15, initial level 100.00):
+// receive the basket return quarterly on 20,000,000 (notional not reset), pay 3-month Term SOFR + 0.40% quarterly ACT/360,
+// from Wed 1 July 2026. No service supplies the composite: its level at each reset is entered by hand on the payment item
+// (Accounting, Pending), and the payment waits visibly until it is. Position-level terms: a fixed independent amount of
+// 400,000; no variation margin. Commission 10.00 per million; T+2 (USD).
+//   1 July to 1 October (92 days): financing (4.20% + 0.40%) x 20,000,000 x 92/360 = 235,111.11 paid; basket 100.00 to
+//     103.50 entered by hand: 20,000,000 x (103.50 / 100.00 - 1) = 700,000.00 received
+//   1 October to 1 January 2027 (92 days; New Year's Day: paid Mon 4 January, level of Thu 31 December): financing
+//     (4.00% + 0.40%) x 20,000,000 x 92/360 = 224,888.89 paid; basket 103.50 to 101.43: 20,000,000 x (101.43 / 103.50 - 1)
+//     = 20,000,000 x -2.00% = 400,000.00 paid
+//   terminated on Wed 20 January at -0.40: 20,000,000 x 0.40 / 100 = 80,000.00 paid (all-in), settles Fri 22 January
+//   cash: 2,000,000 - 200 - 235,111.11 + 700,000 - 224,888.89 - 400,000 - 80,200 = 1,759,600.00
+const BASKET = 'HRBR: 0.30; LMNT: 0.30; CDRS: 0.25; PKWY: 0.15';
+const EBS_NAME = 'US consumer basket TRS v TSFR3M+0.40% 1 Jul 2027';
+const equityBasketSwap = {
+  productId: 'equity_basket_swap',
+  title: 'Equity basket total-return swap: basket levels entered by hand on each payment item, financing at Term SOFR + 0.40%, terminated',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'return leg: Basket instead of a reference asset (names and weights adding up to 1), Initial basket level', 'financing leg: Index, Spread'],
+    automaticInputs: ['payment schedule from the contract terms and the USD calendar', 'Term SOFR fixings (rate fixtures standing in for Shaffer MarketData)', 'the basket return from the levels entered', 'settlement date T+2', 'commission from the Book fee schedule', 'independent amount from the position-level terms'],
+    manualInputs: ['the basket level at each reset, entered on the payment item (no service supplies the composite)', 'upfront and termination amounts (stated fill prices)', 'marks entered by hand'],
+    settlement: 'Upfront, termination and commission T+2 on the USD calendar; each leg paid on its payment date',
+    lifecycle: 'Financing paid each quarter; the basket payment waits for its level (named on the item) and is made once it is entered; the next period starts from that level; a period ending on a holiday is paid the next business day with the level of the business day before; termination at a stated amount',
+    accounting: 'Carried at the mark less the upfront; leg payments and the termination result realized; commission expensed',
+    collateral: 'Position-level terms: a fixed independent amount of 400,000 posted at entry and returned on termination',
+  },
+  start: at('2026-06-29'),
+  settlementCheck: { lag: 2, holidays: [] },
+  book: {
+    name: 'Matrix equity basket swap', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 4_000_000 }],
+    account: { name: 'Equity derivatives', funding: [{ ccy: 'USD', amount: 2_000_000 }] },
+    settings: { fees: { swap: { perUnit: 0.00001, minimum: 0, bps: 0 } }, fill: FILL, settlement: { swap: 2 } },
+  },
+  instruments: {
+    main: {
+      productId: 'equity_basket_swap', name: EBS_NAME, symbol: 'EBS-CONS-0727', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { tradingCalendar: 'USD', settlementCalendar: 'USD', paymentCalendar: 'USD' },
+      terms: {
+        effective: '2026-07-01', maturity: '2027-07-01', counterparty: 'Dealer E',
+        collateralBasis: { type: 'position', independentAmount: { type: 'fixed', amount: 400_000 }, variationMargin: false },
+        legs: [
+          { side: 'receive', type: 'return', ccy: 'USD', months: 3, basket: BASKET, initialLevel: 100, passDividends: false, resetNotional: false },
+          { side: 'pay', type: 'float', ccy: 'USD', index: 'TSFR3M', spread: 0.004, months: 3, dayCount: 'ACT/360' },
+        ],
+      },
+    },
+  },
+  rates: { TSFR3M: { byDate: { '2026-07-01': 4.20, '2026-10-01': 4.00 } } },
+  expectAtStart: usdStart(2_000_000, 2_000_000),
+  steps: [
+    {
+      id: 'open', covers: ['open', 'collateral'], action: 'ticket', instrument: 'main', side: 'buy', qty: 20_000_000, as: 'ebs', order: { statedPrice: 0 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 20_000_000, estimate: 0, model: 'stated-price', settleDate: '2026-07-01', calendar: 'USD', cash: 0, fees: 200 }], // 20,000,000 x 0.00001
+          cash: { USD: { fees: 200, margin: 400_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 20_000_000, avgPrice: 0 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Entered as written: 20,000,000 notional of EBS-CONS-0727 at 0.00 per 100 notional', owner: 'account', date: '2026-06-29' },
+          { type: 'swap.collateral', summary: `Collateral posted on ${EBS_NAME} under its position-level terms: 400,000.00 USD (independent amount, fixed amount for the position)`, cash: { USD: -400_000 } },
+        ],
+        cash: { account: { USD: { settled: 1_600_000, unsettled: -200, margin: 400_000, availableToTrade: 1_599_800, availableToWithdraw: 1_599_800 } } },
+        positions: [{ instrument: 'main', lot: 'ebs', owner: 'account', direction: 'as written', qty: 20_000_000, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, notional: 20_000_000, margin: 400_000 }],
+        holdings: { main: { long: 20_000_000, short: 0, net: 20_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-07-01', amount: -200, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-10-01', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-10-01', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-07-01', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', lot: 'ebs', owner: 'account', qty: 20_000_000, basis: 'position', iaRequired: 400_000, iaPosted: 400_000, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: -200, unrealized: 0, total: -200 } },
+        nav: { account: 1_999_800, book: 3_999_800 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 1_600_000, margin: 400_000, payable: 200, positions: null, assets: 2_000_000, liabilities: 200, netAssets: 1_999_800 } },
+      },
+    },
+    {
+      id: 'mark-at-par', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 0, note: 'Dealer E mark, by hand',
+      expect: { positions: [{ instrument: 'main', lot: 'ebs', price: 0, value: 0, unrealized: 0, provisional: false }], otc: [{ instrument: 'main', mark: 0, markValue: 0 }], provisional: { account: false, book: false } },
+    },
+    {
+      id: 'settle-commission', covers: 'settlement', action: 'clock', to: at('2026-07-01'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 200.00 USD from settled cash', cash: { USD: -200 } }],
+        cash: { account: { USD: { settled: 1_599_800, unsettled: 0, availableToTrade: 1_599_800, availableToWithdraw: 1_599_800 } } },
+        pending: [],
+        balance: { account: { cash: 1_599_800, payable: null, assets: 1_999_800, liabilities: 0 } },
+      },
+    },
+    {
+      // Financing 235,111.11 paid; the basket payment waits for its level.
+      id: 'first-quarter-basket-waits', covers: ['financing payment', 'missing basket level'], action: 'clock', to: at('2026-10-01'),
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Swap payment on ${EBS_NAME}, leg B (float), period 2026-07-01 to 2026-10-01: 235,111.11 USD`, cash: { USD: -235_111.11 }, date: '2026-10-01' }],
+        cash: { account: { USD: { settled: 1_364_688.89, availableToTrade: 1_364_688.89, availableToWithdraw: 1_364_688.89 } } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-10-01', status: 'blocked', reason: /Awaiting the basket level of 2026-10-01 for leg A/ },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-01-04', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-07-01', status: 'pending' },
+        ],
+        pnl: { account: { realized: -235_111.11, total: -235_311.11 } },
+        nav: { account: 1_764_688.89, book: 3_764_688.89 },
+        balance: { account: { cash: 1_364_688.89, assets: 1_764_688.89, netAssets: 1_764_688.89 } },
+      },
+    },
+    {
+      // 103.50 entered by hand: 20,000,000 x 3.50% = 700,000.00 received.
+      id: 'basket-level-by-hand', covers: ['basket level', 'basket return'], action: 'basket_level', lot: 'ebs', value: 103.50,
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Swap receipt on ${EBS_NAME}, leg A (return), period 2026-07-01 to 2026-10-01: 700,000.00 USD`, cash: { USD: 700_000 } }],
+        cash: { account: { USD: { settled: 2_064_688.89, availableToTrade: 2_064_688.89, availableToWithdraw: 2_064_688.89 } } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-01-04', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-01-04', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-07-01', status: 'pending' },
+        ],
+        pnl: { account: { realized: 464_888.89, total: 464_688.89 } },
+        nav: { account: 2_464_688.89, book: 4_464_688.89 },
+        balance: { account: { cash: 2_064_688.89, assets: 2_464_688.89, netAssets: 2_464_688.89 } },
+      },
+    },
+    {
+      // New Year's Day: both legs fall due Mon 4 January; financing 224,888.89 paid; the basket waits for the level of 31 December.
+      id: 'second-quarter-basket-waits', covers: ['financing payment', 'missing basket level', 'holiday'], action: 'clock', to: at('2027-01-04'),
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Swap payment on ${EBS_NAME}, leg B (float), period 2026-10-01 to 2027-01-01: 224,888.89 USD`, cash: { USD: -224_888.89 } }],
+        cash: { account: { USD: { settled: 1_839_800, availableToTrade: 1_839_800, availableToWithdraw: 1_839_800 } } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-01-04', status: 'blocked', reason: /Awaiting the basket level of 2026-12-31 for leg A/ },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-04-01', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-07-01', status: 'pending' },
+        ],
+        pnl: { account: { realized: 240_000, total: 239_800 } },
+        nav: { account: 2_239_800, book: 4_239_800 },
+        balance: { account: { cash: 1_839_800, assets: 2_239_800, netAssets: 2_239_800 } },
+      },
+    },
+    {
+      // 101.43 from 103.50: -2.00% on 20,000,000 = 400,000.00 paid.
+      id: 'basket-level-lower', covers: ['basket level', 'basket return'], action: 'basket_level', lot: 'ebs', value: 101.43,
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Swap payment on ${EBS_NAME}, leg A (return), period 2026-10-01 to 2027-01-01: 400,000.00 USD`, cash: { USD: -400_000 } }],
+        cash: { account: { USD: { settled: 1_439_800, availableToTrade: 1_439_800, availableToWithdraw: 1_439_800 } } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-04-01', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-04-01', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-07-01', status: 'pending' },
+        ],
+        pnl: { account: { realized: -160_000, total: -160_200 } },
+        nav: { account: 1_839_800, book: 3_839_800 },
+        balance: { account: { cash: 1_439_800, assets: 1_839_800, netAssets: 1_839_800 } },
+      },
+    },
+    { id: 'late-january', action: 'clock', to: at('2027-01-20'), expect: {} },
+    {
+      id: 'mark-before-termination', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: -0.40, note: 'Dealer E mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'ebs', price: -0.4, value: -80_000, unrealized: -80_000 }],
+        otc: [{ instrument: 'main', mark: -0.4, markValue: -80_000 }],
+        pnl: { account: { unrealized: -80_000, total: -240_200 } },
+        nav: { account: 1_759_800, book: 3_759_800 },
+        balance: { account: { positions: -80_000, assets: 1_759_800, netAssets: 1_759_800 } },
+      },
+    },
+    {
+      // 80,000.00 paid, realized -80,000.00 against a cost of 0; commission 200.00; the 400,000 comes back.
+      id: 'terminate', covers: ['close', 'full termination', 'collateral'], action: 'close', lot: 'ebs', scope: 'position', percent: 100, order: { statedPrice: -0.40 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 20_000_000, estimate: -0.4, model: 'stated-price', settleDate: '2027-01-22', cash: -80_000, fees: 200 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 20_000_000, avgPrice: -0.4 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Terminated: 20,000,000 notional of EBS-CONS-0727 at -0.40 per 100 notional (realized -80,000.00 USD)' },
+          { type: 'swap.collateral', summary: `Collateral returned on ${EBS_NAME} under its position-level terms: 400,000.00 USD (independent amount, the position ended)`, cash: { USD: 400_000 } },
+        ],
+        cash: { account: { USD: { settled: 1_839_800, unsettled: -80_200, margin: 0, availableToTrade: 1_759_600, availableToWithdraw: 1_759_600 } } },
+        positions: [], holdings: { main: null }, lifecycle: [], otc: [],
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2027-01-22', amount: -80_200, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: -240_000, commissions: -400, unrealized: 0, total: -240_400 } },
+        nav: { account: 1_759_600, book: 3_759_600 },
+        balance: { account: { cash: 1_839_800, margin: null, positions: null, payable: 80_200, assets: 1_839_800, liabilities: 80_200, netAssets: 1_759_600 } },
+      },
+    },
+    {
+      // 2,000,000 - 200 - 235,111.11 + 700,000 - 224,888.89 - 400,000 - 80,200 = 1,759,600.00.
+      id: 'settle-termination', covers: ['settlement', 'close'], action: 'clock', to: at('2027-01-22'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 80,200.00 USD from settled cash', cash: { USD: -80_200 } }],
+        cash: { account: { USD: { settled: 1_759_600, unsettled: 0, availableToTrade: 1_759_600, availableToWithdraw: 1_759_600 } } },
+        pending: [], lifecycle: [], otc: [], alerts: [],
+        balance: { account: { cash: 1_759_600, payable: null, assets: 1_759_600, liabilities: 0 } },
+      },
+    },
+  ],
+};
+
+export default [dividendSwap, cmsSpreadSwap, nonDeliverableSwap, quantoSwap, callableSwap, puttableSwap, equityBasketSwap];
