@@ -648,3 +648,8 @@ table.ledger td.acts { white-space: normal; }
   .drawer .pos-acts-sm { display: block; margin-top: 4px; }
   .drawer .pos-acts-sm .pos-acts, .drawer .pos-acts-sm .row { justify-content: flex-start !important; flex-wrap: wrap; }
 }
+
+/* ---- s2: contract form on a narrow screen ---- */
+/* A field spanning two columns in a form that has room for one created an implicit, near-zero-width second column
+   (the swap leg panels at 390 px wide): there it spans the columns that exist instead. */
+@media (max-width: 520px) { .grid-form .span-2 { grid-column: 1 / -1; } }

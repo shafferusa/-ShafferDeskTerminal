@@ -310,6 +310,13 @@ export const bond = {
     // principal instead of paid in cash. The election is recorded by hand for each coupon (manual event 'pik').
     t.pikAllowed = Boolean(t.pikAllowed);
     if (!t.pikAllowed) delete t.pikAllowed;
+    // b4: a fixed PIK component (private credit: e.g. SOFR + 6.00% cash plus 2.00% PIK): that part of every coupon is capitalised
+    // automatically; holders accrue the whole rate.
+    if (t.pikRate === undefined || t.pikRate === null || t.pikRate === '') delete t.pikRate;
+    else { t.pikRate = num(t.pikRate); if (!(t.pikRate > 0 && t.pikRate < 0.3)) errors.push('The PIK rate is a decimal a year, such as 0.02 for 2.00% paid in kind.'); else if (t.couponType === 'zero') errors.push('A PIK component needs a coupon schedule.'); }
+    // b4: the lender's undrawn commitment of a delayed-draw loan, funded by draws recorded by hand.
+    if (t.undrawnCommitment === undefined || t.undrawnCommitment === null || t.undrawnCommitment === '') delete t.undrawnCommitment;
+    else { t.undrawnCommitment = num(t.undrawnCommitment); if (!(t.undrawnCommitment >= 0)) errors.push('The undrawn commitment is an amount of 0 or more.'); }
     if (!Array.isArray(t.pikCoupons) || !t.pikCoupons.length) delete t.pikCoupons;
     // b4: priority of a sequential-pay tranche (a CMO class): it receives principal only after the tranche senior to it has
     // been paid down to zero. The senior tranche's stated balance is a term; what is left of it is recorded by hand from each
@@ -361,6 +368,8 @@ export const bond = {
       if (obs.length) rows.push(['Observations', obs.map(([d, l]) => `${d}: ${fmtLevel(l)}`).join('; ')]);
     }
     if (t.referenceEntity) rows.push(['Reference entity', t.creditEvent ? `${t.referenceEntity}: credit event recorded ${t.creditEvent.date}, principal settled at the recovery ${fmtPx(t.creditEvent.recovery * 100)}% of par on ${t.creditEvent.settleDate}; coupons ended` : `${t.referenceEntity} (a credit event, recorded by hand, ends the coupon and settles principal at the recovery)`]);
+    if (t.pikRate) rows.push(['PIK interest', `${(t.pikRate * 100).toFixed(3)}% a year on top of the cash coupon, capitalised into principal on each coupon date`]);
+    if (typeof t.undrawnCommitment === 'number') rows.push(['Undrawn commitment', `${fmtQty(t.undrawnCommitment)} ${inst.trading_ccy}: funded at par by draws recorded by hand on an interest payment date`]);
     if (t.pikAllowed) rows.push(['Interest deferral', `Deferrable: a coupon may be paid in kind (capitalised into principal), elected by hand for each coupon${t.pikCoupons?.length ? `; paid in kind: ${t.pikCoupons.join(', ')}` : ''}`]);
     if (t.seniorTranche) rows.push(['Priority', `Sequential: principal only after ${t.seniorTranche} (stated balance ${fmtQty(t.seniorBalance)}) is retired; ${t.seniorRemaining > 0 ? `${fmtQty(t.seniorRemaining)} of it outstanding, as last recorded by hand` : `retired${t.seniorRetiredOn ? ` (recorded ${t.seniorRetiredOn})` : ''}: this tranche now receives principal`}`]);
     if (t.servicingFeeRate) rows.push(['Servicing fee', `${(t.servicingFeeRate * 100).toFixed(3)}% a year, deducted from interest before holders are paid${t.couponType === 'fixed' ? `: net coupon ${((t.couponRate - t.servicingFeeRate) * 100).toFixed(3)}%` : ''}`]);
@@ -586,6 +595,31 @@ export const bond = {
         servicing = `; gross interest ${fmt(Math.abs(gross), ccy)} less servicing fee ${fmt(Math.abs(money(gross - amount, ccy)), ccy)} (${(inst.terms.servicingFeeRate * 100).toFixed(3)}% a year)`;
       }
       if (isContingent(inst)) servicing = ` (contingent coupon: ${inst.terms.linkedTo} observed at ${fmtLevel(inst.terms.observations[couponDate])}, at or above the coupon barrier ${fmtLevel(inst.terms.couponBarrier * inst.terms.initialLevel)})`;
+      // b4: a fixed PIK component: that part of the coupon is capitalised (factor up once for the instrument, cost up), the rest paid.
+      if (inst.terms.pikRate && !inst.terms.couponSuspended) {
+        const pikPer100 = couponPer100({ ...couponTerms(inst, couponDate), couponType: 'fixed', couponRate: inst.terms.pikRate }, couponDate);
+        const pikAmount = money((face * cScale * pikPer100) / 100, ccy);
+        const cashAmount = money(amount - pikAmount, ccy);
+        let fresh = app.instruments.get(inst.id);
+        if (!(fresh.terms.pikApplied || {})[couponDate]) {
+          const old = factorOf(fresh);
+          const nf = Math.round(old * (1 + pikPer100 / 100) * 1e10) / 1e10;
+          app.instruments.update(inst.id, { terms: { ...fresh.terms, factor: nf, factorHistory: [...(fresh.terms.factorHistory || []), { from: couponDate, factor: nf, prior: old, pik: true }], pikApplied: { ...(fresh.terms.pikApplied || {}), [couponDate]: nf } } }, { system: true });
+          fresh = app.instruments.get(inst.id);
+        }
+        const nf = fresh.terms.pikApplied[couponDate];
+        const eventId = ledger.post({
+          ...base, type: 'bond.coupon', summary: `Coupon received on ${fmtQty(Math.abs(face))} ${inst.symbol || inst.name}${principalNote(inst, face, cScale)}: ${fmt(Math.abs(cashAmount), ccy)} in cash and ${fmt(Math.abs(pikAmount), ccy)} paid in kind (${(inst.terms.pikRate * 100).toFixed(3)}% PIK added to principal, factor ${Number(cScale.toFixed(10))} to ${nf}): ${fmt(Math.abs(amount), ccy)}`,
+          data: { couponDate, per100, face, pikPer100, pikAmount, cashAmount, factor: nf, ...(Math.abs(cScale - 1) > 1e-12 ? { scale: cScale } : {}) },
+          entries: [{ account: 'cash', ccy, amount: cashAmount, positionId: pos.id }, { account: 'pos', ccy, amount: pikAmount, positionId: pos.id }, { account: 'accrued.asset', ccy, amount: -amount, positionId: pos.id }],
+        });
+        app.positions.change(live, { dCost: pikAmount });
+        if (inst.terms.couponType === 'float') resetFloat(app, fresh, couponDate);
+        const asOf = live.data?.accruedThrough && live.data.accruedThrough > couponDate ? live.data.accruedThrough : couponDate;
+        if (!isZero(live.qty)) accrueTo(app, { book, unit, inst: app.instruments.get(inst.id), pos: positions.get(pos.id), date: asOf, paying: couponDate });
+        scheduleNext();
+        return { done: true, eventId };
+      }
       const eventId = ledger.post({
         // A short owes the coupon to the lender of the securities: it is paid, on the face sold short.
         ...base, type: 'bond.coupon', summary: `Coupon ${amount >= 0 ? 'received' : 'paid'} on ${fmtQty(Math.abs(face))} ${inst.symbol || inst.name}${face < 0 ? ' sold short' : ''}${principalNote(inst, face, cScale)}${servicing}: ${fmt(Math.abs(amount), ccy)}`,
@@ -688,6 +722,7 @@ export const bond = {
   positionEvent(app, ctx) {
     if (ctx.action === 'put') return bond.exercisePut(app, { ...ctx, face: ctx.body.face, label: ctx.body.label });
     if (ctx.action === 'convert') return bond.convert(app, { ...ctx, face: ctx.body.face, sharePrice: ctx.body.sharePrice, settlement: ctx.body.settlement });
+    if (ctx.action === 'draw') return bond.draw(app, { ...ctx, amount: ctx.body.amount, note: ctx.body.note });
     throw new AppError(`Unknown debt-security event "${ctx.action}".`);
   },
   /**
@@ -924,6 +959,39 @@ export const bond = {
    *   scheduledFactor   optional: the factor after the scheduled amortisation only. The history then says how much of the
    *                     principal was scheduled and how much was prepaid (and the single monthly mortality, SMM).
    */
+  /**
+   * A draw on a delayed-draw loan, recorded by hand by the lender (b4): the borrower draws `amount` of the lender's undrawn
+   * commitment and the lender funds it at par, in cash, now. The principal joins the interest period that starts today, so a draw
+   * is recorded on an interest payment date (the start of a period); interest for a stub from another day is not modelled. The
+   * position's face rises by amount / factor (principal outstanding per unit of face), its cost by the amount.
+   */
+  draw(app, { book, unit, inst, pos, amount, note }) {
+    const name = inst.symbol || inst.name;
+    const t = inst.terms;
+    need(typeof t.undrawnCommitment === 'number', `${name} has no undrawn commitment: it is not a delayed-draw loan.`);
+    need(pos.qty > 0, 'Only the lender (a long position) funds a draw.');
+    const ccy = inst.trading_ccy;
+    const a = money(num(amount), ccy);
+    need(a > 0, 'Enter the amount drawn.');
+    need(a <= t.undrawnCommitment + 0.004, `The undrawn commitment of ${name} is ${fmt(t.undrawnCommitment, ccy)}; ${fmt(a, ccy)} cannot be drawn.`);
+    const today = app.clock.today();
+    const st = schedTerms(inst);
+    need(nextCouponDate(st, addBusinessDays(today, -1, 'ALLDAYS')) === today, `A draw funds at the start of an interest period: record it on an interest payment date of ${name} (the next is ${nextCouponDate(st, today)}). A stub period from another day is not modelled.`);
+    const have = app.ledger.cash(unit.id, ccy).availableToWithdraw;
+    need(have >= a - 0.004, `${unit.name} has ${fmt(have, ccy)} available; the draw needs ${fmt(a, ccy)}.`, { code: 'insufficient_cash' });
+    const scale = scaleOn(inst, today);
+    const dq = Math.round((a / scale) * 1e8) / 1e8;
+    const left = money(t.undrawnCommitment - a, ccy);
+    app.instruments.update(inst.id, { terms: { ...t, undrawnCommitment: left } }, { system: true });
+    const eventId = app.ledger.post({
+      bookId: book.id, unitId: unit.id, type: 'loan.draw', instrumentId: inst.id, strategyId: pos.strategy_id, positionId: pos.id, actor: 'user',
+      summary: `Draw funded on ${name}, recorded by hand${note ? ` (${note})` : ''}: ${fmt(a, ccy)} of principal at par (${fmtQty(dq)} face${Math.abs(scale - 1) > 1e-12 ? ` at factor ${Number(scale.toFixed(10))}` : ''}); undrawn commitment ${fmt(t.undrawnCommitment, ccy)} to ${fmt(left, ccy)}`,
+      data: { amount: a, face: dq, scale, undrawnBefore: t.undrawnCommitment, undrawnAfter: left, manual: true },
+      entries: [{ account: 'cash', ccy, amount: -a, positionId: pos.id }, { account: 'pos', ccy, amount: a, positionId: pos.id }],
+    });
+    app.positions.change(pos, { dQty: dq, dCost: a });
+    return { eventId, amount: a, face: dq };
+  },
   /**
    * A repricing amendment of a floating-rate loan, recorded by hand (b4): the lenders agree a new spread over the reference rate.
    * It takes effect at the start of an interest period (recorded on the payment date that starts it, after that day's interest
@@ -1189,6 +1257,11 @@ function schedTerms(inst) {
   if (t.servicingFeeRate) {
     if (t.couponType === 'fixed') t = { ...t, couponRate: t.couponRate - t.servicingFeeRate };
     else if (t.couponType === 'float' && t.currentCoupon !== null && t.currentCoupon !== undefined) t = { ...t, currentCoupon: t.currentCoupon - t.servicingFeeRate };
+  }
+  // b4: a fixed PIK component accrues with the cash coupon (the coupon task splits the payment).
+  if (t.pikRate) {
+    if (t.couponType === 'fixed') t = { ...t, couponRate: t.couponRate + t.pikRate };
+    else if (t.couponType === 'float' && t.currentCoupon !== null && t.currentCoupon !== undefined) t = { ...t, currentCoupon: t.currentCoupon + t.pikRate };
   }
   if (!t.perpetual) return t;
   const y = Number(t.anchorDate.slice(0, 4));

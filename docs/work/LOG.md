@@ -262,3 +262,4 @@
 - 2026-10-13T20:13Z | s2 | +0.2 | freight_swap passes at engine, API and browser (route average on London days, cleared terms); all 13 s2 products pass
 - 2026-10-13T20:13Z | t2 | +0.2 | long_calendar passes at engine, API and browser
 - 2026-10-13T20:15Z | b4 | +0.2 | leveraged_loan passes at engine, API and browser
+- 2026-10-13T20:17Z | t2 | +0.2 | long_diagonal passes at engine, API and browser

@@ -250,6 +250,11 @@ const F = {
     { path: 'terms.counterparty', label: 'Counterparty', type: 'text' },
     { path: 'terms.collateralBasis', type: 'collateral' },
     { path: 'terms.collateral', label: 'Other collateral terms', type: 'text', span: 2, hint: 'Free text. Recorded, not simulated.' },
+    // s3: non-deliverable settlement and the call or put of a callable or puttable swap (server/products/swap-partial.js).
+    { path: 'terms.settlementCcy', label: 'Settlement currency (non-deliverable)', type: 'text', hint: 'Every payment is made in it, at the FX fixing', show: (d) => d.productId === 'non_deliverable_swap', required: true },
+    { path: 'terms.fixingLag', label: 'FX fixing lag (business days)', type: 'number', hint: 'Before each payment date. Empty: 2', show: (d) => d.productId === 'non_deliverable_swap' },
+    { path: 'terms.callRight.dates', label: 'Exercise dates', type: 'text', span: 2, hint: 'The dates the swap can be called or put, YYYY-MM-DD separated by ";"', show: (d) => ['callable_swap', 'puttable_swap'].includes(d.productId), required: true },
+    { path: 'terms.callRight.by', label: 'Right held by', type: 'select', options: opt([['written', 'The party entering as written'], ['opposite', 'The party entering the opposite side']]), show: (d) => ['callable_swap', 'puttable_swap'].includes(d.productId), required: true },
     { path: 'terms.netSettlement', label: 'Net settlement', type: 'check', hint: 'Legs of one currency ending a period on the same date are paid as one net amount (commodity swaps). Not with return or overnight legs.' }, // s2
     { path: 'terms.legs', type: 'legs' },
   ],
@@ -284,7 +289,7 @@ for (const f of ['equity', 'fund', 'spot', 'crypto']) F[f] = F.security;
 F.manual = MANUAL_FIELDS;
 export const FAMILY_FIELDS = F;
 
-const LEG_TYPES = opt([['fixed', 'Fixed rate'], ['float', 'Floating rate'], ['ois', 'Compounded overnight rate'], ['return', 'Return on a reference asset'], ['price', 'Price of a reference asset'], ['cap', 'Cap'], ['floor', 'Floor']]);
+const LEG_TYPES = opt([['fixed', 'Fixed rate'], ['float', 'Floating rate'], ['ois', 'Compounded overnight rate'], ['return', 'Return on a reference asset'], ['price', 'Price of a reference asset'], ['cap', 'Cap'], ['floor', 'Floor'], ['dividend', 'Realised dividends of a stock']]); // s3: dividend
 const MONTHS = opt([[0, 'At maturity only'], [1, 'Monthly'], [3, 'Quarterly'], [6, 'Semi-annual'], [12, 'Annual']]);
 
 /** Starting legs for each swap product, so the ticket opens with the right structure. */
@@ -327,14 +332,15 @@ function LegsEditor({ legs, onChange, ccy }) {
         ${['float', 'ois', 'cap', 'floor'].includes(l.type) ? html`<${Field} label="Index (rate code)" hint="Financing benchmark"><${Text} value=${l.index} onInput=${(v) => set(i, { index: v })} /><//>` : null}
         ${['float', 'ois'].includes(l.type) ? html`<${Field} label="Spread (decimal)"><${Num} value=${l.spread} onInput=${(v) => set(i, { spread: v })} /><//>` : null}
         ${['cap', 'floor'].includes(l.type) ? html`<${Field} label="Strike rate (decimal)"><${Num} value=${l.strike} onInput=${(v) => set(i, { strike: v })} /><//>` : null}
-        ${['return', 'price'].includes(l.type) ? html`<${Field} label="Reference asset" span=${2}><${InstrumentPicker} value=${l.underlyingId} onChange=${(v) => set(i, { underlyingId: v })} /><//>` : null}
+        ${['return', 'price', 'dividend'].includes(l.type) && !l.basket ? html`<${Field} label="Reference asset" span=${2}><${InstrumentPicker} value=${l.underlyingId} onChange=${(v) => set(i, { underlyingId: v })} /><//>` : null}
         ${l.type === 'price' ? html`<${Field} label="Units per unit of notional"><${Num} value=${l.units} onInput=${(v) => set(i, { units: v })} /><//>
           <${Field} label="Fixed price" hint="Leave empty for the floating price"><${Num} value=${l.fixedPrice} onInput=${(v) => set(i, { fixedPrice: v })} /><//>` : null}
         <${Field} label=${['return', 'price'].includes(l.type) ? 'Reset and payment' : 'Payment'}><${Select} value=${l.months} onChange=${(v) => set(i, { months: Number(v), ...(Number(v) && l.compounding ? { compounding: null } : {}) })} options=${MONTHS} /><//>
-        ${!['return', 'price'].includes(l.type) ? html`<${Field} label="Day count"><${Select} value=${l.dayCount} onChange=${(v) => set(i, { dayCount: v })} options=${DAY_COUNTS} /><//>` : null}
+        ${!['return', 'price', 'dividend'].includes(l.type) ? html`<${Field} label="Day count"><${Select} value=${l.dayCount} onChange=${(v) => set(i, { dayCount: v })} options=${DAY_COUNTS} /><//>` : null}
         ${l.type === 'return' ? html`<${Field} label="Options"><${Check} checked=${l.passDividends} onChange=${(v) => set(i, { passDividends: v })}>Total return (pass income through)<//><${Check} checked=${l.resetNotional} onChange=${(v) => set(i, { resetNotional: v })}>Notional resets<//><//>` : null}
         ${['fixed', 'float', 'ois'].includes(l.type) ? html`<${Field} label="Notional"><${Check} checked=${l.exchangeNotional} onChange=${(v) => set(i, { exchangeNotional: v })}>Exchanged at start and maturity<//><//>` : null}
         ${l.type === 'price' ? html`<${PriceLegFields} leg=${l} set=${(patch) => set(i, patch)} />` : null}
+        <${PartialLegFields} leg=${l} set=${(patch) => set(i, patch)} />
         <${Field} label="Payment lag (business days)" hint="Paid this many business days after each period end; 0 = on the period end"><${Num} value=${l.paymentLag ?? 0} onInput=${(v) => set(i, { paymentLag: v })} /><//>
         <${Field} label="Notional schedule" hint="Amortizing or accreting: one step per line, the first day of a period and its factor of the notional (2026-09-05 0.75). Empty: the notional does not change."><${ScheduleText} value=${l.notionalSchedule} onChange=${(v) => set(i, { notionalSchedule: v })} /><//>
       </div></div>`)}
@@ -468,4 +474,16 @@ export function draftToContract(d) {
     issuer: d.issuer || undefined, domicile: d.domicile || undefined, underlyingGeo: d.underlyingGeo || undefined, underlyingId: d.underlyingId || undefined,
     tradingCcy: (d.tradingCcy || '').toUpperCase(), settleCcy: d.settleCcy ? d.settleCcy.toUpperCase() : undefined, multiplier: d.multiplier ?? undefined, tags: d.tags || [], externalIds: d.externalIds || {}, terms,
   };
+}
+
+// ---- s3: legs of the swaps marked partial: CMS spread, quanto, basket and dividend legs (server/products/swap-partial.js) ----
+function PartialLegFields({ leg: l, set }) {
+  const basketText = Array.isArray(l.basket) ? l.basket.map((b) => `${b.name}: ${b.weight}`).join('; ') : l.basket || '';
+  return html`
+    ${l.type === 'float' ? html`<${Field} label="Minus index (CMS spread)" hint="Optional: a second rate code, subtracted (CMS10Y - CMS2Y)"><${Text} value=${l.index2 || ''} onInput=${(v) => set({ index2: v || undefined })} /><//>` : null}
+    ${l.type === 'dividend' ? html`<${Field} label="Units per unit of notional" hint="Shares whose dividends one unit of notional pays"><${Num} value=${l.units ?? 1} onInput=${(v) => set({ units: v })} /><//>` : null}
+    ${l.type === 'return' ? html`<${Field} label="Basket instead of a reference asset" span=${2} hint="Constituents and weights, NAME: 0.25; ... The level is entered by hand at each reset."><${Text} value=${basketText} onInput=${(v) => set({ basket: v || undefined, ...(v ? { underlyingId: '' } : {}) })} /><//>
+      ${l.basket ? html`<${Field} label="Initial basket level"><${Num} value=${l.initialLevel ?? null} onInput=${(v) => set({ initialLevel: v })} /><//>` : null}` : null}
+    ${['fixed', 'float', 'return'].includes(l.type) ? html`<${Field} label="Quanto currency" hint="Optional: worked out in this currency, paid in the leg's"><${Text} value=${l.quantoCcy || ''} onInput=${(v) => set({ quantoCcy: v.toUpperCase() || undefined })} /><//>
+      ${l.quantoCcy ? html`<${Field} label="Fixed conversion rate" hint=${`${l.ccy || 'leg currency'} per ${l.quantoCcy}`}><${Num} value=${l.quantoRate ?? null} onInput=${(v) => set({ quantoRate: v })} /><//>` : null}` : null}`;
 }

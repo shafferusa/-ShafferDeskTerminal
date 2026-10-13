@@ -16,6 +16,7 @@ import { STATUS_LABEL } from './data/observation.js';
 import { guardRepeats } from './http/once.js';
 import { createRouter } from './http/router.js';
 import { CALENDARS, COUNTRY_CALENDAR, CURRENCY_CALENDAR, getExtraHolidays, holidaysOf, setExtraHolidays } from './quant/calendar.js';
+import { setBasketLevel } from './products/swap-partial.js'; // s3: basket level entered on a swap payment item
 
 export function createApi(app) {
   // Every mutating route below takes an optional client token (body `clientToken` or the Idempotency-Key header):
@@ -388,7 +389,7 @@ export function createApi(app) {
         case 'assign': need(plugin.assign, 'Assignment does not apply to this position.'); result = plugin.assign(app, { ...ctx, contracts: body.contracts }); break;
         case 'redeem': need(plugin.redeemEarly, 'Early redemption does not apply to this position.'); result = plugin.redeemEarly(app, { ...ctx, price: body.price, face: body.face, label: body.label }); break;
         // A holder's put and a conversion or exchange into shares, recorded by hand (server/products/bond.js).
-        case 'put': case 'convert':
+        case 'put': case 'convert': case 'draw': // b4: a draw on a delayed-draw loan
           // Only debt securities record these here; any other family answers as before (an unknown lifecycle action).
           if (inst.family !== 'bond' || !plugin.positionEvent) throw new AppError(`Unknown lifecycle action "${body.action}".`);
           result = plugin.positionEvent(app, { ...ctx, action: body.action, body }); break;
@@ -499,6 +500,8 @@ export function createApi(app) {
   r.post('/api/tasks/:id/settlement-amount', ({ params, body }) => {
     const t = app.tasks.get(params.id);
     need(t, 'Lifecycle item not found.', { status: 404 });
+    // s3: the level of an equity basket at a reset, entered by hand on the payment item of its return leg.
+    if (t.type === 'swap.payment') return setBasketLevel(app, t, body.value);
     if (body.value !== undefined && body.value !== null && body.value !== '') {
       need(t.type === 'option.expiry', 'A settlement value is entered on the expiry item of an option.');
       const inst = instruments.get(t.instrument_id);

@@ -3598,4 +3598,437 @@ const longCalendar = {
   ],
 };
 
-export default [bearCall, longStraddle, longStrangle, ironCondor, ironButterfly, longButterfly, longCalendar];
+// =====================================================================================================================
+// long_diagonal
+// =====================================================================================================================
+// Quillan Mining (NYSE) puts, physical delivery: sell the 20 March 2026 45 put, buy the 17 April 2026 40 put, 5 each.
+// The near put depends on the far put. The far put outlives it and covers it below 40, so the reserve is the width,
+// 5 x 100 x (45 - 40) = 2,500, not the full strike value of the written put (5 x 100 x 45 = 22,500).
+//   diagonal  refused short of cash, then Treasury funding; the far put fills 3 of 5 first and the near put follows. On
+//             20 March the stock closes at 46: the near put lapses, its reserve is released, and the far put remains,
+//             held over Good Friday and sold on 6 April.
+//   retry / accept / unwind  1 each when the near put has no fresh quote. Accept keeps a far put alone.
+const DIAG_PAGE = (contracts, financing) => ({ template: 'Long Diagonal Spread', underlying: 'stock', expiration: '2026-03-20', farExpiration: '2026-04-17', right: 'P', strikes: { 'Near-dated strike (sold)': 45, 'Far-dated strike (bought)': 40 }, contracts, ...(financing ? { financing } : {}) });
+const diagInput = (contracts, financing) => templateInput('long_diagonal', { underlyingId: '$inst:stock', options: { expiration: '2026-03-20', farExpiration: '2026-04-17', right: 'P', strikes: { near: 45, far: 40 }, contracts }, financing });
+const diagOne = (as) => ({ action: 'package', as, instrument: 'stock', input: diagInput(1, null), strategyPage: DIAG_PAGE(1, null) });
+const longDiagonal = {
+  template: 'long_diagonal',
+  title: 'Long diagonal put spread on Quillan Mining (NYSE): sell the 20 March 2026 45 put, buy the 17 April 2026 40 put',
+  matrix: {
+    ...OPTION_TEMPLATE_MATRIX,
+    requiredFields: [...OPTION_TEMPLATE_MATRIX.requiredFields, 'Far expiration', 'Built from (calls or puts)'],
+    settlement: 'Premium of each leg T+1 on the US calendar; Treasury funding moves at once',
+    lifecycle: 'The near put\'s expiry item on 20 March 2026 (close 46: it lapses, its reserve is released) while the far put remains with its own expiry item on 17 April; held across Good Friday and sold; a failed dependent leg leaves the instance needing attention: Retry, Unwind or Accept',
+    accounting: 'Net credit received; commission expensed; premium realized on buy-back, sale and lapse; after the near expiry the instance holds the far put alone',
+    collateral: 'The far 40 put covers the written 45 put below 40: the width is reserved (2,500 for 5), not the written put\'s strike value; released when the near put lapses',
+  },
+  start: MAR(2),
+  settlementCheck: { lag: 1, holidays: ['2026-04-03'] },
+  book: book('Templates long diagonal'),
+  instruments: {
+    stock: stockDraft('Quillan Mining Corp.', 'QLM'),
+    mar45: equityOption('QLM', 'QLM260320P45', 'P', 45, '2026-03-20'),
+    apr40: equityOption('QLM', 'QLM260417P40', 'P', 40, '2026-04-17'),
+  },
+  quotes: {
+    stock: { bid: 45.98, ask: 46.02, last: 46.00, bidSize: 10000, askSize: 10000 },
+    mar45: { bid: 1.60, ask: 1.70, last: 1.65, bidSize: 20, askSize: 20 },
+    apr40: { bid: 0.90, ask: 1.00, last: 0.95, bidSize: 20, askSize: 3 }, // only 3 contracts displayed at the ask
+  },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 1_000, unsettled: 0, reserved: 0, availableToTrade: 1_000, availableToWithdraw: 1_000 } },
+      treasury: { USD: { settled: 999_000, unsettled: 0, reserved: 0, availableToTrade: 999_000, availableToWithdraw: 999_000 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 1_000, treasury: 999_000, book: 1_000_000 },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+  },
+  steps: [
+    {
+      // 500 for the far puts (5 x 1.00 x 100) + 6.50 + 2,500 reserved, against 800 (5 x 1.60 x 100) and 1,000: 1,206.50
+      // short, netted and leg by leg alike (the far put is bought first: 1,000 - 503.25 + 796.75 - 2,500).
+      id: 'open-short-of-cash', covers: 'financing', action: 'package', as: 'refused', instrument: 'stock',
+      input: diagInput(5, null), strategyPage: DIAG_PAGE(5, null),
+      status: 'blocked', reason: 'The Account cannot fund the package: the preview is blocked until financing is chosen.',
+      expect: {
+        refused: 'Alpha is short 1,206.50 USD',
+        preview: {
+          blocking: 1, errors: ['cash'],
+          legs: [
+            { kind: 'trade', action: 'buy', instrument: 'apr40', qty: 5, estimate: 1.00, settleDate: '2026-03-03', cash: -500, fees: 3.25, dependsOn: [] },
+            { kind: 'trade', action: 'sell', instrument: 'mar45', qty: 5, estimate: 1.60, settleDate: '2026-03-03', cash: 800, fees: 3.25, dependsOn: [1] },
+          ],
+          cash: { USD: { purchases: 500, proceeds: 800, fees: 6.50, reserved: 2_500, required: 3_006.50, available: 1_000, shortfall: 1_206.50 } },
+        },
+      },
+    },
+    {
+      id: 'open', covers: ['open', 'financing', 'partial fill', 'dependency'], action: 'package', as: 'diagonal', instrument: 'stock',
+      input: diagInput(5, { mode: 'treasury' }), strategyPage: DIAG_PAGE(5, { mode: 'treasury' }),
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [
+            { kind: 'funding', purpose: 'financing', qty: 1_206.50, cash: 1_206.50, dependsOn: [] },
+            { kind: 'trade', action: 'buy', instrument: 'apr40', qty: 5, estimate: 1.00, model: 'quoted-bid-ask', settleDate: '2026-03-03', cash: -500, fees: 3.25, dependsOn: [1] },
+            { kind: 'trade', action: 'sell', instrument: 'mar45', qty: 5, estimate: 1.60, settleDate: '2026-03-03', cash: 800, fees: 3.25, dependsOn: [2, 1] },
+          ],
+          cash: { USD: { purchases: 500, proceeds: 800, fees: 6.50, reserved: 2_500, financingIn: 1_206.50, required: 3_006.50, available: 1_000, shortfall: 0, netCash: 1_500 } },
+          netPremium: { amount: -300, ccy: 'USD', type: 'credit', complete: true },
+          optionRequirement: [{ ccy: 'USD', amount: 2_500, finite: 2_500, naked: 0, uncoveredCallUnits: 0 }],
+        },
+        result: {
+          status: 'partial',
+          orders: [
+            { kind: 'funding', status: 'filled', filledQty: 1_206.50 },
+            { action: 'buy', instrument: 'apr40', status: 'partial', filledQty: 3, avgPrice: 1.00 },
+            { action: 'sell', instrument: 'mar45', status: 'partial', filledQty: 3, avgPrice: 1.60 },
+          ],
+        },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'transfer.funding', summary: 'Treasury funding: 1,206.50 USD from Treasury to Alpha' },
+          { type: 'trade.fill', summary: 'Bought 3 QLM260417P40 @ 1.00 USD', date: '2026-03-02' },
+          { type: 'trade.fill', summary: 'Sold 3 QLM260320P45 @ 1.60 USD' },
+          { type: 'trade.fill', summary: 'Bought 2 QLM260417P40 @ 1.00 USD' },
+          { type: 'trade.fill', summary: 'Sold 2 QLM260320P45 @ 1.60 USD' },
+        ],
+        cash: {
+          // owed 301.95 + 201.30 = 503.25; owed to it 478.05 + 318.70 = 796.75; reserved 2,500
+          account: { USD: { settled: 2_206.50, unsettled: 293.50, reserved: 2_500, availableToTrade: 0, availableToWithdraw: -796.75 } },
+          treasury: { USD: { settled: 997_793.50, unsettled: 0, availableToTrade: 997_793.50, availableToWithdraw: 997_793.50 } },
+        },
+        positions: [
+          { instrument: 'apr40', lot: 'diagonal', owner: 'account', direction: 'long', qty: 5, avgCost: 1.00, cost: 500, price: 0.95, value: 475, unrealized: -25 },
+          { instrument: 'mar45', lot: 'diagonal', owner: 'account', direction: 'short', qty: -5, avgCost: 1.60, cost: -800, price: 1.65, value: -825, unrealized: -25 },
+        ],
+        holdings: { apr40: { long: 5, short: 0, net: 5 }, mar45: { long: 0, short: 5, net: -5 } },
+        pending: [
+          { instrument: 'apr40', lot: 'diagonal', dueDate: '2026-03-03', amount: -301.95, into: 'cash' },
+          { instrument: 'apr40', lot: 'diagonal', dueDate: '2026-03-03', amount: -201.30, into: 'cash' },
+          { instrument: 'mar45', lot: 'diagonal', dueDate: '2026-03-03', amount: 318.70, into: 'cash' },
+          { instrument: 'mar45', lot: 'diagonal', dueDate: '2026-03-03', amount: 478.05, into: 'cash' },
+        ],
+        lifecycle: [
+          { type: 'option.expiry', instrument: 'mar45', dueDate: '2026-03-20', status: 'pending' },
+          { type: 'option.expiry', instrument: 'apr40', dueDate: '2026-04-17', status: 'pending' },
+        ],
+        pnl: {
+          account: { realized: 0, commissions: -6.50, fees: 0, unrealized: -50, total: -56.50 },
+          book: { realized: 0, commissions: -6.50, unrealized: -50, total: -56.50 },
+          treasury: { total: 0 },
+        },
+        nav: { account: 2_150, treasury: 997_793.50, book: 999_943.50 },
+        balance: {
+          account: { cash: 2_206.50, receivable: 796.75, payable: 503.25, positions: -350, assets: 2_653.25, liabilities: 503.25, netAssets: 2_150 },
+          treasury: { cash: 997_793.50, assets: 997_793.50, liabilities: 0, netAssets: 997_793.50 },
+          book: { cash: 1_000_000, receivable: 796.75, payable: 503.25, positions: -350, assets: 1_000_446.75, liabilities: 503.25, netAssets: 999_943.50 },
+        },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: MAR(3),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 478.05 USD into settled cash', date: '2026-03-03' },
+          { type: 'settlement.receive', summary: 'received 318.70 USD into settled cash' },
+          { type: 'settlement.pay', summary: 'paid 301.95 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 201.30 USD from settled cash' },
+        ],
+        cash: { account: { USD: { settled: 2_500, unsettled: 0, availableToTrade: 0, availableToWithdraw: 0 } } },
+        pending: [],
+        balance: { account: { cash: 2_500, receivable: null, payable: null, assets: 2_150, liabilities: 0 }, book: { cash: 1_000_293.50, receivable: null, payable: null, assets: 999_943.50, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'fund-account', covers: 'internal funding', action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 2_000,
+      expect: {
+        events: [{ type: 'transfer.funding', summary: 'Treasury funding: 2,000.00 USD from Treasury to Alpha' }],
+        cash: { account: { USD: { settled: 4_500, availableToTrade: 2_000, availableToWithdraw: 2_000 } }, treasury: { USD: { settled: 995_793.50, availableToTrade: 995_793.50, availableToWithdraw: 995_793.50 } } },
+        nav: { account: 4_150, treasury: 995_793.50 },
+        balance: { account: { cash: 4_500, assets: 4_150, netAssets: 4_150 }, treasury: { cash: 995_793.50, assets: 995_793.50, netAssets: 995_793.50 } },
+      },
+    },
+    { id: 'mar45-quote-stops', action: 'quote', instrument: 'mar45', quote: { bid: 1.60, ask: 1.70, last: 1.65, bidSize: 20, askSize: 20, asOf: MAR(3, '09:50') }, expect: {} },
+    {
+      ...diagOne('retry'), id: 'open-retry', covers: ['open', 'failed dependent leg'],
+      expect: {
+        preview: {
+          blocking: 0, warnings: ['not-executable'],
+          legs: [
+            { kind: 'trade', action: 'buy', instrument: 'apr40', qty: 1, estimate: 1.00, settleDate: '2026-03-04', cash: -100, fees: 0.65, dependsOn: [] },
+            { kind: 'trade', action: 'sell', instrument: 'mar45', qty: 1, estimate: null, reference: 1.65, executable: false, settleDate: '2026-03-04', cash: 165, fees: 0.65, dependsOn: [1] },
+          ],
+          cash: { USD: { purchases: 100, proceeds: 165, fees: 1.30, reserved: 500, required: 601.30, available: 2_000, shortfall: 0 } },
+        },
+        result: { status: 'partial', orders: [{ instrument: 'apr40', status: 'filled', filledQty: 1, avgPrice: 1.00 }, { instrument: 'mar45', status: 'working', filledQty: 0 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1 QLM260417P40 @ 1.00 USD', date: '2026-03-03' }],
+        cash: { account: { USD: { settled: 4_500, unsettled: -100.65, reserved: 2_500, availableToTrade: 1_899.35, availableToWithdraw: 1_899.35 } } },
+        positions: [
+          { instrument: 'apr40', lot: 'diagonal', value: 475 },
+          { instrument: 'apr40', lot: 'retry', owner: 'account', direction: 'long', qty: 1, avgCost: 1.00, cost: 100, price: 0.95, value: 95, unrealized: -5 },
+          { instrument: 'mar45', lot: 'diagonal', value: -825 },
+        ],
+        holdings: { apr40: { long: 6, short: 0, net: 6 } },
+        pending: [{ instrument: 'apr40', lot: 'retry', dueDate: '2026-03-04', amount: -100.65 }],
+        openOrders: [{ instrument: 'mar45', kind: 'trade', action: 'sell', status: 'working', qty: 1, filledQty: 0 }],
+        lifecycle: [{ instrument: 'mar45' }, { instrument: 'apr40' }, { instrument: 'apr40' }],
+        pnl: { account: { commissions: -7.15, unrealized: -55, total: -62.15 }, book: { commissions: -7.15, unrealized: -55, total: -62.15 } },
+        nav: { account: 4_144.35, book: 999_937.85 },
+        balance: {
+          account: { cash: 4_500, payable: 100.65, positions: -255, assets: 4_245, liabilities: 100.65, netAssets: 4_144.35 },
+          book: { cash: 1_000_293.50, payable: 100.65, positions: -255, assets: 1_000_038.50, liabilities: 100.65, netAssets: 999_937.85 },
+        },
+      },
+    },
+    {
+      ...diagOne('accept'), id: 'open-accept', covers: ['open', 'failed dependent leg'],
+      expect: {
+        preview: { blocking: 0, legs: [{ instrument: 'apr40', qty: 1 }, { instrument: 'mar45', qty: 1, estimate: null, dependsOn: [1] }], cash: { USD: { required: 601.30, available: 1_899.35, shortfall: 0 } } },
+        result: { status: 'partial', orders: [{ instrument: 'apr40', status: 'filled' }, { instrument: 'mar45', status: 'working' }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1 QLM260417P40 @ 1.00 USD' }],
+        cash: { account: { USD: { settled: 4_500, unsettled: -201.30, availableToTrade: 1_798.70, availableToWithdraw: 1_798.70 } } },
+        positions: [{ instrument: 'apr40', lot: 'accept', value: 95 }, { instrument: 'apr40', lot: 'diagonal' }, { instrument: 'apr40', lot: 'retry' }, { instrument: 'mar45', lot: 'diagonal' }],
+        holdings: { apr40: { long: 7, short: 0, net: 7 } },
+        pending: [{ lot: 'accept', amount: -100.65 }, { lot: 'retry', amount: -100.65 }],
+        openOrders: [{ instrument: 'mar45', status: 'working' }, { instrument: 'mar45', status: 'working' }],
+        lifecycle: [{ instrument: 'mar45' }, { instrument: 'apr40' }, { instrument: 'apr40' }, { instrument: 'apr40' }],
+        pnl: { account: { commissions: -7.80, unrealized: -60, total: -67.80 }, book: { commissions: -7.80, unrealized: -60, total: -67.80 } },
+        nav: { account: 4_138.70, book: 999_932.20 },
+        balance: {
+          account: { cash: 4_500, payable: 201.30, positions: -160, assets: 4_340, liabilities: 201.30, netAssets: 4_138.70 },
+          book: { cash: 1_000_293.50, payable: 201.30, positions: -160, assets: 1_000_133.50, liabilities: 201.30, netAssets: 999_932.20 },
+        },
+      },
+    },
+    {
+      ...diagOne('unwind'), id: 'open-unwind', covers: ['open', 'failed dependent leg'],
+      expect: {
+        preview: { blocking: 0, legs: [{ instrument: 'apr40', qty: 1 }, { instrument: 'mar45', qty: 1, estimate: null }], cash: { USD: { required: 601.30, available: 1_798.70, shortfall: 0 } } },
+        result: { status: 'partial', orders: [{ instrument: 'apr40', status: 'filled' }, { instrument: 'mar45', status: 'working' }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1 QLM260417P40 @ 1.00 USD' }],
+        cash: { account: { USD: { settled: 4_500, unsettled: -301.95, availableToTrade: 1_698.05, availableToWithdraw: 1_698.05 } } },
+        positions: [{ instrument: 'apr40', lot: 'accept' }, { instrument: 'apr40', lot: 'diagonal' }, { instrument: 'apr40', lot: 'retry' }, { instrument: 'apr40', lot: 'unwind', value: 95 }, { instrument: 'mar45', lot: 'diagonal' }],
+        holdings: { apr40: { long: 8, short: 0, net: 8 } },
+        pending: [{ lot: 'accept' }, { lot: 'retry' }, { lot: 'unwind', amount: -100.65 }],
+        openOrders: [{ instrument: 'mar45', status: 'working' }, { instrument: 'mar45', status: 'working' }, { instrument: 'mar45', status: 'working' }],
+        lifecycle: [{ instrument: 'mar45' }, { instrument: 'apr40' }, { instrument: 'apr40' }, { instrument: 'apr40' }, { instrument: 'apr40' }],
+        pnl: { account: { commissions: -8.45, unrealized: -65, total: -73.45 }, book: { commissions: -8.45, unrealized: -65, total: -73.45 } },
+        nav: { account: 4_133.05, book: 999_926.55 },
+        balance: {
+          account: { cash: 4_500, payable: 301.95, positions: -65, assets: 4_435, liabilities: 301.95, netAssets: 4_133.05 },
+          book: { cash: 1_000_293.50, payable: 301.95, positions: -65, assets: 1_000_228.50, liabilities: 301.95, netAssets: 999_926.55 },
+        },
+      },
+    },
+    {
+      id: 'near-legs-expire', covers: ['failed dependent leg', 'settlement'], action: 'clock', to: MAR(4),
+      expect: {
+        events: [
+          { type: 'settlement.pay', summary: 'paid 100.65 USD from settled cash', date: '2026-03-04' },
+          { type: 'settlement.pay', summary: 'paid 100.65 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 100.65 USD from settled cash' },
+          { type: 'order.expired', summary: 'Leg 2 expired: sell 1 QLM260320P45. Day order did not fill before the end of the business day' },
+          { type: 'order.expired', summary: 'Leg 2 expired: sell 1 QLM260320P45. Day order did not fill before the end of the business day' },
+          { type: 'order.expired', summary: 'Leg 2 expired: sell 1 QLM260320P45. Day order did not fill before the end of the business day' },
+        ],
+        cash: { account: { USD: { settled: 4_198.05, unsettled: 0, availableToTrade: 1_698.05, availableToWithdraw: 1_698.05 } } },
+        pending: [], openOrders: [],
+        failed: { orders: 3 },
+        alerts: ['strategy.attention', 'strategy.attention', 'strategy.attention'],
+        balance: { account: { cash: 4_198.05, payable: null, assets: 4_133.05, liabilities: 0 }, book: { cash: 999_991.55, payable: null, assets: 999_926.55, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'mar45-quote-day3', action: 'quote', instrument: 'mar45', quote: { bid: 1.40, ask: 1.50, last: 1.45, bidSize: 20, askSize: 20 },
+      expect: {
+        positions: [{ instrument: 'apr40', lot: 'accept' }, { instrument: 'apr40', lot: 'diagonal' }, { instrument: 'apr40', lot: 'retry' }, { instrument: 'apr40', lot: 'unwind' }, { instrument: 'mar45', lot: 'diagonal', price: 1.45, value: -725, unrealized: 75 }],
+        pnl: { account: { unrealized: 35, total: 26.55 }, book: { unrealized: 35, total: 26.55 } },
+        nav: { account: 4_233.05, book: 1_000_026.55 },
+        balance: { account: { positions: 35, assets: 4_233.05, netAssets: 4_233.05 }, book: { positions: 35, assets: 1_000_026.55, netAssets: 1_000_026.55 } },
+      },
+    },
+    {
+      // Retry sells the near put at 1.40 (139.35 after commission) and reserves the width for one contract, 500.
+      id: 'retry', covers: ['retry', 'failed dependent leg'], action: 'recover', how: 'retry', lot: 'retry',
+      expect: {
+        preview: { blocking: 0, errors: [], intent: 'retry', legs: [{ kind: 'trade', action: 'sell', instrument: 'mar45', qty: 1, estimate: 1.40, settleDate: '2026-03-05', cash: 140, fees: 0.65 }], cash: { USD: { proceeds: 140, fees: 0.65, reserved: 500, required: 500.65, available: 1_698.05, shortfall: 0 } }, optionRequirement: [{ ccy: 'USD', amount: 500, finite: 500, naked: 0, uncoveredCallUnits: 0 }] },
+        result: { status: 'open', complete: true, orders: [{ action: 'sell', instrument: 'mar45', status: 'filled', filledQty: 1, avgPrice: 1.40 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 1 QLM260320P45 @ 1.40 USD', date: '2026-03-04' }],
+        cash: { account: { USD: { settled: 4_198.05, unsettled: 139.35, reserved: 3_000, availableToTrade: 1_337.40, availableToWithdraw: 1_198.05 } } },
+        positions: [
+          { instrument: 'apr40', lot: 'accept' }, { instrument: 'apr40', lot: 'diagonal' }, { instrument: 'apr40', lot: 'retry' }, { instrument: 'apr40', lot: 'unwind' },
+          { instrument: 'mar45', lot: 'diagonal', value: -725 }, { instrument: 'mar45', lot: 'retry', owner: 'account', direction: 'short', qty: -1, avgCost: 1.40, cost: -140, price: 1.45, value: -145, unrealized: -5 },
+        ],
+        holdings: { mar45: { long: 0, short: 6, net: -6 } },
+        pending: [{ instrument: 'mar45', lot: 'retry', dueDate: '2026-03-05', amount: 139.35 }],
+        lifecycle: [{ instrument: 'mar45' }, { instrument: 'mar45' }, { instrument: 'apr40' }, { instrument: 'apr40' }, { instrument: 'apr40' }, { instrument: 'apr40' }],
+        alerts: ['strategy.attention', 'strategy.attention'],
+        pnl: { account: { commissions: -9.10, unrealized: 30, total: 20.90 }, book: { commissions: -9.10, unrealized: 30, total: 20.90 } },
+        nav: { account: 4_227.40, book: 1_000_020.90 },
+        balance: {
+          account: { cash: 4_198.05, receivable: 139.35, positions: -110, assets: 4_227.40, liabilities: 0, netAssets: 4_227.40 },
+          book: { cash: 999_991.55, receivable: 139.35, positions: -110, assets: 1_000_020.90, netAssets: 1_000_020.90 },
+        },
+      },
+    },
+    {
+      id: 'accept', covers: ['accept', 'failed dependent leg'], action: 'strategy_action', lot: 'accept', how: 'accept',
+      expect: { events: [{ type: 'strategy.accepted', summary: 'accepted as it stands with 1 leg unexecuted. The position no longer matches its template.' }], alerts: ['strategy.attention'] },
+    },
+    {
+      id: 'unwind', covers: ['unwind', 'close'], action: 'recover', how: 'unwind', lot: 'unwind',
+      expect: {
+        preview: { blocking: 0, errors: [], intent: 'unwind', legs: [{ kind: 'trade', action: 'sell', instrument: 'apr40', qty: 1, estimate: 0.90, settleDate: '2026-03-05', cash: 90, fees: 0.65, dependsOn: [] }] },
+        result: { status: 'closed', orders: [{ action: 'sell', instrument: 'apr40', status: 'filled', filledQty: 1, avgPrice: 0.90 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 1 QLM260417P40 @ 0.90 USD (realized -10.00 USD)' }],
+        cash: { account: { USD: { settled: 4_198.05, unsettled: 228.70, availableToTrade: 1_426.75, availableToWithdraw: 1_198.05 } } },
+        positions: [
+          { instrument: 'apr40', lot: 'accept' }, { instrument: 'apr40', lot: 'diagonal' }, { instrument: 'apr40', lot: 'retry' },
+          { instrument: 'mar45', lot: 'diagonal' }, { instrument: 'mar45', lot: 'retry' },
+        ],
+        holdings: { apr40: { long: 7, short: 0, net: 7 } },
+        pending: [{ instrument: 'apr40', lot: 'unwind', dueDate: '2026-03-05', amount: 89.35 }, { instrument: 'mar45', lot: 'retry', amount: 139.35 }],
+        lifecycle: [{ instrument: 'mar45' }, { instrument: 'mar45' }, { instrument: 'apr40' }, { instrument: 'apr40' }, { instrument: 'apr40' }],
+        alerts: [],
+        pnl: { account: { realized: -10, commissions: -9.75, unrealized: 35, total: 15.25 }, book: { realized: -10, commissions: -9.75, unrealized: 35, total: 15.25 } },
+        nav: { account: 4_221.75, book: 1_000_015.25 },
+        balance: {
+          account: { cash: 4_198.05, receivable: 228.70, positions: -205, assets: 4_221.75, liabilities: 0, netAssets: 4_221.75 },
+          book: { cash: 999_991.55, receivable: 228.70, positions: -205, assets: 1_000_015.25, netAssets: 1_000_015.25 },
+        },
+      },
+    },
+    {
+      id: 'settle-recovery', covers: 'settlement', action: 'clock', to: MAR(5),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 139.35 USD into settled cash', date: '2026-03-05' }, { type: 'settlement.receive', summary: 'received 89.35 USD into settled cash' }],
+        cash: { account: { USD: { settled: 4_426.75, unsettled: 0, availableToTrade: 1_426.75, availableToWithdraw: 1_426.75 } } },
+        pending: [],
+        balance: { account: { cash: 4_426.75, receivable: null, assets: 4_221.75 }, book: { cash: 1_000_220.25, receivable: null, assets: 1_000_015.25 } },
+      },
+    },
+    {
+      // Close "retry": the near put is bought back first at 1.50, then the far put is sold at 0.90. -10 each.
+      id: 'close-retry', covers: ['close', 'dependency'], action: 'close', lot: 'retry', instrument: 'apr40', scope: 'strategy', percent: 100,
+      expect: {
+        preview: {
+          blocking: 0, errors: [], intent: 'close',
+          legs: [
+            { kind: 'trade', action: 'buy', instrument: 'mar45', qty: 1, estimate: 1.50, settleDate: '2026-03-06', cash: -150, fees: 0.65, dependsOn: [] },
+            { kind: 'trade', action: 'sell', instrument: 'apr40', qty: 1, estimate: 0.90, settleDate: '2026-03-06', cash: 90, fees: 0.65, dependsOn: [1] },
+          ],
+          cash: { USD: { purchases: 150, proceeds: 90, fees: 1.30, reserved: 0, required: 151.30, available: 1_426.75, shortfall: 0 } },
+        },
+        result: { status: 'closed', orders: [{ instrument: 'mar45', status: 'filled' }, { instrument: 'apr40', status: 'filled' }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Bought 1 QLM260320P45 @ 1.50 USD (realized -10.00 USD)' },
+          { type: 'trade.fill', summary: 'Sold 1 QLM260417P40 @ 0.90 USD (realized -10.00 USD)' },
+        ],
+        cash: { account: { USD: { settled: 4_426.75, unsettled: -61.30, reserved: 2_500, availableToTrade: 1_865.45, availableToWithdraw: 1_776.10 } } },
+        positions: [{ instrument: 'apr40', lot: 'accept', value: 95 }, { instrument: 'apr40', lot: 'diagonal', value: 475 }, { instrument: 'mar45', lot: 'diagonal', value: -725 }],
+        holdings: { apr40: { long: 6, short: 0, net: 6 }, mar45: { long: 0, short: 5, net: -5 } },
+        pending: [{ instrument: 'apr40', lot: 'retry', dueDate: '2026-03-06', amount: 89.35 }, { instrument: 'mar45', lot: 'retry', dueDate: '2026-03-06', amount: -150.65 }],
+        lifecycle: [{ instrument: 'mar45' }, { instrument: 'apr40' }, { instrument: 'apr40' }],
+        pnl: { account: { realized: -30, commissions: -11.05, unrealized: 45, total: 3.95 }, book: { realized: -30, commissions: -11.05, unrealized: 45, total: 3.95 } },
+        nav: { account: 4_210.45, book: 1_000_003.95 },
+        balance: {
+          account: { cash: 4_426.75, receivable: 89.35, payable: 150.65, positions: -155, assets: 4_361.10, liabilities: 150.65, netAssets: 4_210.45 },
+          book: { cash: 1_000_220.25, receivable: 89.35, payable: 150.65, positions: -155, assets: 1_000_154.60, liabilities: 150.65, netAssets: 1_000_003.95 },
+        },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: MAR(6),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 89.35 USD into settled cash', date: '2026-03-06' }, { type: 'settlement.pay', summary: 'paid 150.65 USD from settled cash' }],
+        cash: { account: { USD: { settled: 4_365.45, unsettled: 0, availableToTrade: 1_865.45, availableToWithdraw: 1_865.45 } } },
+        pending: [],
+        balance: { account: { cash: 4_365.45, receivable: null, payable: null, assets: 4_210.45, liabilities: 0 }, book: { cash: 1_000_158.95, receivable: null, payable: null, assets: 1_000_003.95, liabilities: 0 } },
+      },
+    },
+    { id: 'near-expiry-close', action: 'close_price', instrument: 'stock', date: '2026-03-20', value: 46.00, expect: {} },
+    {
+      // 20 March, close 46: the near 45 put lapses (its 800 premium is realized) and its 2,500 reserve is released; the
+      // far 40 puts remain. Realized -30 + 800 = 770.
+      id: 'near-expiry', covers: ['expiry', 'far leg remains', 'reserve release'], action: 'clock', to: MAR(20, '17:30'),
+      expect: {
+        events: [{ type: 'option.expired', summary: 'Expired worthless: 5 QLM260320P45 (fixing 46)', date: '2026-03-20' }],
+        cash: { account: { USD: { settled: 4_365.45, reserved: 0, availableToTrade: 4_365.45, availableToWithdraw: 4_365.45 } } },
+        positions: [
+          { instrument: 'apr40', lot: 'accept', qty: 1, value: 95, unrealized: -5 },
+          { instrument: 'apr40', lot: 'diagonal', owner: 'account', direction: 'long', qty: 5, avgCost: 1.00, cost: 500, price: 0.95, value: 475, unrealized: -25 },
+        ],
+        holdings: { mar45: null },
+        lifecycle: [{ type: 'option.expiry', instrument: 'apr40', dueDate: '2026-04-17', status: 'pending' }, { type: 'option.expiry', instrument: 'apr40', dueDate: '2026-04-17', status: 'pending' }],
+        pnl: { account: { realized: 770, commissions: -11.05, unrealized: -30, total: 728.95 }, book: { realized: 770, commissions: -11.05, unrealized: -30, total: 728.95 } },
+        nav: { account: 4_935.45, book: 1_000_728.95 }, // 4,365.45 + 570
+        balance: { account: { positions: 570, assets: 4_935.45, netAssets: 4_935.45 }, book: { positions: 570, assets: 1_000_728.95, netAssets: 1_000_728.95 } },
+      },
+    },
+    { id: 'after-good-friday', covers: 'holiday', action: 'clock', to: APR(6), expect: {} },
+    {
+      id: 'apr40-quote', action: 'quote', instrument: 'apr40', quote: { bid: 0.40, ask: 0.50, last: 0.45, bidSize: 20, askSize: 20 },
+      expect: {
+        positions: [{ instrument: 'apr40', lot: 'accept', price: 0.45, value: 45, unrealized: -55 }, { instrument: 'apr40', lot: 'diagonal', price: 0.45, value: 225, unrealized: -275 }],
+        pnl: { account: { unrealized: -330, total: 428.95 }, book: { unrealized: -330, total: 428.95 } },
+        nav: { account: 4_635.45, book: 1_000_428.95 },
+        balance: { account: { positions: 270, assets: 4_635.45, netAssets: 4_635.45 }, book: { positions: 270, assets: 1_000_428.95, netAssets: 1_000_428.95 } },
+      },
+    },
+    {
+      // The far put that remains: 5 sold at 0.40 = 200, commission 3.25. Realized 5 x (0.40 - 1.00) x 100 = -300.
+      id: 'close-diagonal', covers: ['close'], action: 'close', lot: 'diagonal', instrument: 'apr40', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], intent: 'close', legs: [{ kind: 'trade', action: 'sell', instrument: 'apr40', qty: 5, estimate: 0.40, settleDate: '2026-04-07', cash: 200, fees: 3.25 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', instrument: 'apr40', status: 'filled', filledQty: 5, avgPrice: 0.40 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 5 QLM260417P40 @ 0.40 USD (realized -300.00 USD)', date: '2026-04-06' }],
+        cash: { account: { USD: { settled: 4_365.45, unsettled: 196.75, availableToTrade: 4_562.20, availableToWithdraw: 4_365.45 } } },
+        positions: [{ instrument: 'apr40', lot: 'accept', value: 45 }],
+        holdings: { apr40: { long: 1, short: 0, net: 1 } },
+        pending: [{ instrument: 'apr40', lot: 'diagonal', dueDate: '2026-04-07', amount: 196.75, into: 'cash' }],
+        lifecycle: [{ type: 'option.expiry', instrument: 'apr40' }],
+        pnl: { account: { realized: 470, commissions: -14.30, unrealized: -55, total: 400.70 }, book: { realized: 470, commissions: -14.30, unrealized: -55, total: 400.70 } },
+        nav: { account: 4_607.20, book: 1_000_400.70 },
+        balance: {
+          account: { cash: 4_365.45, receivable: 196.75, positions: 45, assets: 4_607.20, netAssets: 4_607.20 },
+          book: { cash: 1_000_158.95, receivable: 196.75, positions: 45, assets: 1_000_400.70, netAssets: 1_000_400.70 },
+        },
+      },
+    },
+    {
+      id: 'close-accept', covers: ['close'], action: 'close', lot: 'accept', instrument: 'apr40', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'sell', instrument: 'apr40', qty: 1, estimate: 0.40, settleDate: '2026-04-07', cash: 40, fees: 0.65 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 1, avgPrice: 0.40 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 1 QLM260417P40 @ 0.40 USD (realized -60.00 USD)' }],
+        cash: { account: { USD: { settled: 4_365.45, unsettled: 236.10, availableToTrade: 4_601.55, availableToWithdraw: 4_365.45 } } },
+        positions: [],
+        holdings: { apr40: null },
+        pending: [{ instrument: 'apr40', lot: 'accept', dueDate: '2026-04-07', amount: 39.35 }, { instrument: 'apr40', lot: 'diagonal', dueDate: '2026-04-07', amount: 196.75 }],
+        lifecycle: [],
+        pnl: { account: { realized: 410, commissions: -14.95, unrealized: 0, total: 395.05 }, book: { realized: 410, commissions: -14.95, unrealized: 0, total: 395.05 } },
+        nav: { account: 4_601.55, book: 1_000_395.05 },
+        balance: {
+          account: { cash: 4_365.45, receivable: 236.10, positions: null, assets: 4_601.55, netAssets: 4_601.55 },
+          book: { cash: 1_000_158.95, receivable: 236.10, positions: null, assets: 1_000_395.05, netAssets: 1_000_395.05 },
+        },
+      },
+    },
+    {
+      // Nothing left: 1,000 + 1,206.50 + 2,000 funded, plus 395.05.
+      id: 'settle-final', covers: 'settlement', action: 'clock', to: APR(7),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 196.75 USD into settled cash', date: '2026-04-07' }, { type: 'settlement.receive', summary: 'received 39.35 USD into settled cash' }],
+        cash: { account: { USD: { settled: 4_601.55, unsettled: 0, reserved: 0, availableToTrade: 4_601.55, availableToWithdraw: 4_601.55 } } },
+        pending: [],
+        balance: { account: { cash: 4_601.55, receivable: null, assets: 4_601.55 }, book: { cash: 1_000_395.05, receivable: null, assets: 1_000_395.05 } },
+      },
+    },
+  ],
+};
+
+export default [bearCall, longStraddle, longStrangle, ironCondor, ironButterfly, longButterfly, longCalendar, longDiagonal];
