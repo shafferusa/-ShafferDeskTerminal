@@ -497,6 +497,7 @@ export const swap = {
       return { done: true, eventId: r.eventId };
     }
     if (isZero(pos.qty)) return 'done';
+    if (task.type === 'swap.dividend') return passDividend(app, task, { book, unit, inst, pos }); // s2
     const awaiting = app.data.describe().awaitingMessage;
 
     if (task.type === 'swap.payment') {
@@ -575,35 +576,13 @@ export const swap = {
   /** Dividend pass-through on total-return legs when a dividend is recorded on the reference asset. */
   onCorporateAction(app, { ca, book, unit, inst, pos }) {
     if (ca.type !== 'cash_dividend' || isZero(pos.qty)) return null;
-    let eventId = null;
+    // The pass-through needs the fixing its period starts from, which may have to be fetched: it is a lifecycle task, run
+    // in the same engine pass, and it waits visibly (and holds the maturity) while that fixing is missing (s2).
     for (const leg of inst.terms.legs) {
       if (leg.type !== 'return' || !leg.passDividends || leg.underlyingId !== ca.instrument_id) continue;
-      // Reference units: the notional of the period containing the ex-date over that period's start fixing (s2). The start
-      // fixing is the close of the period's first day (the contract's initial price for the first period, when it states one);
-      // it used to be the last reset paid, so a dividend in the first period, before any reset, was silently not passed through.
-      const exDate = ca.ex_date || app.clock.today();
-      const period = legSchedule(inst, leg).find((p) => p.start <= exDate && exDate < p.end);
-      if (!period) continue;
-      const stated = period.start === inst.terms.effective ? inst.terms.initialPrices?.[leg.id] ?? null : null;
-      const o0 = stated === null ? app.data.closeFor(leg.underlyingId, fixingDate(inst, period.start)) : null;
-      const p0 = stated ?? (o0 && o0.value !== null ? o0.value : null);
-      if (p0 === null) {
-        app.alerts.raise({ bookId: book.id, unitId: unit.id, level: 'error', code: 'swap.dividend_unpriced', refType: 'position', refId: pos.id, message: `Dividend of ${ca.amount} on ${app.instruments.get(ca.instrument_id)?.symbol || 'the reference asset'} (ex-date ${exDate}) was not passed through on ${inst.name}: the ${fixingDate(inst, period.start)} fixing the period starts from is missing, so the reference units cannot be worked out. Record the pass-through by hand (the position's manual cash flow).` });
-        continue;
-      }
-      if (o0) app.data.recordUsed(o0);
-      const shares = (Math.abs(pos.qty) * (leg.notionalFactor ?? 1) * scaleAt(pos, period.start)) / p0;
-      const s = sign(pos.qty) * (leg.side === 'receive' ? 1 : -1);
-      const amount = money(s * shares * ca.amount, leg.ccy);
-      if (amount === 0) continue;
-      eventId = app.ledger.post({
-        bookId: book.id, unitId: unit.id, type: 'swap.dividend', instrumentId: inst.id, strategyId: pos.strategy_id, positionId: pos.id, actor: 'engine',
-        summary: `Dividend pass-through on ${inst.name}: ${amount >= 0 ? 'received' : 'paid'} ${fmt(Math.abs(amount), leg.ccy)} (${fmtQty(shares)} reference shares x ${ca.amount})`,
-        data: { corporateActionId: ca.id, shares, perShare: ca.amount },
-        entries: [{ account: 'cash', ccy: leg.ccy, amount, positionId: pos.id }, { account: 'pnl.realized', ccy: leg.ccy, amount: -amount, positionId: pos.id }],
-      });
+      app.tasks.schedule({ bookId: book.id, unitId: unit.id, positionId: pos.id, instrumentId: inst.id, strategyId: pos.strategy_id, type: 'swap.dividend', dueDate: app.clock.today(), data: { key: `div:${ca.id}:${leg.id}`, legId: leg.id, corporateActionId: ca.id, exDate: ca.ex_date, perShare: ca.amount } });
     }
-    return eventId;
+    return null;
   },
 };
 

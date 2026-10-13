@@ -226,3 +226,4 @@
 - 2026-10-13T19:38Z | t1 | +0.2 | T:long template passes at engine, API and browser
 - 2026-10-13T19:38Z | t2 | +0.2 | long_straddle passes at engine, API and browser
 - 2026-10-13T19:41Z | s3 | +0.2 | cds_single_name passes at engine, API and browser
+- 2026-10-13T19:41Z | s7 | +2 | s7: accounting verification engine test passes (11 hand-worked checkpoints, 1,155 checks); balance sheet capital/funding now at booked FX rates

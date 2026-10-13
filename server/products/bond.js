@@ -430,7 +430,8 @@ export const bond = {
       // A floating coupon whose period had no fixing takes it now if it has since been supplied or entered (the fixing of the
       // period's first day; never a later one).
       const periodStart = couponPeriod(schedTerms(inst), addBusinessDays(couponDate, -1, 'ALLDAYS'))?.start || null;
-      if (inst.terms.couponType === 'float') inst = takeFixing(app, inst, periodStart);
+      // (Not when another holder's payment already reset the coupon: the period's rate is then kept in periodCoupons, b4.)
+      if (inst.terms.couponType === 'float' && (inst.terms.periodCoupons?.[couponDate] ?? null) === null) inst = takeFixing(app, inst, periodStart);
       const t = schedTerms(inst);
       // Entitlement: face settled before the coupon date.
       const face = entitledFace(app, pos, couponDate);
