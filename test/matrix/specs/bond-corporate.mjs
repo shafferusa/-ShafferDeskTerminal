@@ -2209,4 +2209,131 @@ const commercialPaper = {
   ],
 };
 
-export default [corporateBondIg, highYieldBond, eurobond, foreignMarketBond, corporateSukuk, floatingRateNote, zeroCouponBond, perpetualBond, subordinatedDebt, coveredBond, commercialPaper];
+// ---------------------------------------------------------------------------------------------
+// abcp
+// ---------------------------------------------------------------------------------------------
+// Asset-backed commercial paper of a bank-sponsored conduit (a bankruptcy-remote vehicle funding trade
+// receivables, with a liquidity facility from its sponsor): a discount note redeemed at par, same-day
+// settlement (instrument convention: lag 0), pieces of 10,000. This dealer quotes it on an investment-yield
+// (money-market yield) basis, ACT/360, converted by hand to a price in % of par, rounded to six decimals:
+//     price = 100 / (1 + yield x days from settlement to maturity / 360).
+//   12 October, 30 days: ask 4.80% -> 100 / 1.004 = 99.601594; bid 4.86% -> 99.596634; last 4.83% -> 99.599114.
+//   19 October, 23 days: ask 4.70% -> 100 / 1.0030027778 = 99.700621; bid 4.76% -> 99.696811; last 4.73% -> 99.698716.
+// It matures on Thursday 11 November 2027, Veterans Day (bond market and Federal Reserve closed): paid on Friday
+// 12 November. The Account buys twice (average cost) and holds to maturity; a short sale is refused (no borrow).
+// Commission: 0.1 basis point of principal.
+const abcp = {
+  productId: 'abcp',
+  title: 'Meridian Receivables Funding asset-backed commercial paper due 11 November 2027: quoted on yield, two same-day purchases at average cost, redeemed at par after Veterans Day',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount (a multiple of 10,000)'],
+    automaticInputs: ['bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData)', 'fill price and fill model', 'same-day settlement from the instrument convention', 'commission from the Book fee schedule'],
+    manualInputs: ['the money-market (investment) yield is converted to a price in % of par by hand (the Terminal has no yield quotation)'],
+    settlement: 'Same day (instrument convention, settlement lag 0)',
+    lifecycle: 'No coupon and no accrual; redemption at par on the maturity date, moved to the next business day after Veterans Day, automatic',
+    accounting: 'Clean cost at average across two purchases; no accrued interest; the discount is unrealized P&L while held and realized P&L at redemption',
+    collateral: 'None for a long position (the receivables back the conduit, not the holder); a short sale needs a securities borrow and none is available',
+  },
+  start: EDT('2027-10-12'), // Tuesday (Monday 11 October was Columbus Day)
+  settlementCheck: { lag: 0, holidays: [] },
+  book: {
+    name: 'Matrix asset-backed commercial paper', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 10_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 8_000_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.1 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'abcp', name: 'Meridian Receivables Funding LLC Asset-Backed CP 11-Nov-2027', symbol: 'MERID-ABCP-11NOV27', marketView: 'US_CASH', venueType: 'otc', issuer: 'Meridian Receivables Funding LLC', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { settleLag: 0 },
+      terms: { couponType: 'zero', maturity: '2027-11-11', issueDate: '2027-08-13', dayCount: 'ACT/360', redemption: 100, minDenomination: 10_000, seniority: 'Senior secured (asset-backed conduit)' } },
+  },
+  quotes: { main: { bid: 99.596634, ask: 99.601594, last: 99.599114, bidSize: 50_000_000, askSize: 50_000_000 } },
+  expectAtStart: { ...startState(8_000_000, 2_000_000), cash: { account: usdCash(8_000_000), treasury: usdCash(2_000_000) } },
+  steps: [
+    {
+      id: 'short-without-borrow', covers: 'short', action: 'ticket', instrument: 'main', side: 'sell_short', qty: 1_000_000,
+      status: 'blocked', reason: 'No borrow availability or fee is supplied for the paper and none was stated: a short sale cannot proceed without a securities borrow.',
+      expect: { refused: 'no borrow availability data for MERID-ABCP-11NOV27' },
+    },
+    {
+      id: 'open', covers: ['open', 'settlement'], action: 'ticket', instrument: 'main', side: 'buy', qty: 4_000_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 4_000_000, estimate: 99.601594, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2027-10-12', calendar: 'USBOND',
+            gross: 3_984_063.76, // 4,000,000 x 99.601594 / 100
+            accrued: 0, cash: -3_984_063.76, fees: 39.84 }], // 0.1 bp of 3,984,063.76 = 39.8406
+          cash: { USD: { purchases: 3_984_063.76, fees: 39.84, required: 3_984_103.60, available: 8_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 4_000_000, avgPrice: 99.601594, fills: [{ qty: 4_000_000, price: 99.601594, model: 'quoted-bid-ask', settleDate: '2027-10-12', source: 'Test fixture' }] }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Bought 4,000,000 MERID-ABCP-11NOV27 @ 99.601594 USD', owner: 'account', date: '2027-10-12' },
+          { type: 'settlement.pay', summary: 'paid 3,984,103.60 USD from settled cash', cash: { USD: -3_984_103.60 }, date: '2027-10-12' },
+        ],
+        cash: { account: { USD: { settled: 4_015_896.40, unsettled: 0, availableToTrade: 4_015_896.40 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 4_000_000, avgCost: 99.601594, cost: 3_984_063.76, price: 99.599114,
+          value: 3_983_964.56, unrealized: -99.20, accrued: 0, priceSource: 'Test fixture' }], // 4,000,000 x 99.599114%
+        holdings: { main: { long: 4_000_000, short: 0, net: 4_000_000 } },
+        pending: [],
+        lifecycle: [{ type: 'bond.maturity', instrument: 'main', dueDate: '2027-11-12', status: 'pending' }], // 11 Nov is Veterans Day
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -39.84, fees: 0, borrowFunding: 0, unrealized: -99.20, total: -139.04 } },
+        nav: { account: 7_999_860.96, book: 9_999_860.96 },
+        balance: { account: { cash: 4_015_896.40, positions: 3_983_964.56, assets: 7_999_860.96, liabilities: 0, netAssets: 7_999_860.96 } },
+      },
+    },
+    { id: 'week-on', covers: 'accrual', action: 'clock', to: EDT('2027-10-19'), expect: { events: [] } },
+    {
+      id: 'quote-23-days', action: 'quote', instrument: 'main', quote: { bid: 99.696811, ask: 99.700621, last: 99.698716, bidSize: 50_000_000, askSize: 50_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 4_000_000, price: 99.698716, value: 3_987_948.64, unrealized: 3_884.88 }], // 4,000,000 x 99.698716% - 3,984,063.76
+        pnl: { account: { unrealized: 3_884.88, total: 3_845.04 } },
+        nav: { account: 8_003_845.04, book: 10_003_845.04 },
+        balance: { account: { positions: 3_987_948.64, assets: 8_003_845.04, netAssets: 8_003_845.04 } },
+      },
+    },
+    {
+      id: 'increase', covers: ['increase', 'settlement'], action: 'resize', lot: 'lot', factor: 1.5, // 4,000,000 -> 6,000,000
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', qty: 2_000_000, estimate: 99.700621, settleDate: '2027-10-19',
+          gross: 1_994_012.42, // 2,000,000 x 99.700621 / 100
+          accrued: 0, cash: -1_994_012.42, fees: 19.94 }] }, // 0.1 bp of 1,994,012.42 = 19.9401
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 2_000_000, avgPrice: 99.700621 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Bought 2,000,000 MERID-ABCP-11NOV27 @ 99.700621 USD' },
+          { type: 'settlement.pay', summary: 'paid 1,994,032.36 USD from settled cash', cash: { USD: -1_994_032.36 } },
+        ],
+        cash: { account: { USD: { settled: 2_021_864.04, unsettled: 0, availableToTrade: 2_021_864.04 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 6_000_000,
+          cost: 5_978_076.18, // 3,984,063.76 + 1,994,012.42
+          avgCost: 99.634603, // 5,978,076.18 / 6,000,000 x 100
+          price: 99.698716, value: 5_981_922.96, unrealized: 3_846.78 }], // 6,000,000 x 99.698716%
+        holdings: { main: { long: 6_000_000, short: 0, net: 6_000_000 } },
+        pnl: { account: { commissions: -59.78, unrealized: 3_846.78, total: 3_787 } },
+        nav: { account: 8_003_787, book: 10_003_787 },
+        balance: { account: { cash: 2_021_864.04, positions: 5_981_922.96, assets: 8_003_787, liabilities: 0, netAssets: 8_003_787 } },
+      },
+    },
+    {
+      // Friday 12 November, the day after the Veterans Day maturity: 6,000,000 redeemed at par. Realized 6,000,000 - 5,978,076.18 = 21,923.82.
+      id: 'maturity', covers: ['maturity', 'close', 'market holiday'], action: 'clock', to: EST('2027-11-12'),
+      expect: {
+        events: [
+          { type: 'bond.redemption', summary: 'Redeemed at maturity: 6,000,000 MERID-ABCP-11NOV27 at 100.00% of par', owner: 'account' },
+          { type: 'settlement.receive', summary: 'received 6,000,000.00 USD into settled cash', cash: { USD: 6_000_000 } },
+        ],
+        cash: { account: { USD: { settled: 8_021_864.04, unsettled: 0, availableToTrade: 8_021_864.04 } }, treasury: { USD: { settled: 2_000_000 } } },
+        positions: [],
+        holdings: { main: null },
+        lifecycle: [],
+        pnl: { account: { realized: 21_923.82, couponInterest: 0, commissions: -59.78, unrealized: 0, total: 21_864.04 } },
+        nav: { account: 8_021_864.04, book: 10_021_864.04 },
+        balance: { account: { cash: 8_021_864.04, positions: null, assets: 8_021_864.04, liabilities: 0, netAssets: 8_021_864.04 } },
+      },
+    },
+  ],
+};
+
+export default [corporateBondIg, highYieldBond, eurobond, foreignMarketBond, corporateSukuk, floatingRateNote, zeroCouponBond, perpetualBond, subordinatedDebt, coveredBond, commercialPaper, abcp];

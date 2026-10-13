@@ -1916,3 +1916,129 @@ export async function catchUpScreens(b, c) {
   await checkLife(b, c, L, 'catch-up from the screens');
   sameLife(c, ref, await lifeDigest(b, L), 'catch-up from the screens');
 }
+
+// ---------------------------------------------------------------------------------------------
+// A Shaffer service address that stops answering, as the Data connection page and the screens show it
+// ---------------------------------------------------------------------------------------------
+
+/** Press Test connection on the MarketData panel; returns the verdict shown, the last error shown and how long it took. */
+async function testMarketData(b) {
+  const panel = b.ui.section(b.page.locator('main'), 'Shaffer MarketData');
+  const t0 = Date.now();
+  const r = await answerTo(b, 'POST', /^\/api\/data\/test$/, () => b.ui.button(panel, 'Test connection').click());
+  const verdict = panel.locator('.notice').filter({ hasText: /Test passed|answered|could not be reached|Nothing to test/ }).first();
+  await verdict.waitFor();
+  await settle(b);
+  return { ms: Date.now() - t0, verdict: flat(await verdict.innerText()), panel: flat(await panel.innerText()), result: r.body?.result };
+}
+/** The PLN row of the US Based Marketplace as displayed, and what the page says about the data source. */
+async function plnRow(b) {
+  await show(b, '#/markets/US_CASH');
+  await b.page.getByPlaceholder(/Filter by symbol/).fill('AWAY');
+  const row = b.page.locator('main table tbody tr').filter({ has: b.page.locator('.sym', { hasText: exactly('AWAY') }) }).first();
+  await row.waitFor();
+  await settle(b);
+  return { text: flat(await row.innerText()), html: await row.evaluate((tr) => tr.innerHTML), page: flat(await b.page.locator('main').innerText()) };
+}
+
+/** SB:stress:service-stops-answering. The world is a Terminal in normal mode. */
+export async function serviceAway(b, c) {
+  const { page, ui } = b;
+  const { createServer } = await import('node:http');
+  const { createServer: createTcp } = await import('node:net');
+  const book = await b.book('Service stops answering', { settings: null });
+  const inst = await b.instrument({ productId: 'common_stock', name: 'Away Works Inc.', symbol: 'AWAY', marketView: 'US_CASH', venue: 'NYSE', venueType: 'exchange', venueCountry: 'US', tradingCcy: 'USD', terms: {}, conventions: { tradingCalendar: 'ALLDAYS' } });
+  const s = await b.trade({ bookId: book.id, unitId: book.accountId, template: 'custom', legs: [{ kind: 'trade', action: 'buy', instrumentId: inst.id, qty: 100, statedPrice: 50 }] });
+  c.eq(s.orders[0].status, 'filled', 'setup: 100 shares bought at the stated price of 50.00');
+  await enter(b, book, '#/data/manual');
+  // The mark is entered by hand on the Data connection page.
+  const px = ui.section(page.locator('main'), 'Instrument price');
+  await px.locator('input[type=search]').fill('AWAY');
+  await px.locator('.picklist button.pick', { hasText: 'AWAY' }).first().click();
+  await ui.input(px, 'Price').fill('51');
+  await ui.button(px, 'Save price').click();
+  await ui.toast(/Price saved/);
+  let nav = await navShown(b, book);
+  c.eq([nav.value, nav.provisional], ['1,000,100.00', false], 'the Accounting header shows 1,000,100.00 (1,000,000.00 + 100 x (51.00 - 50.00)) on the manual mark');
+
+  // A MarketData address that answers, typed into the Data connection page with a 1.5 second timeout.
+  const listen = (srv, port = 0) => new Promise((res) => srv.listen(port, '127.0.0.1', () => res(srv.address().port)));
+  const close = (srv) => new Promise((res) => { srv.closeAllConnections?.(); srv.close(() => res()); });
+  let stub = createServer((req, res) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{"service":"stub"}'); });
+  const port = await listen(stub);
+  b.defer(() => close(stub).catch(() => {}));
+  await show(b, '#/data');
+  const addresses = ui.section(page.locator('main'), 'Service addresses');
+  await ui.input(addresses, 'Shaffer MarketData address').fill(`http://127.0.0.1:${port}`);
+  await ui.input(addresses, 'Request timeout').fill('1.5');
+  const saved = await answerTo(b, 'PUT', /^\/api\/data\/connection$/, () => ui.button(addresses, 'Save service addresses').click());
+  c.ok(saved.ok, 'the address and the 1.5 second timeout are saved from the page', saved.body?.error);
+  await ui.toast(/Service addresses saved/);
+  let t = await testMarketData(b);
+  c.match(t.verdict, /The address answered, but the connection is not verified/, 'Test connection: the address answers (reachable, not verified: no service contract exists yet)');
+  let row = await plnRow(b);
+  c.match(row.text, /51\.00/, 'the Marketplace row shows the manual 51.00');
+  c.match(row.html, /manual/i, 'labelled manual');
+  c.match(row.page, /Awaiting Shaffer data connection/, 'and the page still says it is awaiting the Shaffer data connection');
+  const fp = b.fingerprint();
+  const before = await b.books(book.id);
+
+  // 1. Connection refused.
+  await close(stub);
+  await show(b, '#/data');
+  t = await testMarketData(b);
+  c.match(t.verdict, /The address could not be reached\..*Could not reach the configured address/, 'connection refused: the page says the address could not be reached, with the reason');
+  c.ok(t.ms < 4_000, 'and says so at once', `${t.ms} ms`);
+  c.match(t.panel, /Last error/, 'the panel shows its last error');
+  row = await plnRow(b);
+  c.ok(/51\.00/.test(row.text) && /manual/i.test(row.html) && /Awaiting Shaffer data connection/.test(row.page), 'the Marketplace still shows the manual 51.00 and the waiting state', row.text);
+  const tick1 = await b.tick();
+  c.ok(tick1 && !tick1.error, 'an engine cycle completes', JSON.stringify(tick1));
+  nav = await navShown(b, book);
+  c.eq([nav.value, nav.provisional], ['1,000,100.00', false], 'the Accounting header still shows 1,000,100.00');
+  b.sameStored(c, fp, b.fingerprint(), 'connection refused: every stored row is as before');
+
+  // 2. The connection is accepted and never answered.
+  const held = new Set();
+  const hang = createTcp((socket) => { held.add(socket); socket.on('close', () => held.delete(socket)); socket.on('error', () => {}); });
+  await new Promise((res) => hang.listen(port, '127.0.0.1', res));
+  const stopHanging = () => new Promise((res) => { for (const sk of held) sk.destroy(); hang.close(() => res()); });
+  b.defer(() => stopHanging().catch(() => {}));
+  await show(b, '#/data');
+  const panel = ui.section(page.locator('main'), 'Shaffer MarketData');
+  const testing = answerTo(b, 'POST', /^\/api\/data\/test$/, () => ui.button(panel, 'Test connection').click());
+  await sleep(400);
+  c.eq(await panel.getByRole('button', { name: /Test connection/ }).evaluate((x) => x.disabled || x.getAttribute('aria-busy') === 'true' || x.classList.contains('busy')), true, 'no answer: while it waits the Test connection button shows that it is busy');
+  const t0 = Date.now();
+  const answered = await testing;
+  c.note(`no answer: the test answered ${JSON.stringify(answered.body?.result || answered.body).slice(0, 300)}`);
+  const verdict = panel.locator('.notice').filter({ hasText: /could not be reached/ }).first();
+  await verdict.waitFor();
+  const waited = Date.now() - t0 + 400;
+  c.ok(waited >= 1_000 && waited < 4_000, 'the page gives the verdict after the 1.5 second timeout, not later', `${waited} ms`);
+  c.match(flat(await verdict.innerText()), /The address could not be reached/, 'and says the address could not be reached');
+  const t1 = Date.now();
+  const tick2 = await b.tick();
+  c.ok(tick2 && !tick2.error && Date.now() - t1 < 3_000, 'an engine cycle completes without waiting for the service', `${Date.now() - t1} ms`);
+  await show(b, `#/accounting/positions/${book.accountId}`);
+  await ui.section(page.locator('main'), 'Positions').locator('tbody tr').filter({ hasText: 'AWAY' }).first().waitFor();
+  c.ok(true, 'the Accounting positions screen still loads, with the AWAY holding');
+  b.sameStored(c, fp, b.fingerprint(), 'no answer: every stored row is as before');
+  await stopHanging();
+
+  // 3. Answering again; then a restart.
+  stub = createServer((req, res) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{"service":"stub"}'); });
+  await listen(stub, port);
+  await show(b, '#/data');
+  t = await testMarketData(b);
+  c.match(t.verdict, /The address answered/, 'the address answers again: the page says so');
+  await b.restart();
+  await ui.reloadAt('#/accounting');
+  await settle(b);
+  b.sameStored(c, fp, b.fingerprint(), 'after reconnection and a restart: every stored row is as before');
+  b.sameBooks(c, before, await b.books(book.id), 'after reconnection and a restart');
+  nav = await navShown(b, book);
+  c.eq([nav.value, nav.provisional], ['1,000,100.00', false], 'the Accounting header shows 1,000,100.00, unchanged');
+  b.takePageErrors();
+  await b.clean(c, book.id);
+}

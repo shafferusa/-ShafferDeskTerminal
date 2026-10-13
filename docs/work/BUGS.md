@@ -9,12 +9,14 @@
    the JPY amount and should be labelled JPY (or left out of the USD gross notional). Reproduce: demo, buy KAIJ, hedge
    popup, "JPY currency forward", Inspect or edit: the "Notional, margin" column. The hedge popup's own leg card now
    labels that figure in the base currency (web/views/hedge.js); the preview dialog and the snapshot are unchanged.
+   > **Status (fix, 2026-10-13):** FIXED. Before a rate, an FX/NDF forward's notional is the base amount, labelled in the base currency (`row.notionalCcy`, server/core/packages.js); the confirmation snapshot adds it to that currency's gross notional (confirmation.js); the preview labels it so (preview.js). An asset forward's notional without a price is now missing, not the quantity. Test: test/core/labels-conventions.test.js.
 2. **A swap floating-leg payment that is exactly half a cent rounds down** (server/products/swap.js `legAmount`, then
    `money()`). Equity TRS, notional 81,590, SIM-ON 4.00% + 0.50%, 2026-10-06 to 2027-01-06 (92 days, ACT/360):
    81,590 x 0.045 x 92 / 360 = 938.285 exactly; the Terminal paid 938.28 because the day-count fraction 92/360 is a
    binary float (the product is 938.28499...). Half-up gives 938.29. One cent; the convention for exact halves should be
    decided and the amount computed as notional x rate x days / 360 in that order (or in integer minor units).
 
+   > **Status (fix, 2026-10-13):** Already FIXED by s1 (swap.js, test/core/swap-rates.test.js); nothing left.
 ## b1 (bond family, government group), 2026-10-07: two findings outside my files, not fixed
 
 1. **Bond prices are displayed to three decimals, so a price in 32nds or 64ths is not shown as quoted**
@@ -30,6 +32,7 @@
    Reproduce: `npm run test:browser -- --product=treasury_note --headed`, or register any bond, quote it at 99.53125
    and open the buy preview. The matrix compares a displayed figure to the decimals shown, so this does not fail a step.
 
+   > **Status (fix, 2026-10-13):** NOT TOUCHED: owned by ui1 (web/lib/core.js bond price format), per the coordinator.
 2. **Two strategy instances with the same name are listed in an arbitrary order in Accounting, Positions** (cosmetic;
    `web/views/accounting.js`, the sort of the Positions table: owner, strategy name, then strategy id, which is random).
    Product corporate_bond, step second-lot onwards: two purchases of one bond are two instances both named
@@ -37,6 +40,7 @@
    says which instance it is. What is right: the older instance first (opened_at, as the API lists them). Not fixed:
    shared view. The browser check now tells two equal-sized lots apart by their average cost (drivers/browser.mjs).
 
+   > **Status (fix, 2026-10-13):** FIXED. Accounting rows carry `strategy.openedAt`; Positions sort by owner, name, opened time; the group heading shows when it was opened and, when names repeat, the instance ID (web/views/accounting.js, server/core/accounting.js). Test: test/core/collateral-followup.test.js.
 ## o1 (listed options), 2026-10-07: one gap outside my files, not fixed
 
 1. **No catalog product for an index, so an index option's underlying is a stand-in** (server/core/catalog.js; the
@@ -53,6 +57,7 @@
    reference instrument is supplied, the engine settles on the close. Reproduce: Instruments, New instrument, Index
    option: "Underlying (required)" lists registry instruments only.
 
+   > **Status (fix, 2026-10-13):** PARTLY FIXED. The listed-option form now takes a named published index and its index level code when no registry underlying is chosen (web/lib/contracts.js); settlement reads the level under that code, like a rate fixing (engine test: labels-conventions.test.js, index option settled in cash). NOT done: a catalog kind for a non-tradable reference index. That changes the catalog inventory (205 products), the registry form, Marketplaces classification (ui1) and valuation of every instrument that can name an underlying: a redesign, not a fix. The index_option spec's ETF stand-in is left as its author wrote it.
 ## s1 (swap family, rate products), 2026-10-07: findings outside my files or left as they are, not fixed
 
 (Fixed in my own file and covered by test/core/swap-rates.test.js, so not listed below: v1b's item 2 above, the half
@@ -66,48 +71,59 @@ start fixing never asked of the data service; a return or price fixing asked for
    "Entered as written", "Increased", "Terminated in part", "Terminated" (swap.js), but the leg rows between the two
    still say Buy and Sell. Right: the same words as the ticket. Not fixed: shared core, and the browser harness
    matches trade rows with `/^(Buy|Sell)/` (drivers/browser.mjs `previewDisplayProblems`), so both change together.
+   > **Status (fix, 2026-10-13):** FIXED. A swap trade reads "Enter as written: pay fixed 4.000%, receive SIM-3M + 0.25% on 10,000,000 IRS-X" (or "Enter the opposite side: ..." with the sides swapped) in the preview, on the order rows and on the Strategies page legs (swap.js swapTradeLabel, packages.js legLabel/describeOrder, strategy.js describeLeg); a CDS uses its own action labels. Browser harness regex widened (drivers/browser.mjs). Test: labels-conventions.test.js.
 2. **No catalog product for a published index, so an inflation leg's index is a stand-in** (same gap as o1's item
    above). zc_inflation_swap and yoy_inflation_swap register the CPI as a "Physical / spot commodity" that is never
    traded, and supply its fixings as instrument prices "for a date". The Terminal lists it as a tradable asset.
    Right: a reference index of its own kind (not tradable), or an index code on the leg served like a rate fixing.
    The Terminal also applies no publication lag and no interpolation: the fixing asked for is the index for the
    period's first and last day (last business day before, when that is not one).
+   > **Status (fix, 2026-10-13):** NOT FIXED, redesign (same reason as o1 item 1): an index code on a swap leg served like a rate fixing, with publication lag and interpolation, is new swap mechanics plus a reference-index kind; the stand-in stays and is labelled in the spec.
 3. **The OTC ticket of the Strategies page has no market view, calendar or symbol fields** (`web/views/strategy.js`,
    "New OTC contract"). constant_maturity_swap, step open. A contract entered there is always US Derivatives on the
    US market calendar (payments on it joined with each leg currency's calendar) and has no symbol, so it is shown by
    its full name everywhere. A euro contract entered there would settle on New York days. Right: the same
    "Calendars and settlement" group and Primary view as the registry form. Reproduce: Strategies, Custom, Add a leg.
+   > **Status (fix, 2026-10-13):** FIXED. The Strategies page "New OTC contract" leg now has Symbol, Primary view (US / Foreign Derivatives) and the registry's Calendars and settlement group (ConventionFields exported from web/views/registry.js; conventions sent with the contract). Looked at on screen; constant_maturity_swap (entered on the Strategies page) passes at browser level.
 4. **A swap whose last payment was released late matures one engine pass later** (`server/core/engine.js` runs due
    tasks once, in due-date then creation order; the maturity task is older than the last payment's). interest_rate_cap
    step fixing-entered-by-hand, constant_maturity_swap step cms-fixing-entered-by-hand: after the fixing is entered
    the payment is made and the maturity row still reads "blocked: Waiting for the final leg payments" until the next
    pass (a few seconds with the engine timer on; the scenarios use a `cycle` step). Right: blocked tasks of a
    position looked at again in the pass in which another of its tasks completed.
+   > **Status (fix, 2026-10-13):** FIXED. server/core/engine.js processTasks looks again, in the same pass, at the blocked tasks of a position where another task has just completed. Test (fails without the fix): labels-conventions.test.js. The cap and CMS specs now expect maturity in the fixing step (test/matrix/specs/swap-rates.mjs); both pass at engine, API and browser level.
 5. **"Close share %" cannot state an exact notional** (strategy instance, Close). 33.3333% of 30,000,000 gives
    9,999,999. The scenarios use exact percentages. Right: a notional field beside the percentage for contracts.
+   > **Status (fix, 2026-10-13):** FIXED. Strategy instance, Manage: "Close an exact notional" (position and amount) beside the share, button "Preview close of this amount" (strategy-detail.js). Engine path tested: 10,000,000 of 30,000,000 leaves 20,000,000 (labels-conventions.test.js).
 6. **A position's own margin figure is its independent amount only**; variation margin posted for it shows in the
    cash "margin" bucket and on Treasury, Collateral, not on the position row (interest_rate_collar, step
    variation-margin-call: position margin 0 while 30,000 is posted). By design (variation margin belongs to the
    netting set), but the row gives no hint. `server/core/agreements.js` area.
+   > **Status (fix, 2026-10-13):** FIXED. Accounting, Open positions: every OTC row shows its collateral basis, the independent amount posted, and the variation margin of its netting set, labelled "for its netting set of N positions" when it is the set's (accounting.openPositions `otcCollateral`; accounting.js view). Test: collateral-followup.test.js.
 7. **Marks: nothing on the manual price form says what a swap's mark must contain.** The Terminal accrues nothing in
    the ledger between payment dates, so the mark has to include interest accrued; and for a cross-currency swap the
    principal exchanged is on the balance sheet (lent / owed, at the current rate), so the mark has to exclude it or it
    is counted twice. Both are stated in the spec header and asserted; a hint on the form (web/views/data.js) is due.
+   > **Status (fix, 2026-10-13):** FIXED. Both manual price forms (Data connection, Manual entries; instrument page) state, for a swap, that the mark includes interest accrued since the last payment and excludes principal already exchanged on a cross-currency swap.
 8. **Two rules for a notional that changes inside a period** (swap.js, left as it was and documented): an increase
    takes the whole current period on the added notional, while a position first opened inside a period pays from its
    trade date. Either is defensible with an all-in price; they are not the same rule.
+   > **Status (fix, 2026-10-13):** CONVENTION, now stated where it applies: the preview of an increase to a running swap carries the note (swap.js economics) and docs/ARCHITECTURE.md describes both rules.
 9. **Balance sheet lines in a foreign currency can foot one cent off net assets** (`server/core/accounting.js`):
    each line is converted and rounded on its own, the NAV converts the currency's net total once.
    cross_currency_basis_swap, step second-quarter: cash 10,394,382.69 + lent 9,615,384.62 - 10,000 = 19,999,767.31,
    assets shown 19,999,767.30. Cosmetic; the totals are right.
+   > **Status (fix, 2026-10-13):** CONVENTION, now stated on the balance sheet note (each line converted and rounded on its own; net assets convert each currency's net once) and in docs/ARCHITECTURE.md.
 10. **Fixing dates follow the contract's joint payment calendar, not each index's own** (swap.js `fixingDate`, a
     convention, documented): on the USD/JPY swap the term SOFR fixing for the period starting 23 September 2026 (a
     holiday in Tokyo, like the 21st and 22nd) is Friday 18 September's, though New York was open on all three days.
+   > **Status (fix, 2026-10-13):** CONVENTION, now stated in the swap's contract terms (a "Fixing dates" row naming the calendar) and in docs/ARCHITECTURE.md.
 11. **Principal a forward-starting cross-currency swap will exchange is announced, not reserved.** The preview says
     what is due on the effective date and whether the cash is there today; nothing sets it aside, so if it is spent
     the exchange fails visibly on the day and waits (cross_currency_swap, step initial-exchange-unfunded). And the
     shortfall message of a trade that cannot pay its principal calls it "purchases" (generic text in packages.js).
 
+   > **Status (fix, 2026-10-13):** Message FIXED: a shortfall now names "principal exchanged when the trade settles" apart from purchases (packages.js; xccy spec regex updated). Not reserving is a CONVENTION already stated in the preview note ("it is not set aside now") and now in docs/ARCHITECTURE.md; reserving it would hold cash for months ahead, a design change the owner has not asked for.
 ## b2 (2026-10-13): two "Preview close" buttons in the strategy Manage panel break browser close steps
 - Since commit 008a80d the Manage panel of a strategy instance (web/views/strategy-detail.js) has a second "Preview close"
   button ("Close an exact amount"). `ui.button(drawer, 'Preview close')` then matches two elements (Playwright strict mode)
@@ -115,3 +131,9 @@ start fixing never asked of the data service; a return or price fixing asked for
 - Fixed in the shared driver (test/matrix/drivers/browser.mjs, close path): the button is taken inside the field
   "Close, share of every position". NOT fixed (other people's drivers, same pattern): test/matrix/drivers/browser/future.mjs:139
   and test/matrix/drivers/browser/swap.mjs:244 still call `ui.button(drawer, 'Preview close')`; scope them the same way.
+   > **Status (fix, 2026-10-13):** FIXED at the source: the exact-amount button is now "Preview close of this amount", so "Preview close" names one button again; interest_rate_swap, interest_rate_cap and cross_currency_swap pass at browser level.
+
+## fix (2026-10-13): red engine test in another area, not investigated
+- `npm test`: "matrix E: commodity_future" fails at its delivery-refusal step: the spec expects `Unknown lifecycle action "deliver"`,
+  the Terminal now answers "Physical delivery does not apply to this position." Someone has added a `deliver` lifecycle action
+  (server/api.js or a plugin); the futures spec (test/matrix/specs/future*.mjs) needs its expected refusal updated by its owner.

@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 56.0% of the pass** (last milestone 2026-10-13T16:58Z, b2: commercial_paper passes at engine, API and browser)
+**Completeness: about 57.0% of the pass** (last milestone 2026-10-13T16:59Z, fix: A complete: collateral follow-up (stale-mark calls, collateral on Accounting rows, borrow collateral, narrow collateral screens, no-basis fix from templates and Add legs))
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 

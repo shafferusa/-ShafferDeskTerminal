@@ -24,8 +24,17 @@ Tools: $SP/fix/shot2.mjs (out hash port theme w h step full), steps/env.mjs (STE
 - B o1-1/s1-2: listed-option form accepts a named index + index level code (contracts.js); engine test settles an index option on the level. Catalog index kind NOT added (redesign).
 - npm test 405/405 after these; test:api for 4 swap products passes.
 
+- B s1-9 balance-sheet note; BUGS.md: every entry marked with a status line.
+- C shell: web/app.js Menu button + drawer (rail at <=820), tools duplicated in drawer (.rail-tools), clock kept at <=1100;
+  app.css "narrow shell (fix)", panel headers wrap <=820, P&L split class (accounting.js), cash summary min-width. Checked 1024x768 and
+  390x844, demo and normal, light and dark: no horizontal page scroll; drawer opens/closes.
+- A4: collateral desk tables stack into labelled blocks <=1100 (agreements.js `labelled`, app.css "collateral desk, narrow");
+  agreement form and Account page checked at 390/1024.
+- Browser: common_stock, interest_rate_swap, unsecured_loan, interest_rate_cap, constant_maturity_swap, cross_currency_swap pass.
+- npm test 434/435: the one failure is commodity_future (someone's new deliver action), logged in BUGS.md.
+
 ## In progress
 - Nothing half-edited.
 
 ## Next
-- s1-9 balance-sheet cent note; mark BUGS.md entries; browser check of swap products + common set; A4 narrow collateral screens; C shell; D docs.
+- D docs: ARCHITECTURE.md + README (integrity, demo fixtures, once.js/client tokens, agreements/collateral routes, confirmation tolerances, calendars/conventions, test/matrix + test/system commands, conventions from BUGS); then final report.
