@@ -290,7 +290,7 @@ const ventureCapital = {
     collateral: 'None: a fund interest held long',
   },
   start: '2026-04-01T14:00:00.000Z', // Wednesday 1 April 2026, 10:00 New York
-  settlementCheck: { lag: 2, holidays: [] },
+  settlementCheck: { lag: 2, holidays: ['2026-04-03', '2026-04-06'] }, // TARGET: Good Friday and Easter Monday
   book: { name: 'Matrix venture capital', reportingCcy: 'USD', capital: [{ ccy: 'USD', amount: 5_000_000 }, { ccy: 'EUR', amount: 6_000_000 }], account: { name: 'Alpha', funding: [{ ccy: 'EUR', amount: 4_000_000 }] }, settings: SETTINGS },
   fx: { 'EUR/USD': 1.10 },
   instruments: {
