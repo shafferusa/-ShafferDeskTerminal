@@ -55,15 +55,15 @@ the named engine and API case; or a click, a dialog or a page is a browser matte
 <!-- system-mapping:start -->
 <!-- Written by test/system/mapping.mjs from the cases and the results files; do not edit by hand. -->
 
-57 cases. Each declares, at each level, the test that runs there or the precise reason it does not; the runners refuse to start when a level has neither, when a reason names a test that does not exist or does not run at that level, or when a case that runs at engine or API level names no browser test covering what the user sees of it (test/system/lib/mapping.mjs).
+58 cases. Each declares, at each level, the test that runs there or the precise reason it does not; the runners refuse to start when a level has neither, when a reason names a test that does not exist or does not run at that level, or when a case that runs at engine or API level names no browser test covering what the user sees of it (test/system/lib/mapping.mjs).
 
 | Level | Cases | Run at this level | Not applicable (reason given) | Passed | Failed | Not run | Results as of |
 |---|---:|---:|---:|---:|---:|---:|---|
-| Engine | 57 | 41 | 16 | 41 | 0 | 0 | 2026-10-13T18:00:30.169Z |
-| API | 57 | 47 | 10 | 47 | 0 | 0 | 2026-10-13T17:50:36.630Z |
-| Browser | 57 | 37 | 20 | 37 | 0 | 0 | 2026-10-13T18:04:23.533Z |
+| Engine | 58 | 41 | 17 | 41 | 0 | 0 | 2026-10-13T19:44:11.179Z |
+| API | 58 | 48 | 10 | 48 | 0 | 0 | 2026-10-13T19:44:04.870Z |
+| Browser | 58 | 38 | 20 | 38 | 0 | 0 | 2026-10-13T19:44:02.458Z |
 
-Each row adds up: run + not applicable = 57 at every level; passed + failed + not run = run. 20 of the 47 API cases have no browser run of their own; each names the browser test(s) that cover what the user sees of it (the Browser column below). 10 browser cases have no API run (a click, a dialog or a screen is a browser matter; the routes behind them are covered by the tests their API reason names).
+Each row adds up: run + not applicable = 58 at every level; passed + failed + not run = run. 20 of the 48 API cases have no browser run of their own; each names the browser test(s) that cover what the user sees of it (the Browser column below). 10 browser cases have no API run (a click, a dialog or a screen is a browser matter; the routes behind them are covered by the tests their API reason names).
 
 ### The owner's list at browser level
 
@@ -98,6 +98,12 @@ Each item is triggered from the interface by these browser tests (the list is da
 | Insufficient collateral | `SB:refusals:collateral-repo` `SB:refusals:collateral-pledged-position` `SB:refusals:collateral-independent-amount` `SB:refusals:failed-tab` | passed, passed, passed, passed |
 | Cancellations | `SB:stress:cancellations` `SB:stress:failed-leg-cancel` | passed, passed |
 | Persistence across restart | `SB:stress:restart-stages` `SB:nodup:catch-up` `SB:isolation:demo-normal-databases` `SB:stress:service-stops-answering` | passed, passed, passed, passed |
+
+### Accounting verified against hand-worked figures
+
+| Case | What it proves | Engine | API | Browser |
+|---|---|---|---|---|
+| `accounting:verification-book` Accounting verified against hand-worked figures: one Book, Treasury and two Accounts, every situation of section 7 | Assets less liabilities equal net assets at Account, Treasury and Book scope; the Book equals its owners after the internal funding is eliminated; each borrowing, interest, fee and collateral amount appears once; internal transfers make no P&L; long, short, derivative, loan and collateral balances are classified as stated; gross holdings and net exposure reconcile; bond quotation, accrued interest, multipliers, currencies and settlement amounts reconcile; repo proceeds reconcile to collateral value, haircut and buffer; realized and unrealized P&L, income, financing costs and FX effects add up to the change in net assets net of capital flows; a missing mark and a stale rate give a provisional NAV that names them; the integrity read is clean after every step. | not applicable: The engine level of this scenario is test/core/accounting-verification.test.js, which runs runVerification from this file in-process (route handlers, engine and ledger on a disposable database) as part of npm test, so it is not run a second time here. | `SA:accounting:verification-book` passed | `SB:accounting:verification-book` passed |
 
 ### Hedge reconnection
 

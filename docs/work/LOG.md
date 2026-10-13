@@ -230,3 +230,4 @@
 - 2026-10-13T19:42Z | b4 | +0 | bond floating coupon with several holders paid at the period's own rate (fix + regression test); PIK engine in progress
 - 2026-10-13T19:44Z | s2 | +0.2 | equity_trs passes at engine, API and browser (first-period dividend pass-through fixed; EUR contract in a USD Book)
 - 2026-10-13T19:44Z | t2 | +0.2 | long_strangle passes at engine, API and browser
+- 2026-10-13T19:44Z | s7 | +1.5 | s7: accounting verification system case passes at API (1,154 checks) and browser level (1,405 checks, Accounting screens read at 6 checkpoints)
