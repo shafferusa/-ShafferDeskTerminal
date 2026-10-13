@@ -2148,7 +2148,9 @@ export async function hedgeReconnection(b, c) {
   const held = async (k) => (await b.strategy(s[k].id)).positions.filter((p) => p.family === 'equity').reduce((a, p) => a + p.qty, 0);
   c.eq([await held('grew'), await held('shrank'), await held('closed')], [600, 100, 0], 'HGR doubled to 600, 300 of HSH sold (100 left), HCL closed');
   q = await hedgeQueue(b);
-  c.eq(Object.keys(q).sort(), Object.values(ids).sort(), 'while waiting the queue still lists the same five requests');
+  c.eq(Object.keys(q).sort(), [ids.grew, ids.shrank, ids.untouched, ids.incomplete].sort(), 'while waiting the queue lists the four open requests: HCL\'s left it when its position was closed');
+  c.eq((await b.get('/api/hedge/requests', { bookId: book.id })).items.map((r) => r.id).sort(), Object.values(ids).sort(), 'behind the screen there are still exactly the same five requests');
+  c.eq([(await reqOf('closed')).state, (await reqOf('closed')).response ?? null], ['closed', null], 'HCL\'s is closed, and was never sent');
   c.eq((await b.get('/api/demo/hedge-script')).used ?? 0, 0, 'nothing was sent meanwhile');
   const beforeBooks = await b.books(book.id);
   const ordersOf = () => Object.fromEntries(Object.entries(s).map(([k, x]) => [k, b.sql('SELECT COUNT(*) AS n FROM orders WHERE strategy_id = ?', x.id)[0].n]));
