@@ -220,3 +220,10 @@ start fixing never asked of the data service; a return or price fixing asked for
      returns as income). The minimum-denomination refusal prints the step without a thousands separator
      ("multiple of 200000", server/core/packages.js); other specs assert that text, so it was left.
   9. Not exercised for these products: short sales, Treasury-owned linkers or convertibles, partial calls of a short.
+
+## o2 (OTC options), 2026-10-13
+- Harness, test/matrix/drivers/browser.mjs readScreens (history): once, on B:commodity_option:settle-termination, the screen
+  check reported "history event #31 (settlement.receive) is not in the audit trail"; an immediate re-run passed and the
+  later clean runs passed. The Audit trail table appears to be read as soon as its heading is drawn, possibly before its
+  rows for the latest events are loaded. Not fixed (shared harness). Reproduce: run `npm run test:browser -- --product=commodity_option`
+  under load; look for the message above.
