@@ -95,3 +95,4 @@
 - 2026-10-13T16:44Z | b2 | +0.2 | floating_rate_note passes at engine, API and browser (late fixings now taken, coupon income at a missing reset, no-fixing trades refused)
 - 2026-10-13T16:46Z | b2 | +0.2 | zero_coupon_bond passes at engine, API and browser
 - 2026-10-13T16:48Z | ui1 | +1 | Product-specific Marketplace columns and units-aware bond price display (BUGS b1 #1)
+- 2026-10-13T16:48Z | b2 | +0.2 | perpetual_bond passes at engine, API and browser
