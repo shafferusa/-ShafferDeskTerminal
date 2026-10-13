@@ -630,3 +630,11 @@ table.ledger.pv-legs td.amt .sub, table.ledger.pv-legs td.amt .was { white-space
 
 /* ---- manual workflow (m1) ---- */
 .manual-line { display: block; white-space: normal; max-width: 300px; line-height: 1.35; }
+@container mk (max-width: 1080px) {
+  /* Current market price, Fair price and Gap % stay together: first after the instrument, in that order. */
+  .mk-table td.mk-head { order: -2; }
+  .mk-table td.mk-mkt { order: -1; }
+}
+@container mk (max-width: 520px) {
+  .mk-table tr { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 10px; }
+}

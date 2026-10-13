@@ -207,13 +207,52 @@ const MANUAL_FORMS = {
   call: { fields: (b) => [['Call price', b.price], ['Share of the issue called', b.share]], review: 'Review issuer call', confirm: 'Record issuer call', done: /Issuer call recorded/ },
 };
 
+/**
+ * Position events recorded by hand from the Lifecycle menu (b3): the menu entry, the dialog's fields and its button.
+ * Spec step: `{ action: 'lifecycle', lot, instrument?, body: { action: 'put', face, label } }` or
+ * `{ ..., body: { action: 'convert', face, sharePrice, settlement: 'shares' | 'cash' } }`.
+ */
+const POSITION_FORMS = {
+  put: { menu: 'Holder put', fields: (b) => [['Face amount put', b.face], ['Label', b.label]], button: 'Record holder put' },
+  convert: { menu: 'Conversion into shares', fields: (b) => [['Face amount converted', b.face], ['Share price', b.sharePrice]], select: (b) => [['Settlement', b.settlement]], button: 'Record conversion' },
+};
+async function positionForm(ui, ctx, step, { positionRow }) {
+  const f = POSITION_FORMS[step.body.action];
+  const lot = ctx.lot(step.lot);
+  const drawer = await ui.openStrategy(ctx, lot.strategyId);
+  const row = positionRow(drawer, ctx.inst(step.instrument || lot.instrument));
+  const menu = row.locator('select').first();
+  // The menu lists what the position's terms allow once they have loaded.
+  await menu.locator('option', { hasText: f.menu }).first().waitFor({ state: 'attached', timeout: 8000 }).catch(() => {});
+  const offered = (await menu.locator('option').allInnerTexts()).map((x) => x.trim()).filter((x) => x && x !== 'Lifecycle');
+  if (!offered.includes(f.menu)) return { refusal: { message: `The Lifecycle menu of this position offers only: ${offered.join(', ') || 'nothing'}. "${f.menu}" is not offered.`, where: 'strategy instance, position Lifecycle menu' } };
+  await menu.selectOption({ label: f.menu });
+  const dlg = ui.dialog(new RegExp(`^${f.menu}`));
+  for (const [label, value] of f.fields(step.body)) if (has(value)) await ui.input(dlg, label).fill(String(value));
+  if (f.select) for (const [label, value] of f.select(step.body)) if (has(value)) await ui.select(dlg, label).selectOption(value);
+  const record = ui.button(dlg, f.button);
+  if (await record.isDisabled()) {
+    await ui.button(dlg, 'Cancel').click();
+    return { refusal: { message: `The "${f.button}" button is disabled: the dialog is missing an amount it needs.`, where: `${f.menu} dialog` } };
+  }
+  const r = await ui.respondsTo('POST', /^\/api\/positions\/[^/]+\/lifecycle$/, () => record.click());
+  if (!r.ok) {
+    await dlg.locator('.notice.err', { hasText: r.body?.error || 'no message' }).first().waitFor();
+    return { refusal: { message: r.body?.error, status: r.status, where: 'dialog message' } };
+  }
+  await dlg.waitFor({ state: 'hidden' });
+  return {};
+}
+
 export const actions = {
   /**
    * An early redemption recorded by hand from the position's Lifecycle menu. Any other lifecycle event is handed
    * back to the shared path (which records manual cash flows and names what it does not do yet).
    */
-  async lifecycle(ui, t, ctx, step, { positionRow }) {
+  async lifecycle(ui, t, ctx, step, tools) {
+    if (POSITION_FORMS[step.body?.action]) return positionForm(ui, ctx, step, tools);
     if (step.body?.action !== 'redeem') return undefined;
+    const { positionRow } = tools;
     const lot = ctx.lot(step.lot);
     const drawer = await ui.openStrategy(ctx, lot.strategyId);
     const row = positionRow(drawer, ctx.inst(step.instrument || lot.instrument));

@@ -9,9 +9,9 @@
 // the settlement visibly; it is never guessed.
 
 import { fmt } from '../core/books.js';
-import { addBusinessDays, fxValueDate } from '../quant/calendar.js';
+import { CURRENCY_CALENDAR, addBusinessDays, fxValueDate, isBusinessDay } from '../quant/calendar.js';
 import { yearFraction } from '../quant/daycount.js';
-import { CCY_RE, ISO_DATE_RE, isZero, money, num, qty8, sign } from '../core/util.js';
+import { AppError, CCY_RE, ISO_DATE_RE, isZero, money, num, qty8, sign } from '../core/util.js';
 import { normalizeBasis } from '../core/agreements.js';
 import { dqOf, fmtPx, fmtQty } from './common.js';
 import { calendarFor, calendarInfo, standardSettleDate } from './security.js';
@@ -142,6 +142,12 @@ export const forward = {
       if (!draft.underlying_id) errors.push('An asset forward needs its underlying instrument.');
     }
     if (!ISO_DATE_RE.test(t.valueDate || '')) errors.push('Value (maturity) date is required.');
+    // An FX forward (deliverable or not) is settled on a day both currencies' payment systems are open: the value
+    // date must be a business day of the joint calendar of its two currencies, where both calendars are built in.
+    else if ((t.forwardType === 'fx' || t.forwardType === 'ndf') && CURRENCY_CALENDAR[t.base] && CURRENCY_CALENDAR[t.quote]) {
+      const closed = [t.base, t.quote].filter((c) => !isBusinessDay(t.valueDate, CURRENCY_CALENDAR[c]));
+      if (closed.length) errors.push(`The value date ${t.valueDate} is not a business day for ${closed.map((c) => `${c} (${CURRENCY_CALENDAR[c]} calendar)`).join(' or ')}: an FX forward settles on a day that is a business day for both ${t.base} and ${t.quote}.`);
+    }
     // Collateral follows the basis stated on the contract; nothing is assumed from the product.
     t.collateralBasis = normalizeBasis(t.collateralBasis, errors);
     if (!t.collateralBasis) delete t.collateralBasis;
@@ -253,6 +259,42 @@ export const forward = {
     }
     return {};
   },
+  /**
+   * Early termination at a stated amount (lifecycle action `terminate`): the amount agreed with the counterparty
+   * (positive received, negative paid) for all or part of the notional, settled on a stated date (default: two
+   * business days on the contract's settlement calendar). The amount is realized P&L; the terminated notional leaves
+   * the position, its collateral is trued up or released, and nothing is settled for it on the value date.
+   */
+  terminate(app, { book, unit, inst, pos, amount, qty, settleDate }) {
+    const sym = inst.symbol || inst.name;
+    const ccy = inst.trading_ccy;
+    if (!pos || isZero(pos.qty)) throw new AppError(`This ${sym} position is closed: there is nothing to terminate.`, { code: 'termination_position_closed' });
+    const a = num(amount);
+    if (a === null) throw new AppError('Enter the termination amount agreed with the counterparty (positive if received, negative if paid, 0 for none).', { code: 'termination_amount' });
+    const held = Math.abs(pos.qty);
+    const n = qty === undefined || qty === null || qty === '' ? held : num(qty);
+    if (!(n > 0)) throw new AppError('Enter the notional to terminate as a positive amount.', { code: 'termination_qty' });
+    if (n > held + 1e-9) throw new AppError(`Termination of ${fmtQty(n)} was requested, but this ${sym} position holds only ${fmtQty(held)}.`, { code: 'termination_more_than_held' });
+    const today = app.clock.today();
+    const due = settleDate || addBusinessDays(today, 2, calendarFor(inst));
+    if (!ISO_DATE_RE.test(due) || due < today) throw new AppError('The settlement date of a termination is a date from today on.', { code: 'termination_settle_date' });
+    const value = money(a, ccy);
+    const eventId = app.ledger.post({
+      bookId: book.id, unitId: unit.id, type: 'forward.termination', instrumentId: inst.id, strategyId: pos.strategy_id, positionId: pos.id, actor: 'user',
+      summary: `Terminated early: ${fmtQty(n)} of ${sym} (dealt ${fmtPx(pos.data.avgStrike)}) at a stated amount, ${value >= 0 ? 'received' : 'paid'} ${fmt(Math.abs(value), ccy)} on ${due}${n < held - 1e-9 ? `; ${fmtQty(held - n)} remains` : ''}`,
+      data: { qty: n, amount: value, settleDate: due, dealt: pos.data.avgStrike },
+      entries: [
+        { account: value >= 0 ? 'recv.settle' : 'pay.settle', ccy, amount: value, positionId: pos.id },
+        { account: 'pnl.realized', ccy, amount: -value, positionId: pos.id },
+      ],
+    });
+    if (value !== 0) app.settle.create({ bookId: book.id, unitId: unit.id, instrumentId: inst.id, strategyId: pos.strategy_id, positionId: pos.id, kind: 'forward', dueDate: due, ccy, amount: value });
+    const dq = -sign(pos.qty) * n;
+    const left = qty8(pos.qty + dq);
+    const fresh = app.positions.change(pos, { dQty: dq, data: { avgStrike: isZero(left) ? null : pos.data.avgStrike } });
+    app.agreements.onPositionChange({ book, unit, inst, pos: fresh });
+    return { eventId, amount: value, qty: n, settleDate: due };
+  },
   runTask(app, task, ctx) {
     const r = settleForwardTask(app, task, ctx);
     // The forward ended: whatever collateral it carried is released.
@@ -322,7 +364,7 @@ function settleForwardTask(app, task, { book, unit, inst, pos }) {
       const action = q > 0 ? (undPos && undPos.qty < 0 ? 'buy_to_cover' : 'buy') : 'sell';
       const d = plugin.fill(app, {
         book, unit, inst: und, action, qty: units, price: k, fees: [], strategyId: pos.strategy_id, tradeDate: t.valueDate, settleDate: plugin.settleDate(app, und, t.valueDate, book), actor: 'engine',
-        eventType: 'forward.delivery', summary: `Forward delivery: ${q > 0 ? 'received' : 'delivered'} ${fmtQty(units)} ${und.symbol || und.name} at ${fmtPx(k)}`, data: { fromForward: inst.id },
+        eventType: 'forward.delivery', summary: `Simulated forward delivery (paper entry, no goods or securities move): ${q > 0 ? 'received' : 'delivered'} ${fmtQty(units)} ${und.symbol || und.name} at ${fmtPx(k)}`, data: { fromForward: inst.id, simulated: true },
       });
       positions.change(pos, { dQty: -q, data: { avgStrike: null } });
       const undNow = positions.find(unit.id, und.id, pos.strategy_id);

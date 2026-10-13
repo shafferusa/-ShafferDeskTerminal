@@ -563,6 +563,98 @@ export const bond = {
     if (full) app.instruments.update(inst.id, { terms: { ...app.instruments.get(inst.id).terms, calledOn: today, calledAt: p } }, { system: true });
     return { price: p, share: sh, eventIds };
   },
+  /**
+   * Holder put recorded by hand: a long holder puts `face` back to the issuer on a put date of the schedule (moved to the
+   * next payment day when it is not one), at that date's put price, with the accrued interest to today paid with it.
+   * Any other day is refused and the put dates are named. (The put notice window is not modelled.)
+   */
+  exercisePut(app, { book, unit, inst, pos, face, label }) {
+    const name = inst.symbol || inst.name;
+    const sched = inst.terms.putSchedule;
+    need(Array.isArray(sched) && sched.length, `${name} has no put schedule: the holder cannot put it back to the issuer.`);
+    need(pos.qty > 0, 'Only a holder (a long position) can put the bonds back to the issuer.');
+    const today = app.clock.today();
+    const cal = paymentCalendarFor(inst);
+    const entry = sched.find((r) => r.date === today || adjust(r.date, 'following', cal) === today);
+    if (!entry) {
+      const next = sched.find((r) => r.date > today);
+      throw new AppError(`${today} is not a put date of ${name}. The holder may put only on ${scheduleText(sched)}${next ? `; the next is ${next.date}` : '; no put date is left'}.`);
+    }
+    const f = face === undefined || face === null || face === '' ? pos.qty : num(face);
+    need(f > 0 && f <= pos.qty + 1e-9, `The position is ${fmtQty(pos.qty)} face; cannot put ${fmtQty(f)}.`);
+    const step = inst.terms.minDenomination || 1;
+    need(Math.abs(f / step - Math.round(f / step)) < 1e-9, `The face put must be a multiple of the minimum denomination, ${fmtQty(step)}.`);
+    const r = redeem(app, { book, unit, inst, pos, price: entry.price, face: f, date: today, type: 'bond.put', label: `Holder put recorded by hand (put date ${entry.date})${label ? `, ${label}` : ''}`, actor: 'user', accrued: Math.abs(bond.accruedAmount(inst, f, today) || 0) });
+    return { price: entry.price, eventId: r.eventId };
+  },
+  /**
+   * Conversion (convertible bond) or exchange (exchangeable bond) into shares, recorded by hand by a long holder.
+   * Shares = face / 1,000 x conversion ratio. The rule the Terminal applies:
+   *   - the bonds converted leave the position at their carrying cost (average cost), with no realized P&L;
+   *   - the whole shares open in the same strategy instance at that carrying cost (less the part of it that belongs to a
+   *     fraction of a share), booked as a simulated delivery;
+   *   - a fraction of a share is paid in cash at the share price entered by hand; its share of the cost against that cash
+   *     is realized P&L;
+   *   - the accrued interest on the bonds converted is forfeited (US market practice: no payment for accrued interest on
+   *     conversion): it is reversed out of coupon and interest income.
+   * With `settlement: 'cash'` (the issuer's election to pay cash instead of shares) the bonds are redeemed for the shares'
+   * value at the share price entered, and the difference from carrying cost is realized; accrued interest is forfeited.
+   */
+  convert(app, { book, unit, inst, pos, face, sharePrice, settlement }) {
+    const name = inst.symbol || inst.name;
+    const ratio = inst.terms.conversionRatio;
+    need(ratio > 0 && inst.underlying_id, `${name} does not convert into shares: it has no conversion ratio or shares registered.`);
+    need(pos.qty > 0, 'Only a holder (a long position) can convert the bonds into shares.');
+    const und = app.instruments.get(inst.underlying_id);
+    need(und, 'The shares this bond converts into are not in the registry.');
+    need(und.trading_ccy === inst.trading_ccy, `The shares trade in ${und.trading_ccy} and the bond in ${inst.trading_ccy}: a conversion across currencies is not supported.`);
+    const f = face === undefined || face === null || face === '' ? pos.qty : num(face);
+    need(f > 0 && f <= pos.qty + 1e-9, `The position is ${fmtQty(pos.qty)} face; cannot convert ${fmtQty(f)}.`);
+    const step = inst.terms.minDenomination || 1;
+    need(Math.abs(f / step - Math.round(f / step)) < 1e-9, `The face converted must be a multiple of the minimum denomination, ${fmtQty(step)}.`);
+    const cash = settlement === 'cash';
+    const shares = Math.round((f / 1000) * ratio * 1e8) / 1e8;
+    const whole = cash ? 0 : Math.floor(shares + 1e-9);
+    const frac = Math.round((shares - whole) * 1e8) / 1e8;
+    const px = sharePrice === undefined || sharePrice === null || sharePrice === '' ? null : num(sharePrice);
+    need(!(frac > 0) || (px !== null && px > 0), cash
+      ? 'Enter the share price the cash settlement is worked out at.'
+      : `${fmtQty(f)} face converts into ${fmtQty(shares)} shares: enter the share price for the fraction of a share paid in cash.`);
+    const ccy = inst.trading_ccy;
+    const today = app.clock.today();
+    const costOut = isZero(f - pos.qty) ? pos.cost : money((pos.cost * f) / pos.qty, ccy);
+    const costShares = cash ? 0 : isZero(frac) ? costOut : money((costOut * whole) / shares, ccy);
+    const cashPaid = money(frac * (px || 0), ccy);
+    const realized = money(cashPaid - (costOut - costShares), ccy);
+    const forfeited = isZero(f - pos.qty) ? app.ledger.positionBalance(pos.id, 'accrued.asset', ccy) : money((app.ledger.positionBalance(pos.id, 'accrued.asset', ccy) * f) / pos.qty, ccy);
+    const exchange = inst.product_id === 'exchangeable_bond' || inst.productId === 'exchangeable_bond';
+    const verb = exchange ? 'Exchange' : 'Conversion';
+    const undName = und.symbol || und.name;
+    const undPos = cash ? null : app.positions.ensure({ bookId: book.id, unitId: unit.id, instrumentId: und.id, strategyId: pos.strategy_id });
+    const entries = [
+      { account: 'pos', ccy, amount: -costOut, positionId: pos.id },
+      ...(cash ? [] : [{ account: 'pos', ccy, amount: costShares, positionId: undPos.id }]),
+      { account: 'cash', ccy, amount: cashPaid, positionId: pos.id },
+      { account: 'pnl.realized', ccy, amount: -realized, positionId: pos.id },
+      { account: 'accrued.asset', ccy, amount: -forfeited, positionId: pos.id },
+      { account: 'pnl.coupon', ccy, amount: forfeited, positionId: pos.id },
+    ].filter((e) => e.amount !== 0);
+    const summary = cash
+      ? `${verb} recorded by hand, settled in cash by the issuer: ${fmtQty(f)} ${name} for the value of ${fmtQty(shares)} ${undName} at ${fmtPx(px)} ${ccy}: ${fmt(cashPaid, ccy)}${realized ? ` (realized ${fmt(realized, ccy)})` : ''}${forfeited ? `; accrued interest ${fmt(forfeited, ccy)} forfeited` : ''}`
+      : `${verb} recorded by hand: ${fmtQty(f)} ${name} into ${fmtQty(whole)} ${undName} (simulated delivery, ${ratio} shares per 1,000 face) at the bonds' carrying cost ${fmt(costShares, ccy)}${frac > 0 ? `; ${fmtQty(frac)} of a share paid in cash at ${fmtPx(px)}: ${fmt(cashPaid, ccy)}${realized ? ` (realized ${fmt(realized, ccy)})` : ''}` : ''}${forfeited ? `; accrued interest ${fmt(forfeited, ccy)} forfeited` : ''}`;
+    const eventId = app.ledger.post({
+      bookId: book.id, unitId: unit.id, type: exchange ? 'bond.exchange' : 'bond.conversion', instrumentId: inst.id, strategyId: pos.strategy_id, positionId: pos.id, actor: 'user',
+      summary, data: { face: f, ratio, shares, wholeShares: whole, fraction: frac, sharePrice: px, settlement: cash ? 'cash' : 'shares', costOut, costShares, cashPaid, realized, forfeited, sharesInstrumentId: und.id, simulated: true, manual: true },
+      entries,
+    });
+    app.positions.change(pos, { dQty: -f, dCost: -costOut });
+    if (!cash && whole > 0) {
+      const after = app.positions.change(undPos, { dQty: whole, dCost: costShares });
+      const undPlugin = app.products.get(und.family);
+      if (undPlugin.onPositionChange) undPlugin.onPositionChange(app, { book, unit, inst: und, pos: after });
+    }
+    return { eventId, shares, wholeShares: whole, cashPaid, realized, forfeited };
+  },
   /** Principal paydown by hand: the pool factor falls and the paid-down face is redeemed at par. */
   paydown(app, { book, unit, inst, newFactor }) {
     const nf = num(newFactor);

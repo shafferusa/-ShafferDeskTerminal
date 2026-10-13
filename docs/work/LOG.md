@@ -143,3 +143,4 @@
 - 2026-10-13T17:43Z | o2 | +0.2 | fx_option passes at engine, API and browser
 - 2026-10-13T17:44Z | r1 | +0.2 | overnight_repo passes at engine, API and browser
 - 2026-10-13T17:44Z | b3 | +0.2 | callable_bond passes at engine, API and browser
+- 2026-10-13T17:47Z | s8 | +1 | missing browser counterparts written and passing: restart-stages, kill-mid-confirmation, double-click-treasury/-reference/-agreements; owner's list mapped to browser tests

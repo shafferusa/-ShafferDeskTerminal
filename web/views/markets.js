@@ -168,7 +168,7 @@ function MkTable({ columns, rows, onRowClick, empty }) {
   return html`<div class="tablewrap mk-wrap"><table class="ledger margin tight mk-table">
     <thead><tr>${columns.map((c) => html`<th class=${c.align || ''} title=${c.title}>${c.label}</th>`)}</tr></thead>
     <tbody>${rows.map((row) => html`<tr key=${row.id} class="click" onClick=${() => onRowClick(row)}>
-      ${columns.map((c, n) => html`<td class=${`${c.align || ''} ${n === 0 ? 'mk-head' : ''}`} data-label=${n === 0 ? null : c.label}>${c.render(row)}</td>`)}</tr>`)}</tbody>
+      ${columns.map((c, n) => html`<td class=${`${c.align || ''} ${c.cls || ''} ${n === 0 ? 'mk-head' : ''}`} data-label=${n === 0 ? null : c.label}>${c.render(row)}</td>`)}</tr>`)}</tbody>
   </table></div>`;
 }
 
@@ -222,11 +222,11 @@ const C = {
   inst: (label = 'Instrument') => ({ label, render: instCell }),
   product: () => ({ label: 'Product', render: productCell }),
   held: (label = 'Held in this Book') => ({ label, align: 'r', title: 'Gross long and short holdings in this Book, with the net. Hover for the owning Accounts.', render: (i) => html`<${Holdings} h=${i.holdings} />` }),
-  price: (ctx, label = 'Current market price', title) => ({ label, align: 'r', title: title || 'The latest price with its provenance: observed quote, indicative, model mark, manual or simulated (hover the chip).', render: (i) => html`<${Price} obs=${obsOf(ctx, i)} units=${i.priceUnits} reason=${priceReason(ctx, i)} />` }),
+  price: (ctx, label = 'Current market price', title) => ({ label, align: 'r', cls: 'mk-mkt', title: title || 'The latest price with its provenance: observed quote, indicative, model mark, manual or simulated (hover the chip).', render: (i) => html`<${Price} obs=${obsOf(ctx, i)} units=${i.priceUnits} reason=${priceReason(ctx, i)} />` }),
   bidAsk: (ctx) => ({ label: 'Bid / ask', align: 'r', render: (i) => { const o = obsOf(ctx, i); return isNum(o?.bid) ? `${fmtPriceUnits(o.bid, i.priceUnits)} / ${fmtPriceUnits(o.ask, i.priceUnits)}` : html`<${Missing} reason="No bid or ask in the latest observation" />`; } }),
   change: (ctx) => ({ label: 'Change', align: 'r', title: 'Against the previous close', render: (i) => { const o = obsOf(ctx, i); return o && isNum(o.value) && isNum(o.prevClose) && o.prevClose ? html`<${Signed} value=${(o.value / o.prevClose - 1) * 100} suffix="%" />` : html`<${Missing} reason="No previous close" />`; } }),
-  fair: (ctx) => ({ label: 'Fair price', align: 'r', title: 'Fair value from Analytics Lab for the chosen Strategy, in the same currency and units as the market price: fundamental above, realistic below. An analytical value, never an executable quote.', render: (i) => twoCell(ctx, i, 'fundamentalFairValue', 'realisticFairValue', (v) => fmtPriceUnits(v, i.priceUnits)) }),
-  gap: (ctx) => ({ label: 'Gap %', align: 'r', title: 'Gap between the current market price and each fair value, as supplied by Analytics Lab: fundamental above, realistic below.', render: (i) => twoCell(ctx, i, 'fundamentalGap', 'realisticGap', (v) => html`<${Signed} value=${v} suffix="%" />`) }),
+  fair: (ctx) => ({ label: 'Fair price', align: 'r', cls: 'mk-mkt', title: 'Fair value from Analytics Lab for the chosen Strategy, in the same currency and units as the market price: fundamental above, realistic below. An analytical value, never an executable quote.', render: (i) => twoCell(ctx, i, 'fundamentalFairValue', 'realisticFairValue', (v) => fmtPriceUnits(v, i.priceUnits)) }),
+  gap: (ctx) => ({ label: 'Gap %', align: 'r', cls: 'mk-mkt', title: 'Gap between the current market price and each fair value, as supplied by Analytics Lab: fundamental above, realistic below.', render: (i) => twoCell(ctx, i, 'fundamentalGap', 'realisticGap', (v) => html`<${Signed} value=${v} suffix="%" />`) }),
   life: () => ({ label: 'Lifecycle', title: 'How much of the instrument\'s lifecycle the paper engine simulates. Separate from whether a price is available, which the price column shows.', render: (i) => html`<${Support} level=${i.support.level} note=${i.support.note} />` }),
   und: () => ({ label: 'Underlying', render: (i) => (i.underlying ? html`<span class="sym">${i.underlying.symbol || i.underlying.name}</span>` : i.terms?.base ? `${i.terms.base}/${i.terms.quote}` : i.terms?.referenceEntity || html`<${Missing} reason="No registered underlying" />`) }),
   expiry: (label = 'Expiry') => ({ label, render: (i) => date(i.terms?.expiration || i.terms?.valueDate || i.terms?.maturity) }),

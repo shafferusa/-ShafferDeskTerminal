@@ -9,6 +9,7 @@
 // Locators go by what a person reads (labels, button text, headings), as in test/matrix/drivers/browser.mjs.
 
 import { evening, TUE } from './world.mjs';
+import { tabOf } from '../../../server/core/catalog.js';
 
 const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const exactly = (s) => new RegExp(`^\\s*${esc(s)}\\s*$`);
@@ -1227,6 +1228,21 @@ async function show(b, hash) {
   await settle(b);
 }
 /**
+ * The Marketplace row of an instrument, reached the way the shared driver's openInstrument reaches it (test/matrix/
+ * drivers/browser.mjs): its market view, then its product-family tab (the API's classification, else the catalog's),
+ * then the filter by symbol. Returns the row locator, drawn and settled.
+ */
+async function marketRow(b, inst) {
+  const tab = inst.classification?.tab || tabOf(inst.productId || inst.product_id);
+  await show(b, `#/markets/${inst.marketView || inst.market_view}${tab ? `/${tab}` : ''}`);
+  await closeHedgePopup(b);
+  await b.page.getByPlaceholder(/Filter by symbol/).fill(inst.symbol);
+  const row = b.page.locator('main table tbody tr').filter({ has: b.page.locator('.sym', { hasText: exactly(inst.symbol) }) }).first();
+  await row.waitFor();
+  await settle(b);
+  return row;
+}
+/**
  * Everything the page shows and carries (text, titles, data attributes, option values), except the Book selector
  * of the top bar, which lists every Book by name by design. Returns the needles found.
  */
@@ -1369,11 +1385,7 @@ export async function bookIsolation(b, c) {
 
 /** The ISO row of the selected Book's US Based Marketplace: what "Held in this Book" says, and its hover text. */
 async function heldInMarketplace(b, inst) {
-  await show(b, '#/markets/US_CASH');
-  await closeHedgePopup(b);
-  await b.page.getByPlaceholder(/Filter by symbol/).fill(inst.symbol);
-  const row = b.page.locator('main table tbody tr').filter({ has: b.page.locator('.sym', { hasText: exactly(inst.symbol) }) }).first();
-  await row.waitFor();
+  const row = await marketRow(b, inst);
   const held = row.locator('.held').first();
   return { text: flat(await held.innerText()), title: flat(await held.getAttribute('title')) };
 }
@@ -1522,10 +1534,7 @@ export async function normalMode(b, c) {
 
   // An instrument with no data source: no price is invented anywhere it is shown.
   const inst = await b.instrument({ productId: 'common_stock', name: 'Plain Works Inc.', symbol: 'PLN', marketView: 'US_CASH', venue: 'NYSE', venueType: 'exchange', venueCountry: 'US', tradingCcy: 'USD', terms: {} });
-  await show(b, '#/markets/US_CASH');
-  await page.getByPlaceholder(/Filter by symbol/).fill('PLN');
-  const row = page.locator('main table tbody tr').filter({ has: page.locator('.sym', { hasText: exactly('PLN') }) }).first();
-  await row.waitFor();
+  let row = await marketRow(b, inst);
   const rowText = flat(await row.innerText());
   c.ok(!/\d+\.\d\d/.test(rowText.replace(/Plain Works Inc\./, '')), 'the Marketplace row of PLN shows no price', rowText);
   c.match(flat(await page.locator('main').innerText()), /Awaiting Shaffer data connection/, 'the Marketplace says it is awaiting the Shaffer data connection');
@@ -1546,10 +1555,7 @@ export async function normalMode(b, c) {
   await ui.input(px, 'Price').fill('12.5');
   await ui.button(px, 'Save price').click();
   await ui.toast(/Price saved/);
-  await show(b, '#/markets/US_CASH');
-  await page.getByPlaceholder(/Filter by symbol/).fill('PLN');
-  await row.waitFor();
-  await settle(b);
+  row = await marketRow(b, inst);
   const priced = await row.evaluate((tr) => tr.innerHTML);
   c.match(flat(await row.innerText()), /12\.50/, 'the Marketplace row now shows the 12.50 entered by hand');
   c.match(priced, /manual/i, 'labelled as a manual input');
@@ -1940,11 +1946,7 @@ async function testMarketData(b) {
 }
 /** The PLN row of the US Based Marketplace as displayed, and what the page says about the data source. */
 async function plnRow(b) {
-  await show(b, '#/markets/US_CASH');
-  await b.page.getByPlaceholder(/Filter by symbol/).fill('AWAY');
-  const row = b.page.locator('main table tbody tr').filter({ has: b.page.locator('.sym', { hasText: exactly('AWAY') }) }).first();
-  await row.waitFor();
-  await settle(b);
+  const row = await marketRow(b, { symbol: 'AWAY', productId: 'common_stock', marketView: 'US_CASH' });
   return { text: flat(await row.innerText()), html: await row.evaluate((tr) => tr.innerHTML), page: flat(await b.page.locator('main').innerText()) };
 }
 
@@ -2539,7 +2541,12 @@ export async function doubleClickReference(b, c) {
   let rq = await reqs();
   c.eq(rq.map((x) => x.state), ['incomplete'], 'setup: the purchase made without a context has one incomplete hedge request');
   if (rq.length === 1) {
-    const popup = await openFromQueue(b, rq[0].id);
+    // The post-trade popup opens by itself for the new request; otherwise it is opened from the review queue.
+    await show(b, '#/strategy');
+    let popup = page.locator('[data-testid=hedge-popup]');
+    await popup.waitFor({ timeout: 8_000 }).catch(() => {});
+    if (!(await popup.count())) popup = await openFromQueue(b, rq[0].id);
+    c.match(flat(await popup.innerText()), new RegExp(rq[0].id), 'the hedge popup of that request is open');
     const form = popup.locator('[data-testid=hedge-complete-form]').first();
     const strat = ui.field(form, 'Investment Strategy');
     if (await strat.locator('select').count()) await strat.locator('select').selectOption({ index: 1 });

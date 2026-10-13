@@ -919,4 +919,336 @@ const fxOption = {
   ],
 };
 
-export default [otcOption, bondOption, fxOption];
+// ---------------------------------------------------------------------------------------------
+// commodity_option
+// ---------------------------------------------------------------------------------------------
+// Two OTC options on WTI crude oil at Cushing (pipeline barrels, USD per barrel), quantity in barrels, dealt by the
+// Account with Dealer E under one CSA whose netting set is the Account (both positions net against each other;
+// independent amount 10% of strike notional on a written option; variation margin over a 100,000 threshold, minimum
+// transfer 25,000):
+//   - a European 75 call, cash-settled against the 28 May 2026 close (the stated settlement price), bought on 50,000
+//     barrels; half terminated at a stated amount; the rest finishes in the money: 2.80 a barrel;
+//   - an American 68 put, physical delivery of barrels, written on 50,000 barrels; crude falls, the netting set goes
+//     beyond the threshold and variation margin is posted; the dealer exercises early (simulated assignment, recorded
+//     by hand): 50,000 barrels are delivered to the Account at 68 (simulated, T+2) and then sold.
+const OIL_NAME = 'WTI crude oil, Cushing, Oklahoma (pipeline barrels, Red River)';
+const OIL_CALL = 'WTI Cushing 75 call, 28 May 2026, European, cash (Dealer E)';
+const OIL_PUT = 'WTI Cushing 68 put, 28 May 2026, American, physical (Dealer E)';
+const commodityOption = {
+  productId: 'commodity_option',
+  title: 'WTI crude OTC options netted under one CSA: 75 call (European, cash) bought; 68 put (American, physical barrels) written and assigned early',
+  matrix: {
+    ...OTC_TICKET,
+    automaticInputs: ['crude price per barrel (quote fixture standing in for Shaffer MarketData) for the notional and the barrels delivered', 'premium settlement date, T+2 on the US calendar; barrels delivered and sold settle T+2 (settlement.spot = 2)', 'commission per barrel from the Book fee schedule', 'independent amount on the written put and variation margin on the Account netting set, from the CSA terms', 'expiry item settled against the crude close for the expiration date (close fixture: the stated settlement price)'],
+    manualInputs: ['premium per barrel agreed with the dealer (stated fill price)', 'marks per barrel entered by hand (Manual entry)', 'early assignment of the written American put, recorded by hand (Lifecycle, Early assignment)', 'termination of half the call at a stated amount per barrel'],
+    settlement: 'Premium and commission T+2 on the US calendar; barrels delivered at the strike T+2, sold T+2; cash settlement of the call T+1',
+    lifecycle: 'Early assignment of the American put with a simulated delivery of 50,000 barrels at 68; the call partly terminated, the rest cash-settled in the money at expiry; held across Good Friday and Memorial Day; nothing scheduled afterwards',
+    accounting: 'Premium per barrel x barrels; average premium; premium realized on termination, assignment and expiry; barrels delivered carried at the strike and sold at the bid; commission expensed; marks by hand drive unrealized P&L',
+    collateral: 'Agreement "CSA Dealer E", netting scope the Account: the two positions form one netting set; independent amount on the written put only, 10% x 50,000 x 68 = 340,000, returned on assignment; variation margin posted when the set fell 40,000 beyond its 100,000 threshold, returned when it came back inside',
+  },
+  start: at('2026-03-02'),
+  settlementCheck: { lag: 2, holidays: [] }, // US calendar, T+2 for the premium and for the barrels; no holiday in the trade weeks
+  book: {
+    name: 'Matrix commodity option', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 8_000_000 }],
+    account: { name: 'Energy', funding: [{ ccy: 'USD', amount: 5_000_000 }] },
+    settings: { fees: { otcoption: { perUnit: 0.01, minimum: 0, bps: 0 }, spot: { perUnit: 0.02, minimum: 0, bps: 0 } }, fill: FILL, settlement: { otcoption: 2, spot: 2 } }, // 0.01 a barrel; 0.02 a barrel of crude
+  },
+  instruments: {
+    oil: { productId: 'crude_oil', name: OIL_NAME, symbol: 'WTI-CUSH-RR', marketView: 'US_CASH', venue: 'Red River Crude Marketing (OTC)', venueType: 'otc', venueCountry: 'US', issuer: 'Red River Crude Marketing LLC', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', terms: { quantityUnit: 'barrels', priceUnits: 'USD per barrel' } },
+  },
+  quotes: { oil: { bid: 71.38, ask: 71.42, last: 71.40, bidSize: 1_000_000, askSize: 1_000_000 } },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 5_000_000, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 5_000_000, availableToWithdraw: 5_000_000 } },
+      treasury: { USD: { settled: 3_000_000 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [], otc: [], alerts: [],
+    nav: { account: 5_000_000, treasury: 3_000_000, book: 8_000_000 },
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+  },
+  steps: [
+    {
+      id: 'agreement', covers: 'collateral', action: 'agreement', as: 'csa',
+      agreement: { name: 'CSA Dealer E', counterparty: 'Dealer E', kind: 'bilateral', independentAmount: { type: 'pct', pct: 0.10 }, variationMargin: true, threshold: 100_000, minimumTransfer: 25_000, nettingScope: 'account' },
+      expect: { events: [{ type: 'collateral.agreement', summary: 'Collateral agreement recorded: CSA Dealer E with Dealer E (Bilateral (CSA-style))', owner: 'treasury' }] },
+    },
+    {
+      id: 'register-call', action: 'register_instrument', as: 'call',
+      draft: { productId: 'commodity_option', name: OIL_CALL, symbol: 'WTI-C75-MAY26', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', underlying: 'oil', multiplier: 1,
+        terms: { right: 'C', strike: 75, expiration: '2026-05-28', optionType: 'vanilla', exercise: 'european', settlement: 'cash', counterparty: 'Dealer E', collateralBasis: { type: 'agreement', agreementId: '$agreement:csa' } } },
+      expect: {},
+    },
+    {
+      id: 'register-put', action: 'register_instrument', as: 'put',
+      draft: { productId: 'commodity_option', name: OIL_PUT, symbol: 'WTI-P68-MAY26', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', underlying: 'oil', multiplier: 1,
+        terms: { right: 'P', strike: 68, expiration: '2026-05-28', optionType: 'vanilla', exercise: 'american', settlement: 'physical', counterparty: 'Dealer E', collateralBasis: { type: 'agreement', agreementId: '$agreement:csa' } } },
+      expect: {},
+    },
+    otcTicket({
+      id: 'buy-call', covers: ['open', 'collateral'], instrument: 'call', side: 'buy', qty: 50_000, premium: 3.10, as: 'calls',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'call', qty: 50_000, estimate: 3.1, model: 'stated-price', settleDate: '2026-03-04', calendar: 'US',
+            cash: -155_000, fees: 500, notional: 3_570_000 }], // 50,000 x 3.10; 50,000 x 0.01; 50,000 x 71.40
+          cash: { USD: { purchases: 155_000, fees: 500, margin: 0, required: 155_500, available: 5_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 50_000, avgPrice: 3.1 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 50,000 WTI-C75-MAY26 @ 3.10 USD', owner: 'account', date: '2026-03-02' }],
+        cash: { account: { USD: { settled: 5_000_000, unsettled: -155_500, availableToTrade: 4_844_500, availableToWithdraw: 4_844_500 } } },
+        positions: [{ instrument: 'call', lot: 'calls', owner: 'account', direction: 'long', qty: 50_000, avgCost: 3.1, cost: 155_000, price: null, value: null, unrealized: null, provisional: true, notional: 3_570_000, margin: 0 }],
+        holdings: { call: { long: 50_000, short: 0, net: 50_000 } },
+        pending: [{ instrument: 'call', owner: 'account', dueDate: '2026-03-04', amount: -155_500, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'option.expiry', instrument: 'call', dueDate: '2026-05-28', status: 'pending' }],
+        otc: [{ instrument: 'call', lot: 'calls', owner: 'account', qty: 50_000, basis: 'agreement', agreement: 'CSA Dealer E', mark: null, iaRequired: 0, iaPosted: 0, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: -500, unrealized: 0, total: -500 } },
+        nav: { account: 4_999_500, book: 7_999_500 }, // unpriced: at cost
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 5_000_000, payable: 155_500, positions: 155_000, assets: 5_155_000, liabilities: 155_500, netAssets: 4_999_500 } },
+      },
+    }),
+    { id: 'half-an-hour-later', action: 'clock', to: at('2026-03-02', '15:30'), expect: {} },
+    otcTicket({
+      // Written: independent amount 10% x 50,000 x 68 x 1 = 340,000, posted at the fill.
+      id: 'write-put', covers: ['write', 'collateral'], instrument: 'put', side: 'sell', qty: 50_000, premium: 1.90, as: 'puts',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'put', qty: 50_000, estimate: 1.9, model: 'stated-price', settleDate: '2026-03-04', calendar: 'US', cash: 95_000, fees: 500, notional: 3_570_000 }],
+          cash: { USD: { proceeds: 95_000, fees: 500, margin: 340_000, required: 340_500, available: 4_844_500, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 50_000, avgPrice: 1.9 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Sold 50,000 WTI-P68-MAY26 @ 1.90 USD', owner: 'account' },
+          { type: 'otcoption.collateral', summary: `Collateral posted on ${OIL_PUT} under "CSA Dealer E" (Dealer E): 340,000.00 USD (independent amount, 10.00% of 3,400,000.00 USD notional)`, cash: { USD: -340_000 } },
+        ],
+        cash: { account: { USD: { settled: 4_660_000, unsettled: -61_000, margin: 340_000, availableToTrade: 4_599_000, availableToWithdraw: 4_504_500 } } }, // -155,500 + 94,500; 4,660,000 - 155,500
+        positions: [
+          { instrument: 'call', lot: 'calls', qty: 50_000 },
+          { instrument: 'put', lot: 'puts', owner: 'account', direction: 'short', qty: -50_000, avgCost: 1.9, cost: -95_000, price: null, value: null, unrealized: null, provisional: true, notional: 3_570_000, margin: 340_000 },
+        ],
+        holdings: { put: { long: 0, short: 50_000, net: -50_000 } },
+        pending: [
+          { instrument: 'call', owner: 'account', dueDate: '2026-03-04', amount: -155_500, ccy: 'USD', into: 'cash' },
+          { instrument: 'put', owner: 'account', dueDate: '2026-03-04', amount: 94_500, ccy: 'USD', into: 'cash' },
+        ],
+        lifecycle: [{ type: 'option.expiry', instrument: 'call', dueDate: '2026-05-28', status: 'pending' }, { type: 'option.expiry', instrument: 'put', dueDate: '2026-05-28', status: 'pending' }],
+        otc: [{ instrument: 'call' }, { instrument: 'put', lot: 'puts', qty: -50_000, basis: 'agreement', agreement: 'CSA Dealer E', iaRequired: 340_000, iaPosted: 340_000, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { commissions: -1_000, total: -1_000 } },
+        nav: { account: 4_999_000, book: 7_999_000 }, // 4,660,000 + 340,000 + 94,500 - 155,500 + 155,000 - 95,000
+        balance: { account: { cash: 4_660_000, margin: 340_000, receivable: 94_500, positions: 60_000, assets: 5_154_500, netAssets: 4_999_000 } },
+      },
+    }),
+    {
+      id: 'mark-call', covers: 'manual mark', action: 'manual_price', instrument: 'call', value: 3.50, note: 'Dealer E mark per barrel, by hand',
+      expect: {
+        positions: [{ instrument: 'call', lot: 'calls', price: 3.5, value: 175_000, unrealized: 20_000, provisional: false }, { instrument: 'put', lot: 'puts' }], // 50,000 x 3.50; - 155,000
+        otc: [{ instrument: 'call', mark: 3.5, markValue: 175_000 }, { instrument: 'put' }],
+        pnl: { account: { unrealized: 20_000, total: 19_000 } },
+        nav: { account: 5_019_000, book: 8_019_000 },
+        balance: { account: { positions: 80_000, assets: 5_174_500, netAssets: 5_019_000 } }, // 175,000 - 95,000 (put at cost)
+      },
+    },
+    {
+      id: 'mark-put', covers: 'manual mark', action: 'manual_price', instrument: 'put', value: 1.60, note: 'Dealer E mark per barrel, by hand',
+      expect: {
+        positions: [{ instrument: 'call', lot: 'calls' }, { instrument: 'put', lot: 'puts', price: 1.6, value: -80_000, unrealized: 15_000, provisional: false }], // -50,000 x 1.60; + 95,000
+        otc: [{ instrument: 'call' }, { instrument: 'put', mark: 1.6, markValue: -80_000 }],
+        pnl: { account: { unrealized: 35_000, total: 34_000 } },
+        nav: { account: 5_034_000, book: 8_034_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 95_000, assets: 5_189_500, netAssets: 5_034_000 } },
+      },
+    },
+    {
+      // One netting set for the Account: 175,000 - 80,000 = +95,000, inside the 100,000 threshold. Nothing moves.
+      id: 'netting-set-inside-threshold', covers: 'variation margin', action: 'clock', to: eod('2026-03-02'),
+      expect: { events: [], otc: [{ instrument: 'call', vmExposure: 95_000, vmStatus: 'ok', vmPosted: 0, vmHeld: 0 }, { instrument: 'put', vmExposure: 95_000, vmStatus: 'ok', vmPosted: 0, vmHeld: 0 }] },
+    },
+    {
+      id: 'settle-premiums', covers: 'settlement', action: 'clock', to: at('2026-03-04'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 94,500.00 USD into settled cash', cash: { USD: 94_500 } },
+          { type: 'settlement.pay', summary: 'paid 155,500.00 USD from settled cash', cash: { USD: -155_500 } },
+        ],
+        cash: { account: { USD: { settled: 4_599_000, unsettled: 0, availableToTrade: 4_599_000, availableToWithdraw: 4_599_000 } } },
+        pending: [],
+        balance: { account: { cash: 4_599_000, receivable: null, payable: null, assets: 5_034_000, liabilities: 0 } },
+      },
+    },
+    { id: 'monday-16-march', action: 'clock', to: at('2026-03-16'), expect: {} },
+    {
+      id: 'crude-falls', action: 'quote', instrument: 'oil', quote: { bid: 66.48, ask: 66.52, last: 66.50, bidSize: 1_000_000, askSize: 1_000_000 },
+      expect: { positions: [{ instrument: 'call', lot: 'calls', notional: 3_325_000 }, { instrument: 'put', lot: 'puts', notional: 3_325_000 }] }, // 50,000 x 66.50
+    },
+    {
+      id: 'mark-call-lower', covers: 'manual mark', action: 'manual_price', instrument: 'call', value: 0.40, note: 'Dealer E mark per barrel, by hand',
+      expect: {
+        positions: [{ instrument: 'call', lot: 'calls', price: 0.4, value: 20_000, unrealized: -135_000 }, { instrument: 'put', lot: 'puts' }],
+        otc: [{ instrument: 'call', mark: 0.4, markValue: 20_000 }, { instrument: 'put' }],
+        pnl: { account: { unrealized: -120_000, total: -121_000 } }, // -135,000 + 15,000
+        nav: { account: 4_879_000, book: 7_879_000 },
+        balance: { account: { positions: -60_000, assets: 4_879_000, netAssets: 4_879_000 } },
+      },
+    },
+    {
+      id: 'mark-put-higher', covers: 'manual mark', action: 'manual_price', instrument: 'put', value: 3.20, note: 'Dealer E mark per barrel, by hand',
+      expect: {
+        positions: [{ instrument: 'call', lot: 'calls' }, { instrument: 'put', lot: 'puts', price: 3.2, value: -160_000, unrealized: -65_000 }],
+        otc: [{ instrument: 'call' }, { instrument: 'put', mark: 3.2, markValue: -160_000 }],
+        pnl: { account: { unrealized: -200_000, total: -201_000 } }, // -135,000 - 65,000
+        nav: { account: 4_799_000, book: 7_799_000 }, // 4,599,000 + 340,000 + 20,000 - 160,000
+        balance: { account: { positions: -140_000, assets: 4_799_000, netAssets: 4_799_000 } },
+      },
+    },
+    {
+      // The set: 20,000 - 160,000 = -140,000, 40,000 beyond the 100,000 threshold (and above the 25,000 minimum transfer).
+      id: 'variation-margin-posted', covers: 'variation margin', action: 'clock', to: eod('2026-03-16'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under "CSA Dealer E" (Dealer E): 40,000.00 USD posted. Netting set of 2 positions marked at -140,000.00 USD; threshold 100,000.00 USD.', cash: { USD: -40_000 }, owner: 'account' }],
+        cash: { account: { USD: { settled: 4_559_000, margin: 380_000, availableToTrade: 4_559_000, availableToWithdraw: 4_559_000 } } },
+        otc: [{ instrument: 'call', vmPosted: 40_000, vmExposure: -140_000 }, { instrument: 'put', vmPosted: 40_000, vmExposure: -140_000 }],
+        balance: { account: { cash: 4_559_000, margin: 380_000 } },
+      },
+    },
+    { id: 'tuesday-17-march', action: 'clock', to: at('2026-03-17'), expect: {} },
+    {
+      // The dealer exercises the American put early (simulated, recorded by hand). The put closes at zero: its 95,000
+      // premium is realized. 50,000 barrels are delivered to the Account at 68: 3,400,000, T+2 (Thursday 19 March). The
+      // 340,000 independent amount comes back; the 40,000 of variation margin stays with the set until the next valuation.
+      id: 'early-assignment', covers: ['early assignment', 'physical settlement', 'collateral'], action: 'lifecycle', lot: 'puts', body: { action: 'assign', contracts: 50_000 },
+      expect: {
+        events: [
+          { type: 'option.assigned', summary: 'Assigned: 50,000 WTI-P68-MAY26 at strike 68', owner: 'account', date: '2026-03-17' },
+          { type: 'option.delivery', summary: /^Simulated delivery: received 50,000 WTI-CUSH-RR at strike 68 on assignment of WTI-P68-MAY26/, owner: 'account' },
+          { type: 'otcoption.collateral', summary: `Collateral returned on ${OIL_PUT} under "CSA Dealer E" (Dealer E): 340,000.00 USD (independent amount, the position ended)`, cash: { USD: 340_000 } },
+        ],
+        cash: { account: { USD: { settled: 4_899_000, margin: 40_000, unsettled: -3_400_000, availableToTrade: 1_499_000, availableToWithdraw: 1_499_000 } } },
+        positions: [
+          { instrument: 'call', lot: 'calls', qty: 50_000 },
+          { instrument: 'oil', lot: 'puts', owner: 'account', direction: 'long', qty: 50_000, avgCost: 68, cost: 3_400_000, price: 66.5, value: 3_325_000, unrealized: -75_000 }, // 50,000 x 66.50 - 3,400,000
+        ],
+        holdings: { put: null, oil: { long: 50_000, short: 0, net: 50_000 } },
+        pending: [{ instrument: 'oil', owner: 'account', dueDate: '2026-03-19', amount: -3_400_000, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'option.expiry', instrument: 'call', dueDate: '2026-05-28', status: 'pending' }],
+        otc: [{ instrument: 'call', lot: 'calls', vmPosted: 40_000 }],
+        pnl: { account: { realized: 95_000, unrealized: -210_000, total: -116_000 } }, // -135,000 - 75,000; 95,000 - 1,000 - 210,000
+        nav: { account: 4_884_000, book: 7_884_000 }, // 4,899,000 + 40,000 + 20,000 + 3,325,000 - 3,400,000
+        balance: { account: { cash: 4_899_000, margin: 40_000, payable: 3_400_000, positions: 3_345_000, assets: 8_284_000, liabilities: 3_400_000, netAssets: 4_884_000 } },
+      },
+    },
+    {
+      // The set is now the call alone, marked at +20,000: inside the threshold, so the 40,000 comes back.
+      id: 'variation-margin-returned', covers: 'variation margin', action: 'clock', to: eod('2026-03-17'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under "CSA Dealer E" (Dealer E): 40,000.00 USD returned to us. Netting set of 1 position marked at 20,000.00 USD; threshold 100,000.00 USD.', cash: { USD: 40_000 }, owner: 'account' }],
+        cash: { account: { USD: { settled: 4_939_000, margin: 0, availableToTrade: 1_539_000, availableToWithdraw: 1_539_000 } } },
+        otc: [{ instrument: 'call', vmPosted: 0, vmExposure: 20_000 }],
+        balance: { account: { cash: 4_939_000, margin: null, assets: 8_284_000 } },
+      },
+    },
+    {
+      id: 'settle-delivery', covers: 'settlement', action: 'clock', to: at('2026-03-19'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 3,400,000.00 USD from settled cash', cash: { USD: -3_400_000 } }],
+        cash: { account: { USD: { settled: 1_539_000, unsettled: 0, availableToTrade: 1_539_000, availableToWithdraw: 1_539_000 } } },
+        pending: [],
+        balance: { account: { cash: 1_539_000, payable: null, assets: 4_884_000, liabilities: 0 } },
+      },
+    },
+    {
+      // The barrels sold at the bid, 66.48, T+2: 3,324,000 less 0.02 x 50,000 = 1,000. Realized 3,324,000 - 3,400,000.
+      id: 'sell-delivered-barrels', covers: 'close', action: 'ticket', ticketOf: 'spot', instrument: 'oil', side: 'sell', qty: 50_000, from: 'puts',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'oil', qty: 50_000, estimate: 66.48, model: 'quoted-bid-ask', settleDate: '2026-03-23', cash: 3_324_000, fees: 1_000 }] },
+        result: { orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 50_000, avgPrice: 66.48 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 50,000 WTI-CUSH-RR @ 66.48 USD (realized -76,000.00 USD)' }],
+        cash: { account: { USD: { unsettled: 3_323_000, availableToTrade: 4_862_000, availableToWithdraw: 1_539_000 } } },
+        positions: [{ instrument: 'call', lot: 'calls', qty: 50_000 }],
+        holdings: { oil: null },
+        pending: [{ instrument: 'oil', owner: 'account', dueDate: '2026-03-23', amount: 3_323_000, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: 19_000, commissions: -2_000, unrealized: -135_000, total: -118_000 } }, // 95,000 - 76,000
+        nav: { account: 4_882_000, book: 7_882_000 }, // 1,539,000 + 3,323,000 + 20,000
+        balance: { account: { receivable: 3_323_000, positions: 20_000, assets: 4_882_000, netAssets: 4_882_000 } },
+      },
+    },
+    {
+      id: 'settle-sale', covers: 'settlement', action: 'clock', to: at('2026-03-23'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 3,323,000.00 USD into settled cash', cash: { USD: 3_323_000 } }],
+        cash: { account: { USD: { settled: 4_862_000, unsettled: 0, availableToTrade: 4_862_000, availableToWithdraw: 4_862_000 } } },
+        pending: [],
+        balance: { account: { cash: 4_862_000, receivable: null } },
+      },
+    },
+    {
+      // Half the call terminated with Dealer E at 0.25 a barrel: 25,000 x 0.25 = 6,250 less 250 commission. Realized
+      // 25,000 x (0.25 - 3.10) = -71,250.
+      id: 'terminate-half-call', covers: ['reduce', 'termination at a stated amount'], action: 'close', lot: 'calls', scope: 'strategy', percent: 50, order: { statedPrice: 0.25 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'call', qty: 25_000, estimate: 0.25, model: 'stated-price', settleDate: '2026-03-25', cash: 6_250, fees: 250 }] },
+        result: { orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 25_000, avgPrice: 0.25 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 25,000 WTI-C75-MAY26 @ 0.25 USD (realized -71,250.00 USD)' }],
+        cash: { account: { USD: { unsettled: 6_000, availableToTrade: 4_868_000, availableToWithdraw: 4_862_000 } } },
+        positions: [{ instrument: 'call', lot: 'calls', qty: 25_000, cost: 77_500, value: 10_000, unrealized: -67_500, notional: 1_662_500 }], // 25,000 x 0.40; 25,000 x 66.50
+        holdings: { call: { long: 25_000, short: 0, net: 25_000 } },
+        pending: [{ instrument: 'call', owner: 'account', dueDate: '2026-03-25', amount: 6_000, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'call', qty: 25_000, markValue: 10_000 }],
+        pnl: { account: { realized: -52_250, commissions: -2_250, unrealized: -67_500, total: -122_000 } }, // 19,000 - 71,250
+        nav: { account: 4_878_000, book: 7_878_000 }, // 4,862,000 + 6,000 + 10,000
+        balance: { account: { receivable: 6_000, positions: 10_000, assets: 4_878_000, netAssets: 4_878_000 } },
+      },
+    },
+    {
+      id: 'settle-termination', covers: 'settlement', action: 'clock', to: at('2026-03-25'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 6,000.00 USD into settled cash', cash: { USD: 6_000 } }],
+        cash: { account: { USD: { settled: 4_868_000, unsettled: 0, availableToTrade: 4_868_000, availableToWithdraw: 4_868_000 } } },
+        pending: [],
+        balance: { account: { cash: 4_868_000, receivable: null } },
+      },
+    },
+    // Held across Good Friday (3 April) and Memorial Day (25 May).
+    { id: 'wednesday-27-may', covers: 'holiday', action: 'clock', to: at('2026-05-27'), expect: {} },
+    {
+      id: 'mark-call-recovers', covers: 'manual mark', action: 'manual_price', instrument: 'call', value: 2.70, note: 'Dealer E mark per barrel, by hand',
+      expect: {
+        positions: [{ instrument: 'call', lot: 'calls', price: 2.7, value: 67_500, unrealized: -10_000 }], // 25,000 x 2.70 - 77,500
+        otc: [{ instrument: 'call', mark: 2.7, markValue: 67_500 }],
+        pnl: { account: { unrealized: -10_000, total: -64_500 } },
+        nav: { account: 4_935_500, book: 7_935_500 },
+        balance: { account: { positions: 67_500, assets: 4_935_500, netAssets: 4_935_500 } },
+      },
+    },
+    { id: 'settlement-price-known-later', action: 'close_price', instrument: 'oil', date: '2026-05-28', value: 77.80, expect: {} },
+    {
+      // Crude settled at 77.80 on 28 May: the call is in the money by 2.80 a barrel and is cash-settled: 25,000 x 2.80 =
+      // 70,000, received T+1. Realized 70,000 - 77,500 = -7,500.
+      id: 'expires-in-the-money', covers: ['expiry', 'cash settlement'], action: 'clock', to: eod('2026-05-28'),
+      expect: {
+        events: [{ type: 'option.cash_settled', summary: 'Exercised (cash settlement): 25,000 WTI-C75-MAY26 at 2.80 USD per unit (fixing 77.80)', owner: 'account', date: '2026-05-28' }],
+        cash: { account: { USD: { unsettled: 70_000, availableToTrade: 4_938_000 } } },
+        positions: [], holdings: { call: null }, otc: [], lifecycle: [],
+        pending: [{ instrument: 'call', owner: 'account', dueDate: '2026-05-29', amount: 70_000, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: -59_750, unrealized: 0, total: -62_000 } }, // -52,250 - 7,500; - 2,250
+        nav: { account: 4_938_000, book: 7_938_000 },
+        balance: { account: { receivable: 70_000, positions: null, assets: 4_938_000, netAssets: 4_938_000 } },
+      },
+    },
+    {
+      id: 'settle-cash-settlement', covers: 'settlement', action: 'clock', to: at('2026-05-29'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 70,000.00 USD into settled cash', cash: { USD: 70_000 } }],
+        cash: { account: { USD: { settled: 4_938_000, unsettled: 0, availableToTrade: 4_938_000, availableToWithdraw: 4_938_000 } } },
+        pending: [],
+        balance: { account: { cash: 4_938_000, receivable: null, assets: 4_938_000 } },
+      },
+    },
+  ],
+};
+
+export default [otcOption, bondOption, fxOption, commodityOption];

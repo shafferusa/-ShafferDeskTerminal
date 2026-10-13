@@ -19,6 +19,40 @@ const LEVEL_OF = { SE: 'engine', SA: 'api', SB: 'browser' };
 const NAME = { engine: 'Engine', api: 'API', browser: 'Browser' };
 const REF = /\b((?:S[EAB]\/)*S[EAB]):([a-z]+):([a-z0-9-]+\*?)/g;
 
+/**
+ * The owner's list (round of 2026-10-13, section 6, and the duplicate-submission buttons of the application), each item
+ * with the browser tests that trigger it from the interface. checkMapping requires every id here to run in the browser.
+ */
+export const OWNER_LIST = [
+  { item: 'Book isolation', ids: ['SB:isolation:book-routes', 'SB:isolation:no-netting', 'SB:isolation:demo-normal-databases', 'SB:isolation:normal-mode-refusals'] },
+  { item: 'Hedge reconnection; a recommendation received is never executed', ids: ['SB:hedge:reconnection', 'SB:stress:double-click-reference'] },
+  { item: 'Catch-up after downtime', ids: ['SB:nodup:catch-up'] },
+  { item: 'Duplicate submission: trade confirm', ids: ['SB:stress:double-click-confirm', 'SB:stress:confirm-changed'] },
+  { item: 'Duplicate submission: Execute now (hedge package)', ids: ['SB:hedge:reconnection'] },
+  { item: 'Duplicate submission: transfers', ids: ['SB:stress:double-click-transfer', 'SB:stress:connection-loss'] },
+  { item: 'Duplicate submission: deposits and withdrawals', ids: ['SB:stress:double-click-transfer', 'SB:stress:double-click-treasury'] },
+  { item: 'Duplicate submission: borrow', ids: ['SB:stress:double-click-treasury'] },
+  { item: 'Duplicate submission: repay', ids: ['SB:stress:double-click-records'] },
+  { item: 'Duplicate submission: repo', ids: ['SB:stress:double-click-treasury'] },
+  { item: 'Duplicate submission: lend (securities loan)', ids: ['SB:stress:double-click-treasury'] },
+  { item: 'Duplicate submission: record event (manual cash flow, lender recall)', ids: ['SB:stress:double-click-records'] },
+  { item: 'Duplicate submission: manual price', ids: ['SB:stress:double-click-reference'] },
+  { item: 'Duplicate submission: corporate action', ids: ['SB:stress:double-click-records'] },
+  { item: 'Duplicate submission: agreement create and close', ids: ['SB:stress:double-click-agreements'] },
+  { item: 'Duplicate submission: collateral retry', ids: ['SB:stress:double-click-agreements'] },
+  { item: 'Duplicate submission: hedge request save', ids: ['SB:stress:double-click-reference'] },
+  { item: 'Duplicate submission: settings save', ids: ['SB:stress:double-click-reference'] },
+  { item: 'Duplicate submission: instrument registration', ids: ['SB:stress:double-click-reference'] },
+  { item: 'Duplicate submission: order cancellation', ids: ['SB:stress:cancellations'] },
+  { item: 'Interrupted execution as the user experiences it', ids: ['SB:stress:kill-mid-confirmation', 'SB:stress:connection-loss', 'SB:stress:failed-leg-cancel', 'SB:stress:failed-leg-retry', 'SB:stress:failed-leg-unwind', 'SB:stress:failed-leg-accept'] },
+  { item: 'Stale and missing prices and rates', ids: ['SB:refusals:quote-missing', 'SB:refusals:quote-stale', 'SB:refusals:fx-missing', 'SB:refusals:fx-stale', 'SB:stress:service-stops-answering'] },
+  { item: 'Insufficient funding', ids: ['SB:refusals:ticket-blocks', 'SB:refusals:cash-transfer', 'SB:refusals:cash-withdrawal', 'SB:refusals:cash-repayment', 'SB:refusals:failed-tab'] },
+  { item: 'Insufficient borrow', ids: ['SB:refusals:ticket-blocks'] },
+  { item: 'Insufficient collateral', ids: ['SB:refusals:collateral-repo', 'SB:refusals:collateral-pledged-position', 'SB:refusals:collateral-independent-amount', 'SB:refusals:failed-tab'] },
+  { item: 'Cancellations', ids: ['SB:stress:cancellations', 'SB:stress:failed-leg-cancel'] },
+  { item: 'Persistence across restart', ids: ['SB:stress:restart-stages', 'SB:nodup:catch-up', 'SB:isolation:demo-normal-databases', 'SB:stress:service-stops-answering'] },
+];
+
 const runs = (k, level) => typeof k.levels?.[level] === 'function';
 const reasonOf = (k, level) => (typeof k.levels?.[level] === 'string' ? k.levels[level].trim() : null);
 
@@ -58,6 +92,13 @@ export function checkMapping(cases) {
       if (l === 'browser' && (runs(k, 'engine') || runs(k, 'api')) && !refs.some((r) => r.level === 'browser')) {
         problems.push(`${where}: runs at the ${runs(k, 'api') ? 'API' : 'engine'} level but not in the browser, and its browser reason names no SB:... test that covers what the user sees.`);
       }
+    }
+  }
+  for (const o of OWNER_LIST) {
+    for (const id of o.ids) {
+      const [ref] = referencesIn(id);
+      const hit = ref ? resolveRef(ref, cases) : [];
+      if (!ref || ref.level !== 'browser' || !hit.some((h) => runs(h, 'browser'))) problems.push(`owner's list, "${o.item}": ${id} is not a browser test of this suite.`);
     }
   }
   return problems;
@@ -102,6 +143,9 @@ export function mappingMarkdown(cases, results = {}, { heading = '###', areas = 
     return `\`${id}\` ${r ? (r.status === 'passed' ? 'passed' : `**${r.status}**`) : 'not run'}`;
   };
   const cell = (l, k) => (runs(k, l) ? status(l, k) : `not applicable: ${esc(reasonOf(k, l))}`);
+  md += `${heading} The owner's list at browser level\n\nEach item is triggered from the interface by these browser tests (the list is data in test/system/lib/mapping.mjs and every id is checked to run in the browser). Every browser test ends with the integrity read of every Book clean: nothing (fills, settlements, payments, accruals, orders, strategies, hedge requests, holds, independent-amount collateral) recorded twice.\n\n| Item | Browser tests | Status |\n|---|---|---|\n`;
+  for (const o of OWNER_LIST) md += `| ${esc(o.item)} | ${o.ids.map((x) => `\`${x}\``).join(' ')} | ${o.ids.map((x) => { const r = results.browser?.results?.[x]; return r ? r.status : 'not run'; }).join(', ')} |\n`;
+  md += '\n';
   for (const area of [...new Set(cases.map((k) => k.area))]) {
     md += `${heading} ${esc(areas[area] || area)}\n\n| Case | What it proves | Engine | API | Browser |\n|---|---|---|---|---|\n`;
     for (const k of cases.filter((x) => x.area === area)) md += `| \`${k.area}:${k.id}\` ${esc(k.title)} | ${esc(k.proves)} | ${cell('engine', k)} | ${cell('api', k)} | ${cell('browser', k)} |\n`;

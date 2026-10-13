@@ -387,6 +387,8 @@ export function createApi(app) {
         // r1: a repo's collateral changed by agreement (margin call met, excess returned, substitution).
         case 'collateral': need(plugin.collateralChange, 'A collateral change applies to repos and reverse repos.'); result = plugin.collateralChange(app, { ...ctx, change: body.change, qty: body.qty, positionId: body.positionId, instrumentId: body.instrumentId }); break;
         case 'cashflow': result = app.accounting.manualCashflow({ positionId: pos.id, category: body.category, amount: body.amount, note: body.note }); break;
+        // fw: early termination of a forward at an amount agreed with the counterparty (server/products/fx.js, forward.terminate).
+        case 'terminate': need(plugin.terminate, 'Early termination at a stated amount applies to forwards.'); result = plugin.terminate(app, { ...ctx, amount: body.amount, qty: body.qty, settleDate: body.settleDate || null }); break;
         // Physical delivery of goods is not simulated for a spot asset: the Terminal moves no goods. Say so plainly.
         // A future's delivery notice: the plugin decides from the contract's own settlement terms (simulated on paper
         // for a physically delivered contract with a configured deliverable; refused with the specific reason otherwise).

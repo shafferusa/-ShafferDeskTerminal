@@ -26,8 +26,11 @@ const LIFECYCLE = {
   assign: { title: 'Early assignment', button: 'Record assignment', done: 'Assignment recorded.', note: 'Simulates the holder exercising against this short option. It never happens by itself before expiration.' },
   barrier: { title: 'Barrier event', button: 'Record barrier event', done: 'Barrier event recorded.', note: 'Records that the barrier was touched. The option is settled at expiration with the barrier taken into account.' },
   redeem: { title: 'Early redemption', button: 'Record early redemption', done: 'Early redemption recorded.', note: 'Issuer call, investor put or tender at a stated price. Accrued interest to today is paid with it.' },
+  put: { title: 'Holder put', button: 'Record holder put', done: 'Holder put recorded.', note: 'The holder puts the bonds back to the issuer, recorded by hand. Only on a put date of the schedule and at its price; accrued interest to today is paid with it.' },
+  convert: { title: 'Conversion into shares', button: 'Record conversion', done: 'Conversion recorded.', note: 'The holder converts (or exchanges) bonds into shares at the registered conversion ratio, recorded by hand. The bonds converted close; the shares open at the bonds\' carrying cost; accrued interest is forfeited; a fraction of a share is paid in cash at the share price stated. If the issuer settles in cash instead, the bonds are redeemed for the shares\' value at that price.' },
   recall: { title: 'Lender recall', button: 'Record lender recall', done: 'Lender recall recorded.', note: 'The lender asks for the borrowed securities back. Cover the short or arrange a new borrow by the deadline; otherwise a buy-in is forced on that date.' },
   deliver: { title: 'Delivery notice', button: 'Give delivery notice', done: 'Simulated delivery recorded.', note: 'For a physically delivered future during its delivery window: the short gives notice, the contracts close at today\'s settlement price and the deliverable changes hands at the invoice amount, on paper only (no goods move). The Terminal refuses a notice the contract\'s terms do not allow and says why.' },
+  terminate: { title: 'Early termination', button: 'Record termination', done: 'Early termination recorded.', note: 'Ends all or part of this forward at the amount agreed with the counterparty: positive if received, negative if paid. The amount is realized and settles on the date stated (two business days if left empty); nothing is exchanged for the terminated part on the value date, and its collateral is returned.' },
   cashflow: { title: 'Manual cash flow', button: 'Record cash flow', done: 'Cash flow recorded.', note: 'A cash amount received or paid on this position that the engine does not generate. Positive is cash received, negative is cash paid.' },
 };
 const words = (s) => String(s || '').replace(/[._]/g, ' ');
@@ -152,6 +155,9 @@ function lifecycleFor(p, terms) {
   if (p.family === 'otcoption' && terms?.barrier && !p.data?.barrierHit) a.push('barrier');
   if (p.family === 'bond') a.push('redeem');
   if (p.family === 'future' && terms && !terms.perpetual) a.push('deliver');
+  if (p.family === 'forward') a.push('terminate');
+  if (p.family === 'bond' && terms?.putSchedule?.length && p.qty > 0) a.push('put');
+  if (p.family === 'bond' && terms?.conversionRatio && p.qty > 0) a.push('convert');
   if (p.family === 'secloan' && p.qty > 0) a.push('recall');
   // A holding or contract valued by hand: its manual workflow (m1, web/lib/manual.js).
   if (p.family === 'manual') a.push(...manualEvents(p.instrument.productId));
@@ -162,12 +168,12 @@ function lifecycleFor(p, terms) {
 function LifecycleDialog({ p, action, terms, onClose, onDone }) {
   const L = LIFECYCLE[action];
   const size = Math.abs(p.qty);
-  const [f, setF] = useState({ contracts: size, qty: size, face: size, price: null, days: null, label: '', category: 'dividend', amount: null, note: '' });
+  const [f, setF] = useState({ contracts: size, qty: size, face: size, price: null, days: null, label: '', category: 'dividend', amount: null, note: '', settleDate: '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const set = (patch) => setF({ ...f, ...patch });
-  const body = { exercise: { contracts: f.contracts }, assign: { contracts: f.contracts }, deliver: { contracts: f.contracts }, barrier: { note: f.note }, redeem: { price: f.price, face: f.face, label: f.label || undefined }, recall: { qty: f.qty, days: f.days ?? undefined }, cashflow: { category: f.category, amount: f.amount, note: f.note } }[action];
-  const ready = { exercise: f.contracts > 0, assign: f.contracts > 0, deliver: f.contracts > 0, barrier: true, redeem: isNum(f.price) && f.price >= 0 && f.face > 0, recall: f.qty > 0, cashflow: isNum(f.amount) && f.amount !== 0 }[action];
+  const body = { exercise: { contracts: f.contracts }, assign: { contracts: f.contracts }, deliver: { contracts: f.contracts }, terminate: { amount: f.amount, qty: f.qty, settleDate: f.settleDate || undefined }, barrier: { note: f.note }, redeem: { price: f.price, face: f.face, label: f.label || undefined }, recall: { qty: f.qty, days: f.days ?? undefined }, cashflow: { category: f.category, amount: f.amount, note: f.note }, put: { face: f.face, label: f.label || undefined }, convert: { face: f.face, sharePrice: f.sharePrice ?? undefined, settlement: f.settlement || 'shares' } }[action];
+  const ready = { exercise: f.contracts > 0, assign: f.contracts > 0, deliver: f.contracts > 0, terminate: isNum(f.amount) && f.qty > 0, barrier: true, redeem: isNum(f.price) && f.price >= 0 && f.face > 0, recall: f.qty > 0, cashflow: isNum(f.amount) && f.amount !== 0, put: f.face > 0, convert: f.face > 0 && (f.settlement !== 'cash' || isNum(f.sharePrice)) }[action];
   const go = async () => {
     setBusy(true); setError(null);
     try {
@@ -184,11 +190,20 @@ function LifecycleDialog({ p, action, terms, onClose, onDone }) {
       ${action === 'deliver' && terms ? html`<${Notice}>Settlement terms: ${terms.settlement === 'physical' ? 'physical delivery' : 'cash'}${terms.delivery?.units ? `; ${fmtQty(terms.delivery.units)} units of the deliverable per contract` : ''}${terms.delivery?.grade ? `; ${terms.delivery.grade}` : ''}${terms.delivery?.location ? `; ${terms.delivery.location}` : ''}; delivery window ${terms.delivery?.firstNotice || terms.expiration} to ${terms.expiration} (last trading day).<//>` : null}
       ${action === 'barrier' && terms?.barrier ? html`<${Notice}>Barrier: ${words(terms.barrier.type)} at ${fmtPrice(terms.barrier.level)}.<//>` : null}
       <div class="grid-form">
+        ${action === 'terminate' ? html`<${Field} label=${`Termination amount (${p.ccy})`} hint="Positive if received, negative if paid"><${Num} value=${f.amount} onInput=${(v) => set({ amount: v })} /><//>
+          <${Field} label="Notional terminated" hint=${`Up to ${fmtQty(size)}`}><${Num} value=${f.qty} onInput=${(v) => set({ qty: v })} /><//>
+          <${Field} label="Settlement date" hint="Leave empty for two business days"><${Text} type="date" value=${f.settleDate} onInput=${(v) => set({ settleDate: v })} /><//>` : null}
         ${action === 'deliver' ? html`<${Field} label="Contracts to deliver" hint=${`Up to ${fmtQty(size)}`}><${Num} value=${f.contracts} onInput=${(v) => set({ contracts: v })} /><//>` : null}
         ${['exercise', 'assign'].includes(action) ? html`<${Field} label=${action === 'exercise' ? 'Contracts to exercise' : 'Contracts assigned'} hint=${`Up to ${fmtQty(size)}`}><${Num} value=${f.contracts} onInput=${(v) => set({ contracts: v })} /><//>` : null}
         ${action === 'redeem' ? html`<${Field} label="Redemption price (% of par)"><${Num} value=${f.price} onInput=${(v) => set({ price: v })} /><//>
           <${Field} label="Face amount redeemed" hint=${`Up to ${fmtQty(size)}`}><${Num} value=${f.face} onInput=${(v) => set({ face: v })} /><//>
           <${Field} label="Label" hint="Optional, for the history" span=${2}><${Text} value=${f.label} onInput=${(v) => set({ label: v })} placeholder="For example: issuer call" /><//>` : null}
+        ${action === 'put' ? html`<${Field} label="Face amount put" hint=${`Up to ${fmtQty(size)}`}><${Num} value=${f.face} onInput=${(v) => set({ face: v })} /><//>
+          <${Field} label="Put schedule"><div class="note" style="padding-top:6px">${(terms?.putSchedule || []).map((r) => `${r.date} at ${fmtNum(r.price, 2)}`).join('; ')}</div><//>
+          <${Field} label="Label" hint="Optional, for the history" span=${2}><${Text} value=${f.label} onInput=${(v) => set({ label: v })} /><//>` : null}
+        ${action === 'convert' ? html`<${Field} label="Face amount converted" hint=${`Up to ${fmtQty(size)}. ${terms?.conversionRatio ?? '?'} shares per 1,000 face.`}><${Num} value=${f.face} onInput=${(v) => set({ face: v })} /><//>
+          <${Field} label="Settlement"><${Select} value=${f.settlement || 'shares'} onChange=${(v) => set({ settlement: v })} options=${[{ value: 'shares', label: 'Shares delivered' }, { value: 'cash', label: 'Cash (issuer\'s election)' }]} /><//>
+          <${Field} label="Share price" hint="For a fraction of a share paid in cash, or a cash settlement. Entered by hand." span=${2}><${Num} value=${f.sharePrice} onInput=${(v) => set({ sharePrice: v })} /><//>` : null}
         ${action === 'recall' ? html`<${Field} label="Quantity recalled" hint=${`Up to ${fmtQty(size)}`}><${Num} value=${f.qty} onInput=${(v) => set({ qty: v })} /><//>
           <${Field} label="Business days to return" hint="Leave empty for the standard two"><${Num} value=${f.days} onInput=${(v) => set({ days: v })} placeholder="2" /><//>` : null}
         ${action === 'cashflow' ? html`<${Field} label="Kind of cash flow" span=${2}><${Select} value=${f.category} onChange=${(v) => set({ category: v })} options=${CASHFLOW.map(([value, label]) => ({ value, label }))} /><//>
@@ -202,7 +217,7 @@ function valueCell(p) {
   return html`<${Money} value=${p.mv} ccy=${p.ccy} reason=${p.missingReason} />${['option', 'otcoption'].includes(p.family) && isNum(p.notional) ? html`<div class="sub">notional ${fmtMoney(p.notional, p.ccy)}</div>` : null}`;
 }
 function Positions({ s, rc, after }) {
-  const optionIds = s.positions.filter((p) => ['option', 'otcoption', 'future'].includes(p.family)).map((p) => p.instrument.id);
+  const optionIds = s.positions.filter((p) => ['option', 'otcoption', 'future', 'bond'].includes(p.family)).map((p) => p.instrument.id);
   const terms = useLive(async () => Object.fromEntries(await Promise.all(optionIds.map(async (id) => [id, (await get(`/api/instruments/${id}`)).terms]))), [optionIds.join(',')], { interval: false });
   const [pick, setPick] = useState(0); // remounts the action menus so they return to their placeholder
   const act = (p, action) => { setPick((n) => n + 1); openOverlay((close) => (p.family === 'manual' && !LIFECYCLE[action] ? html`<${ManualEventDialog} p=${p} action=${action} onClose=${close} onDone=${after} />` : html`<${LifecycleDialog} p=${p} action=${action} terms=${terms.data?.[p.instrument.id]} onClose=${close} onDone=${after} />`)); };
