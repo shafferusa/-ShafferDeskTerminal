@@ -388,14 +388,20 @@ export function createAccounting(app) {
       for (const c of cells) for (const x of c.byCurrency) m.set(x.ccy, (m.get(x.ccy) || 0) + x.amount);
       return cell(m);
     };
-    // Per unit: ledger balances by account and currency, and unrealized P&L by currency.
+    // Per unit: ledger balances by account and currency, and unrealized P&L by currency. `booked` keeps, per account,
+    // the reporting-currency amounts stored on the entries when they were posted (s7: capital and internal funding).
     const per = new Map();
     for (const u of units) {
-      const bal = new Map();
-      for (const b of ledger.balances([u.id])) { if (!bal.has(b.account)) bal.set(b.account, new Map()); bal.get(b.account).set(b.ccy, b.amount); }
+      const bal = new Map(), booked = new Map();
+      for (const b of ledger.balances([u.id])) {
+        if (!bal.has(b.account)) bal.set(b.account, new Map());
+        bal.get(b.account).set(b.ccy, b.amount);
+        const k = booked.get(b.account) || { rc: 0, missing: false };
+        booked.set(b.account, { rc: k.rc + (b.amount_rc || 0), missing: k.missing || b.rc_missing > 0 });
+      }
       const unreal = new Map();
       for (const r of app.valuation.nav(bookId, [u.id]).byCurrency) if (r.unrealized) unreal.set(r.ccy, r.unrealized);
-      per.set(u.id, { bal, unreal });
+      per.set(u.id, { bal, unreal, booked });
     }
     const lineCell = (u, line, sign) => {
       const m = new Map();
