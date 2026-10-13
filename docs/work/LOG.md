@@ -117,3 +117,4 @@
 - 2026-10-13T17:03Z | s8 | +0.3 | s8: browser case SB:stress:service-stops-answering passes
 - 2026-10-13T17:03Z | c2 | +0.2 | refined_product passes at engine, API and browser
 - 2026-10-13T17:04Z | r1 | +0 | repo engine fixes: dirty collateral value, partial repurchase refused, fixing blocks, daily cover alert, day count
+- 2026-10-13T17:04Z | c2 | +0.2 | natural_gas passes at engine, API and browser
