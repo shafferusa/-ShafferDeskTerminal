@@ -229,37 +229,75 @@ function Ticket({ inst, detail, book, onDone }) {
         { label: 'Quantity', align: 'r', render: (p) => fmtQty(p.qty) },
         { label: 'Average cost', align: 'r', render: (p) => fmtPriceUnits(p.avgCost, inst.priceUnits) },
         { label: 'Unrealized', align: 'r', render: (p) => html`<${Money} value=${p.unrealized} ccy=${p.ccy} signed reason=${p.missingReason} />` },
+        FINANCEABLE.has(inst.family) ? { label: 'Financing', align: 'r', title: 'Repo, lend or pledge this holding: opens the Treasury or Account dialog with it filled in', render: (p) => html`<${HoldingFinancing} inst=${inst} book=${book} p=${{ ...p, owner: book.units.find((u) => u.id === p.unitId)?.name }} onDone=${onDone} />` } : null,
         { label: '', align: 'r', render: (p) => html`<${Button} small onClick=${() => closePos(p, 0.5)}>Close half<//> <${Button} small onClick=${() => closePos(p)}>Close<//>` },
-      ]} rows=${mine} rowKey=${(p) => p.positionId} /><//>` : null}
+      ].filter(Boolean)} rows=${mine} rowKey=${(p) => p.positionId} /><//>` : null}
     <${FinancingLinks} inst=${inst} book=${book} unitId=${unitId} longs=${longs} onShort=${() => setAction('sell_short')} canShort=${actions.includes('sell_short')} onDone=${onDone} />
   </div>`;
 }
 
 /**
  * Financing of this instrument (ui1). Borrowing, lending, repo and pledging stay on the Treasury and Account pages:
- * these links open the same dialogs those pages use, with the instrument and the trading owner filled in. A securities
- * borrow is always a leg of a short sale, so "Borrow this security" turns this ticket to Sell short.
+ * these links open the same dialogs those pages use (treasury.js ArrangementDialog), with the instrument, the holding
+ * and its owner filled in. No new engine path: the dialog previews and confirms as it does on those pages.
+ * A securities borrow is always a leg of a short sale, so "Borrow this security" turns the ticket to Sell short.
+ * Each link is shown where the product and the holding allow it; where not, the reason is said.
  */
+export const FINANCEABLE = new Set(['equity', 'fund', 'bond']);
+const freeQty = (p) => Math.max(0, p.qty - (p.pledgedQty || 0) - (p.onLoanQty || 0));
+/** Why a holding cannot be repoed, lent or pledged; null when it can. */
+export function holdingBlock(inst, p) {
+  if (!FINANCEABLE.has(inst.family)) return notFinanceable(inst);
+  if (!p) return 'Choose the trading owner first.';
+  if (p.qty <= 0) return 'A short position is covered by its securities borrow: it cannot be repoed, lent or pledged.';
+  if (freeQty(p) <= 0) return `All ${fmtQty(p.qty)} held are ${p.onLoanQty > 0 && p.pledgedQty > 0 ? 'pledged or on loan' : p.onLoanQty > 0 ? 'on loan' : 'pledged'}: nothing is free to repo, lend or pledge until it is returned or released.`;
+  return null;
+}
+function notFinanceable(inst) {
+  if (inst.arrangement) return 'This is a financing arrangement itself. Open, repay or terminate it from Treasury or the Account.';
+  if (inst.marketView?.endsWith('DERIV') || ['option', 'future', 'swap', 'cds', 'forward', 'otcoption'].includes(inst.family)) return 'A derivative is not repoed, lent or pledged here. Its premium, margin and collateral are funded from cash: choose how under "If cash is short" on the ticket, or move cash from Treasury.';
+  return `Repo, securities lending and pledging take equities, funds and bonds held long; ${inst.support.productName.replace(/ \(.*\)$/, '')} is not one of them. Fund a purchase with cash, or with a loan arranged on the Treasury or Account page.`;
+}
+/** Open the Treasury / Account dialog for this instrument; `positionId` names the holding when it came from one. */
+export async function openFinancing({ book, inst, unitId, mode, side, productId, positionId, onDone }) {
+  const m = await import('./treasury.js');
+  openOverlay((close) => html`<${m.ArrangementDialog} book=${book} mode=${mode} side=${side} unitId=${unitId} preset=${{ instrumentId: inst.id, productId, positionId }} onClose=${close} onDone=${(x) => { bump(); onDone?.(x); }} />`);
+}
+/** The three holding links (repo, lend, finance) for one holding, as small buttons; disabled with the reason when they do not apply. */
+export function HoldingFinancing({ inst, book, p, onDone }) {
+  const why = holdingBlock(inst, p);
+  if (!FINANCEABLE.has(inst.family) || p.qty <= 0) return html`<span class="muted small" title=${why}>${p.qty < 0 ? 'Short: covered by its borrow' : 'Not financeable'}</span>`;
+  const go = (mode, side, productId) => openFinancing({ book, inst, unitId: p.unitId, mode, side, productId, positionId: p.positionId, onDone });
+  return html`<span class="row nowrap" style="gap:4px;justify-content:flex-end">
+    <${Button} small disabled=${Boolean(why)} title=${why || `Repo: borrow cash against this holding of ${p.owner || 'its owner'}`} onClick=${() => go('repo', 'repo')}>Repo<//>
+    <${Button} small disabled=${Boolean(why)} title=${why || `Lend this holding of ${p.owner || 'its owner'}`} onClick=${() => go('secloan', 'lend_sec')}>Lend<//>
+    <${Button} small disabled=${Boolean(why)} title=${why || `A securities-backed loan pledging this holding of ${p.owner || 'its owner'}`} onClick=${() => go('loan', 'borrow_cash', 'securities_backed_loan')}>Finance<//></span>`;
+}
 function FinancingLinks({ inst, book, unitId, longs, onShort, canShort, onDone }) {
-  if (!['equity', 'fund', 'bond'].includes(inst.family) || inst.arrangement) return null;
+  if (inst.arrangement) return null;
   const owner = book.units.find((u) => u.id === unitId);
-  const open = async (mode, side, productId) => {
-    const m = await import('./treasury.js');
-    openOverlay((close) => html`<${m.ArrangementDialog} book=${book} mode=${mode} side=${side} unitId=${unitId} preset=${{ instrumentId: inst.id, productId }} onClose=${close} onDone=${(x) => { bump(); onDone?.(x); }} />`);
-  };
-  const held = longs.length > 0;
   const where = owner ? (owner.kind === 'treasury' ? 'Treasury' : owner.name) : 'the trading owner';
   const page = owner ? (owner.kind === 'treasury' ? '#/treasury/borrowings' : `#/account/${owner.id}`) : '#/treasury';
+  const pageLink = html`<a class="btn small link" href=${page}>Open ${owner?.kind === 'account' ? `${owner.name}'s page` : 'Treasury borrowings and lending'}</a>`;
+  if (!FINANCEABLE.has(inst.family)) {
+    return html`<${Panel} title="Financing" note="Borrowing, lending, repo and funding are arranged on the Treasury and Account pages">
+      <p class="note" style="margin:0 0 6px" data-testid="financing-reason">${notFinanceable(inst)}</p><div class="row">${pageLink}</div><//>`;
+  }
+  const free = longs.reduce((a, p) => a + freeQty(p), 0);
+  const held = longs.length > 0;
+  const hold = held ? (longs.find((p) => freeQty(p) > 0) || longs[0]) : null;
+  const why = !owner ? 'Choose the trading owner first.' : !held ? `${where} holds no long position in it: repo, lending and pledging need one.` : holdingBlock(inst, { ...hold, qty: longs.reduce((a, p) => a + p.qty, 0), pledgedQty: longs.reduce((a, p) => a + (p.pledgedQty || 0), 0), onLoanQty: longs.reduce((a, p) => a + (p.onLoanQty || 0), 0) });
+  const open = (mode, side, productId) => openFinancing({ book, inst, unitId, mode, side, productId, positionId: hold?.positionId, onDone });
   return html`<${Panel} title="Financing" note=${`Arranged on the ${owner?.kind === 'account' ? 'Account' : 'Treasury'} page; these open the same dialogs`}>
     <div class="row" style="flex-wrap:wrap;gap:6px">
-      ${canShort ? html`<${Button} small onClick=${onShort} title="A borrow is always a leg of a short sale: the ticket turns to Sell short, with its borrow leg">Borrow this security<//>` : null}
-      <${Button} small disabled=${!held || !owner} onClick=${() => open('repo', 'repo')} title=${held ? `Repo: borrow cash against this holding of ${where}` : `${where} holds no long position in it`}>Repo this holding<//>
-      <${Button} small disabled=${!held || !owner} onClick=${() => open('secloan', 'lend_sec')} title=${held ? `Lend this holding of ${where}` : `${where} holds no long position in it`}>Lend<//>
-      <${Button} small disabled=${!held || !owner} onClick=${() => open('loan', 'borrow_cash', 'securities_backed_loan')} title=${held ? `A securities-backed loan pledging this holding of ${where}` : `${where} holds no long position in it`}>Finance this position<//>
-      <${Button} small disabled=${!owner} onClick=${() => open('repo', 'reverse_repo')} title="Reverse repo: lend cash and take this security as collateral">Reverse repo against it<//>
-      <a class="btn small link" href=${page}>Open ${owner?.kind === 'account' ? `${owner.name}'s page` : 'Treasury borrowings and lending'}</a>
+      <${Button} small disabled=${!canShort} onClick=${onShort} title=${canShort ? 'A borrow is always a leg of a short sale: the ticket turns to Sell short, with its borrow leg' : `${inst.support.productName} cannot be sold short here, so there is nothing to borrow`}>Borrow this security<//>
+      <${Button} small disabled=${Boolean(why)} onClick=${() => open('repo', 'repo')} title=${why || `Repo: borrow cash against this holding of ${where}`}>Repo this holding<//>
+      <${Button} small disabled=${Boolean(why)} onClick=${() => open('secloan', 'lend_sec')} title=${why || `Lend this holding of ${where}`}>Lend this holding<//>
+      <${Button} small disabled=${Boolean(why)} onClick=${() => open('loan', 'borrow_cash', 'securities_backed_loan')} title=${why || `A securities-backed loan pledging this holding of ${where}`}>Finance this position<//>
+      <${Button} small disabled=${!owner} onClick=${() => open('repo', 'reverse_repo')} title=${owner ? 'Reverse repo: lend cash and take this security as collateral' : 'Choose the trading owner first.'}>Reverse repo against it<//>
+      ${pageLink}
     </div>
-    <p class="note" style="margin:6px 0 0">${held ? `${where} holds this long, so it can be repoed, lent or pledged.` : owner ? `${where} holds no long position in it: repo, lending and pledging need one.` : 'Choose the trading owner first.'} Nothing is submitted until the dialog's preview is confirmed.</p>
+    <p class="note" style="margin:6px 0 0" data-testid="financing-reason">${why ? html`<b>Repo, lend and finance:</b> ${why}` : `${where} holds ${fmtQty(free)} free to repo, lend or pledge.`}${canShort ? '' : html` <b>Borrow:</b> ${inst.support.productName} cannot be sold short here.`} Nothing is submitted until the dialog's preview is confirmed.</p>
   <//>`;
 }
 
@@ -452,16 +490,19 @@ function History({ inst }) {
   </div>`;
 }
 
-function Positions({ detail, reload }) {
+function Positions({ detail, reload, book }) {
   const openStrategy = async (id) => { const m = await import('./strategy-detail.js'); m.openStrategy(id); };
+  const inst = detail.instrument;
   return html`<${Table} columns=${[
     { label: 'Held in', render: (p) => p.owner },
     { label: 'Strategy', render: (p) => (p.strategy ? html`<a href="javascript:void 0" onClick=${() => openStrategy(p.strategy.id)}>${p.strategy.name}</a>` : '') },
     { label: 'Quantity', align: 'r', render: (p) => fmtQty(p.qty) }, { label: 'Average cost', align: 'r', render: (p) => fmtPriceUnits(p.avgCost, detail.instrument?.priceUnits) },
     { label: 'Market value', align: 'r', render: (p) => html`<${Money} value=${p.mv} ccy=${p.ccy} reason=${p.missingReason} />` },
     { label: 'Unrealized', align: 'r', render: (p) => html`<${Money} value=${p.unrealized} ccy=${p.ccy} signed reason=${p.missingReason} />` },
+    FINANCEABLE.has(inst.family) && book ? { label: 'Financing', align: 'r', title: 'Repo, lend or pledge this holding: opens the Treasury or Account dialog with the holding and its owner filled in', render: (p) => html`<${HoldingFinancing} inst=${inst} book=${book} p=${p} onDone=${reload} />` } : null,
     { label: '', align: 'r', render: (p) => html`<${Button} small onClick=${() => openPreviewAction(p.strategy.id, 'close', { positionIds: [p.positionId] }, { onDone: reload })}>Close<//>` },
-  ]} rows=${detail.positions} rowKey=${(p) => p.positionId} empty=${{ title: 'No position in this Book', children: 'Use the Trade tab to open one.' }} />`;
+  ].filter(Boolean)} rows=${detail.positions} rowKey=${(p) => p.positionId} empty=${{ title: 'No position in this Book', children: 'Use the Trade tab to open one.' }} />
+    ${detail.positions.length && !FINANCEABLE.has(inst.family) ? html`<p class="note">${notFinanceable(inst)}</p>` : null}`;
 }
 
 function InstrumentDrawer({ id, initialTab, onClose }) {
@@ -488,7 +529,7 @@ function InstrumentDrawer({ id, initialTab, onClose }) {
     ${tab === 'trade' ? html`<${Ticket} inst=${inst} detail=${d} book=${book} onDone=${res.reload} />` : null}
     ${tab === 'overview' ? html`<${Overview} inst=${inst} detail=${d} reload=${res.reload} />` : null}
     ${tab === 'chain' ? html`<${Chain} inst=${inst} />` : null}
-    ${tab === 'positions' ? html`<${Positions} detail=${d} reload=${res.reload} />` : null}
+    ${tab === 'positions' ? html`<${Positions} detail=${d} reload=${res.reload} book=${book} />` : null}
     ${tab === 'history' ? html`<${History} inst=${inst} />` : null}
   <//>`;
 }

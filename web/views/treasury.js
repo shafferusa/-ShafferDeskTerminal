@@ -27,7 +27,9 @@ const RATE_HEADROOM = 0.001;
 const unitName = (u) => (u?.kind === 'treasury' ? 'Treasury' : u?.name || '');
 const treasuryOf = (book) => book.units.find((u) => u.kind === 'treasury');
 const startUnit = (book, unitId) => book.units.find((u) => u.id === unitId)?.id || treasuryOf(book).id;
-const viewFor = (ccy) => (ccy === 'USD' ? 'US_CASH' : 'FOREIGN_CASH');
+// ui1: no market view is inferred from the currency. A financing arrangement's view is a record only (it is never a
+// Marketplace row); the server takes it from a stated jurisdiction, the security lent or pledged, or the convention.
+const viewFor = () => undefined;
 const plain = (name) => String(name || '').replace(/ \(.*\)$/, '');
 const sum = (list) => list.reduce((a, x) => a + x, 0);
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -323,7 +325,9 @@ export function ArrangementDialog({ book, mode, unitId, fixed, side, preset, onC
     if (!iid || !draft) return;
     if (f.action === 'reverse_repo') { if (!draft.terms?.collateralInstrumentId) setDraft((d) => d && { ...d, terms: { ...d.terms, collateralInstrumentId: iid } }); return; }
     get(`/api/books/${book.id}/accounting/positions`, { scope: f.unitId }).then((r) => {
-      const p = r.positions.find((x) => x.instrument.id === iid && x.qty > 0);
+      // A holding named by the link (preset.positionId) is used as it is; otherwise the owner's first long with a free quantity.
+      const longs = r.positions.filter((x) => x.instrument.id === iid && x.qty > 0);
+      const p = (preset.positionId && longs.find((x) => x.positionId === preset.positionId)) || longs.find((x) => x.qty - x.pledgedQty - x.onLoanQty > 0) || longs[0];
       if (!p) return;
       if (needsPos) pick(p);
       else if (pledging) setPledge({ pos: p, qty: Math.max(0, p.qty - p.pledgedQty - p.onLoanQty) });

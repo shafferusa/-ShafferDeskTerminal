@@ -80,7 +80,8 @@ export function createInstruments(app) {
     const underlying = draft.underlyingId ? get(draft.underlyingId) : null;
     const asked = draft.marketView && MARKET_VIEWS[draft.marketView] ? draft.marketView : null;
     need(!draft.marketView || asked, 'Unknown market view. Use US_CASH, US_DERIV, FOREIGN_CASH or FOREIGN_DERIV.');
-    const conv = conventionRoute({ product, venueType: draft.venueType, venueCountry: draft.venueCountry, jurisdiction: draft.jurisdiction, domicile: draft.domicile, underlying, requestedView: asked });
+    const collateral = draft.terms?.collateralInstrumentId ? get(draft.terms.collateralInstrumentId) : null;
+    const conv = conventionRoute({ product, venueType: draft.venueType, venueCountry: draft.venueCountry, jurisdiction: draft.jurisdiction, domicile: draft.domicile, underlying, collateral, requestedView: asked });
     if (conv?.basis === 'listed') {
       need(!asked || asked === conv.view, `A product listed on a ${conv.view.startsWith('US') ? 'US' : 'non-US'} venue belongs in ${conv.view.startsWith('US') ? 'a US' : 'a Foreign'} market view (listing venue decides, not issuer domicile or currency).`);
       return conv;

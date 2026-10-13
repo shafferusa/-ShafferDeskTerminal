@@ -126,3 +126,4 @@
 - 2026-10-13T17:07Z | c2 | +0.2 | livestock passes at engine, API and browser
 - 2026-10-13T17:08Z | s8 | +0.3 | s8: browser case SB:hedge:reconnection passes; all eight unfinished browser cases now written and passing
 - 2026-10-13T17:12Z | coord | +0 | continuing on the owner's instruction; wave B: commodity-future delivery and forwards, Marketplace finish, repo and securities lending, failure-case mapping, structured bonds A, alternatives, OTC options
+- 2026-10-13T17:17Z | r1 | +0.2 | repo passes at engine, API and browser

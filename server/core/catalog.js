@@ -442,12 +442,15 @@ const upper2 = (x) => (x ? String(x).trim().toUpperCase() : null);
  * with no venue country and no jurisdiction): the view must then be chosen by hand.
  *   facts: { product, venueType, venueCountry, jurisdiction, domicile, underlying (registry row or null), requestedView }
  */
-export function conventionRoute({ product, venueType, venueCountry, jurisdiction, domicile, underlying, requestedView }) {
+export function conventionRoute({ product, venueType, venueCountry, jurisdiction, domicile, underlying, collateral, requestedView }) {
   const vc = upper2(venueCountry), jur = upper2(jurisdiction), dom = upper2(domicile);
   if (venueType === 'exchange' && vc) return { view: viewFor(product, vc === 'US'), basis: 'listed' };
   if (FINANCING.has(product.family)) {
+    // Kept as a record only (arrangements are never Marketplace rows): its stated jurisdiction, else a view the caller
+    // states, else the security it lends or takes as collateral, else the convention (Foreign). Never the currency.
+    const sec = underlying || collateral || null;
     const keep = requestedView && MARKET_VIEWS[requestedView]?.cls === product.cls ? requestedView : null;
-    return { view: jur ? viewFor(product, jur === 'US') : keep || viewFor(product, false), basis: 'financing' };
+    return { view: jur ? viewFor(product, jur === 'US') : keep || (sec ? viewFor(product, MARKET_VIEWS[sec.market_view]?.geo === 'US') : viewFor(product, false)), basis: 'financing' };
   }
   if (product.cls === 'deriv' && underlying) return { view: viewFor(product, MARKET_VIEWS[underlying.market_view]?.geo === 'US'), basis: 'underlying' };
   if (jur) return { view: viewFor(product, jur === 'US'), basis: 'jurisdiction', via: 'stated' };
