@@ -1089,4 +1089,187 @@ const spreadOption = {
   ],
 };
 
-export default [barrierOption, asianOption, lookbackOption, basketOption, spreadOption];
+// ---------------------------------------------------------------------------------------------
+// quanto_option
+// ---------------------------------------------------------------------------------------------
+// Two quanto options on Sakuragawa Electric (6599, Tokyo Stock Exchange, priced in JPY), paying US dollars at a rate
+// fixed in the contract, 0.0068 USD per JPY (the market rate stays at 150 JPY per USD, 0.006667: it is not used),
+// dealt with Dealer Q. Strike and fixing in JPY; premium in USD per share; quantity in shares. Expiry Friday 12 June
+// 2026 against the Tokyo close, cash, paid T+1 on the US calendar.
+//   - a quanto call struck at 3,000 JPY, bought on 10,000 shares; position-level terms: variation margin over 5,000.
+//   - a quanto put struck at 2,800 JPY, written on 10,000 shares; position-level terms: independent amount 10% of the
+//     strike notional in USD, 10,000 x 2,800 x 0.0068 = 190,400, so 19,040.
+// The close is 3,250 JPY: the call pays (3,250 - 3,000) x 0.0068 = 1.70 USD a share, 17,000; the put lapses.
+const SKRG = 'Sakuragawa Electric Co., Ltd.';
+const QCALL = '6599 quanto call 3,000 JPY, paid in USD at 0.0068, 12 Jun 2026 (Dealer Q)';
+const QPUT = '6599 quanto put 2,800 JPY, paid in USD at 0.0068, 12 Jun 2026 (Dealer Q)';
+const quantoOption = {
+  productId: 'quanto_option',
+  title: 'Quanto options on a Tokyo-listed stock paid in USD at a fixed 0.0068: call bought (pays), put written (lapses)',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'Payoff: Quanto', 'Fixed conversion rate (trading currency per unit of the underlying\'s currency)', 'Strike in the underlying\'s currency'],
+    automaticInputs: ['the stock price in JPY (quote fixture standing in for Shaffer MarketData) for the notional, converted at the fixed rate', 'the Tokyo close for the expiration date (close fixture)', 'the payoff: (close - strike) in JPY x the fixed rate, in USD', 'premium settlement date, T+2 on the US calendar', 'commission per share from the Book fee schedule', 'variation margin and independent amount from the position-level terms'],
+    manualInputs: ['premium in USD per share agreed with the dealer (stated fill price)', 'marks in USD per share entered by hand (Manual entry)'],
+    settlement: 'Premium and commission T+2 on the US calendar; the cash settlement in USD T+1 after expiry',
+    lifecycle: 'Expiry item settled against the Tokyo close for 12 June: the call pays its JPY intrinsic value converted at the fixed rate; the put lapses; nothing scheduled afterwards',
+    accounting: 'Premium in USD per share x shares; payoff in USD at the contract\'s fixed rate, never at the market rate; premium realized at expiry; commission expensed; marks by hand drive unrealized P&L',
+    collateral: 'Call (bought): position-level terms, variation margin over 5,000, received from the dealer and returned at settlement. Put (written): independent amount 10% of the USD strike notional, 19,040, returned at expiry',
+  },
+  start: at('2026-03-02'),
+  settlementCheck: { lag: 2, holidays: [] },
+  book: {
+    name: 'Matrix quanto option', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 1_000_000 }],
+    account: { name: 'Japan', funding: [{ ccy: 'USD', amount: 300_000 }] },
+    settings: { fees: { otcoption: { perUnit: 0.01, minimum: 0, bps: 0 }, equity: NO_FEE }, fill: FILL, settlement: { otcoption: 2, equity: 2 } },
+  },
+  fx: { 'USD/JPY': 150 },
+  instruments: {
+    stock: { productId: 'common_stock', name: SKRG, symbol: '6599', marketView: 'FOREIGN_CASH', venue: 'Tokyo Stock Exchange', venueType: 'exchange', venueCountry: 'JP', issuer: SKRG, domicile: 'JP', underlyingGeo: 'JP', tradingCcy: 'JPY', terms: {} },
+    call: {
+      productId: 'quanto_option', name: QCALL, symbol: 'SKRG-QC3000-JUN26', marketView: 'FOREIGN_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', underlying: 'stock', multiplier: 1,
+      terms: { right: 'C', strike: 3_000, expiration: '2026-06-12', optionType: 'quanto', quantoRate: 0.0068, exercise: 'european', settlement: 'cash', counterparty: 'Dealer Q',
+        collateralBasis: { type: 'position', independentAmount: { type: 'none' }, variationMargin: true, threshold: 5_000, minimumTransfer: 1_000 } },
+    },
+    put: {
+      productId: 'quanto_option', name: QPUT, symbol: 'SKRG-QP2800-JUN26', marketView: 'FOREIGN_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', underlying: 'stock', multiplier: 1,
+      terms: { right: 'P', strike: 2_800, expiration: '2026-06-12', optionType: 'quanto', quantoRate: 0.0068, exercise: 'european', settlement: 'cash', counterparty: 'Dealer Q',
+        collateralBasis: { type: 'position', independentAmount: { type: 'pct', pct: 0.10 }, variationMargin: false, threshold: 0, minimumTransfer: 0 } },
+    },
+  },
+  quotes: { stock: { bid: 2_999, ask: 3_001, last: 3_000, bidSize: 100_000, askSize: 100_000 } },
+  expectAtStart: usdStart(300_000, 700_000),
+  steps: [
+    otcTicket({
+      id: 'buy-quanto-call', covers: 'open', instrument: 'call', side: 'buy', qty: 10_000, premium: 1.50, as: 'calls',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'call', qty: 10_000, estimate: 1.5, model: 'stated-price', settleDate: '2026-03-04', calendar: 'US', cash: -15_000, fees: 100, notional: 204_000 }], // 10,000 x 1.50; 10,000 x 0.01; 10,000 x 3,000 JPY x 0.0068
+          cash: { USD: { purchases: 15_000, fees: 100, margin: 0, required: 15_100, available: 300_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 10_000, avgPrice: 1.5 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 10,000 SKRG-QC3000-JUN26 @ 1.50 USD', owner: 'account', date: '2026-03-02' }],
+        cash: { account: { USD: { settled: 300_000, unsettled: -15_100, availableToTrade: 284_900, availableToWithdraw: 284_900 } } },
+        positions: [{ instrument: 'call', lot: 'calls', owner: 'account', direction: 'long', qty: 10_000, avgCost: 1.5, cost: 15_000, price: null, value: null, unrealized: null, provisional: true, notional: 204_000, margin: 0 }],
+        holdings: { call: { long: 10_000, short: 0, net: 10_000 } },
+        pending: [{ instrument: 'call', owner: 'account', dueDate: '2026-03-04', amount: -15_100, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'option.expiry', instrument: 'call', dueDate: '2026-06-12', status: 'pending' }],
+        otc: [{ instrument: 'call', lot: 'calls', qty: 10_000, basis: 'position', mark: null, iaRequired: 0, iaPosted: 0, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: -100, unrealized: 0, total: -100 } },
+        nav: { account: 299_900, book: 999_900 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 300_000, payable: 15_100, positions: 15_000, assets: 315_000, liabilities: 15_100, netAssets: 299_900 } },
+      },
+    }),
+    { id: 'half-an-hour-later', action: 'clock', to: at('2026-03-02', '15:30'), expect: {} },
+    otcTicket({
+      // Written: independent amount 10% x 10,000 x 2,800 JPY x 0.0068 = 19,040 USD.
+      id: 'write-quanto-put', covers: ['write', 'collateral'], instrument: 'put', side: 'sell', qty: 10_000, premium: 0.80, as: 'puts',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'put', qty: 10_000, estimate: 0.8, model: 'stated-price', settleDate: '2026-03-04', calendar: 'US', cash: 8_000, fees: 100, notional: 204_000 }],
+          cash: { USD: { proceeds: 8_000, fees: 100, margin: 19_040, required: 19_140, available: 284_900, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 10_000, avgPrice: 0.8 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Sold 10,000 SKRG-QP2800-JUN26 @ 0.80 USD', owner: 'account' },
+          { type: 'otcoption.collateral', summary: `Collateral posted on ${QPUT} under its position-level terms: 19,040.00 USD (independent amount, 10.00% of 190,400.00 USD notional)`, cash: { USD: -19_040 } },
+        ],
+        cash: { account: { USD: { settled: 280_960, unsettled: -7_200, margin: 19_040, availableToTrade: 273_760, availableToWithdraw: 265_860 } } }, // -15,100 + 7,900; 280,960 - 15,100
+        positions: [
+          { instrument: 'call', lot: 'calls', qty: 10_000 },
+          { instrument: 'put', lot: 'puts', owner: 'account', direction: 'short', qty: -10_000, avgCost: 0.8, cost: -8_000, price: null, value: null, unrealized: null, provisional: true, notional: 204_000, margin: 19_040 },
+        ],
+        holdings: { put: { long: 0, short: 10_000, net: -10_000 } },
+        pending: [
+          { instrument: 'call', owner: 'account', dueDate: '2026-03-04', amount: -15_100, ccy: 'USD', into: 'cash' },
+          { instrument: 'put', owner: 'account', dueDate: '2026-03-04', amount: 7_900, ccy: 'USD', into: 'cash' },
+        ],
+        lifecycle: [{ type: 'option.expiry', instrument: 'call', dueDate: '2026-06-12', status: 'pending' }, { type: 'option.expiry', instrument: 'put', dueDate: '2026-06-12', status: 'pending' }],
+        otc: [{ instrument: 'call' }, { instrument: 'put', lot: 'puts', qty: -10_000, basis: 'position', iaRequired: 19_040, iaPosted: 19_040, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { commissions: -200, total: -200 } },
+        nav: { account: 299_800, book: 999_800 }, // 280,960 + 19,040 + 7,900 - 15,100 + 15,000 - 8,000
+        balance: { account: { cash: 280_960, margin: 19_040, receivable: 7_900, payable: 15_100, positions: 7_000, assets: 314_900, liabilities: 15_100, netAssets: 299_800 } },
+      },
+    }),
+    {
+      id: 'mark-call', covers: 'manual mark', action: 'manual_price', instrument: 'call', value: 1.80, note: 'Dealer Q mark in USD per share, by hand',
+      expect: {
+        positions: [{ instrument: 'call', lot: 'calls', price: 1.8, value: 18_000, unrealized: 3_000, provisional: false }, { instrument: 'put', lot: 'puts' }],
+        otc: [{ instrument: 'call', mark: 1.8, markValue: 18_000 }, { instrument: 'put' }],
+        pnl: { account: { unrealized: 3_000, total: 2_800 } },
+        nav: { account: 302_800, book: 1_002_800 },
+        balance: { account: { positions: 10_000, assets: 317_900, netAssets: 302_800 } }, // 18,000 - 8,000
+      },
+    },
+    {
+      id: 'mark-put', covers: 'manual mark', action: 'manual_price', instrument: 'put', value: 0.50, note: 'Dealer Q mark in USD per share, by hand',
+      expect: {
+        positions: [{ instrument: 'call', lot: 'calls' }, { instrument: 'put', lot: 'puts', price: 0.5, value: -5_000, unrealized: 3_000, provisional: false }],
+        otc: [{ instrument: 'call' }, { instrument: 'put', mark: 0.5, markValue: -5_000 }],
+        pnl: { account: { unrealized: 6_000, total: 5_800 } },
+        nav: { account: 305_800, book: 1_005_800 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 13_000, assets: 320_900, netAssets: 305_800 } },
+      },
+    },
+    {
+      // Call marked at 18,000: 13,000 beyond its 5,000 threshold, posted by Dealer Q.
+      id: 'variation-margin-received', covers: 'variation margin', action: 'clock', to: eod('2026-03-02'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under position-level terms: 13,000.00 USD received. Netting set of 1 position marked at 18,000.00 USD; threshold 5,000.00 USD.', owner: 'account' }],
+        cash: { account: { USD: { restricted: 13_000 } } },
+        otc: [{ instrument: 'call', vmHeld: 13_000, vmExposure: 18_000, vmStatus: 'ok' }, { instrument: 'put' }],
+        balance: { account: { restricted: 13_000, collateralReceived: 13_000, assets: 333_900, liabilities: 28_100, netAssets: 305_800 } },
+      },
+    },
+    {
+      id: 'settle-premiums', covers: 'settlement', action: 'clock', to: at('2026-03-04'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 7,900.00 USD into settled cash', cash: { USD: 7_900 } },
+          { type: 'settlement.pay', summary: 'paid 15,100.00 USD from settled cash', cash: { USD: -15_100 } },
+        ],
+        cash: { account: { USD: { settled: 273_760, unsettled: 0, availableToTrade: 273_760, availableToWithdraw: 273_760 } } },
+        pending: [],
+        balance: { account: { cash: 273_760, receivable: null, payable: null, assets: 318_800, liabilities: 13_000 } }, // 273,760 + 13,000 + 19,040 + 13,000
+      },
+    },
+    { id: 'settlement-price-known-later', action: 'close_price', instrument: 'stock', date: '2026-06-12', value: 3_250, expect: {} },
+    {
+      // Tokyo close 3,250 JPY. Call: (3,250 - 3,000) x 0.0068 = 1.70 USD a share: 17,000, T+1 (Monday 15 June); realized
+      // 17,000 - 15,000; the 13,000 Dealer Q posted goes back. At the market rate it would have been 250 / 150 x 10,000 =
+      // 16,666.67: the fixed rate is what counts. Put: lapses, 8,000 realized; the 19,040 comes back.
+      id: 'expiry', covers: ['expiry', 'cash settlement', 'fixed conversion rate', 'lapse', 'collateral'], action: 'clock', to: eod('2026-06-12'),
+      expect: {
+        events: [
+          { type: 'option.cash_settled', summary: 'Exercised (cash settlement): 10,000 SKRG-QC3000-JUN26 at 1.70 USD per unit (fixing 3,250.00, converted at the fixed rate 0.0068)', owner: 'account', date: '2026-06-12' },
+          { type: 'collateral.variation', summary: 'Variation margin under position-level terms: 13,000.00 USD returned to the counterparty. The last position of the netting set ended.', owner: 'account' },
+          { type: 'option.expired', summary: 'Expired worthless: 10,000 SKRG-QP2800-JUN26 (fixing 3,250.00, converted at the fixed rate 0.0068)', owner: 'account', date: '2026-06-12' },
+          { type: 'otcoption.collateral', summary: `Collateral returned on ${QPUT} under its position-level terms: 19,040.00 USD (independent amount, the position ended)`, cash: { USD: 19_040 } },
+        ],
+        cash: { account: { USD: { settled: 292_800, restricted: 0, margin: 0, unsettled: 17_000, availableToTrade: 309_800, availableToWithdraw: 292_800 } } }, // 273,760 + 19,040
+        positions: [], holdings: { call: null, put: null }, otc: [], lifecycle: [],
+        pending: [{ instrument: 'call', owner: 'account', dueDate: '2026-06-15', amount: 17_000, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: 10_000, unrealized: 0, total: 9_800 } }, // 2,000 + 8,000; - 200
+        nav: { account: 309_800, book: 1_009_800 },
+        balance: { account: { cash: 292_800, receivable: 17_000, restricted: null, collateralReceived: null, margin: null, positions: null, assets: 309_800, liabilities: 0, netAssets: 309_800 } },
+      },
+    },
+    {
+      id: 'settle-cash-settlement', covers: 'settlement', action: 'clock', to: at('2026-06-15'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 17,000.00 USD into settled cash', cash: { USD: 17_000 } }],
+        cash: { account: { USD: { settled: 309_800, unsettled: 0, availableToTrade: 309_800, availableToWithdraw: 309_800 } } },
+        pending: [],
+        balance: { account: { cash: 309_800, receivable: null } },
+      },
+    },
+  ],
+};
+
+export default [barrierOption, asianOption, lookbackOption, basketOption, spreadOption, quantoOption];

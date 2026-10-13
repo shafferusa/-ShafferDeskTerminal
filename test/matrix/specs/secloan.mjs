@@ -572,4 +572,199 @@ const securitiesLending = {
   ],
 };
 
-export default [securitiesBorrowing, securitiesLending];
+// ---------------------------------------------------------------------------------------------
+// stock_loan
+// ---------------------------------------------------------------------------------------------
+// An Account in a dollar Book lends 8,000 of its 10,000 shares of a Xetra-listed German company to Vossberg Bank under a stock
+// loan: cash collateral in euros at 105% of market value (the cross-border convention, against 102% for domestic loans), a
+// fee of 0.60% a year on market value, recallable. The fee is received on the first business day of April; the loan runs
+// over Easter (Good Friday and Easter Monday, Xetra closed), the fee accruing on calendar days; the euro rises from 1.08 to
+// 1.10 dollars; the company pays a dividend, received on all 10,000 shares (on the 8,000 lent, as the borrower's manufactured
+// payment); the Account recalls the shares and the collateral goes back with the fee to date.
+//
+// Inputs: KRNW, Xetra, quoted 74.95 / 75.05, last 75.00 (fixture); no commission; T+2 (foreign listing); EUR/USD 1.08, then
+// 1.10 (fixture); dividend 2.10 EUR a share, ex-date 8 April 2026, recorded by hand.
+//   Collateral: 1.05 x 8,000 x 75.00 = 630,000.00 EUR. Fee: 8,000 x 75.00 x 0.006 / 360 = 10.00 EUR a day.
+//   Reporting currency: each entry at the rate in force when posted; balances at the current rate.
+const KRNW = { productId: 'common_stock', name: 'Kranich Werke AG', symbol: 'KRNW', marketView: 'FOREIGN_CASH', venue: 'Xetra', venueType: 'exchange', venueCountry: 'DE', issuer: 'Kranich Werke AG', domicile: 'DE', underlyingGeo: 'DE', tradingCcy: 'EUR', terms: {} };
+const SLOAN = { owner: 'account', productId: 'stock_loan', productLabel: 'Stock loan', ccy: 'EUR', qty: 8_000, name: 'Vossberg stock loan of KRNW', position: { instrument: 'stock', lot: 'shares' }, as: 'sloan',
+  terms: { feeRate: 0.006, collateralPct: 1.05, recallable: true, counterparty: 'Vossberg Bank' } };
+const KSHARES = { instrument: 'stock', lot: 'shares', owner: 'account', direction: 'long', qty: 10_000, avgCost: 75.05, cost: 750_500, price: 75.00, value: 750_000, unrealized: -500 };
+const SLENT = { instrument: 'sloan', lot: 'sloan', owner: 'account', direction: 'securities lent', product: 'stock_loan', qty: -8_000, value: 600_000, collateralCash: 630_000 };
+
+const stockLoan = {
+  productId: 'stock_loan',
+  title: 'Stock loan by an Account of 8,000 Xetra-listed shares to Vossberg Bank: 105% euro collateral, fee received monthly, held over Easter, manufactured dividend, reporting-currency figures, recalled',
+  matrix: {
+    ...LEND_TICKET,
+    automaticInputs: ['the cash collateral at 105% of market value, in euros (price fixture)', 'the daily fee accrual on market value, calendar days over holidays', 'the daily re-mark of the collateral', 'the fee received on the first business day of the month and on the full return', 'conversion of every entry to dollars at the rate in force (EUR/USD fixture)'],
+    manualInputs: ['every term, entered on the ticket (product Stock loan, collateral share 1.05)', 'the dividend (ex-date, amount), recorded by hand', 'the recall (Take back)'],
+    settlement: 'None for the loan: collateral received and returned in restricted euros; the shares bought settle T+2 on the Xetra calendar',
+    lifecycle: 'Fee accrues daily (over Easter too) and is received monthly and on return; the dividend on shares lent is received as a manufactured payment; recall by hand',
+    accounting: 'The shares lent stay the Account\'s holding (on loan, not sellable); the euro collateral is restricted cash with a matching liability; fee income and dividend income are booked in dollars at each day\'s rate; the change in the dollar value of the euro balances is the FX effect',
+    collateral: 'Cash 105% of market value (cross-border stock loan), restricted and owed back; returned in full on the recall',
+  },
+  tradedOn: 'A stock loan is not a registry instrument: it is entered on the Lend a security ticket of the Treasury page from a position held (here the Account\'s), and registers itself when the ticket is confirmed. The shares are a registered Xetra-listed common stock.',
+  start: AT_1000('2026-03-25'), // Wednesday 25 March 2026, 10:00 New York
+  settlementCheck: { lag: 2, holidays: [] },
+  book: {
+    name: 'Matrix stock loan', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 500_000 }, { ccy: 'EUR', amount: 1_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'EUR', amount: 900_000 }] },
+    settings: { fees: { equity: { perUnit: 0, minimum: 0, bps: 0 } }, fill: FILL, settlement: { equity: 1, foreignCash: 2 }, dividends: { withholdingPct: 0 } },
+  },
+  instruments: { stock: KRNW },
+  quotes: { stock: { bid: 74.95, ask: 75.05, last: 75.00, bidSize: 100_000, askSize: 100_000 } },
+  fx: { 'EUR/USD': 1.08 },
+  expectAtStart: {
+    cash: {
+      account: { EUR: { settled: 900_000, unsettled: 0, payable: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 900_000, availableToWithdraw: 900_000, borrowed: 0, lent: 0 } },
+      treasury: { USD: { settled: 500_000 }, EUR: { settled: 100_000 } },
+    },
+    positions: [], holdings: {}, pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 972_000, treasury: 608_000, book: 1_580_000 }, // 900,000 x 1.08; 500,000 + 100,000 x 1.08
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+    pnl: { account: { dividends: 0, lendingIncome: 0, unrealized: 0, fx: 0, total: 0 }, book: { fx: 0, total: 0 } },
+    balance: { account: { cash: 972_000, assets: 972_000, liabilities: 0, netAssets: 972_000, local: { EUR: { cash: 900_000 } } }, book: { netAssets: 1_580_000 } },
+  },
+  steps: [
+    {
+      id: 'buy-the-shares', covers: 'collateral', action: 'ticket', ticketOf: 'equity', instrument: 'stock', side: 'buy', qty: 10_000, as: 'shares',
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'buy', instrument: 'stock', qty: 10_000, estimate: 75.05, settleDate: '2026-03-27', cash: -750_500, fees: 0 }] }, // 10,000 x 75.05; T+2
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 10_000, avgPrice: 75.05 }] },
+        events: [{ type: 'strategy.submitted', owner: 'account' }, { type: 'trade.fill', summary: 'Bought 10,000 KRNW @ 75.05 EUR', owner: 'account', date: '2026-03-25' }],
+        cash: { account: { EUR: { settled: 900_000, unsettled: -750_500, payable: 750_500, availableToTrade: 149_500, availableToWithdraw: 149_500 } } },
+        positions: [{ ...KSHARES, onLoan: 0 }],
+        holdings: { stock: { long: 10_000, short: 0, net: 10_000 } },
+        pending: [{ instrument: 'stock', lot: 'shares', owner: 'account', dueDate: '2026-03-27', amount: -750_500, ccy: 'EUR', into: 'cash' }],
+        pnl: { account: { unrealized: -540, total: -540 }, book: { total: -540 } }, // -500 x 1.08
+        nav: { account: 971_460, book: 1_579_460 },
+        balance: {
+          account: { cash: 972_000, positions: 810_000, payable: 810_540, assets: 1_782_000, liabilities: 810_540, netAssets: 971_460, local: { EUR: { cash: 900_000, positions: 750_000, payable: 750_500 } } },
+          book: { netAssets: 1_579_460 },
+        },
+      },
+    },
+    {
+      id: 'shares-settle', covers: 'settlement', action: 'clock', to: AT_1000('2026-03-27'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: /^Settlement: paid 750,500\.00 EUR/, cash: { EUR: -750_500 }, owner: 'account', date: '2026-03-27' }],
+        cash: { account: { EUR: { settled: 149_500, unsettled: 0, payable: 0, availableToTrade: 149_500, availableToWithdraw: 149_500 } } },
+        pending: [],
+        balance: { account: { cash: 161_460, payable: null, assets: 971_460, liabilities: 0, local: { EUR: { cash: 149_500, payable: null } } } }, // 149,500 x 1.08
+      },
+    },
+    lendTicket('lend-the-shares', SLOAN, {
+      covers: ['open', 'lend', 'cash collateral'],
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'lend_sec', action: 'lend_sec', purpose: 'financing', qty: 8_000, ccy: 'EUR', lending: { collateralCash: 630_000, value: 600_000 } }] }, // 1.05 x 8,000 x 75.00
+        result: { status: 'open', orders: [{ kind: 'lend_sec', action: 'lend_sec', instrument: 'sloan', status: 'filled', qty: 8_000, filledQty: 8_000 }] },
+        events: [
+          { type: 'strategy.submitted', owner: 'account' },
+          { type: 'secloan.lend', summary: 'Lent 8,000 KRNW at a fee of 0.600% p.a.; received 630,000.00 EUR cash collateral', owner: 'account', date: '2026-03-27' },
+        ],
+        cash: { account: { EUR: { settled: 149_500, restricted: 630_000, availableToTrade: 149_500, availableToWithdraw: 149_500 } } },
+        positions: [{ ...SLENT, accrued: 0 }, { ...KSHARES, onLoan: 8_000 }],
+        lifecycle: [{ type: 'secloan.fee', instrument: 'sloan', dueDate: '2026-04-01', status: 'pending', owner: 'account' }],
+        balance: {
+          // 630,000 x 1.08 = 680,400
+          account: { restricted: 680_400, collateralReceived: 680_400, assets: 1_651_860, liabilities: 680_400, netAssets: 971_460, local: { EUR: { restricted: 630_000, collateralReceived: 630_000 } } },
+          book: { netAssets: 1_579_460 },
+        },
+      },
+    }),
+    {
+      // Wednesday 1 April, the first business day of April: the fee is brought to today (27 March to 1 April, 5 days: 50.00 EUR,
+      // at 1.08 = 54.00) and received. The next is due on the first business day of May: 1 May is a TARGET holiday, so 4 May.
+      id: 'monthly-fee-received', covers: ['lending fee', 'fee payment'], action: 'clock', to: AT_1000('2026-04-01'),
+      expect: {
+        events: [
+          { type: 'accrual.fee', summary: 'Lending fee accrued on 8,000 KRNW: 50.00 EUR', owner: 'account', date: '2026-04-01' },
+          { type: 'interest.payment', summary: 'Lending fee received on Vossberg stock loan of KRNW: 50.00 EUR', cash: { EUR: 50 }, owner: 'account', date: '2026-04-01' },
+        ],
+        cash: { account: { EUR: { settled: 149_550, availableToTrade: 149_550, availableToWithdraw: 149_550 } } },
+        positions: [{ ...SLENT, accrued: 0 }, { ...KSHARES, onLoan: 8_000 }],
+        lifecycle: [{ type: 'secloan.fee', instrument: 'sloan', dueDate: '2026-05-04', status: 'pending', owner: 'account' }],
+        pnl: { account: { lendingIncome: 54, total: -486 }, book: { total: -486 } },
+        nav: { account: 971_514, book: 1_579_514 }, // 899,550 x 1.08
+        balance: { account: { cash: 161_514, assets: 1_651_914, netAssets: 971_514, local: { EUR: { cash: 149_550 } } }, book: { netAssets: 1_579_514 } },
+      },
+    },
+    {
+      // Tuesday 7 April, after Easter (Good Friday and Easter Monday: Xetra closed, the New York run of Friday skipped). The run
+      // of Monday 6 April accrues the fee for 1 to 6 April, 5 calendar days: 50.00 EUR (54.00 at 1.08).
+      id: 'held-over-easter', covers: ['holiday', 'lending fee'], action: 'clock', to: AT_1000('2026-04-07'),
+      expect: {
+        events: [{ type: 'accrual.fee', summary: 'Lending fee accrued on 8,000 KRNW: 50.00 EUR', owner: 'account', date: '2026-04-07' }],
+        positions: [{ ...SLENT, accrued: 50 }, { ...KSHARES, onLoan: 8_000 }],
+        pnl: { account: { lendingIncome: 108, total: -432 }, book: { total: -432 } },
+        nav: { account: 971_568, book: 1_579_568 }, // 899,600 x 1.08
+        balance: { account: { accruedIncome: 54, assets: 1_651_968, netAssets: 971_568, local: { EUR: { accruedIncome: 50 } } }, book: { netAssets: 1_579_568 } },
+      },
+    },
+    {
+      // The euro rises to 1.10. Nothing is posted. NAV 899,600 x 1.10 = 989,560.00; unrealized -500 x 1.10 = -550.00. FX effect:
+      // 989,560 - 972,000 funded = 17,560 total, less fees 108.00 and unrealized -550.00: 18,002.00. Treasury's 100,000 EUR gain 2,000.
+      id: 'euro-rises', covers: 'FX effect', action: 'fx_rate', pair: 'EUR/USD', rate: 1.10,
+      expect: {
+        events: [],
+        pnl: { account: { lendingIncome: 108, unrealized: -550, fx: 18_002, total: 17_560 }, book: { fx: 20_002, total: 19_560 } },
+        nav: { account: 989_560, treasury: 610_000, book: 1_599_560 },
+        balance: {
+          // cash 149,550 x 1.10 = 164,505; restricted and owed 630,000 x 1.10 = 693,000; shares 825,000; accrued 55
+          account: { cash: 164_505, restricted: 693_000, positions: 825_000, accruedIncome: 55, collateralReceived: 693_000, assets: 1_682_560, liabilities: 693_000, netAssets: 989_560 },
+          book: { netAssets: 1_599_560 },
+        },
+      },
+    },
+    { id: 'dividend-recorded', covers: 'manufactured payment', action: 'corporate_action', instrument: 'stock', type: 'cash_dividend', exDate: '2026-04-08', amount: 2.10, expect: {} },
+    {
+      // Wednesday 8 April: the dividend on all 10,000 shares, 21,000.00 EUR (16,800 of it on the shares lent, as a manufactured
+      // payment), at 1.10 = 23,100.00. The run of 7 April adds a day's fee: 10.00 EUR (11.00), 60.00 accrued.
+      id: 'dividend-on-the-shares-lent', covers: ['manufactured payment', 'lending fee'], action: 'clock', to: AT_1000('2026-04-08'),
+      expect: {
+        events: [
+          { type: 'dividend', summary: 'Dividend on 10,000 KRNW: 21,000.00 EUR (2.1 per unit, ex-date 2026-04-08); shares out on loan receive a manufactured payment', cash: { EUR: 21_000 }, owner: 'account', date: '2026-04-08' },
+          { type: 'accrual.fee', summary: 'Lending fee accrued on 8,000 KRNW: 10.00 EUR', owner: 'account', date: '2026-04-08' },
+        ],
+        cash: { account: { EUR: { settled: 170_550, availableToTrade: 170_550, availableToWithdraw: 170_550 } } },
+        positions: [{ ...SLENT, accrued: 60 }, { ...KSHARES, onLoan: 8_000 }],
+        pnl: { account: { dividends: 23_100, lendingIncome: 119, unrealized: -550, fx: 18_002, total: 40_671 }, book: { total: 42_671 } },
+        nav: { account: 1_012_671, book: 1_622_671 }, // 920,610 x 1.10
+        balance: {
+          account: { cash: 187_605, accruedIncome: 66, assets: 1_705_671, netAssets: 1_012_671, local: { EUR: { cash: 170_550, accruedIncome: 60 } } },
+          book: { netAssets: 1_622_671 },
+        },
+      },
+    },
+    {
+      // The Account recalls the 8,000 shares: the fee is brought to today (one day, 10.00 EUR, 11.00), the 630,000 EUR of
+      // collateral goes back, and the fee to date, 70.00 EUR, is received.
+      id: 'recall-the-shares', covers: ['recall', 'close', 'full return'], action: 'repay', lot: 'sloan',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'recall_sec', action: 'recall_sec', purpose: 'financing', instrument: 'sloan', qty: 8_000, ccy: 'EUR' }] },
+        result: { status: 'closed', orders: [{ kind: 'recall_sec', action: 'recall_sec', status: 'filled', qty: 8_000, filledQty: 8_000 }] },
+        events: [
+          { type: 'strategy.legs_added', owner: 'account' },
+          { type: 'accrual.fee', summary: 'Lending fee accrued on 8,000 KRNW: 10.00 EUR', owner: 'account', date: '2026-04-08' },
+          { type: 'secloan.recall', summary: 'Took back 8,000 KRNW from loan; returned 630,000.00 EUR cash collateral', owner: 'account', date: '2026-04-08' },
+          { type: 'interest.payment', summary: 'Lending fee received on Vossberg stock loan of KRNW: 70.00 EUR', cash: { EUR: 70 }, owner: 'account', date: '2026-04-08' },
+        ],
+        cash: { account: { EUR: { settled: 170_620, restricted: 0, availableToTrade: 170_620, availableToWithdraw: 170_620 } } },
+        positions: [{ ...KSHARES, onLoan: 0 }],
+        lifecycle: [],
+        pnl: { account: { dividends: 23_100, lendingIncome: 130, unrealized: -550, fx: 18_002, total: 40_682 }, book: { total: 42_682 } },
+        nav: { account: 1_012_682, book: 1_622_682 }, // 920,620 x 1.10
+        balance: {
+          account: { cash: 187_682, restricted: null, accruedIncome: null, collateralReceived: null, positions: 825_000, assets: 1_012_682, liabilities: 0, netAssets: 1_012_682, local: { EUR: { cash: 170_620, restricted: null, accruedIncome: null, collateralReceived: null } } },
+          book: { netAssets: 1_622_682 },
+        },
+      },
+    },
+  ],
+};
+
+export default [securitiesBorrowing, securitiesLending, stockLoan];

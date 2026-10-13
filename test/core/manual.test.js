@@ -88,3 +88,42 @@ test('manual: an OTC contract valued by hand cannot be entered without a collate
   assert.ok(pv.blocking > 0);
   assert.ok(pv.checks.some((c) => c.code === 'collateral-basis'));
 });
+
+test('manual: a hedge fund interest is redeemed only by notice, gated per dealing date, and a negative NAV is refused', async () => {
+  const { app, clock } = makeApp({ demo: true });
+  const { book, acct } = makeBook(app, { cash: 3_000_000, account: 2_000_000 });
+  const hf = app.instruments.create({ productId: 'hedge_fund', name: 'Test macro fund', symbol: 'TMF', venueType: 'otc', domicile: 'KY', tradingCcy: 'USD',
+    terms: { dealingFrequency: 'quarterly', noticeDays: 30, gatePct: 0.25, paymentDays: 5, valuationMaxAgeDays: 40 } });
+  const leg = { kind: 'trade', instrumentId: hf.id, qty: 1000, statedPrice: 1000, orderType: 'market', tif: 'day' };
+  const s = await trade(app, { bookId: book.id, unitId: acct.id, template: 'long', underlyingId: hf.id, legs: [{ ...leg, action: 'buy' }], origin: 'marketplace' });
+  // A sale on the ticket is refused: redemption is by notice.
+  const pv = await app.packages.previewAction(s.id, 'close', { positionIds: [s.positions[0].positionId], qty: 100 });
+  assert.ok(pv.checks.some((c) => c.code === 'redeem-by-notice'));
+  const posId = s.positions[0].positionId;
+  const ev = (body) => app.db.tx(() => app.products.get('manual').manualEvent(app, { book, unit: acct, inst: app.instruments.get(hf.id), pos: app.positions.get(posId) }, body));
+  assert.throws(() => ev({ action: 'valuation', value: -5, asOf: '2026-03-02', source: 'x' }), /cannot be negative/);
+  // Notice 2 March + 30 days = 1 April: dealt on the next quarter end, 30 June.
+  assert.equal(ev({ action: 'redemption_notice', shares: 1000 }).dealingDate, '2026-06-30');
+  assert.throws(() => ev({ action: 'redemption', nav: 1100 }), /next dealing date is 2026-06-30/);
+  await goTo(app, clock, '2026-07-06T14:00:00.000Z');
+  // Gate 25% of the 1,000 held at the first dealing date = 250 a dealing date: 250 now, 750 carried to 30 September.
+  const r1 = ev({ action: 'redemption', nav: 1100 });
+  assert.deepEqual([r1.shares, r1.carried, r1.payDate], [250, 750, '2026-07-07']); // 30 June + 5 USD business days: 1, 2, 3 (the Fed is open on Friday 3 July 2026), 6, 7 July
+  assert.equal(app.positions.get(posId).qty, 750);
+  await goTo(app, clock, '2026-10-05T14:00:00.000Z');
+  const r2 = ev({ action: 'redemption', nav: 1120 });
+  assert.deepEqual([r2.shares, r2.carried], [250, 500]); // still 25% of the 1,000 at the first dealing date
+  assert.equal(createIntegrity(app).check(book.id).ok, true);
+});
+
+test('manual: an OTC contract valued by hand may be marked below zero; a valuation goes stale after its limit', async () => {
+  const { app, clock } = makeApp({ demo: true });
+  const ws = app.instruments.create({ productId: 'weather_derivative', name: 'Test HDD swap', venueType: 'otc', jurisdiction: 'US', tradingCcy: 'USD',
+    terms: { station: 'Test station', index: 'HDD', baseTemp: 65, periodStart: '2026-11-01', periodEnd: '2027-03-31', strike: 4000, tick: 1000, cap: 500_000, optionType: 'swap', side: 'short', valuationMaxAgeDays: 5, collateralBasis: { type: 'uncollateralized' } } });
+  const obs = app.data.enterManual({ kind: 'price', subject: ws.id, value: -12_000, asOf: '2026-03-02T12:00:00.000Z', forDate: '2026-03-02', note: 'test' });
+  assert.equal(app.data.present(obs).freshness, 'manual');
+  await goTo(app, clock, '2026-03-09T14:00:00.000Z'); // 7 days later, past the 5-day limit
+  assert.equal(app.data.present(app.data.price(ws.id)).freshness, 'stale');
+  // A weather swap's settlement is capped both ways: the seller of 4,000 + 800 HDD pays 1,000 x 800 = 800,000, capped at 500,000.
+  assert.equal(payoffOf(app.instruments.get(ws.id), { realised: 4800 }).amount, -500_000);
+});
