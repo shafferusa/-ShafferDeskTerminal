@@ -66,9 +66,64 @@
    "title": "Demo and normal paper databases are separate files",
    "commit": "854073b+changes",
    "at": "2026-10-13T17:52:20.660Z"
+  },
+  "SB:nodup:catch-up": {
+   "status": "passed",
+   "message": "event types on the Full history filter: Account created 1, Accrual fee 3, Accrual interest 2, Book created 1, Book settings 1, Capital deposit 1, Collateral agreement 1, Collateral mark 1, Collateral variation 1, Dividend 1, Interest payment 1, Loan drawdown 1, Loan repayment 1, Option expired 1, Secloan borrow 1, Settlement pay 2, Settlement receive 1, Strategy submitted 5, Trade fill 4, Transfer...",
+   "ms": 43012,
+   "checks": 64,
+   "area": "nodup",
+   "case": "catch-up",
+   "title": "Catch-up over fifteen missed days in one engine cycle",
+   "commit": "f0ceb6c",
+   "at": "2026-10-13T17:53:03.684Z"
+  },
+  "SB:refusals:cash-transfer": {
+   "status": "passed",
+   "message": "",
+   "ms": 1235,
+   "checks": 11,
+   "area": "refusals",
+   "case": "cash-transfer",
+   "title": "Insufficient cash: a transfer larger than the settled cash that is free",
+   "commit": "f0ceb6c",
+   "at": "2026-10-13T17:53:04.930Z"
+  },
+  "SB:refusals:cash-withdrawal": {
+   "status": "passed",
+   "message": "",
+   "ms": 1092,
+   "checks": 8,
+   "area": "refusals",
+   "case": "cash-withdrawal",
+   "title": "Insufficient cash: a capital withdrawal larger than Treasury holds",
+   "commit": "f0ceb6c",
+   "at": "2026-10-13T17:53:06.036Z"
+  },
+  "SB:refusals:cash-repayment": {
+   "status": "passed",
+   "message": "Failed tab: \"Alpha Loan maturity System test loan Custom System test loan 2026-04-01 Alpha has 10,000.00 USD of settled USD available; 100,416.67 USD is needed (principal plus accrued interest).\"",
+   "ms": 2167,
+   "checks": 19,
+   "area": "refusals",
+   "case": "cash-repayment",
+   "title": "Insufficient cash: repaying a loan early, and at maturity",
+   "commit": "f0ceb6c+changes",
+   "at": "2026-10-13T17:53:08.215Z"
+  },
+  "SB:refusals:collateral-repo": {
+   "status": "passed",
+   "message": "(a) pledging 2,000,000 face of the 1,000,000 held: \"Blocks submission. Leg 1: Only 1,000,000 of the collateral is unencumbered; 2,000,000 is needed.\"\n(b) 2,000,000.00 of cash against 1,000,000 face: \"Blocks submission. Leg 1: The collateral supports at most 998,300.55 USD: 1,000,000 TTSY31 is worth 1,018,674.03 USD (1,000,000.00 USD clean plus 18,674.03 USD accrued interest) and the haircut is 2.0\"\nrepo ticket guide: \"Collateral: 1,000,000 TTSY31 at 100.00 Simulated is worth 1,000,000.00 USD clean, or 980,000.00 USD after the haircut. The accrued interest is added to the value of a bond (its dirty value). The principal cannot exceed the value after the haircut: the preview \"\n(d) pledging the same holding again: \"Blocks submission. Leg 1: Only 0 of the collateral is unencumbered; 100,000 is needed.\"",
+   "ms": 3066,
+   "checks": 15,
+   "area": "refusals",
+   "case": "collateral-repo",
+   "title": "Insufficient collateral: repo",
+   "commit": "f0ceb6c+changes",
+   "at": "2026-10-13T17:53:11.293Z"
   }
  },
- "updatedAt": "2026-10-13T17:52:20.660Z",
+ "updatedAt": "2026-10-13T17:53:11.293Z",
  "environment": {
   "node": "v22.22.0",
   "platform": "linux",

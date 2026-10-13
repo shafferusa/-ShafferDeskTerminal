@@ -847,4 +847,224 @@ const termRepo = {
   ],
 };
 
-export default [repo, reverseRepo, overnightRepo, termRepo];
+// ---------------------------------------------------------------------------------------------
+// open_repo
+// ---------------------------------------------------------------------------------------------
+// An open equity repo: an Account buys 50,000 shares and repos them with no end date, at 5.10% to begin with. A week
+// later the rate is reset by hand to 5.35%. The Account sends most of its cash back to Treasury, so when it asks to
+// terminate the repo the termination is refused for want of cash (principal and interest must be paid at once); Treasury
+// funds it and the repo is terminated on demand, with interest at each rate for its days.
+//
+// Inputs: RIDG, NYSE, quoted 83.98 / 84.02, last 84.00 (fixture); no commission; T+1. Repo 3,700,000 at 5.10% ACT/360
+// from 3 March, haircut 10% (an equity haircut), reset to 5.35% on 10 March, terminated 16 March.
+//   Shares: 50,000 x 84.00 = 4,200,000.00; less 10%: 3,780,000.00 supported.
+//   Interest: 3,700,000 x 0.051 / 360 = 524.166667 a day for 7 days (3 to 10 March): 3,669.1667;
+//             3,700,000 x 0.0535 / 360 = 549.861111 a day for 6 days (10 to 16 March): 3,299.1667; total 6,968.3333 -> 6,968.33.
+const RIDG = { productId: 'common_stock', name: 'Ridgeway Industrial Holdings Inc.', symbol: 'RIDG', marketView: 'US_CASH', venue: 'NYSE', venueType: 'exchange', venueCountry: 'US', issuer: 'Ridgeway Industrial Holdings Inc.', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', terms: {} };
+const OREPO_TERMS = { collateralInstrumentId: '$inst:stock', collateralQty: 50_000, haircut: 0.10, rateType: 'fixed', rate: 0.051, dayCount: 'ACT/360', term: 'open', style: 'classic', collateralType: 'gc', triparty: false, counterparty: 'Wexford Prime Services' };
+const OREPO = { owner: 'account', side: 'repo', productId: 'open_repo', productLabel: 'Open repo', ccy: 'USD', principal: 3_700_000, name: 'Wexford open repo', collateral: { instrument: 'stock', lot: 'shares' }, as: 'orepo', terms: OREPO_TERMS };
+const SHARES = { instrument: 'stock', lot: 'shares', owner: 'account', direction: 'long', qty: 50_000, avgCost: 84.02, cost: 4_201_000, price: 84, value: 4_200_000, unrealized: -1_000 };
+const OR_POS = { instrument: 'orepo', lot: 'orepo', owner: 'account', direction: 'repo (cash borrowed)', qty: -3_700_000, value: 3_700_000, carrying: -3_700_000, collateralHeld: null };
+
+const openRepo = {
+  productId: 'open_repo',
+  title: 'Open repo of 50,000 shares by an Account: no end date, rate reset by hand, termination on demand refused for want of cash, then terminated with interest at each rate',
+  matrix: {
+    ...REPO_TICKET,
+    automaticInputs: ['the shares\' value from the price fixture', 'the most cash it supports after the haircut', 'repo interest accrued daily at the rate in force', 'the daily check of the cover', 'the cash a termination needs: principal and interest to the day'],
+    manualInputs: ['every term, entered on the ticket (Term: Open, no end date)', 'the new rate, entered with Set rate on the repo\'s row', 'the termination on demand, with Repurchase on the repo\'s row'],
+    settlement: 'None for the repo: cash received when confirmed and paid back when terminated. The shares bought settle T+1',
+    lifecycle: 'Runs until terminated: no end date and nothing scheduled; interest accrues daily at the rate in force; a rate reset accrues to its date at the old rate first; termination on demand pays principal and all interest',
+    accounting: 'Cash borrowed is a liability of the Account; repo interest is a funding expense; the pledged shares stay on the Account\'s balance sheet at market value',
+    collateral: 'The shares are pledged until the repo is terminated: not sellable or lendable; cover checked daily',
+  },
+  tradedOn: 'An open repo is not a registry instrument: it is entered on the Repo or reverse repo ticket of the Treasury page (for the Account) and registers itself when the ticket is confirmed. The collateral is a registered NYSE-listed common stock.',
+  start: AT_1000('2026-03-02'), // Monday 2 March 2026, 10:00 New York
+  settlementCheck: { lag: 1, holidays: [] },
+  book: {
+    name: 'Matrix open repo', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 5_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 4_500_000 }] },
+    settings: { fees: { equity: { perUnit: 0, minimum: 0, bps: 0 } }, fill: FILL, settlement: { equity: 1 } },
+  },
+  instruments: { stock: RIDG },
+  quotes: { stock: { bid: 83.98, ask: 84.02, last: 84.00, bidSize: 1_000_000, askSize: 1_000_000 } },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 4_500_000, unsettled: 0, payable: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 4_500_000, availableToWithdraw: 4_500_000, borrowed: 0, lent: 0 } },
+      treasury: { USD: { settled: 500_000, availableToTrade: 500_000, availableToWithdraw: 500_000, borrowed: 0 } },
+    },
+    positions: [], holdings: {}, pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 4_500_000, treasury: 500_000, book: 5_000_000 },
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+    pnl: { account: { realized: 0, borrowFunding: 0, unrealized: 0, total: 0 }, book: { total: 0 } },
+    balance: {
+      account: { cash: 4_500_000, assets: 4_500_000, liabilities: 0, netAssets: 4_500_000, internal: 4_500_000 },
+      treasury: { cash: 500_000, assets: 500_000, liabilities: 0, netAssets: 500_000, internal: -4_500_000 },
+      book: { cash: 5_000_000, assets: 5_000_000, liabilities: 0, netAssets: 5_000_000, internal: 0 },
+    },
+    oversight: { accountBorrowings: [], treasuryOwn: [] },
+  },
+  steps: [
+    {
+      id: 'buy-the-shares', covers: 'collateral', action: 'ticket', ticketOf: 'equity', instrument: 'stock', side: 'buy', qty: 50_000, as: 'shares',
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'buy', instrument: 'stock', qty: 50_000, estimate: 84.02, model: 'quoted-bid-ask', settleDate: '2026-03-03', cash: -4_201_000, fees: 0 }] }, // 50,000 x 84.02
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 50_000, avgPrice: 84.02 }] },
+        events: [{ type: 'strategy.submitted', owner: 'account' }, { type: 'trade.fill', summary: 'Bought 50,000 RIDG @ 84.02 USD', owner: 'account', date: '2026-03-02' }],
+        cash: { account: { USD: { settled: 4_500_000, unsettled: -4_201_000, payable: 4_201_000, availableToTrade: 299_000, availableToWithdraw: 299_000 } } },
+        positions: [{ ...SHARES, pledged: 0 }],
+        holdings: { stock: { long: 50_000, short: 0, net: 50_000 } },
+        pending: [{ instrument: 'stock', lot: 'shares', owner: 'account', dueDate: '2026-03-03', amount: -4_201_000, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { unrealized: -1_000, total: -1_000 }, book: { total: -1_000 } },
+        nav: { account: 4_499_000, book: 4_999_000 },
+        balance: {
+          account: { cash: 4_500_000, positions: 4_200_000, payable: 4_201_000, assets: 8_700_000, liabilities: 4_201_000, netAssets: 4_499_000 },
+          book: { cash: 5_000_000, positions: 4_200_000, payable: 4_201_000, assets: 9_200_000, liabilities: 4_201_000, netAssets: 4_999_000 },
+        },
+      },
+    },
+    {
+      id: 'shares-settle', covers: 'settlement', action: 'clock', to: AT_1000('2026-03-03'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: /^Settlement: paid 4,201,000\.00 USD/, cash: { USD: -4_201_000 }, owner: 'account', date: '2026-03-03' }],
+        cash: { account: { USD: { settled: 299_000, unsettled: 0, payable: 0, availableToTrade: 299_000, availableToWithdraw: 299_000 } } },
+        pending: [],
+        balance: { account: { cash: 299_000, payable: null, assets: 4_499_000, liabilities: 0 }, book: { cash: 799_000, payable: null, assets: 4_999_000, liabilities: 0 } },
+      },
+    },
+    repoTicket('repo-open-ended', OREPO, {
+      covers: ['open', 'borrow', 'haircut', 'collateral'],
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'repo_open', action: 'repo', purpose: 'financing', qty: 3_700_000, cash: 3_700_000, fees: 0, ccy: 'USD', dailyCost: 524.17, // 3,700,000 x 0.051 / 360
+            financing: { amount: 3_700_000, rateType: 'fixed', rate: 0.051, maturity: null, interestFrom: '2026-03-03',
+              collateral: { qty: 50_000, clean: 4_200_000, accrued: 0, worth: 4_200_000, haircutAmount: 420_000, buffer: 0, supports: 3_780_000 }, forward: null } }],
+          cash: { USD: { financingIn: 3_700_000, financingOut: 0, required: 0, available: 299_000, shortfall: 0, netCash: 3_700_000 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'repo_open', action: 'repo', instrument: 'orepo', status: 'filled', qty: 3_700_000, filledQty: 3_700_000 }] },
+        events: [
+          { type: 'strategy.submitted', owner: 'account' },
+          { type: 'repo.open', summary: 'Repo: received 3,700,000.00 USD against 50,000 RIDG at 5.100% fixed, open', cash: { USD: 3_700_000 }, owner: 'account', date: '2026-03-03' },
+        ],
+        cash: { account: { USD: { settled: 3_999_000, availableToTrade: 3_999_000, availableToWithdraw: 3_999_000, borrowed: 3_700_000 } } },
+        positions: [{ ...SHARES, pledged: 50_000 }, { ...OR_POS, accrued: 0 }],
+        lifecycle: [], // open: nothing is scheduled
+        borrowings: [{ owner: 'account', origin: 'account', family: 'repo', type: 'Repo (cash borrowed against securities)', lot: 'orepo', principal: 3_700_000, principalRc: 3_700_000, ccy: 'USD', rate: 0.051, rateType: 'fixed', rateText: '5.100% fixed', dayCount: 'ACT/360',
+          accrued: 0, costToDate: 0, feesToDate: 0, startDate: '2026-03-03', maturity: null, term: 'open', lender: 'Wexford Prime Services', collateral: 'RIDG: 50,000 pledged, haircut 10.00%', schedule: 'Interest paid at repurchase', nextPayment: null, nextPaymentType: null, blocked: null }],
+        balance: {
+          account: { cash: 3_999_000, borrowed: 3_700_000, assets: 8_199_000, liabilities: 3_700_000, netAssets: 4_499_000 },
+          book: { cash: 4_499_000, borrowed: 3_700_000, assets: 8_699_000, liabilities: 3_700_000, netAssets: 4_999_000 },
+        },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'orepo', principal: 3_700_000, ccy: 'USD', accrued: 0 }], treasuryOwn: [], accounts: { account: { cashBorrowed: 3_700_000 } } },
+      },
+    },
+    {
+      // Tuesday 10 March: the run of Monday 9 March accrues 6 days (3 to 9 March): 6 x 524.166667 = 3,145.00.
+      id: 'a-week-runs', covers: 'interest accrual', action: 'clock', to: AT_1000('2026-03-10'),
+      expect: {
+        events: [{ type: 'accrual.interest', summary: 'Repo interest accrued on Wexford open repo: 3,145.00 USD', owner: 'account', date: '2026-03-10' }],
+        positions: [{ ...SHARES, pledged: 50_000 }, { ...OR_POS, accrued: -3_145 }],
+        borrowings: [{ lot: 'orepo', accrued: 3_145, costToDate: 3_145 }],
+        pnl: { account: { borrowFunding: -3_145, unrealized: -1_000, total: -4_145 }, book: { total: -4_145 } },
+        nav: { account: 4_495_855, book: 4_995_855 },
+        balance: { account: { accruedExpense: 3_145, liabilities: 3_703_145, netAssets: 4_495_855 }, book: { accruedExpense: 3_145, liabilities: 3_703_145, netAssets: 4_995_855 } },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'orepo', principal: 3_700_000, ccy: 'USD', accrued: 3_145 }] },
+      },
+    },
+    {
+      // The rate is reset by hand. Interest is first brought to today at the old rate: 7 days, 3,669.1667 -> 3,669.17 (+524.17).
+      id: 'set-a-new-rate', covers: ['rate change', 'set rate'], action: 'instrument_lifecycle', instrument: 'orepo', body: { action: 'set_rate', rate: 0.0535 },
+      expect: {
+        events: [
+          { type: 'accrual.interest', summary: 'Repo interest accrued on Wexford open repo: 524.17 USD', owner: 'account', date: '2026-03-10' },
+          { type: 'rate.reset', summary: 'Rate on Wexford open repo reset to 5.350%', owner: 'account', date: '2026-03-10' },
+        ],
+        positions: [{ ...SHARES, pledged: 50_000 }, { ...OR_POS, accrued: -3_669.17 }],
+        borrowings: [{ lot: 'orepo', rate: 0.0535, rateText: '5.350% fixed', accrued: 3_669.17, costToDate: 3_669.17 }],
+        pnl: { account: { borrowFunding: -3_669.17, total: -4_669.17 }, book: { total: -4_669.17 } },
+        nav: { account: 4_495_330.83, book: 4_995_330.83 },
+        balance: { account: { accruedExpense: 3_669.17, liabilities: 3_703_669.17, netAssets: 4_495_330.83 }, book: { accruedExpense: 3_669.17, liabilities: 3_703_669.17, netAssets: 4_995_330.83 } },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'orepo', principal: 3_700_000, ccy: 'USD', accrued: 3_669.17 }] },
+      },
+    },
+    {
+      id: 'cash-back-to-treasury', covers: 'return to Treasury', action: 'transfer', from: 'account', to: 'treasury', ccy: 'USD', amount: 3_500_000,
+      expect: {
+        events: [{ type: 'transfer.return', summary: /3,500,000\.00 USD from Alpha to Treasury/, date: '2026-03-10' }],
+        cash: { account: { USD: { settled: 499_000, availableToTrade: 499_000, availableToWithdraw: 499_000 } }, treasury: { USD: { settled: 4_000_000, availableToTrade: 4_000_000, availableToWithdraw: 4_000_000 } } },
+        nav: { account: 995_330.83, treasury: 4_000_000, book: 4_995_330.83 },
+        balance: {
+          account: { cash: 499_000, assets: 4_699_000, netAssets: 995_330.83, internal: 1_000_000 },
+          treasury: { cash: 4_000_000, assets: 4_000_000, netAssets: 4_000_000, internal: -1_000_000 },
+          book: { cash: 4_499_000, internal: 0 },
+        },
+      },
+    },
+    {
+      // Monday 16 March: the run of Friday 13 March accrues 3 days at 5.35%: 3,669.1667 + 1,649.5833 = 5,318.75 (+1,649.58).
+      id: 'monday-16-march', covers: 'interest accrual', action: 'clock', to: AT_1000('2026-03-16'),
+      expect: {
+        events: [{ type: 'accrual.interest', summary: 'Repo interest accrued on Wexford open repo: 1,649.58 USD', owner: 'account', date: '2026-03-16' }],
+        positions: [{ ...SHARES, pledged: 50_000 }, { ...OR_POS, accrued: -5_318.75 }],
+        borrowings: [{ lot: 'orepo', accrued: 5_318.75, costToDate: 5_318.75 }],
+        pnl: { account: { borrowFunding: -5_318.75, total: -6_318.75 }, book: { total: -6_318.75 } },
+        nav: { account: 993_681.25, book: 4_993_681.25 },
+        balance: { account: { accruedExpense: 5_318.75, liabilities: 3_705_318.75, netAssets: 993_681.25 }, book: { accruedExpense: 5_318.75, liabilities: 3_705_318.75, netAssets: 4_993_681.25 } },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'orepo', principal: 3_700_000, ccy: 'USD', accrued: 5_318.75 }] },
+      },
+    },
+    {
+      // Termination on demand needs 3,700,000 + 6,968.33 interest to today; the Account holds 499,000.
+      id: 'terminate-without-the-cash', covers: ['close', 'termination', 'insufficient cash at repurchase'], action: 'repay', lot: 'orepo',
+      status: 'blocked', reason: 'A termination pays principal and interest at once from settled cash; the Account holds 499,000.00 USD.',
+      expect: { refused: 'Repurchase needs 3,706,968.33 USD (principal plus repo interest); Alpha has 499,000.00 USD of settled USD available.' },
+    },
+    {
+      id: 'treasury-funds-the-account', covers: 'funding from Treasury', action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 3_300_000,
+      expect: {
+        events: [{ type: 'transfer.funding', summary: 'Treasury funding: 3,300,000.00 USD from Treasury to Alpha', date: '2026-03-16' }],
+        cash: { account: { USD: { settled: 3_799_000, availableToTrade: 3_799_000, availableToWithdraw: 3_799_000 } }, treasury: { USD: { settled: 700_000, availableToTrade: 700_000, availableToWithdraw: 700_000 } } },
+        nav: { account: 4_293_681.25, treasury: 700_000, book: 4_993_681.25 },
+        balance: {
+          account: { cash: 3_799_000, assets: 7_999_000, netAssets: 4_293_681.25, internal: 4_300_000 },
+          treasury: { cash: 700_000, assets: 700_000, netAssets: 700_000, internal: -4_300_000 },
+          book: { cash: 4_499_000, internal: 0 },
+        },
+      },
+    },
+    {
+      // Terminated on demand: interest to today, 6,968.33 (+1,649.58 for 13 to 16 March), with the principal; shares released.
+      id: 'terminate-on-demand', covers: ['close', 'termination', 'collateral released'], action: 'repay', lot: 'orepo',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'repo_close', action: 'close_repo', purpose: 'financing', instrument: 'orepo', qty: 3_700_000, cash: -3_706_968.33, ccy: 'USD', financing: { amount: -3_706_968.33, principal: 3_700_000, interest: 6_968.33, full: true, rate: 0.0535, maturity: null } }],
+          cash: { USD: { financingIn: 0, financingOut: 3_706_968.33, required: 3_706_968.33, available: 3_799_000, shortfall: 0, netCash: -3_706_968.33 } },
+        },
+        result: { status: 'closed', orders: [{ kind: 'repo_close', action: 'close_repo', status: 'filled', qty: 3_700_000, filledQty: 3_700_000 }] },
+        events: [
+          { type: 'strategy.legs_added', owner: 'account' },
+          { type: 'accrual.interest', summary: 'Repo interest accrued on Wexford open repo: 1,649.58 USD', owner: 'account', date: '2026-03-16' },
+          { type: 'interest.payment', summary: 'Repo interest paid on Wexford open repo: 6,968.33 USD', cash: { USD: -6_968.33 }, owner: 'account', date: '2026-03-16' },
+          { type: 'repo.close', summary: 'Repo repurchase: paid 3,700,000.00 USD principal (interest 6,968.33 USD); collateral released', cash: { USD: -3_700_000 }, owner: 'account', date: '2026-03-16' },
+        ],
+        cash: { account: { USD: { settled: 92_031.67, availableToTrade: 92_031.67, availableToWithdraw: 92_031.67, borrowed: 0 } } }, // 3,799,000 - 3,706,968.33
+        positions: [{ ...SHARES, pledged: 0 }],
+        borrowings: [],
+        pnl: { account: { borrowFunding: -6_968.33, unrealized: -1_000, total: -7_968.33 }, book: { total: -7_968.33 } },
+        nav: { account: 4_292_031.67, book: 4_992_031.67 },
+        balance: {
+          account: { cash: 92_031.67, borrowed: null, accruedExpense: null, assets: 4_292_031.67, liabilities: 0, netAssets: 4_292_031.67 },
+          book: { cash: 792_031.67, borrowed: null, accruedExpense: null, assets: 4_992_031.67, liabilities: 0, netAssets: 4_992_031.67 },
+        },
+        oversight: { accountBorrowings: [], accounts: { account: { cashBorrowed: 0 } } },
+      },
+    },
+  ],
+};
+
+export default [repo, reverseRepo, overnightRepo, termRepo, openRepo];
