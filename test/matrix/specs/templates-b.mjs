@@ -6991,6 +6991,7 @@ const pathStrategyPackage = {
 // Execute now is refused with what changed (was / now) and nothing is submitted; the new figures are checked and
 // executed. The put leg is added to the position's strategy instance, carries the request's id, and protects the
 // 1,000 shares. Closed: nothing left.
+const P2_STRATEGY = { id: 'TEST-IS-007', name: 'Core Equity', version: 'test-1' };
 const KRV_PUT = { underlyingId: '$inst:stock', expiration: '2026-03-20', strike: 45, right: 'P', multiplier: 100, deliverableUnits: 100, exercise: 'american', settlement: 'physical' };
 const pathMarketplaceHedge = {
   template: 'long', path: 'marketplace-hedge',
@@ -7024,8 +7025,9 @@ const pathMarketplaceHedge = {
     alerts: [],
   },
   steps: [
-    // The scripted hedge service (a labelled test fixture) will answer one complete request with one package.
-    { id: 'hedge-script', action: 'hedge_script', script: { responses: [{ packages: [{ id: 'scripted-put', label: 'Scripted protective put', recommended: true, legs: [{ role: 'hedge', hedgeFamily: 'Options', kind: 'trade', action: 'buy', quantity: 10, option: KRV_PUT }] }] }] }, expect: {} },
+    // The scripted hedge service (a labelled test fixture) will answer one complete request with one package; it also
+    // supplies the Investment Strategy list (labelled "Test fixture (scripted, not Analytics Lab)").
+    { id: 'hedge-script', action: 'hedge_script', script: { strategies: [P2_STRATEGY], responses: [{ packages: [{ id: 'scripted-put', label: 'Scripted protective put', recommended: true, legs: [{ role: 'hedge', hedgeFamily: 'Options', kind: 'trade', action: 'buy', quantity: 10, option: KRV_PUT }] }] }] }, expect: {} },
     {
       // 1,000 shares at the ask 50.02 = 50,020, commission 5.00.
       id: 'buy', covers: ['marketplace trade'], action: 'ticket', ticketOf: 'equity', instrument: 'stock', side: 'buy', qty: 1000, as: 'core',
@@ -7049,11 +7051,11 @@ const pathMarketplaceHedge = {
       // The request made after the fill was incomplete (no context on the ticket); completed and saved, it is sent and the
       // scripted service answers. Receiving the recommendation executes nothing: no order, no fill, nothing pending.
       id: 'complete-request', covers: ['hedge popup', 'complete the request', 'recommendation never executes'], action: 'hedge_complete', lot: 'core',
-      investmentStrategy: P1_CONTEXT.investmentStrategy, holdingDays: 30, objective: 'downside_protection', // as the popup's Strategy picker sends a listed Strategy
+      investmentStrategy: { ...P2_STRATEGY, resolved: true, source: 'Test fixture (scripted, not Analytics Lab)' }, holdingDays: 30, objective: 'downside_protection', // a listed Strategy, as the popup's picker sends it
       expect: {
         result: {
           state: 'recommendation_ready', complete: true, missing: [], source: { kind: 'test-fixture', label: 'Test fixture (scripted, not Shaffer Hedge)' }, packages: ['scripted-put'], recommendedId: 'scripted-put',
-          investmentStrategy: { id: 'DEMO-IS-002', name: 'Core Equity', resolved: true }, holdingDays: 30, objective: 'downside_protection', scope: 'trade',
+          investmentStrategy: { id: 'TEST-IS-007', name: 'Core Equity', resolved: true }, holdingDays: 30, objective: 'downside_protection', scope: 'trade',
           primary: { instrument: 'stock', direction: 'long', quantity: 1000, status: 'filled' }, proposedProtection: [], linkedProtection: [], hedgesHeld: [],
         },
         events: [],

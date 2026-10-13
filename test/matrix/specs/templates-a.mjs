@@ -4115,4 +4115,61 @@ const shortCollar = {
   ],
 };
 
-export default [longTemplate, shortTemplate, protectivePut, protectiveCall, coveredCall, coveredPut, longCollar, shortCollar];
+// ---------------------------------------------------------------------------------------------
+// cash_secured_put
+// ---------------------------------------------------------------------------------------------
+const csp = (contracts, strike, extra = {}) => pageInput('cash_secured_put', { quantity: null, options: { expiration: '2026-03-20', strikes: { put: strike }, contracts }, ...extra });
+const cspPage = (contracts, strike, extra = {}) => ({ template: 'Cash-Secured Put', underlying: 'main', expiration: '2026-03-20', strikes: { 'Put strike': strike }, contracts, ...extra });
+
+const cashSecuredPut = {
+  template: 'cash_secured_put',
+  title: 'Cash-secured put on Kestrel Logistics: exercise cash reserved and put written as one package, partial fills, assignment, roll',
+  matrix: { ...TEMPLATE_MATRIX },
+  start: MAR(2),
+  settlementCheck: { lag: 1, holidays: [] },
+  book: book('Matrix template cash-secured put'),
+  instruments: { main: STOCK, put48: option('P', 48), put50: option('P', 50), put48apr: option('P', 48, '2026-04-17') },
+  quotes: {
+    main: { bid: 49.95, ask: 50.05, last: 50.00, bidSize: 10000, askSize: 10000 },
+    put48: { bid: 0.90, ask: 1.00, last: 0.95, bidSize: 3, askSize: 3 },
+    put50: { bid: 1.80, ask: 1.90, last: 1.85, bidSize: 1, askSize: 1 },
+    put48apr: { bid: 1.60, ask: 1.70, last: 1.65, bidSize: 100, askSize: 100 },
+  },
+  expectAtStart: startState(),
+  steps: [
+    { id: 'hedge-request', covers: ['hedge request'], action: 'hedge_request', input: csp(10, 48, CONTEXT), strategyPage: { ...PAGE_CONTEXT, ...cspPage(10, 48) }, expect: {} },
+    { id: 'open-partial', covers: ['open', 'reserve', 'partial fill'], action: 'package', as: 'core', instrument: 'put48', input: csp(10, 48), strategyPage: cspPage(10, 48), expect: {} },
+    { id: 'cancel-remainder', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'core', expect: {} },
+    { id: 'retry', covers: ['retry'], action: 'recover', how: 'retry', lot: 'core', expect: {} },
+    { id: 'limit-never-reached', covers: ['failed dependent leg'], action: 'package', as: 'limited', instrument: 'put50', input: csp(2, 50), strategyPage: cspPage(2, 50), editLegs: { 2: { orderType: 'limit', limitPrice: 2.5 } }, expect: {} },
+    { id: 'cancel-limited', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'limited', expect: {} },
+    { id: 'unwind', covers: ['unwind', 'reserve released'], action: 'recover', how: 'unwind', lot: 'limited', expect: {} },
+    { id: 'kept-partial', covers: ['partial fill'], action: 'package', as: 'kept', instrument: 'put50', input: csp(3, 50), strategyPage: cspPage(3, 50), expect: {} },
+    { id: 'cancel-kept', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'kept', expect: {} },
+    { id: 'accept-kept', covers: ['accept as it stands'], action: 'strategy_action', how: 'accept', lot: 'kept', expect: {} },
+    { id: 'deep-book', action: 'quote', instrument: 'put48', quote: { bid: 0.90, ask: 1.00, last: 0.95, bidSize: 100, askSize: 100 }, expect: {} },
+    { id: 'resize-up', covers: ['resize', 'increase'], action: 'resize', lot: 'core', factor: 1.2, expect: {} },
+    { id: 'roll', covers: ['roll'], action: 'roll', lot: 'core', newExpiration: '2026-04-17', expect: {} },
+    { id: 'next-day', covers: ['settlement'], action: 'clock', to: MAR(3), expect: {} },
+    { id: 'sweep-to-treasury', covers: ['transfer'], action: 'transfer', from: 'account', to: 'treasury', ccy: 'USD', amount: 120_000, expect: {} },
+    { id: 'cash-short-not-financed', covers: ['financing: not financed'], action: 'package', instrument: 'put48', input: csp(4, 48), strategyPage: cspPage(4, 48), status: 'blocked', reason: 'x', expect: { refused: 'short' } },
+    { id: 'funded-from-treasury', covers: ['financing: Treasury funding'], action: 'package', as: 'funded', instrument: 'put48', input: csp(4, 48, { financing: { mode: 'treasury' } }), strategyPage: cspPage(4, 48, { financing: { mode: 'treasury' } }), expect: {} },
+    { id: 'funded-by-loan', covers: ['financing: borrow'], action: 'package', as: 'levered', instrument: 'put48', contractAs: 'loan', input: csp(2, 48, { financing: { mode: 'loan', rateType: 'fixed', rate: 0.06 } }), strategyPage: cspPage(2, 48, { financing: { mode: 'loan', rate: 0.06 } }), expect: {} },
+    { id: 'settle-financed', covers: ['settlement'], action: 'clock', to: MAR(4), expect: {} },
+    { id: 'treasury-top-up', covers: ['transfer'], action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 50_000, expect: {} },
+    { id: 'close-levered', covers: ['close', 'repay', 'reserve released'], action: 'close', lot: 'levered', scope: 'strategy', expect: {} },
+    { id: 'settle-close-levered', covers: ['settlement'], action: 'clock', to: MAR(5), expect: {} },
+    { id: 'expiry-close', action: 'close_price', instrument: 'main', date: '2026-03-20', value: 49, expect: {} },
+    { id: 'expiry-quote', action: 'quote', instrument: 'main', quote: { bid: 48.95, ask: 49.05, last: 49.00, bidSize: 10000, askSize: 10000 }, expect: {} },
+    { id: 'expiry', covers: ['expiry', 'assignment', 'lapse'], action: 'clock', to: MAR(20, '17:30'), expect: {} },
+    { id: 'after-expiry-funded', covers: ['package state after expiry'], action: 'strategy_check', lot: 'funded', expect: {} },
+    { id: 'settle-expiry', covers: ['settlement'], action: 'clock', to: MAR(23), expect: {} },
+    { id: 'close-kept', covers: ['close'], action: 'close', lot: 'kept', instrument: 'main', scope: 'strategy', expect: {} },
+    { id: 'close-share', covers: ['reduce', 'close share'], action: 'close', lot: 'core', scope: 'strategy', percent: 50, expect: {} },
+    { id: 'close-exact', covers: ['reduce', 'close exact amount'], action: 'close', lot: 'core', instrument: 'put48apr', qty: 2, expect: {} },
+    { id: 'close-all', covers: ['close'], action: 'close', lot: 'core', scope: 'strategy', expect: {} },
+    { id: 'settle-closes', covers: ['settlement'], action: 'clock', to: MAR(24), expect: {} },
+  ],
+};
+
+export default [longTemplate, shortTemplate, protectivePut, protectiveCall, coveredCall, coveredPut, longCollar, shortCollar, cashSecuredPut];

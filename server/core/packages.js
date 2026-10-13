@@ -570,7 +570,7 @@ export function createPackages(app) {
       };
       cashEffect[ccy] = cash[ccy].netCash;
       if (interim > netted + 0.004) {
-        check('error', 'cash', `${unit.name} is short ${fmt(interim, ccy)} while the legs execute: netted over the whole package it needs ${fmt(required, ccy)} against ${fmt(have.availableToTrade + sources, ccy)}, but leg ${peak[ccy].leg} must find ${fmt(interim, ccy)} more than is free at that point (${{ short: 'the short sale\'s margin, collateral top-up and commission are needed before the premium of a later leg arrives', purchase: 'it is paid for before the premium of a later leg arrives' }[peak[ccy].why] || 'the cash reserved against a written option is needed before the premium of a later leg arrives'}). Add Treasury funding or a borrowing leg, or reduce the size.`);
+        check('error', 'cash', `${unit.name} is short ${fmt(interim, ccy)} while the legs execute: netted over the whole package it needs ${fmt(required, ccy)} against ${fmt(have.availableToTrade + sources, ccy)}, but leg ${peak[ccy].leg} must find ${fmt(interim, ccy)} more than is free at that point (${{ short: 'the short sale\'s margin, collateral top-up and commission are needed before the premium of a later leg arrives', purchase: 'it is paid for before the premium of a later leg arrives', reserve: 'the exercise cash is reserved before the premium of a later leg arrives' }[peak[ccy].why] || 'the cash reserved against a written option is needed before the premium of a later leg arrives'}). Add Treasury funding or a borrowing leg, or reduce the size.`);
       } else if (shortfall > 0.004) {
         check('error', 'cash', `${unit.name} is short ${fmt(shortfall, ccy)}: the package needs ${fmt(required, ccy)} (purchases ${fmt(money(n.purchases - (principalOut[ccy] || 0), ccy), ccy)}${principalOut[ccy] ? `, principal exchanged when the trade settles ${fmt(money(principalOut[ccy], ccy), ccy)}` : ''}, fees ${fmt(n.fees, ccy)}, margin and collateral ${fmt(n.margin + n.collateral, ccy)}, reserved ${fmt(n.reserved, ccy)}) and ${fmt(have.availableToTrade + sources, ccy)} is available. Add Treasury funding or a borrowing leg, convert currency, or reduce the size.`);
       }
@@ -698,8 +698,10 @@ export function createPackages(app) {
     // t1: a short sale of shares (with its securities borrow) is sequenced too: its margin, collateral top-up and
     // commission come out of free cash when it executes, before a later leg's premium arrives (a covered put).
     if (!trades.every((l) => l.inst && SIMPLE.has(l.inst.family) && (['buy', 'sell'].includes(l.action) || (l.action === 'sell_short' && l.inst.family === 'equity')))) return {};
-    if (legs.some((l) => !['trade', 'funding', 'loan', 'link', 'borrow_sec'].includes(l.kind))) return {};
-    const free = {}, low = {};
+    // t1: so is a cash reservation (a cash-secured put): the cash it sets aside leaves free cash before the put's premium
+    // arrives, and the put it secures then needs nothing more.
+    if (legs.some((l) => !['trade', 'funding', 'loan', 'link', 'borrow_sec', 'reserve'].includes(l.kind))) return {};
+    const free = {}, low = {}, secured = {};
     const move = (ccy, x, n, why = null) => {
       if (!(ccy in free)) { free[ccy] = ledger.cash(unit.id, ccy).availableToTrade; low[ccy] = { deficit: 0, leg: null, why: null }; }
       free[ccy] = money(free[ccy] + x, ccy);
@@ -722,12 +724,14 @@ export function createPackages(app) {
         if (l.kind === 'loan') { if (typeof r.cash === 'number') move(r.currency, r.cash, l.n); return; }
         if (l.kind === 'link') { const src = positions.get(l.sourcePositionId); if (src && !bucket.some((b) => b.inst.id === l.inst.id)) add(l.inst, Math.sign(src.qty) * l.qty); return; }
         if (l.kind === 'borrow_sec') return; // the borrow itself moves no cash
+        if (l.kind === 'reserve') { const rv = r.reserve; if (rv?.amount > 0) { secured[rv.ccy] = (secured[rv.ccy] || 0) + rv.amount; move(rv.ccy, -rv.amount, l.n, 'reserve'); } return; }
         if (typeof r.cash !== 'number') return; // no price: the netted figure already says the requirement is incomplete
         const before = reserve();
         add(l.inst, (BUY.has(l.action) ? 1 : -1) * l.qty);
         const after = reserve();
         const ccy = r.currency;
-        const held = (after[ccy] || 0) - (before[ccy] || 0);
+        let held = (after[ccy] || 0) - (before[ccy] || 0);
+        if (held > 0 && secured[ccy] > 0) { const use = Math.min(held, secured[ccy]); secured[ccy] -= use; held -= use; }
         if (l.action === 'sell_short') {
           // The proceeds are restricted collateral, never free cash: what leaves free cash is the top-up, margin and commission.
           const sc = r.shortCollateral || {};
