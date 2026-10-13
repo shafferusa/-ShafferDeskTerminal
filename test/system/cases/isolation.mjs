@@ -282,6 +282,7 @@ export default [
       }),
       browser: async (bz, c) => bz.cases.normalMode(bz, c),
     },
+    expectedBrowser: 'A Terminal in normal mode opened in the browser. The page has no demo band, no buttons to move the clock and no hedge fixture chip; MarketData and Analytics Lab both read "awaiting"; the clock in the top bar is the real time in New York; there is no Book, so the page asks for the first one and has no Book selector. "Normal mode" is created in that form with 1,000,000.00 of starting capital, which is then in Treasury. A stock registered by hand shows no price on the US Based Marketplace, which says it is awaiting the Shaffer data connection. The Data connection page has no Demo mode panel and no hedge fixture switch, and says the demo is a separate server with its own database. A price of 12.50 entered on its Manual entries tab then shows on the Marketplace row, labelled manual (the quote behind it is the manual observation). The page sent no request to any demo route throughout; behind the screen, moving the clock and a quote fixture are refused with 403 and store nothing; after a reload the clock is still the real time.',
   },
   {
     id: 'demo-normal-databases',
@@ -338,5 +339,6 @@ export default [
       },
       browser: async (bz, c) => bz.cases.demoNormalScreens(bz, c),
     },
+    expectedBrowser: 'One data directory, two servers: normal mode (terminal.db) and demo mode (demo.db), each open in its own browser tab. The normal tab has no demo band, the real time, and asks for its first Book; the demo tab has its demo band and lists only its seeded Demo Book. "Paper" is created in the normal tab\'s first-Book form: the demo tab\'s Books page does not list it. In the demo tab "Demo extra" is created from the Book selector (+ New Book) and the demo clock is moved with its "+1 week" button: every row of terminal.db is as before, and the normal tab (reloaded) still lists Paper alone with the real time. A deposit recorded in the normal tab\'s Deposit dialog leaves every row of demo.db as before. Both servers are stopped and started again: the normal tab lists Paper only, the demo tab Demo Book and Demo extra, and each server reopened its own file.',
   },
 ];

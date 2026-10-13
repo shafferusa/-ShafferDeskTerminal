@@ -55,13 +55,16 @@ export function createEngine(app) {
     }
     await app.data.refresh({ instruments: [...need.instruments.values()], closes: need.closes, rateCodes: [...need.rateCodes], rateRange: { from: need.rateFrom, to: today } });
     let done = 0;
-    for (const t of due) {
+    // A task of a position that waited on another task of the same position (a swap's maturity on its final payments)
+    // is looked at again in the pass in which that other task completed, not one pass later.
+    const completedFor = new Set();
+    const runOne = (t) => {
       const fresh = app.tasks.get(t.id);
-      if (!fresh || !['pending', 'blocked', 'failed'].includes(fresh.status)) continue;
+      if (!fresh || !['pending', 'blocked', 'failed'].includes(fresh.status)) return;
       const inst = fresh.instrument_id ? instruments.get(fresh.instrument_id) : null;
-      if (!inst) { app.tasks.fail(fresh.id, 'Instrument no longer exists'); continue; }
+      if (!inst) { app.tasks.fail(fresh.id, 'Instrument no longer exists'); return; }
       const plugin = app.products.get(inst.family);
-      if (!plugin.runTask) { app.tasks.fail(fresh.id, `No lifecycle handler for ${inst.family}`); continue; }
+      if (!plugin.runTask) { app.tasks.fail(fresh.id, `No lifecycle handler for ${inst.family}`); return; }
       try {
         db.tx(() => {
           const pos = fresh.position_id ? positions.get(fresh.position_id) : null;
@@ -70,6 +73,7 @@ export function createEngine(app) {
           if (r === 'done' || r?.done) {
             app.tasks.done(fresh.id, r?.eventId);
             done++;
+            if (fresh.position_id) completedFor.add(fresh.position_id);
             if (fresh.strategy_id) {
               app.packages.recomputeHolds(fresh.strategy_id);
               app.packages.refreshStrategy(fresh.strategy_id);
@@ -85,7 +89,10 @@ export function createEngine(app) {
         app.tasks.fail(fresh.id, `Lifecycle error: ${err.message}`);
         lastError = `${fresh.type}: ${err.message}`;
       }
-    }
+    };
+    for (const t of due) runOne(t);
+    // One more look, in this pass, at the blocked tasks of positions where another task has just completed.
+    for (const t of due) if (t.position_id && completedFor.has(t.position_id) && app.tasks.get(t.id)?.status === 'blocked') runOne(t);
     return done;
   }
 

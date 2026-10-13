@@ -413,4 +413,133 @@ const stablecoin = {
   ],
 };
 
-export default [cryptocurrency, stablecoin];
+// ---------------------------------------------------------------------------------------------
+// tokenized_asset
+// ---------------------------------------------------------------------------------------------
+// A token representing shares of a short-term US Treasury fund, traded 24x7 on a crypto platform. What the token
+// does not do by itself is recorded by hand on the position: the network fee of moving it to custody, and the
+// month's yield distribution of the underlying fund. A partial sale on the Saturday, the rest after.
+const tokenizedAsset = {
+  productId: 'tokenized_asset',
+  title: 'Meridian On-chain Treasury Token (MOTT): a tokenized short-term Treasury fund, income recorded by hand',
+  matrix: {
+    ...CRYPTO_TICKET,
+    manualInputs: ['income on the underlying (the fund\'s monthly distribution), recorded by hand as a manual cash flow (dividend) on the position', 'network (gas) fee of an on-chain transfer, recorded by hand as a manual cash flow (fee)'],
+    settlement: 'Same day on the 24x7 calendar (Book setting settlement.crypto = 0)',
+    lifecycle: 'No event automated; income of the underlying and network fees recorded by hand',
+    accounting: 'Average cost; commission in basis points expensed; manual income in dividends, network fee in fees; realized P&L on sale; valued at the last price',
+    collateral: 'None; no short sale',
+  },
+  start: '2026-03-04T15:00:00.000Z', // Wednesday 4 March 2026, 10:00 New York
+  settlementCheck: false, // 24x7 calendar: dates stated by hand
+  book: book('Matrix tokenized asset', { fee: { bps: 10 } }),
+  instruments: {
+    main: { productId: 'tokenized_asset', name: 'Meridian On-chain Treasury Token', symbol: 'MOTT', marketView: 'FOREIGN_CASH', venue: 'Kestrel Digital (crypto trading platform)', venueType: 'otc', venueCountry: 'US', issuer: 'Meridian Digital Funds LLC', domicile: 'US', underlyingGeo: 'US Treasury bills', tradingCcy: 'USD', terms: {} },
+  },
+  quotes: { main: { bid: 102.40, ask: 102.50, last: 102.45, bidSize: 100_000, askSize: 100_000 } },
+  expectAtStart: START_STATE,
+  steps: [
+    {
+      id: 'buy', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 1500, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 1500, estimate: 102.50, model: 'quoted-bid-ask', settleDate: '2026-03-04', calendar: 'ALLDAYS',
+            cash: -153_750, // 1,500 x 102.50
+            fees: 153.75 }], // 0.10% x 153,750
+          cash: { USD: { purchases: 153_750, fees: 153.75, required: 153_903.75, available: 500_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 1500, avgPrice: 102.50 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Bought 1,500 MOTT @ 102.50 USD', owner: 'account', date: '2026-03-04' },
+          { type: 'settlement.pay', summary: 'paid 153,903.75 USD from settled cash', cash: { USD: -153_903.75 }, date: '2026-03-04' },
+        ],
+        cash: { account: { USD: { settled: 346_096.25, unsettled: 0, availableToTrade: 346_096.25 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 1500, avgCost: 102.5, cost: 153_750, price: 102.45, value: 153_675, unrealized: -75, priceSource: 'Test fixture' }], // 1,500 x 102.45
+        holdings: { main: { long: 1500, short: 0, net: 1500 } },
+        pending: [],
+        pnl: { account: { realized: 0, dividends: 0, commissions: -153.75, fees: 0, unrealized: -75, total: -228.75 } },
+        nav: { account: 499_771.25, book: 999_771.25 },
+        balance: { account: { cash: 346_096.25, positions: 153_675, assets: 499_771.25, liabilities: 0, netAssets: 499_771.25 } },
+      },
+    },
+    {
+      id: 'network-fee-by-hand', covers: 'manual fee', action: 'cashflow', lot: 'lot', category: 'fee', amount: -12.40, note: 'Network fee for moving the tokens to the custody wallet',
+      expect: {
+        events: [{ type: 'manual.cashflow', summary: 'Manual fee on MOTT: paid 12.40 USD. Network fee for moving the tokens to the custody wallet', cash: { USD: -12.40 }, owner: 'account' }],
+        cash: { account: { USD: { settled: 346_083.85, availableToTrade: 346_083.85 } } },
+        pnl: { account: { fees: -12.40, total: -241.15 } },
+        nav: { account: 499_758.85, book: 999_758.85 },
+        balance: { account: { cash: 346_083.85, assets: 499_758.85, netAssets: 499_758.85 } },
+      },
+    },
+    {
+      id: 'saturday', action: 'clock', to: '2026-03-07T15:00:00.000Z', // Saturday 7 March, 10:00 New York
+      expect: {},
+    },
+    {
+      id: 'quote-saturday', action: 'quote', instrument: 'main', quote: { bid: 102.60, ask: 102.70, last: 102.65, bidSize: 100_000, askSize: 100_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1500, price: 102.65, value: 153_975, unrealized: 225 }], // 1,500 x 102.65 - 153,750
+        pnl: { account: { unrealized: 225, total: 58.85 } }, // -153.75 - 12.40 + 225
+        nav: { account: 500_058.85, book: 1_000_058.85 },
+        balance: { account: { positions: 153_975, assets: 500_058.85, netAssets: 500_058.85 } },
+      },
+    },
+    {
+      id: 'income-by-hand', covers: 'income', action: 'cashflow', lot: 'lot', category: 'dividend', amount: 512.30, note: 'Monthly distribution of the underlying fund, paid on-chain in USD',
+      expect: {
+        events: [{ type: 'manual.cashflow', summary: 'Manual dividend on MOTT: received 512.30 USD. Monthly distribution of the underlying fund, paid on-chain in USD', cash: { USD: 512.30 }, owner: 'account' }],
+        cash: { account: { USD: { settled: 346_596.15, availableToTrade: 346_596.15 } } },
+        pnl: { account: { dividends: 512.30, total: 571.15 } },
+        nav: { account: 500_571.15, book: 1_000_571.15 },
+        balance: { account: { cash: 346_596.15, assets: 500_571.15, netAssets: 500_571.15 } },
+      },
+    },
+    {
+      id: 'reduce-saturday', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 600, from: 'lot',
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'sell', qty: 600, estimate: 102.60, settleDate: '2026-03-07', calendar: 'ALLDAYS', cash: 61_560, fees: 61.56 }], // 600 x 102.60; 0.10%
+          cash: { USD: { proceeds: 61_560, fees: 61.56 } } },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 600, avgPrice: 102.60 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 600 MOTT @ 102.60 USD (realized 60.00 USD)', date: '2026-03-07' }, // cost out 153,750 x 600/1,500 = 61,500
+          { type: 'settlement.receive', summary: 'received 61,498.44 USD into settled cash', cash: { USD: 61_498.44 }, date: '2026-03-07' },
+        ],
+        cash: { account: { USD: { settled: 408_094.59, availableToTrade: 408_094.59 } } }, // 346,596.15 + 61,498.44
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 900, avgCost: 102.5, cost: 92_250, price: 102.65, value: 92_385, unrealized: 135 }],
+        holdings: { main: { long: 900, short: 0, net: 900 } },
+        pnl: { account: { realized: 60, commissions: -215.31, unrealized: 135, total: 479.59 } }, // 60 - 215.31 - 12.40 + 512.30 + 135
+        nav: { account: 500_479.59, book: 1_000_479.59 },
+        balance: { account: { cash: 408_094.59, positions: 92_385, assets: 500_479.59, netAssets: 500_479.59 } },
+      },
+    },
+    {
+      id: 'short-sale', covers: 'open', action: 'ticket', instrument: 'main', side: 'sell_short', qty: 100, borrow: { available: true, feeRate: 0.02 },
+      status: 'unsupported', reason: 'A digital asset has no securities borrow in the Terminal, so it cannot be sold short.',
+      expect: { refused: { engine: 'cannot be traded with "sell short"', api: 'cannot be traded with "sell short"', browser: 'does not offer "Sell short"' } },
+    },
+    {
+      id: 'close', covers: 'close', action: 'ticket', instrument: 'main', side: 'sell', qty: 900, from: 'lot',
+      expect: {
+        preview: { blocking: 0, legs: [{ action: 'sell', qty: 900, estimate: 102.60, settleDate: '2026-03-07', cash: 92_340, fees: 92.34 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 900, avgPrice: 102.60 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 900 MOTT @ 102.60 USD (realized 90.00 USD)' }, // 92,340 - 92,250
+          { type: 'settlement.receive', summary: 'received 92,247.66 USD into settled cash' },
+        ],
+        cash: { account: { USD: { settled: 500_342.25, unsettled: 0, availableToTrade: 500_342.25 } }, treasury: { USD: { settled: 500_000 } } },
+        positions: [],
+        holdings: { main: null },
+        pnl: { account: { realized: 150, commissions: -307.65, fees: -12.40, dividends: 512.30, unrealized: 0, total: 342.25 } },
+        nav: { account: 500_342.25, book: 1_000_342.25 },
+        balance: { account: { cash: 500_342.25, positions: null, assets: 500_342.25, liabilities: 0, netAssets: 500_342.25 } },
+      },
+    },
+  ],
+};
+
+export default [cryptocurrency, stablecoin, tokenizedAsset];
