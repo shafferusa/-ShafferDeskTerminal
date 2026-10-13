@@ -1321,7 +1321,7 @@ const electricity = {
   start: '2026-03-19T14:00:00.000Z', // Thursday 19 March 2026, 10:00 New York
   settlementCheck: { lag: 1, holidays: [] },
   book: { name: "Matrix electricity", reportingCcy: "USD", capital: [{ ccy: "USD", amount: 1_000_000 }, { ccy: "EUR", amount: 200_000 }], account: { name: "Alpha", funding: [{ ccy: "USD", amount: 500_000 }, { ccy: "EUR", amount: 200_000 }] }, settings: { fees: { spot: { perUnit: 0.05, minimum: 0, bps: 0 } }, fill: FILL, settlement: { spot: 2, foreignCash: 2 } } },
-  fx: { EUR/USD: 1.1 },
+  fx: { "EUR/USD": 1.1 },
   instruments: { main: { productId: "electricity", name: "German power, baseload, delivery Friday 20 March 2026 (day-ahead)", symbol: "DE-BASE-0320", marketView: "FOREIGN_CASH", venue: "EPEX SPOT day-ahead auction", venueType: "exchange", venueCountry: "FR", issuer: "EPEX SPOT SE", underlyingGeo: "Germany", tradingCcy: "EUR", terms: { settleDays: 1, quantityUnit: "MWh", priceUnits: "EUR per MWh" } } },
   quotes: { main: { bid: 92.1, ask: 92.4, last: 92.25, bidSize: 1_000_000, askSize: 1_000_000 } },
   expectAtStart: { cash: { account: { USD: { settled: 500_000, unsettled: 0 }, EUR: { settled: 200_000, unsettled: 0, availableToTrade: 200_000 } }, treasury: { USD: { settled: 500_000 } } }, positions: [], pending: [], openOrders: [], borrowings: [], nav: { account: 720_000, treasury: 500_000, book: 1_220_000 }, provisional: { account: false, book: false }, failed: { orders: 0, settlements: 0, lifecycle: 0 } },

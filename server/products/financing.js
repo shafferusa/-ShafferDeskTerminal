@@ -316,6 +316,23 @@ function fundingFailure(app, { book, unit, inst, pos, amount, what, detail }) {
 // Repo and reverse repo
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * What `qty` of a security is worth in `ccy` on `date`: quantity x price x multiplier, and for a debt security its dirty
+ * value (the interest accrued to `date` added to the clean value). { worth, clean, accrued, price } or { error }.
+ */
+function collateralWorth(app, coll, qty, ccy, date) {
+  const name = coll.symbol || coll.name;
+  const px = markOf(app.data.price(coll.id));
+  if (px === null || px === undefined) return { error: `${name} has no price, so the cash this collateral supports cannot be worked out. Enter a price for it first.` };
+  const fx = coll.trading_ccy === ccy ? { rate: 1 } : app.data.fx(coll.trading_ccy, ccy);
+  if (!fx) return { error: `No ${coll.trading_ccy}/${ccy} conversion rate is available, so the cash this collateral supports cannot be worked out.` };
+  const bond = coll.family === 'bond';
+  const factor = bond ? coll.terms.factor ?? 1 : 1;
+  const clean = qty * px * coll.multiplier * factor;
+  const ai = bond ? ((accruedPer100(coll.terms, date) ?? 0) * qty * factor) / 100 : 0;
+  return { price: px, clean: money(clean * fx.rate, ccy), accrued: money(ai * fx.rate, ccy), worth: money((clean + ai) * fx.rate, ccy) };
+}
+
 export const repo = {
   family: 'repo',
   kind: 'arrangement',
@@ -354,25 +371,23 @@ export const repo = {
   checkOpen(app, { unit, inst, action, qty, collateralPositionId }) {
     const out = [];
     const ccy = inst.trading_ccy;
+    const today = app.clock.today();
+    if (inst.terms.term === 'term' && inst.terms.endDate && inst.terms.endDate <= today) out.push(`The end date ${inst.terms.endDate} is not after today (${today}).`);
     if (action === 'repo') {
       const p = collateralPositionId ? app.positions.get(collateralPositionId) : null;
       if (!p || p.unit_id !== unit.id || p.instrument_id !== inst.terms.collateralInstrumentId) out.push('Choose a position in this Treasury/Account that holds the collateral security.');
       else if (app.positions.freeQty(p) < inst.terms.collateralQty - 1e-9) out.push(`Only ${fmtQty(app.positions.freeQty(p))} of the collateral is unencumbered; ${fmtQty(inst.terms.collateralQty)} is needed.`);
       else {
-        // The cash raised cannot exceed what the pledged collateral supports: its market value (with the accrued
-        // interest that belongs to the pledged quantity) less the haircut. Without a price, or without a conversion
-        // rate when the collateral is in another currency, that cannot be worked out and nothing is assumed.
+        // The cash raised cannot exceed what the pledged collateral supports: its market value (a debt security at its
+        // dirty value: clean price plus the interest accrued to today) less the haircut. Without a price, or without a
+        // conversion rate when the collateral is in another currency, that cannot be worked out and nothing is assumed.
         const coll = app.instruments.get(p.instrument_id);
-        const name = coll.symbol || coll.name;
         const cq = inst.terms.collateralQty;
-        const v = app.valuation.position({ ...p, qty: cq });
-        const fx = app.data.fx(coll.trading_ccy, ccy);
-        if (v.mv === null || v.mv === undefined) out.push(`${name} has no price, so the cash this collateral supports cannot be worked out. Enter a price for it first.`);
-        else if (!fx) out.push(`No ${coll.trading_ccy}/${ccy} conversion rate is available, so the cash this collateral supports cannot be worked out.`);
+        const w = collateralWorth(app, coll, cq, ccy, today);
+        if (w.error) out.push(w.error);
         else {
-          const worth = money((v.mv + (v.accrued || 0) * Math.min(1, cq / p.qty)) * fx.rate, ccy);
-          const max = money(worth * (1 - (inst.terms.haircut || 0)), ccy);
-          if (qty > max + 0.004) out.push(`The collateral supports at most ${fmt(max, ccy)}: ${fmtQty(cq)} ${name} is worth ${fmt(worth, ccy)} and the haircut is ${((inst.terms.haircut || 0) * 100).toFixed(2)}%; ${fmt(qty, ccy)} requested.`);
+          const max = money(w.worth * (1 - (inst.terms.haircut || 0)), ccy);
+          if (qty > max + 0.004) out.push(`The collateral supports at most ${fmt(max, ccy)}: ${fmtQty(cq)} ${coll.symbol || coll.name} is worth ${fmt(w.worth, ccy)}${w.accrued ? ` (${fmt(w.clean, ccy)} clean plus ${fmt(w.accrued, ccy)} accrued interest)` : ''} and the haircut is ${((inst.terms.haircut || 0) * 100).toFixed(2)}%; ${fmt(qty, ccy)} requested.`);
         }
       }
     } else {

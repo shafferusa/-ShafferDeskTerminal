@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 58.5% of the pass** (last milestone 2026-10-13T16:59Z, fix: C complete: shell fits 1024x768 and 390x844 in demo and normal mode, light and dark (sidebar drawer behind Menu))
+**Completeness: about 58.7% of the pass** (last milestone 2026-10-13T17:00Z, b2: abcp passes at engine, API and browser)
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 
