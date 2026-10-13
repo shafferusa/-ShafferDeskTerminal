@@ -537,17 +537,39 @@ const longTemplate = {
 // ---------------------------------------------------------------------------------------------
 // short
 // ---------------------------------------------------------------------------------------------
+// Two legs: a simulated securities borrow (financing) and the short sale that depends on it. The borrow is refused
+// while none is available. The short sale fills in parts against a small bid size and its remainder is cancelled and
+// retried; a short sale held at a limit never reached is cancelled and the package unwound (the borrow goes back); a
+// part-filled one is accepted as it stands. The first package is resized (a second borrow record) and later closed by a
+// share, an exact amount and in full; the cover returns what it frees of both borrows. Cash short is not financed
+// (blocked), funded from Treasury, or borrowed (a margin loan). Treasury tops the Account up for the covers and takes
+// the cash back at the end.
+//
+// Rules used here (Book short assumptions): the sale proceeds less commission settle T+1 into restricted cash; the
+// collateral is marked at each end of day (and when the proceeds arrive) to 102% of quantity x last price, topped up
+// from or released to settled cash; 30% of quantity x last price is reserved from free cash while the short is open
+// (set when the strategy instance changes, and again at each end of day). The borrow fee (1.8% a year, ACT/360, on
+// quantity x last price) accrues at each end of day from the day the sale settles, and to the day of a return at the
+// current price; it is paid when a borrow record is fully returned. A cover is paid from the short's restricted cash
+// first; until it settles, its payable is counted against free cash.
+const borrowed = (lot, qty, value, accrued = 0) => ({ instrument: 'borrow:main', lot, owner: 'account', direction: 'securities borrowed', qty, value, accrued });
+const shortPos = (lot, qty, value, unrealized, restrictedCash) => ({ instrument: 'main', lot, owner: 'account', direction: 'short', qty, avgCost: 50, cost: qty * 50, value, unrealized, restrictedCash });
+const fee = (n) => Array.from({ length: n }, () => ({ type: 'secloan.fee', instrument: 'borrow:main', dueDate: '2026-04-01', status: 'pending', owner: 'account' }));
+const secBorrow = (lot, qty, value, accrued, collateralCash) => ({ owner: 'account', family: 'secloan', instrument: 'main', lot, qty, value, rate: 0.018, accrued, costToDate: accrued, collateralCash, nextPayment: '2026-04-01' });
+const oversee = (lot, accrued, principal = null) => ({ owner: 'account', origin: 'account', lot, principal, ccy: 'USD', accrued });
+
 const shortTemplate = {
   template: 'short',
   title: 'Short template on Kestrel Logistics: simulated borrow linked to the short sale, partial fills, failures, financing, closure',
   matrix: {
     ...TEMPLATE_MATRIX,
     ticket: 'Strategies page (Short): Trading owner and intent, Instrument and template, Securities borrow, Order and funding; then the package preview (legs editable). The strategy instance drawer for Cancel working legs, Retry, Unwind, Accept, Resize and Close',
-    manualInputs: ['limit price of the short-sale leg, changed in the preview', 'investment Strategy, holding period and objective for the hedge request'],
-    settlement: 'Short-sale proceeds T+1 into restricted cash; covers T+1 paid from restricted cash first',
-    lifecycle: 'Borrow first, short sale after it; daily borrow fee; end-of-day collateral mark and margin reserve; cover returns the borrow',
-    accounting: 'Short position at negative cost; borrow fee under borrowing and funding expenses; the borrow is one record in the borrowing register',
-    collateral: 'Restricted cash 102% of market value; 30% margin reserve',
+    manualInputs: ['limit price of the short-sale leg, changed in the preview', 'investment Strategy, holding period and objective for the hedge request', 'loan rate when the shortfall is borrowed'],
+    automaticInputs: [...TEMPLATE_MATRIX.automaticInputs, 'borrow availability and fee (borrow fixture standing in for Shaffer MarketData)', 'collateral and margin from the Book short assumptions'],
+    settlement: 'Short-sale proceeds T+1 into restricted cash; covers T+1 paid from restricted cash; collateral marked when proceeds arrive and at each end of day',
+    lifecycle: 'Borrow first, short sale after it (dependent leg); borrow refused when unavailable; daily borrow fee from settlement; fee paid when a borrow record is fully returned; cover returns the borrow; resize borrows again; roll refused',
+    accounting: 'Short position at negative cost; realized on cover; borrow fee and loan interest under borrowing and funding expenses; each borrow is one record in the borrowing register, overseen by Treasury',
+    collateral: 'Restricted cash 102% of market value; 30% margin reserve; neither is buying power or withdrawable',
   },
   start: MAR(2),
   settlementCheck: { lag: 1, holidays: [] },
@@ -558,40 +580,514 @@ const shortTemplate = {
   borrow: { main: { available: true, quantity: 50_000, feeRate: 0.018 } },
   expectAtStart: startState(100_000),
   steps: [
-    { id: 'hedge-request', covers: ['hedge request'], action: 'hedge_request', input: pageInput('short', { quantity: 1500, ...CONTEXT, hedgeObjective: { type: 'upside_protection_short' } }), strategyPage: { ...PAGE_CONTEXT, objective: 'Upside protection for shorts', template: 'Short', underlying: 'main', quantity: 1500 }, expect: { result: {} } },
+    {
+      id: 'hedge-request', covers: ['hedge request'], action: 'hedge_request',
+      input: pageInput('short', { quantity: 1500, ...CONTEXT, hedgeObjective: { type: 'upside_protection_short' } }),
+      strategyPage: { ...PAGE_CONTEXT, objective: 'Upside protection for shorts', template: 'Short', underlying: 'main', quantity: 1500 },
+      expect: {
+        result: {
+          state: 'recommendation_ready', complete: true, missing: [], source: { kind: 'demo-fixture', label: 'Demo fixture, not Shaffer Hedge' },
+          investmentStrategy: { id: 'DEMO-IS-002', name: 'Core Equity', resolved: true }, holdingDays: 30, objective: 'upside_protection_short', scope: 'trade',
+          primary: { instrument: 'main', direction: 'short', quantity: 1500, status: 'proposed' }, proposedProtection: [], linkedProtection: [], hedgesHeld: [],
+        },
+      },
+    },
     { id: 'borrow-withdrawn', action: 'borrow', instrument: 'main', terms: { available: false, quantity: 0, feeRate: 0.018 }, expect: {} },
-    { id: 'borrow-unavailable', covers: ['borrow unavailable'], action: 'package', instrument: 'main', input: pageInput('short', { quantity: 1500 }), strategyPage: { template: 'Short', underlying: 'main', quantity: 1500 }, status: 'blocked', reason: 'No borrow is available, so the dependent short sale cannot be confirmed.', expect: { refused: 'is not available to borrow' } },
+    {
+      id: 'borrow-unavailable', covers: ['borrow unavailable'], action: 'package', instrument: 'main',
+      input: pageInput('short', { quantity: 1500 }), strategyPage: { template: 'Short', underlying: 'main', quantity: 1500 },
+      status: 'blocked', reason: 'No borrow is available, so the dependent short sale cannot be confirmed.',
+      expect: { refused: 'is not available to borrow' },
+    },
     { id: 'borrow-back', action: 'borrow', instrument: 'main', terms: { available: true, quantity: 50_000, feeRate: 0.018 }, expect: {} },
-    { id: 'open-partial', covers: ['open', 'borrow', 'partial fill'], action: 'package', as: 'core', instrument: 'main', input: pageInput('short', { quantity: 1500 }), strategyPage: { template: 'Short', underlying: 'main', quantity: 1500 }, expect: {} },
-    { id: 'cancel-remainder', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'core', expect: {} },
-    { id: 'retry', covers: ['retry'], action: 'recover', how: 'retry', lot: 'core', expect: {} },
-    { id: 'limit-never-reached', covers: ['failed dependent leg'], action: 'package', as: 'limited', instrument: 'main', input: pageInput('short', { quantity: 400 }), strategyPage: { template: 'Short', underlying: 'main', quantity: 400 }, editLegs: { 2: { orderType: 'limit', limitPrice: 52 } }, expect: {} },
-    { id: 'cancel-limited', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'limited', expect: {} },
-    { id: 'unwind', covers: ['unwind', 'return'], action: 'recover', how: 'unwind', lot: 'limited', expect: {} },
+    {
+      // 1,500 x 50.00 (the bid) = 75,000 of proceeds, restricted. Required: 15 commission + 2% top-up 1,500 + 30% margin 22,500.
+      id: 'open-partial', covers: ['open', 'borrow', 'partial fill'], action: 'package', as: 'core', instrument: 'main',
+      input: pageInput('short', { quantity: 1500 }), strategyPage: { template: 'Short', underlying: 'main', quantity: 1500 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: ['unbounded'], template: 'short',
+          legs: [
+            { kind: 'borrow_sec', action: 'borrow_sec', purpose: 'financing', instrument: 'main', qty: 1500, borrow: { available: true, feeRate: 0.018, dailyCost: 3.75, source: 'Test fixture' } }, // 1,500 x 50 x 0.018 / 360
+            { kind: 'trade', action: 'sell_short', purpose: 'primary', instrument: 'main', qty: 1500, estimate: 50, settleDate: '2026-03-03', cash: 75_000, fees: 15, dependsOn: [1], shortCollateral: { topUp: 1_500, marginHold: 22_500 } },
+          ],
+          cash: { USD: { purchases: 0, proceeds: 0, restrictedProceeds: 75_000, fees: 15, collateral: 1_500, margin: 22_500, required: 24_015, available: 100_000, shortfall: 0 } },
+        },
+        result: { status: 'partial', orders: [{ kind: 'borrow_sec', status: 'filled', filledQty: 1500 }, { kind: 'trade', action: 'sell_short', status: 'partial', qty: 1500, filledQty: 500, avgPrice: 50 }] },
+        events: [{ type: 'strategy.submitted', summary: 'Package submitted: Short KSTL (2 legs; open)' }, { type: 'secloan.borrow', summary: 'Borrowed 1,500 KSTL at a fee of 1.800% p.a.' }, { type: 'trade.fill', summary: 'Sold short 500 KSTL @ 50.00 USD' }, { type: 'trade.fill', summary: 'Sold short 500 KSTL @ 50.00 USD' }],
+        // Owed to the Account, as restricted cash: 2 x (500 x 50 - 5) = 49,990. Reserved: 0.30 x 1,000 x 50 = 15,000.
+        cash: { account: { USD: { settled: 100_000, unsettled: 49_990, receivable: 49_990, reserved: 15_000, restricted: 0, availableToTrade: 85_000, availableToWithdraw: 85_000 } } },
+        positions: [borrowed('core', 1500, 75_000), shortPos('core', -1000, -50_000, 0, 0)],
+        holdings: { main: { long: 0, short: 1000, net: -1000 } },
+        pending: [24_995, 24_995].map((amount) => ({ instrument: 'main', lot: 'core', owner: 'account', dueDate: '2026-03-03', amount, ccy: 'USD', into: 'cash.restricted' })),
+        openOrders: [{ instrument: 'main', kind: 'trade', action: 'sell_short', status: 'partial', qty: 1500, filledQty: 1000 }],
+        lifecycle: fee(1),
+        borrowings: [secBorrow('core', 1500, 75_000, 0, null)], // no collateral until the sale settles
+        pnl: { account: { realized: 0, commissions: -10, borrowFunding: 0, unrealized: 0, total: -10 }, book: { realized: 0, commissions: -10, unrealized: 0, total: -10 }, treasury: { total: 0 } },
+        nav: { account: 99_990, treasury: 900_000, book: 999_990 },
+        balance: {
+          account: { cash: 100_000, receivable: 49_990, positions: -50_000, assets: 99_990, liabilities: 0, netAssets: 99_990 },
+          book: { cash: 1_000_000, receivable: 49_990, positions: -50_000, assets: 999_990, liabilities: 0, netAssets: 999_990 },
+          treasury: { cash: 900_000, assets: 900_000, liabilities: 0, netAssets: 900_000 },
+        },
+        oversight: { accountBorrowings: [oversee('core', 0)], accounts: { account: { cashBorrowed: 0, fundingReceived: 100_000 } }, treasuryOwn: [] },
+      },
+    },
+    {
+      id: 'cancel-remainder', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'core',
+      expect: {
+        result: { status: 'attention', orders: [{ kind: 'borrow_sec', status: 'filled', filledQty: 1500 }, { kind: 'trade', action: 'sell_short', status: 'cancelled', qty: 1500, filledQty: 1000 }] },
+        events: [{ type: 'order.cancelled', summary: 'Leg 2 cancelled: sell short 1,500 KSTL. Cancelled by user (1,000 of 1,500 had filled and remains in place)' }],
+        openOrders: [], failed: { orders: 1 }, alerts: ['strategy.attention'],
+      },
+    },
+    {
+      // The 500 not sold are sold against the borrow already held (1,500 borrowed, 1,000 used).
+      id: 'retry', covers: ['retry'], action: 'recover', how: 'retry', lot: 'core',
+      expect: {
+        preview: { blocking: 0, intent: 'retry', legs: [{ kind: 'trade', action: 'sell_short', qty: 500, estimate: 50, cash: 25_000, fees: 5, shortCollateral: { topUp: 500, marginHold: 7_500 } }], cash: { USD: { restrictedProceeds: 25_000, fees: 5, collateral: 500, margin: 7_500, required: 8_005, available: 85_000, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell_short', status: 'filled', qty: 500, filledQty: 500, avgPrice: 50 }] },
+        events: [{ type: 'strategy.legs_added', summary: 'Legs added to Short KSTL (1 leg; retry)' }, { type: 'trade.fill', summary: 'Sold short 500 KSTL @ 50.00 USD' }],
+        cash: { account: { USD: { unsettled: 74_985, receivable: 74_985, reserved: 22_500, availableToTrade: 77_500, availableToWithdraw: 77_500 } } }, // 0.30 x 1,500 x 50
+        positions: [borrowed('core', 1500, 75_000), shortPos('core', -1500, -75_000, 0, 0)],
+        holdings: { main: { long: 0, short: 1500, net: -1500 } },
+        pending: [24_995, 24_995, 24_995].map((amount) => ({ lot: 'core', dueDate: '2026-03-03', amount, into: 'cash.restricted' })),
+        pnl: { account: { commissions: -15, total: -15 }, book: { commissions: -15, total: -15 } },
+        nav: { account: 99_985, book: 999_985 },
+        balance: { account: { receivable: 74_985, positions: -75_000, assets: 99_985, netAssets: 99_985 }, book: { receivable: 74_985, positions: -75_000, assets: 999_985, netAssets: 999_985 } },
+        alerts: [],
+      },
+    },
+    {
+      // The short-sale leg is changed in the preview to a limit of 52, above the bid: the borrow fills, the sale works.
+      id: 'limit-never-reached', covers: ['failed dependent leg'], action: 'package', as: 'limited', instrument: 'main',
+      input: pageInput('short', { quantity: 400 }), strategyPage: { template: 'Short', underlying: 'main', quantity: 400 }, editLegs: { 2: { orderType: 'limit', limitPrice: 52 } },
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'borrow_sec', qty: 400, borrow: { available: true, dailyCost: 1 } }, { kind: 'trade', action: 'sell_short', qty: 400, orderType: 'limit', executable: false, cash: 20_000, fees: 4, dependsOn: [1] }], cash: { USD: { restrictedProceeds: 20_000, fees: 4, collateral: 400, margin: 6_000, required: 6_404, available: 77_500, shortfall: 0 } } },
+        result: { status: 'partial', orders: [{ kind: 'borrow_sec', status: 'filled', filledQty: 400 }, { kind: 'trade', action: 'sell_short', status: 'working', filledQty: 0, reason: 'Limit not reached: executable price 50 is below the limit 52.' }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'secloan.borrow', summary: 'Borrowed 400 KSTL at a fee of 1.800% p.a.' }],
+        positions: [borrowed('core', 1500, 75_000), borrowed('limited', 400, 20_000), shortPos('core', -1500, -75_000, 0, 0)],
+        openOrders: [{ kind: 'trade', action: 'sell_short', status: 'working', qty: 400, filledQty: 0 }],
+        lifecycle: fee(2),
+        borrowings: [secBorrow('core', 1500, 75_000, 0, null), secBorrow('limited', 400, 20_000, 0, null)],
+        oversight: { accountBorrowings: [oversee('core', 0), oversee('limited', 0)] },
+      },
+    },
+    {
+      id: 'cancel-limited', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'limited',
+      expect: { result: { status: 'attention', orders: [{ kind: 'borrow_sec', status: 'filled' }, { kind: 'trade', status: 'cancelled', filledQty: 0 }] }, events: [{ type: 'order.cancelled', summary: 'Leg 2 cancelled: sell short 400 KSTL. Cancelled by user' }], openOrders: [], failed: { orders: 2 }, alerts: ['strategy.attention'] },
+    },
+    {
+      // Unwind gives back what filled: the borrow, returned the same day (no fee: it never supported a settled sale).
+      id: 'unwind', covers: ['unwind', 'return'], action: 'recover', how: 'unwind', lot: 'limited',
+      expect: {
+        preview: { blocking: 0, intent: 'unwind', legs: [{ kind: 'return_sec', action: 'return_sec', instrument: 'borrow:main', qty: 400 }] },
+        result: { status: 'closed', orders: [{ kind: 'return_sec', status: 'filled', filledQty: 400 }] },
+        events: [{ type: 'strategy.legs_added', summary: 'Legs added to Short KSTL (1 leg; unwind)' }, { type: 'secloan.return', summary: 'Returned 400 borrowed KSTL' }],
+        positions: [borrowed('core', 1500, 75_000), shortPos('core', -1500, -75_000, 0, 0)],
+        lifecycle: fee(1), borrowings: [secBorrow('core', 1500, 75_000, 0, null)], oversight: { accountBorrowings: [oversee('core', 0)] }, alerts: [],
+      },
+    },
     { id: 'thin-book', action: 'quote', instrument: 'main', quote: { bid: 50.00, ask: 50.10, last: 50.00, bidSize: 100, askSize: 100 }, expect: {} },
-    { id: 'kept-partial', covers: ['partial fill'], action: 'package', as: 'kept', instrument: 'main', input: pageInput('short', { quantity: 400 }), strategyPage: { template: 'Short', underlying: 'main', quantity: 400 }, expect: {} },
-    { id: 'cancel-kept', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'kept', expect: {} },
-    { id: 'accept-kept', covers: ['accept as it stands'], action: 'strategy_action', how: 'accept', lot: 'kept', expect: {} },
+    {
+      id: 'kept-partial', covers: ['partial fill'], action: 'package', as: 'kept', instrument: 'main',
+      input: pageInput('short', { quantity: 400 }), strategyPage: { template: 'Short', underlying: 'main', quantity: 400 },
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'borrow_sec', qty: 400 }, { kind: 'trade', action: 'sell_short', qty: 400, cash: 20_000, fees: 4, shortCollateral: { topUp: 400, marginHold: 6_000 } }], cash: { USD: { required: 6_404, available: 77_500 } } },
+        result: { status: 'partial', orders: [{ kind: 'borrow_sec', status: 'filled', filledQty: 400 }, { kind: 'trade', status: 'partial', qty: 400, filledQty: 100 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'secloan.borrow', summary: 'Borrowed 400 KSTL' }, { type: 'trade.fill', summary: 'Sold short 100 KSTL @ 50.00 USD' }, { type: 'trade.fill', summary: 'Sold short 100 KSTL @ 50.00 USD' }],
+        cash: { account: { USD: { unsettled: 84_983, receivable: 84_983, reserved: 25_500, availableToTrade: 74_500, availableToWithdraw: 74_500 } } }, // + 2 x (100 x 50 - 1); + 0.30 x 200 x 50
+        positions: [borrowed('core', 1500, 75_000), borrowed('kept', 400, 20_000), shortPos('core', -1500, -75_000, 0, 0), shortPos('kept', -200, -10_000, 0, 0)],
+        holdings: { main: { long: 0, short: 1700, net: -1700 } },
+        pending: [{ lot: 'kept', amount: 4_999 }, { lot: 'kept', amount: 4_999 }, ...[24_995, 24_995, 24_995].map((amount) => ({ lot: 'core', amount }))],
+        openOrders: [{ kind: 'trade', action: 'sell_short', status: 'partial', qty: 400, filledQty: 200 }],
+        lifecycle: fee(2), borrowings: [secBorrow('core', 1500, 75_000, 0, null), secBorrow('kept', 400, 20_000, 0, null)], oversight: { accountBorrowings: [oversee('core', 0), oversee('kept', 0)] },
+        pnl: { account: { commissions: -17, total: -17 }, book: { commissions: -17, total: -17 } },
+        nav: { account: 99_983, book: 999_983 },
+        balance: { account: { receivable: 84_983, positions: -85_000, assets: 99_983, netAssets: 99_983 }, book: { receivable: 84_983, positions: -85_000, assets: 999_983, netAssets: 999_983 } },
+      },
+    },
+    { id: 'cancel-kept', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'kept', expect: { result: { status: 'attention' }, events: [{ type: 'order.cancelled', summary: /200 of 400 had filled and remains in place/ }], openOrders: [], failed: { orders: 3 }, alerts: ['strategy.attention'] } },
+    { id: 'accept-kept', covers: ['accept as it stands'], action: 'strategy_action', how: 'accept', lot: 'kept', expect: { result: { status: 'open' }, events: [{ type: 'strategy.accepted', summary: 'Short KSTL: accepted as it stands with 1 leg unexecuted. The position no longer matches its template.' }], alerts: [] } },
     { id: 'deep-book', action: 'quote', instrument: 'main', quote: { bid: 50.00, ask: 50.10, last: 50.00, bidSize: 10000, askSize: 10000 }, expect: {} },
-    { id: 'resize-up', covers: ['resize', 'increase'], action: 'resize', lot: 'core', factor: 1.2, expect: {} },
-    { id: 'roll-refused', covers: ['roll'], action: 'roll', lot: 'core', newExpiration: '2026-04-17', status: 'unsupported', reason: 'A short holding of shares has no option or futures position to roll.', expect: { refused: { engine: 'holds no option or futures position to roll', api: 'holds no option or futures position to roll', browser: 'offers no Roll' } } },
-    { id: 'next-day', covers: ['settlement', 'collateral mark'], action: 'clock', to: MAR(3), expect: {} },
-    { id: 'cash-short-not-financed', covers: ['financing: not financed'], action: 'package', instrument: 'main', input: pageInput('short', { quantity: 5000 }), strategyPage: { template: 'Short', underlying: 'main', quantity: 5000 }, status: 'blocked', reason: 'blocked', expect: { refused: 'is short' } },
-    { id: 'funded-from-treasury', covers: ['financing: Treasury funding'], action: 'package', as: 'funded', instrument: 'main', input: pageInput('short', { quantity: 5000, financing: { mode: 'treasury' } }), strategyPage: { template: 'Short', underlying: 'main', quantity: 5000, financing: { mode: 'treasury' } }, expect: {} },
-    { id: 'fee-day', covers: ['borrow fee'], action: 'clock', to: MAR(3, '17:30'), expect: {} },
-    { id: 'settle-funded', covers: ['settlement', 'collateral mark'], action: 'clock', to: MAR(4), expect: {} },
-    { id: 'funded-by-loan', covers: ['financing: borrow'], action: 'package', as: 'levered', instrument: 'main', contractAs: 'loan', input: pageInput('short', { quantity: 600, financing: { mode: 'loan', rateType: 'fixed', rate: 0.06 } }), strategyPage: { template: 'Short', underlying: 'main', quantity: 600, financing: { mode: 'loan', rate: 0.06 } }, expect: {} },
-    { id: 'settle-levered', covers: ['settlement', 'borrow fee'], action: 'clock', to: MAR(5), expect: {} },
-    { id: 'treasury-top-up', covers: ['transfer'], action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 400_000, expect: {} },
-    { id: 'price-down', action: 'quote', instrument: 'main', quote: { bid: 48.00, ask: 48.10, last: 48.00, bidSize: 10000, askSize: 10000 }, expect: {} },
-    { id: 'close-share', covers: ['reduce', 'close share', 'return'], action: 'close', lot: 'core', scope: 'strategy', percent: 50, expect: {} },
-    { id: 'close-exact', covers: ['reduce', 'close exact amount', 'return'], action: 'close', lot: 'core', instrument: 'main', qty: 300, expect: {} },
-    { id: 'close-all', covers: ['close', 'return'], action: 'close', lot: 'core', scope: 'strategy', expect: {} },
-    { id: 'close-levered', covers: ['close', 'return'], action: 'close', lot: 'levered', scope: 'strategy', expect: {} },
-    { id: 'close-funded', covers: ['close', 'return'], action: 'close', lot: 'funded', scope: 'strategy', expect: {} },
-    { id: 'close-kept', covers: ['close', 'return'], action: 'close', lot: 'kept', scope: 'strategy', expect: {} },
-    { id: 'settle-covers', covers: ['settlement'], action: 'clock', to: MAR(6), expect: {} },
-    { id: 'return-to-treasury', covers: ['transfer'], action: 'transfer', from: 'account', to: 'treasury', ccy: 'USD', amount: 400_000, expect: {} },
+    {
+      // 1,500 x 1.2 = 1,800: a borrow of 300 more (its own record) and the short sale of 300 after it.
+      id: 'resize-up', covers: ['resize', 'increase', 'borrow'], action: 'resize', lot: 'core', factor: 1.2,
+      expect: {
+        preview: { blocking: 0, intent: 'resize', legs: [{ kind: 'borrow_sec', qty: 300, borrow: { dailyCost: 0.75 } }, { kind: 'trade', action: 'sell_short', qty: 300, cash: 15_000, fees: 3, dependsOn: [1], shortCollateral: { topUp: 300, marginHold: 4_500 } }], cash: { USD: { restrictedProceeds: 15_000, fees: 3, required: 4_803, available: 74_500 } } },
+        result: { status: 'open', orders: [{ kind: 'borrow_sec', status: 'filled', filledQty: 300 }, { kind: 'trade', action: 'sell_short', status: 'filled', filledQty: 300 }] },
+        events: [{ type: 'strategy.legs_added', summary: 'Legs added to Short KSTL (2 legs; resize)' }, { type: 'secloan.borrow', summary: 'Borrowed 300 KSTL' }, { type: 'trade.fill', summary: 'Sold short 300 KSTL @ 50.00 USD' }],
+        cash: { account: { USD: { unsettled: 99_980, receivable: 99_980, reserved: 30_000, availableToTrade: 70_000, availableToWithdraw: 70_000 } } },
+        positions: [borrowed('core', 300, 15_000), borrowed('core', 1500, 75_000), borrowed('kept', 400, 20_000), shortPos('core', -1800, -90_000, 0, 0), shortPos('kept', -200, -10_000, 0, 0)],
+        holdings: { main: { long: 0, short: 2000, net: -2000 } },
+        pending: [{ lot: 'kept', amount: 4_999 }, { lot: 'kept', amount: 4_999 }, { lot: 'core', amount: 14_997 }, ...[24_995, 24_995, 24_995].map((amount) => ({ lot: 'core', amount }))],
+        lifecycle: fee(3), borrowings: [secBorrow('core', 1500, 75_000, 0, null), secBorrow('core', 300, 15_000, 0, null), secBorrow('kept', 400, 20_000, 0, null)], oversight: { accountBorrowings: [oversee('core', 0), oversee('core', 0), oversee('kept', 0)] },
+        pnl: { account: { commissions: -20, total: -20 }, book: { commissions: -20, total: -20 } },
+        nav: { account: 99_980, book: 999_980 },
+        balance: { account: { receivable: 99_980, positions: -100_000, assets: 99_980, netAssets: 99_980 }, book: { receivable: 99_980, positions: -100_000, assets: 999_980, netAssets: 999_980 } },
+      },
+    },
+    { id: 'roll-refused', covers: ['roll'], action: 'roll', lot: 'core', newExpiration: '2026-04-17', status: 'unsupported', reason: 'A short holding of shares has no option or futures position to roll; the strategy instance offers no Roll.', expect: { refused: { engine: 'holds no option or futures position to roll', api: 'holds no option or futures position to roll', browser: 'offers no Roll' } } },
+    {
+      // The sales settle into restricted cash and the collateral is marked to 102%: core 1.02 x 1,800 x 50 = 91,800 against
+      // 89,982 received (top-up 1,818); kept 1.02 x 200 x 50 = 10,200 against 9,998 (202). No borrow fee yet.
+      id: 'next-day', covers: ['settlement', 'collateral mark'], action: 'clock', to: MAR(3),
+      expect: {
+        events: [
+          ...[1, 2, 3].map(() => ({ type: 'settlement.receive', summary: 'Settlement: received 24,995.00 USD into restricted cash' })),
+          { type: 'settlement.receive', summary: 'received 4,999.00 USD into restricted cash' }, { type: 'settlement.receive', summary: 'received 4,999.00 USD into restricted cash' }, { type: 'settlement.receive', summary: 'received 14,997.00 USD into restricted cash' },
+          { type: 'collateral.mark', summary: 'Short collateral on KSTL marked to market: posted 1,818.00 USD', cash: { USD: -1_818 } },
+          { type: 'collateral.mark', summary: 'Short collateral on KSTL marked to market: posted 202.00 USD', cash: { USD: -202 } },
+        ],
+        cash: { account: { USD: { settled: 97_980, unsettled: 0, receivable: 0, reserved: 30_000, restricted: 102_000, availableToTrade: 67_980, availableToWithdraw: 67_980 } } },
+        positions: [borrowed('core', 300, 15_000), borrowed('core', 1500, 75_000), borrowed('kept', 400, 20_000), shortPos('core', -1800, -90_000, 0, 91_800), shortPos('kept', -200, -10_000, 0, 10_200)],
+        pending: [],
+        borrowings: [secBorrow('core', 1500, 75_000, 0, 91_800), secBorrow('core', 300, 15_000, 0, 91_800), secBorrow('kept', 400, 20_000, 0, 10_200)],
+        balance: { account: { cash: 97_980, restricted: 102_000, receivable: null, assets: 99_980 }, book: { cash: 997_980, restricted: 102_000, receivable: null, assets: 999_980 } },
+      },
+    },
+    {
+      // 5,000 x 50 = 250,000: 30% margin 75,000 + 2% top-up 5,000 + 50 commission = 80,050 against 67,980 free: short 12,070.
+      id: 'cash-short-not-financed', covers: ['financing: not financed'], action: 'package', instrument: 'main',
+      input: pageInput('short', { quantity: 5000 }), strategyPage: { template: 'Short', underlying: 'main', quantity: 5000 },
+      status: 'blocked', reason: 'The short sale needs 80,050.00 of margin, collateral and commission and 67,980.00 is free; "Do not finance" leaves it blocked.',
+      expect: { refused: 'Alpha is short 12,070.00 USD' },
+    },
+    {
+      id: 'funded-from-treasury', covers: ['financing: Treasury funding'], action: 'package', as: 'funded', instrument: 'main',
+      input: pageInput('short', { quantity: 5000, financing: { mode: 'treasury' } }), strategyPage: { template: 'Short', underlying: 'main', quantity: 5000, financing: { mode: 'treasury' } },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [
+            { kind: 'funding', action: 'treasury_funding', purpose: 'financing', qty: 12_070, cash: 12_070 },
+            { kind: 'borrow_sec', purpose: 'financing', qty: 5000, borrow: { dailyCost: 12.5 } }, // 5,000 x 50 x 0.018 / 360
+            { kind: 'trade', action: 'sell_short', qty: 5000, estimate: 50, settleDate: '2026-03-04', cash: 250_000, fees: 50, dependsOn: [2, 1], shortCollateral: { topUp: 5_000, marginHold: 75_000 } }, // waits for its borrow and its funding
+          ],
+          cash: { USD: { restrictedProceeds: 250_000, fees: 50, collateral: 5_000, margin: 75_000, financingIn: 12_070, required: 80_050, available: 67_980, shortfall: 0, netCash: 12_020 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'funding', status: 'filled', filledQty: 12_070 }, { kind: 'borrow_sec', status: 'filled', filledQty: 5000 }, { kind: 'trade', action: 'sell_short', status: 'filled', filledQty: 5000, avgPrice: 50 }] },
+        events: [{ type: 'strategy.submitted', summary: 'Package submitted: Short KSTL (3 legs; open)' }, { type: 'transfer.funding', summary: 'Treasury funding: 12,070.00 USD from Treasury to Alpha (Funding for Short KSTL)', owner: 'treasury' }, { type: 'secloan.borrow', summary: 'Borrowed 5,000 KSTL' }, { type: 'trade.fill', summary: 'Sold short 5,000 KSTL @ 50.00 USD' }],
+        cash: {
+          account: { USD: { settled: 110_050, unsettled: 249_950, receivable: 249_950, reserved: 105_000, restricted: 102_000, availableToTrade: 5_050, availableToWithdraw: 5_050 } }, // 97,980 + 12,070; 30,000 + 75,000 reserved
+          treasury: { USD: { settled: 887_930, availableToTrade: 887_930 } },
+        },
+        positions: [borrowed('core', 300, 15_000), borrowed('core', 1500, 75_000), borrowed('funded', 5000, 250_000), borrowed('kept', 400, 20_000), shortPos('core', -1800, -90_000, 0, 91_800), shortPos('funded', -5000, -250_000, 0, 0), shortPos('kept', -200, -10_000, 0, 10_200)],
+        holdings: { main: { long: 0, short: 7000, net: -7000 } },
+        pending: [{ lot: 'funded', dueDate: '2026-03-04', amount: 249_950, into: 'cash.restricted' }],
+        lifecycle: fee(4),
+        borrowings: [secBorrow('core', 1500, 75_000, 0, 91_800), secBorrow('core', 300, 15_000, 0, 91_800), secBorrow('funded', 5000, 250_000, 0, null), secBorrow('kept', 400, 20_000, 0, 10_200)],
+        pnl: { account: { commissions: -70, total: -70 }, book: { commissions: -70, total: -70 }, treasury: { total: 0 } },
+        nav: { account: 112_000, treasury: 887_930, book: 999_930 }, // 110,050 + 102,000 + 249,950 - 350,000; internal funding is no Book P&L
+        balance: {
+          account: { cash: 110_050, restricted: 102_000, receivable: 249_950, positions: -350_000, assets: 112_000, netAssets: 112_000 },
+          book: { cash: 997_980, restricted: 102_000, receivable: 249_950, positions: -350_000, assets: 999_930, netAssets: 999_930 },
+          treasury: { cash: 887_930, assets: 887_930, netAssets: 887_930 },
+        },
+        oversight: { accountBorrowings: [oversee('core', 0), oversee('core', 0), oversee('funded', 0), oversee('kept', 0)], accounts: { account: { cashBorrowed: 0, fundingReceived: 112_070 } } },
+      },
+    },
+    {
+      // End of Tuesday: borrow fees for the shorts that settled today (on 50.00): 1,500 -> 3.75; 400 -> 1.00; 300 -> 0.75.
+      // 'funded' is marked with its proceeds still on the way: 1.02 x 5,000 x 50 = 255,000 against 249,950 to come: 5,050 posted.
+      id: 'fee-day', covers: ['borrow fee', 'collateral mark'], action: 'clock', to: MAR(3, '17:30'),
+      expect: {
+        events: [
+          { type: 'accrual.fee', summary: 'Borrow fee accrued on 1,500 KSTL: 3.75 USD' }, { type: 'accrual.fee', summary: 'Borrow fee accrued on 400 KSTL: 1.00 USD' }, { type: 'accrual.fee', summary: 'Borrow fee accrued on 300 KSTL: 0.75 USD' },
+          { type: 'collateral.mark', summary: 'Short collateral on KSTL marked to market: posted 5,050.00 USD', cash: { USD: -5_050 } },
+        ],
+        cash: { account: { USD: { settled: 105_000, restricted: 107_050, availableToTrade: 0, availableToWithdraw: 0 } } },
+        positions: [borrowed('core', 300, 15_000, -0.75), borrowed('core', 1500, 75_000, -3.75), borrowed('funded', 5000, 250_000), borrowed('kept', 400, 20_000, -1), shortPos('core', -1800, -90_000, 0, 91_800), shortPos('funded', -5000, -250_000, 0, 5_050), shortPos('kept', -200, -10_000, 0, 10_200)],
+        borrowings: [secBorrow('core', 1500, 75_000, 3.75, 91_800), secBorrow('core', 300, 15_000, 0.75, 91_800), secBorrow('funded', 5000, 250_000, 0, 5_050), secBorrow('kept', 400, 20_000, 1, 10_200)],
+        oversight: { accountBorrowings: [oversee('core', 3.75), oversee('core', 0.75), oversee('funded', 0), oversee('kept', 1)] },
+        pnl: { account: { borrowFunding: -5.5, total: -75.5 }, book: { borrowFunding: -5.5, total: -75.5 } },
+        nav: { account: 111_994.5, book: 999_924.5 },
+        balance: { account: { cash: 105_000, restricted: 107_050, accruedExpense: 5.5, liabilities: 5.5, netAssets: 111_994.5 }, book: { cash: 992_930, restricted: 107_050, accruedExpense: 5.5, liabilities: 5.5, netAssets: 999_924.5 } },
+      },
+    },
+    {
+      id: 'settle-funded', covers: ['settlement'], action: 'clock', to: MAR(4),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'Settlement: received 249,950.00 USD into restricted cash' }],
+        cash: { account: { USD: { unsettled: 0, receivable: 0, restricted: 357_000 } } },
+        positions: [borrowed('core', 300, 15_000, -0.75), borrowed('core', 1500, 75_000, -3.75), borrowed('funded', 5000, 250_000), borrowed('kept', 400, 20_000, -1), shortPos('core', -1800, -90_000, 0, 91_800), shortPos('funded', -5000, -250_000, 0, 255_000), shortPos('kept', -200, -10_000, 0, 10_200)],
+        pending: [],
+        borrowings: [secBorrow('core', 1500, 75_000, 3.75, 91_800), secBorrow('core', 300, 15_000, 0.75, 91_800), secBorrow('funded', 5000, 250_000, 0, 255_000), secBorrow('kept', 400, 20_000, 1, 10_200)],
+        balance: { account: { restricted: 357_000, receivable: null }, book: { restricted: 357_000, receivable: null } },
+      },
+    },
+    {
+      // 600 x 50 = 30,000: 9,000 margin + 600 top-up + 6 commission = 9,606 needed, nothing free: a margin loan of 9,606.00 at 6%.
+      id: 'funded-by-loan', covers: ['financing: borrow'], action: 'package', as: 'levered', instrument: 'main', contractAs: 'loan',
+      input: pageInput('short', { quantity: 600, financing: { mode: 'loan', rateType: 'fixed', rate: 0.06 } }), strategyPage: { template: 'Short', underlying: 'main', quantity: 600, financing: { mode: 'loan', rate: 0.06 } },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [
+            { kind: 'loan', action: 'borrow_cash', purpose: 'financing', qty: 9_606, cash: 9_606, dailyCost: 1.6, financing: { amount: 9_606, rateType: 'fixed', rate: 0.06, interestFrom: '2026-03-04' } }, // 9,606 x 0.06 / 360 = 1.601
+            { kind: 'borrow_sec', qty: 600, borrow: { dailyCost: 1.5 } },
+            { kind: 'trade', action: 'sell_short', qty: 600, cash: 30_000, fees: 6, settleDate: '2026-03-05', dependsOn: [2, 1] },
+          ],
+          cash: { USD: { restrictedProceeds: 30_000, fees: 6, collateral: 600, margin: 9_000, financingIn: 9_606, required: 9_606, available: 0, shortfall: 0, netCash: 9_600 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'loan', instrument: 'loan', status: 'filled', filledQty: 9_606 }, { kind: 'borrow_sec', status: 'filled', filledQty: 600 }, { kind: 'trade', action: 'sell_short', status: 'filled', filledQty: 600 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'loan.drawdown', summary: 'Borrowed 9,606.00 USD (margin, 6.000% fixed, open-ended)', cash: { USD: 9_606 } }, { type: 'secloan.borrow', summary: 'Borrowed 600 KSTL' }, { type: 'trade.fill', summary: 'Sold short 600 KSTL @ 50.00 USD' }],
+        cash: { account: { USD: { settled: 114_606, unsettled: 29_994, receivable: 29_994, reserved: 114_000, availableToTrade: 606, availableToWithdraw: 606, borrowed: 9_606 } } },
+        positions: [borrowed('core', 300, 15_000, -0.75), borrowed('core', 1500, 75_000, -3.75), borrowed('funded', 5000, 250_000), borrowed('kept', 400, 20_000, -1), borrowed('levered', 600, 30_000),
+          { instrument: 'loan', lot: 'levered', owner: 'account', direction: 'borrowed', qty: -9_606, carrying: -9_606 },
+          shortPos('core', -1800, -90_000, 0, 91_800), shortPos('funded', -5000, -250_000, 0, 255_000), shortPos('kept', -200, -10_000, 0, 10_200), shortPos('levered', -600, -30_000, 0, 0)],
+        holdings: { main: { long: 0, short: 7600, net: -7600 } },
+        pending: [{ lot: 'levered', dueDate: '2026-03-05', amount: 29_994, into: 'cash.restricted' }],
+        lifecycle: [{ type: 'loan.interest', instrument: 'loan', dueDate: '2026-04-01', status: 'pending' }, ...fee(5)],
+        borrowings: [{ owner: 'account', family: 'loan', lot: 'levered', principal: 9_606, rate: 0.06, accrued: 0 }, secBorrow('core', 1500, 75_000, 3.75, 91_800), secBorrow('core', 300, 15_000, 0.75, 91_800), secBorrow('funded', 5000, 250_000, 0, 255_000), secBorrow('kept', 400, 20_000, 1, 10_200), secBorrow('levered', 600, 30_000, 0, null)],
+        oversight: { accountBorrowings: [oversee('core', 3.75), oversee('core', 0.75), oversee('funded', 0), oversee('kept', 1), oversee('levered', 0, 9_606), oversee('levered', 0)], accounts: { account: { cashBorrowed: 9_606, fundingReceived: 112_070 } } },
+        pnl: { account: { commissions: -76, total: -81.5 }, book: { commissions: -76, total: -81.5 } },
+        nav: { account: 111_988.5, book: 999_918.5 },
+        balance: {
+          account: { cash: 114_606, receivable: 29_994, positions: -380_000, borrowed: 9_606, assets: 121_600, liabilities: 9_611.5, netAssets: 111_988.5 },
+          book: { cash: 1_002_536, receivable: 29_994, positions: -380_000, borrowed: 9_606, assets: 1_009_530, liabilities: 9_611.5, netAssets: 999_918.5 },
+        },
+      },
+    },
+    {
+      // Wednesday's end of day: fees on the shorts settled by then, on 50.00 (core 3.75 + 0.75, kept 1.00, funded 12.50).
+      // The loan's interest is accrued as of the business date, from its drawdown on Wednesday: none yet.
+      id: 'settle-levered', covers: ['settlement', 'borrow fee', 'collateral mark'], action: 'clock', to: MAR(5),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'Settlement: received 29,994.00 USD into restricted cash' },
+          { type: 'accrual.fee', summary: 'Borrow fee accrued on 1,500 KSTL: 3.75 USD' }, { type: 'accrual.fee', summary: 'Borrow fee accrued on 400 KSTL: 1.00 USD' }, { type: 'accrual.fee', summary: 'Borrow fee accrued on 300 KSTL: 0.75 USD' }, { type: 'accrual.fee', summary: 'Borrow fee accrued on 5,000 KSTL: 12.50 USD' },
+          { type: 'collateral.mark', summary: 'Short collateral on KSTL marked to market: posted 606.00 USD', cash: { USD: -606 } }, // 1.02 x 600 x 50 = 30,600 against 29,994
+        ],
+        cash: { account: { USD: { settled: 114_000, unsettled: 0, receivable: 0, restricted: 387_600, availableToTrade: 0, availableToWithdraw: 0 } } },
+        positions: [borrowed('core', 300, 15_000, -1.5), borrowed('core', 1500, 75_000, -7.5), borrowed('funded', 5000, 250_000, -12.5), borrowed('kept', 400, 20_000, -2), borrowed('levered', 600, 30_000),
+          { instrument: 'loan', lot: 'levered', qty: -9_606 }, shortPos('core', -1800, -90_000, 0, 91_800), shortPos('funded', -5000, -250_000, 0, 255_000), shortPos('kept', -200, -10_000, 0, 10_200), shortPos('levered', -600, -30_000, 0, 30_600)],
+        pending: [],
+        borrowings: [{ family: 'loan', lot: 'levered', principal: 9_606, accrued: 0 }, secBorrow('core', 1500, 75_000, 7.5, 91_800), secBorrow('core', 300, 15_000, 1.5, 91_800), secBorrow('funded', 5000, 250_000, 12.5, 255_000), secBorrow('kept', 400, 20_000, 2, 10_200), secBorrow('levered', 600, 30_000, 0, 30_600)],
+        oversight: { accountBorrowings: [oversee('core', 7.5), oversee('core', 1.5), oversee('funded', 12.5), oversee('kept', 2), oversee('levered', 0, 9_606), oversee('levered', 0)] },
+        pnl: { account: { borrowFunding: -23.5, total: -99.5 }, book: { borrowFunding: -23.5, total: -99.5 } },
+        nav: { account: 111_970.5, book: 999_900.5 },
+        balance: { account: { cash: 114_000, restricted: 387_600, receivable: null, accruedExpense: 23.5, liabilities: 9_629.5, netAssets: 111_970.5 }, book: { cash: 1_001_930, restricted: 387_600, receivable: null, accruedExpense: 23.5, liabilities: 9_629.5, netAssets: 999_900.5 } },
+      },
+    },
+    {
+      id: 'treasury-top-up', covers: ['transfer'], action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 400_000,
+      expect: {
+        events: [{ type: 'transfer.funding', summary: 'Treasury funding: 400,000.00 USD from Treasury to Alpha', owner: 'treasury' }],
+        cash: { account: { USD: { settled: 514_000, availableToTrade: 400_000, availableToWithdraw: 400_000 } }, treasury: { USD: { settled: 487_930, availableToTrade: 487_930 } } },
+        nav: { account: 511_970.5, treasury: 487_930 },
+        balance: { account: { cash: 514_000, assets: 521_600, netAssets: 511_970.5 }, treasury: { cash: 487_930, assets: 487_930, netAssets: 487_930 } },
+        oversight: { accounts: { account: { fundingReceived: 512_070 } } },
+      },
+    },
+    {
+      id: 'price-down', action: 'quote', instrument: 'main', quote: { bid: 48.00, ask: 48.10, last: 48.00, bidSize: 10000, askSize: 10000 },
+      expect: {
+        positions: [borrowed('core', 300, 14_400, -1.5), borrowed('core', 1500, 72_000, -7.5), borrowed('funded', 5000, 240_000, -12.5), borrowed('kept', 400, 19_200, -2), borrowed('levered', 600, 28_800),
+          { instrument: 'loan', lot: 'levered', qty: -9_606 },
+          shortPos('core', -1800, -86_400, 3_600, 91_800), shortPos('funded', -5000, -240_000, 10_000, 255_000), shortPos('kept', -200, -9_600, 400, 10_200), shortPos('levered', -600, -28_800, 1_200, 30_600)], // (50 - 48) x quantity
+        borrowings: [{ family: 'loan', principal: 9_606 }, secBorrow('core', 1500, 72_000, 7.5, 91_800), secBorrow('core', 300, 14_400, 1.5, 91_800), secBorrow('funded', 5000, 240_000, 12.5, 255_000), secBorrow('kept', 400, 19_200, 2, 10_200), secBorrow('levered', 600, 28_800, 0, 30_600)],
+        pnl: { account: { unrealized: 15_200, total: 15_100.5 }, book: { unrealized: 15_200, total: 15_100.5 } },
+        nav: { account: 527_170.5, book: 1_015_100.5 },
+        balance: { account: { positions: -364_800, assets: 536_800, netAssets: 527_170.5 }, book: { positions: -364_800, assets: 1_024_730, netAssets: 1_015_100.5 } },
+      },
+    },
+    {
+      // Half of 'core': cover 900 at 48.10 (the ask) and give back half of each borrow record (750 and 150) once it fills.
+      // Realized 900 x (50 - 48.10) = 1,710. Each partly returned borrow has its fee accrued to today, on 48.00:
+      // 1,500 x 48 x 0.018 / 360 = 3.60; 300 x 48 x 0.018 / 360 = 0.72. The cover is paid from the short's restricted cash.
+      id: 'close-share', covers: ['reduce', 'close share', 'return'], action: 'close', lot: 'core', scope: 'strategy', percent: 50,
+      expect: {
+        preview: {
+          blocking: 0, errors: [], notes: ['arrangement', 'arrangement'],
+          legs: [
+            { kind: 'trade', action: 'buy_to_cover', instrument: 'main', qty: 900, estimate: 48.1, settleDate: '2026-03-06', cash: -43_290, fees: 9 },
+            { kind: 'return_sec', instrument: 'borrow:main', qty: 750, dependsOn: [1] }, { kind: 'return_sec', instrument: 'borrow:main', qty: 150, dependsOn: [1] },
+          ],
+          cash: { USD: { purchases: 43_290, fees: 9, coverCollateral: 43_299, required: 43_299, available: 400_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ action: 'buy_to_cover', status: 'filled', filledQty: 900, avgPrice: 48.1 }, { kind: 'return_sec', status: 'filled', filledQty: 750 }, { kind: 'return_sec', status: 'filled', filledQty: 150 }] },
+        events: [
+          { type: 'strategy.legs_added', summary: 'Legs added to Short KSTL (3 legs; close)' }, { type: 'trade.fill', summary: 'Bought to cover 900 KSTL @ 48.10 USD (realized 1,710.00 USD)' },
+          { type: 'accrual.fee', summary: 'Borrow fee accrued on 1,500 KSTL: 3.60 USD' }, { type: 'secloan.return', summary: 'Returned 750 borrowed KSTL' },
+          { type: 'accrual.fee', summary: 'Borrow fee accrued on 300 KSTL: 0.72 USD' }, { type: 'secloan.return', summary: 'Returned 150 borrowed KSTL' },
+        ],
+        // Reserved: core now 0.30 x 900 x 48 = 12,960, the others still on Wednesday's 50.00 (75,000 + 3,000 + 9,000).
+        cash: { account: { USD: { unsettled: -43_299, payable: 43_299, reserved: 99_960, availableToTrade: 370_741, availableToWithdraw: 370_741 } } },
+        positions: [borrowed('core', 150, 7_200, -2.22), borrowed('core', 750, 36_000, -11.1), borrowed('funded', 5000, 240_000, -12.5), borrowed('kept', 400, 19_200, -2), borrowed('levered', 600, 28_800),
+          { instrument: 'loan', lot: 'levered', qty: -9_606 },
+          shortPos('core', -900, -43_200, 1_800, 91_800), shortPos('funded', -5000, -240_000, 10_000, 255_000), shortPos('kept', -200, -9_600, 400, 10_200), shortPos('levered', -600, -28_800, 1_200, 30_600)],
+        holdings: { main: { long: 0, short: 6700, net: -6700 } },
+        pending: [{ lot: 'core', dueDate: '2026-03-06', amount: -43_299, into: 'cash.restricted' }],
+        borrowings: [{ family: 'loan', principal: 9_606 }, secBorrow('core', 750, 36_000, 11.1, 91_800), secBorrow('core', 150, 7_200, 2.22, 91_800), secBorrow('funded', 5000, 240_000, 12.5, 255_000), secBorrow('kept', 400, 19_200, 2, 10_200), secBorrow('levered', 600, 28_800, 0, 30_600)],
+        oversight: { accountBorrowings: [oversee('core', 11.1), oversee('core', 2.22), oversee('funded', 12.5), oversee('kept', 2), oversee('levered', 0, 9_606), oversee('levered', 0)] },
+        pnl: { account: { realized: 1_710, commissions: -85, borrowFunding: -27.82, unrealized: 13_400, total: 14_997.18 }, book: { realized: 1_710, commissions: -85, borrowFunding: -27.82, unrealized: 13_400, total: 14_997.18 } },
+        nav: { account: 527_067.18, book: 1_014_997.18 },
+        balance: {
+          account: { payable: 43_299, positions: -321_600, accruedExpense: 27.82, assets: 580_000, liabilities: 52_932.82, netAssets: 527_067.18 },
+          book: { payable: 43_299, positions: -321_600, accruedExpense: 27.82, assets: 1_067_930, liabilities: 52_932.82, netAssets: 1_014_997.18 },
+        },
+      },
+    },
+    {
+      // Exactly 300 of the 900: the cover returns as much of a borrow with it (the first record, 750 -> 450). Realized 570.
+      id: 'close-exact', covers: ['reduce', 'close exact amount', 'return'], action: 'close', lot: 'core', instrument: 'main', qty: 300,
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'buy_to_cover', qty: 300, estimate: 48.1, cash: -14_430, fees: 3 }, { kind: 'return_sec', qty: 300, dependsOn: [1] }], cash: { USD: { purchases: 14_430, fees: 3, coverCollateral: 14_433, required: 14_433, available: 370_741, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'buy_to_cover', status: 'filled', filledQty: 300 }, { kind: 'return_sec', status: 'filled', filledQty: 300 }] },
+        events: [{ type: 'strategy.legs_added', summary: 'Legs added to Short KSTL (2 legs; close)' }, { type: 'trade.fill', summary: 'Bought to cover 300 KSTL @ 48.10 USD (realized 570.00 USD)' }, { type: 'secloan.return', summary: 'Returned 300 borrowed KSTL' }],
+        cash: { account: { USD: { unsettled: -57_732, payable: 57_732, reserved: 95_640, availableToTrade: 360_628, availableToWithdraw: 360_628 } } }, // core reserve 0.30 x 600 x 48 = 8,640
+        positions: [borrowed('core', 150, 7_200, -2.22), borrowed('core', 450, 21_600, -11.1), borrowed('funded', 5000, 240_000, -12.5), borrowed('kept', 400, 19_200, -2), borrowed('levered', 600, 28_800),
+          { instrument: 'loan', lot: 'levered', qty: -9_606 },
+          shortPos('core', -600, -28_800, 1_200, 91_800), shortPos('funded', -5000, -240_000, 10_000, 255_000), shortPos('kept', -200, -9_600, 400, 10_200), shortPos('levered', -600, -28_800, 1_200, 30_600)],
+        holdings: { main: { long: 0, short: 6400, net: -6400 } },
+        pending: [{ lot: 'core', amount: -43_299 }, { lot: 'core', amount: -14_433 }],
+        borrowings: [{ family: 'loan', principal: 9_606 }, secBorrow('core', 450, 21_600, 11.1, 91_800), secBorrow('core', 150, 7_200, 2.22, 91_800), secBorrow('funded', 5000, 240_000, 12.5, 255_000), secBorrow('kept', 400, 19_200, 2, 10_200), secBorrow('levered', 600, 28_800, 0, 30_600)],
+        pnl: { account: { realized: 2_280, commissions: -88, unrealized: 12_800, total: 14_964.18 }, book: { realized: 2_280, commissions: -88, unrealized: 12_800, total: 14_964.18 } },
+        nav: { account: 527_034.18, book: 1_014_964.18 },
+        balance: { account: { payable: 57_732, positions: -307_200, assets: 594_400, liabilities: 67_365.82, netAssets: 527_034.18 }, book: { payable: 57_732, positions: -307_200, assets: 1_082_330, liabilities: 67_365.82, netAssets: 1_014_964.18 } },
+      },
+    },
+    {
+      // The rest of 'core': cover 600 and return both records in full; each pays its fee (11.10 and 2.22). Realized 1,140.
+      id: 'close-all', covers: ['close', 'return', 'borrow fee'], action: 'close', lot: 'core', scope: 'strategy',
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'buy_to_cover', qty: 600, cash: -28_860, fees: 6 }, { kind: 'return_sec', qty: 450, dependsOn: [1] }, { kind: 'return_sec', qty: 150, dependsOn: [1] }], cash: { USD: { purchases: 28_860, fees: 6, coverCollateral: 28_866, required: 28_866, available: 360_628 } } },
+        result: { status: 'closed', orders: [{ action: 'buy_to_cover', status: 'filled', filledQty: 600 }, { kind: 'return_sec', status: 'filled', filledQty: 450 }, { kind: 'return_sec', status: 'filled', filledQty: 150 }] },
+        events: [
+          { type: 'strategy.legs_added', summary: 'Legs added to Short KSTL (3 legs; close)' }, { type: 'trade.fill', summary: 'Bought to cover 600 KSTL @ 48.10 USD (realized 1,140.00 USD)' },
+          { type: 'secloan.return', summary: 'Returned 450 borrowed KSTL' }, { type: 'interest.payment', summary: 'Borrow fee paid on Borrow of KSTL (Short KSTL): 11.10 USD', cash: { USD: -11.1 } },
+          { type: 'secloan.return', summary: 'Returned 150 borrowed KSTL' }, { type: 'interest.payment', summary: 'Borrow fee paid on Borrow of KSTL (Short KSTL): 2.22 USD', cash: { USD: -2.22 } },
+        ],
+        cash: { account: { USD: { settled: 513_986.68, unsettled: -86_598, payable: 86_598, reserved: 87_000, availableToTrade: 340_388.68, availableToWithdraw: 340_388.68 } } },
+        positions: [borrowed('funded', 5000, 240_000, -12.5), borrowed('kept', 400, 19_200, -2), borrowed('levered', 600, 28_800), { instrument: 'loan', lot: 'levered', qty: -9_606 },
+          shortPos('funded', -5000, -240_000, 10_000, 255_000), shortPos('kept', -200, -9_600, 400, 10_200), shortPos('levered', -600, -28_800, 1_200, 30_600)],
+        holdings: { main: { long: 0, short: 5800, net: -5800 } },
+        pending: [{ lot: 'core', amount: -43_299 }, { lot: 'core', amount: -28_866 }, { lot: 'core', amount: -14_433 }],
+        lifecycle: [{ type: 'loan.interest', instrument: 'loan', dueDate: '2026-04-01' }, ...fee(3)],
+        borrowings: [{ family: 'loan', principal: 9_606 }, secBorrow('funded', 5000, 240_000, 12.5, 255_000), secBorrow('kept', 400, 19_200, 2, 10_200), secBorrow('levered', 600, 28_800, 0, 30_600)],
+        oversight: { accountBorrowings: [oversee('funded', 12.5), oversee('kept', 2), oversee('levered', 0, 9_606), oversee('levered', 0)] },
+        pnl: { account: { realized: 3_420, commissions: -94, unrealized: 11_600, total: 14_898.18 }, book: { realized: 3_420, commissions: -94, unrealized: 11_600, total: 14_898.18 } },
+        nav: { account: 526_968.18, book: 1_014_898.18 },
+        balance: {
+          account: { cash: 513_986.68, payable: 86_598, positions: -278_400, accruedExpense: 14.5, assets: 623_186.68, liabilities: 96_218.5, netAssets: 526_968.18 },
+          book: { cash: 1_001_916.68, payable: 86_598, positions: -278_400, accruedExpense: 14.5, assets: 1_111_116.68, liabilities: 96_218.5, netAssets: 1_014_898.18 },
+        },
+      },
+    },
+    {
+      // Cover 600, repay the loan with interest to today (one day, 9,606 x 0.06 / 360 = 1.601 -> 1.60) from the settled cash
+      // Treasury provided, and return the borrow after the cover, paying its fee for today (600 x 48 x 0.018 / 360 = 1.44).
+      id: 'close-levered', covers: ['close', 'repay', 'return'], action: 'close', lot: 'levered', scope: 'strategy',
+      expect: {
+        preview: {
+          blocking: 0,
+          legs: [
+            { kind: 'trade', action: 'buy_to_cover', qty: 600, cash: -28_860, fees: 6 },
+            { kind: 'repay', action: 'repay_cash', instrument: 'loan', qty: 9_606, cash: -9_607.6, financing: { principal: 9_606, interest: 1.6, full: true, interestThrough: '2026-03-05' } },
+            { kind: 'return_sec', qty: 600, dependsOn: [1] },
+          ],
+          cash: { USD: { purchases: 28_860, fees: 6, financingOut: 9_607.6, coverCollateral: 28_866, required: 38_473.6, available: 340_388.68, shortfall: 0 } },
+        },
+        result: { status: 'closed', orders: [{ action: 'buy_to_cover', status: 'filled', filledQty: 600 }, { kind: 'repay', status: 'filled', filledQty: 9_606 }, { kind: 'return_sec', status: 'filled', filledQty: 600 }] },
+        events: [
+          { type: 'strategy.legs_added', summary: 'Legs added to Short KSTL (3 legs; close)' }, { type: 'trade.fill', summary: 'Bought to cover 600 KSTL @ 48.10 USD (realized 1,140.00 USD)' },
+          { type: 'accrual.interest', summary: 'Interest accrued on Margin loan USD (Short KSTL): 1.60 USD' },
+          { type: 'loan.repayment', summary: 'Repaid 9,606.00 USD of principal on Margin loan USD (Short KSTL) (in full)', cash: { USD: -9_606 } },
+          { type: 'interest.payment', summary: 'Interest paid on Margin loan USD (Short KSTL): 1.60 USD', cash: { USD: -1.6 } },
+          { type: 'accrual.fee', summary: 'Borrow fee accrued on 600 KSTL: 1.44 USD' }, { type: 'secloan.return', summary: 'Returned 600 borrowed KSTL' },
+          { type: 'interest.payment', summary: 'Borrow fee paid on Borrow of KSTL (Short KSTL): 1.44 USD', cash: { USD: -1.44 } },
+        ],
+        cash: { account: { USD: { settled: 504_377.64, unsettled: -115_464, payable: 115_464, reserved: 78_000, availableToTrade: 310_913.64, availableToWithdraw: 310_913.64, borrowed: 0 } } }, // 513,986.68 - 9,606 - 1.60 - 1.44
+        positions: [borrowed('funded', 5000, 240_000, -12.5), borrowed('kept', 400, 19_200, -2), shortPos('funded', -5000, -240_000, 10_000, 255_000), shortPos('kept', -200, -9_600, 400, 10_200)],
+        holdings: { main: { long: 0, short: 5200, net: -5200 } },
+        pending: [{ lot: 'core', amount: -43_299 }, { lot: 'core', amount: -28_866 }, { lot: 'levered', amount: -28_866 }, { lot: 'core', amount: -14_433 }],
+        lifecycle: fee(2),
+        borrowings: [secBorrow('funded', 5000, 240_000, 12.5, 255_000), secBorrow('kept', 400, 19_200, 2, 10_200)],
+        oversight: { accountBorrowings: [oversee('funded', 12.5), oversee('kept', 2)], accounts: { account: { cashBorrowed: 0 } } },
+        pnl: { account: { realized: 4_560, commissions: -100, borrowFunding: -30.86, unrealized: 10_400, total: 14_829.14 }, book: { realized: 4_560, commissions: -100, borrowFunding: -30.86, unrealized: 10_400, total: 14_829.14 } },
+        nav: { account: 526_899.14, book: 1_014_829.14 },
+        balance: {
+          account: { cash: 504_377.64, payable: 115_464, positions: -249_600, borrowed: null, assets: 642_377.64, liabilities: 115_478.5, netAssets: 526_899.14 },
+          book: { cash: 992_307.64, payable: 115_464, positions: -249_600, borrowed: null, assets: 1_130_307.64, liabilities: 115_478.5, netAssets: 1_014_829.14 },
+        },
+      },
+    },
+    {
+      // Realized 5,000 x 1.90 = 9,500. Fee for today 5,000 x 48 x 0.018 / 360 = 12.00; paid 12.50 + 12.00 = 24.50.
+      id: 'close-funded', covers: ['close', 'return', 'borrow fee'], action: 'close', lot: 'funded', scope: 'strategy',
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'buy_to_cover', qty: 5000, cash: -240_500, fees: 50 }, { kind: 'return_sec', qty: 5000, dependsOn: [1] }], cash: { USD: { purchases: 240_500, fees: 50, coverCollateral: 240_550, required: 240_550, available: 310_913.64, shortfall: 0 } } },
+        result: { status: 'closed', orders: [{ action: 'buy_to_cover', status: 'filled', filledQty: 5000 }, { kind: 'return_sec', status: 'filled', filledQty: 5000 }] },
+        events: [
+          { type: 'strategy.legs_added', summary: 'Legs added to Short KSTL (2 legs; close)' }, { type: 'trade.fill', summary: 'Bought to cover 5,000 KSTL @ 48.10 USD (realized 9,500.00 USD)' },
+          { type: 'accrual.fee', summary: 'Borrow fee accrued on 5,000 KSTL: 12.00 USD' }, { type: 'secloan.return', summary: 'Returned 5,000 borrowed KSTL' },
+          { type: 'interest.payment', summary: 'Borrow fee paid on Borrow of KSTL (Short KSTL): 24.50 USD', cash: { USD: -24.5 } },
+        ],
+        cash: { account: { USD: { settled: 504_353.14, unsettled: -356_014, payable: 356_014, reserved: 3_000, availableToTrade: 145_339.14, availableToWithdraw: 145_339.14 } } },
+        positions: [borrowed('kept', 400, 19_200, -2), shortPos('kept', -200, -9_600, 400, 10_200)],
+        holdings: { main: { long: 0, short: 200, net: -200 } },
+        pending: [{ lot: 'funded', amount: -240_550 }, { lot: 'core', amount: -43_299 }, { lot: 'core', amount: -28_866 }, { lot: 'levered', amount: -28_866 }, { lot: 'core', amount: -14_433 }],
+        lifecycle: fee(1), borrowings: [secBorrow('kept', 400, 19_200, 2, 10_200)], oversight: { accountBorrowings: [oversee('kept', 2)] },
+        pnl: { account: { realized: 14_060, commissions: -150, borrowFunding: -42.86, unrealized: 400, total: 14_267.14 }, book: { realized: 14_060, commissions: -150, borrowFunding: -42.86, unrealized: 400, total: 14_267.14 } },
+        nav: { account: 526_337.14, book: 1_014_267.14 },
+        balance: {
+          account: { cash: 504_353.14, payable: 356_014, positions: -9_600, accruedExpense: 2, assets: 882_353.14, liabilities: 356_016, netAssets: 526_337.14 },
+          book: { cash: 992_283.14, payable: 356_014, positions: -9_600, accruedExpense: 2, assets: 1_370_283.14, liabilities: 356_016, netAssets: 1_014_267.14 },
+        },
+      },
+    },
+    {
+      // The accepted package: cover its 200 and return its whole borrow of 400 (fee 1.00 + 1.00 + 0.96 = 2.96). Realized 380.
+      id: 'close-kept', covers: ['close', 'return', 'borrow fee'], action: 'close', lot: 'kept', scope: 'strategy',
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'buy_to_cover', qty: 200, cash: -9_620, fees: 2 }, { kind: 'return_sec', qty: 400, dependsOn: [1] }], cash: { USD: { purchases: 9_620, fees: 2, coverCollateral: 9_622, required: 9_622, available: 145_339.14 } } },
+        result: { status: 'closed', orders: [{ action: 'buy_to_cover', status: 'filled', filledQty: 200 }, { kind: 'return_sec', status: 'filled', filledQty: 400 }] },
+        events: [
+          { type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Bought to cover 200 KSTL @ 48.10 USD (realized 380.00 USD)' },
+          { type: 'accrual.fee', summary: 'Borrow fee accrued on 400 KSTL: 0.96 USD' }, { type: 'secloan.return', summary: 'Returned 400 borrowed KSTL' },
+          { type: 'interest.payment', summary: 'Borrow fee paid on Borrow of KSTL (Short KSTL): 2.96 USD', cash: { USD: -2.96 } },
+        ],
+        cash: { account: { USD: { settled: 504_350.18, unsettled: -365_636, payable: 365_636, reserved: 0, availableToTrade: 138_714.18, availableToWithdraw: 138_714.18 } } },
+        positions: [], holdings: { main: null },
+        pending: [{ lot: 'funded', amount: -240_550 }, { lot: 'core', amount: -43_299 }, { lot: 'core', amount: -28_866 }, { lot: 'levered', amount: -28_866 }, { lot: 'core', amount: -14_433 }, { lot: 'kept', amount: -9_622 }],
+        lifecycle: [], borrowings: [], oversight: { accountBorrowings: [] },
+        pnl: { account: { realized: 14_440, commissions: -152, borrowFunding: -43.82, unrealized: 0, total: 14_244.18 }, book: { realized: 14_440, commissions: -152, borrowFunding: -43.82, unrealized: 0, total: 14_244.18 } },
+        nav: { account: 526_314.18, book: 1_014_244.18 },
+        balance: {
+          account: { cash: 504_350.18, payable: 365_636, positions: null, accruedExpense: null, assets: 891_950.18, liabilities: 365_636, netAssets: 526_314.18 },
+          book: { cash: 992_280.18, payable: 365_636, positions: null, accruedExpense: null, assets: 1_379_880.18, liabilities: 365_636, netAssets: 1_014_244.18 },
+        },
+      },
+    },
+    {
+      // The covers settle from restricted cash; what each short's collateral had beyond its cover comes back to settled cash:
+      // core 91,800 - 86,598 = 5,202; kept 10,200 - 9,622 = 578; funded 255,000 - 240,550 = 14,450; levered 30,600 - 28,866 = 1,734.
+      id: 'settle-covers', covers: ['settlement', 'collateral release'], action: 'clock', to: MAR(6),
+      expect: {
+        events: [
+          { type: 'settlement.pay', summary: 'Settlement: paid 43,299.00 USD from restricted cash' }, { type: 'settlement.pay', summary: 'paid 14,433.00 USD from restricted cash' }, { type: 'settlement.pay', summary: 'paid 28,866.00 USD from restricted cash' },
+          { type: 'settlement.pay', summary: 'paid 28,866.00 USD from restricted cash' }, { type: 'settlement.pay', summary: 'paid 240,550.00 USD from restricted cash' }, { type: 'settlement.pay', summary: 'paid 9,622.00 USD from restricted cash' },
+          { type: 'collateral.mark', summary: 'released 5,202.00 USD', cash: { USD: 5_202 } }, { type: 'collateral.mark', summary: 'released 578.00 USD', cash: { USD: 578 } },
+          { type: 'collateral.mark', summary: 'released 14,450.00 USD', cash: { USD: 14_450 } }, { type: 'collateral.mark', summary: 'released 1,734.00 USD', cash: { USD: 1_734 } },
+        ],
+        // Nothing is left restricted, reserved, borrowed or scheduled. Whole scenario: realized 14,440; commissions 152;
+        // borrow fees 42.22 and loan interest 1.60. 100,000 + 12,070 + 400,000 funded + 14,244.18 = 526,314.18.
+        cash: { account: { USD: { settled: 526_314.18, unsettled: 0, payable: 0, receivable: 0, reserved: 0, restricted: 0, availableToTrade: 526_314.18, availableToWithdraw: 526_314.18, borrowed: 0 } } },
+        pending: [],
+        balance: { account: { cash: 526_314.18, restricted: null, payable: null, assets: 526_314.18, liabilities: 0, netAssets: 526_314.18 }, book: { cash: 1_014_244.18, restricted: null, payable: null, assets: 1_014_244.18, liabilities: 0, netAssets: 1_014_244.18 } },
+      },
+    },
+    {
+      id: 'return-to-treasury', covers: ['transfer'], action: 'transfer', from: 'account', to: 'treasury', ccy: 'USD', amount: 400_000,
+      expect: {
+        events: [{ type: 'transfer.return', summary: 'Return to Treasury: 400,000.00 USD from Alpha to Treasury', owner: 'account' }],
+        cash: { account: { USD: { settled: 126_314.18, availableToTrade: 126_314.18, availableToWithdraw: 126_314.18 } }, treasury: { USD: { settled: 887_930, availableToTrade: 887_930 } } },
+        nav: { account: 126_314.18, treasury: 887_930, book: 1_014_244.18 },
+        balance: { account: { cash: 126_314.18, assets: 126_314.18, netAssets: 126_314.18 }, treasury: { cash: 887_930, assets: 887_930, netAssets: 887_930 } },
+        oversight: { accountBorrowings: [], accounts: { account: { cashBorrowed: 0, fundingReceived: 112_070 } }, treasuryOwn: [] },
+      },
+    },
   ],
 };
 

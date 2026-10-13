@@ -235,3 +235,4 @@
 - 2026-10-13T19:47Z | b4 | +0.2 | clo passes at engine, API and browser
 - 2026-10-13T19:49Z | t2 | +0 | Fix: package cash shortfall measured leg by leg (iron condor funded to netted shortfall had both written legs rejected)
 - 2026-10-13T19:50Z | s2 | +0.2 | bond_trs passes at engine, API and browser (clean-price return with reset, coupon passed through by hand)
+- 2026-10-13T19:50Z | b4 | +0.2 | cdo passes at engine, API and browser
