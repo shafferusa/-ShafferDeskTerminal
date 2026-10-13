@@ -89,3 +89,47 @@ test('dividend pass-through: a dividend in the first period is passed through fr
   assert.equal(cash(app, acct), 537_500);
   assert.deepEqual(ledgerImbalance(app), []);
 });
+
+test('averaged price legs, peak hours and net settlement: a missing pricing day is named, then one net amount moves', async () => {
+  const { app, clock } = makeApp();
+  const { book, acct } = makeBook(app);
+  const idx = app.instruments.create({ productId: 'electricity', name: 'Test peak index', symbol: 'TPEAK', marketView: 'US_CASH', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', terms: {} });
+  const peak = { hours: 'peak', peakHours: 16, peakCalendar: 'WEEKEND' };
+  const contract = {
+    productId: 'electricity_swap', name: 'Peak test', marketView: 'US_DERIV', venueType: 'otc', tradingCcy: 'USD',
+    terms: { effective: '2026-06-01', maturity: '2026-07-01', netSettlement: true, ...NO_COLLATERAL, legs: [
+      { id: 'A', side: 'pay', type: 'price', ccy: 'USD', months: 1, units: 1, fixedPrice: 45, ...peak },
+      { id: 'B', side: 'receive', type: 'price', ccy: 'USD', months: 1, units: 1, underlyingId: idx.id, averaging: 'daily', pricingCalendar: 'WEEKEND', ...peak },
+    ] },
+  };
+  await trade(app, { bookId: book.id, unitId: acct.id, template: 'custom', legs: [{ kind: 'trade', action: 'buy', qty: 1, statedPrice: 0, contract }] });
+  // June 2026 has 22 weekdays: 22 x 16 = 352 peak hours. Every weekday's index is 50.00 except 10 June, not supplied.
+  for (let d = 1; d <= 30; d++) {
+    const date = `2026-06-${String(d).padStart(2, '0')}`;
+    const wd = new Date(`${date}T12:00:00Z`).getUTCDay();
+    if (wd !== 0 && wd !== 6 && date !== '2026-06-10') close(app, idx, date, 50);
+  }
+  await goTo(app, clock, NY10('2026-07-01'));
+  const blocked = open(app, 'swap.payment');
+  assert.equal(blocked.length, 2);
+  for (const t of blocked) assert.match(t.blocked_reason, /Awaiting the averaging fixings of TPEAK for 2026-06-10 \(1 of the 22 pricing days of the period 2026-06-01 to 2026-07-01\)/);
+  assert.equal(cash(app, acct), 500_000, 'nothing moves while one leg cannot be worked out');
+  close(app, idx, '2026-06-10', 50);
+  await advance(app, clock, 1000);
+  // Net: 352 MWh x (50.00 - 45.00) = 1,760.00, one event with both legs.
+  assert.deepEqual(summaries(app, book, acct, 'swap.payment'), ['Net swap receipt on Peak test, period 2026-06-01 to 2026-07-01: 1,760.00 USD (leg A, fixed price 45.00 x 352 (352 hours): 15,840.00 USD paid; leg B, average of 22 fixings 50.00 x 352 (352 hours): 17,600.00 USD received)']);
+  assert.equal(cash(app, acct), 501_760);
+  assert.deepEqual(open(app, 'swap.payment'), []);
+  assert.deepEqual(ledgerImbalance(app), []);
+});
+
+test('net settlement is refused with a return leg; a payment lag outside 0-10 business days is refused', () => {
+  const { app } = makeApp();
+  const s = stock(app, 'NETR');
+  const refused = (draft) => { try { app.instruments.create(draft); } catch (e) { return e.message; } return null; };
+  const base = { productId: 'equity_swap', name: 'Net test', marketView: 'US_DERIV', venueType: 'otc', tradingCcy: 'USD' };
+  assert.match(refused({ ...base, terms: { effective: '2026-03-05', maturity: '2026-09-05', netSettlement: true, ...NO_COLLATERAL, legs: [
+    { side: 'receive', type: 'return', ccy: 'USD', months: 3, underlyingId: s.id }, { side: 'pay', type: 'fixed', ccy: 'USD', rate: 0.04, months: 3 }] } }), /^Net settlement applies to fixed, floating, price, cap and floor legs/);
+  assert.equal(refused({ ...base, terms: { effective: '2026-03-05', maturity: '2026-09-05', ...NO_COLLATERAL, legs: [
+    { side: 'receive', type: 'return', ccy: 'USD', months: 3, underlyingId: s.id, paymentLag: 12 }, { side: 'pay', type: 'fixed', ccy: 'USD', rate: 0.04, months: 3 }] } }), 'Leg A: the payment lag is a whole number of business days from 0 to 10.');
+});
