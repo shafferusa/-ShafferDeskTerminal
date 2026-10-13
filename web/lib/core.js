@@ -214,6 +214,17 @@ export function fmtPrice(x) {
   const s = a.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: max });
   return x < 0 ? `−${s}` : s;
 }
+/**
+ * A price in its quoted units (ui1). A price in % of par or per 100 notional (bonds, CDS upfronts, swap marks) keeps
+ * every decimal it carries, up to 6, so 99.53125 (99-17) is shown as 99.53125 and the displayed price times the face
+ * reproduces the principal. Any other unit is shown as fmtPrice shows it.
+ */
+export const PAR_UNITS = /% of par|per 100\b/i;
+export function fmtPriceUnits(x, units) {
+  if (!isNum(x) || !units || !PAR_UNITS.test(units)) return fmtPrice(x);
+  const s = Math.abs(x).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 });
+  return x < 0 ? `−${s}` : s;
+}
 export const fmtPct = (x, dp = 2, opts) => (isNum(x) ? `${fmtNum(x, dp, opts)}%` : DASH);
 export function fmtAge(sec) {
   if (!isNum(sec)) return '';

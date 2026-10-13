@@ -12,6 +12,7 @@ import { bump, fmtMoney, fmtNum, fmtPrice, fmtQty, fmtTime, get, isNum, openOver
 import { Awaiting, Button, Check, Empty, ErrorNote, Field, Missing, Modal, Notice, Num, Panel, Pill, Price, Prov, Seg, Select, Signed, StrategyStatus, Table, Text } from '../lib/ui.js';
 import { ContractFields, draftToContract, InstrumentPicker, newDraft, PositionPicker } from '../lib/contracts.js';
 import { defaultUnit, OrderFields, UnitSelect } from './instrument.js';
+import { ConventionFields, conventionsPayload } from './registry.js';
 import { PreviewModal } from './preview.js';
 import { HedgeQueue, OBJECTIVES, PackageDetail, PackageList, RequestState, RequestSummary, SCOPES, SourceFacts, sourceWords, StatePill, strategyInput, StrategyPicker, StrategyRef, usePackagePreview } from './hedge.js';
 
@@ -112,6 +113,8 @@ function LegDialog({ book, unitId, und, catalog, defaultPurpose, onAdd, onClose 
   useEffect(() => { setProductId(''); setDraft(null); setAction(type === 'loan' ? 'borrow_cash' : 'buy'); if (type === 'loan') setPurpose('financing'); }, [type]);
   useEffect(() => { if (product) { setDraft(newDraft(product, { tradingCcy: und?.tradingCcy || book.reportingCcy, underlyingId: ['otcoption', 'forward'].includes(product.family) ? und?.id || '' : '' })); if (type === 'contract') setAction('buy'); } }, [productId]);
   const chain = useLive(() => (type === 'option' && und ? get(`/api/instruments/${und.id}/chain`, { expiration: opt.expiration }) : null), [type, und?.id, opt.expiration], { interval: false });
+  // A new OTC contract states its market view, symbol and calendars here as on the registry form: a euro contract must not settle on New York days.
+  const cals = useLive(() => (type === 'contract' ? get('/api/calendars') : null), [type], { interval: false });
 
   const order = () => ({ orderType: o.orderType, limitPrice: o.limitPrice, stopPrice: o.stopPrice, tif: o.tif, statedPrice: stated });
   const add = () => {
@@ -142,7 +145,7 @@ function LegDialog({ book, unitId, und, catalog, defaultPurpose, onAdd, onClose 
         onAdd([{ ...base, kind: 'trade', action, qty, group: 'options', option: { underlyingId: und.id, expiration: opt.expiration, strike, right: opt.right, ...meta }, ...order(), _name: und.symbol || und.name }]);
       } else if (type === 'contract' || type === 'loan') {
         if (!draft) throw new Error('Choose the product.');
-        const contract = draftToContract({ ...draft, name: draft.name || `${product.name.replace(/ \(.*\)$/, '')} ${draft.tradingCcy}` });
+        const contract = { ...draftToContract({ ...draft, name: draft.name || `${product.name.replace(/ \(.*\)$/, '')} ${draft.tradingCcy}` }), ...(type === 'contract' ? { conventions: conventionsPayload(draft.conventions) } : {}) };
         if (type === 'loan') onAdd([{ ...base, purpose: 'financing', role: 'loan', kind: 'loan', action, qty, contract }]);
         else onAdd([{ ...base, kind: 'trade', action, qty, contract, ...order(), _actionLabel: (CONTRACT_ACTIONS[product.family] || []).find((a) => a[0] === action)?.[1] || action }]);
       } else if (type === 'link') {
@@ -183,8 +186,11 @@ function LegDialog({ book, unitId, und, catalog, defaultPurpose, onAdd, onClose 
       ${draft ? html`<div class="grid-form">
         <${Field} label="Contract name" span=${2}><${Text} value=${draft.name} onInput=${(v) => setDraft({ ...draft, name: v })} placeholder=${product.name.replace(/ \(.*\)$/, '')} /><//>
         <${Field} label="Currency"><${Text} value=${draft.tradingCcy} onInput=${(v) => setDraft({ ...draft, tradingCcy: v.toUpperCase() })} /><//>
+        ${type === 'contract' ? html`<${Field} label="Symbol" hint="Optional. Shown in place of the full name"><${Text} value=${draft.symbol || ''} onInput=${(v) => setDraft({ ...draft, symbol: v.toUpperCase() })} /><//>
+          <${Field} label="Primary view" span=${2} hint="Where the contract is listed in Marketplaces"><${Seg} value=${draft.marketView} onChange=${(v) => setDraft({ ...draft, marketView: v })} options=${[{ value: 'US_DERIV', label: 'US Derivatives' }, { value: 'FOREIGN_DERIV', label: 'Foreign Derivatives' }]} /><//>` : null}
         <${ContractFields} draft=${draft} onChange=${setDraft} />
       </div>
+      ${type === 'contract' ? html`<${ConventionFields} draft=${draft} set=${(patch) => setDraft({ ...draft, ...patch })} cals=${cals.data} product=${product} />` : null}
       ${product.support !== 'full' ? html`<${Notice}>Paper support for ${product.name}: ${product.support === 'partial' ? 'partly manual' : 'manual inputs'}. ${product.note}<//>` : null}` : null}
       ${type === 'instrument' && action === 'sell_short' ? html`<div class="grid-form">
         <${Field} label="Borrow assumption" hint="Used only when no borrow data is supplied for the security" span=${2}><${Check} checked=${borrow.available} onChange=${(v) => setBorrow({ ...borrow, available: v })}>Assume the security can be borrowed<//><//>

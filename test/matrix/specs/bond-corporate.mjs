@@ -295,4 +295,182 @@ const corporateBondIg = {
   ],
 };
 
-export default [corporateBondIg];
+// ---------------------------------------------------------------------------------------------
+// high_yield_bond
+// ---------------------------------------------------------------------------------------------
+// A high-yield issuer's senior notes: 8.50%, coupons 1 June and 1 December, 30/360 (US), T+1 on the US
+// bond calendar, pieces of 1,000 (a real high-yield bond usually has a 2,000 minimum and 1,000 steps after
+// it; the Terminal has one quantity step, so 1,000 is registered). The catalog says defaults and
+// restructurings are recorded by hand, and this scenario does both through the interface:
+//   - The Account buys 500,000 at 72 (already distressed) with 168 days of accrued interest.
+//   - The issuer announces that it will not pay the 1 June coupon. The user records it on the instrument
+//     (Edit, "Lifecycle events recorded by hand", coupon suspension). The holding goes on non-accrual: the
+//     interest accrued and not received, 19,951.39, is reversed out of coupon and interest income (the
+//     19,833.33 paid to the seller at purchase is lost with it); no interest accrues from then on.
+//   - 1 June passes, after Memorial Day: nothing is paid, and the history says so.
+//   - 200,000 is sold at 38, flat: a bond whose coupons are suspended trades without accrued interest.
+//   - The restructuring cancels the notes for a cash distribution of 35% of par: recorded by hand as an early
+//     redemption of the remaining 300,000 at 35 from the position's Lifecycle menu, paid the same day.
+// Commission: 2 basis points of clean principal (none on the redemption).
+const highYieldBond = {
+  productId: 'high_yield_bond',
+  title: 'Corvane Holdings 8.50% senior notes due 1 June 2031 (high yield): bought distressed, coupon suspended on default, a missed coupon, a flat sale, a cash restructuring',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount (a multiple of 1,000)'],
+    manualInputs: ['Default: coupon suspension recorded on the instrument (Edit, Lifecycle events recorded by hand, Review coupon suspension, Suspend coupons)', 'Restructuring: early redemption at the cash distribution price, face and label, recorded on the position (Lifecycle, Early redemption)'],
+    settlement: 'T+1 on the US bond calendar; a sale of the defaulted bond settles flat (no accrued interest); the restructuring distribution is paid on the day it is recorded',
+    lifecycle: 'Daily accrual on 30/360 until the coupon suspension; on suspension, accrued interest reversed (non-accrual); a coupon date passing while suspended is listed as not paid; restructuring by hand closes the position',
+    accounting: 'Clean cost at average; accrued interest reversed out of coupon and interest income on suspension; realized losses on the flat sale and on the restructuring distribution; commission expensed',
+    collateral: 'None for a long position',
+  },
+  start: EDT('2027-05-18'), // Tuesday
+  settlementCheck: { lag: 1, holidays: ['2027-05-31'] }, // Memorial Day
+  book: {
+    name: 'Matrix high-yield bond', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 2_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 1_000_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 2 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'high_yield_bond', name: 'Corvane Holdings Inc 8.50% Senior Notes 1-Jun-2031', symbol: 'CORVANE-8.5-JUN31', marketView: 'US_CASH', venueType: 'otc', issuer: 'Corvane Holdings Inc', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      terms: { couponType: 'fixed', couponRate: 0.085, frequency: 2, maturity: '2031-06-01', issueDate: '2023-06-01', dayCount: '30/360', redemption: 100, minDenomination: 1_000, seniority: 'Senior unsecured' } },
+  },
+  quotes: { main: { bid: 71, ask: 72, last: 71.5, bidSize: 5_000_000, askSize: 5_000_000 } },
+  expectAtStart: { ...startState(1_000_000, 1_000_000), cash: { account: usdCash(1_000_000), treasury: usdCash(1_000_000) } },
+  steps: [
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 500_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 500_000, estimate: 72, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2027-05-19', calendar: 'USBOND',
+            gross: 360_000, // 500,000 x 72 / 100
+            accrued: 19_833.33, // settles 19 May, 168 days of 30/360 from 1 Dec: 500,000 x 8.5% x 168/360 = 19,833.333
+            cash: -379_833.33, fees: 72 }], // 2 bp of 360,000
+          cash: { USD: { purchases: 379_833.33, fees: 72, required: 379_905.33, available: 1_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 500_000, avgPrice: 72, fills: [{ qty: 500_000, price: 72, model: 'quoted-bid-ask', settleDate: '2027-05-19', source: 'Test fixture', status: 'simulated' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 500,000 CORVANE-8.5-JUN31 @ 72.00 USD', owner: 'account', date: '2027-05-18' }],
+        cash: { account: { USD: { settled: 1_000_000, unsettled: -379_905.33, availableToTrade: 620_094.67 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 500_000, avgCost: 72, cost: 360_000, price: 71.5,
+          value: 357_500, unrealized: -2_500, accrued: 19_833.33, priceSource: 'Test fixture' }], // 500,000 x 71.5%
+        holdings: { main: { long: 500_000, short: 0, net: 500_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2027-05-19', amount: -379_905.33, ccy: 'USD', into: 'cash' }],
+        // 1 Jun 2027 is a Tuesday; 1 Jun 2031 is a Sunday, so redemption is due Monday 2 June 2031.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-06-01', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2031-06-02', status: 'pending' }],
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -72, fees: 0, borrowFunding: 0, unrealized: -2_500, total: -2_572 } },
+        nav: { account: 997_428, book: 1_997_428 },
+        balance: { account: { cash: 1_000_000, accruedIncome: 19_833.33, positions: 357_500, payable: 379_905.33, assets: 1_377_333.33, liabilities: 379_905.33, netAssets: 997_428 } },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EDT('2027-05-19'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 379,905.33 USD from settled cash', cash: { USD: -379_905.33 }, date: '2027-05-19' }],
+        cash: { account: { USD: { settled: 620_094.67, unsettled: 0, availableToTrade: 620_094.67 } } },
+        pending: [],
+        balance: { account: { cash: 620_094.67, payable: null, assets: 997_428, liabilities: 0 } },
+      },
+    },
+    {
+      // End of day Thursday 20 May: 169 days on 500,000: 42,500 x 169/360 = 19,951.3889. Income 118.06.
+      id: 'accrue', covers: 'accrual', action: 'clock', to: EDT('2027-05-21'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on CORVANE-8.5-JUN31: 118.06 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 500_000, accrued: 19_951.39 }],
+        pnl: { account: { couponInterest: 118.06, total: -2_453.94 } },
+        nav: { account: 997_546.06, book: 1_997_546.06 },
+        balance: { account: { accruedIncome: 19_951.39, assets: 997_546.06, netAssets: 997_546.06 } },
+      },
+    },
+    {
+      // The issuer says it will not pay the 1 June coupon: the price falls.
+      id: 'quote-distress', action: 'quote', instrument: 'main', quote: { bid: 54, ask: 56, last: 55, bidSize: 5_000_000, askSize: 5_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 500_000, price: 55, value: 275_000, unrealized: -85_000 }], // 500,000 x 55% - 360,000
+        pnl: { account: { unrealized: -85_000, total: -84_953.94 } }, // 118.06 - 72 - 85,000
+        nav: { account: 915_046.06, book: 1_915_046.06 },
+        balance: { account: { positions: 275_000, assets: 915_046.06, netAssets: 915_046.06 } },
+      },
+    },
+    {
+      // Recorded by hand on the instrument. The accrued balance of 19,951.39 will not be paid: it is reversed out of coupon and
+      // interest income at once. Interest income to date: 118.06 - 19,951.39 = -19,833.33, the accrued interest bought.
+      id: 'default-suspend-coupons', covers: 'default (by hand)', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'suspend_coupon', suspended: true },
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Accrued interest reversed on CORVANE-8.5-JUN31: coupons suspended, not accrued or paid: 19,951.39 USD', owner: 'account', date: '2027-05-21' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 500_000, accrued: 0 }],
+        pnl: { account: { couponInterest: -19_833.33, total: -104_905.33 } },
+        nav: { account: 895_094.67, book: 1_895_094.67 }, // 620,094.67 + 275,000
+        balance: { account: { accruedIncome: null, assets: 895_094.67, netAssets: 895_094.67 } },
+      },
+    },
+    {
+      // Tuesday 1 June, after Memorial Day. The coupon date passes unpaid and is listed; the next one is scheduled. Nothing accrues.
+      id: 'coupon-missed', covers: ['missed coupon', 'market holiday'], action: 'clock', to: EDT('2027-06-01'),
+      expect: {
+        events: [{ type: 'bond.coupon_missed', summary: 'Coupon of 2027-06-01 not paid on 500,000 CORVANE-8.5-JUN31: coupons are suspended', owner: 'account', date: '2027-06-01' }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-12-01', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2031-06-02', status: 'pending' }],
+      },
+    },
+    {
+      id: 'quote-default', action: 'quote', instrument: 'main', quote: { bid: 38, ask: 40, last: 39, bidSize: 5_000_000, askSize: 5_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 500_000, price: 39, value: 195_000, unrealized: -165_000 }], // 500,000 x 39% - 360,000
+        pnl: { account: { unrealized: -165_000, total: -184_905.33 } }, // -19,833.33 - 72 - 165,000
+        nav: { account: 815_094.67, book: 1_815_094.67 },
+        balance: { account: { positions: 195_000, assets: 815_094.67, netAssets: 815_094.67 } },
+      },
+    },
+    {
+      id: 'sell-flat', covers: ['reduce', 'flat trading'], action: 'ticket', instrument: 'main', side: 'sell', qty: 200_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 200_000, estimate: 38, settleDate: '2027-06-02',
+          gross: 76_000, // 200,000 x 38 / 100
+          accrued: 0, // coupons suspended: the bond trades flat
+          cash: 76_000, fees: 15.20 }] }, // 2 bp of 76,000
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 200_000, avgPrice: 38 }] },
+        // Cost removed at the average: 200,000 x 72% = 144,000. Realized 76,000 - 144,000 = -68,000.
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: /^Sold 200,000 CORVANE-8\.5-JUN31 @ 38\.00 USD \(realized [-−]68,000\.00 USD\)$/ }],
+        cash: { account: { USD: { settled: 620_094.67, unsettled: 75_984.80, availableToTrade: 696_079.47 } } }, // 76,000 - 15.20
+        positions: [{ instrument: 'main', lot: 'lot', qty: 300_000, cost: 216_000, avgCost: 72, price: 39, value: 117_000, unrealized: -99_000, accrued: 0 }],
+        holdings: { main: { long: 300_000, short: 0, net: 300_000 } },
+        pending: [{ instrument: 'main', dueDate: '2027-06-02', amount: 75_984.80, into: 'cash' }],
+        pnl: { account: { realized: -68_000, commissions: -87.20, unrealized: -99_000, total: -186_920.53 } }, // -68,000 - 19,833.33 - 87.20 - 99,000
+        nav: { account: 813_079.47, book: 1_813_079.47 },
+        balance: { account: { cash: 620_094.67, receivable: 75_984.80, positions: 117_000, assets: 813_079.47, liabilities: 0, netAssets: 813_079.47 } },
+      },
+    },
+    {
+      id: 'settle-sale', covers: 'settlement', action: 'clock', to: EDT('2027-06-02'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 75,984.80 USD into settled cash', cash: { USD: 75_984.80 } }],
+        cash: { account: { USD: { settled: 696_079.47, unsettled: 0, availableToTrade: 696_079.47 } } },
+        pending: [],
+        balance: { account: { cash: 696_079.47, receivable: null, assets: 813_079.47 } },
+      },
+    },
+    {
+      // The restructuring plan cancels the notes for 35% of par in cash, recorded by hand on the position. No accrued interest is
+      // paid (coupons are suspended). Realized 300,000 x 35% - 216,000 = 105,000 - 216,000 = -111,000.
+      id: 'restructuring', covers: ['restructuring (by hand)', 'close'], action: 'lifecycle', lot: 'lot', body: { action: 'redeem', price: 35, face: 300_000, label: 'Restructuring, notes cancelled for cash' },
+      expect: {
+        events: [
+          { type: 'bond.early_redemption', summary: 'Restructuring, notes cancelled for cash: 300,000 CORVANE-8.5-JUN31 at 35.00% of par', owner: 'account', date: '2027-06-02' },
+          { type: 'settlement.receive', summary: 'received 105,000.00 USD into settled cash', cash: { USD: 105_000 } },
+        ],
+        cash: { account: { USD: { settled: 801_079.47, unsettled: 0, availableToTrade: 801_079.47 } }, treasury: { USD: { settled: 1_000_000 } } }, // 696,079.47 + 105,000
+        positions: [],
+        holdings: { main: null },
+        pending: [],
+        lifecycle: [],
+        pnl: { account: { realized: -179_000, couponInterest: -19_833.33, commissions: -87.20, unrealized: 0, total: -198_920.53 } }, // -68,000 - 111,000
+        nav: { account: 801_079.47, book: 1_801_079.47 },
+        balance: { account: { cash: 801_079.47, positions: null, accruedIncome: null, assets: 801_079.47, liabilities: 0, netAssets: 801_079.47 } },
+      },
+    },
+  ],
+};
+
+export default [corporateBondIg, highYieldBond];

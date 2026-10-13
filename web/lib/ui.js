@@ -1,7 +1,7 @@
 // Shared interface components. Every price is shown through <Price>, which always carries its
 // provenance chip (source, time, status); a missing value is drawn as a dash, never as zero.
 import { html, useEffect, useRef, useState } from '../vendor/preact-htm.js';
-import { DASH, fmtAge, fmtMoney, fmtNum, fmtPrice, fmtQty, fmtTime, isNum, parseNum, tone as toneOf, useStore } from './core.js';
+import { DASH, fmtAge, fmtMoney, fmtNum, fmtPrice, fmtPriceUnits, fmtQty, fmtTime, isNum, parseNum, tone as toneOf, useStore } from './core.js';
 
 export { html };
 
@@ -116,10 +116,11 @@ export function Prov({ obs }) {
   return html`<span class=${`prov ${obs.status} ${stale ? 'stale' : ''}`} title=${lines}>${GLYPH[obs.status]}${SHORT[obs.status] || obs.status}</span>`;
 }
 /** A price with its provenance. `value` overrides which number of the observation is shown. */
-export function Price({ obs, value, chip = true, reason }) {
+export function Price({ obs, value, chip = true, reason, units }) {
   const v = value !== undefined ? value : obs ? (obs.value ?? null) : null;
   if (!isNum(v)) return html`<${Missing} reason=${reason || (obs ? 'No value in this observation' : undefined)} />`;
-  return html`<span class="price"><span class="v">${fmtPrice(v)}</span>${chip && obs ? html` <${Prov} obs=${obs} />` : null}</span>`;
+  // `units` (or the observation's own units) keeps every decimal of a price in % of par: see fmtPriceUnits.
+  return html`<span class="price"><span class="v">${fmtPriceUnits(v, units ?? obs?.units)}</span>${chip && obs ? html` <${Prov} obs=${obs} />` : null}</span>`;
 }
 export function Money({ value, ccy, signed, bare, reason }) {
   if (!isNum(value)) return html`<${Missing} reason=${reason} />`;

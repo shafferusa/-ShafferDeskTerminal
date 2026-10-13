@@ -293,12 +293,15 @@ export function ArrangementDialog({ book, mode, unitId, fixed, side, onClose, on
   const product = products.find((p) => p.id === f.productId);
   const unit = book.units.find((u) => u.id === f.unitId);
   const needsPos = f.action === 'repo' || mode === 'secloan';
+  // A secured or securities-backed loan pledges named positions of the borrower: they cannot be sold or lent until it is repaid.
+  const pledging = mode === 'loan' && !lending && draft?.terms?.loanType === 'secured';
+  const [pledge, setPledge] = useState({ pos: null, qty: null });
   // The product decides the starting terms, so a change of side or product starts the terms again.
   useEffect(() => { if (cat.data) setF((x) => ({ ...x, productId: products.some((p) => p.id === DEFAULT_PRODUCT[f.action]) ? DEFAULT_PRODUCT[f.action] : products[0]?.id || '' })); }, [f.action, Boolean(cat.data)]);
-  useEffect(() => { setDraft(product ? newDraft(product, { terms: REPO_PRESET[product.id] }) : null); setPos(null); }, [f.productId, f.action]);
+  useEffect(() => { setDraft(product ? newDraft(product, { terms: REPO_PRESET[product.id] }) : null); setPos(null); setPledge({ pos: null, qty: null }); }, [f.productId, f.action]);
   // Another Treasury or Account holds different positions: the chosen one no longer applies, the other terms stay.
   const changeUnit = (v) => {
-    setUnit(v); setF({ ...f, unitId: v }); setPos(null);
+    setUnit(v); setF({ ...f, unitId: v }); setPos(null); setPledge({ pos: null, qty: null });
     if (needsPos && draft) setDraft(mode === 'secloan' ? { ...draft, underlyingId: '' } : { ...draft, terms: { ...draft.terms, collateralInstrumentId: '', collateralQty: null } });
   };
   const pick = (p) => {
@@ -319,14 +322,14 @@ export function ArrangementDialog({ book, mode, unitId, fixed, side, onClose, on
     : `${mode === 'repo' ? `${f.action === 'repo' ? 'Repo' : 'Reverse repo'} ${sym}` : product.id === 'cash_loan' ? (lending ? 'Cash lent' : 'Cash loan') : plain(product.name)} ${f.ccy}${rateTag}`.replace(/\s+/g, ' ').trim();
   const go = () => t.preview({
     bookId: book.id, unitId: f.unitId, template: 'custom', name: f.name.trim() || autoName,
-    legs: [{ kind: m.kind, action: f.action, purpose: 'financing', qty: f.qty, contract: draftToContract({ ...draft, name: f.name.trim() || autoName, tradingCcy: f.ccy, marketView: viewFor(f.ccy) }),
+    legs: [{ kind: m.kind, action: f.action, purpose: 'financing', qty: f.qty, contract: draftToContract({ ...draft, name: f.name.trim() || autoName, tradingCcy: f.ccy, marketView: viewFor(f.ccy), ...(pledging ? { terms: { ...draft.terms, collateral: pledge.pos && pledge.qty > 0 ? [{ positionId: pledge.pos.positionId, qty: pledge.qty }] : [] } } : {}) }),
       collateralPositionId: f.action === 'repo' ? pos?.positionId : undefined, sourcePositionId: mode === 'secloan' ? pos?.positionId : undefined }],
   });
   const collQty = draft?.terms?.collateralQty, haircut = draft?.terms?.haircut;
   const collValue = pos && isNum(pos.price) && collQty > 0 ? collQty * pos.price * pos.instrument.multiplier : null;
   const who = mode === 'secloan' ? 'Lender' : lending ? 'Lender' : 'Borrower';
   return html`<${Modal} size="mid" title=${m.title} sub=${m.sub} onClose=${onClose}
-    footer=${foot(t, onClose, m.button, go, !draft || !(f.qty > 0) || !CCY.test(f.ccy), 'Nothing is submitted until you confirm the preview.')}>
+    footer=${foot(t, onClose, m.button, go, !draft || !(f.qty > 0) || !CCY.test(f.ccy) || (pledging && !(pledge.pos && pledge.qty > 0)), 'Nothing is submitted until you confirm the preview.')}>
     <div ...${t.form}><${ErrorNote} error=${t.error} />
       <div class="grid-form">
         <${Field} label=${who} hint=${fixed ? FIXED_HINT : ''}><${UnitPick} book=${book} value=${f.unitId} lock=${fixed} onChange=${changeUnit} /><//>
@@ -334,6 +337,9 @@ export function ArrangementDialog({ book, mode, unitId, fixed, side, onClose, on
         <${Field} label="Product" span=${2}><${Select} value=${f.productId} onChange=${(v) => setF({ ...f, productId: v })} options=${products.map((p) => ({ value: p.id, label: plain(p.name) }))} /><//>
         ${needsPos ? html`<${Field} label=${mode === 'secloan' ? 'Position to lend' : 'Collateral position'} span=${2} hint=${pos ? `${fmtQty(Math.max(0, pos.qty - pos.pledgedQty - pos.onLoanQty))} of ${fmtQty(pos.qty)} is free (not pledged, not on loan).` : `A long position held in ${unitName(unit)}.`}>
           <${PositionPicker} key=${`${f.unitId}:${f.action}`} value=${pos?.positionId || ''} onChange=${(v, p) => pick(p)} bookId=${book.id} unitId=${f.unitId} families=${['bond', 'equity', 'fund']} direction="long" /><//>` : null}
+        ${pledging ? html`<${Field} label="Collateral position" span=${2} hint=${pledge.pos ? `${fmtQty(Math.max(0, pledge.pos.qty - pledge.pos.pledgedQty - pledge.pos.onLoanQty))} of ${fmtQty(pledge.pos.qty)} is free (not pledged, not on loan).` : `A long position held in ${unitName(unit)}, pledged to the lender.`}>
+          <${PositionPicker} key=${`pledge:${f.unitId}:${f.productId}`} value=${pledge.pos?.positionId || ''} onChange=${(v, p) => setPledge({ pos: p || null, qty: p ? Math.max(0, p.qty - p.pledgedQty - p.onLoanQty) : null })} bookId=${book.id} unitId=${f.unitId} families=${['bond', 'equity', 'fund']} direction="long" /><//>
+          <${Field} label="Quantity to pledge" hint="Cannot be sold or lent until the loan is repaid in full."><${Num} value=${pledge.qty} onInput=${(v) => setPledge({ ...pledge, qty: v })} /><//>` : null}
         <${Field} label="Currency">${mode === 'secloan' ? html`<${Text} value=${pos ? f.ccy : ''} disabled onInput=${() => {}} placeholder="From the security" />` : html`<${Text} value=${f.ccy} onInput=${(v) => setF({ ...f, ccy: v.toUpperCase().slice(0, 3) })} />`}<//>
         <${Field} label=${m.qty} hint=${lending ? availableText(res.data, unit, f.ccy) : ''}><${Num} value=${f.qty} onInput=${(v) => setF({ ...f, qty: v })} /><//>
         <${Field} label="Name" span=${2} hint="Optional"><${Text} value=${f.name} onInput=${(v) => setF({ ...f, name: v })} placeholder=${autoName} /><//>

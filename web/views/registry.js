@@ -357,7 +357,7 @@ const fromInst = (i) => ({
 const NO_CONVENTIONS = { tradingCalendar: '', settlementCalendar: '', paymentCalendar: '', settleLag: null };
 const conventionsOf = (i) => ({ ...NO_CONVENTIONS, ...(i?.conventions || {}) });
 /** What is stored: only the fields that are set; null when none is. */
-function conventionsPayload(c) {
+export function conventionsPayload(c) {
   const out = {};
   for (const k of ['tradingCalendar', 'settlementCalendar', 'paymentCalendar']) if (String(c?.[k] || '').trim()) out[k] = String(c[k]).trim().toUpperCase();
   if (isNum(c?.settleLag)) out.settleLag = c.settleLag;
@@ -388,7 +388,7 @@ function CalendarField({ label, hint, value, onChange, cals, inherit }) {
  * venue country or the currency decides, as shown above. Editable after the instrument has traded:
  * these are conventions for dates worked out from then on, not terms that positions were booked on.
  */
-function ConventionFields({ draft, set, cals, product, saved }) {
+export function ConventionFields({ draft, set, cals, product, saved }) {
   const c = draft.conventions || NO_CONVENTIONS;
   const on = (patch) => set({ conventions: { ...c, ...patch } });
   const base = cals ? expectedCalendar(draft, cals) : null;

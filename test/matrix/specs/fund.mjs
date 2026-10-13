@@ -289,6 +289,8 @@ const mutualFund = {
       id: 'tuesday-nav-published', action: 'quote', instrument: 'main', quote: { last: 24.60 },
       expect: {
         positions: [{ instrument: 'main', lot: 'lot', qty: 600, price: 24.60, value: 14_760, unrealized: 252 }], // 600 x 24.60 - 14,508
+        // The waiting order's estimate follows the last published NAV (still the same dealing date).
+        openOrders: [{ instrument: 'main', kind: 'trade', action: 'sell', status: 'working', qty: 600, filledQty: 0, owner: 'account', reason: waitingFor('2026-04-07', '24.60') }],
         pnl: { account: { unrealized: 252, total: 520 } },
         nav: { account: 500_520, book: 1_000_520 },
         balance: { account: { positions: 14_760, assets: 500_520, netAssets: 500_520 } },
