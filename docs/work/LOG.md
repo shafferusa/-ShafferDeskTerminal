@@ -257,3 +257,4 @@
 - 2026-10-13T20:07Z | s3 | +0.2 | abs_cds passes at engine, API and browser
 - 2026-10-13T20:09Z | t2 | +0.2 | long_butterfly passes at engine, API and browser
 - 2026-10-13T20:10Z | s2 | +0.2 | electricity_swap passes at engine, API and browser (peak and off-peak MWh, four legs net, EUR Book)
+- 2026-10-13T20:11Z | b4 | +0.2 | syndicated_loan passes at engine, API and browser
