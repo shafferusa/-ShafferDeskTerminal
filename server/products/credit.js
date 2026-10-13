@@ -76,6 +76,10 @@ export function normalizeCreditTerms(productId, t, errors) {
     errors.push(`A standard contract pays one of the standard running coupons (${STANDARD_COUPONS.map(bp).join(', ')}); ${bp(t.coupon)} is not one. State the bespoke convention for any other coupon.`);
   }
   t.firstStub = t.convention ? null : t.firstStub === 'long' ? 'long' : 'short';
+  // Monthly premium on a stated day (bespoke contracts only: an ABS CDS pays on its reference obligation's distribution day).
+  t.paymentDay = num(t.paymentDay);
+  if (t.paymentDay !== null && (t.convention || !(Number.isInteger(t.paymentDay) && t.paymentDay >= 1 && t.paymentDay <= 28))) errors.push(t.convention ? 'A monthly payment day applies to a bespoke contract; a standard contract pays quarterly on the IMM dates.' : 'The monthly payment day is a whole day of the month from 1 to 28.');
+  if (t.paymentDay === null) delete t.paymentDay;
   t.settlement = SETTLEMENT_METHODS[t.settlement] ? t.settlement : 'auction';
   if (t.settlement === 'physical' && !String(t.deliverable || '').trim()) errors.push('Physical settlement needs the deliverable obligation (Deliverable obligation).');
   if (t.creditEventSet && !CREDIT_EVENT_SETS[t.creditEventSet]) errors.push(`Credit events "${t.creditEventSet}" is not one of: ${Object.keys(CREDIT_EVENT_SETS).join(', ')}.`);
@@ -111,7 +115,7 @@ export function normalizeCreditTerms(productId, t, errors) {
 export function creditRows(inst) {
   const t = inst.terms;
   const rows = [];
-  rows.push(['Premium convention', t.convention === 'standard' ? 'Standard (full first coupon): IMM roll dates moved to the next business day, accrued premium exchanged at trade (step-in the day after the trade), last period to maturity included' : `Bespoke: periods from the effective date to the IMM roll dates, first period a ${t.firstStub === 'long' ? 'long stub (to the second roll date)' : 'short stub'}; premium from the trade date, nothing exchanged at trade`]);
+  rows.push(['Premium convention', t.convention === 'standard' ? 'Standard (full first coupon): IMM roll dates moved to the next business day, accrued premium exchanged at trade (step-in the day after the trade), last period to maturity included' : `Bespoke: periods from the effective date to ${t.paymentDay ? `day ${t.paymentDay} of each month` : 'the IMM roll dates'}, first period a ${t.firstStub === 'long' ? 'long stub (to the second roll date)' : 'short stub'}; premium from the trade date, nothing exchanged at trade`]);
   rows.push(['Credit events', (t.creditEvents || []).map((e) => CREDIT_EVENTS[e]).join(', ')]);
   rows.push(['Settlement after a credit event', `${SETTLEMENT_METHODS[t.settlement || 'auction']}${t.settlement === 'physical' ? `: ${t.deliverable}` : ''}`]);
   if (t.basket?.length) rows.push(['Basket', `${t.basket.join('; ')}. Protection on the ${ordinal(t.nth)} default${t.defaults?.length ? `; defaults so far: ${t.defaults.map((d) => `${d.entity} (${d.date})`).join(', ')}` : ''}`]);
@@ -130,6 +134,20 @@ function immDates(from, to) {
   for (let y = Number(from.slice(0, 4)); `${y}-01-01` <= to; y++) {
     for (const m of ['03', '06', '09', '12']) { const d = `${y}-${m}-20`; if (d > from && d <= to) out.push(d); }
   }
+  return out;
+}
+
+/** The `day` of each month after `from` up to `to`, and `to` itself. */
+function monthlyDates(from, to, day) {
+  const out = [];
+  let y = Number(from.slice(0, 4)), m = Number(from.slice(5, 7));
+  for (let guard = 0; guard < 1200; guard++) {
+    const d = `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    if (d > to) break;
+    if (d > from) out.push(d);
+    m += 1; if (m > 12) { m = 1; y += 1; }
+  }
+  if (!out.length || out[out.length - 1] !== to) out.push(to);
   return out;
 }
 
@@ -154,7 +172,8 @@ export function cdsSchedule(inst) {
     }
     return out;
   }
-  let dates = cdsDates(t.effective, t.maturity);
+  // A monthly contract (an ABS CDS paying on the reference obligation's distribution day) rolls on that day of each month.
+  let dates = t.paymentDay ? monthlyDates(t.effective, t.maturity, t.paymentDay) : cdsDates(t.effective, t.maturity);
   if (t.firstStub === 'long' && dates.length > 1) dates = dates.slice(1);
   const out = [];
   let start = t.effective;
