@@ -231,7 +231,36 @@ function Ticket({ inst, detail, book, onDone }) {
         { label: 'Unrealized', align: 'r', render: (p) => html`<${Money} value=${p.unrealized} ccy=${p.ccy} signed reason=${p.missingReason} />` },
         { label: '', align: 'r', render: (p) => html`<${Button} small onClick=${() => closePos(p, 0.5)}>Close half<//> <${Button} small onClick=${() => closePos(p)}>Close<//>` },
       ]} rows=${mine} rowKey=${(p) => p.positionId} /><//>` : null}
+    <${FinancingLinks} inst=${inst} book=${book} unitId=${unitId} longs=${longs} onShort=${() => setAction('sell_short')} canShort=${actions.includes('sell_short')} onDone=${onDone} />
   </div>`;
+}
+
+/**
+ * Financing of this instrument (ui1). Borrowing, lending, repo and pledging stay on the Treasury and Account pages:
+ * these links open the same dialogs those pages use, with the instrument and the trading owner filled in. A securities
+ * borrow is always a leg of a short sale, so "Borrow this security" turns this ticket to Sell short.
+ */
+function FinancingLinks({ inst, book, unitId, longs, onShort, canShort, onDone }) {
+  if (!['equity', 'fund', 'bond'].includes(inst.family) || inst.arrangement) return null;
+  const owner = book.units.find((u) => u.id === unitId);
+  const open = async (mode, side, productId) => {
+    const m = await import('./treasury.js');
+    openOverlay((close) => html`<${m.ArrangementDialog} book=${book} mode=${mode} side=${side} unitId=${unitId} preset=${{ instrumentId: inst.id, productId }} onClose=${close} onDone=${(x) => { bump(); onDone?.(x); }} />`);
+  };
+  const held = longs.length > 0;
+  const where = owner ? (owner.kind === 'treasury' ? 'Treasury' : owner.name) : 'the trading owner';
+  const page = owner ? (owner.kind === 'treasury' ? '#/treasury/borrowings' : `#/account/${owner.id}`) : '#/treasury';
+  return html`<${Panel} title="Financing" note=${`Arranged on the ${owner?.kind === 'account' ? 'Account' : 'Treasury'} page; these open the same dialogs`}>
+    <div class="row" style="flex-wrap:wrap;gap:6px">
+      ${canShort ? html`<${Button} small onClick=${onShort} title="A borrow is always a leg of a short sale: the ticket turns to Sell short, with its borrow leg">Borrow this security<//>` : null}
+      <${Button} small disabled=${!held || !owner} onClick=${() => open('repo', 'repo')} title=${held ? `Repo: borrow cash against this holding of ${where}` : `${where} holds no long position in it`}>Repo this holding<//>
+      <${Button} small disabled=${!held || !owner} onClick=${() => open('secloan', 'lend_sec')} title=${held ? `Lend this holding of ${where}` : `${where} holds no long position in it`}>Lend<//>
+      <${Button} small disabled=${!held || !owner} onClick=${() => open('loan', 'borrow_cash', 'securities_backed_loan')} title=${held ? `A securities-backed loan pledging this holding of ${where}` : `${where} holds no long position in it`}>Finance this position<//>
+      <${Button} small disabled=${!owner} onClick=${() => open('repo', 'reverse_repo')} title="Reverse repo: lend cash and take this security as collateral">Reverse repo against it<//>
+      <a class="btn small link" href=${page}>Open ${owner?.kind === 'account' ? `${owner.name}'s page` : 'Treasury borrowings and lending'}</a>
+    </div>
+    <p class="note" style="margin:6px 0 0">${held ? `${where} holds this long, so it can be repoed, lent or pledged.` : owner ? `${where} holds no long position in it: repo, lending and pledging need one.` : 'Choose the trading owner first.'} Nothing is submitted until the dialog's preview is confirmed.</p>
+  <//>`;
 }
 
 /** Preview a lifecycle action on a strategy (close, resize, roll, retry, unwind). */

@@ -35,7 +35,7 @@ export default [
         sameLife(c, before, await lifeDigest(w, L), 'six more cycles and a restart');
         w.sameStored(c, fp, w.fingerprint(), 'six more cycles and a restart store nothing');
       }),
-      browser: 'time passing is not a user action; the screens are read after catch-up in SB:nodup:catch-up-screens',
+      browser: 'time passing is not a user action; the screens are read after time was moved on with the demo band, across two server stops, in SB:nodup:catch-up',
     },
   },
   {
@@ -57,6 +57,7 @@ export default [
       }),
       browser: async (b, c) => b.cases.catchUpScreens(b, c),
     },
+    expectedBrowser: 'The same fifteen days, seen from the screens. Monday: everything is put on and the Book is open in the browser. The server is stopped: the page says it cannot reach the server, and a screen opened meanwhile (Data connection, whose code the page had not loaded) says it could not be loaded and will reload by itself; the server is started and that screen loads without the user reloading. The user then moves the demo clock with the demo band, +1 week, +1 week, +1 day, to Tuesday 17 March (closing the post-trade popups as they come). The Full history\'s event-type filter then shows, for every kind of event other than daily accruals, the count the day-by-day run booked (Dividend, Option expired, Loan repayment, Collateral variation once each), and no kind the day-by-day run did not have; no row of the Full history, daily accruals included, appears twice, and the loan interest of 194.44 is on one row. Alpha\'s Cash and financing balances show settled 944,301.76, restricted 15,300.00 and margin 5,000.00; its P&L shows the 250.00 dividend, the 420.00 option premium lost and borrowing and funding expenses of 200.27 (194.44 interest + 5.83 borrow fee); nothing is left awaiting settlement; each lifecycle item is listed once; no settlement has failed. The server is stopped and started again, the page reloaded, the clock moved +1 hour and a cycle run: the event counts and those five screens are exactly as before. Behind the screens: the hand-worked figures of lib/life.mjs hold and the books equal the day-by-day run\'s.',
   },
   {
     id: 'catch-up-restarts',

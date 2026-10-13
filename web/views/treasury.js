@@ -279,8 +279,13 @@ const LEND_ONLY = ['bank_deposit', 'term_deposit', 'certificate_of_deposit', 're
 const REPO_PRESET = { overnight_repo: { term: 'overnight' }, open_repo: { term: 'open' }, triparty_repo: { triparty: true }, special_repo: { collateralType: 'special' } };
 const DEFAULT_PRODUCT = { borrow_cash: 'cash_loan', lend_cash: 'term_deposit', repo: 'repo', reverse_repo: 'reverse_repo', lend_sec: 'securities_lending' };
 
-/** mode: 'loan' | 'repo' | 'secloan'. `unitId` preselects the Treasury or Account, `fixed` holds it there, `side` preselects borrow or lend. */
-export function ArrangementDialog({ book, mode, unitId, fixed, side, onClose, onDone }) {
+/**
+ * mode: 'loan' | 'repo' | 'secloan'. `unitId` preselects the Treasury or Account, `fixed` holds it there, `side` preselects borrow or lend.
+ * `preset` (ui1, from an instrument page's financing links): { productId, instrumentId } preselects the product and the
+ * long position in that instrument held by the chosen owner (the repo collateral, the security to lend, or the position
+ * a secured loan pledges; a reverse repo names the instrument as its collateral). Everything stays editable.
+ */
+export function ArrangementDialog({ book, mode, unitId, fixed, side, preset, onClose, onDone }) {
   const m = MODES[mode];
   const res = useBook(book.id);
   const cat = useLive(() => get('/api/catalog'), [], { interval: false });
@@ -297,7 +302,7 @@ export function ArrangementDialog({ book, mode, unitId, fixed, side, onClose, on
   const pledging = mode === 'loan' && !lending && draft?.terms?.loanType === 'secured';
   const [pledge, setPledge] = useState({ pos: null, qty: null });
   // The product decides the starting terms, so a change of side or product starts the terms again.
-  useEffect(() => { if (cat.data) setF((x) => ({ ...x, productId: products.some((p) => p.id === DEFAULT_PRODUCT[f.action]) ? DEFAULT_PRODUCT[f.action] : products[0]?.id || '' })); }, [f.action, Boolean(cat.data)]);
+  useEffect(() => { if (cat.data) setF((x) => ({ ...x, productId: preset?.productId && products.some((p) => p.id === preset.productId) ? preset.productId : products.some((p) => p.id === DEFAULT_PRODUCT[f.action]) ? DEFAULT_PRODUCT[f.action] : products[0]?.id || '' })); }, [f.action, Boolean(cat.data)]);
   useEffect(() => { setDraft(product ? newDraft(product, { terms: REPO_PRESET[product.id] }) : null); setPos(null); setPledge({ pos: null, qty: null }); }, [f.productId, f.action]);
   // Another Treasury or Account holds different positions: the chosen one no longer applies, the other terms stay.
   const changeUnit = (v) => {
@@ -311,6 +316,19 @@ export function ArrangementDialog({ book, mode, unitId, fixed, side, onClose, on
     setF((x) => ({ ...x, ccy: p.ccy, qty: mode === 'secloan' ? free : x.qty }));
     setDraft((d) => d && (mode === 'secloan' ? { ...d, underlyingId: p.instrument.id } : { ...d, terms: { ...d.terms, collateralInstrumentId: p.instrument.id, collateralQty: free } }));
   };
+  // ui1: opened from an instrument page, the position in that instrument (held long by the chosen owner) is filled in.
+  const presetKey = draft ? `${f.unitId}|${f.action}|${f.productId}` : '';
+  useEffect(() => {
+    const iid = preset?.instrumentId;
+    if (!iid || !draft) return;
+    if (f.action === 'reverse_repo') { if (!draft.terms?.collateralInstrumentId) setDraft((d) => d && { ...d, terms: { ...d.terms, collateralInstrumentId: iid } }); return; }
+    get(`/api/books/${book.id}/accounting/positions`, { scope: f.unitId }).then((r) => {
+      const p = r.positions.find((x) => x.instrument.id === iid && x.qty > 0);
+      if (!p) return;
+      if (needsPos) pick(p);
+      else if (pledging) setPledge({ pos: p, qty: Math.max(0, p.qty - p.pledgedQty - p.onLoanQty) });
+    }, () => {});
+  }, [presetKey, pledging]);
   // A reverse repo names its collateral by instrument, not by a position held: look its symbol up for the default name.
   const [collSym, setCollSym] = useState('');
   const collId = f.action === 'reverse_repo' ? draft?.terms?.collateralInstrumentId : '';

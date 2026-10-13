@@ -2087,4 +2087,126 @@ const coveredBond = {
   ],
 };
 
-export default [corporateBondIg, highYieldBond, eurobond, foreignMarketBond, corporateSukuk, floatingRateNote, zeroCouponBond, perpetualBond, subordinatedDebt, coveredBond];
+// ---------------------------------------------------------------------------------------------
+// commercial_paper
+// ---------------------------------------------------------------------------------------------
+// Unsecured US commercial paper of a top-rated finance company: a discount note with no coupon, 90 days from
+// purchase to maturity on Monday 11 October 2027 (Columbus Day: the bond market and the Federal Reserve are
+// closed, so it is paid on Tuesday 12 October), SAME-DAY settlement (instrument convention: lag 0), pieces of
+// 100,000. Bought, part sold after rates fall, the rest held to maturity.
+// Commercial paper is quoted as a bank discount rate on ACT/360. The Terminal takes prices in % of par, so each
+// quote is converted by hand: price = 100 - discount rate (%) x days from settlement to maturity / 360.
+//   13 July, 90 days: ask 4.80% -> 100 - 4.80 x 90/360 = 98.80; bid 4.84% -> 98.79; last 4.82% -> 98.795.
+//   10 August, 62 days: ask 4.50% -> 100 - 4.50 x 62/360 = 99.225; bid 4.68% -> 99.194; last 4.59% -> 99.2095.
+// Commission: 0.1 basis point of principal.
+const commercialPaper = {
+  productId: 'commercial_paper',
+  title: 'Larchmont Funding commercial paper due 11 October 2027: bought at a 4.80% discount with same-day settlement, part sold, redeemed at par after Columbus Day',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount (a multiple of 100,000)'],
+    automaticInputs: ['bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData)', 'fill price and fill model', 'same-day settlement from the instrument convention', 'commission from the Book fee schedule'],
+    manualInputs: ['the bank discount rate is converted to a price in % of par by hand (the Terminal has no discount-rate quotation)'],
+    settlement: 'Same day (instrument convention, settlement lag 0): the purchase is paid and the sale received the day they are made',
+    lifecycle: 'No coupon and no accrual; redemption at par on the maturity date, moved to the next business day after Columbus Day, automatic',
+    accounting: 'Clean cost at average; no accrued interest; the discount is unrealized P&L while held and realized P&L at sale and redemption (no accretion into interest income)',
+    collateral: 'None for a long position',
+  },
+  start: EDT('2027-07-13'), // Tuesday
+  settlementCheck: { lag: 0, holidays: [] },
+  book: {
+    name: 'Matrix commercial paper', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 10_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 6_000_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.1 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'commercial_paper', name: 'Larchmont Funding Corp Commercial Paper 11-Oct-2027', symbol: 'LARCH-CP-11OCT27', marketView: 'US_CASH', venueType: 'otc', issuer: 'Larchmont Funding Corp', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { settleLag: 0 },
+      terms: { couponType: 'zero', maturity: '2027-10-11', issueDate: '2027-07-13', dayCount: 'ACT/360', redemption: 100, minDenomination: 100_000, seniority: 'Senior unsecured' } },
+  },
+  quotes: { main: { bid: 98.79, ask: 98.8, last: 98.795, bidSize: 50_000_000, askSize: 50_000_000 } },
+  expectAtStart: { ...startState(6_000_000, 4_000_000), cash: { account: usdCash(6_000_000), treasury: usdCash(4_000_000) } },
+  steps: [
+    {
+      id: 'open', covers: ['open', 'settlement'], action: 'ticket', instrument: 'main', side: 'buy', qty: 5_000_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 5_000_000, estimate: 98.8, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2027-07-13', calendar: 'USBOND',
+            gross: 4_940_000, // 5,000,000 x 98.80 / 100
+            accrued: 0, cash: -4_940_000, fees: 49.4 }], // 0.1 bp of 4,940,000
+          cash: { USD: { purchases: 4_940_000, fees: 49.4, required: 4_940_049.40, available: 6_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 5_000_000, avgPrice: 98.8, fills: [{ qty: 5_000_000, price: 98.8, model: 'quoted-bid-ask', settleDate: '2027-07-13', source: 'Test fixture', status: 'simulated' }] }] },
+        // Same-day settlement: the purchase is paid at once.
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Bought 5,000,000 LARCH-CP-11OCT27 @ 98.80 USD', owner: 'account', date: '2027-07-13' },
+          { type: 'settlement.pay', summary: 'paid 4,940,049.40 USD from settled cash', cash: { USD: -4_940_049.40 }, date: '2027-07-13' },
+        ],
+        cash: { account: { USD: { settled: 1_059_950.60, unsettled: 0, availableToTrade: 1_059_950.60 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 5_000_000, avgCost: 98.8, cost: 4_940_000, price: 98.795,
+          value: 4_939_750, unrealized: -250, accrued: 0, priceSource: 'Test fixture' }], // 5,000,000 x 98.795%
+        holdings: { main: { long: 5_000_000, short: 0, net: 5_000_000 } },
+        pending: [],
+        lifecycle: [{ type: 'bond.maturity', instrument: 'main', dueDate: '2027-10-12', status: 'pending' }], // 11 Oct is Columbus Day
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -49.4, fees: 0, borrowFunding: 0, unrealized: -250, total: -299.40 } },
+        nav: { account: 5_999_700.60, book: 9_999_700.60 },
+        balance: { account: { cash: 1_059_950.60, positions: 4_939_750, assets: 5_999_700.60, liabilities: 0, netAssets: 5_999_700.60 } },
+      },
+    },
+    // Four weeks pass: commercial paper has no coupon and nothing accrues (no accretion of the discount).
+    { id: 'four-weeks-on', covers: 'accrual', action: 'clock', to: EDT('2027-08-10'), expect: { events: [] } },
+    {
+      id: 'quote-rates-fall', action: 'quote', instrument: 'main', quote: { bid: 99.194, ask: 99.225, last: 99.2095, bidSize: 50_000_000, askSize: 50_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 5_000_000, price: 99.2095, value: 4_960_475, unrealized: 20_475 }], // 5,000,000 x 99.2095% - 4,940,000
+        pnl: { account: { unrealized: 20_475, total: 20_425.60 } },
+        nav: { account: 6_020_425.60, book: 10_020_425.60 },
+        balance: { account: { positions: 4_960_475, assets: 6_020_425.60, netAssets: 6_020_425.60 } },
+      },
+    },
+    {
+      id: 'reduce', covers: ['reduce', 'settlement'], action: 'ticket', instrument: 'main', side: 'sell', qty: 2_000_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 2_000_000, estimate: 99.194, settleDate: '2027-08-10',
+          gross: 1_983_880, // 2,000,000 x 99.194 / 100
+          accrued: 0, cash: 1_983_880, fees: 19.84 }] }, // 0.1 bp of 1,983,880 = 19.8388
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 2_000_000, avgPrice: 99.194 }] },
+        // Realized: 1,983,880 - 2,000,000 x 98.80% = 7,880, the discount earned on the part sold. Received at once: 1,983,860.16.
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 2,000,000 LARCH-CP-11OCT27 @ 99.194 USD (realized 7,880.00 USD)' },
+          { type: 'settlement.receive', summary: 'received 1,983,860.16 USD into settled cash', cash: { USD: 1_983_860.16 } },
+        ],
+        cash: { account: { USD: { settled: 3_043_810.76, unsettled: 0, availableToTrade: 3_043_810.76 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 3_000_000, cost: 2_964_000, avgCost: 98.8, price: 99.2095, value: 2_976_285, unrealized: 12_285 }], // 3,000,000 x 99.2095%
+        holdings: { main: { long: 3_000_000, short: 0, net: 3_000_000 } },
+        pnl: { account: { realized: 7_880, commissions: -69.24, unrealized: 12_285, total: 20_095.76 } }, // 49.40 + 19.84
+        nav: { account: 6_020_095.76, book: 10_020_095.76 },
+        balance: { account: { cash: 3_043_810.76, positions: 2_976_285, assets: 6_020_095.76, liabilities: 0, netAssets: 6_020_095.76 } },
+      },
+    },
+    {
+      // Tuesday 12 October: redeemed at par the business day after the Columbus Day maturity. Realized 3,000,000 - 2,964,000 = 36,000.
+      id: 'maturity', covers: ['maturity', 'close', 'market holiday'], action: 'clock', to: EDT('2027-10-12'),
+      expect: {
+        events: [
+          { type: 'bond.redemption', summary: 'Redeemed at maturity: 3,000,000 LARCH-CP-11OCT27 at 100.00% of par', owner: 'account' },
+          { type: 'settlement.receive', summary: 'received 3,000,000.00 USD into settled cash', cash: { USD: 3_000_000 } },
+        ],
+        cash: { account: { USD: { settled: 6_043_810.76, unsettled: 0, availableToTrade: 6_043_810.76 } }, treasury: { USD: { settled: 4_000_000 } } },
+        positions: [],
+        holdings: { main: null },
+        lifecycle: [],
+        // Discount earned: 7,880 + 36,000 = 43,880, all realized; commissions 69.24.
+        pnl: { account: { realized: 43_880, couponInterest: 0, commissions: -69.24, unrealized: 0, total: 43_810.76 } },
+        nav: { account: 6_043_810.76, book: 10_043_810.76 },
+        balance: { account: { cash: 6_043_810.76, positions: null, assets: 6_043_810.76, liabilities: 0, netAssets: 6_043_810.76 } },
+      },
+    },
+  ],
+};
+
+export default [corporateBondIg, highYieldBond, eurobond, foreignMarketBond, corporateSukuk, floatingRateNote, zeroCouponBond, perpetualBond, subordinatedDebt, coveredBond, commercialPaper];
