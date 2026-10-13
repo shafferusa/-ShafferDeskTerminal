@@ -37,8 +37,9 @@
 //       underlyingId '$inst:<key>' (return, price: picked by symbol in the Reference asset search), units and
 //       fixedPrice (price), months 0 | 1 | 3 | 6 | 12 (Payment), dayCount, compounding (fixed leg paid at
 //       maturity only), passDividends and resetNotional (return), exchangeNotional (fixed, float, ois)
-// Not on the form, so not typed here: a leg's notional schedule (amortizing and accreting swaps) and the
-// initial fixings of a return leg (`terms.initialPrices`); the API accepts both.
+//       notionalSchedule [{ from, factor }] (any leg: the "Notional schedule" box, one "date factor" a line),
+//       averaging 'daily', pricingCalendar, hours 'base' | 'peak' | 'offpeak', peakHours (price legs; s2)
+// Not on the form, so not typed here: the initial fixings of a return leg (`terms.initialPrices`); the API accepts them.
 
 export const family = 'swap';
 
@@ -119,6 +120,16 @@ async function fillLegs(ui, scope, legs, ctx) {
     }
     if (['fixed', 'float', 'ois'].includes(leg.type)) await checkbox(ui, p, /^\s*Notional\s*$/).setChecked(Boolean(leg.exchangeNotional));
     else if (leg.exchangeNotional) throw new Error('The form exchanges notional on fixed, floating and overnight legs only.');
+    // s2: price legs (averaging, pricing calendar, delivery hours) and the notional schedule of any leg.
+    if (leg.type === 'price') {
+      if (leg.fixedPrice === null || leg.fixedPrice === undefined) await ui.select(p, 'Floating price').selectOption(leg.averaging || '');
+      else if (leg.averaging) throw new Error('A fixed-price leg has no averaging.');
+      await ui.input(p, 'Pricing calendar').fill(leg.pricingCalendar || '');
+      await ui.select(p, 'Delivery hours').selectOption(leg.hours || '');
+      if (leg.hours) { await ui.drawn(); await ui.input(p, 'Peak hours a day').fill(String(leg.peakHours ?? 16)); }
+    }
+    const sched = (leg.notionalSchedule || []).map((s) => `${s.from} ${s.factor ?? ''}`.trim()).join('\n');
+    await ui.field(p, 'Notional schedule').locator('textarea').fill(sched);
   }
 }
 

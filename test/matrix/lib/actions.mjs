@@ -24,7 +24,8 @@
 import { eventsSince, normalizePreview, normalizeResult, observeState } from './normalize.mjs';
 
 const SECURITY = new Set(['equity', 'fund', 'spot', 'crypto', 'bond', 'manual']);
-export const TRADE_ACTIONS = new Set(['ticket', 'close', 'resize', 'package', 'repay', 'roll']);
+// t1/t2 (templates): 'recover' (how: 'retry' | 'unwind') is a recovery action of a strategy instance that needs attention; it opens a preview.
+export const TRADE_ACTIONS = new Set(['ticket', 'close', 'resize', 'package', 'repay', 'roll', 'recover']);
 export const FIXTURE_ACTIONS = new Set(['quote', 'close_price', 'fx_rate', 'rate', 'borrow']);
 /** The cash requirement a confirmation sends back, as web/views/preview.js builds it. */
 export const expectedOf = (pv) => ({ cash: Object.fromEntries(Object.values(pv.totals.cash || {}).map((r) => [r.ccy, r.required])) });
@@ -192,7 +193,25 @@ async function previewFor(t, ctx, step) {
   // `package` step. '$inst:key', '$unit:account' and '$lot:name' stand for ids that exist only at run time.
   if (step.action === 'package' || (step.action === 'ticket' && step.input)) {
     const input = resolveRefs({ bookId: ctx.bookId, unitId, ...(await resolvePositions(t, ctx, step.input)) }, ctx);
-    return { lot: step.as, opens: !input.attachTo, instrument: step.instrument, pv: await t.preview(input) };
+    if (!step.hedge && !step.editLegs && !step.acknowledgeProtection) return { lot: step.as, opens: !input.attachTo, instrument: step.instrument, pv: await t.preview(input) };
+    // t1 (templates), as the Strategies page does it:
+    //   hedge: { packageId, scope? }   the page asks Shaffer Hedge (here a labelled fixture) with the package as context and
+    //                                  adds the chosen hedge package's legs to the preview (web/views/strategy.js, hedgeBody)
+    //   editLegs: { <leg n>: patch }   legs changed in the preview dialog, then "Re-check edited package" (web/views/preview.js)
+    //   acknowledgeProtection: true    "Add this protection deliberately" in the preview dialog
+    let extra = {};
+    if (step.hedge) {
+      const r = await t.http.post('/api/hedge/requests', {
+        bookId: ctx.bookId, unitId, scope: { type: step.hedge.scope || 'trade' }, trigger: 'strategy_page', instrumentId: input.underlyingId || undefined,
+        investmentStrategy: input.investmentStrategy ?? null, holdingPeriod: input.holdingPeriod ?? null, objective: input.hedgeObjective ?? null, package: { ...input, financing: null },
+      });
+      ctx.lastHedgeRequest = r;
+      if (step.hedge.packageId) extra = { hedgeLinkId: r.id, hedgePackageId: step.hedge.packageId, appendHedge: true };
+    }
+    let pv = await t.preview({ ...input, ...extra });
+    if (step.editLegs) pv = await t.preview({ ...pv.input, financing: null, legs: pv.legs.map((l) => (step.editLegs[l.n] ? { ...l, ...step.editLegs[l.n] } : l)), clientToken: pv.token });
+    if (step.acknowledgeProtection) pv = await t.preview({ ...pv.input, extraProtection: true, financing: null, legs: pv.legs, clientToken: pv.token });
+    return { lot: step.as, opens: !input.attachTo, instrument: step.instrument, pv };
   }
   if (step.action === 'ticket') {
     const inst = ctx.inst(step.instrument);
@@ -219,7 +238,8 @@ async function previewFor(t, ctx, step) {
   if (step.action === 'close') {
     const { lot, position } = await positionIn(t, ctx, step.lot, step.instrument);
     const fraction = (step.percent ?? 100) / 100;
-    const args = step.scope === 'position' ? { positionIds: [position.positionId], fraction } : { fraction };
+    // t1: `qty` closes an exact amount of one position (the strategy instance's "Close an exact amount").
+    const args = step.qty !== undefined && step.qty !== null ? { positionIds: [position.positionId], qty: step.qty } : step.scope === 'position' ? { positionIds: [position.positionId], fraction } : { fraction };
     return { lot: lot.name, pv: await restated(t, await t.previewAction(lot.strategyId, 'close', args), step) };
   }
   if (step.action === 'resize') {
@@ -254,7 +274,30 @@ async function previewFor(t, ctx, step) {
     const args = { positionIds: picked.map((p) => p.positionId), newExpiration: options.length ? step.newExpiration : undefined, newStrike: options.length === 1 && step.newStrike !== undefined && step.newStrike !== null ? step.newStrike : undefined, newInstrumentId: futures.length && step.into ? ctx.inst(step.into).id : undefined };
     return { lot: lot.name, pv: await t.previewAction(lot.strategyId, 'roll', args) };
   }
+  if (step.action === 'recover') {
+    // t1/t2: a package with failed required legs (status "attention"): Retry resubmits the failed legs, Unwind closes every
+    // open position of the instance (web/views/strategy-detail.js). `how: 'retry' | 'unwind'`.
+    const lot = ctx.lot(step.lot);
+    if (!['retry', 'unwind'].includes(step.how)) throw new Error(`Step "${step.id}": recover needs how: 'retry' or 'unwind'.`);
+    return { lot: lot.name, pv: await restated(t, await t.previewAction(lot.strategyId, step.how, {}), step) };
+  }
   throw new Error(`Not a trade step: ${step.action}`);
+}
+
+/** t1: the facts of a hedge request a spec states: its state, who answered, the packages, and the context that was sent. */
+export function hedgeRequestView(r, ctx) {
+  const q = r.request || {};
+  const key = (ref) => (ref?.terminalId ? ctx.instrumentKey(ref.terminalId) : null);
+  return {
+    state: r.state, complete: r.complete, missing: r.missing || [], source: r.source ? { kind: r.source.kind, label: r.source.label } : null,
+    packages: (r.response?.packages || []).map((p) => p.id), recommendedId: r.response?.recommendedId ?? null, note: r.response?.note ?? null,
+    investmentStrategy: q.investmentStrategy ? { id: q.investmentStrategy.id ?? null, name: q.investmentStrategy.name ?? null, resolved: Boolean(q.investmentStrategy.resolved) } : null,
+    holdingDays: q.holdingPeriod?.days ?? null, objective: q.objective?.type ?? null, scope: q.scope?.type ?? null,
+    primary: q.primary ? { instrument: key(q.primary.instrument), direction: q.primary.direction, quantity: q.primary.quantity ?? null, status: q.primary.status ?? null } : null,
+    proposedProtection: (q.proposedLegs || []).filter((l) => l.isProtection).map((l) => ({ action: l.action, quantity: l.quantity, right: l.instrument?.terms?.right ?? null, strike: l.instrument?.terms?.strike ?? null })),
+    linkedProtection: (q.linkedProtection || []).map((h) => ({ instrument: key(h.instrument), quantity: h.quantity, allocatedUnits: h.allocatedUnits ?? null })),
+    hedgesHeld: (q.hedgesHeld || []).map((h) => ({ instrument: key(h.instrument), quantity: h.quantity, relation: h.relation })),
+  };
 }
 
 const refusalOf = (err) => ({ message: err.message, status: err.status ?? null, code: err.code ?? null, where: 'request' });
@@ -378,6 +421,33 @@ export async function actThroughClient(t, ctx, step) {
         return {};
       }
       case 'restart': await t.restart(); return {};
+      case 'hedge_request': {
+        // t1: the hedge request the Strategies page sends once owner, instrument and amount are set (web/views/strategy.js,
+        // hedgeBody), answered by the labelled demo or test fixture. `request` is the page's input; the step's
+        // `expect.result` is stated on hedgeRequestView(): state, source, packages and the context that was sent.
+        const input = resolveRefs({ bookId: ctx.bookId, unitId: ctx.unitId(step.owner || 'account'), ...(await resolvePositions(t, ctx, step.input)) }, ctx);
+        const r = await t.http.post('/api/hedge/requests', {
+          bookId: ctx.bookId, unitId: input.unitId, scope: { type: step.scope || 'trade' }, trigger: 'strategy_page', instrumentId: input.underlyingId || undefined,
+          investmentStrategy: input.investmentStrategy ?? null, holdingPeriod: input.holdingPeriod ?? null, objective: input.hedgeObjective ?? null, package: { ...input, financing: null },
+        });
+        ctx.lastHedgeRequest = r;
+        return { result: hedgeRequestView(r, ctx) };
+      }
+      case 'strategy_check': {
+        // t1: the strategy instance as it stands (status, legs, fills), for `expect.result`. Nothing is changed.
+        return { result: normalizeResult(await t.strategy(ctx.lot(step.lot).strategyId), null, ctx) };
+      }
+      case 'hedge_script':
+        // t1: the scripted hedge service of demo mode (POST /api/demo/hedge-script), labelled "Test fixture" wherever it is shown.
+        // It stands in for Shaffer Hedge; '$inst:key' in the responses names an instrument of the spec.
+        await t.http.post('/api/demo/hedge-script', resolveRefs(step.script, ctx));
+        return {};
+      case 'strategy_action': {
+        // t2: an action on a strategy instance that submits nothing: Accept as it stands (after failed legs) or Cancel working legs.
+        const after = await t.http.post(`/api/strategies/${ctx.lot(step.lot).strategyId}/action`, { action: step.how });
+        // t1: the strategy instance as it stands after the action (its status and every leg), for `expect.result`.
+        return { result: normalizeResult(after, null, ctx) };
+      }
       default: throw new Error(`Unknown step action "${step.action}".`);
     }
   } catch (err) {

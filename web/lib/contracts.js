@@ -187,6 +187,8 @@ const F = {
     { path: 'terms.conversionRatio', label: 'Conversion ratio (shares per 1,000 face)', type: 'number', show: (d) => CONVERTIBLE_IDS.includes(d.productId), required: true },
     { path: 'terms.paymentDelayDays', label: 'Payment delay (days after the period end)', type: 'number', hint: 'Interest and principal are paid this many days after the accrual period ends: Fannie Mae 24, Ginnie Mae I 14. 0 if empty.', show: (d) => SECURITISED_IDS.includes(d.productId) },
     { path: 'terms.guarantor', label: 'Guarantor', type: 'text', hint: 'Agency guaranteeing principal and interest. Losses cannot be allocated to a guaranteed pool.', show: (d) => SECURITISED_IDS.includes(d.productId) },
+    // b4: structured group B (specified pools, ABS, CMO, CLO, CDO, credit-linked and structured notes, cat bonds, traded loans).
+    { path: 'terms.poolCharacteristics', label: 'Pool characteristics', type: 'text', span: 2, hint: 'What the pool is specified on: maximum loan balance, LTV, FICO, geography, loan purpose', show: (d) => d.productId === 'specified_pool', required: true },
   ],
   loan: [
     { path: 'terms.loanType', label: 'Arrangement', type: 'select', default: 'unsecured', options: opt([['unsecured', 'Unsecured'], ['margin', 'Margin loan'], ['secured', 'Secured'], ['deposit', 'Deposit'], ['cd', 'Certificate of deposit'], ['facility', 'Credit facility drawing']]) },
@@ -302,9 +304,33 @@ function LegsEditor({ legs, onChange, ccy }) {
         ${!['return', 'price'].includes(l.type) ? html`<${Field} label="Day count"><${Select} value=${l.dayCount} onChange=${(v) => set(i, { dayCount: v })} options=${DAY_COUNTS} /><//>` : null}
         ${l.type === 'return' ? html`<${Field} label="Options"><${Check} checked=${l.passDividends} onChange=${(v) => set(i, { passDividends: v })}>Total return (pass income through)<//><${Check} checked=${l.resetNotional} onChange=${(v) => set(i, { resetNotional: v })}>Notional resets<//><//>` : null}
         ${['fixed', 'float', 'ois'].includes(l.type) ? html`<${Field} label="Notional"><${Check} checked=${l.exchangeNotional} onChange=${(v) => set(i, { exchangeNotional: v })}>Exchanged at start and maturity<//><//>` : null}
+        ${l.type === 'price' ? html`<${PriceLegFields} leg=${l} set=${(patch) => set(i, patch)} />` : null}
+        <${Field} label="Notional schedule" span=${2} hint="Amortizing or accreting: one step per line, the first day of a period and its factor of the notional (2026-09-05 0.75). Empty: the notional does not change."><${ScheduleText} value=${l.notionalSchedule} onChange=${(v) => set(i, { notionalSchedule: v })} /><//>
       </div></div>`)}
     <div><${Button} small onClick=${() => onChange([...legs, { side: 'receive', type: 'float', ccy: ccy || 'USD', index: '', spread: 0, months: 3, dayCount: 'ACT/360' }])}>Add a leg<//></div>
   </div>`;
+}
+
+// ---- s2: notional schedule and averaged / volume-shaped price legs (commodity, energy, electricity, freight swaps) ----
+const AVERAGING = opt([['', 'Fixing of the period end'], ['daily', 'Average of each pricing day']]);
+const HOURS = opt([['', 'Not by the hour'], ['base', 'Base (24 hours a day)'], ['peak', 'Peak hours'], ['offpeak', 'Off-peak hours']]);
+function PriceLegFields({ leg: l, set }) {
+  return html`
+    ${l.fixedPrice === null || l.fixedPrice === undefined || l.fixedPrice === '' ? html`<${Field} label="Floating price"><${Select} value=${l.averaging || ''} onChange=${(v) => set({ averaging: v || null })} options=${AVERAGING} /><//>` : null}
+    <${Field} label="Pricing calendar" hint="Pricing (and peak) days; empty: the payment calendar"><${Text} value=${l.pricingCalendar || ''} onInput=${(v) => set({ pricingCalendar: v.toUpperCase() || null })} /><//>
+    <${Field} label="Delivery hours" hint="Electricity: quantity = units x hours of the period"><${Select} value=${l.hours || ''} onChange=${(v) => set({ hours: v || null })} options=${HOURS} /><//>
+    ${l.hours ? html`<${Field} label="Peak hours a day"><${Num} value=${l.peakHours ?? 16} onInput=${(v) => set({ peakHours: v })} /><//>` : null}`;
+}
+/** The schedule as typed: "YYYY-MM-DD factor" a line. A line that cannot be read is sent as typed, for the server to refuse by name. */
+function ScheduleText({ value, onChange }) {
+  const shown = (value || []).map((s) => `${s.from} ${s.factor}`).join('\n');
+  const [text, setText] = useState(shown);
+  return html`<textarea rows="3" value=${text} onInput=${(e) => { setText(e.target.value); onChange(parseSchedule(e.target.value)); }}></textarea>`;
+}
+function parseSchedule(text) {
+  const rows = String(text || '').split('\n').map((x) => x.trim()).filter(Boolean);
+  if (!rows.length) return null;
+  return rows.map((r) => { const [from, factor] = r.split(/[\s,;]+/); return { from, factor: factor === undefined || factor === '' ? null : Number(factor) }; });
 }
 
 const BASIS_OPTIONS = opt([['agreement', 'Under a collateral agreement of this Book'], ['position', 'Position-level terms, entered here'], ['uncollateralized', 'Uncollateralized (paper assumption)']]);

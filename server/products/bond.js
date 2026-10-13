@@ -232,6 +232,11 @@ export const bond = {
     }
     if (typeof t.guarantor === 'string') t.guarantor = t.guarantor.trim();
     if (!t.guarantor) delete t.guarantor;
+    // b4: a specified pool is a pool chosen for its stated characteristics (loan balance cap, LTV, FICO, geography, loan
+    // purpose...): it is priced on them (a pay-up over the TBA), so they are part of what it is and are never assumed.
+    if (typeof t.poolCharacteristics === 'string') t.poolCharacteristics = t.poolCharacteristics.trim();
+    if (!t.poolCharacteristics) delete t.poolCharacteristics;
+    if (draft.productId === 'specified_pool' && !t.poolCharacteristics) errors.push('A specified pool needs its stated characteristics (for example: maximum loan balance, LTV, FICO, geography, loan purpose). They are what the pool is priced on and are not assumed.');
     if (t.issueDate && !ISO_DATE_RE.test(t.issueDate)) errors.push('Issue date must be YYYY-MM-DD.');
     // Minimum denomination: trades are in multiples of it (the quantity step of the ticket and the preview).
     if (t.minDenomination === undefined || t.minDenomination === null || t.minDenomination === '') delete t.minDenomination;
@@ -258,6 +263,7 @@ export const bond = {
     if (t.conversionRatio) rows.push(['Conversion', `${t.conversionRatio} shares per 1,000 face (recorded by hand; accrued interest is forfeited)`]);
     if (t.paymentDelayDays) rows.push(['Payment delay', `${t.paymentDelayDays} days after each accrual period ends`]);
     if (t.guarantor) rows.push(['Guarantor', `${t.guarantor} (principal and interest guaranteed; no loss allocation)`]);
+    if (t.poolCharacteristics) rows.push(['Pool characteristics', `${t.poolCharacteristics} (stated at registration)`]);
     if (t.writtenDown) rows.push(['Written down', `${t.writtenDown.kind === 'loss' ? 'Losses allocated' : 'Principal written down'} to factor ${t.factor} on ${t.writtenDown.date}`]);
     if (t.issueDate) rows.push(['Issue date', t.issueDate]);
     if (t.seniority) rows.push(['Seniority', t.seniority]);

@@ -19,7 +19,7 @@
 // MarketData or manual entry. A payment whose fixing is missing is blocked visibly, never guessed.
 
 import { fmt } from '../core/books.js';
-import { addBusinessDays, adjust, isBusinessDay } from '../quant/calendar.js';
+import { addBusinessDays, adjust, isBusinessDay, isKnownCalendar } from '../quant/calendar.js';
 import { yearFraction, DAY_COUNTS } from '../quant/daycount.js';
 import { addDays, addMonths, diffDays } from '../quant/dates.js';
 import { cdsDates, generateSchedule } from '../quant/schedule.js';
@@ -41,7 +41,7 @@ export function describeLeg(leg, app) {
     case 'float': return `${side} ${leg.index}${leg.spread ? ` ${leg.spread > 0 ? '+' : '-'} ${pct(Math.abs(leg.spread), 2)}` : ''} ${leg.ccy}, ${freq}, ${leg.dayCount}`;
     case 'ois': return `${side} compounded ${leg.index}${leg.spread ? ` ${leg.spread > 0 ? '+' : '-'} ${pct(Math.abs(leg.spread), 2)}` : ''} ${leg.ccy}, ${freq}, ${leg.dayCount}`;
     case 'return': return `${side} ${leg.passDividends ? 'total' : 'price'} return on ${ref} (${leg.ccy}), reset ${freq}${leg.resetNotional ? ', notional resets' : ''}`;
-    case 'price': return `${side} ${leg.fixedPrice !== null && leg.fixedPrice !== undefined ? `fixed price ${leg.fixedPrice}` : `floating price of ${ref}`} x ${leg.units} units per unit notional (${leg.ccy}), ${freq}`;
+    case 'price': return `${side} ${leg.fixedPrice !== null && leg.fixedPrice !== undefined ? `fixed price ${leg.fixedPrice}` : `floating price of ${ref}`} x ${leg.units} units per unit notional (${leg.ccy}), ${freq}${priceLegExtras(leg)}`;
     case 'cap': return `${side} cap: max(${leg.index} - ${pct(leg.strike)}, 0) ${leg.ccy}, ${freq}, ${leg.dayCount}`;
     case 'floor': return `${side} floor: max(${pct(leg.strike)} - ${leg.index}, 0) ${leg.ccy}, ${freq}, ${leg.dayCount}`;
     default: return `${side} ${leg.type}`;
@@ -173,13 +173,14 @@ function legAmount(app, inst, pos, leg, period) {
       return { amount: N * (o1.value / p0 - 1), detail: { notional: N, start: p0, end: o1.value }, used, fixing: o1.value, ratio: o1.value / p0 };
     }
     case 'price': {
-      const units = Math.abs(pos.qty) * (leg.units ?? 1) * scheduleFactor(leg, period.start);
-      if (leg.fixedPrice !== null && leg.fixedPrice !== undefined) return { amount: units * leg.fixedPrice, detail: { units, price: leg.fixedPrice } };
-      const d = fixingDate(inst, period.end);
-      const o = app.data.closeFor(leg.underlyingId, d);
-      if (!o || o.value === null) return { missing: { kind: 'price', subject: leg.underlyingId, date: d } };
-      used.push(app.data.recordUsed(o));
-      return { amount: units * o.value, detail: { units, price: o.value }, used };
+      // Quantity of the period: notional x units x schedule factor, x the delivery hours of the period for an electricity leg.
+      const hours = leg.hours ? deliveryHours(inst, leg, period) : null;
+      const units = Math.abs(pos.qty) * (leg.units ?? 1) * scheduleFactor(leg, period.start) * (hours ?? 1);
+      if (leg.fixedPrice !== null && leg.fixedPrice !== undefined) return { amount: units * leg.fixedPrice, detail: { units, hours, price: leg.fixedPrice } };
+      const f = floatingPrice(app, inst, leg, period);
+      if (f.missing) return { missing: f.missing };
+      used.push(...f.used);
+      return { amount: units * f.price, detail: { units, hours, price: f.price, ...f.detail }, used };
     }
     default:
       return { amount: 0, detail: {} };
@@ -323,9 +324,11 @@ export const swap = {
       l.exchangeNotional = Boolean(l.exchangeNotional);
       l.resetNotional = Boolean(l.resetNotional);
       l.passDividends = Boolean(l.passDividends);
-      if (Array.isArray(l.notionalSchedule)) l.notionalSchedule = l.notionalSchedule.filter((s) => ISO_DATE_RE.test(s.from || '') && num(s.factor) >= 0).map((s) => ({ from: s.from, factor: num(s.factor) })).sort((a, b) => (a.from < b.from ? -1 : 1));
+      if (Array.isArray(l.notionalSchedule)) l.notionalSchedule = normalizeNotionalSchedule(l, t, at, errors);
+      if (l.type === 'price') normalizePriceLeg(l, at, errors);
       return l;
     });
+    checkScheduleProduct(draft.productId, t, errors);
     // Quantity (the notional) and price (upfront, mark, per 100 of notional) are in the contract's trading currency, and a
     // leg's own notional is the quantity x its notional factor. The currency stated on the contract is kept when a leg is
     // in it; it is never replaced silently by another one. Left empty, it is the first leg's.
@@ -345,6 +348,8 @@ export const swap = {
     const t = inst.terms;
     const rows = [['Effective', t.effective], ['Maturity', t.maturity]];
     for (const l of t.legs) rows.push([`Leg ${l.id}`, describeLeg(l, app)]);
+    // The notional of each period of an amortizing or accreting leg, as the schedule states it (s2).
+    for (const l of t.legs) if (l.notionalSchedule?.length) rows.push([`Leg ${l.id} notional schedule`, l.notionalSchedule.map((s) => `from ${s.from}: ${s.factor} x notional`).join('; ')]);
     // Convention (docs/ARCHITECTURE.md): fixing dates are business days of the contract's joint payment calendar, not of each index's own market.
     if (t.legs.some((l) => ['float', 'ois', 'cap', 'floor'].includes(l.type))) rows.push(['Fixing dates', `On business days of the contract's payment calendar (${paymentCalendarFor(inst) || 'the joint calendar of its currencies'}), not of each index's own market: a fixing that falls on a holiday there is taken on the business day before.`]);
     const ccys = [...new Set(t.legs.map((l) => l.ccy))];
@@ -439,6 +444,11 @@ export const swap = {
         if (u) {
           out.instruments.push(u);
           if (task?.data?.periodEnd) out.closes.push({ instrument: u, date: fixingDate(inst, task.data.periodEnd) });
+          // An averaged price leg needs the fixing of every pricing day of the period being paid (s2).
+          if (l.type === 'price' && l.averaging === 'daily' && l.id === task?.data?.legId && task.data.periodEnd) {
+            const period = legSchedule(inst, l).find((x) => x.end === task.data.periodEnd);
+            if (period) for (const date of pricingDays(inst, l, period)) out.closes.push({ instrument: u, date });
+          }
           // A return leg also needs the fixing its period starts from, unless an earlier reset or the contract already gave it
           // (asking for it again does no harm): without this the first period of an index or return leg could never be paid
           // from supplied data.
@@ -484,7 +494,11 @@ export const swap = {
       const eff = { ...period, start: from > period.start && from < period.end && leg.type !== 'return' ? from : period.start };
       const r = legAmount(app, inst, pos, leg, eff);
       if (r.missing) {
-        const what = r.missing.kind === 'rate' ? `the ${r.missing.subject} fixing for ${r.missing.date}` : `the ${r.missing.date} fixing for ${app.instruments.get(r.missing.subject)?.symbol || 'the reference asset'}`;
+        const refName = app.instruments.get(r.missing.subject)?.symbol || 'the reference asset';
+        // An averaged price leg names every pricing day still without its fixing (s2).
+        if (r.missing.dates) return { blocked: `Awaiting the averaging fixings of ${refName} for ${r.missing.dates.join(', ')} (${r.missing.dates.length} of the ${r.missing.of} pricing days of the period ${eff.start} to ${period.end}). ${awaiting}, or enter each fixing by hand as the close for its date.`, needs: r.missing.dates.map((date) => ({ kind: 'price', subject: r.missing.subject, date })) };
+        if (r.missing.none) return { failed: `Leg ${leg.id} of ${inst.name} has no pricing day in the period ${eff.start} to ${period.end} on its pricing calendar: nothing can be averaged. Correct the contract's pricing calendar.` };
+        const what = r.missing.kind === 'rate' ? `the ${r.missing.subject} fixing for ${r.missing.date}` : `the ${r.missing.date} fixing for ${refName}`;
         return { blocked: `Awaiting ${what}. ${awaiting}, or enter the fixing manually.`, needs: [r.missing] };
       }
       const s = sign(pos.qty) * (leg.side === 'receive' ? 1 : -1);
@@ -581,6 +595,112 @@ function swapFillSummary(app, c) {
   if (!isZero(m.openedQty)) return `Terminated ${fmtQty(Math.abs(before.qty))} notional of ${c.inst.symbol || c.inst.name} and entered ${fmtQty(Math.abs(m.openedQty))} ${side} ${at}${realized}`;
   const left = Math.abs(before.qty) - Math.abs(m.closedQty);
   return isZero(left) ? `Terminated: ${what} ${at}${realized}` : `Terminated in part: ${fmtQty(c.qty)} of ${fmtQty(Math.abs(before.qty))} notional of ${c.inst.symbol || c.inst.name} ${at}${realized}`;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Notional schedules (amortizing and accreting swaps) and averaged, volume-shaped price legs
+// (commodity, energy, electricity and freight swaps). s2, 2026-10-13.
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * A leg's notional schedule: [{ from, factor }], the factor (of the trade notional) applying to every period that starts on
+ * or after `from`. An entry that cannot be read is refused, never dropped: a step silently left out would change every
+ * later payment.
+ */
+function normalizeNotionalSchedule(l, t, at, errors) {
+  const out = [];
+  for (const [k, s] of l.notionalSchedule.entries()) {
+    const factor = num(s?.factor);
+    if (!ISO_DATE_RE.test(s?.from || '')) { errors.push(`${at}: notional schedule step ${k + 1} has no valid start date (YYYY-MM-DD).`); continue; }
+    if (!(factor > 0)) { errors.push(`${at}: notional schedule step from ${s.from} needs a factor above zero (1 = the trade notional).`); continue; }
+    out.push({ from: s.from, factor });
+  }
+  out.sort((a, b) => (a.from < b.from ? -1 : 1));
+  for (let i = 1; i < out.length; i++) if (out[i].from === out[i - 1].from) errors.push(`${at}: the notional schedule states ${out[i].from} twice.`);
+  return out;
+}
+
+/** Period start dates of a leg (unadjusted accrual dates; they do not depend on the calendar). */
+const legStarts = (t, leg) => generateSchedule({ start: t.effective, end: t.maturity, months: leg.months || 0 }).map((p) => p.start);
+
+/**
+ * Amortizing and accreting swaps state the notional of every period of every leg that has a schedule, and at least one leg
+ * has one. A period without its step, a step on a date that starts no period, and a schedule that goes the wrong way are
+ * refused with the date named.
+ */
+function checkScheduleProduct(productId, t, errors) {
+  if (productId !== 'amortizing_swap' && productId !== 'accreting_swap') return;
+  if (!ISO_DATE_RE.test(t.effective || '') || !ISO_DATE_RE.test(t.maturity || '') || t.maturity <= t.effective) return;
+  const word = productId === 'amortizing_swap' ? 'amortizing' : 'accreting';
+  const withSchedule = (t.legs || []).filter((l) => Array.isArray(l.notionalSchedule) && l.notionalSchedule.length);
+  if (!withSchedule.length) { errors.push(`An ${word} swap needs a notional schedule: state the notional factor of every period on each leg it applies to.`); return; }
+  for (const l of withSchedule) {
+    const at = `Leg ${l.id}`;
+    const starts = legStarts(t, l);
+    const given = new Map(l.notionalSchedule.map((s) => [s.from, s.factor]));
+    for (const s of l.notionalSchedule) if (!starts.includes(s.from)) errors.push(`${at}: the notional schedule step from ${s.from} is not the start of a period of this leg (periods start on ${starts.join(', ')}).`);
+    const missing = starts.filter((d) => !given.has(d));
+    if (missing.length) errors.push(`${at}: the notional schedule has no step for the period${missing.length > 1 ? 's' : ''} starting ${missing.join(', ')}. An ${word} swap states the notional of every period.`);
+    const f = starts.filter((d) => given.has(d)).map((d) => given.get(d));
+    const wrong = productId === 'amortizing_swap' ? f.some((x, i) => i && x > f[i - 1]) || !f.some((x, i) => i && x < f[i - 1]) : f.some((x, i) => i && x < f[i - 1]) || !f.some((x, i) => i && x > f[i - 1]);
+    if (!missing.length && wrong) errors.push(`${at}: an ${word} schedule ${productId === 'amortizing_swap' ? 'goes down' : 'goes up'} from period to period (and changes at least once); this one does not.`);
+  }
+}
+
+const PRICE_HOURS = ['base', 'peak', 'offpeak'];
+/** Fields of a price leg: averaging of the floating price, the calendar of pricing days, delivery hours (electricity). */
+function normalizePriceLeg(l, at, errors) {
+  l.averaging = l.averaging === 'daily' ? 'daily' : null;
+  l.pricingCalendar = l.pricingCalendar ? String(l.pricingCalendar).toUpperCase() : null;
+  if (l.pricingCalendar && !isKnownCalendar(l.pricingCalendar)) errors.push(`${at}: pricing calendar ${l.pricingCalendar} is not one the Terminal knows.`);
+  l.hours = PRICE_HOURS.includes(l.hours) ? l.hours : null;
+  l.peakHours = l.hours ? num(l.peakHours) ?? 16 : null;
+  if (l.hours && !(l.peakHours > 0 && l.peakHours <= 24)) errors.push(`${at}: peak hours a day must be between 1 and 24.`);
+  if (!l.hours) delete l.peakHours;
+}
+
+/** Pricing days of a period: business days of the leg's pricing calendar (default the payment calendar) from its start up to, not including, its end. */
+function pricingDays(inst, leg, period) {
+  const cal = leg.pricingCalendar || paymentCalendarFor(inst);
+  const out = [];
+  for (let d = period.start; d < period.end; d = addDays(d, 1)) if (isBusinessDay(d, cal)) out.push(d);
+  return out;
+}
+
+/**
+ * Delivery hours of a period (electricity): base = 24 x calendar days; peak = peak hours a day x pricing days; off-peak =
+ * base - peak. Clock changes are not counted (a 23- or 25-hour day is taken as 24): stated on the contract.
+ */
+function deliveryHours(inst, leg, period) {
+  const base = 24 * diffDays(period.start, period.end);
+  const peak = leg.peakHours * pricingDays(inst, leg, period).length;
+  return leg.hours === 'base' ? base : leg.hours === 'peak' ? peak : base - peak;
+}
+
+/** Floating price of a price leg for a period: the fixing of the period end, or the average of the fixings of every pricing day. */
+function floatingPrice(app, inst, leg, period) {
+  if (leg.averaging !== 'daily') {
+    const d = fixingDate(inst, period.end);
+    const o = app.data.closeFor(leg.underlyingId, d);
+    if (!o || o.value === null) return { missing: { kind: 'price', subject: leg.underlyingId, date: d } };
+    return { price: o.value, used: [app.data.recordUsed(o)], detail: { fixingDate: d } };
+  }
+  const days = pricingDays(inst, leg, period);
+  const got = days.map((d) => ({ d, o: app.data.closeFor(leg.underlyingId, d) }));
+  const missing = got.filter((x) => !x.o || x.o.value === null).map((x) => x.d);
+  if (!days.length) return { missing: { kind: 'price', subject: leg.underlyingId, date: period.start, none: true } };
+  if (missing.length) return { missing: { kind: 'price', subject: leg.underlyingId, date: missing[0], dates: missing, of: days.length } };
+  const used = got.map((x) => app.data.recordUsed(x.o));
+  const price = got.reduce((a, x) => a + x.o.value, 0) / got.length;
+  return { price, used, detail: { average: price, days: got.length, fixings: got.map((x) => ({ date: x.d, value: x.o.value })) } };
+}
+
+/** Words for a price leg's averaging and hours, for the contract description. */
+function priceLegExtras(leg) {
+  const out = [];
+  if (leg.averaging === 'daily') out.push(`average of the daily fixings on the business days of ${leg.pricingCalendar ? `the ${leg.pricingCalendar} calendar` : 'the payment calendar'} in each period`);
+  if (leg.hours) out.push(`${leg.hours === 'offpeak' ? 'off-peak' : leg.hours} hours (${leg.hours === 'base' ? '24 a day' : `${leg.peakHours} a peak day`}; clock changes not counted)`);
+  return out.length ? `, ${out.join(', ')}` : '';
 }
 
 /** The "Collateral terms" rows of an OTC contract: the basis it states, and any free-text terms kept on record. */

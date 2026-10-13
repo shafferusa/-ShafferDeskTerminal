@@ -54,7 +54,9 @@ const VIEW = { US_CASH: 'US Based', FOREIGN_CASH: 'Foreign Based', US_DERIV: 'US
 /** Contract terms the registration form has a field for. `calendar` and `settleDays` are engine terms with no field: use `conventions`. */
 const FORM_TERMS = new Set(['couponType', 'couponRate', 'referenceRate', 'spread', 'currentCoupon', 'frequency', 'perpetual', 'maturity', 'anchorDate', 'issueDate', 'dayCount', 'redemption', 'factor', 'minDenomination', 'seniority',
   // structured debt (added by b3): inflation-linked, callable, puttable, convertible and exchangeable bonds, securitised paper
-  'indexRatio', 'inflationFloor', 'callSchedule', 'putSchedule', 'conversionRatio', 'paymentDelayDays', 'guarantor']);
+  'indexRatio', 'inflationFloor', 'callSchedule', 'putSchedule', 'conversionRatio', 'paymentDelayDays', 'guarantor',
+  // structured debt, group B (added by b4)
+  'poolCharacteristics']);
 const has = (v) => v !== undefined && v !== null && v !== '';
 const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** A call or put schedule as the form takes it: "2028-06-15 101; 2029-06-15 100". */
@@ -127,6 +129,8 @@ export async function contractTerms(ui, dialog, draft, ctx) {
   if (has(t.conversionRatio)) await ui.input(dialog, 'Conversion ratio').fill(String(t.conversionRatio));
   if (has(t.paymentDelayDays)) await ui.input(dialog, 'Payment delay').fill(String(t.paymentDelayDays));
   if (has(t.guarantor)) await ui.input(dialog, 'Guarantor').fill(String(t.guarantor));
+  // ---- structured debt, group B (b4) ----
+  if (has(t.poolCharacteristics)) await ui.input(dialog, 'Pool characteristics').fill(String(t.poolCharacteristics));
 }
 
 /** The security ticket in the instrument drawer, for a debt security. */

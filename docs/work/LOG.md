@@ -215,3 +215,4 @@
 - 2026-10-13T19:01Z | o2 | +0 | o2 finished: 16 OTC option products pass at engine, API and browser; catalog notes for the partial products updated
 - 2026-10-13T19:10Z | r1 | +0 | repo and secloan: 15 of 15 products pass at engine, API and browser; catalog notes and Collateral dialog subtitle fixed
 - 2026-10-13T19:12Z | coord | +0 | wave C starting: structured bonds B, other swaps, credit, templates, accounting verification
+- 2026-10-13T19:23Z | s2 | +0.2 | amortizing_swap passes at engine, API and browser (notional schedule on the contract form, missing step refused)

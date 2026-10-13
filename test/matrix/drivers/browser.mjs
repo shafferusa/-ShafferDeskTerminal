@@ -228,7 +228,7 @@ function previewDisplayProblems(pv, screen) {
  * Press the button that asks for a preview, read the dialog, and confirm it unless a refusal is expected.
  * `open` clicks the button. Returns { preview, result, refusal, problems, strategy }.
  */
-export async function previewAndConfirm(ui, ctx, open, { expectsRefusal, edit, inspect }) {
+export async function previewAndConfirm(ui, ctx, open, { expectsRefusal, edit, inspect, acknowledge }) {
   const { page } = ui;
   const asked = await ui.respondsTo('POST', /^\/api\/strategies\/(preview|[^/]+\/preview-action)$/, open);
   if (!asked.ok) {
@@ -252,6 +252,15 @@ export async function previewAndConfirm(ui, ctx, open, { expectsRefusal, edit, i
     }
     pv = again.body;
     await modal.locator('.notice.warn', { hasText: 'You changed the package' }).waitFor({ state: 'hidden' });
+    await ui.drawn();
+  }
+  // t1 (templates): "Add this protection deliberately", offered when a hedge package adds protection beyond what is still
+  // unprotected; the package is checked again with the acknowledgement before it can be confirmed.
+  if (acknowledge) {
+    const again = await ui.respondsTo('POST', /^\/api\/strategies\/preview$/, () => ui.button(modal, 'Add this protection deliberately').click());
+    if (!again.ok) throw new Error(`The acknowledged package was refused: ${again.body?.error}`);
+    pv = again.body;
+    await modal.getByRole('button', { name: 'Add this protection deliberately' }).waitFor({ state: 'hidden' });
     await ui.drawn();
   }
   const screen = await readPreview(ui, modal);
