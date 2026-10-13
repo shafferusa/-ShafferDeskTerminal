@@ -100,7 +100,8 @@ function couponDue(inst, couponDate) {
 
 /** The trades booked on a position: signed face, trade date and settlement date of each fill. */
 function fillsOf(app, positionId) {
-  return app.db.all(`SELECT business_date, data FROM events WHERE position_id = ? AND type = 'trade.fill' ORDER BY id`, positionId)
+  // fw: a bond delivered on a physically settled forward or option is a fill of the position as well (its own event type).
+  return app.db.all(`SELECT business_date, data FROM events WHERE position_id = ? AND type IN ('trade.fill', 'forward.delivery', 'option.delivery') ORDER BY id`, positionId)
     .map((r) => { const d = JSON.parse(r.data || '{}'); return { dq: dqOf(d.action, d.qty), tradeDate: r.business_date, settleDate: d.settleDate || r.business_date }; })
     .filter((f) => Number.isFinite(f.dq));
 }

@@ -168,3 +168,4 @@
 - 2026-10-13T18:08Z | m1 | +0.2 | insurance_linked_security passes at engine, API and browser (coupons, loss event, maturity)
 - 2026-10-13T18:09Z | r1 | +0.2 | triparty_repo passes at engine, API and browser
 - 2026-10-13T18:09Z | b3 | +0.2 | agency_mbs passes at engine, API and browser
+- 2026-10-13T18:10Z | o2 | +0 | OTC exotic manual workflows built (Asian fixings, lookback extreme, basket/spread value, quanto rate, compound and swaption exercise into the underlying, CDS swaption knock-out)
