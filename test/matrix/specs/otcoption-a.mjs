@@ -1251,4 +1251,254 @@ const commodityOption = {
   ],
 };
 
-export default [otcOption, bondOption, fxOption, commodityOption];
+// ---------------------------------------------------------------------------------------------
+// crypto_option
+// ---------------------------------------------------------------------------------------------
+// Two OTC options on Meridian (MRD), a fictional cryptocurrency quoted in USD on a crypto trading platform, dealt with
+// Dealer F on the 24x7 calendar (ALLDAYS): quantity in coins (fractional), premium in USD per coin, premium settled the
+// next calendar day (settlement.otcoption = 1 on ALLDAYS). Both are traded on a Saturday; the put expires on a Sunday.
+//   - an American 90,000 call, physical delivery of coins, bought on 1.5 MRD; position-level terms: variation margin
+//     over a 10,000 threshold. Exercised early by hand when MRD trades at 96,000: 1.5 MRD delivered at 90,000 (a
+//     simulated delivery that settles the same day, as coins do), then sold.
+//   - a European 70,000 put, cash-settled against the MRD close of Sunday 31 May 2026, written on 2.5 MRD;
+//     position-level terms: a fixed independent amount of 20,000 for the position, variation margin with no threshold
+//     (minimum transfer 500). It lapses out of the money at expiry.
+const MRD_CALL = 'MRD 90,000 call, 30 Apr 2026, American, physical (Dealer F)';
+const MRD_PUT = 'MRD 70,000 put, Sun 31 May 2026, European, cash (Dealer F)';
+const CRYPTO_CONVENTIONS = { tradingCalendar: 'ALLDAYS', settlementCalendar: 'ALLDAYS', paymentCalendar: 'ALLDAYS' };
+const cryptoOption = {
+  productId: 'crypto_option',
+  title: 'Meridian (MRD) OTC options on the 24x7 calendar: American 90,000 call (physical coins) bought and exercised early; European 70,000 put (cash) written, expiring on a Sunday',
+  matrix: {
+    ...OTC_TICKET,
+    automaticInputs: ['MRD price (quote fixture standing in for Shaffer MarketData) for the notional and the coins delivered', 'premium settlement date, the next day on the 24x7 calendar (settlement.otcoption = 1); coins settle the same day (settlement.crypto = 0)', 'commission per coin from the Book fee schedule', 'independent amount and variation margin from the position-level terms', 'expiry item settled against the MRD close for the expiration date, a Sunday (close fixture: the stated settlement price)'],
+    manualInputs: ['premium per coin agreed with the dealer (stated fill price)', 'marks per coin entered by hand (Manual entry)', 'early exercise of the American call (Lifecycle, Exercise)'],
+    settlement: 'Premium and commission the next calendar day (ALLDAYS, Saturday to Sunday); coins delivered on exercise and coins sold settle the same day',
+    lifecycle: 'Trades on a Saturday; early exercise by hand with a simulated delivery of 1.5 MRD at 90,000; the put lapses out of the money at its Sunday expiry; nothing scheduled afterwards',
+    accounting: 'Premium per coin x coins (fractional); average premium; premium realized on exercise and on lapse; coins delivered carried at the strike; commission expensed; marks by hand drive unrealized P&L',
+    collateral: 'Call (bought): position-level terms, variation margin over a 10,000 threshold (never reached); no independent amount for a bought option. Put (written): fixed independent amount 20,000, variation margin with no threshold and a 500 minimum transfer: posted on a Saturday, partly returned, the rest returned at expiry',
+  },
+  start: '2026-03-07T15:00:00.000Z', // Saturday 7 March 2026, 10:00 New York
+  settlementCheck: { lag: 1, holidays: [] }, // the 24x7 calendar has no holiday and no weekend (crypto legs, same day, are exempted step by step)
+  book: {
+    name: 'Matrix crypto option', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 1_000_000 }],
+    account: { name: 'Digital', funding: [{ ccy: 'USD', amount: 400_000 }] },
+    settings: { fees: { otcoption: { perUnit: 5, minimum: 0, bps: 0 }, crypto: NO_FEE }, fill: FILL, settlement: { otcoption: 1, crypto: 0 } }, // 5.00 USD a coin
+  },
+  instruments: {
+    mrd: { productId: 'cryptocurrency', name: 'Meridian', symbol: 'MRD', marketView: 'FOREIGN_CASH', venue: 'Aurora Digital (crypto trading platform)', venueType: 'otc', venueCountry: 'US', underlyingGeo: 'Global', tradingCcy: 'USD', terms: {} },
+    call: {
+      productId: 'crypto_option', name: MRD_CALL, symbol: 'MRD-C90K-30APR26', marketView: 'FOREIGN_DERIV', venueType: 'otc', tradingCcy: 'USD', underlying: 'mrd', multiplier: 1, conventions: CRYPTO_CONVENTIONS,
+      terms: { right: 'C', strike: 90_000, expiration: '2026-04-30', optionType: 'vanilla', exercise: 'american', settlement: 'physical', counterparty: 'Dealer F',
+        collateralBasis: { type: 'position', independentAmount: { type: 'none' }, variationMargin: true, threshold: 10_000, minimumTransfer: 500 } },
+    },
+    put: {
+      productId: 'crypto_option', name: MRD_PUT, symbol: 'MRD-P70K-31MAY26', marketView: 'FOREIGN_DERIV', venueType: 'otc', tradingCcy: 'USD', underlying: 'mrd', multiplier: 1, conventions: CRYPTO_CONVENTIONS,
+      terms: { right: 'P', strike: 70_000, expiration: '2026-05-31', optionType: 'vanilla', exercise: 'european', settlement: 'cash', counterparty: 'Dealer F',
+        collateralBasis: { type: 'position', independentAmount: { type: 'fixed', amount: 20_000 }, variationMargin: true, threshold: 0, minimumTransfer: 500 } },
+    },
+  },
+  quotes: { mrd: { bid: 79_990, ask: 80_010, last: 80_000, bidSize: 50, askSize: 50 } },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 400_000, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 400_000, availableToWithdraw: 400_000 } },
+      treasury: { USD: { settled: 600_000 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [], otc: [], alerts: [],
+    nav: { account: 400_000, treasury: 600_000, book: 1_000_000 },
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+  },
+  steps: [
+    otcTicket({
+      id: 'buy-call-on-saturday', covers: ['open', 'weekend trade'], instrument: 'call', side: 'buy', qty: 1.5, premium: 2_500, as: 'calls',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'call', qty: 1.5, estimate: 2_500, model: 'stated-price', settleDate: '2026-03-08', calendar: 'ALLDAYS',
+            cash: -3_750, fees: 7.5, notional: 120_000 }], // 1.5 x 2,500; 1.5 x 5.00; 1.5 x 80,000
+          cash: { USD: { purchases: 3_750, fees: 7.5, margin: 0, required: 3_757.5, available: 400_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 1.5, avgPrice: 2_500, fills: [{ qty: 1.5, price: 2_500, model: 'stated-price', settleDate: '2026-03-08', date: '2026-03-07' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1.5 MRD-C90K-30APR26 @ 2,500.00 USD', owner: 'account', date: '2026-03-07' }],
+        cash: { account: { USD: { settled: 400_000, unsettled: -3_757.5, availableToTrade: 396_242.5, availableToWithdraw: 396_242.5 } } },
+        positions: [{ instrument: 'call', lot: 'calls', owner: 'account', direction: 'long', qty: 1.5, avgCost: 2_500, cost: 3_750, price: null, value: null, unrealized: null, provisional: true, notional: 120_000, margin: 0 }],
+        holdings: { call: { long: 1.5, short: 0, net: 1.5 } },
+        pending: [{ instrument: 'call', owner: 'account', dueDate: '2026-03-08', amount: -3_757.5, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'option.expiry', instrument: 'call', dueDate: '2026-04-30', status: 'pending' }],
+        otc: [{ instrument: 'call', lot: 'calls', qty: 1.5, basis: 'position', mark: null, iaRequired: 0, iaPosted: 0, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: -7.5, unrealized: 0, total: -7.5 } },
+        nav: { account: 399_992.5, book: 999_992.5 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 400_000, payable: 3_757.5, positions: 3_750, assets: 403_750, liabilities: 3_757.5, netAssets: 399_992.5 } },
+      },
+    }),
+    { id: 'half-an-hour-later', action: 'clock', to: '2026-03-07T15:30:00.000Z', expect: {} },
+    otcTicket({
+      // Written: a fixed independent amount of 20,000 for the position, posted at the fill.
+      id: 'write-put-on-saturday', covers: ['write', 'collateral'], instrument: 'put', side: 'sell', qty: 2.5, premium: 3_200, as: 'puts',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'put', qty: 2.5, estimate: 3_200, model: 'stated-price', settleDate: '2026-03-08', calendar: 'ALLDAYS', cash: 8_000, fees: 12.5, notional: 200_000 }], // 2.5 x 3,200; 2.5 x 5.00; 2.5 x 80,000
+          cash: { USD: { proceeds: 8_000, fees: 12.5, margin: 20_000, required: 20_012.5, available: 396_242.5, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 2.5, avgPrice: 3_200 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Sold 2.5 MRD-P70K-31MAY26 @ 3,200.00 USD', owner: 'account' },
+          { type: 'otcoption.collateral', summary: `Collateral posted on ${MRD_PUT} under its position-level terms: 20,000.00 USD (independent amount, fixed amount for the position)`, cash: { USD: -20_000 } },
+        ],
+        cash: { account: { USD: { settled: 380_000, unsettled: 4_230, margin: 20_000, availableToTrade: 384_230, availableToWithdraw: 376_242.5 } } }, // -3,757.50 + 7,987.50; 380,000 - 3,757.50
+        positions: [
+          { instrument: 'call', lot: 'calls', qty: 1.5 },
+          { instrument: 'put', lot: 'puts', owner: 'account', direction: 'short', qty: -2.5, avgCost: 3_200, cost: -8_000, price: null, value: null, unrealized: null, provisional: true, notional: 200_000, margin: 20_000 },
+        ],
+        holdings: { put: { long: 0, short: 2.5, net: -2.5 } },
+        pending: [
+          { instrument: 'call', owner: 'account', dueDate: '2026-03-08', amount: -3_757.5, ccy: 'USD', into: 'cash' },
+          { instrument: 'put', owner: 'account', dueDate: '2026-03-08', amount: 7_987.5, ccy: 'USD', into: 'cash' },
+        ],
+        lifecycle: [{ type: 'option.expiry', instrument: 'call', dueDate: '2026-04-30', status: 'pending' }, { type: 'option.expiry', instrument: 'put', dueDate: '2026-05-31', status: 'pending' }],
+        otc: [{ instrument: 'call' }, { instrument: 'put', lot: 'puts', qty: -2.5, basis: 'position', iaRequired: 20_000, iaPosted: 20_000, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { commissions: -20, total: -20 } },
+        nav: { account: 399_980, book: 999_980 }, // 380,000 + 20,000 + 7,987.50 - 3,757.50 + 3,750 - 8,000
+        balance: { account: { cash: 380_000, margin: 20_000, receivable: 7_987.5, payable: 3_757.5, positions: -4_250, assets: 403_737.5, liabilities: 3_757.5, netAssets: 399_980 } },
+      },
+    }),
+    {
+      id: 'mark-call', covers: 'manual mark', action: 'manual_price', instrument: 'call', value: 2_900, note: 'Dealer F mark per coin, by hand',
+      expect: {
+        positions: [{ instrument: 'call', lot: 'calls', price: 2_900, value: 4_350, unrealized: 600, provisional: false }, { instrument: 'put', lot: 'puts' }], // 1.5 x 2,900; - 3,750
+        otc: [{ instrument: 'call', mark: 2_900, markValue: 4_350 }, { instrument: 'put' }],
+        pnl: { account: { unrealized: 600, total: 580 } },
+        nav: { account: 400_580, book: 1_000_580 },
+        balance: { account: { positions: -3_650, assets: 404_337.5, netAssets: 400_580 } }, // 4,350 - 8,000 (put at cost)
+      },
+    },
+    {
+      id: 'mark-put', covers: 'manual mark', action: 'manual_price', instrument: 'put', value: 3_000, note: 'Dealer F mark per coin, by hand',
+      expect: {
+        positions: [{ instrument: 'call', lot: 'calls' }, { instrument: 'put', lot: 'puts', price: 3_000, value: -7_500, unrealized: 500, provisional: false }], // -2.5 x 3,000; + 8,000
+        otc: [{ instrument: 'call' }, { instrument: 'put', mark: 3_000, markValue: -7_500 }],
+        pnl: { account: { unrealized: 1_100, total: 1_080 } },
+        nav: { account: 401_080, book: 1_001_080 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: -3_150, assets: 404_837.5, netAssets: 401_080 } }, // 4,350 - 7,500
+      },
+    },
+    {
+      // Saturday's end-of-day valuation. Put marked at -7,500, no threshold: 7,500 posted. Call at +4,350: inside its 10,000 threshold.
+      id: 'variation-margin-on-saturday', covers: ['variation margin', 'weekend'], action: 'clock', to: '2026-03-07T22:30:00.000Z',
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under position-level terms: 7,500.00 USD posted. Netting set of 1 position marked at -7,500.00 USD; threshold 0.00 USD.', cash: { USD: -7_500 }, owner: 'account', date: '2026-03-07' }],
+        cash: { account: { USD: { settled: 372_500, margin: 27_500, availableToTrade: 376_730, availableToWithdraw: 368_742.5 } } },
+        otc: [{ instrument: 'call', vmPosted: 0, vmExposure: 4_350, vmStatus: 'ok' }, { instrument: 'put', vmPosted: 7_500, vmExposure: -7_500, vmStatus: 'ok' }],
+        balance: { account: { cash: 372_500, margin: 27_500 } },
+      },
+    },
+    {
+      // Sunday, 10:00 New York (daylight time from today): the premiums settle on the 24x7 calendar.
+      id: 'settle-premiums-on-sunday', covers: ['settlement', 'weekend'], action: 'clock', to: '2026-03-08T14:00:00.000Z',
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 7,987.50 USD into settled cash', cash: { USD: 7_987.5 }, date: '2026-03-08' },
+          { type: 'settlement.pay', summary: 'paid 3,757.50 USD from settled cash', cash: { USD: -3_757.5 }, date: '2026-03-08' },
+        ],
+        cash: { account: { USD: { settled: 376_730, unsettled: 0, availableToTrade: 376_730, availableToWithdraw: 376_730 } } },
+        pending: [],
+        balance: { account: { cash: 376_730, receivable: null, payable: null, assets: 401_080, liabilities: 0 } },
+      },
+    },
+    { id: 'wednesday-8-april', action: 'clock', to: '2026-04-08T14:00:00.000Z', expect: {} },
+    {
+      id: 'mrd-rallies', action: 'quote', instrument: 'mrd', quote: { bid: 95_990, ask: 96_010, last: 96_000, bidSize: 50, askSize: 50 },
+      expect: { positions: [{ instrument: 'call', lot: 'calls', notional: 144_000 }, { instrument: 'put', lot: 'puts', notional: 240_000 }] }, // 1.5 x 96,000; 2.5 x 96,000
+    },
+    {
+      // American: exercised by hand. The call closes at zero (3,750 realized) and 1.5 MRD is delivered at 90,000:
+      // 135,000, a simulated delivery that settles the same day, in this cycle.
+      id: 'exercise-early', covers: ['early exercise', 'physical settlement'], action: 'lifecycle', lot: 'calls', body: { action: 'exercise', contracts: 1.5 },
+      expect: {
+        events: [
+          { type: 'option.exercised', summary: 'Exercised: 1.5 MRD-C90K-30APR26 at strike 90000', owner: 'account', date: '2026-04-08' },
+          { type: 'option.delivery', summary: /^Simulated delivery: received 1\.5 MRD at strike 90000 on exercise of MRD-C90K-30APR26/, owner: 'account' },
+          { type: 'settlement.pay', summary: 'paid 135,000.00 USD from settled cash', cash: { USD: -135_000 }, date: '2026-04-08' },
+        ],
+        cash: { account: { USD: { settled: 241_730, availableToTrade: 241_730, availableToWithdraw: 241_730 } } },
+        positions: [
+          { instrument: 'mrd', lot: 'calls', owner: 'account', direction: 'long', qty: 1.5, avgCost: 90_000, cost: 135_000, price: 96_000, value: 144_000, unrealized: 9_000 },
+          { instrument: 'put', lot: 'puts', qty: -2.5 },
+        ],
+        holdings: { call: null, mrd: { long: 1.5, short: 0, net: 1.5 } },
+        lifecycle: [{ type: 'option.expiry', instrument: 'put', dueDate: '2026-05-31', status: 'pending' }],
+        otc: [{ instrument: 'put', lot: 'puts', qty: -2.5 }],
+        pnl: { account: { realized: -3_750, unrealized: 9_500, total: 5_730 } }, // 9,000 + 500; -3,750 - 20 + 9,500
+        nav: { account: 405_730, book: 1_005_730 }, // 241,730 + 27,500 + 144,000 - 7,500
+        balance: { account: { cash: 241_730, positions: 136_500, assets: 405_730, netAssets: 405_730 } },
+      },
+    },
+    {
+      // Sold at the bid, 95,990: 1.5 x 95,990 = 143,985, settled in the cycle. Realized 143,985 - 135,000.
+      id: 'sell-delivered-coins', covers: 'close', action: 'ticket', ticketOf: 'crypto', settlementCheck: false, // coins settle the same day
+      instrument: 'mrd', side: 'sell', qty: 1.5, from: 'calls',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'mrd', qty: 1.5, estimate: 95_990, model: 'quoted-bid-ask', settleDate: '2026-04-08', cash: 143_985, fees: 0 }] },
+        result: { orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 1.5, avgPrice: 95_990 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 1.5 MRD @ 95,990.00 USD (realized 8,985.00 USD)' },
+          { type: 'settlement.receive', summary: 'received 143,985.00 USD into settled cash', cash: { USD: 143_985 } },
+        ],
+        cash: { account: { USD: { settled: 385_715, availableToTrade: 385_715, availableToWithdraw: 385_715 } } },
+        positions: [{ instrument: 'put', lot: 'puts', qty: -2.5 }],
+        holdings: { mrd: null },
+        pnl: { account: { realized: 5_235, unrealized: 500, total: 5_715 } }, // -3,750 + 8,985
+        nav: { account: 405_715, book: 1_005_715 }, // 385,715 + 27,500 - 7,500
+        balance: { account: { cash: 385_715, positions: -7_500, assets: 405_715, netAssets: 405_715 } },
+      },
+    },
+    { id: 'friday-29-may', action: 'clock', to: '2026-05-29T14:00:00.000Z', expect: {} },
+    {
+      id: 'mark-put-lower', covers: 'manual mark', action: 'manual_price', instrument: 'put', value: 600, note: 'Dealer F mark per coin, by hand',
+      expect: {
+        positions: [{ instrument: 'put', lot: 'puts', price: 600, value: -1_500, unrealized: 6_500 }], // -2.5 x 600; + 8,000
+        otc: [{ instrument: 'put', mark: 600, markValue: -1_500 }],
+        pnl: { account: { unrealized: 6_500, total: 11_715 } },
+        nav: { account: 411_715, book: 1_011_715 },
+        balance: { account: { positions: -1_500, assets: 411_715, netAssets: 411_715 } },
+      },
+    },
+    {
+      // -1,500 requires 1,500; 7,500 is posted: 6,000 comes back.
+      id: 'variation-margin-returned', covers: 'variation margin', action: 'clock', to: '2026-05-29T21:30:00.000Z',
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under position-level terms: 6,000.00 USD returned to us. Netting set of 1 position marked at -1,500.00 USD; threshold 0.00 USD.', cash: { USD: 6_000 }, owner: 'account' }],
+        cash: { account: { USD: { settled: 391_715, margin: 21_500, availableToTrade: 391_715, availableToWithdraw: 391_715 } } },
+        otc: [{ instrument: 'put', vmPosted: 1_500, vmExposure: -1_500 }],
+        balance: { account: { cash: 391_715, margin: 21_500 } },
+      },
+    },
+    { id: 'settlement-price-known-later', action: 'close_price', instrument: 'mrd', date: '2026-05-31', value: 72_500, expect: {} },
+    {
+      // Sunday 31 May, after the day's close: MRD closed at 72,500, above the 70,000 strike. The put lapses; its 8,000
+      // premium is realized; the 20,000 independent amount and the 1,500 of variation margin come back.
+      id: 'expires-on-sunday', covers: ['expiry', 'lapse', 'weekend', 'collateral'], action: 'clock', to: '2026-05-31T21:30:00.000Z',
+      expect: {
+        events: [
+          { type: 'option.expired', summary: 'Expired worthless: 2.5 MRD-P70K-31MAY26 (fixing 72500)', owner: 'account', date: '2026-05-31' },
+          { type: 'otcoption.collateral', summary: `Collateral returned on ${MRD_PUT} under its position-level terms: 20,000.00 USD (independent amount, the position ended)`, cash: { USD: 20_000 } },
+          { type: 'collateral.variation', summary: 'Variation margin under position-level terms: 1,500.00 USD returned to us. The last position of the netting set ended.', cash: { USD: 1_500 } },
+        ],
+        cash: { account: { USD: { settled: 413_215, margin: 0, availableToTrade: 413_215, availableToWithdraw: 413_215 } } }, // 391,715 + 21,500
+        positions: [], holdings: { put: null }, otc: [], lifecycle: [], pending: [],
+        pnl: { account: { realized: 13_235, unrealized: 0, total: 13_215 } }, // 5,235 + 8,000; - 20
+        nav: { account: 413_215, book: 1_013_215 },
+        balance: { account: { cash: 413_215, margin: null, positions: null, assets: 413_215, liabilities: 0, netAssets: 413_215 } },
+      },
+    },
+  ],
+};
+
+export default [otcOption, bondOption, fxOption, commodityOption, cryptoOption];

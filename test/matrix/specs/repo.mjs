@@ -618,7 +618,7 @@ const overnightRepo = {
 //   earned. Then 44,625 x 11 / 184 = 2,667.80 accrued to 2 April and 44,625 x 15 / 184 = 3,637.91 to 6 April.
 //   Reporting currency: each entry at the rate in force when posted; balances at the current rate.
 const GILT = { productId: 'foreign_gov_bond', name: 'UK Treasury 4.25% Gilt 22-Mar-2034', symbol: 'UKT-4.25-MAR34', marketView: 'FOREIGN_CASH', venueType: 'otc', venueCountry: 'GB', issuer: 'HM Treasury', domicile: 'GB', underlyingGeo: 'GB', tradingCcy: 'GBP', multiplier: 0.01,
-  terms: { couponType: 'fixed', couponRate: 0.0425, frequency: 2, maturity: '2034-03-22', issueDate: '2023-09-22', dayCount: 'ACT/ACT', redemption: 100, minDenomination: 0.01 } };
+  terms: { couponType: 'fixed', couponRate: 0.0425, frequency: 2, maturity: '2034-03-22', issueDate: '2023-09-22', dayCount: 'ACT/ACT', redemption: 100, minDenomination: 1 } };
 const TREPO_TERMS = { collateralInstrumentId: '$inst:gilt', collateralQty: 2_000_000, haircut: 0.03, buffer: 25_000, rateType: 'fixed', rate: 0.041, dayCount: 'ACT/365', term: 'term', endDate: '2026-04-03', style: 'classic', collateralType: 'gc', triparty: false, counterparty: 'Ashcombe Gilt Dealers' };
 const TREPO = { owner: 'account', side: 'repo', productId: 'term_repo', productLabel: 'Term repo', ccy: 'GBP', principal: 1_975_000, name: 'Ashcombe gilt term repo', collateral: { instrument: 'gilt', lot: 'gilts' }, as: 'trepo', terms: TREPO_TERMS };
 const GILTS = { instrument: 'gilt', lot: 'gilts', owner: 'account', direction: 'long', qty: 2_100_000, avgCost: 101.20, cost: 2_125_200, price: 101.15, value: 2_124_150, unrealized: -1_050 };

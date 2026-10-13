@@ -147,3 +147,4 @@
 - 2026-10-13T17:48Z | o2 | +0.2 | commodity_option passes at engine, API and browser
 - 2026-10-13T17:48Z | m1 | +0.2 | private_equity passes at engine, API and browser (manual workflow engine, form, lifecycle dialog)
 - 2026-10-13T17:49Z | b3 | +0.2 | puttable_bond passes at engine, API and browser
+- 2026-10-13T17:50Z | r1 | +0.2 | term_repo passes at engine, API and browser
