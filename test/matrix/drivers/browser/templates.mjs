@@ -153,6 +153,27 @@ async function fillStrategyPage(ui, t, ctx, step) {
     } else if (sp.quantity !== undefined && sp.quantity !== null) await ui.input(what, und.qtyLabel).fill(String(sp.quantity));
   }
   if (sp.hedgeRatio !== undefined) await ui.input(what, 'Hedge ratio').fill(String(sp.hedgeRatio));
+  // t2: the futures hedge's "Underlying exposure" (long / short) when a new position is established.
+  if (sp.direction) await ui.option(what, 'Underlying exposure', sp.direction === 'short' ? 'Short' : 'Long').click();
+  // t2: the pairs trade's short leg: { instrument: '<key>', ratio }.
+  if (sp.pair) {
+    const pp = ui.section(main, 'Short leg of the pair');
+    await pickInstrument(ui, pp, 'Security to borrow and sell short', ctx.inst(sp.pair.instrument));
+    await ui.input(pp, 'Sizing ratio').fill(String(sp.pair.ratio));
+  }
+  // t2: futures contracts: { buy: '<key>' (the hedge future, or the month bought), sell?: '<key>' (the month sold), contracts? }.
+  if (sp.futures) {
+    const fp = ui.section(main, 'Futures contracts');
+    const first = ui.select(fp, /^\s*(Futures contract for the hedge|Contract month to buy)/);
+    await first.locator(`option[value="${ctx.inst(sp.futures.buy).id}"]`).waitFor({ state: 'attached' });
+    await first.selectOption(ctx.inst(sp.futures.buy).id);
+    if (sp.futures.sell) {
+      const second = ui.select(fp, 'Contract month to sell');
+      await second.locator(`option[value="${ctx.inst(sp.futures.sell).id}"]`).waitFor({ state: 'attached' });
+      await second.selectOption(ctx.inst(sp.futures.sell).id);
+    }
+    if (sp.futures.contracts !== undefined && sp.futures.contracts !== null) await ui.input(fp, 'Contracts').fill(String(sp.futures.contracts));
+  }
 
   if (sp.expiration || sp.strikes || sp.contracts !== undefined || sp.right) {
     const oc = ui.section(main, 'Option contracts');

@@ -269,3 +269,4 @@
 - 2026-10-13T20:26Z | t2 | +0.2 | synthetic_short passes at engine, API and browser
 - 2026-10-13T20:26Z | s3 | +0.2 | cms_spread_swap passes at engine, API and browser
 - 2026-10-13T20:27Z | b4 | +0.2 | distressed_debt passes at engine, API and browser
+- 2026-10-13T20:29Z | s3 | +0.2 | non_deliverable_swap passes at engine, API and browser

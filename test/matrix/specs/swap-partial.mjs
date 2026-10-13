@@ -445,4 +445,192 @@ const cmsSpreadSwap = {
   ],
 };
 
-export default [dividendSwap, cmsSpreadSwap];
+// ---------------------------------------------------------------------------------------------
+// non_deliverable_swap
+// ---------------------------------------------------------------------------------------------
+// One-year USD-settled Indian rupee swap: pay 6.40% fixed, receive 6-month MIFOR, both semi-annual ACT/365 on an INR notional
+// of 83 rupees per dollar of the USD notional (10,000,000 USD = 830,000,000 INR). Every payment is made in USD at the USD/INR
+// fixing two USD business days before the payment date, entered by hand for that date (no service supplies it); nothing is
+// ever paid in rupees. Price and marks per 100 of the USD notional. The Terminal has no Mumbai holiday calendar: the USD
+// calendar is used for payments and fixings (stated on the contract). Position-level terms: a fixed independent amount of
+// 150,000 USD. Commission 20.00 per million; T+2 (USD).
+//   period 5 May to 5 November 2026 (184 days): fixed 830,000,000 x 6.40% x 184/365 = 26,778,301.37 INR; floating (MIFOR
+//     6.55%) 830,000,000 x 6.55% x 184/365 = 27,405,917.81 INR; the USD/INR fixing of Tue 3 November is not there on Thu
+//     5 November: both payments wait; entered by hand as 84.10: 26,778,301.37 / 84.10 = 318,410.24 USD paid,
+//     27,405,917.81 / 84.10 = 325,872.98 USD received
+//   3,000,000 terminated on Wed 10 February 2027 at 0.15: 4,500.00 received (all-in); settles Fri 12 February
+//   period 5 November 2026 to 5 May 2027 (181 days) on 581,000,000 INR: fixed 18,439,189.04 INR; floating (MIFOR 6.30%)
+//     18,151,076.71 INR; fixing of Mon 3 May entered in advance as 83.20: 221,624.87 USD paid, 218,161.98 USD received
+const NDS_NAME = 'USD-settled INR swap 6.40% v MIFOR6M 5 May 2027';
+const nonDeliverableSwap = {
+  productId: 'non_deliverable_swap',
+  title: 'USD-settled INR swap: legs worked out in rupees and settled in dollars at the USD/INR fixing, entered by hand (one late)',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'Settlement currency (non-deliverable)', 'FX fixing lag', 'each leg: Notional factor (rupees per dollar of notional)'],
+    automaticInputs: ['payment schedule and the fixing dates (2 USD business days before each payment)', 'MIFOR fixings (rate fixture standing in for Shaffer MarketData)', 'each leg worked out in INR and converted at the fixing', 'settlement date T+2', 'commission', 'fixed independent amount'],
+    manualInputs: ['the USD/INR fixing of each fixing date (Data connection, Manual entries, FX rate with its fixing date)', 'upfront and termination amounts (stated fill prices)', 'marks per 100 of the USD notional'],
+    settlement: 'Every leg payment in USD on its payment date at the USD/INR fixing of its fixing date; termination amounts and commission T+2 in USD; nothing settles in INR',
+    lifecycle: 'Both legs blocked visibly until the late fixing is entered, then paid in USD; partial termination; the second period on the reduced notional with its fixing entered in advance; maturity with collateral returned. The Terminal has no Mumbai calendar: the USD calendar stands in (stated)',
+    accounting: 'USD contract: leg payments realized in USD at the fixing; carried at the mark; termination result realized; commission expensed; no INR balance at any time',
+    collateral: 'Position-level terms: a fixed independent amount of 150,000 USD posted at entry, returned at maturity; no variation margin',
+  },
+  start: at('2026-05-01'),
+  settlementCheck: { lag: 2, holidays: [] },
+  book: {
+    name: 'Matrix non-deliverable swap', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 3_000_000 }],
+    account: { name: 'EM rates', funding: [{ ccy: 'USD', amount: 1_000_000 }] },
+    settings: { fees: { swap: { perUnit: 0.00002, minimum: 0, bps: 0 } }, fill: FILL, settlement: { swap: 2 } },
+  },
+  instruments: {
+    main: {
+      productId: 'non_deliverable_swap', name: NDS_NAME, symbol: 'NDS-INR-0527', marketView: 'FOREIGN_DERIV', venueType: 'otc', venueCountry: 'SG', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { tradingCalendar: 'USD', settlementCalendar: 'USD', paymentCalendar: 'USD' },
+      terms: {
+        effective: '2026-05-05', maturity: '2027-05-05', counterparty: 'Dealer N', settlementCcy: 'USD', fixingLag: 2,
+        collateralBasis: { type: 'position', independentAmount: { type: 'fixed', amount: 150_000 }, variationMargin: false },
+        legs: [
+          { side: 'pay', type: 'fixed', ccy: 'INR', notionalFactor: 83, rate: 0.064, months: 6, dayCount: 'ACT/365' },
+          { side: 'receive', type: 'float', ccy: 'INR', notionalFactor: 83, index: 'MIFOR6M', spread: 0, months: 6, dayCount: 'ACT/365' },
+        ],
+      },
+    },
+  },
+  rates: { MIFOR6M: { currency: 'INR', byDate: { '2026-05-05': 6.55, '2026-11-05': 6.30 } } },
+  expectAtStart: usdStart(1_000_000, 2_000_000),
+  steps: [
+    {
+      id: 'open', covers: ['open', 'collateral'], action: 'ticket', instrument: 'main', side: 'buy', qty: 10_000_000, as: 'nds', order: { statedPrice: 0 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 10_000_000, estimate: 0, model: 'stated-price', settleDate: '2026-05-05', calendar: 'USD', cash: 0, fees: 200 }],
+          cash: { USD: { fees: 200, margin: 150_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 10_000_000, avgPrice: 0 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Entered as written: 10,000,000 notional of NDS-INR-0527 at 0.00 per 100 notional', owner: 'account', date: '2026-05-01' },
+          { type: 'swap.collateral', summary: `Collateral posted on ${NDS_NAME} under its position-level terms: 150,000.00 USD`, cash: { USD: -150_000 } },
+        ],
+        cash: { account: { USD: { settled: 850_000, unsettled: -200, margin: 150_000, availableToTrade: 849_800, availableToWithdraw: 849_800 } } },
+        positions: [{ instrument: 'main', lot: 'nds', owner: 'account', direction: 'as written', qty: 10_000_000, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, notional: 10_000_000, margin: 150_000 }],
+        holdings: { main: { long: 10_000_000, short: 0, net: 10_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-05-05', amount: -200, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-11-05', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-11-05', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-05-05', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', lot: 'nds', owner: 'account', qty: 10_000_000, basis: 'position', iaRequired: 150_000, iaPosted: 150_000 }],
+        pnl: { account: { realized: 0, commissions: -200, unrealized: 0, total: -200 } },
+        nav: { account: 999_800, book: 2_999_800 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 850_000, margin: 150_000, payable: 200, positions: null, assets: 1_000_000, liabilities: 200, netAssets: 999_800 } },
+      },
+    },
+    {
+      id: 'mark-at-par', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 0, note: 'Dealer N mark per 100 of the USD notional, by hand',
+      expect: { positions: [{ instrument: 'main', lot: 'nds', price: 0, value: 0, unrealized: 0, provisional: false }], otc: [{ instrument: 'main', mark: 0, markValue: 0 }], provisional: { account: false, book: false } },
+    },
+    {
+      id: 'settle-commission', covers: 'settlement', action: 'clock', to: at('2026-05-05'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 200.00 USD from settled cash', cash: { USD: -200 } }],
+        cash: { account: { USD: { settled: 849_800, unsettled: 0, availableToTrade: 849_800, availableToWithdraw: 849_800 } } },
+        pending: [],
+        balance: { account: { cash: 849_800, payable: null, assets: 999_800, liabilities: 0 } },
+      },
+    },
+    {
+      // Thu 5 November: both legs are worked out (in INR) but neither can be paid: the USD/INR fixing of Tue 3 November is not there.
+      id: 'payments-wait-for-the-fixing', covers: ['missing FX fixing', 'non-deliverable settlement'], action: 'clock', to: at('2026-11-05'),
+      expect: {
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-11-05', status: 'blocked', reason: /Awaiting the USD\/INR settlement fixing of 2026-11-03 for leg A/ },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-11-05', status: 'blocked', reason: /Awaiting the USD\/INR settlement fixing of 2026-11-03 for leg B/ },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-05-05', status: 'pending' },
+        ],
+      },
+    },
+    {
+      // Entered by hand: 84.10 rupees per dollar for 3 November. 26,778,301.37 / 84.10 = 318,410.24 paid; 27,405,917.81 / 84.10 = 325,872.98 received.
+      id: 'usd-inr-fixing-by-hand', covers: ['missing FX fixing', 'non-deliverable settlement', 'fixed payment', 'floating payment'], action: 'manual_fx', pair: 'USD/INR', rate: 84.10, date: '2026-11-03', note: 'Published USD/INR reference rate, entered by hand',
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap payment on ${NDS_NAME}, leg A (fixed), period 2026-05-05 to 2026-11-05: 26,778,301.37 INR, settled in USD at the USD/INR fixing of 2026-11-03 (84.1): 318,410.24 USD`, cash: { USD: -318_410.24 }, date: '2026-11-05' },
+          { type: 'swap.payment', summary: `Swap receipt on ${NDS_NAME}, leg B (float), period 2026-05-05 to 2026-11-05: 27,405,917.81 INR, settled in USD at the USD/INR fixing of 2026-11-03 (84.1): 325,872.98 USD`, cash: { USD: 325_872.98 }, date: '2026-11-05' },
+        ],
+        cash: { account: { USD: { settled: 857_262.74, availableToTrade: 857_262.74, availableToWithdraw: 857_262.74 }, INR: null } }, // no rupee balance, ever
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-05-05', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-05-05', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-05-05', status: 'pending' },
+        ],
+        pnl: { account: { realized: 7_462.74, total: 7_262.74 } },
+        nav: { account: 1_007_262.74, book: 3_007_262.74 },
+        balance: { account: { cash: 857_262.74, assets: 1_007_262.74, netAssets: 1_007_262.74 } },
+      },
+    },
+    { id: 'february', action: 'clock', to: at('2027-02-10'), expect: {} },
+    {
+      id: 'mark-before-termination', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 0.15, note: 'Dealer N mark per 100 of the USD notional, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'nds', price: 0.15, value: 15_000, unrealized: 15_000 }],
+        otc: [{ instrument: 'main', mark: 0.15, markValue: 15_000 }],
+        pnl: { account: { unrealized: 15_000, total: 22_262.74 } },
+        nav: { account: 1_022_262.74, book: 3_022_262.74 },
+        balance: { account: { positions: 15_000, assets: 1_022_262.74, netAssets: 1_022_262.74 } },
+      },
+    },
+    {
+      // 3,000,000 at 0.15, all-in: 4,500.00 received, realized 4,500.00; commission 60.00. The fixed independent amount stays.
+      id: 'partial-termination', covers: ['reduce', 'partial termination'], action: 'close', lot: 'nds', scope: 'strategy', percent: 30, order: { statedPrice: 0.15 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 3_000_000, estimate: 0.15, model: 'stated-price', settleDate: '2027-02-12', cash: 4_500, fees: 60 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 3_000_000, avgPrice: 0.15 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Terminated in part: 3,000,000 of 10,000,000 notional of NDS-INR-0527 at 0.15 per 100 notional (realized 4,500.00 USD)' }],
+        cash: { account: { USD: { unsettled: 4_440, availableToTrade: 861_702.74, availableToWithdraw: 857_262.74 } } },
+        positions: [{ instrument: 'main', lot: 'nds', qty: 7_000_000, cost: 0, price: 0.15, value: 10_500, unrealized: 10_500, notional: 7_000_000 }],
+        holdings: { main: { long: 7_000_000, short: 0, net: 7_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2027-02-12', amount: 4_440, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: 7_000_000, markValue: 10_500, iaRequired: 150_000, iaPosted: 150_000 }],
+        pnl: { account: { realized: 11_962.74, commissions: -260, unrealized: 10_500, total: 22_202.74 } },
+        nav: { account: 1_022_202.74, book: 3_022_202.74 },
+        balance: { account: { receivable: 4_440, positions: 10_500, assets: 1_022_202.74, netAssets: 1_022_202.74 } },
+      },
+    },
+    {
+      id: 'settle-termination', covers: 'settlement', action: 'clock', to: at('2027-02-12'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 4,440.00 USD into settled cash', cash: { USD: 4_440 } }],
+        cash: { account: { USD: { settled: 861_702.74, unsettled: 0, availableToTrade: 861_702.74, availableToWithdraw: 861_702.74 } } },
+        pending: [],
+        balance: { account: { cash: 861_702.74, receivable: null } },
+      },
+    },
+    { id: 'fixing-day', action: 'clock', to: at('2027-05-03'), expect: {} },
+    { id: 'usd-inr-fixing-in-advance', covers: 'non-deliverable settlement', action: 'manual_fx', pair: 'USD/INR', rate: 83.20, date: '2027-05-03', note: 'Published USD/INR reference rate, entered by hand', expect: {} },
+    {
+      // 581,000,000 INR: fixed 18,439,189.04 / 83.20 = 221,624.87 paid; floating at 6.30% 18,151,076.71 / 83.20 = 218,161.98 received;
+      // then the swap matures and the 150,000 comes back. 1,000,000 - 200 + 7,462.74 + 4,440 - 3,462.89 = 1,008,239.85.
+      id: 'second-period-and-maturity', covers: ['non-deliverable settlement', 'fixed payment', 'floating payment', 'maturity', 'collateral'], action: 'clock', to: at('2027-05-05'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap payment on ${NDS_NAME}, leg A (fixed), period 2026-11-05 to 2027-05-05: 18,439,189.04 INR, settled in USD at the USD/INR fixing of 2027-05-03 (83.2): 221,624.87 USD`, cash: { USD: -221_624.87 } },
+          { type: 'swap.payment', summary: `Swap receipt on ${NDS_NAME}, leg B (float), period 2026-11-05 to 2027-05-05: 18,151,076.71 INR, settled in USD at the USD/INR fixing of 2027-05-03 (83.2): 218,161.98 USD`, cash: { USD: 218_161.98 } },
+          { type: 'swap.matured', summary: `Swap matured: ${NDS_NAME} (notional 7,000,000)` },
+          { type: 'swap.collateral', summary: `Collateral returned on ${NDS_NAME} under its position-level terms: 150,000.00 USD (independent amount, the position ended)`, cash: { USD: 150_000 } },
+        ],
+        cash: { account: { USD: { settled: 1_008_239.85, margin: 0, availableToTrade: 1_008_239.85, availableToWithdraw: 1_008_239.85 }, INR: null } },
+        positions: [], holdings: { main: null }, lifecycle: [], otc: [],
+        pnl: { account: { realized: 8_499.85, commissions: -260, unrealized: 0, total: 8_239.85 } },
+        nav: { account: 1_008_239.85, book: 3_008_239.85 },
+        balance: { account: { cash: 1_008_239.85, margin: null, positions: null, assets: 1_008_239.85, liabilities: 0, netAssets: 1_008_239.85 } },
+      },
+    },
+  ],
+};
+
+export default [dividendSwap, cmsSpreadSwap, nonDeliverableSwap];

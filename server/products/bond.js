@@ -121,6 +121,12 @@ function per100Of(inst, couponDate) {
   return isContingent(inst) ? contingentPer100(inst, couponDate) : couponPer100(couponTerms(inst, couponDate), couponDate);
 }
 const fmtLevel = (x) => Number(x).toLocaleString('en-US', { maximumFractionDigits: 6 });
+/** b4: words for a participation's share of a cash flow the grantor receives on its whole holding. */
+function participationNote(inst, face, grantorAmount, verb) {
+  const t = inst.terms;
+  if (!t.grantor || !t.grantorHolding) return '';
+  return ` (participation ${((Math.abs(face) / t.grantorHolding) * 100).toFixed(4)}% of the ${fmt(Math.abs(grantorAmount), inst.trading_ccy)} ${verb} ${t.grantor})`;
+}
 const pctText = (x, dp = 2) => `${(x * 100).toFixed(dp)}%`;
 
 /** The trades booked on a position: signed face, trade date and settlement date of each fill. */
@@ -295,6 +301,13 @@ export const bond = {
     // instrument's settlement convention.
     if (t.tradingDocs === undefined || t.tradingDocs === null || t.tradingDocs === '') delete t.tradingDocs;
     else if (!['par', 'distressed'].includes(t.tradingDocs)) errors.push('Trading documentation must be par or distressed.');
+    // b4: a loan participation: a share of a loan held by the grantor (the lender of record), whose cash flows the grantor passes
+    // on. The grantor and the face it holds are terms; the participant's share of each cash flow is face held / grantor's face.
+    if (typeof t.grantor === 'string') t.grantor = t.grantor.trim();
+    if (!t.grantor) delete t.grantor;
+    if (t.grantorHolding === undefined || t.grantorHolding === null || t.grantorHolding === '') delete t.grantorHolding;
+    else { t.grantorHolding = num(t.grantorHolding); if (!(t.grantorHolding > 0)) errors.push('The face held by the grantor must be above 0.'); }
+    if (draft.productId === 'loan_participation' && (!t.grantor || !t.grantorHolding)) errors.push('A loan participation needs its grantor (the lender of record) and the face of the loan the grantor holds, of which the participation is a share.');
     // b4: a catastrophe bond: the issue's principal sits in a collateral trust account (its assets and custodian are a term), the
     // sponsor (the ceding insurer) is paid out of it when a covered event triggers a principal loss, and the trigger is stated.
     for (const k of ['collateralAccount', 'sponsor', 'trigger']) { if (typeof t[k] === 'string') t[k] = t[k].trim(); if (!t[k]) delete t[k]; }
@@ -358,6 +371,7 @@ export const bond = {
     if (t.poolCharacteristics) rows.push(['Pool characteristics', `${t.poolCharacteristics} (stated at registration)`]);
     if (t.recoveries?.length) rows.push(['Recovery distributions', `${t.recoveries.map((r) => `${r.date}: ${fmtPx(r.percent)} per 100${r.final ? ' (final)' : ''}`).join('; ')} (recorded by hand)`]);
     if (t.repricings?.length) rows.push(['Repricings', t.repricings.map((r) => `${r.from}: spread ${(r.prior * 100).toFixed(3)}% to ${(r.spread * 100).toFixed(3)}%${r.premium ? ` (premium ${fmtPx(r.premium)}%)` : ''}`).join('; ')]);
+    if (t.grantor) rows.push(['Participation', `A share of the ${t.grantorHolding ? `${fmtQty(t.grantorHolding)} face ` : ''}held by ${t.grantor}, the lender of record: each cash flow is passed through in proportion to the face held${t.paymentDelayDays ? `, ${t.paymentDelayDays} days after the coupon date` : ''}; exposure to ${t.grantor} as well as the borrower`]);
     if (t.tradingDocs) rows.push(['Trading documentation', t.tradingDocs === 'par' ? 'Par (assignment): delayed compensation to the buyer for the days a trade settles after the standard date' : 'Distressed (assignment): no delayed compensation']);
     if (t.collateralAccount) rows.push(['Collateral account', `${t.collateralAccount}${t.issueSize ? `; holds the outstanding principal, ${fmtQty(money(t.issueSize * (t.factor ?? 1), inst.trading_ccy))} of the ${fmtQty(t.issueSize)} issued` : ''}${t.collateralReleased ? `; released to the sponsor so far ${fmtQty(t.collateralReleased)}` : ''}`]);
     if (t.sponsor) rows.push(['Sponsor (ceding insurer)', t.sponsor]);
@@ -596,6 +610,7 @@ export const bond = {
         const gross = money((face * cScale * grossPer100) / 100, ccy);
         servicing = `; gross interest ${fmt(Math.abs(gross), ccy)} less servicing fee ${fmt(Math.abs(money(gross - amount, ccy)), ccy)} (${(inst.terms.servicingFeeRate * 100).toFixed(3)}% a year)`;
       }
+      if (inst.terms.grantor && inst.terms.grantorHolding) servicing += participationNote(inst, face, money((inst.terms.grantorHolding * cScale * per100) / 100, ccy), 'coupon on the face held by');
       if (isContingent(inst)) servicing = ` (contingent coupon: ${inst.terms.linkedTo} observed at ${fmtLevel(inst.terms.observations[couponDate])}, at or above the coupon barrier ${fmtLevel(inst.terms.couponBarrier * inst.terms.initialLevel)})`;
       // b4: a fixed PIK component: that part of the coupon is capitalised (factor up once for the instrument, cost up), the rest paid.
       if (inst.terms.pikRate && !inst.terms.couponSuspended) {
@@ -1234,7 +1249,7 @@ export const bond = {
       const later = pay > today;
       const eventId = app.ledger.post({
         bookId: b.id, unitId: u.id, type: 'bond.paydown', instrumentId: inst.id, strategyId: p.strategy_id, positionId: p.id, actor: 'user',
-        summary: `Principal paydown on ${name}${note ? ` (${note})` : ''}: factor ${old} to ${nf}${from !== today ? ` from ${from}` : ''}${split}, ${fmt(Math.abs(paid), ccy)} ${later ? `${paid >= 0 ? 'receivable' : 'payable'} on ${pay}` : paid >= 0 ? 'received' : 'paid'}`,
+        summary: `Principal paydown on ${name}${note ? ` (${note})` : ''}: factor ${old} to ${nf}${from !== today ? ` from ${from}` : ''}${split}, ${fmt(Math.abs(paid), ccy)} ${later ? `${paid >= 0 ? 'receivable' : 'payable'} on ${pay}` : paid >= 0 ? 'received' : 'paid'}${participationNote(inst, face, money(inst.terms.grantorHolding * (old - nf) * ratioOf(inst) * (inst.terms.redemption / 100), ccy), 'principal paid to')}`,
         data: { oldFactor: old, newFactor: nf, effective: from, payDate: pay, scheduledFactor: sf, manual: true },
         entries: [
           { account: later ? (paid >= 0 ? 'recv.settle' : 'pay.settle') : 'cash', ccy, amount: paid, positionId: p.id },

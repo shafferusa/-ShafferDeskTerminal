@@ -440,7 +440,7 @@ const has = (v) => v !== undefined && v !== null && v !== '';
 
 /** Contract fields of a non-deliverable swap (settlement currency, fixing lag) and of a callable or puttable swap (its right). */
 async function fillPartialTerms(ui, dialog, t) {
-  if (t.settlementCcy) await ui.input(dialog, 'Settlement currency').fill(t.settlementCcy);
+  if (t.settlementCcy) await ui.input(dialog, /^\s*Settlement currency \(non-deliverable\)/).fill(t.settlementCcy); // not the registry's own Settlement currency
   if (has(t.fixingLag)) await ui.input(dialog, 'FX fixing lag').fill(String(t.fixingLag));
   if (t.callRight) {
     await ui.input(dialog, 'Exercise dates').fill([].concat(t.callRight.dates || []).join('; '));
