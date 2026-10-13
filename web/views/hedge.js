@@ -16,7 +16,7 @@
 // changed is shown was / now per leg and per total, and the new figures need a fresh confirmation.
 import { html, useEffect, useRef, useState } from '../vendor/preact-htm.js';
 import { bump, fmtMoney, fmtNum, fmtPrice, fmtQty, fmtTime, get, isNum, openOverlay, post, toast, toastError, useLive } from '../lib/core.js';
-import { Awaiting, Button, Check, Checks, Empty, ErrorNote, Field, KV, Missing, Money, Notice, Num, Pill, Prov, Select, Text } from '../lib/ui.js';
+import { Awaiting, Button, Check, Checks, Empty, ErrorNote, Field, KV, Missing, Money, Notice, Num, Pill, Prov, Select, Text, useEscape } from '../lib/ui.js';
 import { CollateralBasisFields } from '../lib/contracts.js';
 import { Changes, expectedOf, PreviewModal, tolerancesText } from './preview.js';
 
@@ -512,11 +512,7 @@ export function HedgePopup({ request, onClose, onDone }) {
     if (!d || busy) return;
     if (d.updatedAt !== r.updatedAt || d.state !== r.state || d.freshness?.status !== r.freshness?.status || d.connection?.reachable !== r.connection?.reachable) adopt(d);
   }, [live.data]);
-  useEffect(() => {
-    const k = (e) => { if (e.key === 'Escape') onClose?.(); };
-    window.addEventListener('keydown', k);
-    return () => window.removeEventListener('keydown', k);
-  }, []);
+  useEscape(onClose);
 
   function adopt(next) {
     setR(next);

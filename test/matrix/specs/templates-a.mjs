@@ -5035,4 +5035,407 @@ const longCall = {
   ],
 };
 
-export default [longTemplate, shortTemplate, protectivePut, protectiveCall, coveredCall, coveredPut, longCollar, shortCollar, cashSecuredPut, longCall];
+// ---------------------------------------------------------------------------------------------
+// long_put
+// ---------------------------------------------------------------------------------------------
+// One leg: buy puts on an index, cash-settled and European (each contract pays (strike - fixing) x 100 when in the money
+// at expiry; nothing is delivered). As for the long call: a small displayed ask fills the puts in parts; the remainder
+// is cancelled and retried; two more packages fill in part and are accepted as they stand or unwound. The first package
+// is resized and rolled to April. Cash short: not financed (refused), funded from Treasury, borrowed and repaid. At the
+// March expiry (index fixing 92.00) the 95 puts are settled in cash, (95 - 92) x 100 = 300 a contract, received T+1;
+// the 90 puts lapse. The April puts are sold by a share, an exact amount and in full. A bought put reserves nothing.
+const INDEX = { productId: 'etf', name: 'Harlow 100 Index (reference level)', symbol: 'HLX', marketView: 'US_CASH', venue: 'Harlow Indices', venueType: 'exchange', venueCountry: 'US', issuer: 'Harlow Indices LLC', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', terms: {} };
+const hlxPut = (strike, expiration = '2026-03-20') => ({
+  productId: 'index_option', name: `HLX ${expiration === '2026-03-20' ? '20 March' : '17 April'} 2026 ${strike} put`, symbol: `HLX${expiration.slice(2).replace(/-/g, '')}P${strike}`,
+  marketView: 'US_DERIV', venue: 'Cboe Options Exchange', venueType: 'exchange', venueCountry: 'US', underlyingGeo: 'US', tradingCcy: 'USD', underlying: 'index', multiplier: 100,
+  terms: { right: 'P', strike, expiration, exercise: 'european', settlement: 'cash', deliverable: { units: 100 } },
+});
+const lput = (contracts, strike, extra = {}) => pageInput('long_put', { underlyingId: '$inst:index', hedgeRatio: undefined, options: { expiration: '2026-03-20', strikes: { put: strike }, contracts }, ...extra });
+const lputPage = (contracts, strike, extra = {}) => ({ template: 'Long Put', underlying: 'index', expiration: '2026-03-20', strikes: { 'Put strike': strike }, contracts, ...extra });
+const LP_OPEN = ['core', 'core', 'core', 'kept', 'kept', 'unwound', 'unwound'].map((lot) => ({ instrument: 'put95', lot, amount: -451.5 })); // 3 x 150 + 1.50 each
+
+const longPut = {
+  template: 'long_put',
+  title: 'Long put on the Harlow 100 Index (cash-settled, European): puts bought as a package, partial fills, recovery, financing, roll, cash settlement and lapse',
+  matrix: {
+    ...OPTION_ONLY_MATRIX,
+    automaticInputs: [...TEMPLATE_MATRIX.automaticInputs.filter((x) => !/hedge request/.test(x)), 'index fixing for the expiration date (close fixture on the reference instrument)'],
+    ticket: 'Strategies page (Long Put): Trading owner and intent, Underlying of the options, Option contracts (expiration, put strike, contracts), Order and funding; then the package preview. The strategy instance drawer for Cancel working legs, Retry, Unwind, Accept, Resize, Roll and Close',
+    settlement: 'Premium T+1 on the US calendar; cash settlement of puts in the money T+1 after expiry; Treasury funding moves at once; a margin loan is drawn at once and repaid with interest to the day',
+    lifecycle: 'Partial fills against displayed size; a cancelled remainder needs attention; retry, unwind and accept; resize; roll to April; European cash settlement in the money at expiry from the index fixing; lapse out of the money; close by share, exact amount and in full',
+    accounting: 'Bought puts at premium cost; premium realized at sale, cash settlement or lapse; commissions expensed; the margin loan is one borrowing record of the Account',
+    collateral: 'None: the premium is paid in full; a bought put reserves nothing',
+  },
+  start: MAR(2),
+  settlementCheck: { lag: 1, holidays: [] },
+  book: book('Matrix template long put'),
+  instruments: { index: INDEX, put95: hlxPut(95), put90: hlxPut(90), put95apr: hlxPut(95, '2026-04-17') },
+  quotes: {
+    index: { bid: 99.99, ask: 100.01, last: 100, bidSize: 10000, askSize: 10000 },
+    put95: { bid: 1.40, ask: 1.50, last: 1.45, bidSize: 100, askSize: 3 }, // only 3 contracts displayed at the ask
+    put90: { bid: 0.40, ask: 0.50, last: 0.45, bidSize: 100, askSize: 100 },
+    put95apr: { bid: 2.40, ask: 2.50, last: 2.45, bidSize: 100, askSize: 100 },
+  },
+  expectAtStart: startState(),
+  steps: [
+    {
+      // 10 contracts at the 1.50 ask: 10 x 1.50 x 100 = 1,500, commission 5. Ask size 3: 3 + 3 fill, 4 work.
+      id: 'open-partial', covers: ['open', 'partial fill'], action: 'package', as: 'core', instrument: 'put95', input: lput(10, 95), strategyPage: lputPage(10, 95),
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: [], template: 'long_put',
+          legs: [{ kind: 'trade', action: 'buy', purpose: 'primary', instrument: 'put95', qty: 10, orderType: 'market', estimate: 1.5, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2026-03-03', calendar: 'US', cash: -1_500, fees: 5, dependsOn: [] }],
+          cash: { USD: { purchases: 1_500, proceeds: 0, fees: 5, reserved: 0, financingIn: 0, required: 1_505, available: 200_000, shortfall: 0, netCash: -1_505 } },
+          netPremium: { amount: 1_500, ccy: 'USD', type: 'debit' }, optionRequirement: [],
+        },
+        result: { status: 'partial', orders: [{ kind: 'trade', action: 'buy', instrument: 'put95', status: 'partial', qty: 10, filledQty: 3, avgPrice: 1.5, fills: [{ qty: 3, price: 1.5, model: 'quoted-bid-ask', settleDate: '2026-03-03', source: 'Test fixture', status: 'simulated' }] }] },
+        events: [{ type: 'strategy.submitted', summary: 'Package submitted: Long Put HLX (1 leg; open)' }, { type: 'trade.fill', summary: 'Bought 3 HLX260320P95 @ 1.50 USD', owner: 'account', date: '2026-03-02' }, { type: 'trade.fill', summary: 'Bought 3 HLX260320P95 @ 1.50 USD' }],
+        cash: { account: { USD: { settled: 200_000, unsettled: -903, receivable: 0, payable: 903, reserved: 0, availableToTrade: 199_097, availableToWithdraw: 199_097 } } }, // 2 x 451.50
+        positions: [boughtPos('put95', 'core', 6, 1.5, 1.45)], // 6 x 1.45 x 100 = 870
+        holdings: { put95: { long: 6, short: 0, net: 6 } },
+        pending: [-451.5, -451.5].map((amount) => ({ instrument: 'put95', lot: 'core', owner: 'account', dueDate: '2026-03-03', amount, ccy: 'USD', into: 'cash' })),
+        openOrders: [{ instrument: 'put95', kind: 'trade', action: 'buy', status: 'partial', qty: 10, filledQty: 6, owner: 'account' }],
+        lifecycle: [expiryItem('put95')],
+        pnl: { account: { realized: 0, commissions: -3, borrowFunding: 0, unrealized: -30, total: -33 }, book: { realized: 0, commissions: -3, unrealized: -30, total: -33 }, treasury: { total: 0 } },
+        nav: { account: 199_967, treasury: 800_000, book: 999_967 },
+        balance: {
+          account: { cash: 200_000, positions: 870, payable: 903, assets: 200_870, liabilities: 903, netAssets: 199_967 },
+          book: { cash: 1_000_000, positions: 870, payable: 903, assets: 1_000_870, liabilities: 903, netAssets: 999_967 },
+          treasury: { cash: 800_000, assets: 800_000, liabilities: 0, netAssets: 800_000 },
+        },
+        oversight: { accountBorrowings: [], accounts: { account: { cashBorrowed: 0, fundingReceived: 200_000 } }, treasuryOwn: [] },
+      },
+    },
+    {
+      id: 'cancel-remainder', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'core',
+      expect: {
+        result: { status: 'attention', orders: [{ instrument: 'put95', status: 'cancelled', qty: 10, filledQty: 6 }] },
+        events: [{ type: 'order.cancelled', summary: 'Leg 1 cancelled: buy 10 HLX260320P95. Cancelled by user (6 of 10 had filled and remains in place)' }],
+        openOrders: [], failed: { orders: 1 }, alerts: ['strategy.attention'],
+      },
+    },
+    {
+      // The 4 not bought: 600 + 2; 3 now, 1 in the next cycle.
+      id: 'retry', covers: ['retry'], action: 'recover', how: 'retry', lot: 'core',
+      expect: {
+        preview: { blocking: 0, intent: 'retry', legs: [{ kind: 'trade', action: 'buy', instrument: 'put95', qty: 4, estimate: 1.5, cash: -600, fees: 2, dependsOn: [] }], cash: { USD: { purchases: 600, fees: 2, required: 602, available: 199_097, shortfall: 0 } } },
+        result: { status: 'partial', orders: [{ kind: 'trade', action: 'buy', instrument: 'put95', status: 'partial', qty: 4, filledQty: 3, avgPrice: 1.5 }] },
+        events: [{ type: 'strategy.legs_added', summary: 'Legs added to Long Put HLX (1 leg; retry)' }, { type: 'trade.fill', summary: 'Bought 3 HLX260320P95 @ 1.50 USD' }, { type: 'trade.fill', summary: 'Bought 1 HLX260320P95 @ 1.50 USD' }],
+        cash: { account: { USD: { unsettled: -1_505, payable: 1_505, availableToTrade: 198_495, availableToWithdraw: 198_495 } } }, // 903 + 451.50 + 150.50
+        positions: [boughtPos('put95', 'core', 10, 1.5, 1.45)],
+        holdings: { put95: { long: 10, short: 0, net: 10 } },
+        pending: [-451.5, -451.5, -451.5, -150.5].map((amount) => ({ instrument: 'put95', lot: 'core', dueDate: '2026-03-03', amount })),
+        pnl: { account: { commissions: -5, unrealized: -50, total: -55 }, book: { commissions: -5, unrealized: -50, total: -55 } },
+        nav: { account: 199_945, book: 999_945 },
+        balance: { account: { positions: 1_450, payable: 1_505, assets: 201_450, liabilities: 1_505, netAssets: 199_945 }, book: { positions: 1_450, payable: 1_505, assets: 1_001_450, liabilities: 1_505, netAssets: 999_945 } },
+        alerts: [],
+      },
+    },
+    {
+      id: 'kept-partial', covers: ['partial fill'], action: 'package', as: 'kept', instrument: 'put95', input: lput(7, 95), strategyPage: lputPage(7, 95),
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'buy', instrument: 'put95', qty: 7, estimate: 1.5, cash: -1_050, fees: 3.5, dependsOn: [] }], cash: { USD: { purchases: 1_050, fees: 3.5, required: 1_053.5, available: 198_495, shortfall: 0 } } },
+        result: { status: 'partial', orders: [{ instrument: 'put95', status: 'partial', qty: 7, filledQty: 3 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 3 HLX260320P95 @ 1.50 USD' }, { type: 'trade.fill', summary: 'Bought 3 HLX260320P95 @ 1.50 USD' }],
+        cash: { account: { USD: { unsettled: -2_408, payable: 2_408, availableToTrade: 197_592, availableToWithdraw: 197_592 } } },
+        positions: [boughtPos('put95', 'core', 10, 1.5, 1.45), boughtPos('put95', 'kept', 6, 1.5, 1.45)],
+        holdings: { put95: { long: 16, short: 0, net: 16 } },
+        pending: [...LP_OPEN.slice(0, 5), { instrument: 'put95', lot: 'core', amount: -150.5 }],
+        openOrders: [{ instrument: 'put95', status: 'partial', qty: 7, filledQty: 6 }],
+        lifecycle: [expiryItem('put95'), expiryItem('put95')],
+        pnl: { account: { commissions: -8, unrealized: -80, total: -88 }, book: { commissions: -8, unrealized: -80, total: -88 } },
+        nav: { account: 199_912, book: 999_912 },
+        balance: { account: { positions: 2_320, payable: 2_408, assets: 202_320, liabilities: 2_408, netAssets: 199_912 }, book: { positions: 2_320, payable: 2_408, assets: 1_002_320, liabilities: 2_408, netAssets: 999_912 } },
+      },
+    },
+    { id: 'cancel-kept', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'kept', expect: { result: { status: 'attention' }, events: [{ type: 'order.cancelled', summary: /6 of 7 had filled and remains in place/ }], openOrders: [], failed: { orders: 2 }, alerts: ['strategy.attention'] } },
+    { id: 'accept-kept', covers: ['accept as it stands'], action: 'strategy_action', how: 'accept', lot: 'kept', expect: { result: { status: 'open' }, events: [{ type: 'strategy.accepted', summary: 'Long Put HLX: accepted as it stands with 1 leg unexecuted. The position no longer matches its template.' }], alerts: [] } },
+    {
+      id: 'unwound-partial', covers: ['partial fill'], action: 'package', as: 'unwound', instrument: 'put95', input: lput(7, 95), strategyPage: lputPage(7, 95),
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'buy', instrument: 'put95', qty: 7, estimate: 1.5, cash: -1_050, fees: 3.5 }], cash: { USD: { required: 1_053.5, available: 197_592 } } },
+        result: { status: 'partial', orders: [{ instrument: 'put95', status: 'partial', qty: 7, filledQty: 3 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 3 HLX260320P95 @ 1.50 USD' }, { type: 'trade.fill', summary: 'Bought 3 HLX260320P95 @ 1.50 USD' }],
+        cash: { account: { USD: { unsettled: -3_311, payable: 3_311, availableToTrade: 196_689, availableToWithdraw: 196_689 } } },
+        positions: [boughtPos('put95', 'core', 10, 1.5, 1.45), boughtPos('put95', 'kept', 6, 1.5, 1.45), boughtPos('put95', 'unwound', 6, 1.5, 1.45)],
+        holdings: { put95: { long: 22, short: 0, net: 22 } },
+        pending: [...LP_OPEN, { instrument: 'put95', lot: 'core', amount: -150.5 }],
+        openOrders: [{ instrument: 'put95', status: 'partial', qty: 7, filledQty: 6 }],
+        lifecycle: [expiryItem('put95'), expiryItem('put95'), expiryItem('put95')],
+        pnl: { account: { commissions: -11, unrealized: -110, total: -121 }, book: { commissions: -11, unrealized: -110, total: -121 } },
+        nav: { account: 199_879, book: 999_879 },
+        balance: { account: { positions: 3_190, payable: 3_311, assets: 203_190, liabilities: 3_311, netAssets: 199_879 }, book: { positions: 3_190, payable: 3_311, assets: 1_003_190, liabilities: 3_311, netAssets: 999_879 } },
+      },
+    },
+    { id: 'cancel-unwound', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'unwound', expect: { result: { status: 'attention' }, events: [{ type: 'order.cancelled' }], openOrders: [], failed: { orders: 3 }, alerts: ['strategy.attention'] } },
+    {
+      // Unwind sells the 6 puts at the 1.40 bid: 840 - 3; 6 x (1.40 - 1.50) x 100 = -60 realized.
+      id: 'unwind', covers: ['unwind'], action: 'recover', how: 'unwind', lot: 'unwound',
+      expect: {
+        preview: { blocking: 0, intent: 'unwind', legs: [{ kind: 'trade', action: 'sell', instrument: 'put95', qty: 6, estimate: 1.4, cash: 840, fees: 3, dependsOn: [] }], cash: { USD: { proceeds: 840, fees: 3, required: 3, available: 196_689 } } },
+        result: { status: 'closed', orders: [{ kind: 'trade', action: 'sell', instrument: 'put95', status: 'filled', qty: 6, filledQty: 6, avgPrice: 1.4 }] },
+        events: [{ type: 'strategy.legs_added', summary: 'Legs added to Long Put HLX (1 leg; unwind)' }, { type: 'trade.fill', summary: 'Sold 6 HLX260320P95 @ 1.40 USD (realized -60.00 USD)' }],
+        cash: { account: { USD: { unsettled: -2_474, receivable: 837, availableToTrade: 197_526, availableToWithdraw: 196_689 } } },
+        positions: [boughtPos('put95', 'core', 10, 1.5, 1.45), boughtPos('put95', 'kept', 6, 1.5, 1.45)],
+        holdings: { put95: { long: 16, short: 0, net: 16 } },
+        pending: [...LP_OPEN, { instrument: 'put95', lot: 'core', amount: -150.5 }, { instrument: 'put95', lot: 'unwound', dueDate: '2026-03-03', amount: 837 }],
+        lifecycle: [expiryItem('put95'), expiryItem('put95')],
+        pnl: { account: { realized: -60, commissions: -14, unrealized: -80, total: -154 }, book: { realized: -60, commissions: -14, unrealized: -80, total: -154 } },
+        nav: { account: 199_846, book: 999_846 },
+        balance: { account: { receivable: 837, positions: 2_320, assets: 203_157, netAssets: 199_846 }, book: { receivable: 837, positions: 2_320, assets: 1_003_157, netAssets: 999_846 } },
+        alerts: [],
+      },
+    },
+    { id: 'deep-book', action: 'quote', instrument: 'put95', quote: { bid: 1.40, ask: 1.50, last: 1.45, bidSize: 100, askSize: 100 }, expect: {} },
+    {
+      id: 'resize-up', covers: ['resize', 'increase'], action: 'resize', lot: 'core', factor: 1.2,
+      expect: {
+        preview: { blocking: 0, intent: 'resize', legs: [{ kind: 'trade', action: 'buy', instrument: 'put95', qty: 2, estimate: 1.5, cash: -300, fees: 1, dependsOn: [] }], cash: { USD: { purchases: 300, fees: 1, required: 301, available: 197_526 } } },
+        result: { status: 'open', orders: [{ action: 'buy', instrument: 'put95', status: 'filled', filledQty: 2, avgPrice: 1.5 }] },
+        events: [{ type: 'strategy.legs_added', summary: 'Legs added to Long Put HLX (1 leg; resize)' }, { type: 'trade.fill', summary: 'Bought 2 HLX260320P95 @ 1.50 USD' }],
+        cash: { account: { USD: { unsettled: -2_775, payable: 3_612, availableToTrade: 197_225, availableToWithdraw: 196_388 } } },
+        positions: [boughtPos('put95', 'core', 12, 1.5, 1.45), boughtPos('put95', 'kept', 6, 1.5, 1.45)],
+        holdings: { put95: { long: 18, short: 0, net: 18 } },
+        pending: [...LP_OPEN, { instrument: 'put95', lot: 'core', amount: -301 }, { instrument: 'put95', lot: 'core', amount: -150.5 }, { instrument: 'put95', lot: 'unwound', amount: 837 }],
+        pnl: { account: { commissions: -15, unrealized: -90, total: -165 }, book: { commissions: -15, unrealized: -90, total: -165 } },
+        nav: { account: 199_835, book: 999_835 },
+        balance: { account: { positions: 2_610, payable: 3_612, assets: 203_447, liabilities: 3_612, netAssets: 199_835 }, book: { positions: 2_610, payable: 3_612, assets: 1_003_447, liabilities: 3_612, netAssets: 999_835 } },
+      },
+    },
+    {
+      // Roll the 12 March puts to April: sold at 1.40 (12 x (1.40 - 1.50) x 100 = -120 realized), April bought at 2.50:
+      // a net debit of 3,000 - 1,680 = 1,320.
+      id: 'roll', covers: ['roll'], action: 'roll', lot: 'core', newExpiration: '2026-04-17',
+      expect: {
+        preview: { blocking: 0, intent: 'roll', legs: [{ action: 'sell', instrument: 'put95', qty: 12, estimate: 1.4, cash: 1_680, fees: 6 }, { action: 'buy', instrument: 'put95apr', qty: 12, estimate: 2.5, cash: -3_000, fees: 6 }], cash: { USD: { purchases: 3_000, proceeds: 1_680, fees: 12, required: 3_012, available: 197_225 } }, netPremium: { amount: 1_320, type: 'debit' } },
+        result: { status: 'open', orders: [{ action: 'sell', instrument: 'put95', status: 'filled', filledQty: 12 }, { action: 'buy', instrument: 'put95apr', status: 'filled', filledQty: 12 }] },
+        events: [{ type: 'strategy.legs_added', summary: 'Legs added to Long Put HLX (2 legs; roll)' }, { type: 'trade.fill', summary: 'Sold 12 HLX260320P95 @ 1.40 USD (realized -120.00 USD)' }, { type: 'trade.fill', summary: 'Bought 12 HLX260417P95 @ 2.50 USD' }],
+        // To receive 837 + 1,674 = 2,511; owed 3,612 + 3,006 = 6,618.
+        cash: { account: { USD: { unsettled: -4_107, receivable: 2_511, payable: 6_618, availableToTrade: 195_893, availableToWithdraw: 193_382 } } },
+        positions: [boughtPos('put95', 'kept', 6, 1.5, 1.45), boughtPos('put95apr', 'core', 12, 2.5, 2.45)],
+        holdings: { put95: { long: 6, short: 0, net: 6 }, put95apr: { long: 12, short: 0, net: 12 } },
+        pending: [...LP_OPEN, { instrument: 'put95', lot: 'core', amount: -301 }, { instrument: 'put95', lot: 'core', amount: -150.5 }, { instrument: 'put95', lot: 'unwound', amount: 837 }, { instrument: 'put95', lot: 'core', amount: 1_674 }, { instrument: 'put95apr', lot: 'core', dueDate: '2026-03-03', amount: -3_006 }],
+        lifecycle: [expiryItem('put95'), expiryItem('put95apr', '2026-04-17')],
+        pnl: { account: { realized: -180, commissions: -27, unrealized: -90, total: -297 }, book: { realized: -180, commissions: -27, unrealized: -90, total: -297 } },
+        nav: { account: 199_703, book: 999_703 },
+        balance: { account: { receivable: 2_511, positions: 3_810, payable: 6_618, assets: 206_321, liabilities: 6_618, netAssets: 199_703 }, book: { receivable: 2_511, positions: 3_810, payable: 6_618, assets: 1_006_321, liabilities: 6_618, netAssets: 999_703 } },
+      },
+    },
+    {
+      id: 'next-day', covers: ['settlement'], action: 'clock', to: MAR(3),
+      expect: {
+        events: [
+          ...[837, 1_674].map((x) => ({ type: 'settlement.receive', cash: { USD: x } })),
+          ...[451.5, 451.5, 451.5, 150.5, 451.5, 451.5, 451.5, 451.5, 301, 3_006].map((x) => ({ type: 'settlement.pay', cash: { USD: -x } })),
+        ],
+        cash: { account: { USD: { settled: 195_893, unsettled: 0, receivable: 0, payable: 0, availableToTrade: 195_893, availableToWithdraw: 195_893 } } }, // 200,000 + 2,511 - 6,618
+        pending: [],
+        balance: { account: { cash: 195_893, receivable: null, payable: null, assets: 199_703, liabilities: 0 }, book: { cash: 995_893, receivable: null, payable: null, assets: 999_703, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'sweep-to-treasury', covers: ['transfer'], action: 'transfer', from: 'account', to: 'treasury', ccy: 'USD', amount: 195_000,
+      expect: {
+        events: [{ type: 'transfer.return', summary: 'Return to Treasury: 195,000.00 USD from Alpha to Treasury' }],
+        cash: { account: { USD: { settled: 893, availableToTrade: 893, availableToWithdraw: 893 } }, treasury: { USD: { settled: 995_000, availableToTrade: 995_000 } } },
+        nav: { account: 4_703, treasury: 995_000 },
+        balance: { account: { cash: 893, assets: 4_703, netAssets: 4_703 }, treasury: { cash: 995_000, assets: 995_000, netAssets: 995_000 } },
+        oversight: { accounts: { account: { fundingReceived: 5_000 } } },
+      },
+    },
+    {
+      // 40 of the 90 puts at 0.50: 2,000 + 20 = 2,020 against 893: short 1,127.
+      id: 'cash-short-not-financed', covers: ['financing: not financed'], action: 'package', instrument: 'put90', input: lput(40, 90), strategyPage: lputPage(40, 90),
+      status: 'blocked', reason: 'The puts cost 2,020.00 with commission and 893.00 is available; "Do not finance" leaves it blocked.',
+      expect: { refused: 'Alpha is short 1,127.00 USD' },
+    },
+    {
+      id: 'funded-from-treasury', covers: ['financing: Treasury funding'], action: 'package', as: 'funded', instrument: 'put90',
+      input: lput(40, 90, { financing: { mode: 'treasury' } }), strategyPage: lputPage(40, 90, { financing: { mode: 'treasury' } }),
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'funding', action: 'treasury_funding', purpose: 'financing', qty: 1_127, cash: 1_127, dependsOn: [] }, { kind: 'trade', action: 'buy', purpose: 'primary', instrument: 'put90', qty: 40, estimate: 0.5, settleDate: '2026-03-04', cash: -2_000, fees: 20, dependsOn: [1] }],
+          cash: { USD: { purchases: 2_000, fees: 20, financingIn: 1_127, required: 2_020, available: 893, shortfall: 0, netCash: -893 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'funding', status: 'filled', filledQty: 1_127 }, { instrument: 'put90', status: 'filled', filledQty: 40, avgPrice: 0.5 }] },
+        events: [{ type: 'strategy.submitted', summary: 'Package submitted: Long Put HLX (2 legs; open)' }, { type: 'transfer.funding', summary: 'Treasury funding: 1,127.00 USD from Treasury to Alpha (Funding for Long Put HLX)', owner: 'treasury' }, { type: 'trade.fill', summary: 'Bought 40 HLX260320P90 @ 0.50 USD', date: '2026-03-03' }],
+        cash: { account: { USD: { settled: 2_020, unsettled: -2_020, payable: 2_020, availableToTrade: 0, availableToWithdraw: 0 } }, treasury: { USD: { settled: 993_873, availableToTrade: 993_873 } } },
+        positions: [boughtPos('put90', 'funded', 40, 0.5, 0.45), boughtPos('put95', 'kept', 6, 1.5, 1.45), boughtPos('put95apr', 'core', 12, 2.5, 2.45)],
+        holdings: { put90: { long: 40, short: 0, net: 40 } },
+        pending: [{ instrument: 'put90', lot: 'funded', owner: 'account', dueDate: '2026-03-04', amount: -2_020, ccy: 'USD', into: 'cash' }],
+        lifecycle: [expiryItem('put90'), expiryItem('put95'), expiryItem('put95apr', '2026-04-17')],
+        pnl: { account: { commissions: -47, unrealized: -290, total: -517 }, book: { commissions: -47, unrealized: -290, total: -517 }, treasury: { total: 0 } },
+        nav: { account: 5_610, treasury: 993_873, book: 999_483 },
+        balance: { account: { cash: 2_020, positions: 5_610, payable: 2_020, assets: 7_630, liabilities: 2_020, netAssets: 5_610 }, book: { cash: 995_893, positions: 5_610, payable: 2_020, assets: 1_001_503, liabilities: 2_020, netAssets: 999_483 }, treasury: { cash: 993_873, assets: 993_873, netAssets: 993_873 } },
+        oversight: { accounts: { account: { fundingReceived: 6_127 } } },
+      },
+    },
+    {
+      // 10 puts at 1.50: 1,500 + 5 = 1,505, nothing free: a margin loan of 1,505 at 6% (1,505 x 0.06 / 360 = 0.2508 a day).
+      id: 'funded-by-loan', covers: ['financing: borrow'], action: 'package', as: 'levered', instrument: 'put95', contractAs: 'loan',
+      input: lput(10, 95, { financing: { mode: 'loan', rateType: 'fixed', rate: 0.06 } }), strategyPage: lputPage(10, 95, { financing: { mode: 'loan', rate: 0.06 } }),
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'loan', action: 'borrow_cash', purpose: 'financing', qty: 1_505, cash: 1_505, dailyCost: 0.25, dependsOn: [], financing: { amount: 1_505, rateType: 'fixed', rate: 0.06, interestFrom: '2026-03-03' } }, { kind: 'trade', action: 'buy', instrument: 'put95', qty: 10, estimate: 1.5, cash: -1_500, fees: 5, dependsOn: [1] }],
+          cash: { USD: { purchases: 1_500, fees: 5, financingIn: 1_505, required: 1_505, available: 0, shortfall: 0, netCash: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'loan', action: 'borrow_cash', instrument: 'loan', status: 'filled', filledQty: 1_505 }, { instrument: 'put95', status: 'filled', filledQty: 10 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'loan.drawdown', summary: 'Borrowed 1,505.00 USD (margin, 6.000% fixed, open-ended)', cash: { USD: 1_505 } }, { type: 'trade.fill', summary: 'Bought 10 HLX260320P95 @ 1.50 USD' }],
+        cash: { account: { USD: { settled: 3_525, unsettled: -3_525, payable: 3_525, availableToTrade: 0, availableToWithdraw: 0, borrowed: 1_505 } } },
+        positions: [
+          { instrument: 'loan', lot: 'levered', owner: 'account', direction: 'borrowed', qty: -1_505, carrying: -1_505, accrued: 0 },
+          boughtPos('put90', 'funded', 40, 0.5, 0.45), boughtPos('put95', 'kept', 6, 1.5, 1.45), boughtPos('put95', 'levered', 10, 1.5, 1.45), boughtPos('put95apr', 'core', 12, 2.5, 2.45),
+        ],
+        holdings: { put95: { long: 16, short: 0, net: 16 } },
+        pending: [{ instrument: 'put90', lot: 'funded', amount: -2_020 }, { instrument: 'put95', lot: 'levered', dueDate: '2026-03-04', amount: -1_505 }],
+        lifecycle: [expiryItem('put90'), expiryItem('put95'), expiryItem('put95'), { type: 'loan.interest', instrument: 'loan', dueDate: '2026-04-01', status: 'pending', owner: 'account' }, expiryItem('put95apr', '2026-04-17')],
+        borrowings: [{ owner: 'account', family: 'loan', type: 'Margin loan', lot: 'levered', principal: 1_505, ccy: 'USD', rate: 0.06, accrued: 0, costToDate: 0, origin: 'account', lender: 'Simulated lender', dayCount: 'ACT/360', startDate: '2026-03-03', nextPayment: '2026-04-01' }],
+        pnl: { account: { commissions: -52, unrealized: -340, total: -572 }, book: { commissions: -52, unrealized: -340, total: -572 } },
+        nav: { account: 5_555, book: 999_428 }, // 3,525 + 7,060 - 3,525 - 1,505
+        balance: {
+          account: { cash: 3_525, positions: 7_060, payable: 3_525, borrowed: 1_505, assets: 10_585, liabilities: 5_030, netAssets: 5_555 },
+          book: { cash: 997_398, positions: 7_060, payable: 3_525, borrowed: 1_505, assets: 1_004_458, liabilities: 5_030, netAssets: 999_428 },
+        },
+        oversight: { accountBorrowings: [oversee('levered', 0, 1_505)], accounts: { account: { cashBorrowed: 1_505 } } },
+      },
+    },
+    {
+      id: 'settle-financed', covers: ['settlement'], action: 'clock', to: MAR(4),
+      expect: {
+        events: [{ type: 'settlement.pay', cash: { USD: -2_020 } }, { type: 'settlement.pay', cash: { USD: -1_505 } }],
+        cash: { account: { USD: { settled: 0, unsettled: 0, payable: 0, availableToTrade: 0, availableToWithdraw: 0, borrowed: 1_505 } } },
+        pending: [],
+        balance: { account: { cash: null, payable: null, assets: 7_060, liabilities: 1_505, netAssets: 5_555 }, book: { cash: 993_873, payable: null, assets: 1_000_933, liabilities: 1_505, netAssets: 999_428 } },
+      },
+    },
+    {
+      id: 'treasury-top-up', covers: ['transfer'], action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 5_000,
+      expect: { events: [{ type: 'transfer.funding', summary: 'Treasury funding: 5,000.00 USD from Treasury to Alpha' }], cash: { account: { USD: { settled: 5_000, availableToTrade: 5_000, availableToWithdraw: 5_000 } }, treasury: { USD: { settled: 988_873, availableToTrade: 988_873 } } }, nav: { account: 10_555, treasury: 988_873 }, balance: { account: { cash: 5_000, assets: 12_060, netAssets: 10_555 }, treasury: { cash: 988_873, assets: 988_873, netAssets: 988_873 } }, oversight: { accounts: { account: { fundingReceived: 11_127 } } } },
+    },
+    {
+      // Close 'levered': sell its 10 puts at 1.40 (-100) and repay the loan with one day's interest (0.2508 -> 0.25).
+      id: 'close-levered', covers: ['close', 'repay'], action: 'close', lot: 'levered', scope: 'strategy',
+      expect: {
+        preview: { blocking: 0, legs: [{ action: 'sell', instrument: 'put95', qty: 10, estimate: 1.4, settleDate: '2026-03-05', cash: 1_400, fees: 5 }, { kind: 'repay', action: 'repay_cash', instrument: 'loan', qty: 1_505, cash: -1_505.25, financing: { principal: 1_505, interest: 0.25, full: true, interestThrough: '2026-03-04' } }], cash: { USD: { proceeds: 1_400, fees: 5, financingOut: 1_505.25, required: 1_510.25, available: 5_000, shortfall: 0 } } },
+        result: { status: 'closed', orders: [{ instrument: 'put95', status: 'filled', filledQty: 10 }, { kind: 'repay', status: 'filled' }] },
+        events: [
+          { type: 'strategy.legs_added', summary: 'Legs added to Long Put HLX (2 legs; close)' }, { type: 'trade.fill', summary: 'Sold 10 HLX260320P95 @ 1.40 USD (realized -100.00 USD)' },
+          { type: 'accrual.interest', summary: ': 0.25 USD' }, { type: 'loan.repayment', summary: 'Repaid 1,505.00 USD of principal', cash: { USD: -1_505 } }, { type: 'interest.payment', summary: ': 0.25 USD', cash: { USD: -0.25 } },
+        ],
+        cash: { account: { USD: { settled: 3_494.75, unsettled: 1_395, receivable: 1_395, availableToTrade: 4_889.75, availableToWithdraw: 3_494.75, borrowed: 0 } } },
+        positions: [boughtPos('put90', 'funded', 40, 0.5, 0.45), boughtPos('put95', 'kept', 6, 1.5, 1.45), boughtPos('put95apr', 'core', 12, 2.5, 2.45)],
+        holdings: { put95: { long: 6, short: 0, net: 6 } },
+        pending: [{ instrument: 'put95', lot: 'levered', dueDate: '2026-03-05', amount: 1_395, into: 'cash' }],
+        lifecycle: [expiryItem('put90'), expiryItem('put95'), expiryItem('put95apr', '2026-04-17')],
+        borrowings: [], oversight: { accountBorrowings: [], accounts: { account: { cashBorrowed: 0 } } },
+        pnl: { account: { realized: -280, borrowFunding: -0.25, commissions: -57, unrealized: -290, total: -627.25 }, book: { realized: -280, borrowFunding: -0.25, commissions: -57, unrealized: -290, total: -627.25 } },
+        nav: { account: 10_499.75, book: 999_372.75 },
+        balance: { account: { cash: 3_494.75, receivable: 1_395, positions: 5_610, borrowed: null, assets: 10_499.75, liabilities: 0, netAssets: 10_499.75 }, book: { cash: 992_367.75, receivable: 1_395, positions: 5_610, borrowed: null, assets: 999_372.75, liabilities: 0, netAssets: 999_372.75 } },
+      },
+    },
+    {
+      id: 'settle-close-levered', covers: ['settlement'], action: 'clock', to: MAR(5),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'Settlement: received 1,395.00 USD into settled cash', cash: { USD: 1_395 } }],
+        cash: { account: { USD: { settled: 4_889.75, unsettled: 0, receivable: 0, availableToTrade: 4_889.75, availableToWithdraw: 4_889.75 } } },
+        pending: [],
+        balance: { account: { cash: 4_889.75, receivable: null }, book: { cash: 993_762.75, receivable: null } },
+      },
+    },
+    { id: 'expiry-close', action: 'close_price', instrument: 'index', date: '2026-03-20', value: 92, expect: {} },
+    { id: 'expiry-quote', action: 'quote', instrument: 'index', quote: { bid: 91.99, ask: 92.01, last: 92, bidSize: 10000, askSize: 10000 }, expect: {} },
+    {
+      // Expiration, fixing 92.00. In the money: the 6 bought 95 puts of 'kept' settle in cash, 6 x (95 - 92) x 100 =
+      // 1,800 received on Monday 23 March; against their 900 cost: +900 realized. Out of the money: the 40 bought 90 puts
+      // lapse: -2,000.
+      id: 'expiry', covers: ['expiry', 'cash settlement', 'lapse'], action: 'clock', to: MAR(20, '17:30'),
+      expect: {
+        events: [
+          { type: 'option.cash_settled', summary: 'Exercised (cash settlement): 6 HLX260320P95 at 3 per unit', date: '2026-03-20' },
+          { type: 'option.expired', summary: 'Expired worthless: 40 HLX260320P90 (fixing 92)' },
+        ],
+        cash: { account: { USD: { unsettled: 1_800, receivable: 1_800, availableToTrade: 6_689.75, availableToWithdraw: 4_889.75 } } },
+        positions: [boughtPos('put95apr', 'core', 12, 2.5, 2.45)],
+        holdings: { put90: null, put95: null },
+        pending: [{ instrument: 'put95', lot: 'kept', dueDate: '2026-03-23', amount: 1_800, into: 'cash' }],
+        lifecycle: [expiryItem('put95apr', '2026-04-17')],
+        pnl: { account: { realized: -1_380, unrealized: -60, total: -1_497.25 }, book: { realized: -1_380, unrealized: -60, total: -1_497.25 } }, // -280 + 900 - 2,000
+        nav: { account: 9_629.75, book: 998_502.75 },
+        balance: { account: { receivable: 1_800, positions: 2_940, assets: 9_629.75, netAssets: 9_629.75 }, book: { receivable: 1_800, positions: 2_940, assets: 998_502.75, netAssets: 998_502.75 } },
+      },
+    },
+    { id: 'after-expiry-kept', covers: ['package state after expiry'], action: 'strategy_check', lot: 'kept', expect: { result: { status: 'closed', orders: [{ instrument: 'put95', status: 'cancelled', filledQty: 6 }] } } },
+    {
+      id: 'settle-expiry', covers: ['settlement'], action: 'clock', to: MAR(23),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'Settlement: received 1,800.00 USD into settled cash', cash: { USD: 1_800 } }],
+        cash: { account: { USD: { settled: 6_689.75, unsettled: 0, receivable: 0, availableToTrade: 6_689.75, availableToWithdraw: 6_689.75 } } },
+        pending: [],
+        balance: { account: { cash: 6_689.75, receivable: null }, book: { cash: 995_562.75, receivable: null } },
+      },
+    },
+    {
+      // Half of 'core': 6 April puts sold at 2.40 (6 x (2.40 - 2.50) x 100 = -60).
+      id: 'close-share', covers: ['reduce', 'close share'], action: 'close', lot: 'core', instrument: 'put95apr', scope: 'strategy', percent: 50,
+      expect: {
+        preview: { blocking: 0, legs: [{ action: 'sell', instrument: 'put95apr', qty: 6, estimate: 2.4, settleDate: '2026-03-24', cash: 1_440, fees: 3 }], cash: { USD: { proceeds: 1_440, fees: 3, required: 3, available: 6_689.75 } } },
+        result: { status: 'open', orders: [{ action: 'sell', instrument: 'put95apr', status: 'filled', filledQty: 6 }] },
+        events: [{ type: 'strategy.legs_added', summary: 'Legs added to Long Put HLX (1 leg; close)' }, { type: 'trade.fill', summary: 'Sold 6 HLX260417P95 @ 2.40 USD (realized -60.00 USD)' }],
+        cash: { account: { USD: { unsettled: 1_437, receivable: 1_437, availableToTrade: 8_126.75 } } },
+        positions: [boughtPos('put95apr', 'core', 6, 2.5, 2.45)],
+        holdings: { put95apr: { long: 6, short: 0, net: 6 } },
+        pending: [{ instrument: 'put95apr', lot: 'core', dueDate: '2026-03-24', amount: 1_437, into: 'cash' }],
+        pnl: { account: { realized: -1_440, commissions: -60, unrealized: -30, total: -1_530.25 }, book: { realized: -1_440, commissions: -60, unrealized: -30, total: -1_530.25 } },
+        nav: { account: 9_596.75, book: 998_469.75 },
+        balance: { account: { receivable: 1_437, positions: 1_470, assets: 9_596.75, netAssets: 9_596.75 }, book: { receivable: 1_437, positions: 1_470, assets: 998_469.75, netAssets: 998_469.75 } },
+      },
+    },
+    {
+      id: 'close-exact', covers: ['reduce', 'close exact amount'], action: 'close', lot: 'core', instrument: 'put95apr', qty: 2,
+      expect: {
+        preview: { blocking: 0, legs: [{ action: 'sell', instrument: 'put95apr', qty: 2, estimate: 2.4, cash: 480, fees: 1 }], cash: { USD: { proceeds: 480, fees: 1, required: 1, available: 8_126.75 } } },
+        result: { status: 'open', orders: [{ action: 'sell', instrument: 'put95apr', status: 'filled', filledQty: 2 }] },
+        events: [{ type: 'strategy.legs_added', summary: 'Legs added to Long Put HLX (1 leg; close)' }, { type: 'trade.fill', summary: 'Sold 2 HLX260417P95 @ 2.40 USD (realized -20.00 USD)' }],
+        cash: { account: { USD: { unsettled: 1_916, receivable: 1_916, availableToTrade: 8_605.75 } } },
+        positions: [boughtPos('put95apr', 'core', 4, 2.5, 2.45)],
+        holdings: { put95apr: { long: 4, short: 0, net: 4 } },
+        pending: [{ instrument: 'put95apr', lot: 'core', amount: 479 }, { instrument: 'put95apr', lot: 'core', amount: 1_437 }],
+        pnl: { account: { realized: -1_460, commissions: -61, unrealized: -20, total: -1_541.25 }, book: { realized: -1_460, commissions: -61, unrealized: -20, total: -1_541.25 } },
+        nav: { account: 9_585.75, book: 998_458.75 },
+        balance: { account: { receivable: 1_916, positions: 980, assets: 9_585.75, netAssets: 9_585.75 }, book: { receivable: 1_916, positions: 980, assets: 998_458.75, netAssets: 998_458.75 } },
+      },
+    },
+    {
+      id: 'close-all', covers: ['close'], action: 'close', lot: 'core', instrument: 'put95apr', scope: 'strategy',
+      expect: {
+        preview: { blocking: 0, legs: [{ action: 'sell', instrument: 'put95apr', qty: 4, estimate: 2.4, cash: 960, fees: 2 }], cash: { USD: { proceeds: 960, fees: 2, required: 2, available: 8_605.75 } } },
+        result: { status: 'closed', orders: [{ action: 'sell', instrument: 'put95apr', status: 'filled', filledQty: 4 }] },
+        events: [{ type: 'strategy.legs_added', summary: 'Legs added to Long Put HLX (1 leg; close)' }, { type: 'trade.fill', summary: 'Sold 4 HLX260417P95 @ 2.40 USD (realized -40.00 USD)' }],
+        cash: { account: { USD: { unsettled: 2_874, receivable: 2_874, availableToTrade: 9_563.75 } } },
+        positions: [],
+        holdings: { put95apr: null },
+        pending: [{ instrument: 'put95apr', lot: 'core', amount: 479 }, { instrument: 'put95apr', lot: 'core', amount: 958 }, { instrument: 'put95apr', lot: 'core', amount: 1_437 }],
+        lifecycle: [],
+        pnl: { account: { realized: -1_500, commissions: -63, unrealized: 0, total: -1_563.25 }, book: { realized: -1_500, commissions: -63, unrealized: 0, total: -1_563.25 } },
+        nav: { account: 9_563.75, book: 998_436.75 },
+        balance: { account: { receivable: 2_874, positions: null, assets: 9_563.75, netAssets: 9_563.75 }, book: { receivable: 2_874, positions: null, assets: 998_436.75, netAssets: 998_436.75 } },
+      },
+    },
+    {
+      // Nothing held, reserved, borrowed or scheduled. Whole scenario: realized -1,500 (puts sold -400, settled in cash +900,
+      // lapsed -2,000); commissions 63; loan interest 0.25. The Account holds what Treasury funded net (11,127) less 1,563.25.
+      id: 'settle-closes', covers: ['settlement'], action: 'clock', to: MAR(24),
+      expect: {
+        events: [1_437, 479, 958].map((x) => ({ type: 'settlement.receive', cash: { USD: x } })),
+        cash: { account: { USD: { settled: 9_563.75, unsettled: 0, receivable: 0, payable: 0, reserved: 0, availableToTrade: 9_563.75, availableToWithdraw: 9_563.75 } }, treasury: { USD: { settled: 988_873 } } },
+        pending: [], openOrders: [], lifecycle: [], borrowings: [],
+        nav: { account: 9_563.75, treasury: 988_873, book: 998_436.75 },
+        balance: { account: { cash: 9_563.75, receivable: null, assets: 9_563.75, liabilities: 0, netAssets: 9_563.75 }, book: { cash: 998_436.75, receivable: null, assets: 998_436.75, liabilities: 0, netAssets: 998_436.75 } },
+      },
+    },
+  ],
+};
+
+export default [longTemplate, shortTemplate, protectivePut, protectiveCall, coveredCall, coveredPut, longCollar, shortCollar, cashSecuredPut, longCall, longPut];

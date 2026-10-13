@@ -199,12 +199,19 @@ export function Table({ columns, rows, rowKey, onRowClick, empty, margin, footer
 }
 
 // ---- overlays ------------------------------------------------------------------------------------------------------
-export function Modal({ title, sub, onClose, size = '', children, footer }) {
+// Escape closes the overlay on top only: a dialog opened from a drawer closes alone, the drawer stays (s9).
+const escStack = [];
+export function useEscape(onClose) {
   useEffect(() => {
-    const k = (e) => { if (e.key === 'Escape') onClose?.(); };
+    const me = {};
+    escStack.push(me);
+    const k = (e) => { if (e.key === 'Escape' && escStack[escStack.length - 1] === me) onClose?.(); };
     window.addEventListener('keydown', k);
-    return () => window.removeEventListener('keydown', k);
+    return () => { window.removeEventListener('keydown', k); const i = escStack.indexOf(me); if (i >= 0) escStack.splice(i, 1); };
   }, []);
+}
+export function Modal({ title, sub, onClose, size = '', children, footer }) {
+  useEscape(onClose);
   return html`<div class="scrim" onMouseDown=${(e) => { if (e.target === e.currentTarget) onClose?.(); }}>
     <div class=${`modal ${size}`} role="dialog" aria-modal="true" aria-label=${title}>
       <header><div class="grow"><h2>${title}</h2>${sub && html`<div class="note">${sub}</div>`}</div><button class="x" aria-label="Close" onClick=${onClose}>×</button></header>
@@ -213,11 +220,7 @@ export function Modal({ title, sub, onClose, size = '', children, footer }) {
     </div></div>`;
 }
 export function Drawer({ title, sub, onClose, wide, children, actions }) {
-  useEffect(() => {
-    const k = (e) => { if (e.key === 'Escape') onClose?.(); };
-    window.addEventListener('keydown', k);
-    return () => window.removeEventListener('keydown', k);
-  }, []);
+  useEscape(onClose);
   return html`<div class="drawer-scrim" onClick=${onClose}></div>
     <aside class=${`drawer ${wide ? 'wide' : ''}`} role="dialog" aria-label=${title}>
       <header><div class="grow"><h2>${title}</h2>${sub && html`<div class="note">${sub}</div>`}</div>${actions}<button class="x" aria-label="Close" onClick=${onClose}>×</button></header>
@@ -268,7 +271,7 @@ export function PayoffChart({ points, breakevens = [], reference, currency }) {
     <line class="axis" x1=${L} y1=${T} x2=${L} y2=${H - B} /><line class="zero" x1=${L} y1=${Y(0)} x2=${W - R} y2=${Y(0)} />
     ${ticks.map((v) => html`<text x=${L - 6} y=${Y(v) + 3.5} text-anchor="end">${fmtNum(v, 0, { sign: true })}</text>`)}
     ${xt.map((v) => html`<text x=${X(v)} y=${H - 8} text-anchor="middle">${fmtPrice(v)}</text>`)}
-    ${isNum(reference) && reference >= x0 && reference <= x1 ? html`<line class="ref" x1=${X(reference)} y1=${T} x2=${X(reference)} y2=${H - B} /><text x=${X(reference) + 4} y=${T + 9}>now ${fmtPrice(reference)}</text>` : null}
+    ${isNum(reference) && reference >= x0 && reference <= x1 ? html`<line class="ref" x1=${X(reference)} y1=${T} x2=${X(reference)} y2=${H - B} /><text x=${X(reference) + 4} y=${T + 22}>now ${fmtPrice(reference)}</text>` : null}
     <path class="line" d=${d} />
     ${breakevens.filter((b) => b >= x0 && b <= x1).map((b) => html`<circle class="be" cx=${X(b)} cy=${Y(0)} r="3.5" />`)}
     <text x=${W - R} y=${T + 9} text-anchor="end">profit / loss${currency ? ` (${currency})` : ''} by underlying price</text>

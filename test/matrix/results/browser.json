@@ -13371,512 +13371,6 @@
     "restart"
    ]
   },
-  "B:common_stock:setup": {
-   "status": "passed",
-   "message": "",
-   "ms": 2504,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:47:32.948Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "setup",
-   "covers": []
-  },
-  "B:common_stock:open": {
-   "status": "passed",
-   "message": "",
-   "ms": 1546,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:47:32.948Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "open",
-   "covers": [
-    "open"
-   ]
-  },
-  "B:common_stock:settle-open": {
-   "status": "passed",
-   "message": "",
-   "ms": 616,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:47:32.948Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "settle-open",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "B:common_stock:quote-up": {
-   "status": "passed",
-   "message": "",
-   "ms": 650,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:47:32.948Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "quote-up",
-   "covers": []
-  },
-  "B:common_stock:increase": {
-   "status": "passed",
-   "message": "",
-   "ms": 1234,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:47:32.948Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "increase",
-   "covers": [
-    "increase"
-   ]
-  },
-  "B:common_stock:settle-increase": {
-   "status": "passed",
-   "message": "",
-   "ms": 567,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:47:32.948Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "settle-increase",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "B:common_stock:oversell": {
-   "status": "blocked",
-   "message": "The Account holds 300 and cannot sell 500; going short needs a securities borrow. Terminal: \"Sells from Long NFTW in this Account, which is long 300 at an average 50.357. 500 is more than it holds.\"",
-   "ms": 1117,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:47:32.948Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "oversell",
-   "covers": [
-    "reduce"
-   ]
-  },
-  "B:common_stock:dividend-recorded": {
-   "status": "passed",
-   "message": "",
-   "ms": 1150,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:47:32.948Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "dividend-recorded",
-   "covers": [
-    "dividend"
-   ]
-  },
-  "B:common_stock:dividend-paid": {
-   "status": "passed",
-   "message": "",
-   "ms": 566,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:47:32.948Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "dividend-paid",
-   "covers": [
-    "dividend"
-   ]
-  },
-  "B:common_stock:quote-up-2": {
-   "status": "passed",
-   "message": "",
-   "ms": 567,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:47:32.948Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "quote-up-2",
-   "covers": []
-  },
-  "B:common_stock:reduce": {
-   "status": "passed",
-   "message": "",
-   "ms": 1349,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:47:32.948Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "reduce",
-   "covers": [
-    "reduce"
-   ]
-  },
-  "B:common_stock:settle-reduce": {
-   "status": "passed",
-   "message": "",
-   "ms": 583,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:47:32.948Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "settle-reduce",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "B:common_stock:split-recorded": {
-   "status": "passed",
-   "message": "",
-   "ms": 1217,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:47:32.948Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "split-recorded",
-   "covers": [
-    "split"
-   ]
-  },
-  "B:common_stock:split-applied": {
-   "status": "passed",
-   "message": "",
-   "ms": 584,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:47:32.948Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "split-applied",
-   "covers": [
-    "split"
-   ]
-  },
-  "B:common_stock:quote-post-split": {
-   "status": "passed",
-   "message": "",
-   "ms": 585,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:47:32.948Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "quote-post-split",
-   "covers": []
-  },
-  "B:common_stock:close": {
-   "status": "passed",
-   "message": "",
-   "ms": 1248,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:47:32.948Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "close",
-   "covers": [
-    "close"
-   ]
-  },
-  "B:common_stock:settle-close": {
-   "status": "passed",
-   "message": "",
-   "ms": 599,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:47:32.948Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "settle-close",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "B:common_stock:restart": {
-   "status": "passed",
-   "message": "",
-   "ms": 2936,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:47:32.948Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "restart",
-   "covers": [
-    "restart"
-   ]
-  },
-  "B:unsecured_loan:setup": {
-   "status": "passed",
-   "message": "",
-   "ms": 2235,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:48:01.882Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "setup",
-   "covers": []
-  },
-  "B:unsecured_loan:borrow-without-a-rate": {
-   "status": "blocked",
-   "message": "No rate was entered. The Terminal does not assume one. Terminal: \"Enter the interest rate as a decimal (0.05 = 5%). The Terminal does not assume a rate.\"",
-   "ms": 1764,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:48:01.882Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "borrow-without-a-rate",
-   "covers": [
-    "open"
-   ]
-  },
-  "B:unsecured_loan:borrow": {
-   "status": "passed",
-   "message": "",
-   "ms": 1785,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:48:01.882Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "borrow",
-   "covers": [
-    "open",
-    "borrow"
-   ]
-  },
-  "B:unsecured_loan:accrue-first-day": {
-   "status": "passed",
-   "message": "",
-   "ms": 1031,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:48:01.882Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "accrue-first-day",
-   "covers": [
-    "interest accrual"
-   ]
-  },
-  "B:unsecured_loan:accrue-over-a-weekend": {
-   "status": "passed",
-   "message": "",
-   "ms": 1099,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:48:01.882Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "accrue-over-a-weekend",
-   "covers": [
-    "interest accrual"
-   ]
-  },
-  "B:unsecured_loan:next-morning": {
-   "status": "passed",
-   "message": "",
-   "ms": 1084,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:48:01.882Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "next-morning",
-   "covers": []
-  },
-  "B:unsecured_loan:set-rate": {
-   "status": "passed",
-   "message": "",
-   "ms": 1399,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:48:01.882Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "set-rate",
-   "covers": [
-    "rate change"
-   ]
-  },
-  "B:unsecured_loan:accrue-at-the-new-rate": {
-   "status": "passed",
-   "message": "",
-   "ms": 1127,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:48:01.882Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "accrue-at-the-new-rate",
-   "covers": [
-    "interest accrual"
-   ]
-  },
-  "B:unsecured_loan:morning-of-the-part-repayment": {
-   "status": "passed",
-   "message": "",
-   "ms": 1242,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:48:01.882Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "morning-of-the-part-repayment",
-   "covers": []
-  },
-  "B:unsecured_loan:repay-more-than-is-owed": {
-   "status": "blocked",
-   "message": "Only 250,000 is outstanding. Terminal: \"Leg 1: Outstanding principal is 250,000.00 USD; cannot repay 300,000.00 USD.\"",
-   "ms": 1617,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:48:01.882Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "repay-more-than-is-owed",
-   "covers": [
-    "reduce"
-   ]
-  },
-  "B:unsecured_loan:repay-part": {
-   "status": "passed",
-   "message": "",
-   "ms": 1664,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:48:01.882Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "repay-part",
-   "covers": [
-    "reduce",
-    "repayment"
-   ]
-  },
-  "B:unsecured_loan:accrue-on-the-reduced-principal": {
-   "status": "passed",
-   "message": "",
-   "ms": 1002,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:48:01.882Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "accrue-on-the-reduced-principal",
-   "covers": [
-    "interest accrual"
-   ]
-  },
-  "B:unsecured_loan:monday-16-march": {
-   "status": "passed",
-   "message": "",
-   "ms": 950,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:48:01.882Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "monday-16-march",
-   "covers": []
-  },
-  "B:unsecured_loan:return-cash-to-treasury": {
-   "status": "passed",
-   "message": "",
-   "ms": 1616,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:48:01.882Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "return-cash-to-treasury",
-   "covers": [
-    "return to Treasury"
-   ]
-  },
-  "B:unsecured_loan:repay-without-the-cash": {
-   "status": "blocked",
-   "message": "The Account holds 50,000.00 USD; a repayment never overdraws. Terminal: \"Leg 1: Alpha has 50,000.00 USD of settled USD available; 150,531.94 USD is needed (principal plus accrued interest). | Blocks submission. Alpha is short 100,531.94 USD: the package needs 150,531.94 USD (purchases 0.00 USD, fees 0.00 USD, margin and collateral 0.00 USD, reserved 0.00 USD) and 50,000.00 USD is available. Add Treasury funding or a borrowing leg, convert currency, or reduce the size.\"",
-   "ms": 1416,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:48:01.882Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "repay-without-the-cash",
-   "covers": [
-    "repayment"
-   ]
-  },
-  "B:unsecured_loan:fund-from-treasury": {
-   "status": "passed",
-   "message": "",
-   "ms": 1533,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:48:01.882Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "fund-from-treasury",
-   "covers": [
-    "funding from Treasury"
-   ]
-  },
-  "B:unsecured_loan:repay-early-in-full": {
-   "status": "passed",
-   "message": "",
-   "ms": 1382,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:48:01.882Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "repay-early-in-full",
-   "covers": [
-    "close",
-    "repayment",
-    "early repayment"
-   ]
-  },
-  "B:unsecured_loan:original-maturity-passes": {
-   "status": "passed",
-   "message": "",
-   "ms": 1050,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:48:01.882Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "original-maturity-passes",
-   "covers": [
-    "maturity"
-   ]
-  },
-  "B:unsecured_loan:restart": {
-   "status": "passed",
-   "message": "",
-   "ms": 3884,
-   "commit": "bd5f896+changes",
-   "at": "2026-10-13T21:48:01.882Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "restart",
-   "covers": [
-    "restart"
-   ]
-  },
   "B:equity_option:setup": {
    "status": "passed",
    "message": "",
@@ -14732,13 +14226,519 @@
    "covers": [
     "restart"
    ]
+  },
+  "B:common_stock:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 3597,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:58:30.592Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "setup",
+   "covers": []
+  },
+  "B:common_stock:open": {
+   "status": "passed",
+   "message": "",
+   "ms": 2018,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:58:30.592Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "open",
+   "covers": [
+    "open"
+   ]
+  },
+  "B:common_stock:settle-open": {
+   "status": "passed",
+   "message": "",
+   "ms": 779,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:58:30.592Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "settle-open",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:common_stock:quote-up": {
+   "status": "passed",
+   "message": "",
+   "ms": 950,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:58:30.592Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "quote-up",
+   "covers": []
+  },
+  "B:common_stock:increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 1585,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:58:30.592Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "increase",
+   "covers": [
+    "increase"
+   ]
+  },
+  "B:common_stock:settle-increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 732,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:58:30.592Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "settle-increase",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:common_stock:oversell": {
+   "status": "blocked",
+   "message": "The Account holds 300 and cannot sell 500; going short needs a securities borrow. Terminal: \"Sells from Long NFTW in this Account, which is long 300 at an average 50.357. 500 is more than it holds.\"",
+   "ms": 1050,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:58:30.592Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "oversell",
+   "covers": [
+    "reduce"
+   ]
+  },
+  "B:common_stock:dividend-recorded": {
+   "status": "passed",
+   "message": "",
+   "ms": 1550,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:58:30.592Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "dividend-recorded",
+   "covers": [
+    "dividend"
+   ]
+  },
+  "B:common_stock:dividend-paid": {
+   "status": "passed",
+   "message": "",
+   "ms": 884,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:58:30.592Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "dividend-paid",
+   "covers": [
+    "dividend"
+   ]
+  },
+  "B:common_stock:quote-up-2": {
+   "status": "passed",
+   "message": "",
+   "ms": 651,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:58:30.592Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "quote-up-2",
+   "covers": []
+  },
+  "B:common_stock:reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 1699,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:58:30.592Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "reduce",
+   "covers": [
+    "reduce"
+   ]
+  },
+  "B:common_stock:settle-reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 733,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:58:30.592Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "settle-reduce",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:common_stock:split-recorded": {
+   "status": "passed",
+   "message": "",
+   "ms": 1248,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:58:30.592Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "split-recorded",
+   "covers": [
+    "split"
+   ]
+  },
+  "B:common_stock:split-applied": {
+   "status": "passed",
+   "message": "",
+   "ms": 584,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:58:30.592Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "split-applied",
+   "covers": [
+    "split"
+   ]
+  },
+  "B:common_stock:quote-post-split": {
+   "status": "passed",
+   "message": "",
+   "ms": 566,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:58:30.592Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "quote-post-split",
+   "covers": []
+  },
+  "B:common_stock:close": {
+   "status": "passed",
+   "message": "",
+   "ms": 1725,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:58:30.592Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "close",
+   "covers": [
+    "close"
+   ]
+  },
+  "B:common_stock:settle-close": {
+   "status": "passed",
+   "message": "",
+   "ms": 858,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:58:30.592Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "settle-close",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:common_stock:restart": {
+   "status": "passed",
+   "message": "",
+   "ms": 3085,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:58:30.592Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "restart",
+   "covers": [
+    "restart"
+   ]
+  },
+  "B:unsecured_loan:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 2554,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:59:07.450Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "setup",
+   "covers": []
+  },
+  "B:unsecured_loan:borrow-without-a-rate": {
+   "status": "blocked",
+   "message": "No rate was entered. The Terminal does not assume one. Terminal: \"Enter the interest rate as a decimal (0.05 = 5%). The Terminal does not assume a rate.\"",
+   "ms": 2177,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:59:07.450Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "borrow-without-a-rate",
+   "covers": [
+    "open"
+   ]
+  },
+  "B:unsecured_loan:borrow": {
+   "status": "passed",
+   "message": "",
+   "ms": 2248,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:59:07.450Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "borrow",
+   "covers": [
+    "open",
+    "borrow"
+   ]
+  },
+  "B:unsecured_loan:accrue-first-day": {
+   "status": "passed",
+   "message": "",
+   "ms": 1421,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:59:07.450Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "accrue-first-day",
+   "covers": [
+    "interest accrual"
+   ]
+  },
+  "B:unsecured_loan:accrue-over-a-weekend": {
+   "status": "passed",
+   "message": "",
+   "ms": 1562,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:59:07.450Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "accrue-over-a-weekend",
+   "covers": [
+    "interest accrual"
+   ]
+  },
+  "B:unsecured_loan:next-morning": {
+   "status": "passed",
+   "message": "",
+   "ms": 1517,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:59:07.450Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "next-morning",
+   "covers": []
+  },
+  "B:unsecured_loan:set-rate": {
+   "status": "passed",
+   "message": "",
+   "ms": 1884,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:59:07.450Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "set-rate",
+   "covers": [
+    "rate change"
+   ]
+  },
+  "B:unsecured_loan:accrue-at-the-new-rate": {
+   "status": "passed",
+   "message": "",
+   "ms": 1215,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:59:07.450Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "accrue-at-the-new-rate",
+   "covers": [
+    "interest accrual"
+   ]
+  },
+  "B:unsecured_loan:morning-of-the-part-repayment": {
+   "status": "passed",
+   "message": "",
+   "ms": 1274,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:59:07.450Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "morning-of-the-part-repayment",
+   "covers": []
+  },
+  "B:unsecured_loan:repay-more-than-is-owed": {
+   "status": "blocked",
+   "message": "Only 250,000 is outstanding. Terminal: \"Leg 1: Outstanding principal is 250,000.00 USD; cannot repay 300,000.00 USD.\"",
+   "ms": 1891,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:59:07.450Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "repay-more-than-is-owed",
+   "covers": [
+    "reduce"
+   ]
+  },
+  "B:unsecured_loan:repay-part": {
+   "status": "passed",
+   "message": "",
+   "ms": 1483,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:59:07.450Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "repay-part",
+   "covers": [
+    "reduce",
+    "repayment"
+   ]
+  },
+  "B:unsecured_loan:accrue-on-the-reduced-principal": {
+   "status": "passed",
+   "message": "",
+   "ms": 1467,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:59:07.450Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "accrue-on-the-reduced-principal",
+   "covers": [
+    "interest accrual"
+   ]
+  },
+  "B:unsecured_loan:monday-16-march": {
+   "status": "passed",
+   "message": "",
+   "ms": 1368,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:59:07.450Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "monday-16-march",
+   "covers": []
+  },
+  "B:unsecured_loan:return-cash-to-treasury": {
+   "status": "passed",
+   "message": "",
+   "ms": 1718,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:59:07.450Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "return-cash-to-treasury",
+   "covers": [
+    "return to Treasury"
+   ]
+  },
+  "B:unsecured_loan:repay-without-the-cash": {
+   "status": "blocked",
+   "message": "The Account holds 50,000.00 USD; a repayment never overdraws. Terminal: \"Leg 1: Alpha has 50,000.00 USD of settled USD available; 150,531.94 USD is needed (principal plus accrued interest). | Blocks submission. Alpha is short 100,531.94 USD: the package needs 150,531.94 USD (purchases 0.00 USD, fees 0.00 USD, margin and collateral 0.00 USD, reserved 0.00 USD) and 50,000.00 USD is available. Add Treasury funding or a borrowing leg, convert currency, or reduce the size.\"",
+   "ms": 1966,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:59:07.450Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "repay-without-the-cash",
+   "covers": [
+    "repayment"
+   ]
+  },
+  "B:unsecured_loan:fund-from-treasury": {
+   "status": "passed",
+   "message": "",
+   "ms": 2216,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:59:07.450Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "fund-from-treasury",
+   "covers": [
+    "funding from Treasury"
+   ]
+  },
+  "B:unsecured_loan:repay-early-in-full": {
+   "status": "passed",
+   "message": "",
+   "ms": 2071,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:59:07.450Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "repay-early-in-full",
+   "covers": [
+    "close",
+    "repayment",
+    "early repayment"
+   ]
+  },
+  "B:unsecured_loan:original-maturity-passes": {
+   "status": "passed",
+   "message": "",
+   "ms": 1519,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:59:07.450Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "original-maturity-passes",
+   "covers": [
+    "maturity"
+   ]
+  },
+  "B:unsecured_loan:restart": {
+   "status": "passed",
+   "message": "",
+   "ms": 5192,
+   "commit": "cb806df+changes",
+   "at": "2026-10-13T21:59:07.450Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "restart",
+   "covers": [
+    "restart"
+   ]
   }
  },
  "runs": {
   "common_stock": {
-   "at": "2026-10-13T21:47:32.948Z",
-   "commit": "bd5f896+changes",
-   "ms": 19619,
+   "at": "2026-10-13T21:58:30.592Z",
+   "commit": "cb806df+changes",
+   "ms": 24297,
    "family": "equity",
    "steps": 18,
    "ran": 18,
@@ -15420,9 +15420,9 @@
    }
   },
   "unsecured_loan": {
-   "at": "2026-10-13T21:48:01.882Z",
-   "commit": "bd5f896+changes",
-   "ms": 28882,
+   "at": "2026-10-13T21:59:07.450Z",
+   "commit": "cb806df+changes",
+   "ms": 36744,
    "family": "loan",
    "steps": 19,
    "ran": 19,
@@ -15857,5 +15857,5 @@
    }
   }
  },
- "updatedAt": "2026-10-13T21:49:01.142Z"
+ "updatedAt": "2026-10-13T21:59:07.450Z"
 }
