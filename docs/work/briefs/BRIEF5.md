@@ -35,3 +35,21 @@ dependency are stated; nothing is quietly skipped or presented as supported.
 - Final report under 60 lines: the per-product table (steps; passed / failed / blocked / unsupported per level),
   Terminal faults fixed (file, what, which product and step found it), faults left open (also appended to
   `$SP/BUGS.md`), limitations you established with their exact dependency, what is not covered, `npm test` count.
+
+## Update, 2026-10-13 17:15 UTC (read this last; it overrides the "State of the tree" above)
+- 96 products now pass at all three levels: equity, listed options, futures, government and corporate bonds, rate
+  swaps, loans, funds, crypto, currency, spot FX, emissions products and commodities. Spec files and browser
+  drivers for those families exist under `test/matrix/`: read the one nearest to your products.
+- The Marketplaces now have product-family tabs inside each view, instruments are routed by listing venue and a
+  stored routing convention, and tickets and the Strategies page ask for a "Trading owner" (Accounts and Treasury
+  distinguished). The shared browser driver opens instruments by tab. One person (ui1) is finishing that work.
+- The app shell collapses the sidebar behind a Menu button below 820 px.
+- OTC position rows in Accounting show their collateral basis; swaps are described as pay / receive in previews
+  ("Enter as written: pay fixed ..."); a strategy can close an exact amount.
+- `npm test` is 462 of 463: `matrix E: commodity_future` is red because a `deliver` lifecycle action was added
+  and the futures spec still expects delivery to be refused. One person (id fw) is resolving it. Not yours unless
+  you are fw.
+- The owner's latest instruction: "Do not simply remove or weaken the assertion to make the suite green."
+  "Worker results are useful" but the coordinator re-runs everything at the end against one commit, so a product
+  you report as passing must pass again from a clean run: no reliance on leftover state, timing luck or a
+  particular machine load.
