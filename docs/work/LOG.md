@@ -81,3 +81,4 @@
 - 2026-10-13T16:25Z | s8 | +0.6 | s8: browser cases SB:isolation:book-routes and no-netting pass; Strategy attach cross-Book leak and Book-switch prompt race fixed
 - 2026-10-13T16:28Z | c1 | +0.2 | stablecoin passes at engine, API and browser
 - 2026-10-13T16:29Z | s8 | +0.6 | s8: browser cases SB:isolation:normal-mode-refusals and demo-normal-databases pass
+- 2026-10-13T16:29Z | ui1 | +1 | Marketplace product-family tabs, 205-product mapping with tests, shared driver opens instruments by tab
