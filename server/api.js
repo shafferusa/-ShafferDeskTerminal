@@ -395,6 +395,8 @@ export function createApi(app) {
         case 'cashflow': result = app.accounting.manualCashflow({ positionId: pos.id, category: body.category, amount: body.amount, note: body.note }); break;
         // fw: early termination of a forward at an amount agreed with the counterparty (server/products/fx.js, forward.terminate).
         case 'terminate': need(plugin.terminate, 'Early termination at a stated amount applies to forwards.'); result = plugin.terminate(app, { ...ctx, amount: body.amount, qty: body.qty, settleDate: body.settleDate || null }); break;
+        // fw: the pool allocated to a TBA mortgage contract, recorded by hand before settlement (forward.allocate).
+        case 'allocate': need(plugin.allocate, 'A pool allocation applies to TBA mortgage contracts.'); result = plugin.allocate(app, { ...ctx, instrumentId: body.instrumentId }); break;
         // Physical delivery of goods is not simulated for a spot asset: the Terminal moves no goods. Say so plainly.
         // A future's delivery notice: the plugin decides from the contract's own settlement terms (simulated on paper
         // for a physically delivered contract with a configured deliverable; refused with the specific reason otherwise).
@@ -404,6 +406,7 @@ export function createApi(app) {
           : 'Physical delivery does not apply to this position.', { code: 'delivery_not_simulated' });
         case 'barrier': {
           need(inst.terms.barrier, 'This option has no barrier.');
+          need(!pos.data.barrierHit, `The barrier event is already recorded on this position (${pos.data.barrierHitAt || 'earlier'}). It is recorded once.`);
           positions.setData(pos, { barrierHit: true, barrierHitAt: app.clock.now().toISOString() });
           const eventId = app.ledger.post({ bookId: book.id, unitId: unit.id, type: 'option.barrier_event', instrumentId: inst.id, strategyId: pos.strategy_id, positionId: pos.id, summary: `Barrier event recorded on ${inst.symbol || inst.name}: ${inst.terms.barrier.type} at ${inst.terms.barrier.level}${body.note ? `. ${body.note}` : ''}`, data: { barrier: inst.terms.barrier } });
           result = { eventId };

@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 76.2% of the pass** (last milestone 2026-10-13T18:19Z, m1: dispersion_swap passes at engine, API and browser)
+**Completeness: about 76.4% of the pass** (last milestone 2026-10-13T18:20Z, b3: cmbs passes at engine, API and browser)
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 

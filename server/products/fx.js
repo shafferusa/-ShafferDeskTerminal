@@ -143,9 +143,19 @@ export const forward = {
       t.fixingDate = t.fixingDate || t.periodStart;
       t.dayCount = t.dayCount || 'ACT/360';
     }
+    // fw: a TBA mortgage contract is a forward on an agency pass-through pool that is not known when it is traded: the
+    // seller allocates the pool shortly before settlement, and the allocation is recorded by hand on the position.
+    const tba = (draft.productId || draft.product_id) === 'tba_mortgage';
+    if (tba) {
+      t.tba = true;
+      if (t.forwardType !== 'asset') errors.push('A TBA mortgage contract is a forward on an asset: the agency pool allocated before settlement.');
+      t.settlement = 'physical';
+      t.coupon = num(t.coupon);
+      if (!(t.coupon > 0)) errors.push('A TBA mortgage contract needs the pass-through coupon of the pools it can be settled with (decimal, 0.055 = 5.5%).');
+    } else delete t.tba;
     if (t.forwardType === 'asset') {
       t.settlement = ['cash', 'physical'].includes(t.settlement) ? t.settlement : 'cash';
-      if (!draft.underlying_id) errors.push('An asset forward needs its underlying instrument.');
+      if (!draft.underlying_id && !tba) errors.push('An asset forward needs its underlying instrument.');
     }
     if (!ISO_DATE_RE.test(t.valueDate || '')) errors.push('Value (maturity) date is required.');
     // An FX forward (deliverable or not) is settled on a day both currencies' payment systems are open: the value
@@ -159,12 +169,12 @@ export const forward = {
     if (!t.collateralBasis) delete t.collateralBasis;
     // An asset forward takes its underlying's value per unit of price unless one is stated (0.01 for a bond quoted in % of par).
     const und = t.forwardType === 'asset' && draft.underlying_id ? app.instruments.get(draft.underlying_id) : null;
-    const multiplier = num(draft.multiplier) > 0 ? num(draft.multiplier) : und?.multiplier > 0 ? und.multiplier : 1;
+    const multiplier = num(draft.multiplier) > 0 ? num(draft.multiplier) : und?.multiplier > 0 ? und.multiplier : tba ? 0.01 : 1;
     // The quantity and price of an asset forward are in its underlying's own units (barrels and USD per barrel, face
     // amount and % of par, shares and price per share), so the ticket says so.
     const unitOf = { bond: 'face amount', equity: 'shares', fund: 'units', crypto: 'units' };
-    const qUnit = und ? und.terms?.quantityUnit || unitOf[und.family] || null : null;
-    const pUnit = und ? und.terms?.priceUnits || (und.family === 'bond' ? '% of par' : null) : null;
+    const qUnit = tba ? 'original face' : und ? und.terms?.quantityUnit || unitOf[und.family] || null : null;
+    const pUnit = tba ? '% of par' : und ? und.terms?.priceUnits || (und.family === 'bond' ? '% of par' : null) : null;
     if (qUnit) t.quantityUnit = qUnit; else delete t.quantityUnit;
     if (pUnit) t.priceUnits = pUnit; else delete t.priceUnits;
     return { terms: t, multiplier, errors, tradingCcy, settleCcy };
@@ -311,6 +321,31 @@ export const forward = {
     app.agreements.onPositionChange({ book, unit, inst, pos: fresh });
     return { eventId, amount: value, qty: n, settleDate: due };
   },
+  /**
+   * Pool allocation recorded by hand on a TBA position (lifecycle action `allocate`): the agency pool the seller
+   * notified, checked for good delivery against the contract (an agency pass-through with the contract's coupon),
+   * delivered on the settlement date in place of the generic TBA terms. It can be changed until settlement.
+   */
+  allocate(app, { book, unit, inst, pos, instrumentId }) {
+    const sym = inst.symbol || inst.name;
+    if (!inst.terms.tba) throw new AppError('A pool allocation applies to TBA mortgage contracts.', { code: 'allocation_not_tba' });
+    if (!pos || isZero(pos.qty)) throw new AppError(`This ${sym} position is closed: there is nothing to allocate.`, { code: 'allocation_position_closed' });
+    const pool = instrumentId ? app.instruments.get(instrumentId) : null;
+    if (!pool) throw new AppError('Choose the allocated pool: a registered agency pass-through.', { code: 'allocation_pool' });
+    const POOLS = ['agency_mbs', 'specified_pool', 'mbs', 'rmbs'];
+    if (!POOLS.includes(pool.product_id)) throw new AppError(`${pool.symbol || pool.name} is not an agency pass-through pool, so it is not good delivery for ${sym}.`, { code: 'allocation_not_pool' });
+    if (Math.abs((pool.terms.couponRate ?? -1) - inst.terms.coupon) > 1e-9) throw new AppError(`${pool.symbol || pool.name} pays ${(pool.terms.couponRate * 100).toFixed(3).replace(/0+$/, '').replace(/\.$/, '')}%; ${sym} is settled with ${(inst.terms.coupon * 100).toFixed(3).replace(/0+$/, '').replace(/\.$/, '')}% pools.`, { code: 'allocation_coupon' });
+    if (app.clock.today() > inst.terms.valueDate) throw new AppError(`The settlement date of ${sym} (${inst.terms.valueDate}) has passed.`, { code: 'allocation_late' });
+    const factor = pool.terms.factor ?? 1;
+    const face = Math.abs(pos.qty) * inst.multiplier / (pool.multiplier || 1);
+    const eventId = app.ledger.post({
+      bookId: book.id, unitId: unit.id, type: 'forward.allocation', instrumentId: inst.id, strategyId: pos.strategy_id, positionId: pos.id, actor: 'user',
+      summary: `Pool allocated by hand on ${sym}: ${pool.symbol || pool.name}, ${fmtQty(face)} original face at factor ${factor} (${fmt(money(face * factor, inst.trading_ccy), inst.trading_ccy)} current face), to be delivered on ${inst.terms.valueDate}`,
+      data: { poolId: pool.id, originalFace: face, factor },
+    });
+    app.positions.setData(pos, { allocatedPoolId: pool.id });
+    return { eventId, poolId: pool.id };
+  },
   runTask(app, task, ctx) {
     const r = settleForwardTask(app, task, ctx);
     // The forward ended: whatever collateral it carried is released.
@@ -373,7 +408,9 @@ function settleForwardTask(app, task, { book, unit, inst, pos }) {
     }
 
     if (t.forwardType === 'asset' && t.settlement === 'physical') {
-      const und = app.instruments.get(inst.underlying_id);
+      // A TBA contract delivers the pool allocated to it by hand; until one is recorded it waits, visibly.
+      const und = pos.data.allocatedPoolId ? app.instruments.get(pos.data.allocatedPoolId) : inst.underlying_id ? app.instruments.get(inst.underlying_id) : null;
+      if (!und) return { blocked: `Awaiting the pool allocation of ${inst.symbol || inst.name}: record the pool the seller allocated on the position (Lifecycle, Pool allocation); it is then delivered (simulated) at ${fmtPx(k)}.`, needs: [] };
       const plugin = app.products.get(und.family);
       // Units of the underlying delivered: quantity x the forward's value per unit of price, over the underlying's own
       // (a bond forward on 1,000,000 face with multiplier 0.01 delivers 1,000,000 face of a bond whose multiplier is 0.01).

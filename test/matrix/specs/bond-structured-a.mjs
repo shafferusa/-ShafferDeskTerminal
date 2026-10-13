@@ -2522,4 +2522,215 @@ const mbs = {
   ],
 };
 
-export default [tips, foreignInflationLinked, callableBond, puttableBond, convertibleBond, exchangeableBond, cocoBond, mbs, agencyMbs, nonAgencyMbs];
+// ---------------------------------------------------------------------------------------------
+// cmbs
+// ---------------------------------------------------------------------------------------------
+// A conduit commercial MBS, senior Class A-4: 4.85% fixed, monthly 30/360, distribution 14 days after the period ends (the
+// 15th, next business day), T+2 (its own convention), factor 0.984271 for June 2029. Commercial loans amortise little and
+// prepay rarely, behind prepayment protection: when a loan does prepay, the borrower pays a yield-maintenance premium, part
+// of which is distributed to this class.
+//   - Bought on Tuesday 5 June; a fifth is sold, settling Monday 11 June. Held over Juneteenth and Independence Day.
+//   - The July distribution report (Friday 6 July) is recorded by hand: factor 0.984271 to 0.961124 from 1 July, of which
+//     0.983612 after scheduled amortisation alone (the rest is the prepaid loan), principal paid on Monday 16 July (the 15th is
+//     a Sunday). On 16 July the yield-maintenance premium allocated to the class, 7,384.20, is recorded by hand as a cash flow on
+//     the position (coupon and interest income): the Terminal does not compute yield maintenance (it needs the loan's terms and
+//     the Treasury curve, a Shaffer Analytics Lab service), so the amount is taken from the distribution report.
+//   - The rest is sold for settlement on 18 July, before the July record date.
+// Commission: 0.5 basis point of clean principal. Days of 30/360: 1 to 7 Jun 6, to 8 Jun 7, to 11 Jun 10; 1 Jul to 5 Jul 4,
+// to 13 Jul 12, to 18 Jul 17. A month's coupon is 4.85% / 12 of current face.
+const cmbs = {
+  productId: 'cmbs',
+  title: 'Meridian Commercial Mortgage Trust 2025-C3 Class A-4: bought, partly sold, held over Juneteenth and Independence Day, distribution report by hand (paydown with a prepaid loan, principal after the 14-day delay), yield maintenance recorded by hand, close',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount (original face)'],
+    manualInputs: ['Registration: Pool factor, Payment delay 14, Settlement convention 2', 'Paydown recorded by hand (New pool factor, Factor effective from, Principal paid on, Factor after scheduled principal)', 'Yield-maintenance premium recorded by hand as a manual cash flow on the position (Kind: Coupon), amount from the distribution report'],
+    settlement: 'T+2 on the US bond calendar (the deal\'s own convention); current face = original face x factor; accrued 30/360 on current face',
+    lifecycle: 'Monthly coupon on the factor of the month, paid 14 days after the period ends (next business day); paydown principal receivable until the payment date; yield maintenance by hand',
+    accounting: 'Cost per 100 of current face; paydown at par against a discount cost is realized gain; coupon, accrual and yield maintenance in coupon and interest income; commission expensed',
+    collateral: 'None for a long position',
+  },
+  start: EDT('2029-06-05'), // Tuesday
+  settlementCheck: { lag: 2, holidays: ['2029-06-19', '2029-07-04'] },
+  book: {
+    name: 'Matrix CMBS', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 7_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 6_000_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.5 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'cmbs', name: 'Meridian Commercial Mortgage Trust 2025-C3 Class A-4 4.85%', symbol: 'MCMT-25C3-A4', marketView: 'US_CASH', venueType: 'otc', issuer: 'Meridian Commercial Mortgage Trust 2025-C3', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { settleLag: 2 },
+      terms: { couponType: 'fixed', couponRate: 0.0485, frequency: 12, maturity: '2058-06-01', issueDate: '2025-06-01', dayCount: '30/360', redemption: 100, factor: 0.984271, paymentDelayDays: 14, seniority: 'Senior (Class A-4)' } },
+  },
+  quotes: { main: { bid: 99.25, ask: 99.5, last: 99.375, bidSize: 20_000_000, askSize: 20_000_000 } },
+  expectAtStart: { ...startState(6_000_000, 1_000_000), cash: { account: usdCash(6_000_000), treasury: usdCash(1_000_000) } },
+  steps: [
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 5_000_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 5_000_000, estimate: 99.5, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2029-06-07', calendar: 'USBOND',
+            notional: 4_921_355, // current face: 5,000,000 x 0.984271
+            gross: 4_896_748.23, // 4,921,355 x 99.50 / 100 = 4,896,748.225
+            accrued: 3_978.10, // 6 days: 4,921,355 x 4.85% x 6/360 = 3,978.0953
+            cash: -4_900_726.33, fees: 244.84 }], // 0.5 bp of 4,896,748.23 = 244.837
+          cash: { USD: { purchases: 4_900_726.33, fees: 244.84, required: 4_900_971.17, available: 6_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 5_000_000, avgPrice: 99.5, fills: [{ qty: 5_000_000, price: 99.5, model: 'quoted-bid-ask', settleDate: '2029-06-07', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 5,000,000 MCMT-25C3-A4 @ 99.50 USD', owner: 'account', date: '2029-06-05' }],
+        cash: { account: { USD: { settled: 6_000_000, unsettled: -4_900_971.17, availableToTrade: 1_099_028.83 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 5_000_000, avgCost: 99.5, cost: 4_896_748.23, price: 99.375,
+          value: 4_890_596.53, unrealized: -6_151.70, accrued: 3_978.10, priceSource: 'Test fixture' }], // 4,921,355 x 99.375 / 100 = 4,890,596.531
+        holdings: { main: { long: 5_000_000, short: 0, net: 5_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2029-06-07', amount: -4_900_971.17, ccy: 'USD', into: 'cash' }],
+        // 1 Jul + 14 days = Sunday 15 July: Monday 16 July. Maturity 1 Jun 2058 + 14 = Saturday 15 June 2058: Monday 17 June.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2029-07-16', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2058-06-17', status: 'pending' }],
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -244.84, fees: 0, borrowFunding: 0, unrealized: -6_151.70, total: -6_396.54 } },
+        nav: { account: 5_993_603.46, book: 6_993_603.46 },
+        balance: { account: { cash: 6_000_000, accruedIncome: 3_978.10, positions: 4_890_596.53, payable: 4_900_971.17, assets: 10_894_574.63, liabilities: 4_900_971.17, netAssets: 5_993_603.46 } },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EDT('2029-06-07'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 4,900,971.17 USD from settled cash', cash: { USD: -4_900_971.17 }, date: '2029-06-07' }],
+        cash: { account: { USD: { settled: 1_099_028.83, unsettled: 0, availableToTrade: 1_099_028.83 } } },
+        pending: [],
+        balance: { account: { cash: 1_099_028.83, payable: null, assets: 5_993_603.46, liabilities: 0 } },
+      },
+    },
+    {
+      // A fifth sold: current face 984,271 at 99.25 = 976,888.97; accrued 10 days to Monday 11 June, 1,326.03. Cost out
+      // 4,896,748.23 / 5 = 979,349.65: realized -2,460.68.
+      id: 'reduce', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 1_000_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 1_000_000, estimate: 99.25, settleDate: '2029-06-11', notional: 984_271,
+          gross: 976_888.97, accrued: 1_326.03, cash: 978_215, fees: 48.84 }] }, // 984,271 x 99.25 / 100 = 976,888.9675; x 4.85% x 10/360 = 1,326.032; 0.5 bp = 48.844
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 1_000_000, avgPrice: 99.25 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: /^Sold 1,000,000 MCMT-25C3-A4 @ 99\.25 USD \(realized [-−]2,460\.68 USD\)$/ }],
+        cash: { account: { USD: { settled: 1_099_028.83, unsettled: 978_166.16, availableToTrade: 2_077_194.99 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 4_000_000, cost: 3_917_398.58, avgCost: 99.5, price: 99.375, value: 3_912_477.23, unrealized: -4_921.35, accrued: 2_652.07 }], // 3,937,084 x 99.375 / 100
+        holdings: { main: { long: 4_000_000, short: 0, net: 4_000_000 } },
+        pending: [{ instrument: 'main', dueDate: '2029-06-11', amount: 978_166.16, into: 'cash' }],
+        pnl: { account: { realized: -2_460.68, commissions: -293.68, unrealized: -4_921.35, total: -7_675.71 } },
+        nav: { account: 5_992_324.29, book: 6_992_324.29 },
+        balance: { account: { cash: 1_099_028.83, receivable: 978_166.16, accruedIncome: 2_652.07, positions: 3_912_477.23, assets: 5_992_324.29, liabilities: 0, netAssets: 5_992_324.29 } },
+      },
+    },
+    {
+      // Monday 11 June. End of day Friday 8 Jun: all 4,921,355 still settled face (the sale settles today), 7 days, 4,641.1112,
+      // less the 10 days sold 1,326.0318: 3,315.08. On the books 2,652.07: 663.01 more.
+      id: 'settle-reduce', covers: ['settlement', 'accrual'], action: 'clock', to: EDT('2029-06-11'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 978,166.16 USD into settled cash', cash: { USD: 978_166.16 } },
+          { type: 'accrual.coupon', summary: 'Interest accrued on MCMT-25C3-A4: 663.01 USD' },
+        ],
+        cash: { account: { USD: { settled: 2_077_194.99, unsettled: 0, availableToTrade: 2_077_194.99 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 4_000_000, accrued: 3_315.08 }],
+        pending: [],
+        pnl: { account: { couponInterest: 663.01, total: -7_012.70 } },
+        nav: { account: 5_992_987.30, book: 6_992_987.30 },
+        balance: { account: { cash: 2_077_194.99, receivable: null, accruedIncome: 3_315.08, assets: 5_992_987.30, netAssets: 5_992_987.30 } },
+      },
+    },
+    {
+      // Friday 6 July, past Juneteenth and Independence Day. End of day 5 Jul: June's coupon (due 16 July) 3,937,084 x 4.85% / 12 =
+      // 15,912.3812, plus 4 days of July 2,121.6508: 18,034.03. 14,718.95 more.
+      id: 'july-6', covers: ['accrual', 'market holiday'], action: 'clock', to: EDT('2029-07-06'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on MCMT-25C3-A4: 14,718.95 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 4_000_000, accrued: 18_034.03 }],
+        pnl: { account: { couponInterest: 15_381.96, total: 7_706.25 } },
+        nav: { account: 6_007_706.25, book: 7_007_706.25 },
+        balance: { account: { accruedIncome: 18_034.03, assets: 6_007_706.25, netAssets: 6_007_706.25 } },
+      },
+    },
+    {
+      // Distribution report by hand: factor 0.984271 to 0.961124 from 1 July, principal 4,000,000 x 0.023147 = 92,588.00 paid
+      // 16 July. Scheduled amortisation 0.000659 of original face (0.984271 - 0.983612), prepaid 0.022488 (SMM 0.022488 / 0.983612
+      // = 2.2863%: a loan paid off). Cost out 3,917,398.58 x 0.023147 / 0.984271 = 92,125.06: realized +462.94. July's 4 days on
+      // 3,844,496: 2,071.7562; with June's coupon 17,984.14, 49.89 down.
+      id: 'distribution-report', covers: ['paydown (by hand)', 'prepayment (by hand)'], action: 'instrument_lifecycle', instrument: 'main',
+      body: { action: 'paydown', newFactor: 0.961124, effective: '2029-07-01', payDate: '2029-07-16', scheduledFactor: 0.983612 },
+      expect: {
+        events: [
+          { type: 'bond.paydown', summary: 'Principal paydown on MCMT-25C3-A4: factor 0.984271 to 0.961124 from 2029-07-01; scheduled principal 0.000659, prepaid 0.022488 of original face (SMM 2.2863%), 92,588.00 USD receivable on 2029-07-16', owner: 'account', date: '2029-07-06' },
+          { type: 'accrual.coupon', summary: 'Accrued interest restated on the new factor of MCMT-25C3-A4, down: 49.89 USD' },
+        ],
+        cash: { account: { USD: { settled: 2_077_194.99, unsettled: 92_588, availableToTrade: 2_169_782.99 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 4_000_000, cost: 3_825_273.52, avgCost: 99.5, price: 99.375, value: 3_820_467.90, unrealized: -4_805.62, accrued: 17_984.14 }], // 3,844,496 x 99.375 / 100
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2029-07-16', amount: 92_588, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: -1_997.74, couponInterest: 15_332.07, unrealized: -4_805.62, total: 8_235.03 } },
+        nav: { account: 6_008_235.03, book: 7_008_235.03 },
+        balance: { account: { receivable: 92_588, accruedIncome: 17_984.14, positions: 3_820_467.90, assets: 6_008_235.03, netAssets: 6_008_235.03 } },
+      },
+    },
+    {
+      // Monday 16 July: the principal 92,588.00 and June's coupon on the June factor, 15,912.38. End of day Friday 13 Jul:
+      // 3,844,496 x 4.85% x 12/360 = 6,215.27; 4,143.51 more.
+      id: 'distribution', covers: ['coupon', 'paydown (by hand)', 'settlement'], action: 'clock', to: EDT('2029-07-16'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 92,588.00 USD into settled cash', cash: { USD: 92_588 }, date: '2029-07-16' },
+          { type: 'bond.coupon', summary: 'Coupon received on 4,000,000 MCMT-25C3-A4 (factor 0.984271: current face 3,937,084): 15,912.38 USD', cash: { USD: 15_912.38 }, owner: 'account', date: '2029-07-16' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on MCMT-25C3-A4: 4,143.51 USD' },
+        ],
+        cash: { account: { USD: { settled: 2_185_695.37, unsettled: 0, availableToTrade: 2_185_695.37 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 4_000_000, accrued: 6_215.27 }],
+        pending: [],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2029-08-15', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2058-06-17', status: 'pending' }],
+        pnl: { account: { couponInterest: 19_475.58, total: 12_378.54 } },
+        nav: { account: 6_012_378.54, book: 7_012_378.54 },
+        balance: { account: { cash: 2_185_695.37, receivable: null, accruedIncome: 6_215.27, assets: 6_012_378.54, netAssets: 6_012_378.54 } },
+      },
+    },
+    {
+      // The yield-maintenance premium allocated to Class A-4 for the prepaid loan, from the distribution report, recorded by hand.
+      id: 'yield-maintenance', covers: 'yield maintenance (by hand)', action: 'cashflow', lot: 'lot', category: 'coupon', amount: 7_384.2, note: 'Yield maintenance on the prepaid loan, allocated to Class A-4 (distribution report of 16 July)',
+      expect: {
+        events: [{ type: 'manual.cashflow', summary: 'Manual coupon on MCMT-25C3-A4: received 7,384.20 USD. Yield maintenance on the prepaid loan, allocated to Class A-4 (distribution report of 16 July)', cash: { USD: 7_384.2 }, owner: 'account' }],
+        cash: { account: { USD: { settled: 2_193_079.57, availableToTrade: 2_193_079.57 } } },
+        pnl: { account: { couponInterest: 26_859.78, total: 19_762.74 } },
+        nav: { account: 6_019_762.74, book: 7_019_762.74 },
+        balance: { account: { cash: 2_193_079.57, assets: 6_019_762.74, netAssets: 6_019_762.74 } },
+      },
+    },
+    {
+      // The rest sold for settlement on Wednesday 18 July: 3,844,496 x 99.25 / 100 = 3,815,662.28; accrued 17 days 8,804.96
+      // (2,589.69 more than on the books). Realized 3,815,662.28 - 3,825,273.52 = -9,611.24.
+      id: 'close', covers: 'close', action: 'close', lot: 'lot', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 4_000_000, estimate: 99.25, settleDate: '2029-07-18', notional: 3_844_496,
+          gross: 3_815_662.28, accrued: 8_804.96, cash: 3_824_467.24, fees: 190.78 }] }, // 3,844,496 x 4.85% x 17/360 = 8,804.958; 0.5 bp = 190.783
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 4_000_000, avgPrice: 99.25 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: /^Sold 4,000,000 MCMT-25C3-A4 @ 99\.25 USD \(realized [-−]9,611\.24 USD\)$/ },
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of MCMT-25C3-A4: 2,589.69 USD' },
+        ],
+        cash: { account: { USD: { settled: 2_193_079.57, unsettled: 3_824_276.46, availableToTrade: 6_017_356.03 } } },
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2029-07-18', amount: 3_824_276.46, ccy: 'USD', into: 'cash' }],
+        lifecycle: [],
+        pnl: { account: { realized: -11_608.98, couponInterest: 29_449.47, commissions: -484.46, unrealized: 0, total: 17_356.03 } },
+        nav: { account: 6_017_356.03, book: 7_017_356.03 },
+        balance: { account: { cash: 2_193_079.57, receivable: 3_824_276.46, positions: null, accruedIncome: null, assets: 6_017_356.03, liabilities: 0, netAssets: 6_017_356.03 } },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: EDT('2029-07-18'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 3,824,276.46 USD into settled cash', cash: { USD: 3_824_276.46 } }],
+        cash: { account: { USD: { settled: 6_017_356.03, unsettled: 0, availableToTrade: 6_017_356.03 } }, treasury: usdCash(1_000_000) },
+        pending: [],
+        balance: { account: { cash: 6_017_356.03, receivable: null, assets: 6_017_356.03, liabilities: 0 } },
+      },
+    },
+  ],
+};
+
+export default [tips, foreignInflationLinked, callableBond, puttableBond, convertibleBond, exchangeableBond, cocoBond, mbs, cmbs, agencyMbs, nonAgencyMbs];
