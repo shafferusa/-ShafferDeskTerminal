@@ -157,7 +157,7 @@ export function createUi(page, baseUrl) {
     /** Open a strategy instance's drawer from the Accounting positions of its owner. */
     async openStrategy(ctx, strategyId) {
       await ui.closeOverlays();
-      await ui.reloadAt(`#/accounting/positions/${ctx.accountId}`);
+      await ui.reloadAt(`#/accounting/positions/${ctx.strategyUnits?.get(strategyId) || ctx.accountId}`);
       await page.locator(`main a[title="Strategy instance ${strategyId}"]`).first().click();
       const drawer = page.getByRole('dialog').filter({ has: page.locator('header h3', { hasText: /^Positions/ }) });
       await drawer.waitFor();
@@ -723,6 +723,8 @@ async function sharedAction(ui, t, ctx, step, family) {
       if (opened.refusal) return opened;
       const out = await previewAndConfirm(ui, ctx, opened.preview, { expectsRefusal });
       if (out.strategy && step.as && !ctx.lots.has(step.as)) ctx.nameLot(step.as, out.strategy.id, step.instrument);
+      // Remember whose strategy instance it is: one opened for Treasury is listed in Treasury's Accounting scope, not the Account's.
+      if (out.strategy?.id && out.strategy.unit?.id) (ctx.strategyUnits ||= new Map()).set(out.strategy.id, out.strategy.unit.id);
       return out;
     }
     case 'close': case 'resize': {

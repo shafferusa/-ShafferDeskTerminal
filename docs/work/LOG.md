@@ -102,3 +102,4 @@
 - 2026-10-13T16:52Z | b2 | +0.2 | subordinated_debt passes at engine, API and browser
 - 2026-10-13T16:54Z | l1 | +0.2 | revolving_credit_facility passes at engine, API and browser (loan family 9 of 9)
 - 2026-10-13T16:55Z | ui1 | +0.5 | Trading owner selector on tickets and the Strategies page: Accounts and Treasury distinguished, no silent Treasury substitution
+- 2026-10-13T16:56Z | b2 | +0.2 | covered_bond passes at engine, API and browser (Treasury-owned; shared driver opens a Treasury strategy in Treasury's scope)

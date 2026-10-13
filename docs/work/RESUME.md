@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 55.3% of the pass** (last milestone 2026-10-13T16:55Z, ui1: Trading owner selector on tickets and the Strategies page: Accounts and Treasury distinguished, no silent Treasury substitution)
+**Completeness: about 55.5% of the pass** (last milestone 2026-10-13T16:56Z, b2: covered_bond passes at engine, API and browser (Treasury-owned; shared driver opens a Treasury strategy in Treasury's scope))
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 
