@@ -166,3 +166,4 @@
 - 2026-10-13T18:05Z | fw | +0.2 | fw: equity_forward passes at engine, API and browser
 - 2026-10-13T18:06Z | ui1 | +0.5 | Marketplace item 4: final screen checks (336 screens, every view and tab, demo/normal, light/dark, 1440/1024/390) with fixes: card rows on narrow panels, market price, fair price and gap adjacent
 - 2026-10-13T18:08Z | m1 | +0.2 | insurance_linked_security passes at engine, API and browser (coupons, loss event, maturity)
+- 2026-10-13T18:09Z | r1 | +0.2 | triparty_repo passes at engine, API and browser

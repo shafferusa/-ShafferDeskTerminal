@@ -1131,6 +1131,7 @@ const insuranceLinked = {
   book: { name: 'Matrix insurance-linked', reportingCcy: 'USD', capital: [{ ccy: 'USD', amount: 8_000_000 }], account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 6_000_000 }] }, settings: SETTINGS },
   instruments: {
     main: { productId: 'insurance_linked_security', name: 'Sable Harbor Re 2026-1 Class A collateralised reinsurance note', symbol: 'SHRE26A', marketView: 'FOREIGN_CASH', venueType: 'otc', issuer: 'Sable Harbor Re Ltd', domicile: 'BM', underlyingGeo: 'US', tradingCcy: 'USD',
+      multiplier: 0.01, // priced in % of face: the product sets 0.01 itself (the form has no multiplier field for it); stated here for the audit
       terms: { peril: 'US named storm and earthquake, per-occurrence excess of loss', trigger: 'indemnity', maturity: '2026-12-31', couponRate: 0.095, valuationMaxAgeDays: 45 } },
   },
   expectAtStart: { cash: { account: { USD: { settled: 6_000_000, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 6_000_000 } }, treasury: { USD: { settled: 2_000_000 } } },
