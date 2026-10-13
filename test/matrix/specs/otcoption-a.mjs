@@ -1504,4 +1504,233 @@ const cryptoOption = {
   ],
 };
 
-export default [otcOption, bondOption, fxOption, commodityOption, cryptoOption];
+// ---------------------------------------------------------------------------------------------
+// digital_option
+// ---------------------------------------------------------------------------------------------
+// Two cash-or-nothing digital options on the Coastline Clean Energy ETF (CCEN, NYSE Arca), dealt with Dealer G, each
+// paying a fixed 10.00 USD per unit if the ETF's close on Thursday 18 June 2026 is beyond the strike, nothing otherwise
+// (a close exactly at the strike pays nothing):
+//   - a digital call struck at 52 on 20,000 units, bought; position-level terms: variation margin over a 20,000
+//     threshold (minimum transfer 5,000), so the dealer posts collateral to the Account; half terminated at a stated
+//     amount. The ETF closes at 53.40: the call pays its fixed 10.00 a unit, received T+1 on the US calendar, which is
+//     Monday 22 June (Friday 19 June is Juneteenth, a market holiday).
+//   - a digital put struck at 45 on 20,000 units, written; position-level terms: a fixed independent amount of 200,000,
+//     the most it can ever pay (20,000 x 10.00), and no variation margin. It lapses out of the money.
+const DCALL = 'CCEN 52 digital call, pays 10.00, 18 Jun 2026 (Dealer G)';
+const DPUT = 'CCEN 45 digital put, pays 10.00, 18 Jun 2026 (Dealer G)';
+const digitalOption = {
+  productId: 'digital_option',
+  title: 'Cash-or-nothing digitals on a US ETF paying 10.00 a unit: 52 call bought (pays at expiry), 45 put written (lapses)',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'Payoff: Digital (cash or nothing)', 'Digital payout per unit'],
+    automaticInputs: ['ETF price (quote fixture standing in for Shaffer MarketData) for the notional', 'premium settlement date, T+2 on the US calendar', 'commission per unit from the Book fee schedule', 'variation margin and independent amount from the position-level terms', 'expiry item settled against the ETF close for the expiration date (close fixture: the stated settlement price): the fixed payout if beyond the strike, else nothing', 'payout date T+1 on the US calendar, across Juneteenth'],
+    manualInputs: ['premium agreed with the dealer (stated fill price)', 'marks entered by hand (Manual entry)', 'termination of half the call at a stated amount per unit'],
+    settlement: 'Premium and commission T+2 on the US calendar; the digital payout T+1 after expiry (Friday 19 June is Juneteenth: paid Monday 22 June)',
+    lifecycle: 'Expiry item on 18 June: the call pays its fixed 10.00 a unit (not the distance from the strike); the put lapses and its premium is realized; nothing scheduled afterwards',
+    accounting: 'Premium per unit x units; average premium; payout and lapse realized at expiry; commission expensed; marks by hand drive unrealized P&L',
+    collateral: 'Call (bought): position-level terms, variation margin over a 20,000 threshold: received from the dealer as restricted cash with a liability, partly returned after the termination, the rest when the call settles. Put (written): fixed independent amount of 200,000, its maximum payout, posted at entry and returned at expiry',
+  },
+  start: at('2026-03-02'),
+  settlementCheck: { lag: 2, holidays: [] },
+  book: {
+    name: 'Matrix digital option', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 2_000_000 }],
+    account: { name: 'Binary', funding: [{ ccy: 'USD', amount: 800_000 }] },
+    settings: { fees: { otcoption: { perUnit: 0.02, minimum: 0, bps: 0 }, equity: NO_FEE }, fill: FILL, settlement: { otcoption: 2, equity: 1 } }, // 0.02 a unit
+  },
+  instruments: {
+    etf: { productId: 'etf', name: 'Coastline Clean Energy ETF', symbol: 'CCEN', marketView: 'US_CASH', venue: 'NYSE Arca', venueType: 'exchange', venueCountry: 'US', issuer: 'Coastline Funds Trust', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', terms: {} },
+    dcall: {
+      productId: 'digital_option', name: DCALL, symbol: 'CCEN-DC52', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', underlying: 'etf', multiplier: 1,
+      terms: { right: 'C', strike: 52, expiration: '2026-06-18', optionType: 'digital', payout: 10, exercise: 'european', settlement: 'cash', counterparty: 'Dealer G',
+        collateralBasis: { type: 'position', independentAmount: { type: 'none' }, variationMargin: true, threshold: 20_000, minimumTransfer: 5_000 } },
+    },
+    dput: {
+      productId: 'digital_option', name: DPUT, symbol: 'CCEN-DP45', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', underlying: 'etf', multiplier: 1,
+      terms: { right: 'P', strike: 45, expiration: '2026-06-18', optionType: 'digital', payout: 10, exercise: 'european', settlement: 'cash', counterparty: 'Dealer G',
+        collateralBasis: { type: 'position', independentAmount: { type: 'fixed', amount: 200_000 }, variationMargin: false, threshold: 0, minimumTransfer: 0 } },
+    },
+  },
+  quotes: { etf: { bid: 47.99, ask: 48.01, last: 48, bidSize: 500_000, askSize: 500_000 } },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 800_000, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 800_000, availableToWithdraw: 800_000 } },
+      treasury: { USD: { settled: 1_200_000 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [], otc: [], alerts: [],
+    nav: { account: 800_000, treasury: 1_200_000, book: 2_000_000 },
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+  },
+  steps: [
+    otcTicket({
+      id: 'buy-digital-call', covers: ['open', 'collateral'], instrument: 'dcall', side: 'buy', qty: 20_000, premium: 3.40, as: 'calls',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'dcall', qty: 20_000, estimate: 3.4, model: 'stated-price', settleDate: '2026-03-04', calendar: 'US', cash: -68_000, fees: 400, notional: 960_000 }], // 20,000 x 3.40; 20,000 x 0.02; 20,000 x 48.00
+          cash: { USD: { purchases: 68_000, fees: 400, margin: 0, required: 68_400, available: 800_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 20_000, avgPrice: 3.4 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 20,000 CCEN-DC52 @ 3.40 USD', owner: 'account', date: '2026-03-02' }],
+        cash: { account: { USD: { settled: 800_000, unsettled: -68_400, availableToTrade: 731_600, availableToWithdraw: 731_600 } } },
+        positions: [{ instrument: 'dcall', lot: 'calls', owner: 'account', direction: 'long', qty: 20_000, avgCost: 3.4, cost: 68_000, price: null, value: null, unrealized: null, provisional: true, notional: 960_000, margin: 0 }],
+        holdings: { dcall: { long: 20_000, short: 0, net: 20_000 } },
+        pending: [{ instrument: 'dcall', owner: 'account', dueDate: '2026-03-04', amount: -68_400, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'option.expiry', instrument: 'dcall', dueDate: '2026-06-18', status: 'pending' }],
+        otc: [{ instrument: 'dcall', lot: 'calls', qty: 20_000, basis: 'position', mark: null, iaRequired: 0, iaPosted: 0, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: -400, unrealized: 0, total: -400 } },
+        nav: { account: 799_600, book: 1_999_600 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 800_000, payable: 68_400, positions: 68_000, assets: 868_000, liabilities: 68_400, netAssets: 799_600 } },
+      },
+    }),
+    { id: 'half-an-hour-later', action: 'clock', to: at('2026-03-02', '15:30'), expect: {} },
+    otcTicket({
+      // Written: a fixed independent amount of 200,000 (20,000 x 10.00, the most the put can pay), posted at the fill.
+      id: 'write-digital-put', covers: ['write', 'collateral'], instrument: 'dput', side: 'sell', qty: 20_000, premium: 2.10, as: 'puts',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'dput', qty: 20_000, estimate: 2.1, model: 'stated-price', settleDate: '2026-03-04', calendar: 'US', cash: 42_000, fees: 400, notional: 960_000 }],
+          cash: { USD: { proceeds: 42_000, fees: 400, margin: 200_000, required: 200_400, available: 731_600, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 20_000, avgPrice: 2.1 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Sold 20,000 CCEN-DP45 @ 2.10 USD', owner: 'account' },
+          { type: 'otcoption.collateral', summary: `Collateral posted on ${DPUT} under its position-level terms: 200,000.00 USD (independent amount, fixed amount for the position)`, cash: { USD: -200_000 } },
+        ],
+        cash: { account: { USD: { settled: 600_000, unsettled: -26_800, margin: 200_000, availableToTrade: 573_200, availableToWithdraw: 531_600 } } }, // -68,400 + 41,600; 600,000 - 68,400
+        positions: [
+          { instrument: 'dcall', lot: 'calls', qty: 20_000 },
+          { instrument: 'dput', lot: 'puts', owner: 'account', direction: 'short', qty: -20_000, avgCost: 2.1, cost: -42_000, price: null, value: null, unrealized: null, provisional: true, notional: 960_000, margin: 200_000 },
+        ],
+        holdings: { dput: { long: 0, short: 20_000, net: -20_000 } },
+        pending: [
+          { instrument: 'dcall', owner: 'account', dueDate: '2026-03-04', amount: -68_400, ccy: 'USD', into: 'cash' },
+          { instrument: 'dput', owner: 'account', dueDate: '2026-03-04', amount: 41_600, ccy: 'USD', into: 'cash' },
+        ],
+        lifecycle: [{ type: 'option.expiry', instrument: 'dcall', dueDate: '2026-06-18', status: 'pending' }, { type: 'option.expiry', instrument: 'dput', dueDate: '2026-06-18', status: 'pending' }],
+        otc: [{ instrument: 'dcall' }, { instrument: 'dput', lot: 'puts', qty: -20_000, basis: 'position', iaRequired: 200_000, iaPosted: 200_000, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { commissions: -800, total: -800 } },
+        nav: { account: 799_200, book: 1_999_200 }, // 600,000 + 200,000 + 41,600 - 68,400 + 68,000 - 42,000
+        balance: { account: { cash: 600_000, margin: 200_000, receivable: 41_600, payable: 68_400, positions: 26_000, assets: 867_600, liabilities: 68_400, netAssets: 799_200 } },
+      },
+    }),
+    {
+      id: 'mark-call', covers: 'manual mark', action: 'manual_price', instrument: 'dcall', value: 4.20, note: 'Dealer G mark, by hand',
+      expect: {
+        positions: [{ instrument: 'dcall', lot: 'calls', price: 4.2, value: 84_000, unrealized: 16_000, provisional: false }, { instrument: 'dput', lot: 'puts' }], // 20,000 x 4.20; - 68,000
+        otc: [{ instrument: 'dcall', mark: 4.2, markValue: 84_000 }, { instrument: 'dput' }],
+        pnl: { account: { unrealized: 16_000, total: 15_200 } },
+        nav: { account: 815_200, book: 2_015_200 },
+        balance: { account: { positions: 42_000, assets: 883_600, netAssets: 815_200 } }, // 84,000 - 42,000 (put at cost)
+      },
+    },
+    {
+      id: 'mark-put', covers: 'manual mark', action: 'manual_price', instrument: 'dput', value: 1.50, note: 'Dealer G mark, by hand',
+      expect: {
+        positions: [{ instrument: 'dcall', lot: 'calls' }, { instrument: 'dput', lot: 'puts', price: 1.5, value: -30_000, unrealized: 12_000, provisional: false }], // -20,000 x 1.50; + 42,000
+        otc: [{ instrument: 'dcall' }, { instrument: 'dput', mark: 1.5, markValue: -30_000 }],
+        pnl: { account: { unrealized: 28_000, total: 27_200 } },
+        nav: { account: 827_200, book: 2_027_200 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 54_000, assets: 895_600, netAssets: 827_200 } },
+      },
+    },
+    {
+      // Call marked at +84,000: 64,000 beyond the 20,000 threshold, posted by Dealer G (restricted, owed back). The put has no variation margin.
+      id: 'variation-margin-received', covers: 'variation margin', action: 'clock', to: eod('2026-03-02'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under position-level terms: 64,000.00 USD received. Netting set of 1 position marked at 84,000.00 USD; threshold 20,000.00 USD.', owner: 'account' }],
+        cash: { account: { USD: { restricted: 64_000 } } },
+        otc: [{ instrument: 'dcall', vmHeld: 64_000, vmExposure: 84_000, vmStatus: 'ok' }, { instrument: 'dput', vmHeld: 0 }],
+        balance: { account: { restricted: 64_000, collateralReceived: 64_000, assets: 959_600, liabilities: 132_400, netAssets: 827_200 } },
+      },
+    },
+    {
+      id: 'settle-premiums', covers: 'settlement', action: 'clock', to: at('2026-03-04'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 41,600.00 USD into settled cash', cash: { USD: 41_600 } },
+          { type: 'settlement.pay', summary: 'paid 68,400.00 USD from settled cash', cash: { USD: -68_400 } },
+        ],
+        cash: { account: { USD: { settled: 573_200, unsettled: 0, availableToTrade: 573_200, availableToWithdraw: 573_200 } } },
+        pending: [],
+        balance: { account: { cash: 573_200, receivable: null, payable: null, assets: 891_200, liabilities: 64_000 } },
+      },
+    },
+    {
+      // Half the call terminated with Dealer G at 4.80 a unit: 10,000 x 4.80 = 48,000 less 200. Realized 10,000 x (4.80 - 3.40).
+      id: 'terminate-half-call', covers: ['reduce', 'termination at a stated amount'], action: 'close', lot: 'calls', scope: 'strategy', percent: 50, order: { statedPrice: 4.80 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'dcall', qty: 10_000, estimate: 4.8, model: 'stated-price', settleDate: '2026-03-06', cash: 48_000, fees: 200 }] },
+        result: { orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 10_000, avgPrice: 4.8 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 10,000 CCEN-DC52 @ 4.80 USD (realized 14,000.00 USD)' }],
+        cash: { account: { USD: { unsettled: 47_800, availableToTrade: 621_000, availableToWithdraw: 573_200 } } },
+        positions: [{ instrument: 'dcall', lot: 'calls', qty: 10_000, cost: 34_000, value: 42_000, unrealized: 8_000, notional: 480_000 }, { instrument: 'dput', lot: 'puts' }],
+        holdings: { dcall: { long: 10_000, short: 0, net: 10_000 } },
+        pending: [{ instrument: 'dcall', owner: 'account', dueDate: '2026-03-06', amount: 47_800, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'dcall', qty: 10_000, markValue: 42_000 }, { instrument: 'dput' }],
+        pnl: { account: { realized: 14_000, commissions: -1_000, unrealized: 20_000, total: 33_000 } }, // 8,000 + 12,000
+        nav: { account: 833_000, book: 2_033_000 }, // 573,200 + 200,000 + 47,800 + 42,000 - 30,000
+        balance: { account: { receivable: 47_800, positions: 12_000, assets: 897_000, liabilities: 64_000, netAssets: 833_000 } },
+      },
+    },
+    {
+      // Marked at 42,000: 22,000 beyond the threshold is held; 42,000 of the 64,000 goes back to Dealer G.
+      id: 'variation-margin-returned', covers: 'variation margin', action: 'clock', to: eod('2026-03-04'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under position-level terms: 42,000.00 USD returned to the counterparty. Netting set of 1 position marked at 42,000.00 USD; threshold 20,000.00 USD.', owner: 'account' }],
+        cash: { account: { USD: { restricted: 22_000 } } },
+        otc: [{ instrument: 'dcall', vmHeld: 22_000, vmExposure: 42_000 }, { instrument: 'dput' }],
+        balance: { account: { restricted: 22_000, collateralReceived: 22_000, assets: 855_000, liabilities: 22_000 } },
+      },
+    },
+    {
+      id: 'settle-termination', covers: 'settlement', action: 'clock', to: at('2026-03-06'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 47,800.00 USD into settled cash', cash: { USD: 47_800 } }],
+        cash: { account: { USD: { settled: 621_000, unsettled: 0, availableToTrade: 621_000, availableToWithdraw: 621_000 } } },
+        pending: [],
+        balance: { account: { cash: 621_000, receivable: null, assets: 855_000 } },
+      },
+    },
+    // Held across Good Friday and Memorial Day.
+    { id: 'wednesday-17-june', covers: 'holiday', action: 'clock', to: at('2026-06-17'), expect: {} },
+    { id: 'settlement-price-known-later', action: 'close_price', instrument: 'etf', date: '2026-06-18', value: 53.40, expect: {} },
+    {
+      // CCEN closed at 53.40. Call (52): beyond the strike, pays the fixed 10.00 a unit: 10,000 x 10.00 = 100,000, due
+      // T+1 on the US calendar: Monday 22 June (19 June is Juneteenth). Realized 100,000 - 34,000 = 66,000. The 22,000 held
+      // goes back to Dealer G. Put (45): not beyond the strike, lapses: 42,000 realized; the 200,000 comes back.
+      id: 'expiry', covers: ['expiry', 'digital payout', 'lapse', 'collateral'], action: 'clock', to: eod('2026-06-18'),
+      expect: {
+        events: [
+          { type: 'option.cash_settled', summary: 'Exercised (cash settlement): 10,000 CCEN-DC52 at 10.00 USD per unit (fixing 53.40)', owner: 'account', date: '2026-06-18' },
+          { type: 'collateral.variation', summary: 'Variation margin under position-level terms: 22,000.00 USD returned to the counterparty. The last position of the netting set ended.', owner: 'account' },
+          { type: 'option.expired', summary: 'Expired worthless: 20,000 CCEN-DP45 (fixing 53.4)', owner: 'account', date: '2026-06-18' },
+          { type: 'otcoption.collateral', summary: `Collateral returned on ${DPUT} under its position-level terms: 200,000.00 USD (independent amount, the position ended)`, cash: { USD: 200_000 } },
+        ],
+        cash: { account: { USD: { settled: 821_000, restricted: 0, margin: 0, unsettled: 100_000, availableToTrade: 921_000, availableToWithdraw: 821_000 } } },
+        positions: [], holdings: { dcall: null, dput: null }, otc: [], lifecycle: [],
+        pending: [{ instrument: 'dcall', owner: 'account', dueDate: '2026-06-22', amount: 100_000, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: 122_000, unrealized: 0, total: 121_000 } }, // 14,000 + 66,000 + 42,000; - 1,000
+        nav: { account: 921_000, book: 2_121_000 },
+        balance: { account: { cash: 821_000, receivable: 100_000, restricted: null, collateralReceived: null, margin: null, positions: null, assets: 921_000, liabilities: 0, netAssets: 921_000 } },
+      },
+    },
+    {
+      id: 'payout-after-juneteenth', covers: ['settlement', 'holiday'], action: 'clock', to: at('2026-06-22'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 100,000.00 USD into settled cash', cash: { USD: 100_000 }, date: '2026-06-22' }],
+        cash: { account: { USD: { settled: 921_000, unsettled: 0, availableToTrade: 921_000, availableToWithdraw: 921_000 } } },
+        pending: [],
+        balance: { account: { cash: 921_000, receivable: null } },
+      },
+    },
+  ],
+};
+
+export default [otcOption, bondOption, fxOption, commodityOption, cryptoOption, digitalOption];

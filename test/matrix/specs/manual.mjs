@@ -457,4 +457,220 @@ const ventureCapital = {
   ],
 };
 
-export default [privateEquity, ventureCapital];
+// ---------------------------------------------------------------------------------------------
+// hedge_fund
+// ---------------------------------------------------------------------------------------------
+// Class A USD shares of a Cayman global macro fund: subscribed at the dealing NAV on the ticket, monthly NAVs entered by
+// hand from the administrator's statements (stale after 35 days), a lock-up to 31 March 2026, and a full redemption by
+// notice: 45 days' notice before a quarter end, an investor-level gate of 50% of the shares held at the first dealing
+// date, proceeds 10 business days after the dealing date on the USD payment calendar (Federal Reserve holidays: the
+// second payment is counted across Columbus Day, 12 October 2026). The ticket's Redeem is refused: redemption is by notice.
+// Management and performance fees are inside the NAV the administrator strikes; nothing is charged apart.
+const HF_POS = { instrument: 'main', lot: 'shares', owner: 'account', direction: 'long' };
+const hfM = (o) => ({ kind: 'fund_interest', redemptions: [], noticed: 0, expenses: 0, ...o });
+const HF_NOTICE = [{ noticeDate: '2026-04-13', dealingDate: '2026-06-30', shares: 2000 }];
+const hedgeFund = {
+  productId: 'hedge_fund',
+  title: 'Kestrel Point Global Macro Fund (Cayman), Class A USD: subscription at NAV, monthly NAVs by hand, lock-up, notice, 50% investor gate, redemption over two quarters',
+  matrix: {
+    ...MANUAL_TICKET,
+    requiredFields: ['Trading owner', 'Action (Subscribe)', 'Shares', 'State a fill price (the dealing NAV)', 'Dealing frequency, notice, payment days (registration)', 'Valuation goes stale after (registration)'],
+    manualInputs: ['subscription NAV (stated fill price)', 'monthly NAV per share with date and source', 'redemption notice (shares)', 'NAV per share struck for each dealing date'],
+    automaticInputs: [...MANUAL_TICKET.automaticInputs, 'dealing date from the notice period and the dealing frequency', 'gate cap and the shares carried to the next dealing date', 'payment date of redemption proceeds on the payment calendar'],
+    settlement: 'Subscription T+2 on the USD payment calendar; redemption proceeds 10 business days after the dealing date (14 July and 15 October 2026)',
+    lifecycle: 'Redemption only by notice: dealt on the first quarter end at least 45 days after the notice, at most 50% of the shares held at the first dealing date each time; each dealing date waits (blocked, visible) until its NAV is entered by hand. Lock-up refused before 31 March 2026; a sale on the ticket is refused',
+    accounting: 'Average cost per share; realized P&L on each redemption at the dealing NAV; valued at the latest NAV per share, stale after 35 days (NAV provisional)',
+    collateral: 'None: a fund interest held long',
+  },
+  start: '2026-02-02T15:00:00.000Z', // Monday 2 February 2026, 10:00 New York
+  settlementCheck: { lag: 2, holidays: [] },
+  book: { name: 'Matrix hedge fund', reportingCcy: 'USD', capital: [{ ccy: 'USD', amount: 6_000_000 }], account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 4_000_000 }] }, settings: SETTINGS },
+  instruments: {
+    main: { productId: 'hedge_fund', name: 'Kestrel Point Global Macro Fund Ltd, Class A USD', symbol: 'KPGM-A', marketView: 'FOREIGN_CASH', venueType: 'otc', issuer: 'Kestrel Point Global Macro Fund Ltd', domicile: 'KY', underlyingGeo: 'Global', tradingCcy: 'USD',
+      terms: { manager: 'Kestrel Point Capital Management LP', dealingFrequency: 'quarterly', noticeDays: 45, gatePct: 0.5, paymentDays: 10, lockupUntil: '2026-03-31', valuationMaxAgeDays: 35 } },
+  },
+  expectAtStart: { cash: { account: { USD: { settled: 4_000_000, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 4_000_000 } }, treasury: { USD: { settled: 2_000_000 } } },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [], nav: { account: 4_000_000, treasury: 2_000_000, book: 6_000_000 }, provisional: { account: false, book: false }, failed: { orders: 0, settlements: 0, lifecycle: 0 } },
+  steps: [
+    {
+      // 2,000 shares at the 30 January dealing NAV of 1,250.00 = 2,500,000.
+      id: 'subscribe', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 2000, as: 'shares', order: { statedPrice: 1250 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 2000, estimate: 1250, model: 'stated-price', settleDate: '2026-02-04', calendar: 'USD', cash: -2_500_000, fees: 0 }],
+          cash: { USD: { purchases: 2_500_000, fees: 0, required: 2_500_000, available: 4_000_000, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 2000, avgPrice: 1250 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 2,000 KPGM-A @ 1,250.00 USD', owner: 'account', date: '2026-02-02' }],
+        cash: { account: { USD: { settled: 4_000_000, unsettled: -2_500_000, availableToTrade: 1_500_000 } } },
+        positions: [{ ...HF_POS, qty: 2000, avgCost: 1250, cost: 2_500_000, price: null, value: null, unrealized: null, provisional: true, freshness: null, manual: hfM({ valuation: null }) }],
+        holdings: { main: { long: 2000, short: 0, net: 2000 } },
+        pending: [{ instrument: 'main', lot: 'shares', owner: 'account', dueDate: '2026-02-04', amount: -2_500_000, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: 0, fees: 0, commissions: 0 } },
+        nav: { account: 4_000_000, book: 6_000_000 }, // carried at cost until a NAV is entered
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 4_000_000, positions: 2_500_000, payable: 2_500_000, assets: 6_500_000, liabilities: 2_500_000, netAssets: 4_000_000 } },
+      },
+    },
+    {
+      id: 'settle-subscription', covers: 'settlement', action: 'clock', to: '2026-02-04T15:00:00.000Z',
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 2,500,000.00 USD from settled cash', cash: { USD: -2_500_000 }, date: '2026-02-04' }],
+        cash: { account: { USD: { settled: 1_500_000, unsettled: 0, availableToTrade: 1_500_000 } } },
+        pending: [],
+        balance: { account: { cash: 1_500_000, payable: null, assets: 4_000_000, liabilities: 0 } },
+      },
+    },
+    { id: 'february-statement-date', action: 'clock', to: '2026-03-16T14:00:00.000Z', expect: {} }, // Monday 16 March 2026
+    {
+      id: 'valuation-feb', covers: 'valuation', action: 'lifecycle', lot: 'shares', body: { action: 'valuation', value: 1275.50, asOf: '2026-02-27', source: 'Harbourside Fund Services, February 2026 NAV statement' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of KPGM-A entered by hand: 1,275.50 NAV per share, as of 2026-02-27, source: Harbourside Fund Services, February 2026 NAV statement. A manual input, not a market quote', owner: 'account' }],
+        positions: [{ ...HF_POS, qty: 2000, cost: 2_500_000, price: 1275.5, value: 2_551_000, unrealized: 51_000, provisional: false, freshness: 'manual', priceSource: 'Manual entry', // 2,000 x 1,275.50
+          manual: hfM({ valuation: { date: '2026-02-27', source: 'Harbourside Fund Services, February 2026 NAV statement', stale: false } }) }],
+        pnl: { account: { unrealized: 51_000, total: 51_000 } },
+        nav: { account: 4_051_000, book: 6_051_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 2_551_000, assets: 4_051_000, netAssets: 4_051_000 } },
+      },
+    },
+    {
+      id: 'sale-on-ticket', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 500, from: 'shares', order: { statedPrice: 1275.5 },
+      status: 'unsupported', reason: 'A hedge fund interest is redeemed by notice on the fund\'s dealing dates, not sold.',
+      expect: { refused: 'is redeemed through a redemption notice' },
+    },
+    {
+      id: 'notice-in-lockup', covers: 'redeem', action: 'lifecycle', lot: 'shares', body: { action: 'redemption_notice', shares: 500 },
+      status: 'blocked', reason: 'The shares are locked up until 31 March 2026.',
+      expect: { refused: 'locked up until 2026-03-31' },
+    },
+    {
+      // Monday 13 April 2026: the February NAV (27 February) is 45 days old, past the 35-day limit.
+      id: 'march-statement-date', covers: 'valuation', action: 'clock', to: '2026-04-13T14:00:00.000Z',
+      expect: {
+        positions: [{ ...HF_POS, qty: 2000, cost: 2_500_000, price: 1275.5, value: 2_551_000, unrealized: 51_000, freshness: 'stale',
+          manual: hfM({ valuation: { date: '2026-02-27', source: 'Harbourside Fund Services, February 2026 NAV statement', stale: true } }) }],
+        provisional: { account: true, book: true },
+      },
+    },
+    {
+      id: 'valuation-mar', covers: 'valuation', action: 'lifecycle', lot: 'shares', body: { action: 'valuation', value: 1301.25, asOf: '2026-03-31', source: 'Harbourside Fund Services, March 2026 NAV statement' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of KPGM-A entered by hand: 1,301.25 NAV per share, as of 2026-03-31, source: Harbourside Fund Services, March 2026 NAV statement. A manual input, not a market quote' }],
+        positions: [{ ...HF_POS, qty: 2000, cost: 2_500_000, price: 1301.25, value: 2_602_500, unrealized: 102_500, freshness: 'manual', // 2,000 x 1,301.25
+          manual: hfM({ valuation: { date: '2026-03-31', source: 'Harbourside Fund Services, March 2026 NAV statement', stale: false } }) }],
+        pnl: { account: { unrealized: 102_500, total: 102_500 } },
+        nav: { account: 4_102_500, book: 6_102_500 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 2_602_500, assets: 4_102_500, netAssets: 4_102_500 } },
+      },
+    },
+    {
+      // Notice on 13 April + 45 days = 28 May: dealt on the quarter end, Tuesday 30 June 2026.
+      id: 'notice', covers: 'redeem', action: 'lifecycle', lot: 'shares', body: { action: 'redemption_notice', shares: 2000, note: 'Full redemption' },
+      expect: {
+        events: [{ type: 'manual.redemption_notice', summary: "Redemption notice for 2,000 shares of KPGM-A entered by hand on 2026-04-13: 45 days' notice, quarterly dealing, so it is dealt on 2026-06-30 (gate 50% of the holding per dealing date). Full redemption", owner: 'account' }],
+        positions: [{ ...HF_POS, qty: 2000, cost: 2_500_000, value: 2_602_500, manual: hfM({ redemptions: HF_NOTICE, noticed: 2000, valuation: { date: '2026-03-31', source: 'Harbourside Fund Services, March 2026 NAV statement', stale: false } }) }],
+        lifecycle: [{ type: 'manual.redemption', instrument: 'main', dueDate: '2026-06-30', status: 'pending', owner: 'account' }],
+      },
+    },
+    {
+      id: 'over-notice', covers: 'redeem', action: 'lifecycle', lot: 'shares', body: { action: 'redemption_notice', shares: 1 },
+      status: 'blocked', reason: 'All 2,000 shares are already under notice.',
+      expect: { refused: '2,000 shares are held and 2,000 are already under notice' },
+    },
+    { id: 'april-statement-date', action: 'clock', to: '2026-05-11T14:00:00.000Z', expect: {} }, // Monday 11 May 2026
+    {
+      id: 'valuation-apr', covers: 'valuation', action: 'lifecycle', lot: 'shares', body: { action: 'valuation', value: 1288, asOf: '2026-04-30', source: 'Harbourside Fund Services, April 2026 NAV statement' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of KPGM-A entered by hand: 1,288.00 NAV per share, as of 2026-04-30, source: Harbourside Fund Services, April 2026 NAV statement. A manual input, not a market quote' }],
+        positions: [{ ...HF_POS, qty: 2000, cost: 2_500_000, price: 1288, value: 2_576_000, unrealized: 76_000, freshness: 'manual',
+          manual: hfM({ redemptions: HF_NOTICE, noticed: 2000, valuation: { date: '2026-04-30', source: 'Harbourside Fund Services, April 2026 NAV statement', stale: false } }) }],
+        pnl: { account: { unrealized: 76_000, total: 76_000 } },
+        nav: { account: 4_076_000, book: 6_076_000 },
+        balance: { account: { positions: 2_576_000, assets: 4_076_000, netAssets: 4_076_000 } },
+      },
+    },
+    {
+      // Wednesday 1 July 2026: the dealing date has passed. It waits, visibly, for its NAV; the April NAV is now 62 days old.
+      id: 'dealing-date-waits', covers: 'redeem', action: 'clock', to: '2026-07-01T14:00:00.000Z',
+      expect: {
+        lifecycle: [{ type: 'manual.redemption', instrument: 'main', dueDate: '2026-06-30', status: 'blocked', owner: 'account', reason: 'Waiting for the NAV per share of the dealing date 2026-06-30, entered by hand (Lifecycle, Redemption at NAV).' }],
+        positions: [{ ...HF_POS, qty: 2000, cost: 2_500_000, value: 2_576_000, freshness: 'stale',
+          manual: hfM({ redemptions: HF_NOTICE, noticed: 2000, valuation: { date: '2026-04-30', source: 'Harbourside Fund Services, April 2026 NAV statement', stale: true } }) }],
+        provisional: { account: true, book: true },
+      },
+    },
+    { id: 'june-nav-date', action: 'clock', to: '2026-07-13T14:00:00.000Z', expect: {} }, // Monday 13 July 2026
+    {
+      // NAV for 30 June: 1,320.00. Gate: 50% of the 2,000 held = 1,000 shares now (1,320,000), 1,000 carried to 30 September.
+      // Paid 30 June + 10 business days on the USD calendar = 14 July. Cost removed 1,000 x 1,250 = 1,250,000; realized 70,000.
+      id: 'redemption-q2', covers: 'redeem', action: 'lifecycle', lot: 'shares', body: { action: 'redemption', nav: 1320 },
+      expect: {
+        events: [{ type: 'manual.redemption', summary: 'Redemption of 1,000 shares of KPGM-A at the NAV of 2026-06-30, 1,320.00 per share (entered by hand): 1,320,000.00 USD paid 2026-07-14; gate 50% of 2,000 held at the first dealing date = 1,000; 1,000 carried to the dealing date 2026-09-30', owner: 'account', date: '2026-07-13' }],
+        cash: { account: { USD: { settled: 1_500_000, unsettled: 1_320_000, availableToTrade: 2_820_000 } } },
+        positions: [{ ...HF_POS, qty: 1000, avgCost: 1250, cost: 1_250_000, price: 1320, value: 1_320_000, unrealized: 70_000, freshness: 'manual',
+          manual: hfM({ redemptions: [{ noticeDate: '2026-04-13', dealingDate: '2026-09-30', shares: 1000 }], noticed: 1000, valuation: { date: '2026-06-30', source: 'NAV per share struck for the dealing date 2026-06-30 (redemption)', stale: false } }) }],
+        holdings: { main: { long: 1000, short: 0, net: 1000 } },
+        pending: [{ instrument: 'main', lot: 'shares', owner: 'account', dueDate: '2026-07-14', amount: 1_320_000, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'manual.redemption', instrument: 'main', dueDate: '2026-09-30', status: 'pending', owner: 'account' }],
+        pnl: { account: { realized: 70_000, unrealized: 70_000, total: 140_000 } },
+        nav: { account: 4_140_000, book: 6_140_000 }, // 1,500,000 + 1,320,000 receivable + 1,320,000
+        provisional: { account: false, book: false },
+        balance: { account: { cash: 1_500_000, receivable: 1_320_000, positions: 1_320_000, assets: 4_140_000, netAssets: 4_140_000 } },
+      },
+    },
+    {
+      id: 'redemption-q2-paid', covers: 'settlement', action: 'clock', to: '2026-07-14T14:00:00.000Z',
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 1,320,000.00 USD into settled cash', cash: { USD: 1_320_000 }, date: '2026-07-14' }],
+        cash: { account: { USD: { settled: 2_820_000, unsettled: 0, availableToTrade: 2_820_000 } } },
+        pending: [],
+        balance: { account: { cash: 2_820_000, receivable: null } },
+      },
+    },
+    { id: 'august-statement-date', action: 'clock', to: '2026-09-14T14:00:00.000Z', expect: {} }, // Monday 14 September 2026
+    {
+      id: 'valuation-aug', covers: 'valuation', action: 'lifecycle', lot: 'shares', body: { action: 'valuation', value: 1342, asOf: '2026-08-31', source: 'Harbourside Fund Services, August 2026 NAV statement' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of KPGM-A entered by hand: 1,342.00 NAV per share, as of 2026-08-31, source: Harbourside Fund Services, August 2026 NAV statement. A manual input, not a market quote' }],
+        positions: [{ ...HF_POS, qty: 1000, cost: 1_250_000, price: 1342, value: 1_342_000, unrealized: 92_000, freshness: 'manual',
+          manual: hfM({ redemptions: [{ noticeDate: '2026-04-13', dealingDate: '2026-09-30', shares: 1000 }], noticed: 1000, valuation: { date: '2026-08-31', source: 'Harbourside Fund Services, August 2026 NAV statement', stale: false } }) }],
+        pnl: { account: { unrealized: 92_000, total: 162_000 } },
+        nav: { account: 4_162_000, book: 6_162_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 1_342_000, assets: 4_162_000, netAssets: 4_162_000 } },
+      },
+    },
+    {
+      id: 'second-dealing-date-waits', covers: 'redeem', action: 'clock', to: '2026-10-01T14:00:00.000Z',
+      expect: { lifecycle: [{ type: 'manual.redemption', instrument: 'main', dueDate: '2026-09-30', status: 'blocked', owner: 'account', reason: 'Waiting for the NAV per share of the dealing date 2026-09-30, entered by hand (Lifecycle, Redemption at NAV).' }] },
+    },
+    { id: 'september-nav-date', action: 'clock', to: '2026-10-13T14:00:00.000Z', expect: {} }, // Tuesday 13 October 2026
+    {
+      // NAV for 30 September: 1,355.00. Gate 50% of the 2,000 held at the first dealing date = 1,000: the last 1,000 shares go.
+      // Paid 30 September + 10 business days on the USD calendar, skipping Columbus Day (12 October) = 15 October.
+      id: 'redemption-q3', covers: 'close', action: 'lifecycle', lot: 'shares', body: { action: 'redemption', nav: 1355 },
+      expect: {
+        events: [{ type: 'manual.redemption', summary: 'Redemption of 1,000 shares of KPGM-A at the NAV of 2026-09-30, 1,355.00 per share (entered by hand): 1,355,000.00 USD paid 2026-10-15; gate 50% of 2,000 held at the first dealing date = 1,000', owner: 'account' }],
+        cash: { account: { USD: { settled: 2_820_000, unsettled: 1_355_000, availableToTrade: 4_175_000 } } },
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', lot: 'shares', owner: 'account', dueDate: '2026-10-15', amount: 1_355_000, ccy: 'USD', into: 'cash' }],
+        lifecycle: [],
+        pnl: { account: { realized: 175_000, unrealized: 0, total: 175_000 } }, // 70,000 + (1,355,000 - 1,250,000)
+        nav: { account: 4_175_000, book: 6_175_000 },
+        balance: { account: { cash: 2_820_000, receivable: 1_355_000, positions: null, assets: 4_175_000, netAssets: 4_175_000 } },
+      },
+    },
+    {
+      id: 'redemption-q3-paid', covers: 'settlement', action: 'clock', to: '2026-10-15T14:00:00.000Z',
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 1,355,000.00 USD into settled cash', cash: { USD: 1_355_000 }, date: '2026-10-15' }],
+        cash: { account: { USD: { settled: 4_175_000, unsettled: 0, availableToTrade: 4_175_000 } }, treasury: { USD: { settled: 2_000_000 } } },
+        pending: [],
+        balance: { account: { cash: 4_175_000, receivable: null, assets: 4_175_000, liabilities: 0, netAssets: 4_175_000 } },
+      },
+    },
+  ],
+};
+
+export default [privateEquity, ventureCapital, hedgeFund];

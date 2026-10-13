@@ -310,4 +310,144 @@ const fxForward = {
   ],
 };
 
-export default [fxForward];
+// ---------------------------------------------------------------------------------------------
+// ndf
+// ---------------------------------------------------------------------------------------------
+// A USD/INR non-deliverable forward owned by Treasury: rupees cannot be delivered offshore, so the contract
+// is settled in US dollars against the rupee reference rate of its fixing date. Treasury sells 5,000,000 USD
+// forward at 87.50 INR per USD, fixing Thursday 30 April 2026, value date Monday 4 May 2026 (two business
+// days after the fixing). The fixing source is the USD/INR pair registered beside it; its close for the
+// fixing date stands in for the reference rate (a fixture standing in for Shaffer MarketData).
+// Collateral: explicitly uncollateralized (chosen on the contract, not assumed).
+// The contract's own currency is INR (its forward rate is INR per USD), so its value is in rupees and is
+// converted at the USD/INR fixture (87.40) for the reporting currency; it settles in USD.
+// Settlement in USD: quantity x (fixing - dealt) / fixing, positive received.
+// Held across Good Friday (3 April 2026). No commission (the dealer's spread is in the rate).
+const ndf = {
+  productId: 'ndf',
+  title: 'USD/INR non-deliverable forward sold by Treasury, cash-settled in USD against the 30 April 2026 fixing, partly terminated early, uncollateralized',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: ['Kind of forward (Non-deliverable forward)', 'Base currency', 'Quote currency', 'Value date', 'Fixing date', 'Settlement currency', 'Fixing source (currency pair)', 'Counterparty', 'Collateral basis (Uncollateralized)', 'Trading owner (Treasury)', 'Action (Sell)', 'quantity', 'State a fill price'],
+    automaticInputs: ['mark (quote fixture standing in for a dealer indication)', 'USD/INR rate for the reporting currency (FX fixture)', 'the fixing: close of the USD/INR pair on the fixing date (fixture standing in for the reference rate)'],
+    manualInputs: ['dealt forward rate (stated fill price)', 'early termination of 2,000,000 at a stated amount in USD (position Lifecycle menu)'],
+    settlement: 'No cash at entry; cash settlement in USD on the value date of quantity x (fixing - dealt) / fixing, booked when the fixing arrives; the termination amount settles two business days after it is agreed',
+    lifecycle: 'Settlement against the fixing (automatic), waiting visibly while the fixing is missing and completed when it arrives; early termination of part of the notional at a stated amount (manual)',
+    accounting: 'Nil cost; value and unrealized P&L in INR = quantity x (mark - dealt), converted to USD at the fixture; termination amount and settlement amount realized in USD',
+    collateral: 'Explicitly uncollateralized: no independent amount, no variation margin',
+  },
+  start: AM('2026-03-02'),
+  settlementCheck: { lag: 0, holidays: ['2026-04-03'] },
+  book: {
+    name: 'Matrix NDF', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 10_000_000 }],
+    account: { name: 'Rates', funding: [{ ccy: 'USD', amount: 100_000 }] },
+    settings: { fees: { forward: { perUnit: 0, minimum: 0, bps: 0 }, fx: { perUnit: 0, minimum: 0, bps: 0 } }, fill: FILL, settlement: {} }, // the pair is not traded here
+  },
+  instruments: {
+    pair: { productId: 'fx_spot', name: 'USD/INR spot', symbol: 'USDINR', marketView: 'FOREIGN_CASH', venueType: 'otc', tradingCcy: 'INR', terms: { base: 'USD', quote: 'INR', settleDays: 2 } },
+    main: {
+      productId: 'ndf', name: 'USD/INR non-deliverable forward, fixing 30 April 2026', symbol: 'USDINR-NDF0430', marketView: 'FOREIGN_DERIV', venueType: 'otc', jurisdiction: 'US', tradingCcy: 'INR', underlying: 'pair',
+      terms: { forwardType: 'ndf', base: 'USD', quote: 'INR', valueDate: '2026-05-04', fixingDate: '2026-04-30', settleCcy: 'USD', counterparty: 'Harbourline Bank N.A., New York', collateralBasis: { type: 'uncollateralized' } },
+    },
+  },
+  quotes: { main: { bid: 87.48, ask: 87.52, last: 87.50, bidSize: 50_000_000, askSize: 50_000_000 } },
+  fx: { 'USD/INR': 87.40 },
+  expectAtStart: {
+    ...NO_STATE,
+    cash: { account: { USD: cashOf(100_000) }, treasury: { USD: cashOf(9_900_000) } },
+    positions: [], otc: [],
+    nav: { account: 100_000, treasury: 9_900_000, book: 10_000_000 },
+  },
+  steps: [
+    {
+      id: 'open-sell', covers: ['open short', 'treasury'], action: 'ticket', owner: 'treasury', instrument: 'main', side: 'sell', qty: 5_000_000, as: 'hedge', order: { statedPrice: 87.50 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 5_000_000, estimate: 87.50, model: 'stated-price', settleDate: '2026-05-04', cash: 0, fees: 0 }] },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 5_000_000, avgPrice: 87.50 }] },
+        events: [{ type: 'strategy.submitted', owner: 'treasury' }, { type: 'trade.fill', summary: 'Sold forward 5,000,000 USDINR-NDF0430 @ 87.50 for 2026-05-04', owner: 'treasury', date: '2026-03-02' }],
+        positions: [{ instrument: 'main', lot: 'hedge', owner: 'treasury', direction: 'short', qty: -5_000_000, avgCost: 87.50, cost: 0, price: 87.50, value: 0, unrealized: 0, notional: 437_500_000, margin: 0 }], // 5,000,000 x 87.50 INR
+        holdings: { main: { long: 0, short: 5_000_000, net: -5_000_000 } },
+        lifecycle: [{ type: 'forward.maturity', instrument: 'main', dueDate: '2026-04-30', status: 'pending', owner: 'treasury' }],
+        pnl: { treasury: { realized: 0, commissions: 0, unrealized: 0, total: 0 } },
+        balance: { treasury: { cash: 9_900_000, assets: 9_900_000, liabilities: 0, netAssets: 9_900_000 } },
+        otc: [{ instrument: 'main', lot: 'hedge', owner: 'treasury', qty: -5_000_000, basis: 'uncollateralized', agreement: null, flagged: false, mark: 87.50, markValue: 0, iaPosted: 0, vmPosted: 0, vmHeld: 0 }],
+      },
+    },
+    {
+      // The dealer's indication moves to 87.80: -5,000,000 x (87.80 - 87.50) = -1,500,000.00 INR; at 87.40 INR per USD
+      // that is -1,500,000 / 87.40 = -17,162.4714 = -17,162.47 USD.
+      id: 'mark', covers: ['mark', 'reporting currency'], action: 'quote', instrument: 'main', quote: { bid: 87.78, ask: 87.82, last: 87.80, bidSize: 50_000_000, askSize: 50_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'hedge', owner: 'treasury', direction: 'short', qty: -5_000_000, avgCost: 87.50, cost: 0, price: 87.80, value: -1_500_000, unrealized: -1_500_000, notional: 437_500_000, margin: 0 }],
+        pnl: { treasury: { unrealized: -17_162.47, total: -17_162.47 } },
+        nav: { treasury: 9_882_837.53, book: 9_982_837.53 },
+        balance: { treasury: { positions: -17_162.47, assets: 9_882_837.53, netAssets: 9_882_837.53 } }, // a contract worth less than nothing is carried at its (negative) value
+        otc: [{ instrument: 'main', lot: 'hedge', owner: 'treasury', qty: -5_000_000, basis: 'uncollateralized', agreement: null, flagged: false, mark: 87.80, markValue: -1_500_000, iaPosted: 0, vmPosted: 0, vmHeld: 0 }],
+      },
+    },
+    {
+      // 2,000,000 of the 5,000,000 is terminated early at an amount agreed with the dealer: 6,900.00 USD paid, in the
+      // settlement currency, two business days later (Wednesday 4 March). Realized -6,900.00 USD. What is left:
+      // -3,000,000 x 0.30 = -900,000.00 INR = -900,000 / 87.40 = -10,297.4828 = -10,297.48 USD.
+      id: 'terminate-part', covers: ['early termination', 'reduce'], action: 'lifecycle', owner: 'treasury', lot: 'hedge', body: { action: 'terminate', amount: -6_900, qty: 2_000_000 },
+      expect: {
+        events: [{ type: 'forward.termination', summary: 'Terminated early: 2,000,000 of USDINR-NDF0430 (dealt 87.50) at a stated amount, paid 6,900.00 USD on 2026-03-04; 3,000,000 remains', owner: 'treasury', date: '2026-03-02' }],
+        cash: { treasury: { USD: cashOf(9_900_000, { unsettled: -6_900 }) } },
+        positions: [{ instrument: 'main', lot: 'hedge', owner: 'treasury', direction: 'short', qty: -3_000_000, avgCost: 87.50, cost: 0, price: 87.80, value: -900_000, unrealized: -900_000, notional: 262_500_000, margin: 0 }],
+        holdings: { main: { long: 0, short: 3_000_000, net: -3_000_000 } },
+        pending: [{ instrument: 'main', lot: 'hedge', owner: 'treasury', dueDate: '2026-03-04', amount: -6_900, ccy: 'USD', into: 'cash' }],
+        pnl: { treasury: { realized: -6_900, unrealized: -10_297.48, total: -17_197.48 } },
+        nav: { treasury: 9_882_802.52, book: 9_982_802.52 }, // 9,900,000 - 6,900 - 10,297.48
+        balance: { treasury: { cash: 9_900_000, positions: -10_297.48, payable: 6_900, assets: 9_889_702.52, liabilities: 6_900, netAssets: 9_882_802.52 } },
+        otc: [{ instrument: 'main', lot: 'hedge', owner: 'treasury', qty: -3_000_000, basis: 'uncollateralized', agreement: null, flagged: false, mark: 87.80, markValue: -900_000, iaPosted: 0, vmPosted: 0, vmHeld: 0 }],
+      },
+    },
+    {
+      id: 'termination-settles', covers: 'settlement', action: 'clock', to: AM('2026-03-04'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 6,900.00 USD from settled cash', cash: { USD: -6_900 }, owner: 'treasury', date: '2026-03-04' }],
+        cash: { treasury: { USD: cashOf(9_893_100) } },
+        pending: [],
+        balance: { treasury: { cash: 9_893_100, payable: null, assets: 9_882_802.52, liabilities: 0 } },
+      },
+    },
+    {
+      // Thursday 30 April, the fixing date (over Good Friday). No fixing has been supplied: the settlement waits, visibly.
+      id: 'fixing-date-no-fixing', covers: ['fixing', 'holiday'], action: 'clock', to: AM('2026-04-30'),
+      expect: {
+        lifecycle: [{ type: 'forward.maturity', instrument: 'main', dueDate: '2026-04-30', status: 'blocked', owner: 'treasury' }],
+      },
+    },
+    { id: 'fixing-date-evening', action: 'clock', to: EOD('2026-04-30'), expect: {} },
+    {
+      // The fixing arrives: 87.10. -3,000,000 x (87.10 - 87.50) = 1,200,000.00 INR, in USD at the fixing:
+      // 1,200,000 / 87.10 = 13,777.2675 = 13,777.27 USD received on the value date, Monday 4 May. Realized in all:
+      // -6,900 + 13,777.27 = 6,877.27.
+      id: 'fixing-arrives', covers: ['fixing', 'settlement'], action: 'close_price', instrument: 'pair', date: '2026-04-30', value: 87.10,
+      expect: {
+        events: [{ type: 'forward.settlement', summary: 'NDF fixed at 87.10 against 87.50: receivable 13,777.27 USD on 2026-05-04', owner: 'treasury', date: '2026-04-30' }],
+        cash: { treasury: { USD: cashOf(9_893_100, { unsettled: 13_777.27, trade: 9_906_877.27, withdraw: 9_893_100 }) } },
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', lot: 'hedge', owner: 'treasury', dueDate: '2026-05-04', amount: 13_777.27, ccy: 'USD', into: 'cash' }],
+        lifecycle: [],
+        pnl: { treasury: { realized: 6_877.27, unrealized: 0, total: 6_877.27 } },
+        nav: { treasury: 9_906_877.27, book: 10_006_877.27 },
+        balance: { treasury: { cash: 9_893_100, positions: null, receivable: 13_777.27, assets: 9_906_877.27, liabilities: 0, netAssets: 9_906_877.27 } },
+        otc: [],
+      },
+    },
+    {
+      id: 'value-date', covers: 'settlement', action: 'clock', to: AM('2026-05-04'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 13,777.27 USD into settled cash', cash: { USD: 13_777.27 }, owner: 'treasury', date: '2026-05-04' }],
+        cash: { treasury: { USD: cashOf(9_906_877.27) } },
+        pending: [],
+        balance: { treasury: { cash: 9_906_877.27, receivable: null, assets: 9_906_877.27, liabilities: 0, netAssets: 9_906_877.27 } },
+      },
+    },
+  ],
+};
+
+export default [fxForward, ndf];

@@ -31,7 +31,7 @@
 
 ## In progress
 - Part 1 done apart from the 1-point save (retry npm test).
-- Next product: ndf.
+- ndf: passed engine / API / browser (saved 0.2). Next product: fra.
 
 ## Next
 1. Part 2: forwards family, 8 products, one at a time, save 0.2 each.

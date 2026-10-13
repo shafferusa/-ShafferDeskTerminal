@@ -951,7 +951,8 @@ const openRepo = {
           { type: 'repo.open', summary: 'Repo: received 3,700,000.00 USD against 50,000 RIDG at 5.100% fixed, open', cash: { USD: 3_700_000 }, owner: 'account', date: '2026-03-03' },
         ],
         cash: { account: { USD: { settled: 3_999_000, availableToTrade: 3_999_000, availableToWithdraw: 3_999_000, borrowed: 3_700_000 } } },
-        positions: [{ ...SHARES, pledged: 50_000 }, { ...OR_POS, accrued: 0 }],
+        positions: [ // sorted by instrument key: orepo, stock
+          { ...OR_POS, accrued: 0 }, { ...SHARES, pledged: 50_000 }],
         lifecycle: [], // open: nothing is scheduled
         borrowings: [{ owner: 'account', origin: 'account', family: 'repo', type: 'Repo (cash borrowed against securities)', lot: 'orepo', principal: 3_700_000, principalRc: 3_700_000, ccy: 'USD', rate: 0.051, rateType: 'fixed', rateText: '5.100% fixed', dayCount: 'ACT/360',
           accrued: 0, costToDate: 0, feesToDate: 0, startDate: '2026-03-03', maturity: null, term: 'open', lender: 'Wexford Prime Services', collateral: 'RIDG: 50,000 pledged, haircut 10.00%', schedule: 'Interest paid at repurchase', nextPayment: null, nextPaymentType: null, blocked: null }],
@@ -961,13 +962,13 @@ const openRepo = {
         },
         oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'orepo', principal: 3_700_000, ccy: 'USD', accrued: 0 }], treasuryOwn: [], accounts: { account: { cashBorrowed: 3_700_000 } } },
       },
-    },
+    }),
     {
       // Tuesday 10 March: the run of Monday 9 March accrues 6 days (3 to 9 March): 6 x 524.166667 = 3,145.00.
       id: 'a-week-runs', covers: 'interest accrual', action: 'clock', to: AT_1000('2026-03-10'),
       expect: {
         events: [{ type: 'accrual.interest', summary: 'Repo interest accrued on Wexford open repo: 3,145.00 USD', owner: 'account', date: '2026-03-10' }],
-        positions: [{ ...SHARES, pledged: 50_000 }, { ...OR_POS, accrued: -3_145 }],
+        positions: [{ ...OR_POS, accrued: -3_145 }, { ...SHARES, pledged: 50_000 }],
         borrowings: [{ lot: 'orepo', accrued: 3_145, costToDate: 3_145 }],
         pnl: { account: { borrowFunding: -3_145, unrealized: -1_000, total: -4_145 }, book: { total: -4_145 } },
         nav: { account: 4_495_855, book: 4_995_855 },
@@ -983,7 +984,7 @@ const openRepo = {
           { type: 'accrual.interest', summary: 'Repo interest accrued on Wexford open repo: 524.17 USD', owner: 'account', date: '2026-03-10' },
           { type: 'rate.reset', summary: 'Rate on Wexford open repo reset to 5.350%', owner: 'account', date: '2026-03-10' },
         ],
-        positions: [{ ...SHARES, pledged: 50_000 }, { ...OR_POS, accrued: -3_669.17 }],
+        positions: [{ ...OR_POS, accrued: -3_669.17 }, { ...SHARES, pledged: 50_000 }],
         borrowings: [{ lot: 'orepo', rate: 0.0535, rateText: '5.350% fixed', accrued: 3_669.17, costToDate: 3_669.17 }],
         pnl: { account: { borrowFunding: -3_669.17, total: -4_669.17 }, book: { total: -4_669.17 } },
         nav: { account: 4_495_330.83, book: 4_995_330.83 },
@@ -1009,7 +1010,7 @@ const openRepo = {
       id: 'monday-16-march', covers: 'interest accrual', action: 'clock', to: AT_1000('2026-03-16'),
       expect: {
         events: [{ type: 'accrual.interest', summary: 'Repo interest accrued on Wexford open repo: 1,649.58 USD', owner: 'account', date: '2026-03-16' }],
-        positions: [{ ...SHARES, pledged: 50_000 }, { ...OR_POS, accrued: -5_318.75 }],
+        positions: [{ ...OR_POS, accrued: -5_318.75 }, { ...SHARES, pledged: 50_000 }],
         borrowings: [{ lot: 'orepo', accrued: 5_318.75, costToDate: 5_318.75 }],
         pnl: { account: { borrowFunding: -5_318.75, total: -6_318.75 }, book: { total: -6_318.75 } },
         nav: { account: 993_681.25, book: 4_993_681.25 },

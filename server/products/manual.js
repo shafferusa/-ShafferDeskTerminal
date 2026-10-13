@@ -563,7 +563,10 @@ export function manualPlugin(base, { standardSettleDate, paymentCalendarFor }) {
       const nav = num(b.nav);
       need(nav !== null && nav > 0, `Enter the NAV per share struck for the dealing date ${req.dealingDate}.`);
       const held = app.positions.get(pos.id).qty;
-      const cap = t.gatePct ? round(held * t.gatePct, 8) : held;
+      // Investor-level gate: on each dealing date at most gatePct of the shares held at the request's first dealing date
+      // (so a full redemption under a 25% gate is paid over four dealing dates).
+      const base = req.gateBase ?? held;
+      const cap = t.gatePct ? round(base * t.gatePct, 8) : held;
       const shares = round(Math.min(req.shares, cap, held), 8);
       const left = round(req.shares - shares, 8);
       const cal = paymentCalendarFor(inst);
@@ -572,9 +575,9 @@ export function manualPlugin(base, { standardSettleDate, paymentCalendarFor }) {
       storeValuation(app, inst, { perUnit: nav, date: req.dealingDate, source: `NAV per share struck for the dealing date ${req.dealingDate} (redemption)`, kind: 'redemption-nav' });
       const proceeds = money(shares * nav * inst.multiplier, ccy);
       const r = closeBy(app, ctx, { qty: shares, price: nav, settleDate: payDate < today ? today : payDate, type: 'manual.redemption',
-        text: `Redemption of ${fmtQty(shares)} shares of ${label(inst)} at the NAV of ${req.dealingDate}, ${fmtPx(nav)} per share (entered by hand): ${fmt(proceeds, ccy)} paid ${payDate}${t.gatePct ? `; gate ${round(t.gatePct * 100, 4)}% of ${fmtQty(held)} held = ${fmtQty(cap)}` : ''}${left > 0 ? `; ${fmtQty(left)} carried to the dealing date ${next}` : ''}`,
+        text: `Redemption of ${fmtQty(shares)} shares of ${label(inst)} at the NAV of ${req.dealingDate}, ${fmtPx(nav)} per share (entered by hand): ${fmt(proceeds, ccy)} paid ${payDate}${t.gatePct ? `; gate ${round(t.gatePct * 100, 4)}% of ${fmtQty(base)} held at the first dealing date = ${fmtQty(cap)}` : ''}${left > 0 ? `; ${fmtQty(left)} carried to the dealing date ${next}` : ''}`,
         data: { requestId: req.id, dealingDate: req.dealingDate, nav, gateCap: cap, carried: left, payDate } });
-      const redemptions = (m.redemptions || []).map((x) => (x.id === req.id ? (left > 0 ? { ...x, shares: left, dealingDate: next } : null) : x)).filter(Boolean);
+      const redemptions = (m.redemptions || []).map((x) => (x.id === req.id ? (left > 0 ? { ...x, shares: left, dealingDate: next, gateBase: base } : null) : x)).filter(Boolean);
       setManual(app, pos, { redemptions });
       for (const task of openTasks(app, pos, 'manual.redemption').filter((x) => x.data?.key === req.id && x.due_date === req.dealingDate)) app.tasks.done(task.id, r.eventId);
       if (left > 0) app.tasks.schedule({ bookId: book.id, unitId: unit.id, positionId: pos.id, instrumentId: inst.id, strategyId: pos.strategy_id, type: 'manual.redemption', dueDate: next, data: { key: req.id } });

@@ -173,7 +173,7 @@ function LifecycleDialog({ p, action, terms, onClose, onDone }) {
   const [error, setError] = useState(null);
   const set = (patch) => setF({ ...f, ...patch });
   const body = { exercise: { contracts: f.contracts }, assign: { contracts: f.contracts }, deliver: { contracts: f.contracts }, terminate: { amount: f.amount, qty: f.qty, settleDate: f.settleDate || undefined }, barrier: { note: f.note }, redeem: { price: f.price, face: f.face, label: f.label || undefined }, recall: { qty: f.qty, days: f.days ?? undefined }, cashflow: { category: f.category, amount: f.amount, note: f.note }, put: { face: f.face, label: f.label || undefined }, convert: { face: f.face, sharePrice: f.sharePrice ?? undefined, settlement: f.settlement || 'shares' } }[action];
-  const ready = { exercise: f.contracts > 0, assign: f.contracts > 0, deliver: f.contracts > 0, terminate: isNum(f.amount) && f.qty > 0, barrier: true, redeem: isNum(f.price) && f.price >= 0 && f.face > 0, recall: f.qty > 0, cashflow: isNum(f.amount) && f.amount !== 0, put: f.face > 0, convert: f.face > 0 && (f.settlement !== 'cash' || isNum(f.sharePrice)) }[action];
+  const ready = { exercise: f.contracts > 0, assign: f.contracts > 0, deliver: f.contracts > 0, terminate: isNum(f.amount) && f.qty > 0, barrier: true, redeem: isNum(f.price) && f.price >= 0 && f.face > 0, recall: f.qty > 0, cashflow: isNum(f.amount) && f.amount !== 0, put: f.face > 0, convert: f.face > 0 }[action];
   const go = async () => {
     setBusy(true); setError(null);
     try {

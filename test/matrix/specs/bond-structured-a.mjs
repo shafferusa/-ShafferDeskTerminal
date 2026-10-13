@@ -1313,4 +1313,206 @@ const convertibleBond = {
   ],
 };
 
-export default [tips, foreignInflationLinked, callableBond, puttableBond, convertibleBond];
+// ---------------------------------------------------------------------------------------------
+// exchangeable_bond
+// ---------------------------------------------------------------------------------------------
+// A holding company's zero-coupon bonds exchangeable into the shares of ANOTHER company it owns a stake in: Aldermoor
+// Holdings Inc issues them; they exchange into Pell Mineral Resources Inc. (NYSE, registered in the same scenario) at 30
+// shares per 1,000 face (an exchange price of 33.33). Zero coupon: no accrued interest and no coupons; redeemed at par on
+// 30 September 2030 if not exchanged. T+1 on the US bond calendar, pieces of 1,000. As usual for exchangeables, the issuer
+// may elect to pay the holder the shares' value in cash instead of delivering the shares.
+//   - Bought on Friday 6 October 2028 for settlement on Tuesday 10 October, over Columbus Day (bond market closed, stock
+//     market open). Increased, then the shares rally from 32 to 36 and the bonds with them; part is sold.
+//   - 600,000 face is exchanged into 18,000 Pell shares (no fraction), recorded by hand from the Lifecycle menu: the shares
+//     open at the bonds' carrying cost. The last 400,000 is exchanged with the issuer electing cash settlement: it pays the
+//     value of 12,000 shares at 36.00, entered by hand; the bonds close with a realized gain. Cash settlement without a
+//     share price is refused.
+//   - The shares are sold on their own ticket (stock ticket, T+1 on the US stock calendar).
+// Commission: bonds 0.5 basis point of clean principal; shares 0.005 a share, at least 1.00 an order.
+const exchangeableBond = {
+  productId: 'exchangeable_bond',
+  title: 'Aldermoor Holdings 0% bonds 2030 exchangeable into Pell Mineral shares: bought over Columbus Day, increased, partly sold, exchanged by hand into the other issuer\'s shares, the rest settled in cash at the issuer\'s election, shares sold',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount (a multiple of 1,000)'],
+    automaticInputs: ['bid, ask, last in % of par and the shares\' bid, ask, last (quote fixtures standing in for Shaffer MarketData)', 'fill price and fill model', 'settlement date from the instrument convention and settlement calendar', 'commission from the Book fee schedule'],
+    manualInputs: ['Registration: Shares delivered on conversion (another issuer\'s stock) and Conversion ratio (shares per 1,000 face)', 'Exchange recorded by hand from the position\'s Lifecycle menu (Conversion into shares: Face amount converted, Settlement shares or cash, Share price)'],
+    settlement: 'Bonds T+1 on the US bond calendar (Columbus Day skipped); shares T+1 on the US stock calendar; a cash-settled exchange is paid at once',
+    lifecycle: 'Zero coupon: no accrual or coupon; redemption at par scheduled at maturity and cancelled once all is exchanged; exchange into shares (simulated delivery) or into cash at the issuer\'s election',
+    accounting: 'Shares carried at the bonds\' carrying cost; a cash-settled exchange realizes the shares\' value against the bonds\' cost; realized P&L on the sales; commissions expensed',
+    collateral: 'None for long positions',
+  },
+  start: EDT('2028-10-06'), // Friday
+  settlementCheck: { lag: 1, holidays: ['2028-10-09'] }, // Columbus Day: US bond market closed
+  book: {
+    name: 'Matrix exchangeable bond', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 3_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 2_000_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.5 }, equity: { perUnit: 0.005, minimum: 1, bps: 0 } }, fill: { ...FILL, halfSpreadBps: { bond: 3, equity: 2 } }, settlement: { bond: 1, equity: 1 }, short: SHORT },
+  },
+  instruments: {
+    stock: { productId: 'common_stock', name: 'Pell Mineral Resources Inc.', symbol: 'PELL', marketView: 'US_CASH', venue: 'NYSE', venueType: 'exchange', venueCountry: 'US', issuer: 'Pell Mineral Resources Inc.', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', terms: {} },
+    main: { productId: 'exchangeable_bond', name: 'Aldermoor Holdings Inc 0% Exchangeable Bonds 30-Sep-2030 (into Pell Mineral Resources shares)', symbol: 'ALDER-0-30EX', marketView: 'US_CASH', venueType: 'otc', issuer: 'Aldermoor Holdings Inc', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01, underlying: 'stock',
+      terms: { couponType: 'zero', maturity: '2030-09-30', issueDate: '2025-09-30', dayCount: 'ACT/ACT', redemption: 100, minDenomination: 1_000, seniority: 'Senior unsecured', conversionRatio: 30 } },
+  },
+  quotes: { main: { bid: 103.4, ask: 103.8, last: 103.6, bidSize: 10_000_000, askSize: 10_000_000 }, stock: { bid: 31.95, ask: 32.05, last: 32, bidSize: 100_000, askSize: 100_000 } },
+  expectAtStart: { ...startState(2_000_000, 1_000_000), cash: { account: usdCash(2_000_000), treasury: usdCash(1_000_000) } },
+  steps: [
+    {
+      // T+1 from Friday is Monday 9 October, Columbus Day: the bonds settle Tuesday 10 October. No accrued interest (zero coupon).
+      id: 'open', covers: ['open', 'market holiday'], action: 'ticket', instrument: 'main', side: 'buy', qty: 800_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 800_000, estimate: 103.8, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2028-10-10', calendar: 'USBOND',
+            gross: 830_400, accrued: 0, cash: -830_400, fees: 41.52 }], // 800,000 x 103.80 / 100; 0.5 bp
+          cash: { USD: { purchases: 830_400, fees: 41.52, required: 830_441.52, available: 2_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 800_000, avgPrice: 103.8, fills: [{ qty: 800_000, price: 103.8, model: 'quoted-bid-ask', settleDate: '2028-10-10', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 800,000 ALDER-0-30EX @ 103.80 USD', owner: 'account', date: '2028-10-06' }],
+        cash: { account: { USD: { settled: 2_000_000, unsettled: -830_441.52, availableToTrade: 1_169_558.48 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 800_000, avgCost: 103.8, cost: 830_400, price: 103.6, value: 828_800, unrealized: -1_600, accrued: 0, priceSource: 'Test fixture' }],
+        holdings: { main: { long: 800_000, short: 0, net: 800_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2028-10-10', amount: -830_441.52, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'bond.maturity', instrument: 'main', dueDate: '2030-09-30', status: 'pending' }], // a Monday; no coupon
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -41.52, fees: 0, borrowFunding: 0, unrealized: -1_600, total: -1_641.52 } },
+        nav: { account: 1_998_358.48, book: 2_998_358.48 },
+        balance: { account: { cash: 2_000_000, positions: 828_800, payable: 830_441.52, assets: 2_828_800, liabilities: 830_441.52, netAssets: 1_998_358.48 } },
+      },
+    },
+    {
+      id: 'settle-after-columbus-day', covers: ['settlement', 'market holiday'], action: 'clock', to: EDT('2028-10-10'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 830,441.52 USD from settled cash', cash: { USD: -830_441.52 }, date: '2028-10-10' }],
+        cash: { account: { USD: { settled: 1_169_558.48, unsettled: 0, availableToTrade: 1_169_558.48 } } },
+        pending: [],
+        balance: { account: { cash: 1_169_558.48, payable: null, assets: 1_998_358.48, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'increase', covers: 'increase', action: 'resize', lot: 'lot', factor: 1.5, // 800,000 -> 1,200,000
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', qty: 400_000, estimate: 103.8, settleDate: '2028-10-11', gross: 415_200, accrued: 0, cash: -415_200, fees: 20.76 }],
+          cash: { USD: { purchases: 415_200, fees: 20.76, required: 415_220.76, available: 1_169_558.48, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 400_000, avgPrice: 103.8 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Bought 400,000 ALDER-0-30EX @ 103.80 USD' }],
+        cash: { account: { USD: { settled: 1_169_558.48, unsettled: -415_220.76, availableToTrade: 754_337.72 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_200_000, cost: 1_245_600, avgCost: 103.8, price: 103.6, value: 1_243_200, unrealized: -2_400, accrued: 0 }],
+        holdings: { main: { long: 1_200_000, short: 0, net: 1_200_000 } },
+        pending: [{ instrument: 'main', dueDate: '2028-10-11', amount: -415_220.76, into: 'cash' }],
+        pnl: { account: { commissions: -62.28, unrealized: -2_400, total: -2_462.28 } },
+        nav: { account: 1_997_537.72, book: 2_997_537.72 },
+        balance: { account: { cash: 1_169_558.48, positions: 1_243_200, payable: 415_220.76, assets: 2_412_758.48, liabilities: 415_220.76, netAssets: 1_997_537.72 } },
+      },
+    },
+    {
+      id: 'settle-increase', covers: 'settlement', action: 'clock', to: EDT('2028-10-11'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 415,220.76 USD from settled cash', cash: { USD: -415_220.76 } }],
+        cash: { account: { USD: { settled: 754_337.72, unsettled: 0, availableToTrade: 754_337.72 } } },
+        pending: [],
+        balance: { account: { cash: 754_337.72, payable: null, assets: 1_997_537.72, liabilities: 0 } },
+      },
+    },
+    { id: 'shares-rally', action: 'quote', instrument: 'stock', quote: { bid: 35.95, ask: 36.05, last: 36, bidSize: 100_000, askSize: 100_000 }, expect: {} },
+    {
+      // Parity is now 30 x 36 / 10 = 108 per 100; the bonds are quoted at 108.20 / 108.60.
+      id: 'bonds-follow', action: 'quote', instrument: 'main', quote: { bid: 108.2, ask: 108.6, last: 108.4, bidSize: 10_000_000, askSize: 10_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_200_000, price: 108.4, value: 1_300_800, unrealized: 55_200 }], // 1,200,000 x 108.40 / 100
+        pnl: { account: { unrealized: 55_200, total: 55_137.72 } },
+        nav: { account: 2_055_137.72, book: 3_055_137.72 },
+        balance: { account: { positions: 1_300_800, assets: 2_055_137.72, netAssets: 2_055_137.72 } },
+      },
+    },
+    {
+      // Realized 216,400 - 200,000 x 103.80% (207,600) = 8,800.
+      id: 'reduce', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 200_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 200_000, estimate: 108.2, settleDate: '2028-10-12', gross: 216_400, accrued: 0, cash: 216_400, fees: 10.82 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 200_000, avgPrice: 108.2 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 200,000 ALDER-0-30EX @ 108.20 USD (realized 8,800.00 USD)' }],
+        cash: { account: { USD: { settled: 754_337.72, unsettled: 216_389.18, availableToTrade: 970_726.90 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_000_000, cost: 1_038_000, avgCost: 103.8, price: 108.4, value: 1_084_000, unrealized: 46_000, accrued: 0 }],
+        holdings: { main: { long: 1_000_000, short: 0, net: 1_000_000 } },
+        pending: [{ instrument: 'main', dueDate: '2028-10-12', amount: 216_389.18, into: 'cash' }],
+        pnl: { account: { realized: 8_800, commissions: -73.1, unrealized: 46_000, total: 54_726.90 } },
+        nav: { account: 2_054_726.90, book: 3_054_726.90 },
+        balance: { account: { cash: 754_337.72, receivable: 216_389.18, positions: 1_084_000, assets: 2_054_726.90, liabilities: 0, netAssets: 2_054_726.90 } },
+      },
+    },
+    {
+      id: 'settle-reduce', covers: 'settlement', action: 'clock', to: EDT('2028-10-12'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 216,389.18 USD into settled cash', cash: { USD: 216_389.18 } }],
+        cash: { account: { USD: { settled: 970_726.90, unsettled: 0, availableToTrade: 970_726.90 } } },
+        pending: [],
+        balance: { account: { cash: 970_726.90, receivable: null, assets: 2_054_726.90, liabilities: 0 } },
+      },
+    },
+    {
+      // 600,000 face into 600 x 30 = 18,000 Pell shares exactly. The bonds out at their carrying cost 1,038,000 x 0.6 = 622,800;
+      // the shares in at 622,800 (average cost 34.60), valued at 36.00: 648,000. No cash, no accrued interest (zero coupon).
+      // Net assets fall 2,400: the bonds were valued at 108.40, the shares they became are worth 108.00 per 100.
+      id: 'exchange-into-shares', covers: ['exchange (by hand)', 'reduce'], action: 'lifecycle', lot: 'lot', body: { action: 'convert', face: 600_000, settlement: 'shares' },
+      expect: {
+        events: [{ type: 'bond.exchange', summary: 'Exchange recorded by hand: 600,000 ALDER-0-30EX into 18,000 PELL (simulated delivery, 30 shares per 1,000 face) at the bonds\' carrying cost 622,800.00 USD', owner: 'account', date: '2028-10-12' }],
+        positions: [
+          { instrument: 'main', lot: 'lot', qty: 400_000, cost: 415_200, avgCost: 103.8, price: 108.4, value: 433_600, unrealized: 18_400, accrued: 0 },
+          { instrument: 'stock', lot: 'lot', owner: 'account', direction: 'long', qty: 18_000, cost: 622_800, avgCost: 34.6, price: 36, value: 648_000, unrealized: 25_200, accrued: 0, priceSource: 'Test fixture' },
+        ],
+        holdings: { main: { long: 400_000, short: 0, net: 400_000 }, stock: { long: 18_000, short: 0, net: 18_000 } },
+        pnl: { account: { unrealized: 43_600, total: 52_326.90 } },
+        nav: { account: 2_052_326.90, book: 3_052_326.90 }, // 970,726.90 + 433,600 + 648,000
+        balance: { account: { positions: 1_081_600, assets: 2_052_326.90, netAssets: 2_052_326.90 } },
+      },
+    },
+    {
+      id: 'cash-settlement-without-price', covers: 'exchange (by hand)', action: 'lifecycle', lot: 'lot', instrument: 'main', body: { action: 'convert', face: 400_000, settlement: 'cash' },
+      status: 'blocked', reason: 'A cash settlement is the shares\' value at a price that must be stated; none is assumed.',
+      expect: { refused: 'Enter the share price the cash settlement is worked out at.' },
+    },
+    {
+      // The issuer elects to settle the last 400,000 in cash: the value of 400 x 30 = 12,000 shares at 36.00 = 432,000, paid now.
+      // The bonds' carrying cost 415,200: realized 16,800. The bonds are gone: the redemption at maturity is cancelled.
+      id: 'exchange-settled-in-cash', covers: ['exchange (by hand)', 'close'], action: 'lifecycle', lot: 'lot', instrument: 'main', body: { action: 'convert', face: 400_000, sharePrice: 36, settlement: 'cash' },
+      expect: {
+        events: [{ type: 'bond.exchange', summary: 'Exchange recorded by hand, settled in cash by the issuer: 400,000 ALDER-0-30EX for the value of 12,000 PELL at 36.00 USD: 432,000.00 USD (realized 16,800.00 USD)', owner: 'account', date: '2028-10-12', cash: { USD: 432_000 } }],
+        cash: { account: { USD: { settled: 1_402_726.90, availableToTrade: 1_402_726.90 } } },
+        positions: [{ instrument: 'stock', lot: 'lot', owner: 'account', direction: 'long', qty: 18_000, cost: 622_800, avgCost: 34.6, price: 36, value: 648_000, unrealized: 25_200, accrued: 0, priceSource: 'Test fixture' }],
+        holdings: { main: null, stock: { long: 18_000, short: 0, net: 18_000 } },
+        lifecycle: [],
+        pnl: { account: { realized: 25_600, unrealized: 25_200, total: 50_726.90 } }, // 8,800 + 16,800
+        nav: { account: 2_050_726.90, book: 3_050_726.90 },
+        balance: { account: { cash: 1_402_726.90, positions: 648_000, assets: 2_050_726.90, netAssets: 2_050_726.90 } },
+      },
+    },
+    {
+      // On the stock ticket: 18,000 x 35.95 = 647,100; commission 18,000 x 0.005 = 90; realized 647,100 - 622,800 = 24,300.
+      id: 'sell-shares', covers: 'close', action: 'ticket', ticketOf: 'equity', instrument: 'stock', side: 'sell', qty: 18_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'stock', qty: 18_000, estimate: 35.95, settleDate: '2028-10-13', calendar: 'US', cash: 647_100, fees: 90 }] },
+        result: { orders: [{ action: 'sell', status: 'filled', filledQty: 18_000, avgPrice: 35.95 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 18,000 PELL @ 35.95 USD (realized 24,300.00 USD)' }],
+        cash: { account: { USD: { settled: 1_402_726.90, unsettled: 647_010, availableToTrade: 2_049_736.90 } } },
+        positions: [],
+        holdings: { stock: null },
+        pending: [{ instrument: 'stock', dueDate: '2028-10-13', amount: 647_010, into: 'cash' }],
+        pnl: { account: { realized: 49_900, couponInterest: 0, commissions: -163.1, unrealized: 0, total: 49_736.90 } },
+        nav: { account: 2_049_736.90, book: 3_049_736.90 },
+        balance: { account: { cash: 1_402_726.90, receivable: 647_010, positions: null, assets: 2_049_736.90, liabilities: 0, netAssets: 2_049_736.90 } },
+      },
+    },
+    {
+      id: 'settle-shares', covers: 'settlement', action: 'clock', to: EDT('2028-10-13'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 647,010.00 USD into settled cash', cash: { USD: 647_010 } }],
+        cash: { account: { USD: { settled: 2_049_736.90, unsettled: 0, availableToTrade: 2_049_736.90 } }, treasury: usdCash(1_000_000) },
+        pending: [],
+        balance: { account: { cash: 2_049_736.90, receivable: null, assets: 2_049_736.90, liabilities: 0 } },
+      },
+    },
+  ],
+};
+
+export default [tips, foreignInflationLinked, callableBond, puttableBond, convertibleBond, exchangeableBond];
