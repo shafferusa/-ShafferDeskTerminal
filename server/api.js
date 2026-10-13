@@ -438,7 +438,8 @@ export function createApi(app) {
       switch (body.action) {
         case 'credit_event': {
           need(plugin.creditEvent, 'A credit event applies to credit default swaps.');
-          const ce = plugin.creditEvent(app, { inst, recovery: body.recovery, weight: body.weight });
+          // s3: the event's type, date, settlement method, defaulted name (basket, index) and settlement date are passed on.
+          const ce = plugin.creditEvent(app, { inst, recovery: body.recovery, weight: body.weight, eventType: body.eventType, eventDate: body.eventDate, settlement: body.settlement, entity: body.entity, settleDate: body.settleDate, note: body.note });
           // A credit-default swaption on this contract that knocks out on a credit event ends with it, nothing paid.
           const otc = app.products.get('otcoption');
           for (const o of instruments.list({ family: 'otcoption' }).filter((i) => i.underlying_id === inst.id && i.terms.knockOutOnCredit)) {
@@ -452,6 +453,9 @@ export function createApi(app) {
           }
           return ce;
         }
+        // s3: an ABS CDS's pay-as-you-go events, and a loan CDS cancelled on refinancing (server/products/credit.js).
+        case 'paygo': need(plugin.paygo, 'Pay-as-you-go events apply to ABS credit default swaps.'); return plugin.paygo(app, { inst, kind: body.kind, amount: body.amount, date: body.date, note: body.note });
+        case 'cancel': need(plugin.cancelOnRefinancing, 'Cancellation on refinancing applies to loan credit default swaps.'); return plugin.cancelOnRefinancing(app, { inst, date: body.date, note: body.note });
         case 'paydown': {
           need(plugin.paydown, 'A principal paydown applies to debt securities.');
           const holder = positions.heldAround(inst.id)[0];

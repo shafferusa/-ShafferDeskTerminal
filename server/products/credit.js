@@ -258,7 +258,9 @@ function settleHolder(app, deps, { inst, p, when, affected, protection, lines, e
   const ccy = inst.trading_ccy;
   const book = app.books.getBook(p.book_id), unit = app.books.getUnit(p.unit_id);
   const from = p.data.premiumPaidThrough || p.data.premiumFrom || inst.terms.effective;
-  const days = accrualDays(inst, from, when, true);
+  // A coupon already paid for days after the event is refunded (negative days); premium that was never paid is not.
+  let days = accrualDays(inst, from, when, true);
+  if (days < 0 && !p.data.premiumPaidThrough) days = 0;
   const accrued = money(Math.abs(affected) * inst.terms.coupon * days / 360, ccy);
   const s = sign(p.qty); // + protection bought
   const later = settleDate && settleDate > app.clock.today();
@@ -298,7 +300,6 @@ export function creditEvent(app, inst, body, deps) {
   const structure = structureOf(inst);
   need(!t.ended, `${name} has ended (${t.ended?.date}: ${t.ended?.reason}). No further credit event is recorded on it.`);
   const when = checkDate(app, body.eventDate || body.date, 'The credit event date');
-  need(when >= t.effective || t.convention === 'standard', `The credit event date ${when} is before the contract's effective date ${t.effective}.`);
   need(when <= t.maturity, `The credit event date ${when} is after the contract's maturity ${t.maturity}: protection had ended.`);
   const R = num(body.recovery);
   need(R !== null && R >= 0 && R <= 1, 'Enter the recovery rate (the auction final price, or the stated recovery) as a decimal between 0 and 1.');

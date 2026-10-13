@@ -80,6 +80,8 @@ const OPTION_TEMPLATE_MATRIX = {
 //           the end of the day, and Retry sells it once a quote is back. Held to expiry.
 //   third   the same failure, Accepted as it stands (55 calls only). Held to expiry.
 // The stock closes at 48 on 20 March: every remaining call, the written 50s and the bought 55s, expires worthless.
+/** What is typed and chosen on the Strategies page for this spread (drivers/browser/templates.mjs, `strategyPage`). */
+const BEAR_CALL_PAGE = (financing) => ({ template: 'Bear Call Spread', underlying: 'stock', expiration: '2026-03-20', strikes: { 'Lower strike (sold)': 50, 'Upper strike (bought)': 55 }, contracts: 5, ...(financing ? { financing } : {}) });
 const bearCall = {
   template: 'bear_call_spread',
   title: 'Bear call spread on Calder Freight Lines (NYSE): sell the 20 March 2026 50 call, buy the 55 call',
@@ -120,6 +122,7 @@ const bearCall = {
       // Account has 1,000: short by 2,906.50 - 1,200 - 1,000 = 706.50.
       id: 'open-short-of-cash', covers: 'financing', action: 'package', as: 'spread-refused', instrument: 'stock',
       input: templateInput('bear_call_spread', { underlyingId: '$inst:stock', options: { expiration: '2026-03-20', strikes: { lower: 50, upper: 55 }, contracts: 5 }, financing: null }),
+      strategyPage: BEAR_CALL_PAGE(null),
       status: 'blocked', reason: 'The Account cannot fund the package: the preview is blocked until financing is chosen.',
       expect: {
         refused: 'Alpha is short 706.50 USD',
@@ -139,6 +142,7 @@ const bearCall = {
       // Commission by order: 3 x 0.65 = 1.95 then 2 x 0.65 = 1.30, each leg.
       id: 'open', covers: ['open', 'financing', 'partial fill', 'dependency'], action: 'package', as: 'spread', instrument: 'stock',
       input: templateInput('bear_call_spread', { underlyingId: '$inst:stock', options: { expiration: '2026-03-20', strikes: { lower: 50, upper: 55 }, contracts: 5 }, financing: { mode: 'treasury' } }),
+      strategyPage: BEAR_CALL_PAGE({ mode: 'treasury' }),
       expect: {
         preview: {
           blocking: 0, errors: [],
@@ -246,6 +250,7 @@ const bearCall = {
       // new instance. Needs 350 + 6.50 + 2,500 = 2,856.50; brings 1,225; the Account has 0 free: funding 1,631.50.
       id: 'open-second', covers: ['open', 'financing', 'failed dependent leg'], action: 'package', as: 'second', instrument: 'stock',
       input: templateInput('bear_call_spread', { underlyingId: '$inst:stock', options: { expiration: '2026-03-20', strikes: { lower: 50, upper: 55 }, contracts: 5 }, financing: { mode: 'treasury' } }),
+      strategyPage: BEAR_CALL_PAGE({ mode: 'treasury' }),
       expect: {
         preview: {
           blocking: 0, errors: [], warnings: ['not-executable'],
@@ -261,7 +266,7 @@ const bearCall = {
           orders: [
             { kind: 'funding', status: 'filled' },
             { kind: 'trade', action: 'buy', instrument: 'c55', status: 'filled', filledQty: 5, avgPrice: 0.70 },
-            { kind: 'trade', action: 'sell', instrument: 'c50', status: 'working', filledQty: 0, reason: 'The last quote is 600 seconds old. Waiting for a fresh quote.' },
+            { kind: 'trade', action: 'sell', instrument: 'c50', status: 'working', filledQty: 0, reason: /^The last quote is 6\d\d seconds old\. Waiting for a fresh quote\.$/ }, // 600 seconds at the engine level; the browser's clock runs on
           ],
         },
         events: [
@@ -300,6 +305,7 @@ const bearCall = {
       // A third instance, the same way. The Account now has 1,278.25 free: funding 2,856.50 - 1,225 - 1,278.25 = 353.25.
       id: 'open-third', covers: ['open', 'financing', 'failed dependent leg'], action: 'package', as: 'third', instrument: 'stock',
       input: templateInput('bear_call_spread', { underlyingId: '$inst:stock', options: { expiration: '2026-03-20', strikes: { lower: 50, upper: 55 }, contracts: 5 }, financing: { mode: 'treasury' } }),
+      strategyPage: BEAR_CALL_PAGE({ mode: 'treasury' }),
       expect: {
         preview: {
           blocking: 0, warnings: ['not-executable'],
@@ -393,7 +399,7 @@ const bearCall = {
     {
       // Retry: the failed leg again, 5 50 calls at the fresh bid 2.20 = 1,100. The instance's written calls are covered by
       // its 55 calls: 2,500 reserved. Needs 3.25 + 2,500 = 2,503.25; 1,100 comes in; 6,278.25 is free.
-      id: 'retry-second', covers: ['retry', 'failed dependent leg'], action: 'retry', lot: 'second',
+      id: 'retry-second', covers: ['retry', 'failed dependent leg'], action: 'recover', how: 'retry', lot: 'second',
       expect: {
         preview: {
           blocking: 0, errors: [], intent: 'retry',
@@ -418,7 +424,7 @@ const bearCall = {
           { type: 'option.expiry', instrument: 'c50' }, { type: 'option.expiry', instrument: 'c50' },
           { type: 'option.expiry', instrument: 'c55' }, { type: 'option.expiry', instrument: 'c55' }, { type: 'option.expiry', instrument: 'c55' },
         ],
-        failed: { orders: 1 },
+        failed: { orders: 2 }, // the Failed tab keeps the record of both expired legs; the retried one is marked resolved
         alerts: ['strategy.attention'],
         pnl: { account: { commissions: -16.25, unrealized: -75, total: -91.25 }, book: { commissions: -16.25, unrealized: -75, total: -91.25 } },
         nav: { account: 8_600, book: 999_908.75 }, // 8,628.25 - 3.25 - 25
@@ -433,7 +439,6 @@ const bearCall = {
       id: 'accept-third', covers: ['accept', 'failed dependent leg'], action: 'strategy_action', lot: 'third', how: 'accept',
       expect: {
         events: [{ type: 'strategy.accepted', summary: 'accepted as it stands with 1 leg unexecuted. The position no longer matches its template.' }],
-        failed: { orders: 0 },
         alerts: [],
       },
     },
@@ -467,7 +472,7 @@ const bearCall = {
       // the last 2.25: 450; no fresh quote, so it waits). The 55-call sale fills first; the 50 calls it covered are now
       // short 5 against 3: 2 calls (200 shares) uncovered add 20% of 200 x 50.00 = 2,000, so "spread" reserves 4,500.
       // Realized on the sale: 2 x (0.50 - 0.80) x 100 = -60.
-      id: 'close-part-buyback-fails', covers: ['reduce', 'failed leg'], action: 'close', lot: 'spread', scope: 'strategy', percent: 40,
+      id: 'close-part-buyback-fails', covers: ['reduce', 'failed leg'], action: 'close', lot: 'spread', instrument: 'c55', scope: 'strategy', percent: 40,
       expect: {
         preview: {
           blocking: 0, warnings: ['not-executable'], intent: 'close',
@@ -509,7 +514,7 @@ const bearCall = {
         ],
         cash: { account: { USD: { settled: 9_973.70, unsettled: 0, reserved: 7_000, availableToTrade: 2_973.70, availableToWithdraw: 2_973.70 } } },
         pending: [], openOrders: [],
-        failed: { orders: 1 },
+        failed: { orders: 3 },
         alerts: ['strategy.attention'],
         balance: { account: { cash: 9_973.70, receivable: null }, book: { cash: 1_001_282.45, receivable: null } },
       },
@@ -547,7 +552,7 @@ const bearCall = {
     {
       // Unwind "spread": sell its 3 remaining 55 calls at 0.40 (120) and buy back its 5 50 calls at 2.10 (1,050).
       // Realized: 3 x (0.40 - 0.80) x 100 = -120 and 5 x (2.40 - 2.10) x 100 = +150. Nothing is left in it.
-      id: 'unwind-spread', covers: ['unwind', 'close'], action: 'unwind', lot: 'spread',
+      id: 'unwind-spread', covers: ['unwind', 'close'], action: 'recover', how: 'unwind', lot: 'spread',
       expect: {
         preview: {
           blocking: 0, errors: [], intent: 'unwind',
@@ -576,7 +581,6 @@ const bearCall = {
           { instrument: 'c55', lot: 'spread', dueDate: '2026-03-09', amount: 118.05, into: 'cash' },
         ],
         lifecycle: [{ type: 'option.expiry', instrument: 'c50' }, { type: 'option.expiry', instrument: 'c55' }, { type: 'option.expiry', instrument: 'c55' }],
-        failed: { orders: 0 },
         alerts: [],
         pnl: { account: { realized: -30, commissions: -22.75, unrealized: -175, total: -227.75 }, book: { realized: -30, commissions: -22.75, unrealized: -175, total: -227.75 } },
         nav: { account: 8_463.50, book: 999_772.25 }, // 8,508.70 - 25 - 15 - 5.20
@@ -608,9 +612,9 @@ const bearCall = {
       id: 'expiry', covers: ['expiry', 'close'], action: 'clock', to: MAR(20, '17:30'),
       expect: {
         events: [
+          { type: 'option.expired', summary: 'Expired worthless: 5 CFL260320C55 (fixing 48)', date: '2026-03-20' },
+          { type: 'option.expired', summary: 'Expired worthless: 5 CFL260320C55 (fixing 48)', date: '2026-03-20' },
           { type: 'option.expired', summary: 'Expired worthless: 5 CFL260320C50 (fixing 48)', date: '2026-03-20' },
-          { type: 'option.expired', summary: 'Expired worthless: 5 CFL260320C55 (fixing 48)', date: '2026-03-20' },
-          { type: 'option.expired', summary: 'Expired worthless: 5 CFL260320C55 (fixing 48)', date: '2026-03-20' },
         ],
         cash: { account: { USD: { settled: 9_038.50, unsettled: 0, reserved: 0, availableToTrade: 9_038.50, availableToWithdraw: 9_038.50 } } },
         positions: [],
@@ -624,9 +628,11 @@ const bearCall = {
         },
       },
     },
+    { id: 'next-business-day', action: 'clock', to: MAR(23), expect: {} },
     {
       id: 'open-after-expiry', covers: 'expired contract', action: 'package', as: 'late', instrument: 'stock',
       input: templateInput('bear_call_spread', { underlyingId: '$inst:stock', options: { expiration: '2026-03-20', strikes: { lower: 50, upper: 55 }, contracts: 5 }, financing: null }),
+      strategyPage: BEAR_CALL_PAGE(null),
       status: 'blocked', reason: 'The contracts expired on 20 March 2026; nothing can be traded in them.',
       expect: { refused: 'CFL260320C55 expired on 2026-03-20' },
     },

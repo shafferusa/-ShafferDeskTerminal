@@ -725,4 +725,220 @@ const accretingSwap = {
   ],
 };
 
-export default [amortizingSwap, accretingSwap];
+// ---------------------------------------------------------------------------------------------
+// equity_swap
+// ---------------------------------------------------------------------------------------------
+// A six-month single-stock equity swap: receive the price return of Halvorsen Robotics (HLVR, NASDAQ), pay
+// 3-month term SOFR + 0.50% ACT/360 on the same notional, quarterly. Price return only: a dividend on HLVR is
+// not passed through. The notional resets at each period: after each payment it is multiplied by end / start
+// price, and the financing of the next period is on the reset notional. Position-level collateral terms: an
+// independent amount of 10% of the (reset) notional, no variation margin.
+//
+// Payment calendar US+USD (a day both NASDAQ and the Federal Reserve are open): the reset dates are exchange days.
+//   period 1  2026-04-01 to 2026-07-01  91 days  HLVR 80.00 to 86.00   TSFR3M 4.30% for 1 April
+//   period 2  2026-07-01 to 2026-10-01  92 days  (terminated before the end: in part on 13 August, in full on 10 September)
+const HLVR = { productId: 'common_stock', name: 'Halvorsen Robotics Inc.', symbol: 'HLVR', marketView: 'US_CASH', venue: 'NASDAQ', venueType: 'exchange', venueCountry: 'US', issuer: 'Halvorsen Robotics Inc.', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', terms: {} };
+const EQS_NAME = 'Equity swap HLVR price return v TSFR3M + 0.50% 1 Oct 2026';
+const equitySwap = {
+  productId: 'equity_swap',
+  title: 'Six-month single-stock equity swap on HLVR: receive the price return, pay term SOFR + 0.50% on a notional that resets quarterly',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'return leg: Leg type "Return on a reference asset", Reference asset (the stock), Reset and payment, Options "Notional resets" (and not "Total return")', 'financing leg: Index, Spread, Day count'],
+    automaticInputs: ['reset and payment schedule on the US+USD calendar', 'HLVR closes for each reset date (close fixture standing in for Shaffer MarketData)', 'TSFR3M fixings (rate fixture)', 'notional reset after each payment, and the financing on it', 'settlement date, T+2', 'commission from the Book fee schedule', 'independent amount on the reset notional'],
+    manualInputs: ['the reference stock, registered as a common stock', 'upfront and termination amounts (stated fill prices)', 'mark of the contract, entered by hand', 'the dividend on the reference, recorded by hand (not passed through: price return)'],
+    settlement: 'Upfront and termination amounts and commission settle T+2 on the US+USD calendar; leg payments are cash on their payment date',
+    lifecycle: 'Return and financing amounts each quarter; the notional resets after each payment and the next financing is on it; a dividend on the reference is not passed through on a price-return leg; partial termination and full termination at stated amounts; nothing paid or scheduled afterwards',
+    accounting: 'Carried at the mark; return and financing payments and termination results are realized P&L; commission expensed',
+    collateral: 'Position-level terms: independent amount 10% of the notional (trued up when the notional resets and on the partial termination, returned on the full termination); no variation margin',
+  },
+  start: at('2026-03-30'),
+  settlementCheck: { lag: 2, holidays: [] }, // no NASDAQ or Federal Reserve holiday in the windows used (30 March to 1 April, 13 to 17 August, 10 to 14 September 2026)
+  book: bookOf('Matrix equity swap', 'Equity derivatives', 'USD', 3_000_000, 1_500_000, { perUnit: 0.0001, minimum: 0, bps: 0 }, { equity: NO_FEE }), // 100.00 per million of notional; the stock is never traded
+  instruments: {
+    hlvr: HLVR,
+    main: {
+      productId: 'equity_swap', name: EQS_NAME, symbol: 'EQS-HLVR-1026', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { tradingCalendar: 'US', settlementCalendar: 'US+USD', paymentCalendar: 'US+USD' },
+      terms: {
+        effective: '2026-04-01', maturity: '2026-10-01', counterparty: 'Prime broker P',
+        collateralBasis: { type: 'position', independentAmount: { type: 'pct', pct: 0.10 }, variationMargin: false },
+        legs: [
+          { side: 'receive', type: 'return', ccy: 'USD', months: 3, underlyingId: '$inst:hlvr', passDividends: false, resetNotional: true },
+          { side: 'pay', type: 'float', ccy: 'USD', index: 'TSFR3M', spread: 0.005, months: 3, dayCount: 'ACT/360' },
+        ],
+      },
+    },
+  },
+  rates: { TSFR3M: { byDate: { '2026-04-01': 4.30 } } },
+  expectAtStart: startOf('USD', 3_000_000, 1_500_000),
+  steps: [
+    {
+      // 5,000,000 as written, no upfront. Commission 5,000,000 x 0.0001 = 500, settling Wednesday 1 April. Independent amount 10% x 5,000,000 = 500,000.
+      id: 'open', covers: ['open', 'collateral'], action: 'ticket', instrument: 'main', side: 'buy', qty: 5_000_000, as: 'eqs', order: { statedPrice: 0 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 5_000_000, estimate: 0, model: 'stated-price', settleDate: '2026-04-01', cash: 0, fees: 500 }],
+          cash: { USD: { purchases: 0, fees: 500, margin: 500_000, required: 500_500, available: 1_500_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 5_000_000, avgPrice: 0, fills: [{ qty: 5_000_000, price: 0, model: 'stated-price', settleDate: '2026-04-01' }] }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Entered as written: 5,000,000 notional of EQS-HLVR-1026 at 0.00 per 100 notional', owner: 'account', date: '2026-03-30' },
+          { type: 'swap.collateral', summary: `Collateral posted on ${EQS_NAME} under its position-level terms: 500,000.00 USD (independent amount, 10.00% of 5,000,000.00 USD notional)`, cash: { USD: -500_000 }, owner: 'account' },
+        ],
+        cash: { account: { USD: { settled: 1_000_000, unsettled: -500, margin: 500_000, restricted: 0, availableToTrade: 999_500, availableToWithdraw: 999_500 } } },
+        positions: [{ instrument: 'main', lot: 'eqs', owner: 'account', direction: 'as written', qty: 5_000_000, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, notional: 5_000_000, margin: 500_000 }],
+        holdings: { main: { long: 5_000_000, short: 0, net: 5_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-04-01', amount: -500, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-07-01', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-07-01', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2026-10-01', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', lot: 'eqs', owner: 'account', qty: 5_000_000, basis: 'position', mark: null, iaRequired: 500_000, iaPosted: 500_000, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: -500, unrealized: 0, total: -500 } },
+        nav: { account: 1_499_500, book: 2_999_500 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 1_000_000, margin: 500_000, payable: 500, positions: null, assets: 1_500_000, liabilities: 500, netAssets: 1_499_500 } },
+      },
+    },
+    {
+      id: 'settle-commission', covers: 'settlement', action: 'clock', to: at('2026-04-01'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 500.00 USD from settled cash', cash: { USD: -500 }, date: '2026-04-01' }],
+        cash: { account: { USD: { settled: 999_500, unsettled: 0, availableToTrade: 999_500, availableToWithdraw: 999_500 } } },
+        pending: [],
+        balance: { account: { cash: 999_500, payable: null, assets: 1_499_500, liabilities: 0 } },
+      },
+    },
+    // HLVR closes at 80.00 on the effective date: the start of the first period.
+    { id: 'start-price', covers: 'reset fixing', action: 'close_price', instrument: 'hlvr', date: '2026-04-01', value: 80, expect: {} },
+    {
+      // 5,000,000 x 1.20 / 100 = 60,000.
+      id: 'mark', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 1.20, note: 'Dealer mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'eqs', price: 1.2, value: 60_000, unrealized: 60_000, provisional: false, priceSource: 'Manual entry', priceStatus: 'manual' }],
+        otc: [{ instrument: 'main', mark: 1.2, markValue: 60_000 }],
+        pnl: { account: { unrealized: 60_000, total: 59_500 } },
+        nav: { account: 1_559_500, book: 3_059_500 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 60_000, assets: 1_559_500, netAssets: 1_559_500 } },
+      },
+    },
+    { id: 'dividend-recorded', covers: 'dividend', action: 'corporate_action', instrument: 'hlvr', type: 'cash_dividend', exDate: '2026-05-14', amount: 0.50, expect: {} },
+    {
+      // HLVR goes ex 0.50. The return leg is price return only: nothing is passed through, nothing is paid or received.
+      id: 'dividend-not-passed-through', covers: 'dividend', action: 'clock', to: at('2026-05-14'),
+      expect: { events: [], cash: { account: { USD: { settled: 999_500 } } } },
+    },
+    // HLVR closes at 86.00 on 1 July: the end of the first period.
+    { id: 'reset-price', covers: 'reset fixing', action: 'close_price', instrument: 'hlvr', date: '2026-07-01', value: 86, expect: {} },
+    {
+      // First period, notional 5,000,000:
+      //   return, received:    5,000,000 x (86 / 80 - 1) = 5,000,000 x 7.5% = 375,000.00
+      //   financing, paid:     5,000,000 x (4.30% + 0.50%) x 91/360 = 60,666.67 (on the notional of the period, before the reset)
+      // The notional resets to 5,000,000 x 86 / 80 = 5,375,000: independent amount 537,500, 37,500 more.
+      id: 'first-reset', covers: ['return payment', 'financing payment', 'notional reset', 'collateral'], action: 'clock', to: at('2026-07-01'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap receipt on ${EQS_NAME}, leg A (return), period 2026-04-01 to 2026-07-01: 375,000.00 USD`, cash: { USD: 375_000 }, owner: 'account', date: '2026-07-01' },
+          { type: 'swap.collateral', summary: `Collateral posted on ${EQS_NAME} under its position-level terms: 37,500.00 USD (independent amount, 10.00% of 5,375,000.00 USD notional)`, cash: { USD: -37_500 } },
+          { type: 'swap.payment', summary: `Swap payment on ${EQS_NAME}, leg B (float), period 2026-04-01 to 2026-07-01: 60,666.67 USD`, cash: { USD: -60_666.67 }, owner: 'account', date: '2026-07-01' },
+        ],
+        cash: { account: { USD: { settled: 1_276_333.33, margin: 537_500, availableToTrade: 1_276_333.33, availableToWithdraw: 1_276_333.33 } } },
+        positions: [{ instrument: 'main', lot: 'eqs', notional: 5_375_000, margin: 537_500 }],
+        otc: [{ instrument: 'main', iaRequired: 537_500, iaPosted: 537_500 }],
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2026-10-01', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-10-01', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-10-01', status: 'pending' },
+        ],
+        pnl: { account: { realized: 314_333.33, total: 373_833.33 } }, // 375,000 - 60,666.67; then - 500 + 60,000
+        nav: { account: 1_873_833.33, book: 3_373_833.33 },
+        balance: { account: { cash: 1_276_333.33, margin: 537_500, assets: 1_873_833.33, netAssets: 1_873_833.33 } },
+      },
+    },
+    { id: 'july-fixing', action: 'rate', code: 'TSFR3M', value: 4.10, date: '2026-07-01', expect: {} },
+    {
+      id: 'mark-after-reset', action: 'manual_price', instrument: 'main', value: 0.80, note: 'Dealer mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'eqs', price: 0.8, value: 40_000, unrealized: 40_000 }],
+        otc: [{ instrument: 'main', mark: 0.8, markValue: 40_000 }],
+        pnl: { account: { unrealized: 40_000, total: 353_833.33 } },
+        nav: { account: 1_853_833.33, book: 3_353_833.33 },
+        balance: { account: { positions: 40_000, assets: 1_853_833.33, netAssets: 1_853_833.33 } },
+      },
+    },
+    { id: 'mid-august', action: 'clock', to: at('2026-08-13'), expect: {} },
+    {
+      // 40% (2,000,000 of 5,000,000) terminated at 0.90 per 100: 18,000 received; commission 200; nothing carried, so realized 18,000. Settles Monday 17 August.
+      // Left: 3,000,000 x the reset 86 / 80 = 3,225,000 of notional; independent amount 322,500, 215,000 back. Marked 0.80: 24,000.
+      id: 'partial-termination', covers: ['reduce', 'partial termination', 'collateral'], action: 'close', lot: 'eqs', scope: 'strategy', percent: 40, order: { statedPrice: 0.90 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 2_000_000, estimate: 0.9, model: 'stated-price', settleDate: '2026-08-17', cash: 18_000, fees: 200 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 2_000_000, avgPrice: 0.9 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Terminated in part: 2,000,000 of 5,000,000 notional of EQS-HLVR-1026 at 0.90 per 100 notional (realized 18,000.00 USD)' },
+          { type: 'swap.collateral', summary: `Collateral returned on ${EQS_NAME} under its position-level terms: 215,000.00 USD (independent amount, 10.00% of 3,225,000.00 USD notional)`, cash: { USD: 215_000 } },
+        ],
+        cash: { account: { USD: { settled: 1_491_333.33, unsettled: 17_800, margin: 322_500, availableToTrade: 1_509_133.33, availableToWithdraw: 1_491_333.33 } } },
+        positions: [{ instrument: 'main', lot: 'eqs', qty: 3_000_000, cost: 0, avgCost: 0, price: 0.8, value: 24_000, unrealized: 24_000, notional: 3_225_000, margin: 322_500 }],
+        holdings: { main: { long: 3_000_000, short: 0, net: 3_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-08-17', amount: 17_800, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: 3_000_000, markValue: 24_000, iaRequired: 322_500, iaPosted: 322_500 }],
+        pnl: { account: { realized: 332_333.33, commissions: -700, unrealized: 24_000, total: 355_633.33 } },
+        nav: { account: 1_855_633.33, book: 3_355_633.33 },
+        balance: { account: { cash: 1_491_333.33, margin: 322_500, receivable: 17_800, positions: 24_000, assets: 1_855_633.33, liabilities: 0, netAssets: 1_855_633.33 } },
+      },
+    },
+    {
+      id: 'settle-partial-termination', covers: 'settlement', action: 'clock', to: at('2026-08-17'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 17,800.00 USD into settled cash', cash: { USD: 17_800 } }],
+        cash: { account: { USD: { settled: 1_509_133.33, unsettled: 0, availableToTrade: 1_509_133.33, availableToWithdraw: 1_509_133.33 } } },
+        pending: [],
+        balance: { account: { cash: 1_509_133.33, receivable: null } },
+      },
+    },
+    { id: 'mid-september', action: 'clock', to: at('2026-09-10'), expect: {} },
+    {
+      // The rest (3,000,000) terminated at 0.50 per 100: 15,000 received; commission 300; realized 15,000. Settles Monday 14 September.
+      // The second period's return and financing are not paid: the termination amount is all-in. The 322,500 comes back.
+      id: 'full-termination', covers: ['close', 'full termination', 'collateral'], action: 'close', lot: 'eqs', scope: 'position', percent: 100, order: { statedPrice: 0.50 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 3_000_000, estimate: 0.5, model: 'stated-price', settleDate: '2026-09-14', cash: 15_000, fees: 300 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 3_000_000, avgPrice: 0.5 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Terminated: 3,000,000 notional of EQS-HLVR-1026 at 0.50 per 100 notional (realized 15,000.00 USD)' },
+          { type: 'swap.collateral', summary: `Collateral returned on ${EQS_NAME} under its position-level terms: 322,500.00 USD (independent amount, the position ended)`, cash: { USD: 322_500 } },
+        ],
+        cash: { account: { USD: { settled: 1_831_633.33, unsettled: 14_700, margin: 0, restricted: 0, availableToTrade: 1_846_333.33, availableToWithdraw: 1_831_633.33 } } },
+        positions: [], holdings: { main: null }, lifecycle: [], otc: [],
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-09-14', amount: 14_700, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: 347_333.33, commissions: -1_000, unrealized: 0, total: 346_333.33 } },
+        nav: { account: 1_846_333.33, book: 3_346_333.33 },
+        balance: { account: { cash: 1_831_633.33, margin: null, positions: null, receivable: 14_700, assets: 1_846_333.33, liabilities: 0, netAssets: 1_846_333.33 } },
+      },
+    },
+    {
+      id: 'settle-full-termination', covers: 'settlement', action: 'clock', to: at('2026-09-14'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 14,700.00 USD into settled cash', cash: { USD: 14_700 } }],
+        cash: { account: { USD: { settled: 1_846_333.33, unsettled: 0, availableToTrade: 1_846_333.33, availableToWithdraw: 1_846_333.33 } } },
+        pending: [],
+        balance: { account: { cash: 1_846_333.33, receivable: null } },
+      },
+    },
+    {
+      // The contract's maturity date: nothing is paid, posted or scheduled. 1,500,000 - 500 + 375,000 - 60,666.67 + 18,000 - 200 + 15,000 - 300 = 1,846,333.33.
+      id: 'nothing-left-at-maturity', covers: 'close', action: 'clock', to: at('2026-10-01'),
+      expect: { events: [], lifecycle: [], positions: [], pending: [], otc: [], alerts: [], cash: { account: { USD: { settled: 1_846_333.33, margin: 0, restricted: 0 } }, treasury: { USD: { settled: 1_500_000 } } }, nav: { account: 1_846_333.33, treasury: 1_500_000, book: 3_346_333.33 } },
+    },
+  ],
+};
+
+export default [amortizingSwap, accretingSwap, equitySwap];

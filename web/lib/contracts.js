@@ -245,6 +245,18 @@ const F = {
     { path: 'terms.recovery', label: 'Recovery assumption', type: 'number', default: 0.4 },
     { path: 'terms.indexFactor', label: 'Index factor', type: 'number', hint: 'For index CDS. 1 otherwise.' },
     { path: 'terms.seniority', label: 'Seniority', type: 'text' },
+    // s3: premium convention, credit events, settlement, and the terms of baskets, tranches, loan and ABS CDS (server/products/credit.js).
+    { path: 'terms.convention', label: 'Premium convention', type: 'select', default: 'bespoke', span: 2, options: opt([['standard', 'Standard: full first coupon, IMM dates, accrued exchanged at trade'], ['bespoke', 'Bespoke: from the effective date, premium from the trade date']]), hint: 'Standard coupons: 25, 100, 300, 500, 750 or 1000 bp' },
+    { path: 'terms.firstStub', label: 'First period', type: 'select', default: 'short', options: opt([['short', 'Short stub to the first IMM date'], ['long', 'Long stub to the second IMM date']]), show: (d) => d.terms?.convention !== 'standard' },
+    { path: 'terms.creditEventSet', label: 'Credit events', type: 'select', options: opt([['corporate', 'Bankruptcy, failure to pay, restructuring'], ['corporate_xr', 'Bankruptcy, failure to pay (no restructuring)'], ['financial', 'Corporate set and governmental intervention'], ['sovereign', 'Failure to pay, repudiation/moratorium, restructuring, obligation acceleration'], ['abs', 'Failure to pay principal, writedown, distressed ratings downgrade']]), span: 2, hint: 'Empty: the usual set for the product' },
+    { path: 'terms.settlement', label: 'Settlement after a credit event', type: 'select', default: 'auction', options: opt([['auction', 'Cash, at the auction final price'], ['cash', 'Cash, at a stated recovery'], ['physical', 'Physical (simulated on paper)']]) },
+    { path: 'terms.deliverable', label: 'Deliverable obligation', type: 'text', span: 2, hint: 'Delivered on paper, simulated', show: (d) => d.terms?.settlement === 'physical' },
+    { path: 'terms.basket', label: 'Basket reference entities', type: 'text', span: 'all', hint: 'Separated by ";"', show: (d) => d.productId === 'credit_basket_swap', required: true },
+    { path: 'terms.nth', label: 'Protection on default number', type: 'number', default: 1, hint: '1 = first-to-default', show: (d) => d.productId === 'credit_basket_swap' },
+    { path: 'terms.attachment', label: 'Attachment point (decimal)', type: 'number', hint: '0.03 = 3% of the index', show: (d) => d.productId === 'cds_index_tranche', required: true },
+    { path: 'terms.detachment', label: 'Detachment point (decimal)', type: 'number', hint: '0.07 = 7% of the index', show: (d) => d.productId === 'cds_index_tranche', required: true },
+    { path: 'terms.cancellable', label: 'Cancellable on refinancing', type: 'check', default: true, show: (d) => d.productId === 'loan_cds' },
+    { path: 'terms.referenceObligation', label: 'Reference obligation', type: 'text', span: 2, hint: 'The securitised bond (pay-as-you-go)', show: (d) => d.productId === 'abs_cds', required: true },
     { path: 'terms.counterparty', label: 'Counterparty', type: 'text' },
     { path: 'terms.collateralBasis', type: 'collateral' },
     { path: 'terms.collateral', label: 'Other collateral terms', type: 'text', span: 2, hint: 'Free text. Recorded, not simulated.' },
@@ -306,6 +318,7 @@ function LegsEditor({ legs, onChange, ccy }) {
         ${l.type === 'return' ? html`<${Field} label="Options"><${Check} checked=${l.passDividends} onChange=${(v) => set(i, { passDividends: v })}>Total return (pass income through)<//><${Check} checked=${l.resetNotional} onChange=${(v) => set(i, { resetNotional: v })}>Notional resets<//><//>` : null}
         ${['fixed', 'float', 'ois'].includes(l.type) ? html`<${Field} label="Notional"><${Check} checked=${l.exchangeNotional} onChange=${(v) => set(i, { exchangeNotional: v })}>Exchanged at start and maturity<//><//>` : null}
         ${l.type === 'price' ? html`<${PriceLegFields} leg=${l} set=${(patch) => set(i, patch)} />` : null}
+        <${Field} label="Payment lag (business days)" hint="Paid this many business days after each period end; 0 = on the period end"><${Num} value=${l.paymentLag ?? 0} onInput=${(v) => set(i, { paymentLag: v })} /><//>
         <${Field} label="Notional schedule" span=${2} hint="Amortizing or accreting: one step per line, the first day of a period and its factor of the notional (2026-09-05 0.75). Empty: the notional does not change."><${ScheduleText} value=${l.notionalSchedule} onChange=${(v) => set(i, { notionalSchedule: v })} /><//>
       </div></div>`)}
     <div><${Button} small onClick=${() => onChange([...legs, { side: 'receive', type: 'float', ccy: ccy || 'USD', index: '', spread: 0, months: 3, dayCount: 'ACT/360' }])}>Add a leg<//></div>

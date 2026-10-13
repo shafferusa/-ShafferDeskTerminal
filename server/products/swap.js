@@ -77,7 +77,9 @@ export function swapTradeLabel(app, inst, action, qtyText) {
 
 function legSchedule(inst, leg) {
   const t = inst.terms;
-  return generateSchedule({ start: t.effective, end: t.maturity, months: leg.months || 0, calendar: paymentCalendarFor(inst), convention: 'modified-following' });
+  const sched = generateSchedule({ start: t.effective, end: t.maturity, months: leg.months || 0, calendar: paymentCalendarFor(inst), convention: 'modified-following' });
+  // A payment lag (s2): paid that many business days after the period end, once the end's fixing is known (equity swaps, commodity swaps).
+  return leg.paymentLag ? sched.map((p) => ({ ...p, payDate: addBusinessDays(p.end, leg.paymentLag, paymentCalendarFor(inst)) })) : sched;
 }
 
 const scheduleFactor = (leg, date) => {
@@ -252,7 +254,12 @@ function trueUpNotionalExchange(app, { book, unit, inst, pos, date, what }) {
 
 /** A task that brings the exchanged principal into line on `dueDate`: the effective date, or the settlement date of a later change. */
 const scheduleNotional = (app, { book, unit, inst, pos }, dueDate, key) => app.tasks.schedule({ bookId: book.id, unitId: unit.id, positionId: pos.id, instrumentId: inst.id, strategyId: pos.strategy_id, type: 'swap.notional', dueDate, data: { key } });
-const maturityPayDate = (inst) => adjust(inst.terms.maturity, 'modified-following', paymentCalendarFor(inst));
+const maturityPayDate = (inst) => {
+  const d = adjust(inst.terms.maturity, 'modified-following', paymentCalendarFor(inst));
+  // With a payment lag the contract ends with its last payment (s2).
+  const lagged = (inst.terms.legs || []).filter((l) => l.paymentLag).map((l) => legSchedule(inst, l).at(-1)?.payDate).filter(Boolean);
+  return lagged.reduce((a, x) => (x > a ? x : a), d);
+};
 
 function scheduleLegTasks(app, { book, unit, inst, pos }) {
   const today = app.clock.today();
@@ -327,6 +334,9 @@ export const swap = {
       l.passDividends = Boolean(l.passDividends);
       if (Array.isArray(l.notionalSchedule)) l.notionalSchedule = normalizeNotionalSchedule(l, t, at, errors);
       if (l.type === 'price') normalizePriceLeg(l, at, errors);
+      l.paymentLag = num(l.paymentLag) ?? 0;
+      if (!(Number.isInteger(l.paymentLag) && l.paymentLag >= 0 && l.paymentLag <= 10)) errors.push(`${at}: the payment lag is a whole number of business days from 0 to 10.`);
+      if (!l.paymentLag) delete l.paymentLag;
       return l;
     });
     checkScheduleProduct(draft.productId, t, errors);
@@ -351,6 +361,7 @@ export const swap = {
     for (const l of t.legs) rows.push([`Leg ${l.id}`, describeLeg(l, app)]);
     // The notional of each period of an amortizing or accreting leg, as the schedule states it (s2).
     for (const l of t.legs) if (l.notionalSchedule?.length) rows.push([`Leg ${l.id} notional schedule`, l.notionalSchedule.map((s) => `from ${s.from}: ${s.factor} x notional`).join('; ')]);
+    for (const l of t.legs) if (l.paymentLag) rows.push([`Leg ${l.id} payment`, `${l.paymentLag} business day${l.paymentLag > 1 ? 's' : ''} after each period end, on the payment calendar`]);
     // Convention (docs/ARCHITECTURE.md): fixing dates are business days of the contract's joint payment calendar, not of each index's own market.
     if (t.legs.some((l) => ['float', 'ois', 'cap', 'floor'].includes(l.type))) rows.push(['Fixing dates', `On business days of the contract's payment calendar (${paymentCalendarFor(inst) || 'the joint calendar of its currencies'}), not of each index's own market: a fixing that falls on a holiday there is taken on the business day before.`]);
     const ccys = [...new Set(t.legs.map((l) => l.ccy))];
@@ -724,16 +735,19 @@ function collateralRows(inst, app) {
 // Credit default swaps
 // ---------------------------------------------------------------------------------------------
 
-function cdsPeriods(inst, from) {
-  const t = inst.terms;
-  const dates = cdsDates(t.effective, t.maturity);
-  const out = [];
-  let start = t.effective;
-  for (const d of dates) {
-    out.push({ start, end: d, payDate: adjust(d, 'following', paymentCalendarFor(inst)) });
-    start = d;
-  }
-  return out.filter((p) => p.end > from);
+// The premium schedule and its conventions, the accrued premium exchanged at trade and the events recorded by hand are in
+// products/credit.js (s3). A contract without a stated convention keeps the bespoke rules it always had.
+const cdsPeriods = (inst, from) => credit.periodsFrom(inst, from);
+const cdsFactor = (inst) => inst.terms.indexFactor ?? 1;
+
+/** A fill of a standard contract names the accrued premium exchanged with it. */
+function cdsFillSummary(app, c, factor, acc) {
+  const ccy = c.inst.trading_ccy;
+  const before = app.positions.find(c.unit.id, c.inst.id, c.strategyId) || { qty: 0, cost: 0 };
+  const dq = c.action === 'buy' ? c.qty : -c.qty;
+  const m = app.positions.tradeMath(before, dq, (c.price * factor) / 100, ccy);
+  const verb = c.action === 'buy' ? 'Bought' : 'Sold';
+  return `${verb} ${fmtQty(c.qty)} ${c.inst.symbol || c.inst.name} @ ${fmtPx(c.price)} ${ccy}${m.realized ? ` (realized ${fmt(m.realized, ccy)})` : ''}; premium accrued from ${acc.from} to the step-in date ${acc.stepIn} (${acc.days} days), ${fmt(acc.amount, ccy)}, ${c.action === 'buy' ? 'received from' : 'paid to'} the counterparty with the settlement`;
 }
 
 export const cds = {
@@ -760,13 +774,15 @@ export const cds = {
     t.dayCount = 'ACT/360';
     t.collateralBasis = normalizeBasis(t.collateralBasis, errors);
     if (!t.collateralBasis) delete t.collateralBasis;
+    credit.normalizeCreditTerms(draft.productId || draft.product_id, t, errors);
     return { terms: t, multiplier: 0.01, errors };
   },
   describe(inst, app) {
     const t = inst.terms;
     const rows = [['Reference', t.referenceEntity], ['Running coupon', `${(t.coupon * 1e4).toFixed(0)} bp, quarterly, ACT/360`], ['Effective', t.effective], ['Maturity', t.maturity], ['Recovery assumption', `${(t.recovery * 100).toFixed(0)}% (used only until a credit event states the real recovery)`]];
-    if (t.indexFactor !== 1) rows.push(['Index factor', t.indexFactor]);
+    if (t.indexFactor !== 1) rows.push([inst.product_id === 'cds_index_tranche' ? 'Tranche outstanding (factor)' : inst.product_id === 'abs_cds' ? 'Reference obligation factor' : 'Index factor', t.indexFactor]);
     if (t.seniority) rows.push(['Seniority', t.seniority]);
+    rows.push(...credit.creditRows(inst));
     rows.push(['Counterparty', t.counterparty || 'Simulated counterparty'], ...collateralRows(inst, app));
     return rows;
   },
@@ -775,26 +791,48 @@ export const cds = {
   /** Notional on which a percentage independent amount is worked out. */
   collateralNotional: (app, inst, { qtyAfter }) => Math.abs(qtyAfter) * (inst.terms.indexFactor ?? 1),
   economics(app, { inst, action, qty, price, unit, strategyId, book }) {
-    const upfront = (qty * price) / 100;
+    const t = inst.terms;
+    need(!t.ended, `${inst.symbol || inst.name} has ended (${t.ended?.date}: ${t.ended?.reason}). It cannot be traded.`);
+    const f = cdsFactor(inst);
+    const upfront = (qty * f * price) / 100;
     const buy = action === 'buy';
-    const annual = qty * inst.terms.indexFactor * inst.terms.coupon;
+    const annual = qty * f * t.coupon;
+    // Standard contracts: the premium accrued in the current period goes from the protection seller to the buyer at trade.
+    const acc = credit.tradeAccrual(inst, app.clock.today(), qty);
+    const cash = (buy ? -upfront : upfront) + (buy ? acc.amount : -acc.amount);
     // Collateral under the basis the contract states. Nothing is assumed from the product.
-    const coll = app.agreements.tradeRequirement({ book, unit, inst, action, qty, price, strategyId, cashOut: Math.max(0, buy ? upfront : -upfront) });
+    const coll = app.agreements.tradeRequirement({ book, unit, inst, action, qty, price, strategyId, cashOut: Math.max(0, -cash) });
+    const notes = [`${buy ? 'Pays' : 'Receives'} a running premium of about ${fmt(annual, inst.trading_ccy)} a year, quarterly, until ${t.maturity} or a credit event.`];
+    if (f !== 1) notes.push(`Outstanding notional ${fmt(qty * f, inst.trading_ccy)} (factor ${f}): the upfront and the premium are on it.`);
+    notes.push(t.convention === 'standard'
+      ? `Standard contract: the premium accrued from ${acc.from} to the step-in date ${acc.stepIn} (${acc.days} days, ${fmt(acc.amount, inst.trading_ccy)}) is ${buy ? 'received from' : 'paid to'} the counterparty with the upfront; every coupon is then a full coupon.`
+      : 'Premium accrues from the trade date; accrued premium is not exchanged at trade.');
     return {
-      ccy: inst.trading_ccy, principal: upfront, cash: buy ? -upfront : upfront, accrued: 0, notional: qty * inst.terms.indexFactor, exposure: null, initialMargin: coll.initialMargin, collateral: coll,
-      notes: [`${buy ? 'Pays' : 'Receives'} a running premium of about ${fmt(annual, inst.trading_ccy)} a year, quarterly, until ${inst.terms.maturity} or a credit event.`, 'Premium accrues from the trade date; accrued premium is not exchanged at trade.', ...coll.notes],
+      ccy: inst.trading_ccy, principal: upfront, cash, accrued: -acc.amount, notional: qty * f, exposure: null, initialMargin: coll.initialMargin, collateral: coll,
+      notes: [...notes, ...coll.notes],
     };
   },
   fill(app, c) {
-    const r = bookSecurityFill(app, c, { unitCost: c.price / 100 });
-    if (r.wasFlat && !isZero(r.position.qty)) app.positions.change(r.position, { data: { premiumFrom: c.tradeDate } });
+    const f = cdsFactor(c.inst);
+    const acc = credit.tradeAccrual(c.inst, c.tradeDate, c.qty);
+    const summary = c.summary || (acc.amount ? cdsFillSummary(app, c, f, acc) : undefined);
+    const r = bookSecurityFill(app, { ...c, summary }, { unitCost: (c.price * f) / 100, accrued: -acc.amount });
+    if (r.wasFlat && !isZero(r.position.qty)) app.positions.change(r.position, { data: { premiumFrom: credit.premiumStart(c.inst, c.tradeDate), premiumPaidThrough: null } });
+    const pos = app.positions.get(r.position.id);
+    if (acc.amount) credit.classifyTradeAccrual(app, { book: c.book, unit: c.unit, inst: c.inst, pos, strategyId: c.strategyId });
+    if (isZero(pos.qty)) credit.settleAccruedOnClose(app, { book: c.book, unit: c.unit, inst: c.inst, pos });
     return { ...r, position: app.positions.get(r.position.id) };
   },
   value(app, inst, pos, obs, mark) {
     const ccy = inst.trading_ccy;
+    const f = cdsFactor(inst);
     const known = mark !== null && mark !== undefined;
-    const mv = known ? money((pos.qty * inst.terms.indexFactor * mark) / 100, ccy) : null;
-    return { price: known ? mark : null, mv, cost: pos.cost, unrealized: known ? money(mv - pos.cost, ccy) : null, accrued: 0, notional: Math.abs(pos.qty) * inst.terms.indexFactor, exposure: null };
+    const mv = known ? money((pos.qty * f * mark) / 100, ccy) : null;
+    return {
+      price: known ? mark : null, mv, cost: pos.cost, unrealized: known ? money(mv - pos.cost, ccy) : null, accrued: credit.accruedBalance(app, pos, ccy), notional: Math.abs(pos.qty) * f, exposure: null,
+      // Average cost per 100 of the notional outstanding, the units the upfront is quoted in.
+      ...(Math.abs(f - 1) > 1e-12 && f > 0 && !isZero(pos.qty) ? { avgCost: Math.round((pos.cost / (pos.qty * f * 0.01)) * 1e6) / 1e6 } : {}),
+    };
   },
   onPositionChange(app, { book, unit, inst, pos }) {
     app.agreements.onPositionChange({ book, unit, inst, pos });
@@ -818,16 +856,23 @@ export const cds = {
         app.alerts.raise({ bookId: book.id, unitId: unit.id, level: 'error', code: 'funding.failed', refType: 'task', refId: task.id, message: msg });
         return { failed: msg };
       }
+      // A standard contract's coupon also settles the accrued premium exchanged at trade (carried until now).
+      const acc = credit.couponAccrualEntries(app, pos, ccy);
+      const accSum = money(acc.reduce((x, e) => x + e.amount, 0), ccy);
+      const std = inst.terms.convention === 'standard';
+      const days = diffDays(from, task.data.periodEnd);
       const eventId = app.ledger.post({
-        ...base, type: 'cds.premium', summary: `CDS premium ${signed < 0 ? 'paid' : 'received'} on ${inst.name} for ${from} to ${task.data.periodEnd}: ${fmt(Math.abs(signed), ccy)}`,
-        data: { from, to: task.data.periodEnd },
-        entries: [{ account: 'cash', ccy, amount: signed, positionId: pos.id }, { account: 'pnl.realized', ccy, amount: -signed, positionId: pos.id }],
+        ...base, type: 'cds.premium',
+        summary: std
+          ? `CDS premium ${signed < 0 ? 'paid' : 'received'} on ${inst.name} for ${from} to ${addDays(task.data.periodEnd, -1)} included (${days} days on ${fmt(Math.abs(pos.qty) * cdsFactor(inst), ccy)}): ${fmt(Math.abs(signed), ccy)}${accSum ? `; the accrued premium of ${fmt(Math.abs(accSum), ccy)} exchanged at trade is settled with it` : ''}`
+          : `CDS premium ${signed < 0 ? 'paid' : 'received'} on ${inst.name} for ${from} to ${task.data.periodEnd}: ${fmt(Math.abs(signed), ccy)}`,
+        data: { from, to: task.data.periodEnd, days, accruedAtTrade: accSum || null },
+        entries: [{ account: 'cash', ccy, amount: signed, positionId: pos.id }, ...acc, { account: 'pnl.realized', ccy, amount: money(-signed - accSum, ccy), positionId: pos.id }],
       });
       app.alerts.resolve({ refType: 'task', refId: task.id, code: 'funding.failed' });
-      const updated = app.positions.change(pos, { data: { premiumPaidThrough: task.data.periodEnd } });
+      app.positions.change(pos, { data: { premiumPaidThrough: task.data.periodEnd } });
       const next = cdsPeriods(inst, task.data.periodEnd)[0];
       if (next) app.tasks.schedule({ ...base, type: 'cds.premium', dueDate: next.payDate, data: { key: next.end, periodEnd: next.end } });
-      void updated;
       return { done: true, eventId };
     }
     if (task.type === 'cds.maturity') {
@@ -841,47 +886,19 @@ export const cds = {
     return { failed: `Unknown task ${task.type}` };
   },
   /**
-   * Credit event, triggered by hand. `recovery` is the real recovery rate (decimal).
-   * `weight` (0-1] is the share of notional affected: 1 for a single name, the constituent weight for an index.
+   * Credit event, recorded by hand (products/credit.js). `recovery`: the auction final price or the stated recovery
+   * (decimal); `weight`: an index constituent's share of the original index notional, or its weight in a tranche's index;
+   * `entity`: the defaulted name (basket, index); `eventType`, `eventDate`, `settlement`, `settleDate`.
    */
-  creditEvent(app, { inst, recovery, weight = 1, date }) {
-    const R = num(recovery);
-    need(R !== null && R >= 0 && R <= 1, 'Enter the recovery rate as a decimal between 0 and 1.');
-    const w = num(weight) ?? 1;
-    need(w > 0 && w <= 1, 'Weight must be between 0 and 1.');
-    const when = date || app.clock.today();
-    const ccy = inst.trading_ccy;
-    const out = [];
-    for (const p of app.positions.heldAround(inst.id)) {
-      if (isZero(p.qty)) continue;
-      const book = app.books.getBook(p.book_id), unit = app.books.getUnit(p.unit_id);
-      const from = p.data.premiumPaidThrough || p.data.premiumFrom || inst.terms.effective;
-      const affected = Math.abs(p.qty) * inst.terms.indexFactor * w;
-      const accruedPremium = money(affected * inst.terms.coupon * yearFraction(from, when > from ? when : from, 'ACT/360'), ccy);
-      const protection = money(affected * (1 - R), ccy);
-      const net = money(sign(p.qty) * (protection - accruedPremium), ccy); // buyer receives protection, pays accrued premium
-      const eventId = app.ledger.post({
-        bookId: book.id, unitId: unit.id, type: 'cds.credit_event', instrumentId: inst.id, strategyId: p.strategy_id, positionId: p.id, actor: 'user',
-        summary: `Credit event on ${inst.terms.referenceEntity}: protection ${fmt(protection, ccy)} at ${(R * 100).toFixed(1)}% recovery, accrued premium ${fmt(accruedPremium, ccy)}; ${net >= 0 ? 'received' : 'paid'} ${fmt(Math.abs(net), ccy)}`,
-        data: { recovery: R, weight: w, affectedNotional: affected, protection, accruedPremium },
-        entries: [{ account: 'cash', ccy, amount: net, positionId: p.id }, { account: 'pnl.realized', ccy, amount: -net, positionId: p.id }],
-      });
-      out.push(eventId);
-      if (w >= 1 - 1e-12) {
-        bookSecurityFill(app, { book, unit, inst, action: p.qty > 0 ? 'sell' : 'buy', qty: Math.abs(p.qty), price: 0, fees: [], strategyId: p.strategy_id, tradeDate: when, settleDate: when, eventType: 'cds.terminated', actor: 'user', summary: `CDS terminated by credit event: ${inst.name}` }, { unitCost: 0 });
-        app.tasks.cancelFor(p.id);
-        app.agreements.onPositionChange({ book, unit, inst, pos: p }); // termination releases its collateral
-      }
-    }
-    if (w < 1 - 1e-12) {
-      app.instruments.update(inst.id, { terms: { ...inst.terms, indexFactor: inst.terms.indexFactor * (1 - w) } }, { system: true });
-      // The surviving notional is smaller, so a percentage independent amount is trued up.
-      for (const p of app.positions.heldAround(inst.id)) if (!isZero(p.qty)) app.agreements.onPositionChange({ pos: p });
-    }
-    return { eventIds: out };
+  creditEvent(app, { inst, recovery, weight, date, ...rest }) {
+    return credit.creditEvent(app, inst, { ...rest, recovery, weight, eventDate: rest.eventDate || date }, { bookSecurityFill });
   },
+  /** ABS CDS pay-as-you-go event recorded by hand. */
+  paygo: (app, { inst, ...body }) => credit.paygo(app, inst, body, { bookSecurityFill }),
+  /** Loan CDS cancelled on refinancing, recorded by hand. */
+  cancelOnRefinancing: (app, { inst, ...body }) => credit.cancelOnRefinancing(app, inst, body, { bookSecurityFill }),
 };
 
 function premiumFor(inst, pos, from, to) {
-  return Math.abs(pos.qty) * inst.terms.indexFactor * inst.terms.coupon * yearFraction(from, to, 'ACT/360');
+  return Math.abs(pos.qty) * (inst.terms.indexFactor ?? 1) * inst.terms.coupon * yearFraction(from, to, 'ACT/360');
 }
