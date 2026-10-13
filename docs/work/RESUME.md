@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 64.6% of the pass** (last milestone 2026-10-13T17:28Z, s8: level mapping enforced (lib/mapping.mjs, loadCases) and printed in test/system/README.md and the System behaviour section of scripts/test-matrix.js; end-of-case integrity sweep)
+**Completeness: about 64.6% of the pass** (last milestone 2026-10-13T17:30Z, r1: repo engine: buffer, reverse repo cover cap, buy/sell-back forward and coupon pass, collateral changes; bond loan collateral on dirty value)
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 

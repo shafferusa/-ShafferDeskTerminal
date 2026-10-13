@@ -177,3 +177,129 @@ test('API: marketplace rows carry their tab and routing, a bond its accrued per 
   assert.equal(cat.products.filter((p) => !p.tab).length, 0, 'the catalog route gives every product its tab');
   assert.equal(cat.marketTabs.length, 14);
 });
+
+// ---- item 3 of the Marketplace finish: every product reachable in exactly one place ---------------------------------
+import { MARKET_VIEWS, conventionRoute } from '../../server/core/catalog.js';
+
+const FIN = new Set(['loan', 'repo', 'secloan']);
+const OTC_FAMILIES = new Set(['swap', 'cds', 'forward', 'otcoption']);
+
+test('all 205 products: a US-listed and a foreign-listed instrument each land in one tab of one view, and the views differ', () => {
+  for (const p of PRODUCTS) {
+    const tab = tabOf(p.id);
+    assert.ok(tab, `${p.id} has a tab`);
+    const cls = MARKET_VIEWS[`US_${p.cls === 'cash' ? 'CASH' : 'DERIV'}`].cls;
+    assert.equal(MARKET_TABS.find((t) => t.id === tab).cls, cls);
+    // Listed on a US venue / a Japanese venue. Financing arrangements are not listed: their stated jurisdiction decides.
+    const us = FIN.has(p.family) ? conventionRoute({ product: p, venueType: 'otc', jurisdiction: 'US' }) : conventionRoute({ product: p, venueType: 'exchange', venueCountry: 'US' });
+    const fo = FIN.has(p.family) ? conventionRoute({ product: p, venueType: 'otc', jurisdiction: 'GB' }) : conventionRoute({ product: p, venueType: 'exchange', venueCountry: 'JP' });
+    const want = p.cls === 'cash' ? ['US_CASH', 'FOREIGN_CASH'] : ['US_DERIV', 'FOREIGN_DERIV'];
+    assert.deepEqual([us.view, fo.view], want, `${p.id}: US and foreign listing`);
+    assert.equal(us.basis, FIN.has(p.family) ? 'financing' : 'listed', p.id);
+    // An OTC product is not listed: its governing law (jurisdiction) places it the same way.
+    if (OTC_FAMILIES.has(p.family)) {
+      assert.deepEqual([conventionRoute({ product: p, venueType: 'otc', jurisdiction: 'US' }).view, conventionRoute({ product: p, venueType: 'otc', jurisdiction: 'DE' }).view], want, `${p.id}: OTC by jurisdiction`);
+    }
+  }
+});
+
+test('the routing convention for global FX, crypto and OTC products with no US connection: Foreign, whatever the currency', () => {
+  for (const p of PRODUCTS.filter((x) => ['fx', 'crypto'].includes(x.family) || OTC_FAMILIES.has(x.family))) {
+    for (const venueType of ['global', 'otc']) {
+      const r = conventionRoute({ product: p, venueType });
+      assert.equal(r.view, p.cls === 'cash' ? 'FOREIGN_CASH' : 'FOREIGN_DERIV', `${p.id} ${venueType}`);
+      assert.equal(r.basis, 'convention', `${p.id} ${venueType}`);
+    }
+  }
+  // Financing arrangements follow the security they lend or take as collateral, never their currency.
+  const repo = PRODUCTS.find((x) => x.id === 'term_repo');
+  assert.equal(conventionRoute({ product: repo, venueType: 'otc', collateral: { market_view: 'US_CASH' } }).view, 'US_CASH');
+  assert.equal(conventionRoute({ product: repo, venueType: 'otc', collateral: { market_view: 'FOREIGN_CASH' } }).view, 'FOREIGN_CASH');
+  assert.equal(conventionRoute({ product: repo, venueType: 'otc' }).view, 'FOREIGN_CASH', 'no security, no jurisdiction: the convention');
+});
+
+// One registered product per tab, each registered twice through the API (US and foreign facts, no market view given),
+// and every Marketplace view and tab asked for its rows: each instrument is in exactly one (view, tab), the expected one.
+const DRAFTS = {
+  equities: (g, n) => ({ productId: 'common_stock', name: `Route stock ${n}`, symbol: `RS${n}`, venueType: 'exchange', venue: g === 'US' ? 'NYSE' : 'TSE', venueCountry: g === 'US' ? 'US' : 'JP', tradingCcy: 'USD' }),
+  funds: (g, n) => ({ productId: 'etf', name: `Route ETF ${n}`, symbol: `RE${n}`, venueType: 'exchange', venueCountry: g === 'US' ? 'US' : 'GB', tradingCcy: 'USD' }),
+  bonds: (g, n) => ({ productId: 'corporate_bond', name: `Route bond ${n}`, venueType: 'otc', domicile: g === 'US' ? 'US' : 'DE', tradingCcy: 'USD',
+    terms: { couponType: 'fixed', couponRate: 0.05, frequency: 2, maturity: '2031-03-01', issueDate: '2024-03-01', dayCount: '30/360', redemption: 100 } }),
+  money: (g, n) => ({ productId: 'commercial_paper', name: `Route CP ${n}`, venueType: 'otc', domicile: g === 'US' ? 'US' : 'FR', tradingCcy: 'USD', multiplier: 0.01,
+    terms: { couponType: 'zero', maturity: '2026-09-01', issueDate: '2026-03-01', dayCount: 'ACT/360', redemption: 100 } }),
+  fx: (g, n) => (g === 'US' ? { productId: 'fx_spot', name: `Route pair ${n}`, venueType: 'exchange', venueCountry: 'US', tradingCcy: 'USD', terms: { base: 'EUR', quote: 'USD', settleDays: 2 } }
+    : { productId: 'fx_spot', name: `Route pair ${n}`, venueType: 'global', tradingCcy: 'USD', terms: { base: 'EUR', quote: 'USD', settleDays: 2 } }),
+  commodities: (g, n) => ({ productId: 'crude_oil', name: `Route oil ${n}`, venueType: 'exchange', venueCountry: g === 'US' ? 'US' : 'GB', tradingCcy: 'USD', terms: { quantityUnit: 'barrels', priceUnits: 'USD per barrel' } }),
+  crypto: (g, n) => (g === 'US' ? { productId: 'cryptocurrency', name: `Route coin ${n}`, venueType: 'exchange', venueCountry: 'US', tradingCcy: 'USD' } : { productId: 'cryptocurrency', name: `Route coin ${n}`, venueType: 'global', tradingCcy: 'USD' }),
+  alternatives: (g, n) => ({ productId: 'private_equity', name: `Route PE ${n}`, venueType: 'otc', jurisdiction: g === 'US' ? 'US' : 'LU', tradingCcy: 'USD' }),
+  options: (g, n, inst) => ({ productId: 'equity_option', name: `Route option ${n}`, venueType: 'exchange', underlyingId: (g === 'US' ? inst.ALFA : inst.KAIJ).id, tradingCcy: g === 'US' ? 'USD' : 'JPY', multiplier: 100,
+    terms: { right: 'C', strike: 100 + n, expiration: '2026-06-19', exercise: 'american', settlement: 'physical', deliverable: { units: 100 } } }),
+  futures: (g, n) => ({ productId: 'equity_index_future', name: `Route future ${n}`, venueType: 'exchange', venueCountry: g === 'US' ? 'US' : 'DE', tradingCcy: 'USD', multiplier: 50, terms: { expiration: '2026-06-19', initialMargin: 12000 } }),
+  forwards: (g, n) => ({ productId: 'fx_forward', name: `Route forward ${n}`, venueType: 'otc', jurisdiction: g === 'US' ? 'US' : 'GB', tradingCcy: 'USD',
+    terms: { forwardType: 'fx', base: 'EUR', quote: 'USD', valueDate: '2026-06-02', counterparty: 'Dealer B', collateralBasis: { type: 'uncollateralized' } } }),
+  swaps: (g, n) => irs({ name: `Route swap ${n}`, jurisdiction: g === 'US' ? 'US' : 'GB' }),
+  credit: (g, n) => ({ productId: 'cds_single_name', name: `Route CDS ${n}`, venueType: 'otc', jurisdiction: g === 'US' ? 'US' : 'GB', tradingCcy: 'USD',
+    terms: { referenceEntity: 'Acme Corp', coupon: 0.01, effective: '2026-03-02', maturity: '2031-03-20', recovery: 0.4, counterparty: 'Dealer A', collateralBasis: { type: 'uncollateralized' } } }),
+  structured: (g, n) => ({ productId: 'weather_derivative', name: `Route weather ${n}`, venueType: 'otc', jurisdiction: g === 'US' ? 'US' : 'GB', tradingCcy: 'USD' }),
+};
+
+test('API: one instrument of every tab, registered with US and with foreign facts, is listed in exactly one view and tab', async () => {
+  const { app, inst } = makeApp();
+  const api = createApi(app);
+  const call = async (method, path, body = {}, query = {}) => { const m = api.match(method, path); return m.handler({ params: m.params, query, body }); };
+  assert.deepEqual(Object.keys(DRAFTS).sort(), MARKET_TABS.map((t) => t.id).sort(), 'a draft for every tab');
+  const made = [];
+  let n = 0;
+  for (const [tab, draft] of Object.entries(DRAFTS)) {
+    for (const g of ['US', 'FOREIGN']) {
+      const d = draft(g, ++n, inst);
+      assert.equal(d.marketView, undefined, 'no market view is given: the facts decide');
+      const v = await call('POST', '/api/instruments', d);
+      const cls = MARKET_TABS.find((t) => t.id === tab).cls;
+      made.push({ id: v.id, tab, view: `${g}_${cls === 'cash' ? 'CASH' : 'DERIV'}`, product: d.productId });
+    }
+  }
+  const where = new Map(made.map((m) => [m.id, []]));
+  for (const view of Object.keys(MARKET_VIEWS)) {
+    for (const t of tabsFor(view)) {
+      const rows = (await call('GET', '/api/instruments', {}, { view, tab: t.id, marketplace: '1', limit: '2000' })).items;
+      for (const r of rows) if (where.has(r.id)) where.get(r.id).push(`${view}/${t.id}`);
+    }
+  }
+  for (const m of made) assert.deepEqual(where.get(m.id), [`${m.view}/${m.tab}`], `${m.product} (${m.view}) is in exactly one place`);
+});
+
+test('registration never infers US from the quote currency: USD-quoted instruments with foreign or no US facts are Foreign', async () => {
+  const { app, inst } = makeApp();
+  const api = createApi(app);
+  const post = (body) => { const m = api.match('POST', '/api/instruments'); return m.handler({ params: m.params, query: {}, body }); };
+  const usdForeign = [
+    { productId: 'common_stock', name: 'USD line in Tokyo', symbol: 'USDJP1', venueType: 'exchange', venueCountry: 'JP', tradingCcy: 'USD' },
+    { productId: 'cryptocurrency', name: 'USD coin, global', venueType: 'global', tradingCcy: 'USD' },
+    { productId: 'fx_spot', name: 'EUR/USD global', venueType: 'global', tradingCcy: 'USD', terms: { base: 'EUR', quote: 'USD', settleDays: 2 } },
+    irs({ name: 'USD swap, no jurisdiction' }),
+    { productId: 'corporate_bond', name: 'USD Eurobond of a German issuer', venueType: 'otc', domicile: 'DE', tradingCcy: 'USD', terms: { couponType: 'fixed', couponRate: 0.04, frequency: 1, maturity: '2030-01-15', issueDate: '2025-01-15', dayCount: '30/360', redemption: 100 } },
+    { productId: 'equity_option', name: 'USD-quoted option on KAIJ', venueType: 'exchange', underlyingId: inst.KAIJ.id, tradingCcy: 'USD', multiplier: 100, terms: { right: 'P', strike: 90, expiration: '2026-06-19', exercise: 'european', settlement: 'cash', deliverable: { units: 100 } } },
+  ];
+  for (const d of usdForeign) {
+    const v = await post(d);
+    assert.ok(v.marketView.startsWith('FOREIGN'), `${d.name}: ${v.marketView} (${v.classification.routing.basis})`);
+  }
+  // And the converse: a JPY-quoted line on a US venue is US Based.
+  assert.equal((await post({ productId: 'common_stock', name: 'JPY line in New York', symbol: 'JPYUS1', venueType: 'exchange', venueCountry: 'US', tradingCcy: 'JPY' })).marketView, 'US_CASH');
+});
+
+test('a routing override set by hand is kept, labelled on the row and the instrument page, and listed in its chosen view', async () => {
+  const { app } = makeApp();
+  const api = createApi(app);
+  const call = async (method, path, body = {}, query = {}) => { const m = api.match(method, path); return m.handler({ params: m.params, query, body }); };
+  const v = await call('POST', '/api/instruments', irs({ name: 'Swap moved by hand', marketView: 'US_DERIV' }));
+  assert.equal(v.marketView, 'US_DERIV');
+  assert.equal(v.classification.routing.basis, 'manual');
+  assert.equal(v.classification.routing.basisLabel, 'Set by hand');
+  assert.equal(v.classification.routing.short, 'Set by hand');
+  assert.match(v.classification.routing.text, /^Set by hand \(the convention gives Foreign Derivatives\)/);
+  const rows = (await call('GET', '/api/instruments', {}, { view: 'US_DERIV', tab: 'swaps', marketplace: '1' })).items;
+  assert.ok(rows.some((r) => r.id === v.id), 'listed in US Derivatives, Swaps');
+  assert.ok(!(await call('GET', '/api/instruments', {}, { view: 'FOREIGN_DERIV', tab: 'swaps' })).items.some((r) => r.id === v.id), 'not also in Foreign Derivatives');
+});

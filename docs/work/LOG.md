@@ -131,3 +131,4 @@
 - 2026-10-13T17:26Z | s8 | +0.5 | step 1: engine 41/41, API 47/47, browser 32/32 from clean (incomplete-terms case updated to the routing convention); level-mapping check enforced by loadCases
 - 2026-10-13T17:28Z | o2 | +0.2 | otc_option passes at engine, API and browser
 - 2026-10-13T17:28Z | s8 | +1 | level mapping enforced (lib/mapping.mjs, loadCases) and printed in test/system/README.md and the System behaviour section of scripts/test-matrix.js; end-of-case integrity sweep
+- 2026-10-13T17:30Z | r1 | +0 | repo engine: buffer, reverse repo cover cap, buy/sell-back forward and coupon pass, collateral changes; bond loan collateral on dirty value

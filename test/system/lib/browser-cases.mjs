@@ -2241,3 +2241,140 @@ export async function hedgeReconnection(b, c) {
   b.takePageErrors();
   await b.clean(c, book.id);
 }
+
+// ---------------------------------------------------------------------------------------------
+// Persistence across restarts, and an interrupted confirmation, as the user sees them
+// ---------------------------------------------------------------------------------------------
+
+/** The rows of the named panels of a page of the selected Book, as displayed (a panel that is not shown: null). */
+async function panelRows(b, hash, titles) {
+  await show(b, hash);
+  await closeHedgePopup(b);
+  const out = {};
+  for (const t of titles) {
+    const panel = b.ui.section(b.page.locator('main'), t);
+    out[t] = (await panel.count()) ? (await panel.locator('tbody tr').allInnerTexts()).map(flat) : null;
+  }
+  return out;
+}
+
+/** SB:stress:restart-stages. */
+export async function restartScreens(b, c) {
+  const { page } = b;
+  const book = await b.book('Browser restart stages');
+  const inst = await b.stock('BRS', QUOTE);
+  await enter(b, book, '#/markets/US_CASH');
+  const drawer = await fillTicket(b, inst, { qty: 1_000, order: { orderType: 'limit', limitPrice: 49, tif: 'gtc' } });
+  const { modal, confirm, pv } = await openPreviewFrom(b, drawer);
+  c.eq(pv.blocking, 0, 'the limit buy of 1,000 at 49.00 previews without a block');
+  await confirm.click();
+  await modal.waitFor({ state: 'hidden' });
+  const order = () => b.sql('SELECT status, filled_qty FROM orders WHERE book_id = ?', book.id);
+  const screens = async () => ({
+    pending: await panelRows(b, `#/accounting/pending/${book.accountId}`, ['Open orders', 'Partly filled', 'Executed trades awaiting settlement']),
+    cash: flat(await (async () => { await show(b, `#/accounting/positions/${book.accountId}`); return b.ui.section(page.locator('main'), 'Cash and financing balances').innerText(); })()),
+    holding: (await holdingRow(b, 'BRS').catch(() => '')) || '',
+    history: await historyShown(b),
+  });
+  /** Stop and start the server, reload the page: every screen reads as before, nothing stored changed, nothing added. */
+  const restartHere = async (stage) => {
+    const fp = b.fingerprint();
+    const before = await screens();
+    await b.restart();
+    await page.reload();
+    await page.locator('.shell .topbar').waitFor();
+    const after = await screens();
+    c.eq(after.pending, before.pending, `restart at "${stage}": the Pending tab lists the same orders and trades, each once`);
+    c.eq(after.cash, before.cash, `restart at "${stage}": the cash balances read as before`);
+    c.eq(after.holding, before.holding, `restart at "${stage}": the holding reads as before`);
+    c.eq(sameHistoryShown(c, before.history, after.history, `restart at "${stage}"`), [], `restart at "${stage}": no row was added to the Full history`);
+    b.sameStored(c, fp, b.fingerprint(), `restart at "${stage}": every stored row is as it was`);
+    await b.clean(c, book.id, `restart at "${stage}"`);
+    return after;
+  };
+
+  // Stage 1: working (ask 50.02, limit 49.00).
+  let s = await restartHere('working');
+  c.match((s.pending['Open orders'] || []).join(' | '), /BRS.*1,000.*49\.00/, 'stage 1: the Pending tab lists the order under Open orders: 1,000 at 49.00');
+  await b.tick();
+  c.eq(order(), [{ status: 'working', filled_qty: 0 }], 'after the restart and a cycle it is still working, unfilled');
+
+  // Stage 2: partly filled (the ask falls to 49.00 with 300 displayed).
+  await b.fixture('quote', { instrumentId: inst.id, bid: 48.98, ask: 49.00, last: 49.00, bidSize: 300, askSize: 300 });
+  await b.tick();
+  s = await restartHere('partly filled');
+  c.match((s.pending['Partly filled'] || []).join(' | '), /300 of 1,000.*700/, 'stage 2: the Pending tab lists it as partly filled: 300 of 1,000, 700 remaining');
+  await b.tick(); await b.tick(); await b.tick();
+  c.eq(b.sql('SELECT qty FROM fills f JOIN orders o ON o.id = f.order_id WHERE o.book_id = ? ORDER BY f.id', book.id).map((f) => f.qty), [300, 300, 300, 100], 'after the restart the remainder fills: 300, 300, 100');
+
+  // Stage 3: filled, unsettled. 1,000 x 49.00 = 49,000.00 plus commission 1,000 x 0.005 = 5.00.
+  s = await restartHere('filled, unsettled');
+  c.eq((s.pending['Executed trades awaiting settlement'] || []).length, 4, 'stage 3: four fills await settlement on the Pending tab, each once');
+  c.match(s.cash, /49,005\.00/, 'stage 3: the cash balances show 49,005.00 payable');
+
+  // Stage 4: Tuesday, settled: 500,000.00 - 49,005.00 = 450,995.00.
+  await b.clock(TUE);
+  s = await restartHere('settled');
+  c.match(s.cash, /450,995\.00/, 'stage 4: settled cash 450,995.00');
+  c.match(s.holding, /1,000/, 'stage 4: 1,000 BRS held');
+  await b.tick();
+  c.near((await b.cash(book.id, book.accountId)).settled, 450_995, 'a cycle after the restart pays nothing again');
+  const n = (type) => b.sql('SELECT COUNT(*) AS n FROM events WHERE book_id = ? AND type = ?', book.id, type)[0].n;
+  c.eq([b.sql('SELECT COUNT(*) AS n FROM orders WHERE book_id = ?', book.id)[0].n, n('trade.fill'), n('settlement.pay')], [1, 4, 4], 'in the end one order, four fill events, four settlement payments');
+  await closeHedgePopup(b);
+}
+
+/**
+ * SB:stress:kill-mid-confirmation. The server process is killed while the preview dialog's confirmation is on its
+ * way: (a) before the server receives it, (b) after the server has stored it but before its answer reaches the page.
+ */
+export async function interruptedConfirmation(b, c) {
+  const { page, ui } = b;
+  const book = await b.book('Browser interrupted confirmation');
+  const insts = { a: await b.stock('BKA', QUOTE), b: await b.stock('BKB', QUOTE) };
+  await enter(b, book, '#/markets/US_CASH');
+  const counts = (inst) => ({
+    strategies: b.sql('SELECT COUNT(DISTINCT o.strategy_id) AS n FROM orders o WHERE o.book_id = ? AND o.instrument_id = ?', book.id, inst.id)[0].n,
+    orders: b.sql('SELECT COUNT(*) AS n FROM orders WHERE book_id = ? AND instrument_id = ?', book.id, inst.id)[0].n,
+    fills: b.sql('SELECT COUNT(*) AS n FROM fills f JOIN orders o ON o.id = f.order_id WHERE o.book_id = ? AND o.instrument_id = ?', book.id, inst.id)[0].n,
+  });
+  for (const [variant, stored] of [['a', false], ['b', true]]) {
+    const inst = insts[variant];
+    const label = stored ? '(b) killed after the server stored the confirmation, before its answer reached the page' : '(a) killed before the server received the confirmation';
+    await ui.closeOverlays().catch(() => {});
+    const drawer = await fillTicket(b, inst, { qty: 100 });
+    const { modal, confirm, pv } = await openPreviewFrom(b, drawer);
+    c.eq(pv.blocking, 0, `${label}: the purchase of 100 ${inst.symbol} previews without a block`);
+    // The confirmation leaves the page; the server process is killed (SIGKILL) on the way.
+    await page.route('**/api/strategies', async (route) => {
+      if (route.request().method() !== 'POST') return route.continue();
+      if (stored) { try { await route.fetch(); } catch { /* answered or not: the page will not know */ } }
+      await b.t.kill();
+      await route.abort('connectionreset');
+    }, { times: 1 });
+    await confirm.click();
+    await modal.locator('.notice.err').first().waitFor({ timeout: 20_000 });
+    const said = (await errorsIn(modal)).join(' | ');
+    c.match(said, /not reachable, so it is not known whether this was recorded/i, `${label}: the dialog says the server could not be reached and that it is not known whether the trade was recorded`);
+    c.match(said, /Sending it again unchanged is safe/i, `${label}: and that sending it again unchanged is safe`);
+    c.ok(await modal.isVisible(), `${label}: the preview dialog stays open with what was previewed`);
+    const offline = page.getByText(/server is not (reachable|responding)/i).first();
+    await offline.waitFor({ timeout: 30_000 });
+    c.ok(await offline.isVisible(), `${label}: the page says it cannot reach the server`);
+    await b.t.start();
+    c.eq(counts(inst), stored ? { strategies: 1, orders: 1, fills: 1 } : { strategies: 0, orders: 0, fills: 0 }, `${label}: after the restart the database holds ${stored ? 'the trade once' : 'nothing of it'}`);
+    await b.clean(c, book.id, `${label}: after the restart`);
+    // The user, who cannot know which it was, presses Confirm again in the same dialog.
+    const again = await answerTo(b, 'POST', /^\/api\/strategies$/, () => modal.getByRole('button', { name: /^Confirm/ }).click());
+    c.ok(again.ok, `${label}: the second confirmation is answered`, again.body?.error);
+    if (stored) c.eq(again.body?.duplicate, true, `${label}: as a duplicate of what was stored`);
+    await modal.waitFor({ state: 'hidden' });
+    await b.tick();
+    c.eq(counts(inst), { strategies: 1, orders: 1, fills: 1 }, `${label}: in the end one strategy instance, one order, one fill`);
+    c.eq(b.sql('SELECT f.qty, f.price FROM fills f JOIN orders o ON o.id = f.order_id WHERE o.instrument_id = ?', inst.id).map((f) => [f.qty, f.price]), [[100, 50.02]], `${label}: 100 shares at 50.02, once`);
+    await closeHedgePopup(b);
+  }
+  // 2 x (5,002.00 + 1.00 commission) = 10,006.00 owed, once each.
+  c.near((await b.cash(book.id, book.accountId)).payable, 10_006, 'the Account owes 10,006.00: each purchase once');
+  b.takePageErrors().forEach((e) => { if (!/ERR_|Failed to fetch|NetworkError|not reachable/i.test(e)) c.fail(`browser console error: ${e}`); });
+}

@@ -140,7 +140,9 @@ function applyOrderConditions(out, { buy, limitPrice, stopPrice, orderType, stop
 }
 
 /** What a fee schedule charges on principal: the notional itself for swaps, credit default swaps and forwards. */
-export const feePrincipal = (inst, qty, price) => Math.abs(['swap', 'cds', 'forward'].includes(inst.family) ? qty : qty * price * inst.multiplier);
+export const feePrincipal = (inst, qty, price) => Math.abs(['swap', 'cds', 'forward'].includes(inst.family) ? qty : qty * price * inst.multiplier * bondScale(inst));
+/** A debt security's principal outstanding per unit of face: pool factor times index ratio (1 for a plain bond). */
+const bondScale = (inst) => (inst.family !== 'bond' ? 1 : (inst.terms?.factor ?? 1) * (typeof inst.terms?.indexRatio === 'number' ? inst.terms.indexRatio : 1));
 
 /**
  * A fee schedule { perUnit, bps, minimum } applied to a quantity and its principal: an amount per

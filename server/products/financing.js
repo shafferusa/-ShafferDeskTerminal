@@ -896,7 +896,7 @@ export const secloan = {
     return {
       price: null, mv: null, cost: 0, unrealized: 0, ledgerCarried: true, carrying: null,
       accrued: app.ledger.positionBalance(pos.id, borrowed ? 'accrued.liab' : 'accrued.asset', ccy),
-      notional: p && p.value !== null && und ? money(loanValue(und, Math.abs(pos.qty), p.value, app.clock.today()), ccy) : null,
+      notional: p && p.value !== null ? money(Math.abs(pos.qty) * p.value * (und?.multiplier || 1), ccy) : null,
       exposure: null,
       collateral: borrowed ? null : -app.ledger.positionBalance(pos.id, 'coll.received', ccy),
       recall: pos.data.recall || null,
@@ -927,7 +927,9 @@ export const secloan = {
     }
     app.alerts.resolve({ refType: 'position', refId: pos.id, code: 'secloan.noprice' });
     const days = Math.max(0, diffDays(through, date));
-    if (days > 0) accrued += (loanValue(und, Math.abs(pos.qty), price, date) * inst.terms.feeRate * days) / 360;
+    // The fee accrues on the clean market value (quantity x price x multiplier) for every security; a bond loan's cash
+    // collateral is on its dirty value (below and at the start).
+    if (days > 0) accrued += (Math.abs(pos.qty) * price * und.multiplier * inst.terms.feeRate * days) / 360;
     trueUpAccrual(app, {
       book, unit, pos, inst, ccy, type: 'accrual.fee', account: borrowed ? 'accrued.liab' : 'accrued.asset', pnlAccount: borrowed ? 'pnl.borrow' : 'pnl.lending',
       target: money(borrowed ? -accrued : accrued, ccy), summary: `${borrowed ? 'Borrow fee' : 'Lending fee'} accrued on ${fmtQty(Math.abs(pos.qty))} ${und.symbol || und.name}`,
