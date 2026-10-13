@@ -105,7 +105,7 @@ const securitiesBorrowing = {
         // Proceeds owed to the Account, arriving as restricted cash. Reserve 0.25 x 10,000 x 42.00 = 105,000.
         cash: { account: { USD: { settled: 500_000, unsettled: 419_800, receivable: 419_800, restricted: 0, reserved: 105_000, availableToTrade: 395_000, availableToWithdraw: 395_000 } } },
         positions: [
-          { instrument: 'borrow:etf', lot: 'short', owner: 'account', direction: 'securities borrowed', qty: 10_000, value: 420_000, accrued: 0 }, // 10,000 x 42.00
+          { instrument: 'borrow:etf', lot: 'short', owner: 'account', direction: 'securities borrowed', product: 'securities_borrowing', qty: 10_000, value: 420_000, accrued: 0 }, // 10,000 x 42.00; ETF units: a securities borrowing
           { instrument: 'etf', lot: 'short', owner: 'account', direction: 'short', qty: -10_000, avgCost: 41.98, cost: -419_800, price: 42.00, value: -420_000, unrealized: -200, restrictedCash: 0 },
         ],
         holdings: { etf: { long: 0, short: 10_000, net: -10_000 } },
@@ -251,31 +251,14 @@ const securitiesBorrowing = {
     },
     {
       // Monday 9 March, the deadline: the short is still open, so the Terminal places the buy-in (a market buy to cover of 6,000
-      // and the return of 6,000). The run of Friday 6 March accrues a day's fee on 6,000 at 45.00: 3.00 (17.666667 -> 17.67).
-      id: 'deadline-forces-the-buy-in', covers: ['recall deadline', 'forced buy-in'], action: 'clock', to: AT_1000('2026-03-09'),
+      // and the return of 6,000), which fills in the same cycle at the ask, 45.02: 270,120; realized 6,000 x (41.98 - 45.02) =
+      // -18,240. The run of Friday 6 March accrues a day's fee on 6,000 at 45.00: 3.00 (17.666667 -> 17.67); the return brings
+      // the fee to today (6 to 9 March, three days: 9.00; 26.666667 -> 26.67) and, the borrow being fully returned, pays it.
+      id: 'deadline-forces-the-buy-in', covers: ['recall deadline', 'forced buy-in', 'full return', 'close', 'borrow fee'], action: 'clock', to: AT_1000('2026-03-09'),
       expect: {
         events: [
           { type: 'secloan.buy_in', summary: 'Recall deadline reached: forced buy-in of 6,000 CCLE and return of 6,000 borrowed securities', owner: 'account', date: '2026-03-09' },
           { type: 'accrual.fee', summary: 'Borrow fee accrued on 6,000 CCLE: 3.00 USD', owner: 'account', date: '2026-03-09' },
-        ],
-        positions: [
-          { instrument: 'borrow:etf', lot: 'short', owner: 'account', direction: 'securities borrowed', qty: 6_000, value: 270_000, accrued: -17.67, recall: { qty: 6_000, dueDate: '2026-03-09' } },
-          { instrument: 'etf', lot: 'short', owner: 'account', direction: 'short', qty: -6_000, avgCost: 41.98, cost: -251_880, price: 45.00, value: -270_000, unrealized: -18_120, restrictedCash: 283_500 },
-        ],
-        lifecycle: [{ type: 'secloan.fee', instrument: 'borrow:etf', dueDate: '2026-04-01', status: 'pending', owner: 'account' }],
-        borrowings: [{ owner: 'account', family: 'secloan', type: 'Securities borrowed', instrument: 'etf', lot: 'short', qty: 6_000, value: 270_000, rate: 0.004, accrued: 17.67, costToDate: 17.67, collateralCash: 283_500, nextPayment: '2026-04-01', term: 'open, recallable' }],
-        pnl: { account: { borrowFunding: -17.67, total: -30_297.67 }, book: { total: -30_297.67 } },
-        nav: { account: 469_702.33, book: 969_702.33 },
-        balance: { account: { accruedExpense: 17.67, netAssets: 469_702.33 }, book: { netAssets: 969_702.33 } },
-      },
-    },
-    {
-      // The next cycle fills the buy-in at the ask, 45.02: 270,120; realized 6,000 x (41.98 - 45.02) = -18,240. The return
-      // brings the fee to today (three days, 6 to 9 March, on 6,000 at 45.00: 9.00; 26.666667 -> 26.67) and, the borrow being
-      // fully returned, pays it: 26.67.
-      id: 'buy-in-fills-and-returns', covers: ['forced buy-in', 'full return', 'close', 'borrow fee'], action: 'cycle',
-      expect: {
-        events: [
           { type: 'trade.fill', summary: /^Bought to cover 6,000 CCLE @ 45\.02 USD/, owner: 'account', date: '2026-03-09' },
           { type: 'accrual.fee', summary: 'Borrow fee accrued on 6,000 CCLE: 9.00 USD', owner: 'account', date: '2026-03-09' },
           { type: 'secloan.return', summary: 'Returned 6,000 borrowed CCLE', owner: 'account', date: '2026-03-09' },

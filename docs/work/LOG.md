@@ -193,3 +193,4 @@
 - 2026-10-13T18:24Z | b3 | +0.2 | rmbs passes at engine, API and browser
 - 2026-10-13T18:25Z | m1 | +0.2 | credit_spread_forward passes at engine, API and browser
 - 2026-10-13T18:25Z | o2 | +0.2 | asian_option passes at engine, API and browser
+- 2026-10-13T18:26Z | m1 | +0.2 | credit_spread_option passes at engine, API and browser
