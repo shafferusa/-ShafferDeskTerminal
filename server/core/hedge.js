@@ -952,6 +952,30 @@ export function createHedge(app) {
     app.alerts.resolve({ refType: 'hedge', refId: requestId, code: 'hedge.ready' });
   }
 
+  /**
+   * The Strategy page's request, answered and acted on without a hedge package (the template or the position already
+   * carries the protection), goes with the package it was asked for once that package is confirmed: it is linked to
+   * the new strategy instance through its id (input.hedgeRequestId), so the position and the hedge review queue show
+   * what the service said about it. Only an open draft of the same Account, not yet linked, is linked. When every leg
+   * of the package has filled, the exposure is the one the request described (the proposed primary and the template's
+   * protection, now held), and the answer's exposure record is taken from the instance as it stands; otherwise the
+   * answer is judged against the instance as it fills, and shows stale until refreshed.
+   */
+  function linkToStrategy(requestId, strategyId) {
+    const row = get(requestId);
+    const s = app.packages.getStrategyRow(strategyId);
+    if (!row || !s || row.trigger !== 'strategy_page' || row.strategy_id || row.unit_id !== s.unit_id || !OPEN.includes(row.status)) return false;
+    const now = clock.now().toISOString();
+    db.run(`UPDATE hedge_requests SET strategy_id = ?, scope_id = CASE WHEN scope_type = 'trade' THEN ? ELSE scope_id END, updated_at = ? WHERE id = ?`, strategyId, strategyId, now, requestId);
+    const linked = get(requestId);
+    const filled = app.orders.forStrategy(strategyId).every((o) => !['pending', 'working', 'partial'].includes(o.status) && (o.kind !== 'trade' || Math.abs(o.filled_qty - o.qty) < 1e-9));
+    const src = sourceOf(linked);
+    if (filled && linked.response && src && typeof linked.response.source === 'object') {
+      db.run('UPDATE hedge_requests SET response = ? WHERE id = ?', j({ ...linked.response, source: { ...linked.response.source, fingerprint: exposureNow(linked) } }), requestId);
+    }
+    return true;
+  }
+
   function dismiss(requestId) {
     const row = get(requestId);
     need(row, 'Hedge request not found.', { status: 404 });
@@ -1064,7 +1088,7 @@ export function createHedge(app) {
 
   return {
     objectives: () => HEDGE_OBJECTIVES, scopes: () => HEDGE_SCOPES, families: () => HEDGE_FAMILIES, states: () => HEDGE_STATES,
-    buildRequest, request, complete, refresh, get: (id) => view(get(id)), packageLegs, previewPackage, executionGuard, markExecuted, dismiss, forStrategy, flagReview, clearReview, onStrategyChange, processQueue, prompts, markSeen, list, queueSize: () => postTradeQueue.size,
+    buildRequest, request, complete, refresh, get: (id) => view(get(id)), packageLegs, previewPackage, executionGuard, markExecuted, linkToStrategy, dismiss, forStrategy, flagReview, clearReview, onStrategyChange, processQueue, prompts, markSeen, list, queueSize: () => postTradeQueue.size,
     refreshWaiting, closeOrphans, openForStrategy, positionLinks, queue, canAnswer, service, serviceStatus, setScript, scriptView,
     strategyList, strategyRef, strategiesView, resolveStrategyName, refView,
   };

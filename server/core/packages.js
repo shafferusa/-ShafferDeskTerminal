@@ -953,6 +953,8 @@ export function createPackages(app) {
     });
 
     await runMatching(strategyId);
+    // The Strategy page's hedge request for this package, answered with no hedge package chosen, goes with it (by its id).
+    if (input.hedgeRequestId && !input.hedgeLinkId && app.hedge?.linkToStrategy) app.hedge.linkToStrategy(input.hedgeRequestId, strategyId);
     return { duplicate: false, strategy: strategyView(strategyId) };
   }
 

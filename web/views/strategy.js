@@ -456,7 +456,8 @@ export default function Strategy({ args, book, status }) {
   const preview = async () => {
     setBusy(true); setError(null);
     try {
-      const withHedge = hedgeSel && hedge.r ? { hedgeLinkId: hedge.r.id, hedgePackageId: hedgeSel, appendHedge: true } : {};
+      // With no hedge package chosen, the request still goes with the package by its id, so it is linked once the package is confirmed.
+      const withHedge = hedgeSel && hedge.r ? { hedgeLinkId: hedge.r.id, hedgePackageId: hedgeSel, appendHedge: true } : hedge.r ? { hedgeRequestId: hedge.r.id } : {};
       const pv = await post('/api/strategies/preview', { ...input, ...withHedge });
       openOverlay((close) => html`<${PreviewModal} preview=${pv} onClose=${close} confirmLabel=${attachId ? 'Confirm added legs' : 'Confirm paper trade'}
         onDone=${() => { setQty(null); setNotional(null); setLegs([]); setO((cur) => ({ ...cur, contracts: null })); setFut((cur) => ({ ...cur, contracts: null })); setSignalRef(null); setSubmitted((n) => n + 1); if (attachId) location.hash = '#/strategy'; }} />`);
