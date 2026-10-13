@@ -694,6 +694,10 @@ function normalizePriceLeg(l, at, errors) {
   l.peakHours = l.hours && l.hours !== 'day' ? num(l.peakHours) ?? 16 : null;
   if (l.peakHours !== null && !(l.peakHours > 0 && l.peakHours <= 24)) errors.push(`${at}: peak hours a day must be between 1 and 24.`);
   if (l.peakHours === null) delete l.peakHours;
+  // Peak days (electricity): business days of this calendar; empty, the pricing calendar's. An off-peak leg priced every day needs it.
+  l.peakCalendar = l.peakHours !== undefined && l.peakCalendar ? String(l.peakCalendar).toUpperCase() : null;
+  if (l.peakCalendar && !isKnownCalendar(l.peakCalendar)) errors.push(`${at}: peak-day calendar ${l.peakCalendar} is not one the Terminal knows.`);
+  if (!l.peakCalendar) delete l.peakCalendar;
 }
 
 /** Pricing days of a period: business days of the leg's pricing calendar (default the payment calendar) from its start up to, not including, its end. */
@@ -710,7 +714,7 @@ function pricingDays(inst, leg, period) {
  */
 function deliveryHours(inst, leg, period) {
   const base = 24 * diffDays(period.start, period.end);
-  const peak = leg.peakHours * pricingDays(inst, leg, period).length;
+  const peak = leg.peakHours * pricingDays(inst, leg.peakCalendar ? { ...leg, pricingCalendar: leg.peakCalendar } : leg, period).length;
   if (leg.hours === 'day') return diffDays(period.start, period.end);
   return leg.hours === 'base' ? base : leg.hours === 'peak' ? peak : base - peak;
 }
@@ -852,7 +856,7 @@ function priceLegExtras(leg) {
   const out = [];
   if (leg.averaging === 'daily') out.push(`average of the daily fixings on the business days of ${leg.pricingCalendar ? `the ${leg.pricingCalendar} calendar` : 'the payment calendar'} in each period`);
   if (leg.hours === 'day') out.push('quantity per calendar day of each period');
-  else if (leg.hours) out.push(`${leg.hours === 'offpeak' ? 'off-peak' : leg.hours} hours (${leg.hours === 'base' ? '24 a day' : `${leg.peakHours} a peak day`}; clock changes not counted)`);
+  else if (leg.hours) out.push(`${leg.hours === 'offpeak' ? 'off-peak' : leg.hours} hours (${leg.hours === 'base' ? '24 a day' : `${leg.peakHours} a peak day${leg.peakCalendar ? `, peak days on the ${leg.peakCalendar} calendar` : ''}`}; clock changes not counted)`);
   return out.length ? `, ${out.join(', ')}` : '';
 }
 

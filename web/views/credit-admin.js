@@ -13,7 +13,7 @@ const EVENT_LABEL = {
   obligation_acceleration: 'Obligation acceleration', governmental_intervention: 'Governmental intervention', failure_to_pay_principal: 'Failure to pay principal',
   writedown: 'Writedown', distressed_ratings_downgrade: 'Distressed ratings downgrade',
 };
-const SETTLE_LABEL = { auction: 'Cash, at the auction final price', cash: 'Cash, at a stated recovery', physical: 'Physical, simulated on paper' };
+const SETTLE_LABEL = { auction: 'Auction final price (cash)', cash: 'Stated recovery (cash)', physical: 'Physical (simulated)' };
 const PAYGO_LABEL = {
   writedown: 'Writedown (seller pays)', principal_shortfall: 'Principal shortfall (seller pays)', interest_shortfall: 'Interest shortfall (seller pays)',
   writedown_reimbursement: 'Writedown reimbursement (buyer pays)', interest_reimbursement: 'Interest shortfall reimbursement (buyer pays)', amortization: 'Amortization of the reference obligation (no payment)',

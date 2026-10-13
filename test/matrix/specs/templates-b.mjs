@@ -2708,4 +2708,464 @@ const ironButterfly = {
   ],
 };
 
-export default [bearCall, longStraddle, longStrangle, ironCondor, ironButterfly];
+// =====================================================================================================================
+// long_butterfly
+// =====================================================================================================================
+// Corrin 50 Index calls (Cboe, European, cash-settled at 100 x the index), 20 March 2026: buy one 100 call, sell two 105
+// calls, buy one 110 call, 5 butterflies. The written 105s depend on both bought legs and are covered by them: nothing
+// is reserved (the package cannot lose more than its debit). Netted, the Account could pay; but both bought legs execute
+// before the written calls bring their premium, so the package is short leg by leg and needs funding.
+//   butterfly  refused (short while the legs execute), then Treasury funding; the 100 calls fill 3 of 5 first, and the
+//              written 105s follow the share of the two legs they depend on (6 of 10), then the rest. The index fixes
+//              at 107: the bought 100s (outer) and the written 105s (inner) are settled in cash, the 110s lapse.
+//   retry / accept / unwind  1 butterfly each when the written calls have no fresh quote.
+const LFLY_PAGE = (contracts, financing) => ({ template: 'Long Call or Put Butterfly', underlying: 'index', expiration: '2026-03-20', right: 'C', strikes: { 'Lower strike (bought)': 100, 'Middle strike (two sold)': 105, 'Upper strike (bought)': 110 }, contracts, ...(financing ? { financing } : {}) });
+const lflyInput = (contracts, financing) => templateInput('long_butterfly', { underlyingId: '$inst:index', options: { expiration: '2026-03-20', right: 'C', strikes: { lower: 100, middle: 105, upper: 110 }, contracts }, financing });
+const crxCall = (strike) => ({
+  productId: 'index_option', name: `CRX 20 March 2026 ${strike} call`, symbol: `CRX260320C${strike}`, marketView: 'US_DERIV', venue: 'Cboe Options Exchange', venueType: 'exchange', venueCountry: 'US', underlyingGeo: 'US', tradingCcy: 'USD', underlying: 'index', multiplier: 100,
+  terms: { right: 'C', strike, expiration: '2026-03-20', exercise: 'european', settlement: 'cash', deliverable: { units: 100 } },
+});
+const lflyOne = (as) => ({ action: 'package', as, instrument: 'index', input: lflyInput(1, null), strategyPage: LFLY_PAGE(1, null) });
+const longButterfly = {
+  template: 'long_butterfly',
+  title: 'Long call butterfly on the Corrin 50 Index (Cboe, cash-settled): 20 March 2026 100 / 105 / 110 calls, one, two sold, one',
+  matrix: {
+    ...OPTION_TEMPLATE_MATRIX,
+    requiredFields: [...OPTION_TEMPLATE_MATRIX.requiredFields, 'Built from (calls or puts)'],
+    settlement: 'Premium of each leg T+1 on the US calendar; Treasury funding moves at once; cash settlement of the expired legs T+1 (receipts settled before payments)',
+    lifecycle: 'Three expiry items settled from the index fixing for 20 March 2026 (107: the bought 100 calls and the written 105 calls settled in cash, the 110 calls lapse); a failed dependent leg leaves the instance needing attention: Retry, Unwind or Accept',
+    accounting: 'Net debit paid; commission expensed; premium realized on buy-back, sale, cash settlement and lapse',
+    collateral: 'The two written calls are covered by the two bought legs: nothing is reserved; the cash need is measured leg by leg (the bought legs are paid for before the written legs bring their premium)',
+  },
+  start: MAR(2),
+  settlementCheck: { lag: 1, holidays: [] },
+  book: book('Templates long butterfly'),
+  instruments: {
+    index: { productId: 'etf', name: 'Corrin 50 Index (reference level)', symbol: 'CRX', marketView: 'US_CASH', venue: 'Corrin Indices', venueType: 'exchange', venueCountry: 'US', issuer: 'Corrin Indices LLC', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', terms: {} },
+    c100: crxCall(100),
+    c105: crxCall(105),
+    c110: crxCall(110),
+  },
+  quotes: {
+    index: { bid: 99.99, ask: 100.01, last: 100, bidSize: 1000, askSize: 1000 },
+    c100: { bid: 3.30, ask: 3.40, last: 3.35, bidSize: 20, askSize: 3 }, // only 3 contracts displayed at the ask
+    c105: { bid: 1.20, ask: 1.30, last: 1.25, bidSize: 40, askSize: 40 },
+    c110: { bid: 0.30, ask: 0.40, last: 0.35, bidSize: 20, askSize: 20 },
+  },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 1_000, unsettled: 0, reserved: 0, availableToTrade: 1_000, availableToWithdraw: 1_000 } },
+      treasury: { USD: { settled: 999_000, unsettled: 0, reserved: 0, availableToTrade: 999_000, availableToWithdraw: 999_000 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 1_000, treasury: 999_000, book: 1_000_000 },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+  },
+  steps: [
+    {
+      // Netted: 1,900 for the bought legs (5 x 3.40 x 100 + 5 x 0.40 x 100), 13 of commission (20 contracts), nothing
+      // reserved, against 1,200 (10 x 1.20 x 100) and 1,000: no shortfall. Leg by leg: 1,000 - 1,703.25 - 203.25 =
+      // -906.50 before the written calls bring 1,193.50.
+      id: 'open-short-of-cash', covers: 'financing', action: 'package', as: 'refused', instrument: 'index',
+      input: lflyInput(5, null), strategyPage: LFLY_PAGE(5, null),
+      status: 'blocked', reason: 'The bought legs are paid for before the written legs bring their premium: the preview is blocked until financing is chosen.',
+      expect: {
+        refused: 'Alpha is short 906.50 USD while the legs execute',
+        preview: {
+          blocking: 1, errors: ['cash'],
+          legs: [
+            { kind: 'trade', action: 'buy', instrument: 'c100', qty: 5, estimate: 3.40, settleDate: '2026-03-03', cash: -1_700, fees: 3.25, dependsOn: [] },
+            { kind: 'trade', action: 'buy', instrument: 'c110', qty: 5, estimate: 0.40, settleDate: '2026-03-03', cash: -200, fees: 3.25, dependsOn: [] },
+            { kind: 'trade', action: 'sell', instrument: 'c105', qty: 10, estimate: 1.20, settleDate: '2026-03-03', cash: 1_200, fees: 6.50, dependsOn: [1, 2] },
+          ],
+          cash: { USD: { purchases: 1_900, proceeds: 1_200, fees: 13, reserved: 0, required: 1_913, available: 1_000, shortfall: 906.50 } },
+        },
+      },
+    },
+    {
+      id: 'open', covers: ['open', 'financing', 'partial fill', 'dependency'], action: 'package', as: 'butterfly', instrument: 'index',
+      input: lflyInput(5, { mode: 'treasury' }), strategyPage: LFLY_PAGE(5, { mode: 'treasury' }),
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [
+            { kind: 'funding', purpose: 'financing', qty: 906.50, cash: 906.50, dependsOn: [] },
+            { kind: 'trade', action: 'buy', instrument: 'c100', qty: 5, estimate: 3.40, model: 'quoted-bid-ask', settleDate: '2026-03-03', cash: -1_700, fees: 3.25, dependsOn: [1] },
+            { kind: 'trade', action: 'buy', instrument: 'c110', qty: 5, estimate: 0.40, settleDate: '2026-03-03', cash: -200, fees: 3.25, dependsOn: [1] },
+            { kind: 'trade', action: 'sell', instrument: 'c105', qty: 10, estimate: 1.20, settleDate: '2026-03-03', cash: 1_200, fees: 6.50, dependsOn: [2, 3, 1] },
+          ],
+          cash: { USD: { purchases: 1_900, proceeds: 1_200, fees: 13, reserved: 0, financingIn: 906.50, required: 1_913, available: 1_000, shortfall: 0, netCash: 193.50 } },
+          netPremium: { amount: 700, ccy: 'USD', type: 'debit', complete: true },
+          // The two written calls are covered by the two bought legs: nothing reserved.
+          optionRequirement: [{ ccy: 'USD', amount: 0, finite: 0, naked: 0, uncoveredCallUnits: 0 }],
+        },
+        result: {
+          status: 'partial',
+          orders: [
+            { kind: 'funding', status: 'filled', filledQty: 906.50 },
+            { action: 'buy', instrument: 'c100', status: 'partial', filledQty: 3, avgPrice: 3.40 },
+            { action: 'buy', instrument: 'c110', status: 'filled', filledQty: 5, avgPrice: 0.40 },
+            { action: 'sell', instrument: 'c105', status: 'partial', qty: 10, filledQty: 6, avgPrice: 1.20 }, // 10 x min(3/5, 5/5)
+          ],
+        },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'transfer.funding', summary: 'Treasury funding: 906.50 USD from Treasury to Alpha' },
+          { type: 'trade.fill', summary: 'Bought 3 CRX260320C100 @ 3.40 USD', date: '2026-03-02' },
+          { type: 'trade.fill', summary: 'Bought 5 CRX260320C110 @ 0.40 USD' },
+          { type: 'trade.fill', summary: 'Sold 6 CRX260320C105 @ 1.20 USD' },
+          { type: 'trade.fill', summary: 'Bought 2 CRX260320C100 @ 3.40 USD' },
+          { type: 'trade.fill', summary: 'Sold 4 CRX260320C105 @ 1.20 USD' },
+        ],
+        cash: {
+          // owed 1,021.95 + 203.25 + 681.30 = 1,906.50; owed to it 716.10 + 477.40 = 1,193.50
+          account: { USD: { settled: 1_906.50, unsettled: -713, reserved: 0, availableToTrade: 1_193.50, availableToWithdraw: 0 } },
+          treasury: { USD: { settled: 998_093.50, unsettled: 0, availableToTrade: 998_093.50, availableToWithdraw: 998_093.50 } },
+        },
+        positions: [
+          { instrument: 'c100', lot: 'butterfly', owner: 'account', direction: 'long', qty: 5, avgCost: 3.40, cost: 1_700, price: 3.35, value: 1_675, unrealized: -25 },
+          { instrument: 'c105', lot: 'butterfly', owner: 'account', direction: 'short', qty: -10, avgCost: 1.20, cost: -1_200, price: 1.25, value: -1_250, unrealized: -50 },
+          { instrument: 'c110', lot: 'butterfly', owner: 'account', direction: 'long', qty: 5, avgCost: 0.40, cost: 200, price: 0.35, value: 175, unrealized: -25 },
+        ],
+        holdings: { c100: { long: 5, short: 0, net: 5 }, c105: { long: 0, short: 10, net: -10 }, c110: { long: 5, short: 0, net: 5 } },
+        pending: [
+          { instrument: 'c100', lot: 'butterfly', dueDate: '2026-03-03', amount: -1_021.95, into: 'cash' },
+          { instrument: 'c100', lot: 'butterfly', dueDate: '2026-03-03', amount: -681.30, into: 'cash' },
+          { instrument: 'c105', lot: 'butterfly', dueDate: '2026-03-03', amount: 477.40, into: 'cash' },
+          { instrument: 'c105', lot: 'butterfly', dueDate: '2026-03-03', amount: 716.10, into: 'cash' },
+          { instrument: 'c110', lot: 'butterfly', dueDate: '2026-03-03', amount: -203.25, into: 'cash' },
+        ],
+        lifecycle: [
+          { type: 'option.expiry', instrument: 'c100', dueDate: '2026-03-20', status: 'pending' },
+          { type: 'option.expiry', instrument: 'c105', dueDate: '2026-03-20', status: 'pending' },
+          { type: 'option.expiry', instrument: 'c110', dueDate: '2026-03-20', status: 'pending' },
+        ],
+        pnl: {
+          account: { realized: 0, commissions: -13, fees: 0, unrealized: -100, total: -113 },
+          book: { realized: 0, commissions: -13, unrealized: -100, total: -113 },
+          treasury: { total: 0 },
+        },
+        nav: { account: 1_793.50, treasury: 998_093.50, book: 999_887 }, // 1,000 + 906.50 - 113
+        balance: {
+          account: { cash: 1_906.50, receivable: 1_193.50, payable: 1_906.50, positions: 600, assets: 3_700, liabilities: 1_906.50, netAssets: 1_793.50 },
+          treasury: { cash: 998_093.50, assets: 998_093.50, liabilities: 0, netAssets: 998_093.50 },
+          book: { cash: 1_000_000, receivable: 1_193.50, payable: 1_906.50, positions: 600, assets: 1_001_793.50, liabilities: 1_906.50, netAssets: 999_887 },
+        },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: MAR(3),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 716.10 USD into settled cash', date: '2026-03-03' },
+          { type: 'settlement.receive', summary: 'received 477.40 USD into settled cash' },
+          { type: 'settlement.pay', summary: 'paid 1,021.95 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 203.25 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 681.30 USD from settled cash' },
+        ],
+        cash: { account: { USD: { settled: 1_193.50, unsettled: 0, availableToTrade: 1_193.50, availableToWithdraw: 1_193.50 } } },
+        pending: [],
+        balance: { account: { cash: 1_193.50, receivable: null, payable: null, assets: 1_793.50, liabilities: 0 }, book: { cash: 999_287, receivable: null, payable: null, assets: 999_887, liabilities: 0 } },
+      },
+    },
+    { id: 'c105-quote-stops', action: 'quote', instrument: 'c105', quote: { bid: 1.20, ask: 1.30, last: 1.25, bidSize: 40, askSize: 40, asOf: MAR(3, '09:50') }, expect: {} },
+    {
+      // One butterfly: 340 + 40 bought, two calls sold estimated at their last 1.25 (250), 2.60 commission. Leg by leg the
+      // deepest point is after the bought legs: 1,193.50 - 340.65 - 40.65 = 812.20.
+      ...lflyOne('retry'), id: 'open-retry', covers: ['open', 'failed dependent leg'],
+      expect: {
+        preview: {
+          blocking: 0, warnings: ['not-executable'],
+          legs: [
+            { kind: 'trade', action: 'buy', instrument: 'c100', qty: 1, estimate: 3.40, settleDate: '2026-03-04', cash: -340, fees: 0.65, dependsOn: [] },
+            { kind: 'trade', action: 'buy', instrument: 'c110', qty: 1, estimate: 0.40, settleDate: '2026-03-04', cash: -40, fees: 0.65, dependsOn: [] },
+            { kind: 'trade', action: 'sell', instrument: 'c105', qty: 2, estimate: null, reference: 1.25, executable: false, settleDate: '2026-03-04', cash: 250, fees: 1.30, dependsOn: [1, 2] },
+          ],
+          cash: { USD: { purchases: 380, proceeds: 250, fees: 2.60, reserved: 0, required: 382.60, available: 1_193.50, shortfall: 0 } },
+        },
+        result: { status: 'partial', orders: [{ instrument: 'c100', status: 'filled', filledQty: 1 }, { instrument: 'c110', status: 'filled', filledQty: 1 }, { instrument: 'c105', status: 'working', filledQty: 0 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1 CRX260320C100 @ 3.40 USD', date: '2026-03-03' }, { type: 'trade.fill', summary: 'Bought 1 CRX260320C110 @ 0.40 USD' }],
+        cash: { account: { USD: { settled: 1_193.50, unsettled: -381.30, availableToTrade: 812.20, availableToWithdraw: 812.20 } } },
+        positions: [
+          { instrument: 'c100', lot: 'butterfly', value: 1_675 },
+          { instrument: 'c100', lot: 'retry', owner: 'account', direction: 'long', qty: 1, avgCost: 3.40, cost: 340, price: 3.35, value: 335, unrealized: -5 },
+          { instrument: 'c105', lot: 'butterfly', value: -1_250 },
+          { instrument: 'c110', lot: 'butterfly', value: 175 },
+          { instrument: 'c110', lot: 'retry', owner: 'account', direction: 'long', qty: 1, avgCost: 0.40, cost: 40, price: 0.35, value: 35, unrealized: -5 },
+        ],
+        holdings: { c100: { long: 6, short: 0, net: 6 }, c110: { long: 6, short: 0, net: 6 } },
+        pending: [{ instrument: 'c100', lot: 'retry', dueDate: '2026-03-04', amount: -340.65 }, { instrument: 'c110', lot: 'retry', dueDate: '2026-03-04', amount: -40.65 }],
+        openOrders: [{ instrument: 'c105', kind: 'trade', action: 'sell', status: 'working', qty: 2, filledQty: 0 }],
+        lifecycle: [{ instrument: 'c100' }, { instrument: 'c100' }, { instrument: 'c105' }, { instrument: 'c110' }, { instrument: 'c110' }],
+        pnl: { account: { commissions: -14.30, unrealized: -110, total: -124.30 }, book: { commissions: -14.30, unrealized: -110, total: -124.30 } },
+        nav: { account: 1_782.20, book: 999_875.70 },
+        balance: {
+          account: { cash: 1_193.50, payable: 381.30, positions: 970, assets: 2_163.50, liabilities: 381.30, netAssets: 1_782.20 },
+          book: { cash: 999_287, payable: 381.30, positions: 970, assets: 1_000_257, liabilities: 381.30, netAssets: 999_875.70 },
+        },
+      },
+    },
+    {
+      ...lflyOne('accept'), id: 'open-accept', covers: ['open', 'failed dependent leg'],
+      expect: {
+        preview: { blocking: 0, legs: [{ instrument: 'c100' }, { instrument: 'c110' }, { instrument: 'c105', estimate: null, dependsOn: [1, 2] }], cash: { USD: { required: 382.60, available: 812.20, shortfall: 0 } } },
+        result: { status: 'partial', orders: [{ status: 'filled' }, { status: 'filled' }, { instrument: 'c105', status: 'working' }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill' }, { type: 'trade.fill' }],
+        cash: { account: { USD: { settled: 1_193.50, unsettled: -762.60, availableToTrade: 430.90, availableToWithdraw: 430.90 } } },
+        positions: [
+          { instrument: 'c100', lot: 'accept', value: 335 }, { instrument: 'c100', lot: 'butterfly' }, { instrument: 'c100', lot: 'retry' },
+          { instrument: 'c105', lot: 'butterfly' },
+          { instrument: 'c110', lot: 'accept', value: 35 }, { instrument: 'c110', lot: 'butterfly' }, { instrument: 'c110', lot: 'retry' },
+        ],
+        holdings: { c100: { long: 7, short: 0, net: 7 }, c110: { long: 7, short: 0, net: 7 } },
+        pending: [{ instrument: 'c100', lot: 'accept' }, { instrument: 'c100', lot: 'retry' }, { instrument: 'c110', lot: 'accept' }, { instrument: 'c110', lot: 'retry' }],
+        openOrders: [{ instrument: 'c105', status: 'working' }, { instrument: 'c105', status: 'working' }],
+        lifecycle: [{ instrument: 'c100' }, { instrument: 'c100' }, { instrument: 'c100' }, { instrument: 'c105' }, { instrument: 'c110' }, { instrument: 'c110' }, { instrument: 'c110' }],
+        pnl: { account: { commissions: -15.60, unrealized: -120, total: -135.60 }, book: { commissions: -15.60, unrealized: -120, total: -135.60 } },
+        nav: { account: 1_770.90, book: 999_864.40 },
+        balance: {
+          account: { cash: 1_193.50, payable: 762.60, positions: 1_340, assets: 2_533.50, liabilities: 762.60, netAssets: 1_770.90 },
+          book: { cash: 999_287, payable: 762.60, positions: 1_340, assets: 1_000_627, liabilities: 762.60, netAssets: 999_864.40 },
+        },
+      },
+    },
+    {
+      ...lflyOne('unwind'), id: 'open-unwind', covers: ['open', 'failed dependent leg'],
+      expect: {
+        preview: { blocking: 0, legs: [{ instrument: 'c100' }, { instrument: 'c110' }, { instrument: 'c105', estimate: null }], cash: { USD: { required: 382.60, available: 430.90, shortfall: 0 } } },
+        result: { status: 'partial', orders: [{ status: 'filled' }, { status: 'filled' }, { instrument: 'c105', status: 'working' }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill' }, { type: 'trade.fill' }],
+        cash: { account: { USD: { settled: 1_193.50, unsettled: -1_143.90, availableToTrade: 49.60, availableToWithdraw: 49.60 } } },
+        positions: [
+          { instrument: 'c100', lot: 'accept' }, { instrument: 'c100', lot: 'butterfly' }, { instrument: 'c100', lot: 'retry' }, { instrument: 'c100', lot: 'unwind', value: 335 },
+          { instrument: 'c105', lot: 'butterfly' },
+          { instrument: 'c110', lot: 'accept' }, { instrument: 'c110', lot: 'butterfly' }, { instrument: 'c110', lot: 'retry' }, { instrument: 'c110', lot: 'unwind', value: 35 },
+        ],
+        holdings: { c100: { long: 8, short: 0, net: 8 }, c110: { long: 8, short: 0, net: 8 } },
+        pending: [{ instrument: 'c100', lot: 'accept' }, { instrument: 'c100', lot: 'retry' }, { instrument: 'c100', lot: 'unwind' }, { instrument: 'c110', lot: 'accept' }, { instrument: 'c110', lot: 'retry' }, { instrument: 'c110', lot: 'unwind' }],
+        openOrders: [{ instrument: 'c105', status: 'working' }, { instrument: 'c105', status: 'working' }, { instrument: 'c105', status: 'working' }],
+        lifecycle: [{ instrument: 'c100' }, { instrument: 'c100' }, { instrument: 'c100' }, { instrument: 'c100' }, { instrument: 'c105' }, { instrument: 'c110' }, { instrument: 'c110' }, { instrument: 'c110' }, { instrument: 'c110' }],
+        pnl: { account: { commissions: -16.90, unrealized: -130, total: -146.90 }, book: { commissions: -16.90, unrealized: -130, total: -146.90 } },
+        nav: { account: 1_759.60, book: 999_853.10 },
+        balance: {
+          account: { cash: 1_193.50, payable: 1_143.90, positions: 1_710, assets: 2_903.50, liabilities: 1_143.90, netAssets: 1_759.60 },
+          book: { cash: 999_287, payable: 1_143.90, positions: 1_710, assets: 1_000_997, liabilities: 1_143.90, netAssets: 999_853.10 },
+        },
+      },
+    },
+    {
+      id: 'written-legs-expire', covers: ['failed dependent leg', 'settlement'], action: 'clock', to: MAR(4),
+      expect: {
+        events: [
+          { type: 'settlement.pay', summary: 'paid 340.65 USD from settled cash', date: '2026-03-04' },
+          { type: 'settlement.pay', summary: 'paid 40.65 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 340.65 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 40.65 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 340.65 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 40.65 USD from settled cash' },
+          { type: 'order.expired', summary: 'Leg 3 expired: sell 2 CRX260320C105. Day order did not fill before the end of the business day' },
+          { type: 'order.expired', summary: 'Leg 3 expired: sell 2 CRX260320C105. Day order did not fill before the end of the business day' },
+          { type: 'order.expired', summary: 'Leg 3 expired: sell 2 CRX260320C105. Day order did not fill before the end of the business day' },
+        ],
+        cash: { account: { USD: { settled: 49.60, unsettled: 0, availableToTrade: 49.60, availableToWithdraw: 49.60 } } },
+        pending: [], openOrders: [],
+        failed: { orders: 3 },
+        alerts: ['strategy.attention', 'strategy.attention', 'strategy.attention'],
+        balance: { account: { cash: 49.60, payable: null, assets: 1_759.60, liabilities: 0 }, book: { cash: 998_143.10, payable: null, assets: 999_853.10, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'c105-quote-day3', action: 'quote', instrument: 'c105', quote: { bid: 1.00, ask: 1.10, last: 1.05, bidSize: 40, askSize: 40 },
+      expect: {
+        positions: [
+          { instrument: 'c100', lot: 'accept' }, { instrument: 'c100', lot: 'butterfly' }, { instrument: 'c100', lot: 'retry' }, { instrument: 'c100', lot: 'unwind' },
+          { instrument: 'c105', lot: 'butterfly', price: 1.05, value: -1_050, unrealized: 150 }, // -10 x 1.05 x 100 + 1,200
+          { instrument: 'c110', lot: 'accept' }, { instrument: 'c110', lot: 'butterfly' }, { instrument: 'c110', lot: 'retry' }, { instrument: 'c110', lot: 'unwind' },
+        ],
+        pnl: { account: { unrealized: 70, total: 53.10 }, book: { unrealized: 70, total: 53.10 } },
+        nav: { account: 1_959.60, book: 1_000_053.10 },
+        balance: { account: { positions: 1_910, assets: 1_959.60, netAssets: 1_959.60 }, book: { positions: 1_910, assets: 1_000_053.10, netAssets: 1_000_053.10 } },
+      },
+    },
+    {
+      // Retry sells the two calls at 1.00 (200 - 1.30). Covered by the instance's bought legs: nothing reserved.
+      id: 'retry', covers: ['retry', 'failed dependent leg'], action: 'recover', how: 'retry', lot: 'retry',
+      expect: {
+        preview: { blocking: 0, errors: [], intent: 'retry', legs: [{ kind: 'trade', action: 'sell', instrument: 'c105', qty: 2, estimate: 1.00, settleDate: '2026-03-05', cash: 200, fees: 1.30 }], cash: { USD: { proceeds: 200, fees: 1.30, reserved: 0, required: 1.30, available: 49.60, shortfall: 0 } }, optionRequirement: [{ ccy: 'USD', amount: 0, finite: 0, naked: 0, uncoveredCallUnits: 0 }] },
+        result: { status: 'open', complete: true, orders: [{ action: 'sell', instrument: 'c105', status: 'filled', filledQty: 2, avgPrice: 1.00 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 2 CRX260320C105 @ 1.00 USD', date: '2026-03-04' }],
+        cash: { account: { USD: { settled: 49.60, unsettled: 198.70, reserved: 0, availableToTrade: 248.30, availableToWithdraw: 49.60 } } },
+        positions: [
+          { instrument: 'c100', lot: 'accept' }, { instrument: 'c100', lot: 'butterfly' }, { instrument: 'c100', lot: 'retry' }, { instrument: 'c100', lot: 'unwind' },
+          { instrument: 'c105', lot: 'butterfly', value: -1_050 }, { instrument: 'c105', lot: 'retry', owner: 'account', direction: 'short', qty: -2, avgCost: 1.00, cost: -200, price: 1.05, value: -210, unrealized: -10 },
+          { instrument: 'c110', lot: 'accept' }, { instrument: 'c110', lot: 'butterfly' }, { instrument: 'c110', lot: 'retry' }, { instrument: 'c110', lot: 'unwind' },
+        ],
+        holdings: { c105: { long: 0, short: 12, net: -12 } },
+        pending: [{ instrument: 'c105', lot: 'retry', dueDate: '2026-03-05', amount: 198.70 }],
+        lifecycle: [{ instrument: 'c100' }, { instrument: 'c100' }, { instrument: 'c100' }, { instrument: 'c100' }, { instrument: 'c105' }, { instrument: 'c105' }, { instrument: 'c110' }, { instrument: 'c110' }, { instrument: 'c110' }, { instrument: 'c110' }],
+        alerts: ['strategy.attention', 'strategy.attention'],
+        pnl: { account: { commissions: -18.20, unrealized: 60, total: 41.80 }, book: { commissions: -18.20, unrealized: 60, total: 41.80 } },
+        nav: { account: 1_948.30, book: 1_000_041.80 },
+        balance: {
+          account: { cash: 49.60, receivable: 198.70, positions: 1_700, assets: 1_948.30, liabilities: 0, netAssets: 1_948.30 },
+          book: { cash: 998_143.10, receivable: 198.70, positions: 1_700, assets: 1_000_041.80, netAssets: 1_000_041.80 },
+        },
+      },
+    },
+    {
+      id: 'accept', covers: ['accept', 'failed dependent leg'], action: 'strategy_action', lot: 'accept', how: 'accept',
+      expect: { events: [{ type: 'strategy.accepted', summary: 'accepted as it stands with 1 leg unexecuted. The position no longer matches its template.' }], alerts: ['strategy.attention'] },
+    },
+    {
+      // Unwind: nothing written to buy back; the two bought calls are sold at 3.30 and 0.30. Realized -10 each.
+      id: 'unwind', covers: ['unwind', 'close'], action: 'recover', how: 'unwind', lot: 'unwind',
+      expect: {
+        preview: {
+          blocking: 0, errors: [], intent: 'unwind',
+          legs: [
+            { kind: 'trade', action: 'sell', instrument: 'c100', qty: 1, estimate: 3.30, settleDate: '2026-03-05', cash: 330, fees: 0.65, dependsOn: [] },
+            { kind: 'trade', action: 'sell', instrument: 'c110', qty: 1, estimate: 0.30, settleDate: '2026-03-05', cash: 30, fees: 0.65, dependsOn: [] },
+          ],
+          cash: { USD: { proceeds: 360, fees: 1.30, required: 1.30, available: 248.30, shortfall: 0 } },
+        },
+        result: { status: 'closed', orders: [{ action: 'sell', instrument: 'c100', status: 'filled' }, { action: 'sell', instrument: 'c110', status: 'filled' }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 1 CRX260320C100 @ 3.30 USD (realized -10.00 USD)' },
+          { type: 'trade.fill', summary: 'Sold 1 CRX260320C110 @ 0.30 USD (realized -10.00 USD)' },
+        ],
+        cash: { account: { USD: { settled: 49.60, unsettled: 557.40, availableToTrade: 607, availableToWithdraw: 49.60 } } }, // 198.70 + 329.35 + 29.35
+        positions: [
+          { instrument: 'c100', lot: 'accept' }, { instrument: 'c100', lot: 'butterfly' }, { instrument: 'c100', lot: 'retry' },
+          { instrument: 'c105', lot: 'butterfly' }, { instrument: 'c105', lot: 'retry' },
+          { instrument: 'c110', lot: 'accept' }, { instrument: 'c110', lot: 'butterfly' }, { instrument: 'c110', lot: 'retry' },
+        ],
+        holdings: { c100: { long: 7, short: 0, net: 7 }, c110: { long: 7, short: 0, net: 7 } },
+        pending: [{ instrument: 'c100', lot: 'unwind', dueDate: '2026-03-05', amount: 329.35 }, { instrument: 'c105', lot: 'retry', amount: 198.70 }, { instrument: 'c110', lot: 'unwind', dueDate: '2026-03-05', amount: 29.35 }],
+        lifecycle: [{ instrument: 'c100' }, { instrument: 'c100' }, { instrument: 'c100' }, { instrument: 'c105' }, { instrument: 'c105' }, { instrument: 'c110' }, { instrument: 'c110' }, { instrument: 'c110' }],
+        alerts: [],
+        pnl: { account: { realized: -20, commissions: -19.50, unrealized: 70, total: 30.50 }, book: { realized: -20, commissions: -19.50, unrealized: 70, total: 30.50 } },
+        nav: { account: 1_937, book: 1_000_030.50 },
+        balance: {
+          account: { cash: 49.60, receivable: 557.40, positions: 1_330, assets: 1_937, liabilities: 0, netAssets: 1_937 },
+          book: { cash: 998_143.10, receivable: 557.40, positions: 1_330, assets: 1_000_030.50, netAssets: 1_000_030.50 },
+        },
+      },
+    },
+    {
+      id: 'settle-recovery', covers: 'settlement', action: 'clock', to: MAR(5),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 198.70 USD into settled cash', date: '2026-03-05' },
+          { type: 'settlement.receive', summary: 'received 329.35 USD into settled cash' },
+          { type: 'settlement.receive', summary: 'received 29.35 USD into settled cash' },
+        ],
+        cash: { account: { USD: { settled: 607, unsettled: 0, availableToTrade: 607, availableToWithdraw: 607 } } },
+        pending: [],
+        balance: { account: { cash: 607, receivable: null, assets: 1_937 }, book: { cash: 998_700.50, receivable: null, assets: 1_000_030.50 } },
+      },
+    },
+    {
+      // Close "retry": its two written calls are bought back first at 1.10; its bought calls are sold after (3.30, 0.30).
+      // Realized 2 x (1.00 - 1.10) x 100 = -20, and -10, -10.
+      id: 'close-retry', covers: ['close', 'dependency'], action: 'close', lot: 'retry', instrument: 'c100', scope: 'strategy', percent: 100,
+      expect: {
+        preview: {
+          blocking: 0, errors: [], intent: 'close',
+          legs: [
+            { kind: 'trade', action: 'buy', instrument: 'c105', qty: 2, estimate: 1.10, settleDate: '2026-03-06', cash: -220, fees: 1.30, dependsOn: [] },
+            { kind: 'trade', action: 'sell', instrument: 'c100', qty: 1, estimate: 3.30, settleDate: '2026-03-06', cash: 330, fees: 0.65, dependsOn: [1] },
+            { kind: 'trade', action: 'sell', instrument: 'c110', qty: 1, estimate: 0.30, settleDate: '2026-03-06', cash: 30, fees: 0.65, dependsOn: [1] },
+          ],
+          cash: { USD: { purchases: 220, proceeds: 360, fees: 2.60, reserved: 0, required: 222.60, available: 607, shortfall: 0 } },
+        },
+        result: { status: 'closed', orders: [{ instrument: 'c105', status: 'filled' }, { instrument: 'c100', status: 'filled' }, { instrument: 'c110', status: 'filled' }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Bought 2 CRX260320C105 @ 1.10 USD (realized -20.00 USD)' },
+          { type: 'trade.fill', summary: 'Sold 1 CRX260320C100 @ 3.30 USD (realized -10.00 USD)' },
+          { type: 'trade.fill', summary: 'Sold 1 CRX260320C110 @ 0.30 USD (realized -10.00 USD)' },
+        ],
+        cash: { account: { USD: { settled: 607, unsettled: 137.40, availableToTrade: 744.40, availableToWithdraw: 385.70 } } }, // -221.30 + 329.35 + 29.35
+        positions: [
+          { instrument: 'c100', lot: 'accept', value: 335 }, { instrument: 'c100', lot: 'butterfly', value: 1_675 },
+          { instrument: 'c105', lot: 'butterfly', value: -1_050 },
+          { instrument: 'c110', lot: 'accept', value: 35 }, { instrument: 'c110', lot: 'butterfly', value: 175 },
+        ],
+        holdings: { c100: { long: 6, short: 0, net: 6 }, c105: { long: 0, short: 10, net: -10 }, c110: { long: 6, short: 0, net: 6 } },
+        pending: [
+          { instrument: 'c100', lot: 'retry', dueDate: '2026-03-06', amount: 329.35 },
+          { instrument: 'c105', lot: 'retry', dueDate: '2026-03-06', amount: -221.30 },
+          { instrument: 'c110', lot: 'retry', dueDate: '2026-03-06', amount: 29.35 },
+        ],
+        lifecycle: [{ instrument: 'c100' }, { instrument: 'c100' }, { instrument: 'c105' }, { instrument: 'c110' }, { instrument: 'c110' }],
+        pnl: { account: { realized: -60, commissions: -22.10, unrealized: 90, total: 7.90 }, book: { realized: -60, commissions: -22.10, unrealized: 90, total: 7.90 } },
+        nav: { account: 1_914.40, book: 1_000_007.90 },
+        balance: {
+          account: { cash: 607, receivable: 358.70, payable: 221.30, positions: 1_170, assets: 2_135.70, liabilities: 221.30, netAssets: 1_914.40 },
+          book: { cash: 998_700.50, receivable: 358.70, payable: 221.30, positions: 1_170, assets: 1_000_229.20, liabilities: 221.30, netAssets: 1_000_007.90 },
+        },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: MAR(6),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 329.35 USD into settled cash', date: '2026-03-06' },
+          { type: 'settlement.receive', summary: 'received 29.35 USD into settled cash' },
+          { type: 'settlement.pay', summary: 'paid 221.30 USD from settled cash' },
+        ],
+        cash: { account: { USD: { settled: 744.40, unsettled: 0, availableToTrade: 744.40, availableToWithdraw: 744.40 } } },
+        pending: [],
+        balance: { account: { cash: 744.40, receivable: null, payable: null, assets: 1_914.40, liabilities: 0 }, book: { cash: 998_837.90, receivable: null, payable: null, assets: 1_000_007.90, liabilities: 0 } },
+      },
+    },
+    { id: 'expiry-fixing', action: 'close_price', instrument: 'index', date: '2026-03-20', value: 107, expect: {} },
+    {
+      // The index fixes at 107. Outer: the bought 100 calls receive 7 x 100 a contract (3,500 for "butterfly", realized
+      // 1,800; 700 for "accept", realized 360). Inner: the ten written 105 calls pay 2 x 100 each, 2,000 (realized -800).
+      // The 110 calls lapse (-200, -40). Realized -60 + 1,800 - 800 - 200 + 360 - 40 = 1,060.
+      id: 'expiry', covers: ['expiry', 'cash settlement', 'assignment'], action: 'clock', to: MAR(20, '17:30'),
+      expect: {
+        events: [
+          { type: 'option.cash_settled', summary: /^Exercised \(cash settlement\): 5 CRX260320C100 at 7(\.00)? per unit/, date: '2026-03-20' },
+          { type: 'option.expired', summary: 'Expired worthless: 5 CRX260320C110 (fixing 107)' },
+          { type: 'option.cash_settled', summary: /^Assigned \(cash settlement\): 10 CRX260320C105 at 2(\.00)? per unit/ },
+          { type: 'option.cash_settled', summary: /^Exercised \(cash settlement\): 1 CRX260320C100 at 7(\.00)? per unit/ },
+          { type: 'option.expired', summary: 'Expired worthless: 1 CRX260320C110 (fixing 107)' },
+        ],
+        cash: { account: { USD: { settled: 744.40, unsettled: 2_200, reserved: 0, availableToTrade: 2_944.40, availableToWithdraw: -1_255.60 } } },
+        positions: [],
+        holdings: { c100: null, c105: null, c110: null },
+        pending: [
+          { instrument: 'c100', lot: 'accept', dueDate: '2026-03-23', amount: 700, into: 'cash' },
+          { instrument: 'c100', lot: 'butterfly', dueDate: '2026-03-23', amount: 3_500, into: 'cash' },
+          { instrument: 'c105', lot: 'butterfly', dueDate: '2026-03-23', amount: -2_000, into: 'cash' },
+        ],
+        lifecycle: [],
+        pnl: { account: { realized: 1_060, commissions: -22.10, unrealized: 0, total: 1_037.90 }, book: { realized: 1_060, commissions: -22.10, unrealized: 0, total: 1_037.90 } },
+        nav: { account: 2_944.40, book: 1_001_037.90 }, // 1,000 + 906.50 + 1,037.90
+        balance: {
+          account: { cash: 744.40, receivable: 4_200, payable: 2_000, positions: null, assets: 4_944.40, liabilities: 2_000, netAssets: 2_944.40 },
+          book: { cash: 998_837.90, receivable: 4_200, payable: 2_000, positions: null, assets: 1_003_037.90, liabilities: 2_000, netAssets: 1_001_037.90 },
+        },
+      },
+    },
+    {
+      id: 'cash-settlement', covers: 'settlement', action: 'clock', to: MAR(23),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 3,500.00 USD into settled cash', date: '2026-03-23' },
+          { type: 'settlement.receive', summary: 'received 700.00 USD into settled cash' },
+          { type: 'settlement.pay', summary: 'paid 2,000.00 USD from settled cash' },
+        ],
+        cash: { account: { USD: { settled: 2_944.40, unsettled: 0, availableToTrade: 2_944.40, availableToWithdraw: 2_944.40 } } },
+        pending: [],
+        balance: { account: { cash: 2_944.40, receivable: null, payable: null, assets: 2_944.40, liabilities: 0 }, book: { cash: 1_001_037.90, receivable: null, payable: null, assets: 1_001_037.90, liabilities: 0 } },
+      },
+    },
+  ],
+};
+
+export default [bearCall, longStraddle, longStrangle, ironCondor, ironButterfly, longButterfly];

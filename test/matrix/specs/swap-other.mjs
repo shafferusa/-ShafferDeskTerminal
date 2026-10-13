@@ -2687,4 +2687,209 @@ const energySwap = {
   ],
 };
 
-export default [amortizingSwap, accretingSwap, equitySwap, equityIndexSwap, equityTrs, bondTrs, indexTrs, commoditySwap, commodityBasisSwap, commodityIndexSwap, energySwap];
+// ---------------------------------------------------------------------------------------------
+// electricity_swap
+// ---------------------------------------------------------------------------------------------
+// A German power swap in a Book that reports in euros: 10 MW for June and July 2026, split into peak and off-peak, written
+// "pay 85.00 EUR/MWh for peak hours and 60.00 EUR/MWh for off-peak hours, receive the average day-ahead peak and off-peak
+// index of each month" (a supplier fixing its purchase cost). Four price legs, net settled 5 TARGET business days after each
+// month. Position-level collateral terms: a fixed independent amount of 30,000 EUR, no variation margin.
+//
+// Delivery hours, MWh = MW x hours (clock changes are not counted; neither month has one):
+//   peak      08:00-20:00, 12 hours, Monday to Friday including public holidays (the WEEKEND calendar: every weekday is a peak day)
+//   off-peak  every other hour: 24 x calendar days - peak hours
+//   June  22 weekdays: peak 264 hours, off-peak 720 - 264 = 456;  10 MW: 2,640 and 4,560 MWh
+//   July  23 weekdays: peak 276 hours, off-peak 744 - 276 = 468;   6 MW after the partial termination: 1,656 and 2,808 MWh
+// Pricing: the peak index is published for each weekday, the off-peak index for every day (ALLDAYS); plain averages.
+//   June  peak 22 fixings, 2,032.80: 92.40; off-peak 30 fixings, 1,656.00: 55.20     paid Wednesday 8 July
+//   July  peak 23 fixings, 1,842.30: 80.10 (15 July entered by hand: 79.80); off-peak 31 fixings, 1,813.50: 58.50     paid Friday 7 August
+const PWR_PEAK = { productId: 'electricity', name: 'German power day-ahead peak index (reference price)', symbol: 'DE-PEAK-DA', marketView: 'FOREIGN_CASH', venue: 'Power exchange index (OTC reference)', venueType: 'otc', venueCountry: 'DE', tradingCcy: 'EUR', terms: { quantityUnit: 'MWh', priceUnits: 'EUR per MWh' } };
+const PWR_OFF = { productId: 'electricity', name: 'German power day-ahead off-peak index (reference price)', symbol: 'DE-OFFPEAK-DA', marketView: 'FOREIGN_CASH', venue: 'Power exchange index (OTC reference)', venueType: 'otc', venueCountry: 'DE', tradingCcy: 'EUR', terms: { quantityUnit: 'MWh', priceUnits: 'EUR per MWh' } };
+const PEAK_FIX = { '2026-06-01': 93.75, '2026-06-02': 91.60, '2026-06-03': 94.95, '2026-06-04': 90.95, '2026-06-05': 93.00, '2026-06-08': 94.20, '2026-06-09': 89.75, '2026-06-10': 92.65, '2026-06-11': 91.45, '2026-06-12': 93.80, '2026-06-15': 92.10, '2026-06-16': 95.00, '2026-06-17': 90.90, '2026-06-18': 92.45, '2026-06-19': 94.10, '2026-06-22': 91.00, '2026-06-23': 92.60, '2026-06-24': 91.55, '2026-06-25': 93.85, '2026-06-26': 92.30, '2026-06-29': 92.70, '2026-06-30': 88.15,
+  '2026-07-01': 81.45, '2026-07-02': 79.30, '2026-07-03': 82.65, '2026-07-06': 78.65, '2026-07-07': 80.70, '2026-07-08': 81.90, '2026-07-09': 77.45, '2026-07-10': 80.35, '2026-07-13': 79.15, '2026-07-14': 81.50, /* 15 July by hand: 79.80 */ '2026-07-16': 82.70, '2026-07-17': 78.60, '2026-07-20': 80.15, '2026-07-21': 81.80, '2026-07-22': 78.70, '2026-07-23': 80.30, '2026-07-24': 79.25, '2026-07-27': 81.55, '2026-07-28': 80.00, '2026-07-29': 80.40, '2026-07-30': 78.75, '2026-07-31': 77.20 };
+const OFF_FIX = { '2026-06-01': 56.55, '2026-06-02': 54.40, '2026-06-03': 57.75, '2026-06-04': 53.75, '2026-06-05': 55.80, '2026-06-06': 57.00, '2026-06-07': 52.55, '2026-06-08': 55.45, '2026-06-09': 54.25, '2026-06-10': 56.60, '2026-06-11': 54.90, '2026-06-12': 57.80, '2026-06-13': 53.70, '2026-06-14': 55.25, '2026-06-15': 56.90, '2026-06-16': 53.80, '2026-06-17': 55.40, '2026-06-18': 54.35, '2026-06-19': 56.65, '2026-06-20': 55.10, '2026-06-21': 55.50, '2026-06-22': 53.85, '2026-06-23': 56.10, '2026-06-24': 54.80, '2026-06-25': 56.30, '2026-06-26': 54.50, '2026-06-27': 55.70, '2026-06-28': 54.00, '2026-06-29': 56.00, '2026-06-30': 51.30,
+  '2026-07-01': 59.85, '2026-07-02': 57.70, '2026-07-03': 61.05, '2026-07-04': 57.05, '2026-07-05': 59.10, '2026-07-06': 60.30, '2026-07-07': 55.85, '2026-07-08': 58.75, '2026-07-09': 57.55, '2026-07-10': 59.90, '2026-07-11': 58.20, '2026-07-12': 61.10, '2026-07-13': 57.00, '2026-07-14': 58.55, '2026-07-15': 60.20, '2026-07-16': 57.10, '2026-07-17': 58.70, '2026-07-18': 57.65, '2026-07-19': 59.95, '2026-07-20': 58.40, '2026-07-21': 58.80, '2026-07-22': 57.15, '2026-07-23': 59.40, '2026-07-24': 58.10, '2026-07-25': 59.60, '2026-07-26': 57.80, '2026-07-27': 59.00, '2026-07-28': 57.30, '2026-07-29': 59.30, '2026-07-30': 57.90, '2026-07-31': 55.20 };
+const PWR_NAME = 'German power swap 10 MW peak 85.00 / off-peak 60.00 Jun-Jul 2026';
+const PEAK = { hours: 'peak', peakHours: 12, peakCalendar: 'WEEKEND' };
+const OFFPEAK = { hours: 'offpeak', peakHours: 12, peakCalendar: 'WEEKEND' };
+const electricitySwap = {
+  productId: 'electricity_swap',
+  title: 'German power swap, 10 MW in peak and off-peak hours for two months against the day-ahead index averages, in a EUR Book',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'Net settlement', 'four price legs: Fixed price or Reference asset with Floating price "Average of each pricing day", Delivery hours "Peak hours" or "Off-peak hours", Peak hours a day 12, Peak-day calendar WEEKEND, Pricing calendar (WEEKEND for peak, ALLDAYS for off-peak), Payment monthly, Payment lag 5'],
+    automaticInputs: ['delivery hours of each month (peak: 12 x weekdays; off-peak: the rest) and the MWh on them', 'daily peak and off-peak index fixings (close fixtures standing in for Shaffer MarketData) and their averages', 'the net amount of the four legs', 'payment 5 TARGET business days after each month', 'settlement date, T+2 TARGET', 'commission from the Book fee schedule (per MW)', 'independent amount from the position-level terms'],
+    manualInputs: ['the two index references, registered as electricity spot instruments (never traded)', 'a fixing the data service did not supply, entered by hand', 'settlement amount of the partial termination (stated fill price)', 'mark of the contract, entered by hand'],
+    settlement: 'Termination amount and commission settle T+2 TARGET; each month settles net 5 TARGET business days after it ends',
+    lifecycle: 'Each month: peak and off-peak MWh from the delivery hours, the two index averages against the two fixed prices, one net amount; a missing peak fixing holds the month and the maturity visibly until entered by hand; partial termination; maturity; nothing left afterwards',
+    accounting: 'EUR reporting currency; carried at the mark; net monthly amounts and the termination result are realized P&L; commission expensed',
+    collateral: 'Position-level terms: fixed independent amount 30,000 EUR, posted at entry, unchanged by the partial termination, returned at maturity; no variation margin',
+  },
+  start: at('2026-05-29'),
+  settlementCheck: { lag: 2, holidays: [] }, // TARGET: no closing day between 29 May and 2 June or 9 and 13 July 2026
+  book: bookOf('Matrix electricity swap', 'Power desk', 'EUR', 2_000_000, 1_000_000, { perUnit: 5, minimum: 0, bps: 0 }, { spot: NO_FEE }), // 5.00 EUR per MW
+  instruments: {
+    peak: PWR_PEAK, offpeak: PWR_OFF,
+    main: {
+      productId: 'electricity_swap', name: PWR_NAME, symbol: 'PWR-DE-0726', marketView: 'FOREIGN_DERIV', venueType: 'otc', venueCountry: 'DE', tradingCcy: 'EUR', multiplier: 0.01,
+      conventions: { tradingCalendar: 'TARGET', settlementCalendar: 'TARGET', paymentCalendar: 'TARGET' },
+      terms: {
+        effective: '2026-06-01', maturity: '2026-08-01', counterparty: 'Power dealer Y', netSettlement: true,
+        collateralBasis: { type: 'position', independentAmount: { type: 'fixed', amount: 30_000 }, variationMargin: false },
+        legs: [
+          { side: 'pay', type: 'price', ccy: 'EUR', months: 1, units: 1, fixedPrice: 85, ...PEAK, paymentLag: 5 },
+          { side: 'receive', type: 'price', ccy: 'EUR', months: 1, units: 1, underlyingId: '$inst:peak', averaging: 'daily', pricingCalendar: 'WEEKEND', ...PEAK, paymentLag: 5 },
+          { side: 'pay', type: 'price', ccy: 'EUR', months: 1, units: 1, fixedPrice: 60, ...OFFPEAK, paymentLag: 5 },
+          { side: 'receive', type: 'price', ccy: 'EUR', months: 1, units: 1, underlyingId: '$inst:offpeak', averaging: 'daily', pricingCalendar: 'ALLDAYS', ...OFFPEAK, paymentLag: 5 },
+        ],
+      },
+    },
+  },
+  closes: { peak: PEAK_FIX, offpeak: OFF_FIX },
+  expectAtStart: startOf('EUR', 2_000_000, 1_000_000),
+  steps: [
+    {
+      // 10 MW as written, no upfront. Commission 10 x 5 = 50 EUR, settling Tuesday 2 June. Independent amount 30,000 EUR.
+      id: 'open', covers: ['open', 'collateral'], action: 'ticket', instrument: 'main', side: 'buy', qty: 10, as: 'pwr', order: { statedPrice: 0 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 10, estimate: 0, model: 'stated-price', settleDate: '2026-06-02', calendar: 'TARGET', cash: 0, fees: 50 }],
+          cash: { EUR: { purchases: 0, fees: 50, margin: 30_000, required: 30_050, available: 1_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 10, avgPrice: 0, fills: [{ qty: 10, price: 0, model: 'stated-price', settleDate: '2026-06-02' }] }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Entered as written: 10 notional of PWR-DE-0726 at 0.00 per 100 notional', owner: 'account', date: '2026-05-29' },
+          { type: 'swap.collateral', summary: `Collateral posted on ${PWR_NAME} under its position-level terms: 30,000.00 EUR (independent amount, fixed amount for the position)`, cash: { EUR: -30_000 }, owner: 'account' },
+        ],
+        cash: { account: { EUR: { settled: 970_000, unsettled: -50, margin: 30_000, restricted: 0, availableToTrade: 969_950, availableToWithdraw: 969_950 } } },
+        positions: [{ instrument: 'main', lot: 'pwr', owner: 'account', direction: 'as written', qty: 10, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, notional: 10, margin: 30_000 }],
+        holdings: { main: { long: 10, short: 0, net: 10 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-06-02', amount: -50, ccy: 'EUR', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-07-08', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-07-08', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-07-08', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-07-08', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2026-08-07', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', lot: 'pwr', owner: 'account', qty: 10, basis: 'position', mark: null, iaRequired: 30_000, iaPosted: 30_000, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: -50, unrealized: 0, total: -50 } },
+        nav: { account: 999_950, book: 1_999_950 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 970_000, margin: 30_000, payable: 50, positions: null, assets: 1_000_000, liabilities: 50, netAssets: 999_950 } },
+      },
+    },
+    {
+      id: 'settle-commission', covers: 'settlement', action: 'clock', to: at('2026-06-02'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 50.00 EUR from settled cash', cash: { EUR: -50 }, date: '2026-06-02' }],
+        cash: { account: { EUR: { settled: 969_950, unsettled: 0, availableToTrade: 969_950, availableToWithdraw: 969_950 } } },
+        pending: [],
+        balance: { account: { cash: 969_950, payable: null, assets: 999_950, liabilities: 0 } },
+      },
+    },
+    {
+      // Mark 120,000 per 100 MW: 10 x 120,000 / 100 = 12,000 EUR.
+      id: 'mark', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 120_000, note: 'Dealer mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'pwr', price: 120_000, value: 12_000, unrealized: 12_000, provisional: false, priceSource: 'Manual entry', priceStatus: 'manual' }],
+        otc: [{ instrument: 'main', mark: 120_000, markValue: 12_000 }],
+        pnl: { account: { unrealized: 12_000, total: 11_950 } },
+        nav: { account: 1_011_950, book: 2_011_950 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 12_000, assets: 1_011_950, netAssets: 1_011_950 } },
+      },
+    },
+    {
+      // June, 10 MW: peak 2,640 MWh, off-peak 4,560 MWh.
+      //   leg A, peak fixed 85.00, paid:          224,400.00
+      //   leg B, peak average 92.40, received:    243,936.00
+      //   leg C, off-peak fixed 60.00, paid:      273,600.00
+      //   leg D, off-peak average 55.20, received: 251,712.00
+      //   net, paid: 2,640 x 7.40 - 4,560 x 4.80 = 19,536 - 21,888 = -2,352.00
+      id: 'june-settled', covers: ['averaging', 'net settlement', 'peak and off-peak hours'], action: 'clock', to: at('2026-07-08'),
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Net swap payment on ${PWR_NAME}, period 2026-06-01 to 2026-07-01: 2,352.00 EUR (leg A, fixed price 85.00 x 2,640 (264 hours): 224,400.00 EUR paid; leg B, average of 22 fixings 92.40 x 2,640 (264 hours): 243,936.00 EUR received; leg C, fixed price 60.00 x 4,560 (456 hours): 273,600.00 EUR paid; leg D, average of 30 fixings 55.20 x 4,560 (456 hours): 251,712.00 EUR received)`, cash: { EUR: -2_352 }, owner: 'account', date: '2026-07-08' }],
+        cash: { account: { EUR: { settled: 967_598, availableToTrade: 967_598, availableToWithdraw: 967_598 } } },
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2026-08-07', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-08-07', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-08-07', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-08-07', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-08-07', status: 'pending' },
+        ],
+        pnl: { account: { realized: -2_352, total: 9_598 } },
+        nav: { account: 1_009_598, book: 2_009_598 },
+        balance: { account: { cash: 967_598, assets: 1_009_598, netAssets: 1_009_598 } },
+      },
+    },
+    { id: 'next-day', action: 'clock', to: at('2026-07-09'), expect: {} },
+    {
+      // 40% (4 MW) terminated at 50,000 per 100 MW: 4 x 50,000 / 100 = 2,000 EUR received; commission 20; realized 2,000. Settles Monday 13 July.
+      id: 'partial-termination', covers: ['reduce', 'partial termination'], action: 'close', lot: 'pwr', scope: 'strategy', percent: 40, order: { statedPrice: 50_000 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 4, estimate: 50_000, model: 'stated-price', settleDate: '2026-07-13', cash: 2_000, fees: 20 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 4, avgPrice: 50_000 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Terminated in part: 4 of 10 notional of PWR-DE-0726 at 50,000.00 per 100 notional (realized 2,000.00 EUR)' }],
+        cash: { account: { EUR: { settled: 967_598, unsettled: 1_980, availableToTrade: 969_578, availableToWithdraw: 967_598 } } },
+        positions: [{ instrument: 'main', lot: 'pwr', qty: 6, cost: 0, avgCost: 0, price: 120_000, value: 7_200, unrealized: 7_200, notional: 6, margin: 30_000 }],
+        holdings: { main: { long: 6, short: 0, net: 6 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-07-13', amount: 1_980, ccy: 'EUR', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: 6, markValue: 7_200, iaRequired: 30_000, iaPosted: 30_000 }],
+        pnl: { account: { realized: -352, commissions: -70, unrealized: 7_200, total: 6_778 } },
+        nav: { account: 1_006_778, book: 2_006_778 },
+        balance: { account: { cash: 967_598, receivable: 1_980, positions: 7_200, assets: 1_006_778, liabilities: 0, netAssets: 1_006_778 } },
+      },
+    },
+    {
+      id: 'settle-partial-termination', covers: 'settlement', action: 'clock', to: at('2026-07-13'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 1,980.00 EUR into settled cash', cash: { EUR: 1_980 } }],
+        cash: { account: { EUR: { settled: 969_578, unsettled: 0, availableToTrade: 969_578, availableToWithdraw: 969_578 } } },
+        pending: [],
+        balance: { account: { cash: 969_578, receivable: null } },
+      },
+    },
+    {
+      // Friday 7 August. The July peak average needs 23 fixings; 15 July's is missing. Nothing moves, and the maturity waits.
+      id: 'july-blocked-peak-fixing-missing', covers: ['missing fixing', 'averaging'], action: 'clock', to: at('2026-08-07'),
+      expect: {
+        events: [],
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2026-08-07', status: 'blocked', reason: /Waiting for the final leg payments/ },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-08-07', status: 'blocked', reason: /Awaiting the averaging fixings of DE-PEAK-DA for 2026-07-15 \(1 of the 23 pricing days of the period 2026-07-01 to 2026-08-01\)/ },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-08-07', status: 'blocked', reason: /Awaiting the averaging fixings of DE-PEAK-DA for 2026-07-15/ },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-08-07', status: 'blocked', reason: /Awaiting the averaging fixings of DE-PEAK-DA for 2026-07-15/ },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-08-07', status: 'blocked', reason: /Awaiting the averaging fixings of DE-PEAK-DA for 2026-07-15/ },
+        ],
+      },
+    },
+    {
+      // 79.80 for 15 July, by hand. July, 6 MW: peak 1,656 MWh, off-peak 2,808 MWh.
+      //   leg A 85.00 x 1,656 = 140,760.00 paid; leg B 80.10 x 1,656 = 132,645.60 received;
+      //   leg C 60.00 x 2,808 = 168,480.00 paid; leg D 58.50 x 2,808 = 164,268.00 received; net paid 12,326.40.
+      // The swap matures; the 30,000 independent amount comes back. 1,000,000 - 50 - 2,352 + 2,000 - 20 - 12,326.40 = 987,251.60.
+      id: 'fixing-entered-july-and-maturity', covers: ['missing fixing', 'averaging', 'net settlement', 'peak and off-peak hours', 'maturity', 'close', 'collateral'], action: 'manual_price', instrument: 'peak', value: 79.80, forDate: '2026-07-15', note: 'Published index, entered by hand',
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Net swap payment on ${PWR_NAME}, period 2026-07-01 to 2026-08-01: 12,326.40 EUR (leg A, fixed price 85.00 x 1,656 (276 hours): 140,760.00 EUR paid; leg B, average of 23 fixings 80.10 x 1,656 (276 hours): 132,645.60 EUR received; leg C, fixed price 60.00 x 2,808 (468 hours): 168,480.00 EUR paid; leg D, average of 31 fixings 58.50 x 2,808 (468 hours): 164,268.00 EUR received)`, cash: { EUR: -12_326.40 }, owner: 'account', date: '2026-08-07' },
+          { type: 'swap.matured', summary: `Swap matured: ${PWR_NAME} (notional 6)`, owner: 'account' },
+          { type: 'swap.collateral', summary: `Collateral returned on ${PWR_NAME} under its position-level terms: 30,000.00 EUR (independent amount, the position ended)`, cash: { EUR: 30_000 } },
+        ],
+        cash: { account: { EUR: { settled: 987_251.60, unsettled: 0, margin: 0, restricted: 0, reserved: 0, availableToTrade: 987_251.60, availableToWithdraw: 987_251.60 } }, treasury: { EUR: { settled: 1_000_000 } } },
+        positions: [], holdings: { main: null }, lifecycle: [], otc: [], pending: [], alerts: [],
+        pnl: { account: { realized: -12_678.40, commissions: -70, unrealized: 0, total: -12_748.40 } },
+        nav: { account: 987_251.60, treasury: 1_000_000, book: 1_987_251.60 },
+        balance: { account: { cash: 987_251.60, margin: null, positions: null, assets: 987_251.60, liabilities: 0, netAssets: 987_251.60 } },
+      },
+    },
+    {
+      id: 'nothing-left', action: 'clock', to: at('2026-08-10'),
+      expect: { events: [], lifecycle: [], positions: [], pending: [], otc: [], alerts: [], cash: { account: { EUR: { settled: 987_251.60, margin: 0, restricted: 0 } } } },
+    },
+  ],
+};
+
+export default [amortizingSwap, accretingSwap, equitySwap, equityIndexSwap, equityTrs, bondTrs, indexTrs, commoditySwap, commodityBasisSwap, commodityIndexSwap, energySwap, electricitySwap];

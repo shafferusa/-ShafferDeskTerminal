@@ -1214,6 +1214,14 @@ export function createPackages(app) {
     need(legs.length || !open.length || !open.every((p) => ['secloan', 'loan', 'repo'].includes(instruments.get(p.instrument_id).family)),
       'A loan, deposit, repo or securities loan is not enlarged by resizing. Open a new arrangement for the additional amount: each drawing or deposit is its own record.');
     need(legs.length, 'The resize is too small to change any leg by a whole unit.');
+    // As in the template that opened it (t1): the options that protect or cover the underlying wait for the added
+    // underlying and are scaled to what of it fills, so a part-filled resize never leaves more options than shares.
+    for (const l of legs) {
+      if (l.purpose !== 'hedge' || l.dependsOnRole) continue;
+      const u = instruments.get(l.instrumentId).underlying_id;
+      if (u && legs.some((x) => x.role === `add_${u}` && x.purpose !== 'hedge')) l.dependsOnRole = `add_${u}`;
+    }
+    legs.sort((a, b) => Number(Boolean(a.dependsOnRole && a.purpose === 'hedge')) - Number(Boolean(b.dependsOnRole && b.purpose === 'hedge')));
     const roleN = new Map(legs.map((l, i) => [l.role, i + 1]));
     return legs.map((l) => { const { dependsOnRole, ...rest } = l; return { ...rest, dependsOn: dependsOnRole ? [roleN.get(dependsOnRole)] : [] }; });
   }

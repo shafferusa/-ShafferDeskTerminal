@@ -1534,4 +1534,78 @@ const protectivePut = {
   ],
 };
 
-export default [longTemplate, shortTemplate, protectivePut];
+// ---------------------------------------------------------------------------------------------
+// protective_call
+// ---------------------------------------------------------------------------------------------
+const pc = (qty, strike, extra = {}) => pageInput('protective_call', { quantity: qty, options: { expiration: '2026-03-20', strikes: { call: strike }, contracts: null }, ...extra });
+const pcPage = (qty, strike, extra = {}) => ({ template: 'Protective Call / Short + Call Cover', underlying: 'main', quantity: qty, expiration: '2026-03-20', strikes: { 'Call strike': strike }, ...extra });
+
+const protectiveCall = {
+  template: 'protective_call',
+  title: 'Protective call on Kestrel Logistics: borrow, short sale and calls as one package, new and existing short, partial fills, expiry, roll',
+  matrix: {
+    ...TEMPLATE_MATRIX,
+    ticket: 'Strategies page (Protective Call / Short + Call Cover): Trading owner and intent, Instrument and template, Underlying position (new or existing), Securities borrow, Option contracts, Order and funding, Hedge panel; then the package preview (legs editable). The strategy instance drawer for Cancel working legs, Retry, Unwind, Accept, Resize, Roll and Close',
+    manualInputs: ['option expiration and call strike (no option chain is supplied for the fictional stock)', 'limit price of a leg, changed in the preview', 'investment Strategy, holding period and objective for the hedge request', 'loan rate when the shortfall is borrowed'],
+    automaticInputs: [...TEMPLATE_MATRIX.automaticInputs, 'contracts from the share quantity and the contract deliverable (100 shares)', 'borrow availability and fee (borrow fixture)', 'collateral and margin from the Book short assumptions', 'underlying close for the expiration date (close fixture)'],
+    settlement: 'Short-sale proceeds T+1 into restricted cash; premium T+1; covers T+1 paid from restricted cash; shares received on exercise settle T+1 at the strike',
+    lifecycle: 'Borrow, then the short sale, then the calls (each waits for the one before and is scaled to what filled); retry keeps that link; expiry in the money exercises the call against the short; out of the money lapses; roll; resize; close by share, exact amount, in full',
+    accounting: 'Short at negative cost; call premium as an option position; realized on cover, exercise, lapse or sale; borrow fee and loan interest as funding expense; an existing short is linked with its borrow, not sold again',
+    collateral: 'Restricted cash 102% of the short market value and a 30% margin reserve; bought calls reserve nothing',
+  },
+  start: MAR(2),
+  settlementCheck: { lag: 1, holidays: [] },
+  book: book('Matrix template protective call'),
+  instruments: { main: STOCK, call52: option('C', 52), call50: option('C', 50), call52apr: option('C', 52, '2026-04-17') },
+  quotes: {
+    main: { bid: 50.00, ask: 50.10, last: 50.00, bidSize: 300, askSize: 300 },
+    call52: { bid: 0.90, ask: 1.00, last: 0.95, bidSize: 3, askSize: 3 },
+    call50: { bid: 1.80, ask: 1.90, last: 1.85, bidSize: 100, askSize: 100 },
+    call52apr: { bid: 1.60, ask: 1.70, last: 1.65, bidSize: 100, askSize: 100 },
+  },
+  borrow: { main: { available: true, quantity: 50_000, feeRate: 0.018 } },
+  expectAtStart: startState(),
+  steps: [
+    { id: 'hedge-request', covers: ['hedge request', 'template protection'], action: 'hedge_request', input: pc(1000, 52, { ...CONTEXT, hedgeObjective: { type: 'upside_protection_short' } }), strategyPage: { ...PAGE_CONTEXT, objective: 'Upside protection for shorts', ...pcPage(1000, 52) }, expect: {} },
+    { id: 'open-partial', covers: ['open', 'borrow', 'partial fill', 'dependent leg scaled'], action: 'package', as: 'core', instrument: 'main', input: pc(1000, 52), strategyPage: pcPage(1000, 52), expect: {} },
+    { id: 'cancel-remainder', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'core', expect: {} },
+    { id: 'retry', covers: ['retry'], action: 'recover', how: 'retry', lot: 'core', expect: {} },
+    { id: 'limit-never-reached', covers: ['failed dependent leg'], action: 'package', as: 'limited', instrument: 'main', input: pc(200, 50), strategyPage: pcPage(200, 50), editLegs: { 2: { orderType: 'limit', limitPrice: 52 } }, expect: {} },
+    { id: 'cancel-limited', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'limited', expect: {} },
+    { id: 'unwind', covers: ['unwind', 'return'], action: 'recover', how: 'unwind', lot: 'limited', expect: {} },
+    { id: 'kept-limit', covers: ['failed dependent leg'], action: 'package', as: 'kept', instrument: 'main', input: pc(100, 50), strategyPage: pcPage(100, 50), editLegs: { 3: { orderType: 'limit', limitPrice: 1.5 } }, expect: {} },
+    { id: 'cancel-kept', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'kept', expect: {} },
+    { id: 'accept-kept', covers: ['accept as it stands'], action: 'strategy_action', how: 'accept', lot: 'kept', expect: {} },
+    {
+      id: 'existing-short', covers: ['existing holding', 'open'], action: 'package', as: 'wrapped', instrument: 'main',
+      input: { template: 'protective_call', underlyingId: '$inst:main', origin: 'strategy_page', ...NO_CONTEXT, mode: 'existing', existingPositionId: '$pos:kept:main', quantity: 100, hedgeRatio: 1, options: { expiration: '2026-03-20', strikes: { call: 50 }, contracts: null }, borrow: null, orderType: 'market', limitPrice: null, stopPrice: null, tif: 'day', financing: null },
+      strategyPage: { template: 'Protective Call / Short + Call Cover', underlying: 'main', mode: 'existing', existing: { lot: 'kept', instrument: 'main' }, expiration: '2026-03-20', strikes: { 'Call strike': 50 } },
+      expect: {},
+    },
+    { id: 'kept-after-link', covers: ['existing holding'], action: 'strategy_check', lot: 'kept', expect: {} },
+    { id: 'deep-book', action: 'quote', instrument: 'main', quote: { bid: 50.00, ask: 50.10, last: 50.00, bidSize: 10000, askSize: 10000 }, expect: {} },
+    { id: 'deep-book-call', action: 'quote', instrument: 'call52', quote: { bid: 0.90, ask: 1.00, last: 0.95, bidSize: 100, askSize: 100 }, expect: {} },
+    { id: 'resize-up', covers: ['resize', 'increase', 'borrow'], action: 'resize', lot: 'core', factor: 1.2, expect: {} },
+    { id: 'roll', covers: ['roll'], action: 'roll', lot: 'core', newExpiration: '2026-04-17', expect: {} },
+    { id: 'next-day', covers: ['settlement', 'collateral mark'], action: 'clock', to: MAR(3), expect: {} },
+    { id: 'sweep-to-treasury', covers: ['transfer'], action: 'transfer', from: 'account', to: 'treasury', ccy: 'USD', amount: 150_000, expect: {} },
+    { id: 'cash-short-not-financed', covers: ['financing: not financed'], action: 'package', instrument: 'main', input: pc(1000, 52), strategyPage: pcPage(1000, 52), status: 'blocked', reason: 'x', expect: { refused: 'short' } },
+    { id: 'funded-from-treasury', covers: ['financing: Treasury funding'], action: 'package', as: 'funded', instrument: 'main', input: pc(1000, 52, { financing: { mode: 'treasury' } }), strategyPage: pcPage(1000, 52, { financing: { mode: 'treasury' } }), expect: {} },
+    { id: 'funded-by-loan', covers: ['financing: borrow'], action: 'package', as: 'levered', instrument: 'main', contractAs: 'loan', input: pc(100, 52, { financing: { mode: 'loan', rateType: 'fixed', rate: 0.06 } }), strategyPage: pcPage(100, 52, { financing: { mode: 'loan', rate: 0.06 } }), expect: {} },
+    { id: 'settle-financed', covers: ['settlement', 'borrow fee'], action: 'clock', to: MAR(4), expect: {} },
+    { id: 'treasury-top-up', covers: ['transfer'], action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 100_000, expect: {} },
+    { id: 'close-levered', covers: ['close', 'repay', 'return'], action: 'close', lot: 'levered', scope: 'strategy', expect: {} },
+    { id: 'expiry-close', action: 'close_price', instrument: 'main', date: '2026-03-20', value: 51, expect: {} },
+    { id: 'expiry-quote', action: 'quote', instrument: 'main', quote: { bid: 51.00, ask: 51.10, last: 51.00, bidSize: 10000, askSize: 10000 }, expect: {} },
+    { id: 'expiry', covers: ['expiry', 'exercise', 'lapse'], action: 'clock', to: MAR(20, '17:30'), expect: {} },
+    { id: 'after-expiry-wrapped', covers: ['package state after expiry'], action: 'strategy_check', lot: 'wrapped', expect: {} },
+    { id: 'settle-expiry', covers: ['settlement'], action: 'clock', to: MAR(23), expect: {} },
+    { id: 'close-share', covers: ['reduce', 'close share', 'return'], action: 'close', lot: 'core', scope: 'strategy', percent: 50, expect: {} },
+    { id: 'close-exact', covers: ['reduce', 'close exact amount', 'return'], action: 'close', lot: 'core', instrument: 'main', qty: 200, expect: {} },
+    { id: 'close-all', covers: ['close', 'return', 'borrow fee'], action: 'close', lot: 'core', scope: 'strategy', expect: {} },
+    { id: 'close-funded', covers: ['close', 'return', 'borrow fee'], action: 'close', lot: 'funded', scope: 'strategy', expect: {} },
+    { id: 'settle-closes', covers: ['settlement', 'collateral release'], action: 'clock', to: MAR(24), expect: {} },
+  ],
+};
+
+export default [longTemplate, shortTemplate, protectivePut, protectiveCall];

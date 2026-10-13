@@ -263,10 +263,10 @@ const F = {
     { path: 'terms.seniority', label: 'Seniority', type: 'text' },
     // s3: premium convention, credit events, settlement, and the terms of baskets, tranches, loan and ABS CDS (server/products/credit.js).
     { path: 'terms.convention', label: 'Premium convention', type: 'select', default: 'bespoke', span: 2, options: opt([['standard', 'Standard: full first coupon, IMM dates, accrued exchanged at trade'], ['bespoke', 'Bespoke: from the effective date, premium from the trade date']]), hint: 'Standard coupons: 25, 100, 300, 500, 750 or 1000 bp' },
-    { path: 'terms.firstStub', label: 'First period', type: 'select', default: 'short', options: opt([['short', 'Short stub to the first roll date'], ['long', 'Long stub to the second roll date']]), show: (d) => d.terms?.convention !== 'standard' },
+    { path: 'terms.firstStub', label: 'First period', type: 'select', default: 'short', options: opt([['short', 'Short stub'], ['long', 'Long stub (to the second roll date)']]), show: (d) => d.terms?.convention !== 'standard' },
     { path: 'terms.paymentDay', label: 'Monthly payment day', type: 'number', hint: 'Bespoke only: monthly premium on this day (1-28), as an ABS CDS on its distribution day. Empty: quarterly on the IMM dates.', show: (d) => d.terms?.convention !== 'standard' && d.productId === 'abs_cds' },
     { path: 'terms.creditEventSet', label: 'Credit events', type: 'select', options: opt([['corporate', 'Bankruptcy, failure to pay, restructuring'], ['corporate_xr', 'Bankruptcy, failure to pay (no restructuring)'], ['financial', 'Corporate set and governmental intervention'], ['sovereign', 'Failure to pay, repudiation/moratorium, restructuring, obligation acceleration'], ['abs', 'Failure to pay principal, writedown, distressed ratings downgrade']]), span: 2, hint: 'Empty: the usual set for the product' },
-    { path: 'terms.settlement', label: 'Settlement after a credit event', type: 'select', default: 'auction', options: opt([['auction', 'Cash, at the auction final price'], ['cash', 'Cash, at a stated recovery'], ['physical', 'Physical (simulated on paper)']]) },
+    { path: 'terms.settlement', label: 'Settlement after a credit event', type: 'select', default: 'auction', options: opt([['auction', 'Auction final price (cash)'], ['cash', 'Stated recovery (cash)'], ['physical', 'Physical (simulated)']]) },
     { path: 'terms.deliverable', label: 'Deliverable obligation', type: 'text', span: 2, hint: 'Delivered on paper, simulated', show: (d) => d.terms?.settlement === 'physical' },
     { path: 'terms.basket', label: 'Basket reference entities', type: 'text', span: 'all', hint: 'Separated by ";"', show: (d) => d.productId === 'credit_basket_swap', required: true },
     { path: 'terms.nth', label: 'Protection on default number', type: 'number', default: 1, hint: '1 = first-to-default', show: (d) => d.productId === 'credit_basket_swap' },
@@ -350,7 +350,8 @@ function PriceLegFields({ leg: l, set }) {
     ${l.fixedPrice === null || l.fixedPrice === undefined || l.fixedPrice === '' ? html`<${Field} label="Floating price"><${Select} value=${l.averaging || ''} onChange=${(v) => set({ averaging: v || null })} options=${AVERAGING} /><//>` : null}
     <${Field} label="Pricing calendar" hint="Pricing (and peak) days; empty: the payment calendar"><${Text} value=${l.pricingCalendar || ''} onInput=${(v) => set({ pricingCalendar: v.toUpperCase() || null })} /><//>
     <${Field} label="Delivery hours" hint="Quantity = units x the days (gas) or hours (electricity) of each period"><${Select} value=${l.hours || ''} onChange=${(v) => set({ hours: v || null })} options=${HOURS} /><//>
-    ${l.hours && l.hours !== 'day' ? html`<${Field} label="Peak hours a day"><${Num} value=${l.peakHours ?? 16} onInput=${(v) => set({ peakHours: v })} /><//>` : null}`;
+    ${l.hours && l.hours !== 'day' ? html`<${Field} label="Peak hours a day"><${Num} value=${l.peakHours ?? 16} onInput=${(v) => set({ peakHours: v })} /><//>` : null}
+    ${l.hours && l.hours !== 'day' ? html`<${Field} label="Peak-day calendar" hint="Days with peak hours; empty: the pricing calendar"><${Text} value=${l.peakCalendar || ''} onInput=${(v) => set({ peakCalendar: v.toUpperCase() || null })} /><//>` : null}`;
 }
 /** The schedule as typed: "YYYY-MM-DD factor" a line. A line that cannot be read is sent as typed, for the server to refuse by name. */
 function ScheduleText({ value, onChange }) {
