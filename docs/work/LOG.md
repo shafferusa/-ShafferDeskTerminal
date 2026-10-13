@@ -273,3 +273,4 @@
 - 2026-10-13T20:32Z | b4 | +0.2 | loan_participation passes at engine, API and browser (13 of 13 structured group B)
 - 2026-10-13T20:32Z | s3 | +0.2 | quanto_swap passes at engine, API and browser
 - 2026-10-13T20:34Z | t2 | +0.2 | pairs_trade passes at engine, API and browser
+- 2026-10-13T20:34Z | t1 | +0.2 | T:protective_call template passes at engine, API and browser

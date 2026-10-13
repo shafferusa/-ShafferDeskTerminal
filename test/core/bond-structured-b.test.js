@@ -130,16 +130,21 @@ test('credit-linked note credit event, contingent coupon with a protected princi
   assert.equal(app.ledger.balance(acct.id, 'accrued.asset', 'USD'), 0);
 
   // A principal-protected contingent note (initial 100, coupon barrier 80%) maturing 15 June 2026 (quarterly 15 Mar/Jun/Sep/Dec,
-  // 8% a year: 2% a quarter). The 15 June coupon waits for its observation; observed at 50: no coupon, and principal at par
-  // (protected) although the underlying lost half: 1,000,000 bought at 99 redeems at 100: realized 10,000.
+  // 8% a year: 2% a quarter). Each coupon waits for its observation, and the next coupon is scheduled only once it is settled:
+  // 15 March observed at 90 (at or above 80): 1,000,000 x 2% = 20,000 paid; 15 June observed at 50: no coupon, and principal at
+  // par (protected) although the underlying lost half.
   const note = app.instruments.create(draftOf('structured_note', 'SN1', { couponType: 'fixed', couponRate: 0.08, frequency: 4, maturity: '2026-06-15', dayCount: '30/360', linkedTo: 'Test Index', initialLevel: 100, couponBarrier: 0.8, principalProtected: true }));
   pin(app, note.id, 99);
   assert.equal((await pv(app, book, acct, note, 'buy', 1_000_000)).legs[0].accrued, 0); // flat
   await trade(app, { bookId: book.id, unitId: acct.id, template: 'custom', legs: [{ kind: 'trade', action: 'buy', instrumentId: note.id, qty: 1_000_000 }] });
   await goTo(app, clock, '2026-06-15T14:00:00.000Z');
-  assert.equal(app.db.get(`SELECT status FROM tasks WHERE instrument_id = ? AND type = 'bond.coupon'`, note.id).status, 'blocked');
+  assert.match(app.db.get(`SELECT blocked_reason FROM tasks WHERE instrument_id = ? AND type = 'bond.coupon' AND status = 'blocked'`, note.id).blocked_reason, /observation of Test Index on 2026-03-15/);
+  await assert.rejects(async () => lifecycle(app, note, { action: 'observation', date: '2026-06-16', level: 90 }), /not an observation \(coupon\) date|in the future/);
+  await lifecycle(app, note, { action: 'observation', date: '2026-03-15', level: 90 });
+  await app.engine.tick(); await app.engine.tick();
+  assert.match(events(app, book, acct).find((e) => e.type === 'bond.coupon' && e.summary.includes('SN1')).summary, /: 20,000\.00 USD$/);
   await lifecycle(app, note, { action: 'observation', date: '2026-06-15', level: 50 });
-  await app.engine.tick();
+  await app.engine.tick(); await app.engine.tick();
   assert.equal(held(app, acct, note.id).length, 0);
   assert.match(events(app, book, acct).find((e) => e.type === 'bond.contingent_coupon').summary, /below the coupon barrier 80/);
   assert.match(events(app, book, acct).find((e) => e.type === 'bond.redemption' && e.summary.includes('SN1')).summary, /principal protected: par/);

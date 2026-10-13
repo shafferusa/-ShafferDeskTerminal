@@ -272,3 +272,14 @@ start fixing never asked of the data service; a return or price fixing asked for
 - OPEN, test fixtures: POST /api/demo/fixtures/quote refuses negative prices, so an out-of-the-money swap/CDS mark
   cannot be a (stale-able) fixture; manual marks can be negative but never go stale.
 - Convention noted: a cash dividend posts on its pay date; no receivable between ex-date and pay date.
+
+## t1 (templates A), protective put / protective call, 2026-10-13
+- FIXED (not open): a protective call exercised (or a covered put assigned) delivered shares that covered the short, but
+  the securities borrow stayed open, its fee accruing against nothing sold short, and the strategy never closed
+  (server/products/option.js settleOption now returns the freed borrow; test/core/templates-t1.test.js).
+- FIXED (not open): resizing a protective/covered package added option legs that did not wait for the added underlying
+  (server/core/packages.js growLegs); protective/collar template option legs did not wait for the stock leg (templates.js).
+- OPEN, minor: linking an existing short into a new strategy (protective call on an existing short) moves the position
+  and its borrow, but its restricted collateral stays booked to the old strategy instance: the next mark releases it
+  there and posts the same amount again for the new one (net cash effect nil; the audit trail shows release + post
+  instead of a transfer). Reproduce: T:protective_call, step next-day (released 4,999 / posted 5,100).
