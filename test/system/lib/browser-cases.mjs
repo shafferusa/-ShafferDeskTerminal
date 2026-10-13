@@ -2278,11 +2278,10 @@ export async function restartScreens(b, c) {
   });
   /** Stop and start the server, reload the page: every screen reads as before, nothing stored changed, nothing added. */
   const restartHere = async (stage) => {
-    const fp = b.fingerprint();
-    const hrA = JSON.stringify(b.sql('SELECT * FROM hedge_requests'));
+    // Read first (closing the post-trade hedge popup marks its prompt seen, a user action), then fingerprint: what is
+    // compared is the restart alone.
     const before = await screens();
-    const hr0 = JSON.stringify(b.sql('SELECT * FROM hedge_requests'));
-    { const a0 = JSON.parse(hrA)[0] || {}, a1 = JSON.parse(hr0)[0] || {}; const d = Object.keys({ ...a0, ...a1 }).filter((k) => !['request', 'response'].includes(k) && a0[k] !== a1[k]); if (d.length) console.log(`DIAG2 while reading the screens before the restart, hedge_requests changed: ${d.map((k) => `${k}: ${String(a0[k]).slice(0, 200)} -> ${String(a1[k]).slice(0, 200)}`).join(' ; ')}`); }
+    const fp = b.fingerprint();
     await b.restart();
     await page.reload();
     await page.locator('.shell .topbar').waitFor();
@@ -2291,7 +2290,7 @@ export async function restartScreens(b, c) {
     c.eq(after.cash, before.cash, `restart at "${stage}": the cash balances read as before`);
     c.eq(after.holding, before.holding, `restart at "${stage}": the holding reads as before`);
     c.eq(sameHistoryShown(c, before.history, after.history, `restart at "${stage}"`), [], `restart at "${stage}": no row was added to the Full history`);
-    if (!b.sameStored(c, fp, b.fingerprint(), `restart at "${stage}": every stored row is as it was`)) { const a0 = JSON.parse(hr0)[0] || {}, a1 = b.sql('SELECT * FROM hedge_requests')[0] || {}; c.fail(`DIAG hedge_requests changed columns: ${Object.keys({ ...a0, ...a1 }).filter((k) => !['request', 'response'].includes(k) && a0[k] !== a1[k]).map((k) => `${k}: ${String(a0[k]).slice(0, 300)} -> ${String(a1[k]).slice(0, 300)}`).join(' ; ')}`); }
+    b.sameStored(c, fp, b.fingerprint(), `restart at "${stage}": every stored row is as it was`);
     await b.clean(c, book.id, `restart at "${stage}"`);
     return after;
   };

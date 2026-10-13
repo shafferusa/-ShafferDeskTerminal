@@ -620,4 +620,236 @@ const foreignInflationLinked = {
   ],
 };
 
-export default [tips, foreignInflationLinked];
+// ---------------------------------------------------------------------------------------------
+// callable_bond
+// ---------------------------------------------------------------------------------------------
+// A US industrial's callable senior notes: 5.75%, coupons 15 June and 15 December, 30/360, T+1 on the US bond calendar,
+// pieces of 1,000, maturing 15 June 2033, callable by the issuer from 15 June 2028 at 101, from 15 June 2029 at 100.50 and
+// from 15 June 2030 at par (American-style after each date, as registered in its call schedule). The issuer's calls are
+// recorded by hand on the instrument (Edit, Lifecycle events recorded by hand, Issuer call): the Terminal checks the date
+// and the price against the schedule and applies the call to every holder.
+//   - A call before the first call date is refused; so is a call at a price other than the one in force.
+//   - On the first call date, after the coupon, the issuer calls 25% of the issue pro rata: no accrued interest (first
+//     day of the period).
+//   - On 15 August 2028 it calls the rest at 101, with 60 days of accrued interest paid; the position closes and the
+//     remaining coupons and the redemption are cancelled. The notes can no longer be traded.
+// Not modelled: the call notice period (30 to 60 days); the call is recorded on its redemption date.
+//
+// Days of 30/360 from 15 Dec 2027: to 2 Jun 167, 5 Jun 170, 7 Jun 172, 9 Jun 174. From 15 Jun 2028: to 14 Aug 59, 15 Aug
+// 60. A full coupon is 2.875 per 100. Commission: 0.5 basis point of clean principal.
+const callableBond = {
+  productId: 'callable_bond',
+  title: 'Halden Industrial 5.75% callable notes 2033: a call before the first call date and one at the wrong price refused, coupon, 25% partial call at 101 on the first call date, the rest called on 15 August with accrued interest',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount (a multiple of 1,000)'],
+    manualInputs: ['Registration: Call schedule (dates and call prices)', 'Issuer call recorded by hand on the instrument form: Call price (% of par), Share of the issue called (1 = whole issue), Review, Record issuer call'],
+    settlement: 'T+1 on the US bond calendar; a call is paid on the day it is recorded, principal at the call price plus accrued interest to that day',
+    lifecycle: 'Daily accrual on 30/360; semi-annual coupon; partial call pro rata to every holder; full call closes every holding and cancels the next coupon and the maturity; call date and price checked against the schedule',
+    accounting: 'Clean cost at average; realized P&L on the sale and on each call (call price against average cost); accrued interest paid with the call is income; commission expensed',
+    collateral: 'None for a long position',
+  },
+  start: EDT('2028-06-01'), // Thursday
+  settlementCheck: { lag: 1, holidays: [] },
+  book: {
+    name: 'Matrix callable bond', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 4_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 3_000_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.5 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'callable_bond', name: 'Halden Industrial Corp 5.75% Callable Senior Notes 15-Jun-2033', symbol: 'HALDEN-5.75-33C', marketView: 'US_CASH', venueType: 'otc', issuer: 'Halden Industrial Corp', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      terms: { couponType: 'fixed', couponRate: 0.0575, frequency: 2, maturity: '2033-06-15', issueDate: '2023-06-15', dayCount: '30/360', redemption: 100, minDenomination: 1_000, seniority: 'Senior unsecured',
+        callSchedule: [{ date: '2028-06-15', price: 101 }, { date: '2029-06-15', price: 100.5 }, { date: '2030-06-15', price: 100 }] } },
+  },
+  quotes: { main: { bid: 101.05, ask: 101.25, last: 101.1, bidSize: 10_000_000, askSize: 10_000_000 } },
+  expectAtStart: { ...startState(3_000_000, 1_000_000), cash: { account: usdCash(3_000_000), treasury: usdCash(1_000_000) } },
+  steps: [
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 2_000_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 2_000_000, estimate: 101.25, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2028-06-02', calendar: 'USBOND',
+            gross: 2_025_000, // 2,000,000 x 101.25 / 100
+            accrued: 53_347.22, // 167 days: 2,000,000 x 5.75% x 167/360 = 53,347.222
+            cash: -2_078_347.22, fees: 101.25 }], // 0.5 bp of 2,025,000
+          cash: { USD: { purchases: 2_078_347.22, fees: 101.25, required: 2_078_448.47, available: 3_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 2_000_000, avgPrice: 101.25, fills: [{ qty: 2_000_000, price: 101.25, model: 'quoted-bid-ask', settleDate: '2028-06-02', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 2,000,000 HALDEN-5.75-33C @ 101.25 USD', owner: 'account', date: '2028-06-01' }],
+        cash: { account: { USD: { settled: 3_000_000, unsettled: -2_078_448.47, availableToTrade: 921_551.53 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 2_000_000, avgCost: 101.25, cost: 2_025_000, price: 101.1,
+          value: 2_022_000, unrealized: -3_000, accrued: 53_347.22, priceSource: 'Test fixture' }],
+        holdings: { main: { long: 2_000_000, short: 0, net: 2_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2028-06-02', amount: -2_078_448.47, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2028-06-15', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2033-06-15', status: 'pending' }],
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -101.25, fees: 0, borrowFunding: 0, unrealized: -3_000, total: -3_101.25 } },
+        nav: { account: 2_996_898.75, book: 3_996_898.75 },
+        balance: { account: { cash: 3_000_000, accruedIncome: 53_347.22, positions: 2_022_000, payable: 2_078_448.47, assets: 5_075_347.22, liabilities: 2_078_448.47, netAssets: 2_996_898.75 } },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EDT('2028-06-02'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 2,078,448.47 USD from settled cash', cash: { USD: -2_078_448.47 }, date: '2028-06-02' }],
+        cash: { account: { USD: { settled: 921_551.53, unsettled: 0, availableToTrade: 921_551.53 } } },
+        pending: [],
+        balance: { account: { cash: 921_551.53, payable: null, assets: 2_996_898.75, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'call-before-first-call-date', covers: 'call (by hand)', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'call', price: 101, share: 1 },
+      status: 'blocked', reason: 'The notes are not callable before 15 June 2028, their first call date.',
+      expect: { refused: 'is not callable before 2028-06-15, its first call date (at 101.00% of par)' },
+    },
+    {
+      id: 'increase', covers: 'increase', action: 'resize', lot: 'lot', factor: 1.25, // 2,000,000 -> 2,500,000
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', qty: 500_000, estimate: 101.25, settleDate: '2028-06-05', calendar: 'USBOND',
+          gross: 506_250, // 500,000 x 101.25 / 100
+          accrued: 13_576.39, // settles Monday 5 Jun, 170 days: 500,000 x 5.75% x 170/360 = 13,576.389
+          cash: -519_826.39, fees: 25.31 }], // 0.5 bp of 506,250 = 25.3125
+          cash: { USD: { purchases: 519_826.39, fees: 25.31, required: 519_851.70, available: 921_551.53, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 500_000, avgPrice: 101.25 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Bought 500,000 HALDEN-5.75-33C @ 101.25 USD' }],
+        cash: { account: { USD: { settled: 921_551.53, unsettled: -519_851.70, availableToTrade: 401_699.83 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_500_000, cost: 2_531_250, avgCost: 101.25, price: 101.1, value: 2_527_500, unrealized: -3_750, accrued: 66_923.61 }], // 53,347.22 + 13,576.39
+        holdings: { main: { long: 2_500_000, short: 0, net: 2_500_000 } },
+        pending: [{ instrument: 'main', dueDate: '2028-06-05', amount: -519_851.70, into: 'cash' }],
+        pnl: { account: { commissions: -126.56, unrealized: -3_750, total: -3_876.56 } },
+        nav: { account: 2_996_123.44, book: 3_996_123.44 },
+        balance: { account: { cash: 921_551.53, accruedIncome: 66_923.61, positions: 2_527_500, payable: 519_851.70, assets: 3_515_975.14, liabilities: 519_851.70, netAssets: 2_996_123.44 } },
+      },
+    },
+    {
+      // Monday 5 June. End of day 2 Jun: 2,000,000 settled to 2 Jun plus 500,000 to 5 Jun: what is on the books.
+      id: 'settle-increase', covers: 'settlement', action: 'clock', to: EDT('2028-06-05'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 519,851.70 USD from settled cash', cash: { USD: -519_851.70 } }],
+        cash: { account: { USD: { settled: 401_699.83, unsettled: 0, availableToTrade: 401_699.83 } } },
+        pending: [],
+        balance: { account: { cash: 401_699.83, payable: null, assets: 2_996_123.44, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'quote-up', action: 'quote', instrument: 'main', quote: { bid: 101.4, ask: 101.6, last: 101.5, bidSize: 10_000_000, askSize: 10_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_500_000, price: 101.5, value: 2_537_500, unrealized: 6_250 }],
+        pnl: { account: { unrealized: 6_250, total: 6_123.44 } },
+        nav: { account: 3_006_123.44, book: 4_006_123.44 },
+        balance: { account: { positions: 2_537_500, assets: 3_006_123.44, netAssets: 3_006_123.44 } },
+      },
+    },
+    {
+      // Thursday 8 June. End of day 7 Jun: 2,500,000 x 5.75% x 172/360 = 68,680.556; on the books 66,923.61: 1,756.95 more.
+      id: 'june-8', covers: 'accrual', action: 'clock', to: EDT('2028-06-08'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on HALDEN-5.75-33C: 1,756.95 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_500_000, accrued: 68_680.56 }],
+        pnl: { account: { couponInterest: 1_756.95, total: 7_880.39 } },
+        nav: { account: 3_007_880.39, book: 4_007_880.39 },
+        balance: { account: { accruedIncome: 68_680.56, assets: 3_007_880.39, netAssets: 3_007_880.39 } },
+      },
+    },
+    {
+      // Cost out at the average: 700,000 x 101.25% = 708,750; realized 709,800 - 708,750 = 1,050.
+      id: 'reduce', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 700_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 700_000, estimate: 101.4, settleDate: '2028-06-09',
+          gross: 709_800, // 700,000 x 101.40 / 100
+          accrued: 19_454.17, // settles 9 Jun, 174 days: 700,000 x 5.75% x 174/360 = 19,454.167
+          cash: 729_254.17, fees: 35.49 }] }, // 0.5 bp of 709,800
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 700_000, avgPrice: 101.4 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 700,000 HALDEN-5.75-33C @ 101.40 USD (realized 1,050.00 USD)' }],
+        cash: { account: { USD: { settled: 401_699.83, unsettled: 729_218.68, availableToTrade: 1_130_918.51 } } }, // 729,254.17 - 35.49
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_800_000, cost: 1_822_500, avgCost: 101.25, price: 101.5, value: 1_827_000, unrealized: 4_500, accrued: 49_226.39 }], // 68,680.56 - 19,454.17
+        holdings: { main: { long: 1_800_000, short: 0, net: 1_800_000 } },
+        pending: [{ instrument: 'main', dueDate: '2028-06-09', amount: 729_218.68, into: 'cash' }],
+        pnl: { account: { realized: 1_050, commissions: -162.05, unrealized: 4_500, total: 7_144.90 } },
+        nav: { account: 3_007_144.90, book: 4_007_144.90 },
+        balance: { account: { cash: 401_699.83, receivable: 729_218.68, accruedIncome: 49_226.39, positions: 1_827_000, assets: 3_007_144.90, liabilities: 0, netAssets: 3_007_144.90 } },
+      },
+    },
+    {
+      // Thursday 15 June, the first call date. The sale settled on 9 Jun. Coupon on the 1,800,000 settled before today:
+      // 1,800,000 x 2.875% = 51,750. On the books 49,226.39: the coupon exceeds it by 2,523.61.
+      id: 'coupon', covers: ['coupon', 'settlement'], action: 'clock', to: EDT('2028-06-15'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 729,218.68 USD into settled cash', cash: { USD: 729_218.68 } },
+          { type: 'bond.coupon', summary: 'Coupon received on 1,800,000 HALDEN-5.75-33C: 51,750.00 USD', cash: { USD: 51_750 }, owner: 'account', date: '2028-06-15' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on HALDEN-5.75-33C: 2,523.61 USD' },
+        ],
+        cash: { account: { USD: { settled: 1_182_668.51, unsettled: 0, availableToTrade: 1_182_668.51 } } }, // 401,699.83 + 729,218.68 + 51,750
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_800_000, accrued: 0 }],
+        pending: [],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2028-12-15', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2033-06-15', status: 'pending' }],
+        pnl: { account: { couponInterest: 4_280.56, total: 9_668.51 } },
+        nav: { account: 3_009_668.51, book: 4_009_668.51 },
+        balance: { account: { cash: 1_182_668.51, receivable: null, accruedIncome: null, assets: 3_009_668.51, netAssets: 3_009_668.51 } },
+      },
+    },
+    {
+      id: 'call-at-wrong-price', covers: 'call (by hand)', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'call', price: 100.5, share: 1 },
+      status: 'blocked', reason: 'From 15 June 2028 the call price is 101; 100.50 applies only from 15 June 2029.',
+      expect: { refused: 'The call price in force on 2028-06-15 is 101.00% of par (from 2028-06-15 under the call schedule); a call at 100.50 is not in the terms.' },
+    },
+    {
+      // The issuer calls 25% of the issue, pro rata, at 101: 450,000 of the 1,800,000 held. No accrued interest (the first day
+      // of the period). Paid today: 454,500. Cost out at the average 450,000 x 101.25% = 455,625: realized -1,125.
+      id: 'partial-call', covers: ['call (by hand)', 'reduce'], action: 'instrument_lifecycle', instrument: 'main', body: { action: 'call', price: 101, share: 0.25 },
+      expect: {
+        events: [
+          { type: 'bond.call', summary: 'Partial issuer call recorded by hand (25% of the issue, pro rata): 450,000 HALDEN-5.75-33C at 101.00% of par', owner: 'account', date: '2028-06-15' },
+          { type: 'settlement.receive', summary: 'received 454,500.00 USD into settled cash', cash: { USD: 454_500 } },
+        ],
+        cash: { account: { USD: { settled: 1_637_168.51, availableToTrade: 1_637_168.51 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_350_000, cost: 1_366_875, avgCost: 101.25, price: 101.5, value: 1_370_250, unrealized: 3_375, accrued: 0 }],
+        holdings: { main: { long: 1_350_000, short: 0, net: 1_350_000 } },
+        pnl: { account: { realized: -75, unrealized: 3_375, total: 7_418.51 } }, // 1,050 - 1,125
+        nav: { account: 3_007_418.51, book: 4_007_418.51 },
+        balance: { account: { cash: 1_637_168.51, positions: 1_370_250, assets: 3_007_418.51, netAssets: 3_007_418.51 } },
+      },
+    },
+    {
+      // Tuesday 15 August, past Juneteenth and Independence Day. End of day 14 Aug: 1,350,000 x 5.75% x 59/360 = 12,721.875.
+      id: 'august', covers: 'accrual', action: 'clock', to: EDT('2028-08-15'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on HALDEN-5.75-33C: 12,721.88 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_350_000, accrued: 12_721.88 }],
+        pnl: { account: { couponInterest: 17_002.44, total: 20_140.39 } },
+        nav: { account: 3_020_140.39, book: 4_020_140.39 },
+        balance: { account: { accruedIncome: 12_721.88, assets: 3_020_140.39, netAssets: 3_020_140.39 } },
+      },
+    },
+    {
+      // The rest of the issue is called at 101 (the price in force until 15 June 2029). Principal 1,350,000 x 101% = 1,363,500;
+      // accrued interest to today, 60 days: 1,350,000 x 5.75% x 60/360 = 12,937.50; paid together 1,376,437.50. Realized
+      // 1,363,500 - 1,366,875 = -3,375. The interest paid exceeds the 12,721.88 on the books by 215.62 (today's day).
+      // The coupon of 15 December and the maturity are cancelled.
+      id: 'full-call', covers: ['call (by hand)', 'close'], action: 'instrument_lifecycle', instrument: 'main', body: { action: 'call', price: 101, share: 1 },
+      expect: {
+        events: [
+          { type: 'bond.call', summary: 'Issuer call recorded by hand (whole issue): 1,350,000 HALDEN-5.75-33C at 101.00% of par', owner: 'account', date: '2028-08-15' },
+          { type: 'settlement.receive', summary: 'received 1,376,437.50 USD into settled cash', cash: { USD: 1_376_437.50 } },
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of HALDEN-5.75-33C: 215.62 USD' },
+        ],
+        cash: { account: { USD: { settled: 3_013_606.01, unsettled: 0, availableToTrade: 3_013_606.01 } }, treasury: usdCash(1_000_000) },
+        positions: [],
+        holdings: { main: null },
+        lifecycle: [],
+        pnl: { account: { realized: -3_450, couponInterest: 17_218.06, commissions: -162.05, unrealized: 0, total: 13_606.01 } }, // -75 - 3,375; + 215.62
+        nav: { account: 3_013_606.01, book: 4_013_606.01 },
+        balance: { account: { cash: 3_013_606.01, positions: null, accruedIncome: null, assets: 3_013_606.01, liabilities: 0, netAssets: 3_013_606.01 } },
+      },
+    },
+    {
+      id: 'trade-after-call', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 100_000,
+      status: 'blocked', reason: 'The whole issue has been called and redeemed: nothing is left to trade.',
+      expect: { refused: 'was called by the issuer and redeemed in full on 2028-08-15' },
+    },
+  ],
+};
+
+export default [tips, foreignInflationLinked, callableBond];

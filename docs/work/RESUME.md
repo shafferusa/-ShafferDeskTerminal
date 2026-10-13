@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 66.4% of the pass** (last milestone 2026-10-13T17:42Z, fw: fw: delivery refusals for cash-settled and bond futures; equity_future now delivers shares on paper; five futures pass E/A/B)
+**Completeness: about 66.6% of the pass** (last milestone 2026-10-13T17:43Z, o2: fx_option passes at engine, API and browser)
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 

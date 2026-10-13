@@ -464,7 +464,7 @@ export function createPackages(app) {
         // r1: what the arrangement reconciles to (a repo: collateral value, haircut, buffer and the cash it supports; a
         // buy/sell-back: its forward price; securities lent: the cash collateral received), as displayed in the preview.
         const detail = plugin.previewDetail ? plugin.previewDetail(app, { unit, inst, action: l.action, qty: l.qty, collateralPositionId: l.collateralPositionId, sourcePositionId: l.sourcePositionId }) : null;
-        if (detail && row.financing) Object.assign(row.financing, { collateral: detail.collateral ?? null, forward: detail.forward ?? null });
+        if (detail && row.financing) Object.assign(row.financing, { collateral: detail.collateral ?? null, forward: detail.forward ?? null }, !row.financing.maturity && detail.maturity ? { maturity: detail.maturity } : {});
         else if (detail) row.lending = detail;
       } else if (ARR_CLOSE.has(l.kind)) {
         const p = l.targetPosition;

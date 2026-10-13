@@ -502,7 +502,9 @@ export const repo = {
     const c = coverFor(app, inst, coll, inst.terms.collateralQty, app.clock.today());
     const collateral = c.error ? null : { qty: c.qty, price: c.price, clean: c.clean, accrued: c.accrued, worth: c.worth, haircut: c.haircut, haircutAmount: c.haircutAmount, afterHaircut: c.afterHaircut, buffer: c.buffer, supports: c.cover, symbol: symOf(coll) };
     const forward = isBsb(inst) && collateral && inst.terms.rateType === 'fixed' && inst.terms.endDate && coll.family === 'bond' ? forwardOf(app, inst, coll, money(qty, inst.trading_ccy), inst.terms.startDate || app.clock.today()) : null;
-    return { collateral, forward, positionId: collateralPositionId || null };
+    // An overnight repo ends on the next business day of the currency's payment calendar: shown in the preview before it exists.
+    const maturity = inst.terms.term === 'overnight' && !inst.terms.endDate ? addBusinessDays(app.clock.today(), 1, paymentCalendarFor(inst)) : null;
+    return { collateral, forward, maturity, positionId: collateralPositionId || null };
   },
   open(app, c) {
     const { ledger, positions } = app;

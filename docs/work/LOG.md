@@ -140,3 +140,4 @@
 - 2026-10-13T17:40Z | ui1 | +0.5 | Marketplace item 3: routing of all 205 products tested US/foreign to one tab of one view, convention documented in view, ARCHITECTURE, README, COVERAGE; never US from currency; hand-set override labelled
 - 2026-10-13T17:41Z | r1 | +0.2 | reverse_repo passes at engine, API and browser
 - 2026-10-13T17:42Z | fw | +0 | fw: delivery refusals for cash-settled and bond futures; equity_future now delivers shares on paper; five futures pass E/A/B
+- 2026-10-13T17:43Z | o2 | +0.2 | fx_option passes at engine, API and browser
