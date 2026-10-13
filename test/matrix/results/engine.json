@@ -52061,6 +52061,193 @@
    "covers": [
     "restart"
    ]
+  },
+  "E:asset_swap:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 89,
+   "commit": "b86648b+changes",
+   "at": "2026-10-13T20:54:35.138Z",
+   "product": "asset_swap",
+   "template": null,
+   "family": "swap",
+   "step": "setup",
+   "covers": []
+  },
+  "E:asset_swap:open-package": {
+   "status": "passed",
+   "message": "",
+   "ms": 65,
+   "commit": "b86648b+changes",
+   "at": "2026-10-13T20:54:35.138Z",
+   "product": "asset_swap",
+   "template": null,
+   "family": "swap",
+   "step": "open-package",
+   "covers": [
+    "open",
+    "package",
+    "collateral"
+   ]
+  },
+  "E:asset_swap:mark-swap": {
+   "status": "passed",
+   "message": "",
+   "ms": 23,
+   "commit": "b86648b+changes",
+   "at": "2026-10-13T20:54:35.138Z",
+   "product": "asset_swap",
+   "template": null,
+   "family": "swap",
+   "step": "mark-swap",
+   "covers": [
+    "manual mark"
+   ]
+  },
+  "E:asset_swap:settle-package": {
+   "status": "passed",
+   "message": "",
+   "ms": 26,
+   "commit": "b86648b+changes",
+   "at": "2026-10-13T20:54:35.138Z",
+   "product": "asset_swap",
+   "template": null,
+   "family": "swap",
+   "step": "settle-package",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:asset_swap:float-stub": {
+   "status": "passed",
+   "message": "",
+   "ms": 42,
+   "commit": "b86648b+changes",
+   "at": "2026-10-13T20:54:35.138Z",
+   "product": "asset_swap",
+   "template": null,
+   "family": "swap",
+   "step": "float-stub",
+   "covers": [
+    "floating payment",
+    "accrual"
+   ]
+  },
+  "E:asset_swap:december-coupon-and-legs": {
+   "status": "passed",
+   "message": "",
+   "ms": 32,
+   "commit": "b86648b+changes",
+   "at": "2026-10-13T20:54:35.138Z",
+   "product": "asset_swap",
+   "template": null,
+   "family": "swap",
+   "step": "december-coupon-and-legs",
+   "covers": [
+    "coupon",
+    "fixed payment",
+    "floating payment"
+   ]
+  },
+  "E:asset_swap:late-january": {
+   "status": "passed",
+   "message": "",
+   "ms": 30,
+   "commit": "b86648b+changes",
+   "at": "2026-10-13T20:54:35.138Z",
+   "product": "asset_swap",
+   "template": null,
+   "family": "swap",
+   "step": "late-january",
+   "covers": [
+    "accrual"
+   ]
+  },
+  "E:asset_swap:bond-quote-higher": {
+   "status": "passed",
+   "message": "",
+   "ms": 30,
+   "commit": "b86648b+changes",
+   "at": "2026-10-13T20:54:35.138Z",
+   "product": "asset_swap",
+   "template": null,
+   "family": "swap",
+   "step": "bond-quote-higher",
+   "covers": []
+  },
+  "E:asset_swap:mark-swap-lower": {
+   "status": "passed",
+   "message": "",
+   "ms": 32,
+   "commit": "b86648b+changes",
+   "at": "2026-10-13T20:54:35.138Z",
+   "product": "asset_swap",
+   "template": null,
+   "family": "swap",
+   "step": "mark-swap-lower",
+   "covers": [
+    "manual mark"
+   ]
+  },
+  "E:asset_swap:sell-bond": {
+   "status": "passed",
+   "message": "",
+   "ms": 40,
+   "commit": "b86648b+changes",
+   "at": "2026-10-13T20:54:35.138Z",
+   "product": "asset_swap",
+   "template": null,
+   "family": "swap",
+   "step": "sell-bond",
+   "covers": [
+    "close",
+    "bond leg"
+   ]
+  },
+  "E:asset_swap:terminate-swap": {
+   "status": "passed",
+   "message": "",
+   "ms": 25,
+   "commit": "b86648b+changes",
+   "at": "2026-10-13T20:54:35.138Z",
+   "product": "asset_swap",
+   "template": null,
+   "family": "swap",
+   "step": "terminate-swap",
+   "covers": [
+    "close",
+    "full termination",
+    "collateral"
+   ]
+  },
+  "E:asset_swap:settle-closes": {
+   "status": "passed",
+   "message": "",
+   "ms": 15,
+   "commit": "b86648b+changes",
+   "at": "2026-10-13T20:54:35.138Z",
+   "product": "asset_swap",
+   "template": null,
+   "family": "swap",
+   "step": "settle-closes",
+   "covers": [
+    "settlement",
+    "close"
+   ]
+  },
+  "E:asset_swap:restart": {
+   "status": "passed",
+   "message": "",
+   "ms": 54,
+   "commit": "b86648b+changes",
+   "at": "2026-10-13T20:54:35.138Z",
+   "product": "asset_swap",
+   "template": null,
+   "family": "swap",
+   "step": "restart",
+   "covers": [
+    "restart"
+   ]
   }
  },
  "runs": {
@@ -55599,7 +55786,23 @@
     "node": "v22.22.0",
     "platform": "linux"
    }
+  },
+  "asset_swap": {
+   "at": "2026-10-13T20:54:35.138Z",
+   "commit": "b86648b+changes",
+   "ms": 504,
+   "family": "swap",
+   "steps": 13,
+   "ran": 13,
+   "passed": 13,
+   "failed": 0,
+   "blocked": 0,
+   "unsupported": 0,
+   "environment": {
+    "node": "v22.22.0",
+    "platform": "linux"
+   }
   }
  },
- "updatedAt": "2026-10-13T20:52:26.294Z"
+ "updatedAt": "2026-10-13T20:54:35.138Z"
 }

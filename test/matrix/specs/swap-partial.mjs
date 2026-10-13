@@ -1674,7 +1674,7 @@ const assetSwap = {
           { type: 'trade.fill', summary: 'Entered as written: 5,000,000 notional of ASW-BWU-0629 at 2.975 per 100 notional', owner: 'account', date: '2026-08-13' },
           { type: 'swap.collateral', summary: `Collateral posted on ${ASW_NAME} under its position-level terms: 50,000.00 USD (independent amount, fixed amount for the position)`, cash: { USD: -50_000 } },
         ],
-        cash: { account: { USD: { settled: 5_950_000, unsettled: -5_000_100, margin: 50_000, availableToTrade: 949_900 } } },
+        cash: { account: { USD: { settled: 5_950_000, unsettled: -5_000_100, margin: 50_000, availableToTrade: 949_900, availableToWithdraw: 949_900 } } },
         positions: [
           { instrument: 'bond', lot: 'asw', owner: 'account', direction: 'long', qty: 5_000_000, avgCost: 96.25, cost: 4_812_500, price: 96.25, value: 4_812_500, unrealized: 0, accrued: 38_750 },
           { instrument: 'main', lot: 'asw', owner: 'account', direction: 'as written', qty: 5_000_000, avgCost: 2.975, cost: 148_750, price: null, value: null, unrealized: null, provisional: true, notional: 5_000_000, margin: 50_000 },
@@ -1720,19 +1720,146 @@ const assetSwap = {
       },
     },
     {
-      // Float 17 August to 15 September: 24,166.67 received (see the header).
-      id: 'float-stub', covers: 'floating payment', action: 'clock', to: at('2026-09-15'),
+      // Float 17 August to 15 September: 24,166.67 received (see the header). The bond's interest accrues each day at the end
+      // of the day: 17 August to 14 September (27 days of 30/360) 5,000,000 x 4.50% x 27/360 = 16,875.00, on top of the
+      // 38,750.00 bought: 55,625.00 accrued (89 days from 15 June).
+      id: 'float-stub', covers: ['floating payment', 'accrual'], action: 'clock', to: at('2026-09-15'),
       expect: {
-        events: [{ type: 'swap.payment', summary: `Swap receipt on ${ASW_NAME}, leg B (float), period 2026-08-17 to 2026-09-15: 24,166.67 USD`, cash: { USD: 24_166.67 } }],
+        events: [
+          { type: 'swap.payment', summary: `Swap receipt on ${ASW_NAME}, leg B (float), period 2026-08-17 to 2026-09-15: 24,166.67 USD`, cash: { USD: 24_166.67 } },
+          { type: 'accrual.coupon', summary: 'Interest accrued on BWU-4.5-JUN29: 16,875.00 USD' },
+        ],
         cash: { account: { USD: { settled: 974_066.67, availableToTrade: 974_066.67, availableToWithdraw: 974_066.67 } } },
+        positions: [{ instrument: 'bond', lot: 'asw', accrued: 55_625 }, { instrument: 'main', lot: 'asw' }],
+        lifecycle: [
+          { type: 'bond.coupon', instrument: 'bond', dueDate: '2026-12-15', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-12-15', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-12-15', status: 'pending' },
+          { type: 'bond.maturity', instrument: 'bond', dueDate: '2029-06-15', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2029-06-15', status: 'pending' },
+        ],
+        pnl: { account: { realized: 24_166.67, couponInterest: 16_875, total: 40_941.67 } },
+        nav: { account: 6_040_941.67, book: 8_040_941.67 },
+        balance: { account: { cash: 974_066.67, accruedIncome: 55_625, assets: 6_040_941.67, netAssets: 6_040_941.67 } },
       },
     },
     {
-      // Bond coupon 112,500.00; fixed stub 73,750.00 paid; float 74,569.44 received (see the header).
+      // Bond coupon 112,500.00, the accrual brought up to it (112,500 - 55,625 = 56,875.00): interest earned on the bond
+      // 112,500 - 38,750 bought = 73,750.00; fixed stub 73,750.00 paid; float 74,569.44 received (see the header).
+      // 974,066.67 + 112,500 - 73,750 + 74,569.44 = 1,087,386.11.
       id: 'december-coupon-and-legs', covers: ['coupon', 'fixed payment', 'floating payment'], action: 'clock', to: at('2026-12-15'),
       expect: {
-        events: [],
+        events: [
+          { type: 'bond.coupon', summary: 'Coupon received on 5,000,000 BWU-4.5-JUN29: 112,500.00 USD', cash: { USD: 112_500 } },
+          { type: 'accrual.coupon', summary: 'Interest accrued on BWU-4.5-JUN29: 56,875.00 USD' },
+          { type: 'swap.payment', summary: `Swap payment on ${ASW_NAME}, leg A (fixed), period 2026-08-17 to 2026-12-15: 73,750.00 USD`, cash: { USD: -73_750 } },
+          { type: 'swap.payment', summary: `Swap receipt on ${ASW_NAME}, leg B (float), period 2026-09-15 to 2026-12-15: 74,569.44 USD`, cash: { USD: 74_569.44 } },
+        ],
         cash: { account: { USD: { settled: 1_087_386.11, availableToTrade: 1_087_386.11, availableToWithdraw: 1_087_386.11 } } },
+        positions: [{ instrument: 'bond', lot: 'asw', accrued: 0 }, { instrument: 'main', lot: 'asw' }],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-03-15', status: 'pending' },
+          { type: 'bond.coupon', instrument: 'bond', dueDate: '2027-06-15', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-06-15', status: 'pending' },
+          { type: 'bond.maturity', instrument: 'bond', dueDate: '2029-06-15', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2029-06-15', status: 'pending' },
+        ],
+        pnl: { account: { realized: 24_986.11, couponInterest: 73_750, total: 98_636.11 } },
+        nav: { account: 6_098_636.11, book: 8_098_636.11 },
+        balance: { account: { cash: 1_087_386.11, accruedIncome: null, assets: 6_098_636.11, netAssets: 6_098_636.11 } },
+      },
+    },
+    {
+      // 15 December to 19 January (34 days of 30/360): 5,000,000 x 4.50% x 34/360 = 21,250.00 accrued.
+      id: 'late-january', covers: 'accrual', action: 'clock', to: at('2027-01-20'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on BWU-4.5-JUN29: 21,250.00 USD' }],
+        positions: [{ instrument: 'bond', lot: 'asw', accrued: 21_250 }, { instrument: 'main', lot: 'asw' }],
+        pnl: { account: { couponInterest: 95_000, total: 119_886.11 } },
+        nav: { account: 6_119_886.11, book: 8_119_886.11 },
+        balance: { account: { accruedIncome: 21_250, assets: 6_119_886.11, netAssets: 6_119_886.11 } },
+      },
+    },
+    {
+      // The bond at 97.20: 5,000,000 x 97.20 / 100 = 4,860,000.00, 47,500.00 over its cost.
+      id: 'bond-quote-higher', action: 'quote', instrument: 'bond', quote: { bid: 97.10, ask: 97.30, last: 97.20, bidSize: 20_000_000, askSize: 20_000_000 },
+      expect: {
+        positions: [{ instrument: 'bond', lot: 'asw', price: 97.2, value: 4_860_000, unrealized: 47_500 }, { instrument: 'main', lot: 'asw' }],
+        pnl: { account: { unrealized: 47_500, total: 167_386.11 } },
+        nav: { account: 6_167_386.11, book: 8_167_386.11 },
+        balance: { account: { positions: 5_008_750, assets: 6_167_386.11, netAssets: 6_167_386.11 } },
+      },
+    },
+    {
+      // The swap at -0.60: -30,000.00 against its 148,750.00 cost: -178,750.00.
+      id: 'mark-swap-lower', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: -0.60, note: 'Dealer A mark, by hand',
+      expect: {
+        positions: [{ instrument: 'bond', lot: 'asw' }, { instrument: 'main', lot: 'asw', price: -0.6, value: -30_000, unrealized: -178_750 }],
+        otc: [{ instrument: 'main', mark: -0.6, markValue: -30_000 }],
+        pnl: { account: { unrealized: -131_250, total: -11_363.89 } },
+        nav: { account: 5_988_636.11, book: 7_988_636.11 },
+        balance: { account: { positions: 4_830_000, assets: 5_988_636.11, netAssets: 5_988_636.11 } },
+      },
+    },
+    {
+      // Sold at the bid of 97.10: 4,855,000.00 + accrued 23,125.00 (see the header) = 4,878,125.00, settling Fri 22 January;
+      // realized 4,855,000 - 4,812,500 = 42,500.00; interest 23,125 - 21,250 = 1,875.00 more.
+      id: 'sell-bond', covers: ['close', 'bond leg'], action: 'close', lot: 'asw', instrument: 'bond', scope: 'position', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'bond', qty: 5_000_000, estimate: 97.1, model: 'quoted-bid-ask', settleDate: '2027-01-22', gross: 4_855_000, accrued: 23_125, cash: 4_878_125, fees: 0 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 5_000_000, avgPrice: 97.1 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 5,000,000 BWU-4.5-JUN29 @ 97.10 USD (realized 42,500.00 USD)' },
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of BWU-4.5-JUN29: 1,875.00 USD' },
+        ],
+        cash: { account: { USD: { settled: 1_087_386.11, unsettled: 4_878_125, availableToTrade: 5_965_511.11, availableToWithdraw: 1_087_386.11 } } },
+        positions: [{ instrument: 'main', lot: 'asw', qty: 5_000_000, price: -0.6, value: -30_000 }],
+        holdings: { bond: null, main: { long: 5_000_000, short: 0, net: 5_000_000 } },
+        pending: [{ instrument: 'bond', owner: 'account', dueDate: '2027-01-22', amount: 4_878_125, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-03-15', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-06-15', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2029-06-15', status: 'pending' },
+        ],
+        pnl: { account: { realized: 67_486.11, couponInterest: 96_875, commissions: -100, unrealized: -178_750, total: -14_488.89 } },
+        nav: { account: 5_985_511.11, book: 7_985_511.11 },
+        balance: { account: { cash: 1_087_386.11, accruedIncome: null, receivable: 4_878_125, positions: -30_000, assets: 5_985_511.11, liabilities: 0, netAssets: 5_985_511.11 } },
+      },
+    },
+    {
+      // 30,000.00 paid and 100.00 commission, settling Fri 22 January; realized -30,000 - 148,750 = -178,750.00; the 50,000 comes back.
+      id: 'terminate-swap', covers: ['close', 'full termination', 'collateral'], action: 'close', lot: 'asw', instrument: 'main', scope: 'position', percent: 100, order: { statedPrice: -0.60 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 5_000_000, estimate: -0.6, model: 'stated-price', settleDate: '2027-01-22', cash: -30_000, fees: 100 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 5_000_000, avgPrice: -0.6 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Terminated: 5,000,000 notional of ASW-BWU-0629 at -0.60 per 100 notional (realized -178,750.00 USD)' },
+          { type: 'swap.collateral', summary: `Collateral returned on ${ASW_NAME} under its position-level terms: 50,000.00 USD (independent amount, the position ended)`, cash: { USD: 50_000 } },
+        ],
+        cash: { account: { USD: { settled: 1_137_386.11, unsettled: 4_848_025, margin: 0, availableToTrade: 5_985_411.11, availableToWithdraw: 1_107_286.11 } } },
+        positions: [], holdings: { bond: null, main: null }, lifecycle: [], otc: [],
+        pending: [
+          { instrument: 'bond', owner: 'account', dueDate: '2027-01-22', amount: 4_878_125, ccy: 'USD', into: 'cash' },
+          { instrument: 'main', owner: 'account', dueDate: '2027-01-22', amount: -30_100, ccy: 'USD', into: 'cash' },
+        ],
+        pnl: { account: { realized: -111_263.89, couponInterest: 96_875, commissions: -200, unrealized: 0, total: -14_588.89 } },
+        nav: { account: 5_985_411.11, book: 7_985_411.11 },
+        balance: { account: { cash: 1_137_386.11, margin: null, positions: null, receivable: 4_878_125, payable: 30_100, assets: 6_015_511.11, liabilities: 30_100, netAssets: 5_985_411.11 } },
+      },
+    },
+    {
+      // 6,000,000 - 5,000,100 + 24,166.67 + 112,500 - 73,750 + 74,569.44 + 4,878,125 - 30,100 = 5,985,411.11.
+      id: 'settle-closes', covers: ['settlement', 'close'], action: 'clock', to: at('2027-01-22'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 4,878,125.00 USD into settled cash', cash: { USD: 4_878_125 } },
+          { type: 'settlement.pay', summary: 'paid 30,100.00 USD from settled cash', cash: { USD: -30_100 } },
+        ],
+        cash: { account: { USD: { settled: 5_985_411.11, unsettled: 0, availableToTrade: 5_985_411.11, availableToWithdraw: 5_985_411.11 } } },
+        pending: [], lifecycle: [], otc: [], alerts: [],
+        balance: { account: { cash: 5_985_411.11, receivable: null, payable: null, assets: 5_985_411.11, liabilities: 0 } },
       },
     },
   ],
