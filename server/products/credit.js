@@ -301,7 +301,7 @@ function settleHolder(app, deps, { inst, p, when, affected, protection, lines, e
   ];
   const pnl = money(-sumOf(entries), ccy);
   if (pnl !== 0) entries.push({ account: 'pnl.realized', ccy, amount: pnl, positionId: p.id });
-  const words = summary({ accrued, days, from, net, later, s });
+  const words = summary({ accrued, days, from, net, later, s, settleDate });
   const eventId = app.ledger.post({ bookId: book.id, unitId: unit.id, type, instrumentId: inst.id, strategyId: p.strategy_id, positionId: p.id, actor: 'user', summary: words, data: { ...data, from, to: when, days, accruedPremium: accrued, net, settleDate: later ? settleDate : app.clock.today() }, entries });
   if (later && net !== 0) app.settle.create({ bookId: book.id, unitId: unit.id, instrumentId: inst.id, strategyId: p.strategy_id, positionId: p.id, kind: 'credit_event', dueDate: settleDate, ccy, amount: net, accounts: ['cash'] });
   let pos = app.positions.change(p, { dCost: -costOut });
@@ -406,14 +406,14 @@ export function creditEvent(app, inst, body, deps) {
       inst: fresh, p, when, affected: q * cut, protection: q * pay, lines: physical ? lines : null, endShare: factor > 0 ? cut / factor : 1, close: ends, settleDate,
       type: 'cds.credit_event',
       data: { recovery: R, eventType: type, settlement: method, entity: record.entity, weight: record.weight ?? null, protection: money(q * pay, ccy), affectedNotional: q * cut, endReason },
-      summary: ({ accrued, net, later, s }) => {
+      summary: ({ accrued, net, later, s, settleDate: due }) => {
         const prot = money(q * pay, ccy);
         const pieces = [`${typeText} of ${record.entity} on ${when} recorded by hand for ${name}, ${howText}`];
         if (noteText) pieces.push(noteText);
         if (physical) pieces.push(`deliverable obligation ${t.deliverable}, ${fmt(q * cut, ccy)} face delivered against par (simulated on paper: the Terminal moves no securities; the obligation is taken as ${s > 0 ? 'bought' : 'sold'} at the final price, ${fmt(q * cut * R, ccy)})`);
         else if (pay > 0) pieces.push(`protection ${fmt(prot, ccy)} (${fmt(q * cut, ccy)} x ${pctText((pay / cut) || 0, 3)})`);
         if (accrued !== 0) pieces.push(`accrued premium ${fmt(Math.abs(accrued), ccy)}${accrued < 0 ? ' refunded' : ''}`);
-        pieces.push(net === 0 ? 'nothing paid' : `${net > 0 ? (later ? 'receivable' : 'received') : (later ? 'payable' : 'paid')} ${fmt(Math.abs(net), ccy)}${later ? ` on ${settleDate}` : ''}`);
+        pieces.push(net === 0 ? 'nothing paid' : `${net > 0 ? (later ? 'receivable' : 'received') : (later ? 'payable' : 'paid')} ${fmt(Math.abs(net), ccy)}${later ? ` on ${due}` : ''}${later && due === app.clock.today() && !settleDate ? ' (not enough settled cash today: it settles when the cash is there)' : ''}`);
         return pieces.join('; ');
       },
     }));
