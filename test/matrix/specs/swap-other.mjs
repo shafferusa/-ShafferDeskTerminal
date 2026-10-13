@@ -2112,4 +2112,201 @@ const commoditySwap = {
   ],
 };
 
-export default [amortizingSwap, accretingSwap, equitySwap, equityIndexSwap, equityTrs, bondTrs, indexTrs, commoditySwap];
+// ---------------------------------------------------------------------------------------------
+// commodity_basis_swap
+// ---------------------------------------------------------------------------------------------
+// A location basis swap between two crude references: WTI at Cushing and WTI at Houston (MEH), July and August 2026, 100,000
+// barrels a month. The contract is written "pay the Cushing average, receive the Houston average, pay a fixed differential of
+// 0.85 a barrel": three price legs, net settled, so each month one amount moves: quantity x (Houston - Cushing - 0.85). The
+// Account enters the opposite side (it is long Cushing against Houston), with an upfront of 5 per 100 barrels received.
+// Position-level collateral terms: a fixed independent amount of 50,000, no variation margin.
+//
+// Pricing days: US trading days (the US calendar: Friday 3 July is the Independence Day holiday observed and is not priced).
+//   July    22 pricing days: Cushing 1,544.40 (average 70.20), Houston 1,568.60 (average 71.30): Houston - Cushing - 0.85 = +0.25
+//   August  21 pricing days: Cushing 1,436.40 (average 68.40), Houston 1,449.00 (average 69.00; 12 August entered by hand): -0.25
+//   paid Friday 7 August (1 August + 5 USD business days) and Wednesday 9 September (1 September + 5, across Labor Day)
+const WTI_CUSH = { productId: 'crude_oil', name: 'WTI crude, Cushing (reference price)', symbol: 'WTI-CUSH-REF', marketView: 'US_CASH', venue: 'Price assessment (OTC)', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', terms: { quantityUnit: 'barrels', priceUnits: 'USD per barrel' } };
+const WTI_MEH = { productId: 'crude_oil', name: 'WTI crude, Houston MEH (reference price)', symbol: 'WTI-MEH-REF', marketView: 'US_CASH', venue: 'Price assessment (OTC)', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', terms: { quantityUnit: 'barrels', priceUnits: 'USD per barrel' } };
+const CUSH_FIX = { '2026-07-01': 70.55, '2026-07-02': 70.00, '2026-07-06': 70.75, '2026-07-07': 69.75, '2026-07-08': 70.30, '2026-07-09': 71.00, '2026-07-10': 69.55, '2026-07-13': 70.45, '2026-07-14': 70.05, '2026-07-15': 70.60, '2026-07-16': 69.90, '2026-07-17': 70.80, '2026-07-20': 69.70, '2026-07-21': 70.25, '2026-07-22': 70.90, '2026-07-23': 69.80, '2026-07-24': 70.40, '2026-07-27': 69.95, '2026-07-28': 70.65, '2026-07-29': 70.10, '2026-07-30': 70.50, '2026-07-31': 68.45,
+  '2026-08-03': 68.25, '2026-08-04': 68.70, '2026-08-05': 68.00, '2026-08-06': 68.65, '2026-08-07': 68.45, '2026-08-10': 68.10, '2026-08-11': 68.85, '2026-08-12': 68.20, '2026-08-13': 68.75, '2026-08-14': 68.35, '2026-08-17': 68.55, '2026-08-18': 67.95, '2026-08-19': 68.80, '2026-08-20': 68.30, '2026-08-21': 68.60, '2026-08-24': 68.05, '2026-08-25': 68.90, '2026-08-26': 68.15, '2026-08-27': 68.50, '2026-08-28': 68.70, '2026-08-31': 67.60 };
+const MEH_FIX = { '2026-07-01': 71.15, '2026-07-02': 71.60, '2026-07-06': 70.90, '2026-07-07': 71.55, '2026-07-08': 71.35, '2026-07-09': 71.00, '2026-07-10': 71.75, '2026-07-13': 71.10, '2026-07-14': 71.65, '2026-07-15': 71.25, '2026-07-16': 71.45, '2026-07-17': 70.85, '2026-07-20': 71.70, '2026-07-21': 71.20, '2026-07-22': 71.50, '2026-07-23': 70.95, '2026-07-24': 71.80, '2026-07-27': 71.05, '2026-07-28': 71.40, '2026-07-29': 71.60, '2026-07-30': 71.10, '2026-07-31': 70.70,
+  '2026-08-03': 69.35, '2026-08-04': 68.80, '2026-08-05': 69.55, '2026-08-06': 68.55, '2026-08-07': 69.10, '2026-08-10': 69.80, '2026-08-11': 68.35, /* 12 August by hand: 69.25 */ '2026-08-13': 68.85, '2026-08-14': 69.40, '2026-08-17': 68.70, '2026-08-18': 69.60, '2026-08-19': 68.50, '2026-08-20': 69.05, '2026-08-21': 69.70, '2026-08-24': 68.60, '2026-08-25': 69.20, '2026-08-26': 68.75, '2026-08-27': 69.45, '2026-08-28': 68.90, '2026-08-31': 67.55 };
+const CBS_NAME = 'WTI basis swap Houston v Cushing less 0.85 Jul-Aug 2026';
+const commodityBasisSwap = {
+  productId: 'commodity_basis_swap',
+  title: 'Two-month crude location basis swap, Houston against Cushing less a fixed differential, three averaged legs net settled, opposite side',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'Net settlement', 'two floating price legs: Reference asset, Floating price "Average of each pricing day", Pricing calendar US', 'differential leg: Fixed price 0.85', 'every leg: Payment monthly, Payment lag 5'],
+    automaticInputs: ['monthly periods, US pricing days, payment 5 USD business days after each month', 'both references\' daily prices (close fixtures standing in for Shaffer MarketData) and their averages', 'the net amount of the three legs', 'settlement date, T+2 USD', 'commission from the Book fee schedule (per barrel)', 'independent amount from the position-level terms'],
+    manualInputs: ['the two reference prices, registered as crude oil spot instruments (never traded)', 'a price the data service did not supply, entered by hand as the close of its date', 'upfront amount and settlement amount of the partial termination (stated fill prices)', 'mark of the contract, entered by hand'],
+    settlement: 'Upfront and termination amounts and commission settle T+2 USD; each month settles net 5 USD business days after it ends',
+    lifecycle: 'Each month: two averages on US pricing days (Independence Day observed excluded) and the differential, one net amount; a missing price holds the month and the maturity visibly until entered by hand; partial termination; maturity; nothing left afterwards',
+    accounting: 'Opposite side carried at the mark less the upfront received; net monthly amounts and the termination result are realized P&L; the upfront still carried is earned at maturity; commission expensed',
+    collateral: 'Position-level terms: fixed independent amount 50,000, posted at entry, unchanged by the partial termination, returned at maturity; no variation margin',
+  },
+  start: at('2026-06-26'),
+  settlementCheck: { lag: 2, holidays: [] }, // no Federal Reserve holiday in the windows used (26 to 30 June, 13 to 17 August 2026)
+  book: bookOf('Matrix commodity basis swap', 'Crude trading', 'USD', 3_000_000, 1_000_000, { perUnit: 0.01, minimum: 0, bps: 0 }, { spot: NO_FEE }), // 0.01 USD a barrel
+  instruments: {
+    cush: WTI_CUSH, meh: WTI_MEH,
+    main: {
+      productId: 'commodity_basis_swap', name: CBS_NAME, symbol: 'CMBS-CUSHMEH-0826', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: USD_CALENDARS,
+      terms: {
+        effective: '2026-07-01', maturity: '2026-09-01', counterparty: 'Energy dealer V', netSettlement: true,
+        collateralBasis: { type: 'position', independentAmount: { type: 'fixed', amount: 50_000 }, variationMargin: false },
+        legs: [
+          { side: 'pay', type: 'price', ccy: 'USD', months: 1, units: 1, underlyingId: '$inst:cush', averaging: 'daily', pricingCalendar: 'US', paymentLag: 5 },
+          { side: 'receive', type: 'price', ccy: 'USD', months: 1, units: 1, underlyingId: '$inst:meh', averaging: 'daily', pricingCalendar: 'US', paymentLag: 5 },
+          { side: 'pay', type: 'price', ccy: 'USD', months: 1, units: 1, fixedPrice: 0.85, paymentLag: 5 },
+        ],
+      },
+    },
+  },
+  closes: { cush: CUSH_FIX, meh: MEH_FIX },
+  expectAtStart: startOf('USD', 3_000_000, 1_000_000),
+  steps: [
+    {
+      // Opposite side, 100,000 barrels a month at 5 per 100 barrels: 100,000 x 5 / 100 = 5,000 received; commission 1,000; settles Tuesday 30 June.
+      id: 'open', covers: ['open', 'collateral'], action: 'ticket', instrument: 'main', side: 'sell', qty: 100_000, as: 'cbs', order: { statedPrice: 5 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 100_000, estimate: 5, model: 'stated-price', settleDate: '2026-06-30', calendar: 'USD', cash: 5_000, fees: 1_000 }],
+          cash: { USD: { proceeds: 5_000, fees: 1_000, margin: 50_000, available: 1_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 100_000, avgPrice: 5, fills: [{ qty: 100_000, price: 5, model: 'stated-price', settleDate: '2026-06-30' }] }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Entered on the opposite side: 100,000 notional of CMBS-CUSHMEH-0826 at 5.00 per 100 notional', owner: 'account', date: '2026-06-26' },
+          { type: 'swap.collateral', summary: `Collateral posted on ${CBS_NAME} under its position-level terms: 50,000.00 USD (independent amount, fixed amount for the position)`, cash: { USD: -50_000 }, owner: 'account' },
+        ],
+        cash: { account: { USD: { settled: 950_000, unsettled: 4_000, margin: 50_000, restricted: 0, availableToTrade: 954_000, availableToWithdraw: 950_000 } } },
+        positions: [{ instrument: 'main', lot: 'cbs', owner: 'account', direction: 'opposite side', qty: -100_000, avgCost: 5, cost: -5_000, price: null, value: null, unrealized: null, provisional: true, notional: 100_000, margin: 50_000 }],
+        holdings: { main: { long: 0, short: 100_000, net: -100_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-06-30', amount: 4_000, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-08-07', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-08-07', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-08-07', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2026-09-09', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', lot: 'cbs', owner: 'account', qty: -100_000, basis: 'position', mark: null, iaRequired: 50_000, iaPosted: 50_000, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: -1_000, unrealized: 0, total: -1_000 } },
+        nav: { account: 999_000, book: 2_999_000 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 950_000, margin: 50_000, receivable: 4_000, positions: -5_000, assets: 999_000, liabilities: 0, netAssets: 999_000 } },
+      },
+    },
+    {
+      id: 'settle-upfront', covers: 'settlement', action: 'clock', to: at('2026-06-30'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 4,000.00 USD into settled cash', cash: { USD: 4_000 }, date: '2026-06-30' }],
+        cash: { account: { USD: { settled: 954_000, unsettled: 0, availableToTrade: 954_000, availableToWithdraw: 954_000 } } },
+        pending: [],
+        balance: { account: { cash: 954_000, receivable: null } },
+      },
+    },
+    {
+      // As written -10 per 100 barrels; opposite side: -100,000 x -10 / 100 = +10,000; 15,000 above the -5,000 carried.
+      id: 'mark', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: -10, note: 'Dealer mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'cbs', price: -10, value: 10_000, unrealized: 15_000, provisional: false, priceSource: 'Manual entry', priceStatus: 'manual' }],
+        otc: [{ instrument: 'main', mark: -10, markValue: 10_000 }],
+        pnl: { account: { unrealized: 15_000, total: 14_000 } },
+        nav: { account: 1_014_000, book: 3_014_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 10_000, assets: 1_014_000, netAssets: 1_014_000 } },
+      },
+    },
+    {
+      // July, 22 US pricing days (3 July excluded). Opposite side, 100,000 barrels:
+      //   leg A, Cushing average 70.20, received:  7,020,000.00
+      //   leg B, Houston average 71.30, paid:      7,130,000.00
+      //   leg C, differential 0.85, received:          85,000.00
+      //   net, paid: 100,000 x (71.30 - 70.20 - 0.85) = 25,000.00
+      id: 'july-settled', covers: ['averaging', 'net settlement', 'holiday in the pricing period'], action: 'clock', to: at('2026-08-07'),
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Net swap payment on ${CBS_NAME}, period 2026-07-01 to 2026-08-01: 25,000.00 USD (leg A, average of 22 fixings 70.20 x 100,000: 7,020,000.00 USD received; leg B, average of 22 fixings 71.30 x 100,000: 7,130,000.00 USD paid; leg C, fixed price 0.85 x 100,000: 85,000.00 USD received)`, cash: { USD: -25_000 }, owner: 'account', date: '2026-08-07' }],
+        cash: { account: { USD: { settled: 929_000, availableToTrade: 929_000, availableToWithdraw: 929_000 } } },
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2026-09-09', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-09-09', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-09-09', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-09-09', status: 'pending' },
+        ],
+        pnl: { account: { realized: -25_000, total: -11_000 } },
+        nav: { account: 989_000, book: 2_989_000 },
+        balance: { account: { cash: 929_000, assets: 989_000, netAssets: 989_000 } },
+      },
+    },
+    { id: 'mid-august', action: 'clock', to: at('2026-08-13'), expect: {} },
+    {
+      // Half (50,000 barrels a month) terminated at -8 per 100 as written: closing the opposite side receives 50,000 x 8 / 100 = 4,000; commission 500.
+      // Upfront carried on that half: 2,500 received. Realized 2,500 + 4,000 = 6,500. Settles Monday 17 August.
+      id: 'partial-termination', covers: ['reduce', 'partial termination'], action: 'close', lot: 'cbs', scope: 'strategy', percent: 50, order: { statedPrice: -8 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 50_000, estimate: -8, model: 'stated-price', settleDate: '2026-08-17', cash: 4_000, fees: 500 }] },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 50_000, avgPrice: -8 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Terminated in part: 50,000 of 100,000 notional of CMBS-CUSHMEH-0826 at -8.00 per 100 notional (realized 6,500.00 USD)' }],
+        cash: { account: { USD: { settled: 929_000, unsettled: 3_500, availableToTrade: 932_500, availableToWithdraw: 929_000 } } },
+        positions: [{ instrument: 'main', lot: 'cbs', qty: -50_000, cost: -2_500, avgCost: 5, price: -10, value: 5_000, unrealized: 7_500, notional: 50_000, margin: 50_000 }],
+        holdings: { main: { long: 0, short: 50_000, net: -50_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-08-17', amount: 3_500, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: -50_000, markValue: 5_000, iaRequired: 50_000, iaPosted: 50_000 }],
+        pnl: { account: { realized: -18_500, commissions: -1_500, unrealized: 7_500, total: -12_500 } },
+        nav: { account: 987_500, book: 2_987_500 },
+        balance: { account: { cash: 929_000, receivable: 3_500, positions: 5_000, assets: 987_500, liabilities: 0, netAssets: 987_500 } },
+      },
+    },
+    {
+      id: 'settle-partial-termination', covers: 'settlement', action: 'clock', to: at('2026-08-17'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 3,500.00 USD into settled cash', cash: { USD: 3_500 } }],
+        cash: { account: { USD: { settled: 932_500, unsettled: 0, availableToTrade: 932_500, availableToWithdraw: 932_500 } } },
+        pending: [],
+        balance: { account: { cash: 932_500, receivable: null } },
+      },
+    },
+    {
+      // Wednesday 9 September (1 September + 5 USD business days, Labor Day skipped). The Houston price of 12 August is missing: the month waits, and the maturity with it.
+      id: 'august-blocked-price-missing', covers: ['missing fixing', 'payment across a holiday'], action: 'clock', to: at('2026-09-09'),
+      expect: {
+        events: [],
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2026-09-09', status: 'blocked', reason: /Waiting for the final leg payments/ },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-09-09', status: 'blocked', reason: /Awaiting the averaging fixings of WTI-MEH-REF for 2026-08-12 \(1 of the 21 pricing days of the period 2026-08-01 to 2026-09-01\)/ },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-09-09', status: 'blocked', reason: /Awaiting the averaging fixings of WTI-MEH-REF for 2026-08-12/ },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-09-09', status: 'blocked', reason: /Awaiting the averaging fixings of WTI-MEH-REF for 2026-08-12/ },
+        ],
+      },
+    },
+    {
+      // 69.25 for 12 August, by hand. August, 21 pricing days, on the 50,000 barrels left:
+      //   leg A, Cushing average 68.40, received: 3,420,000.00; leg B, Houston average 69.00, paid: 3,450,000.00; leg C, 0.85, received: 42,500.00
+      //   net, received: 50,000 x (68.40 - 69.00 + 0.85) = 12,500.00
+      // The swap matures: the -2,500 still carried is earned (+2,500), the 50,000 independent amount comes back.
+      // 1,000,000 + 5,000 - 1,000 - 25,000 + 4,000 - 500 + 12,500 = 995,000.
+      id: 'price-entered-august-and-maturity', covers: ['missing fixing', 'averaging', 'net settlement', 'maturity', 'close', 'collateral'], action: 'manual_price', instrument: 'meh', value: 69.25, forDate: '2026-08-12', note: 'Published price, entered by hand',
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Net swap receipt on ${CBS_NAME}, period 2026-08-01 to 2026-09-01: 12,500.00 USD (leg A, average of 21 fixings 68.40 x 50,000: 3,420,000.00 USD received; leg B, average of 21 fixings 69.00 x 50,000: 3,450,000.00 USD paid; leg C, fixed price 0.85 x 50,000: 42,500.00 USD received)`, cash: { USD: 12_500 }, owner: 'account', date: '2026-09-09' },
+          { type: 'swap.matured', summary: `Swap matured: ${CBS_NAME} (notional 50,000)`, owner: 'account' },
+          { type: 'swap.collateral', summary: `Collateral returned on ${CBS_NAME} under its position-level terms: 50,000.00 USD (independent amount, the position ended)`, cash: { USD: 50_000 } },
+        ],
+        cash: { account: { USD: { settled: 995_000, unsettled: 0, margin: 0, restricted: 0, reserved: 0, availableToTrade: 995_000, availableToWithdraw: 995_000 } }, treasury: { USD: { settled: 2_000_000 } } },
+        positions: [], holdings: { main: null }, lifecycle: [], otc: [], pending: [], alerts: [],
+        pnl: { account: { realized: -3_500, commissions: -1_500, unrealized: 0, total: -5_000 } }, // -18,500 + 12,500 + 2,500
+        nav: { account: 995_000, treasury: 2_000_000, book: 2_995_000 },
+        balance: { account: { cash: 995_000, margin: null, positions: null, assets: 995_000, liabilities: 0, netAssets: 995_000 } },
+      },
+    },
+    {
+      id: 'nothing-left', action: 'clock', to: at('2026-09-10'),
+      expect: { events: [], lifecycle: [], positions: [], pending: [], otc: [], alerts: [], cash: { account: { USD: { settled: 995_000, margin: 0, restricted: 0 } } } },
+    },
+  ],
+};
+
+export default [amortizingSwap, accretingSwap, equitySwap, equityIndexSwap, equityTrs, bondTrs, indexTrs, commoditySwap, commodityBasisSwap];

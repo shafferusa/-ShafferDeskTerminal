@@ -1685,4 +1685,205 @@ const clnSpec = {
   ],
 };
 
-export default [specifiedPool, absSpec, cmoSpec, cloSpec, cdoSpec, clnSpec];
+// ---------------------------------------------------------------------------------------------
+// structured_note
+// ---------------------------------------------------------------------------------------------
+// A contingent income note without principal protection: Ardent Capital Markets Contingent Income Notes linked to the
+// Northbridge 100 Index, due 15 September 2028. Initial level 5,000. On each quarterly coupon date (15 December, March, June,
+// September) the index is observed: at or above the coupon barrier, 70% of the initial (3,500), the holder is paid a contingent
+// coupon of 9.00% a year (2.25% of face), 3 days later; below it, nothing. Nothing accrues in between: the note trades flat.
+// At maturity the principal is par if the final observation is at or above the principal barrier, 60% (3,000); below it the
+// holder is repaid par x final / initial. The Terminal has no feed for the index: each observation is recorded by hand.
+//   - Bought on Monday 8 May 2028 (settling Wednesday 10 May) at 96.00, flat; increased the same day.
+//   - 15 June: the index is observed at 4,210.35 (84.21%), recorded by hand: the 2.25% coupon is earned, and paid on Tuesday
+//     20 June (18 June a Sunday, 19 June Juneteenth).
+//   - The index falls; 400,000 sold at 80.00 on 10 July.
+//   - On Monday 18 September (the payment date of the final coupon and the principal) both wait, visibly, for the final
+//     observation. It is recorded: 2,850 (57.00%), below both barriers: no coupon, and principal repaid at 57.00% of par.
+// Commission: 0.5 basis point of clean principal. The book's figures follow from flat trades: no accrued changes hands.
+const structuredNoteSpec = {
+  productId: 'structured_note',
+  title: 'Ardent contingent income note on the Northbridge 100 Index (not principal protected): flat trades, observations recorded by hand, coupon paid over Juneteenth, partial sale, final coupon and principal blocked until the final observation, below both barriers: no coupon and principal at 57% of par',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount (a multiple of 1,000)'],
+    automaticInputs: ['bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData)', 'fill price and fill model', 'no accrued interest (contingent coupon, trades flat)', 'settlement date from the instrument convention and settlement calendar', 'commission from the Book fee schedule'],
+    manualInputs: ['Registration: Coupon rate (contingent), Linked to, Initial level, Coupon barrier, Principal protected (no), Principal barrier, Payment delay 3', 'Each observation of the index recorded by hand on the instrument form (Observation date, Observed level, Review, Record)'],
+    settlement: 'T+2 on the US bond calendar; flat (no accrued interest)',
+    lifecycle: 'Automatic: the contingent coupon worked out from the observation (paid 3 days after the coupon date, next business day) and the principal at maturity from the final observation and the barrier. Manual: every observation (no index feed); a coupon or the redemption waits, visibly, for its observation. Not modelled: autocall, memory coupons',
+    accounting: 'Cost at average; the contingent coupon is coupon and interest income once its observation is recorded (accrued until paid); principal repaid below par against cost is a realized loss; commission expensed',
+    collateral: 'None for a long position',
+  },
+  start: EDT('2028-05-08'), // Monday
+  settlementCheck: { lag: 2, holidays: ['2028-06-19'] }, // Juneteenth
+  book: {
+    name: 'Matrix structured note', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 3_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 2_000_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.5 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'structured_note', name: 'Ardent Capital Markets Contingent Income Notes linked to the Northbridge 100 Index due 15-Sep-2028', symbol: 'ARDENT-NB100-28', marketView: 'US_CASH', venueType: 'otc', issuer: 'Ardent Capital Markets LLC', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { settleLag: 2 },
+      terms: { couponType: 'fixed', couponRate: 0.09, frequency: 4, maturity: '2028-09-15', issueDate: '2026-09-15', dayCount: '30/360', redemption: 100, minDenomination: 1_000, paymentDelayDays: 3,
+        linkedTo: 'Northbridge 100 Index', initialLevel: 5_000, couponBarrier: 0.7, principalProtected: false, principalBarrier: 0.6 } },
+  },
+  quotes: { main: { bid: 95.5, ask: 96, last: 95.75, bidSize: 10_000_000, askSize: 10_000_000 } },
+  expectAtStart: { ...startState(2_000_000, 1_000_000), cash: { account: usdCash(2_000_000), treasury: usdCash(1_000_000) } },
+  steps: [
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 1_000_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 1_000_000, estimate: 96, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2028-05-10', calendar: 'USBOND',
+            gross: 960_000, accrued: 0, // flat: a contingent coupon does not accrue
+            cash: -960_000, fees: 48 }], // 0.5 bp of 960,000
+          cash: { USD: { purchases: 960_000, fees: 48, required: 960_048, available: 2_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 1_000_000, avgPrice: 96, fills: [{ qty: 1_000_000, price: 96, model: 'quoted-bid-ask', settleDate: '2028-05-10', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1,000,000 ARDENT-NB100-28 @ 96.00 USD', owner: 'account', date: '2028-05-08' }],
+        cash: { account: { USD: { settled: 2_000_000, unsettled: -960_048, availableToTrade: 1_039_952 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 1_000_000, avgCost: 96, cost: 960_000, price: 95.75, value: 957_500, unrealized: -2_500, accrued: 0, priceSource: 'Test fixture' }],
+        holdings: { main: { long: 1_000_000, short: 0, net: 1_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2028-05-10', amount: -960_048, ccy: 'USD', into: 'cash' }],
+        // The 15 June coupon is paid 3 days later, Sunday 18 June: on the next business day after Juneteenth (Monday 19 June),
+        // Tuesday 20 June. Maturity 15 September + 3 days = Monday 18 September.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2028-06-20', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2028-09-18', status: 'pending' }],
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -48, fees: 0, borrowFunding: 0, unrealized: -2_500, total: -2_548 } },
+        nav: { account: 1_997_452, book: 2_997_452 },
+        balance: { account: { cash: 2_000_000, accruedIncome: null, positions: 957_500, payable: 960_048, assets: 2_957_500, liabilities: 960_048, netAssets: 1_997_452 } },
+      },
+    },
+    {
+      // 500,000 more at 96.00 = 480,000, settling Wednesday 10 May (T+2); commission 24.00.
+      id: 'increase', covers: 'increase', action: 'resize', lot: 'lot', factor: 1.5,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', qty: 500_000, estimate: 96, settleDate: '2028-05-10', gross: 480_000, accrued: 0, cash: -480_000, fees: 24 }],
+          cash: { USD: { purchases: 480_000, fees: 24, required: 480_024, available: 1_039_952, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 500_000, avgPrice: 96 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Bought 500,000 ARDENT-NB100-28 @ 96.00 USD' }],
+        cash: { account: { USD: { settled: 2_000_000, unsettled: -1_440_072, availableToTrade: 559_928 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_500_000, cost: 1_440_000, avgCost: 96, price: 95.75, value: 1_436_250, unrealized: -3_750, accrued: 0 }],
+        holdings: { main: { long: 1_500_000, short: 0, net: 1_500_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2028-05-10', amount: -960_048, ccy: 'USD', into: 'cash' }, { instrument: 'main', owner: 'account', dueDate: '2028-05-10', amount: -480_024, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { commissions: -72, unrealized: -3_750, total: -3_822 } },
+        nav: { account: 1_996_178, book: 2_996_178 },
+        balance: { account: { cash: 2_000_000, positions: 1_436_250, payable: 1_440_072, assets: 3_436_250, liabilities: 1_440_072, netAssets: 1_996_178 } },
+      },
+    },
+    {
+      // Wednesday 10 May: both purchases settle. Nothing accrues (contingent coupon).
+      id: 'settle', covers: 'settlement', action: 'clock', to: EDT('2028-05-10'),
+      expect: {
+        events: [
+          { type: 'settlement.pay', summary: 'paid 960,048.00 USD from settled cash', cash: { USD: -960_048 }, date: '2028-05-10' },
+          { type: 'settlement.pay', summary: 'paid 480,024.00 USD from settled cash', cash: { USD: -480_024 }, date: '2028-05-10' },
+        ],
+        cash: { account: { USD: { settled: 559_928, unsettled: 0, availableToTrade: 559_928 } } },
+        pending: [],
+        balance: { account: { cash: 559_928, payable: null, assets: 1_996_178, liabilities: 0 } },
+      },
+    },
+    // Thursday 15 June, the first observation date in the holding: nothing accrues, nothing is due yet.
+    { id: 'observation-day', covers: 'accrual', action: 'clock', to: EDT('2028-06-15'), expect: { events: [] } },
+    {
+      // The index closes at 4,210.35 on 15 June: 84.21% of 5,000, at or above the coupon barrier 3,500. Recorded by hand.
+      id: 'june-observation', covers: 'observation (by hand)', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'observation', date: '2028-06-15', level: 4_210.35 },
+      expect: {
+        events: [{ type: 'bond.observation', summary: 'Observation of Northbridge 100 Index on 2028-06-15 recorded by hand: 4,210.35 (84.21% of the initial 5,000): at or above the coupon barrier, the contingent coupon of 2.25% is paid', owner: 'account', date: '2028-06-15' }],
+      },
+    },
+    {
+      // Friday 16 June. End of day 15 June: the coupon of 15 June is earned and not yet paid: 1,500,000 x 2.25% = 33,750.00.
+      id: 'coupon-earned', covers: ['coupon', 'accrual'], action: 'clock', to: EDT('2028-06-16'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on ARDENT-NB100-28: 33,750.00 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_500_000, accrued: 33_750 }],
+        pnl: { account: { couponInterest: 33_750, total: 29_928 } },
+        nav: { account: 2_029_928, book: 3_029_928 },
+        balance: { account: { accruedIncome: 33_750, assets: 2_029_928, netAssets: 2_029_928 } },
+      },
+    },
+    {
+      // Tuesday 20 June, after Juneteenth: the contingent coupon 33,750.00 is paid.
+      id: 'coupon-paid', covers: ['coupon', 'market holiday'], action: 'clock', to: EDT('2028-06-20'),
+      expect: {
+        events: [{ type: 'bond.coupon', summary: 'Coupon received on 1,500,000 ARDENT-NB100-28 (contingent coupon: Northbridge 100 Index observed at 4,210.35, at or above the coupon barrier 3,500): 33,750.00 USD', cash: { USD: 33_750 }, owner: 'account', date: '2028-06-20' }],
+        cash: { account: { USD: { settled: 593_678, availableToTrade: 593_678 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_500_000, accrued: 0 }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2028-09-18', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2028-09-18', status: 'pending' }],
+        balance: { account: { cash: 593_678, accruedIncome: null, assets: 2_029_928, netAssets: 2_029_928 } },
+      },
+    },
+    {
+      id: 'index-falls', action: 'quote', instrument: 'main', quote: { bid: 80, ask: 81, last: 80.5, bidSize: 10_000_000, askSize: 10_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_500_000, price: 80.5, value: 1_207_500, unrealized: -232_500 }],
+        pnl: { account: { unrealized: -232_500, total: -198_822 } },
+        nav: { account: 1_801_178, book: 2_801_178 },
+        balance: { account: { positions: 1_207_500, assets: 1_801_178, netAssets: 1_801_178 } },
+      },
+    },
+    // Monday 10 July: nothing accrues between coupon dates.
+    { id: 'july', action: 'clock', to: EDT('2028-07-10'), expect: { events: [] } },
+    {
+      // 400,000 sold at 80.00 = 320,000 flat, settling Wednesday 12 July; commission 16.00. Cost out 1,440,000 x 4 / 15 = 384,000:
+      // realized -64,000.
+      id: 'reduce', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 400_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 400_000, estimate: 80, settleDate: '2028-07-12', gross: 320_000, accrued: 0, cash: 320_000, fees: 16 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 400_000, avgPrice: 80 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: /^Sold 400,000 ARDENT-NB100-28 @ 80\.00 USD \(realized [-−]64,000\.00 USD\)$/ }],
+        cash: { account: { USD: { settled: 593_678, unsettled: 319_984, availableToTrade: 913_662 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_100_000, cost: 1_056_000, avgCost: 96, price: 80.5, value: 885_500, unrealized: -170_500, accrued: 0 }],
+        holdings: { main: { long: 1_100_000, short: 0, net: 1_100_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2028-07-12', amount: 319_984, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: -64_000, commissions: -88, unrealized: -170_500, total: -200_838 } },
+        nav: { account: 1_799_162, book: 2_799_162 },
+        balance: { account: { receivable: 319_984, positions: 885_500, assets: 1_799_162, netAssets: 1_799_162 } },
+      },
+    },
+    {
+      id: 'settle-reduce', covers: 'settlement', action: 'clock', to: EDT('2028-07-12'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 319,984.00 USD into settled cash', cash: { USD: 319_984 } }],
+        cash: { account: { USD: { settled: 913_662, unsettled: 0, availableToTrade: 913_662 } } },
+        pending: [],
+        balance: { account: { cash: 913_662, receivable: null, assets: 1_799_162, netAssets: 1_799_162 } },
+      },
+    },
+    {
+      // Monday 18 September: the final coupon and the principal are due and both wait, visibly, for the final observation.
+      id: 'maturity-waits', covers: ['maturity', 'observation (by hand)'], action: 'clock', to: EDT('2028-09-18'),
+      expect: {
+        events: [],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2028-09-18', status: 'blocked' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2028-09-18', status: 'blocked' }],
+      },
+    },
+    {
+      // The final observation, recorded by hand: 2,850 on 15 September, 57.00% of the initial. Below the coupon barrier: no coupon.
+      // Below the principal barrier (60%): principal repaid at 57.00% of par, 1,100,000 x 57% = 627,000.00, against a cost of
+      // 1,056,000: realized -429,000.
+      id: 'final-observation', covers: ['observation (by hand)', 'coupon', 'maturity', 'close'], action: 'instrument_lifecycle', instrument: 'main', body: { action: 'observation', date: '2028-09-15', level: 2_850 },
+      expect: {
+        events: [
+          { type: 'bond.observation', summary: 'Observation of Northbridge 100 Index on 2028-09-15 recorded by hand: 2,850 (57.00% of the initial 5,000): below the coupon barrier, no coupon; below the principal barrier 60%: principal repaid at 57.00% of par', owner: 'account', date: '2028-09-18' },
+          { type: 'bond.contingent_coupon', summary: 'Contingent coupon of 2028-09-15 not paid on 1,100,000 ARDENT-NB100-28: Northbridge 100 Index observed at 2,850, below the coupon barrier 3,500 (70% of the initial 5,000)', owner: 'account', date: '2028-09-18' },
+          { type: 'bond.redemption', summary: 'Redeemed at maturity: 1,100,000 ARDENT-NB100-28 at 57.00% of par (final observation 2,850 is 57.00% of the initial 5,000, below the principal barrier 60%: not protected, principal repaid at the underlying\'s performance)', owner: 'account', date: '2028-09-18' },
+          { type: 'settlement.receive', summary: 'received 627,000.00 USD into settled cash', cash: { USD: 627_000 } },
+        ],
+        cash: { account: { USD: { settled: 1_540_662, unsettled: 0, availableToTrade: 1_540_662 } }, treasury: usdCash(1_000_000) },
+        positions: [],
+        holdings: { main: null },
+        pending: [],
+        lifecycle: [],
+        pnl: { account: { realized: -493_000, unrealized: 0, total: -459_338 } },
+        nav: { account: 1_540_662, book: 2_540_662 },
+        balance: { account: { cash: 1_540_662, positions: null, assets: 1_540_662, liabilities: 0, netAssets: 1_540_662 } },
+      },
+    },
+  ],
+};
+
+export default [specifiedPool, absSpec, cmoSpec, cloSpec, cdoSpec, clnSpec, structuredNoteSpec];

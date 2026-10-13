@@ -1168,4 +1168,196 @@ const cdsBasket = {
   ],
 };
 
-export default [cdsSingleName, cdsSovereign, cdsIndex, cdsBasket];
+// ---------------------------------------------------------------------------------------------
+// cds_index_tranche
+// ---------------------------------------------------------------------------------------------
+// The 3%-7% tranche of a bespoke index of 25 names (4% each), standard contract, 500 bp running plus an upfront, maturity
+// 20 June 2031. Protection SOLD on 10,000,000 of tranche notional to Dealer Q. Position-level terms: independent amount
+// 10% of the tranche notional outstanding, no variation margin. Commission 20.00 per million; T+3 (USD calendar).
+// Losses: index loss = weight x (1 - recovery) for each default; the tranche loses (loss - 3%) / 4% of its notional
+// between the points, nothing below 3%, all of it at 7%. The tranche's outstanding share is its factor.
+//   sold on Tue 21 April at 12.50: 1,250,000.00 received; accrued 20 March to the step-in date 22 April, 33 days, paid:
+//     10,000,000 x 5% x 33/360 = 45,833.33; net 1,204,166.67 less 200.00 commission, settles Fri 24 April
+//   Aldine Paper Co. bankrupt (11 May, recovery 0.50): index loss 2%, below the 3% attachment: nothing happens to the tranche
+//   coupon Mon 22 June: 10,000,000 x 5% x 94/360 = 130,555.56 received (less the 45,833.33 paid at trade: 84,722.23)
+//   Brennick Steel Corp. fails to pay (7 July, recovery 0.50): index loss 4%: (4% - 3%) / 4% = 25% of the tranche written
+//     down: 2,500,000.00 paid to the buyer; the buyer pays the premium accrued on it from 22 June to 7 July included,
+//     16 days: 2,500,000 x 5% x 16/360 = 5,555.56; net paid 2,494,444.44; cost share 1,250,000 x 25% = 312,500 realized;
+//     factor 0.75; independent amount 10% x 7,500,000 = 750,000.00 (250,000.00 back)
+//   coupon Mon 21 September: 7,500,000 x 5% x 91/360 = 94,791.67
+//   Carrow Logistics plc bankrupt (13 October, recovery 0.25): index loss 4% + 3% = 7%, the detachment point: the 75% left is
+//     written down, 7,500,000.00 paid; accrued 21 September to 13 October included, 23 days: 7,500,000 x 5% x 23/360 =
+//     23,958.33 received; net paid 7,476,041.67; the tranche is exhausted and ends
+const TR_NAME = 'MCX Bespoke 25 3-7% tranche 500bp 20 Jun 2031';
+const cdsTranche = {
+  productId: 'cds_index_tranche',
+  title: 'Index tranche 3%-7%, protection sold: a default below the attachment leaves it untouched, the next writes it down by 25%, the third exhausts it',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'Attachment point', 'Detachment point'],
+    automaticInputs: ['coupon dates and full coupons on the tranche notional outstanding', 'premium accrued to the step-in date, exchanged at trade', 'index loss, the tranche writedown between the points, the tranche factor and its end when exhausted', 'premium accrued on the written-down part to the event date', 'settlement date T+3', 'commission', 'independent amount trued up on the outstanding notional'],
+    manualInputs: ['attachment and detachment points', 'upfront per 100 (stated fill price)', 'marks per 100 of the outstanding notional entered by hand', 'each constituent credit event: kind, date, final price, weight in the index'],
+    settlement: 'Upfront, accrued and commission T+3 on the USD calendar; coupons on the adjusted coupon dates; writedowns settled in cash on the day they are recorded',
+    lifecycle: 'Sell protection on the tranche; a default whose loss stays below the attachment point changes nothing; a default inside the tranche writes it down by 25% (factor 0.75, smaller coupons); the default that takes the index loss to the detachment point exhausts the tranche and ends it',
+    accounting: 'Carried at the mark per 100 of the notional outstanding less the upfront received; writedowns paid and the cost share of the written-down part realized; coupons realized; accrued premium paid at trade carried as accrued income until the coupon',
+    collateral: 'Position-level terms: independent amount 10% of the tranche notional outstanding, posted at entry, a quarter returned with the writedown, the rest when the tranche is exhausted; no variation margin',
+  },
+  start: at('2026-04-21'),
+  settlementCheck: { lag: 3, holidays: [] },
+  book: {
+    name: 'Matrix index tranche', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 15_000_000 }],
+    account: { name: 'Structured credit', funding: [{ ccy: 'USD', amount: 10_000_000 }] },
+    settings: { fees: { cds: { perUnit: 0.00002, minimum: 0, bps: 0 } }, fill: FILL, settlement: { cds: 3 } },
+  },
+  instruments: {
+    main: {
+      productId: 'cds_index_tranche', name: TR_NAME, symbol: 'MCXB25-3-7', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { tradingCalendar: 'USD', settlementCalendar: 'USD', paymentCalendar: 'USD' },
+      terms: {
+        referenceEntity: 'MCX Bespoke 25 (25 names, 4% each)', coupon: 0.05, effective: '2026-03-20', maturity: '2031-06-20', recovery: 0.4,
+        convention: 'standard', creditEventSet: 'corporate', settlement: 'auction', attachment: 0.03, detachment: 0.07, counterparty: 'Dealer Q',
+        collateralBasis: { type: 'position', independentAmount: { type: 'pct', pct: 0.10 }, variationMargin: false, threshold: 0, minimumTransfer: 0 },
+      },
+    },
+  },
+  expectAtStart: {
+    cash: { account: { USD: { settled: 10_000_000, unsettled: 0, margin: 0, restricted: 0, availableToTrade: 10_000_000, availableToWithdraw: 10_000_000 } }, treasury: { USD: { settled: 5_000_000 } } },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [], otc: [], alerts: [],
+    nav: { account: 10_000_000, treasury: 5_000_000, book: 15_000_000 },
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+  },
+  steps: [
+    otcTicket({
+      id: 'sell-tranche-protection', covers: ['open', 'sell protection', 'accrued at trade', 'collateral'], instrument: 'main', side: 'sell', qty: 10_000_000, upfront: 12.50, as: 'tranche',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 10_000_000, estimate: 12.5, model: 'stated-price', settleDate: '2026-04-24', calendar: 'USD', cash: 1_204_166.67, accrued: -45_833.33, fees: 200 }], // 1,250,000 - 45,833.33
+          cash: { USD: { fees: 200, margin: 1_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 10_000_000, avgPrice: 12.5 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Sold 10,000,000 MCXB25-3-7 @ 12.50 USD; premium accrued from 2026-03-20 to the step-in date 2026-04-22 (33 days), 45,833.33 USD, paid to the counterparty with the settlement', owner: 'account', date: '2026-04-21' },
+          { type: 'cds.collateral', summary: `Collateral posted on ${TR_NAME} under its position-level terms: 1,000,000.00 USD (independent amount, 10.00% of 10,000,000.00 USD notional)`, cash: { USD: -1_000_000 } },
+        ],
+        cash: { account: { USD: { settled: 9_000_000, unsettled: 1_203_966.67, margin: 1_000_000, availableToTrade: 10_203_966.67, availableToWithdraw: 9_000_000 } } },
+        positions: [{ instrument: 'main', lot: 'tranche', owner: 'account', direction: 'protection sold', qty: -10_000_000, avgCost: 12.5, cost: -1_250_000, price: null, value: null, unrealized: null, provisional: true, notional: 10_000_000, margin: 1_000_000, accrued: 45_833.33 }],
+        holdings: { main: { long: 0, short: 10_000_000, net: -10_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-04-24', amount: 1_203_966.67, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'cds.premium', instrument: 'main', dueDate: '2026-06-22', status: 'pending' },
+          { type: 'cds.maturity', instrument: 'main', dueDate: '2031-06-20', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', lot: 'tranche', owner: 'account', qty: -10_000_000, basis: 'position', iaRequired: 1_000_000, iaPosted: 1_000_000, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: -200, unrealized: 0, total: -200 } },
+        nav: { account: 9_999_800, book: 14_999_800 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 9_000_000, margin: 1_000_000, receivable: 1_203_966.67, positions: -1_250_000, accruedIncome: 45_833.33, assets: 9_999_800, liabilities: 0, netAssets: 9_999_800 } },
+      },
+    }),
+    {
+      id: 'mark-at-trade', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 12.50, note: 'Dealer Q upfront per 100 of tranche notional, by hand',
+      expect: { positions: [{ instrument: 'main', lot: 'tranche', price: 12.5, value: -1_250_000, unrealized: 0, provisional: false }], otc: [{ instrument: 'main', mark: 12.5, markValue: -1_250_000 }], provisional: { account: false, book: false } },
+    },
+    {
+      id: 'settle-upfront', covers: 'settlement', action: 'clock', to: at('2026-04-24'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 1,203,966.67 USD into settled cash', cash: { USD: 1_203_966.67 } }],
+        cash: { account: { USD: { settled: 10_203_966.67, unsettled: 0, availableToTrade: 10_203_966.67, availableToWithdraw: 10_203_966.67 } } },
+        pending: [],
+        balance: { account: { cash: 10_203_966.67, receivable: null } },
+      },
+    },
+    { id: 'may', action: 'clock', to: at('2026-05-12'), expect: {} },
+    {
+      id: 'default-below-attachment', covers: ['credit event', 'loss below the attachment point'], action: 'instrument_lifecycle', instrument: 'main',
+      body: { action: 'credit_event', eventType: 'bankruptcy', eventDate: '2026-05-11', recovery: 0.50, entity: 'Aldine Paper Co.', weight: 0.04, settlement: 'auction' },
+      expect: {
+        events: [{ type: 'cds.credit_event', summary: 'Bankruptcy of Aldine Paper Co. on 2026-05-11 recorded by hand for MCXB25-3-7, auction final price 50.000%; index loss 0.0000% to 2.0000%, below the attachment point 3.00%: the tranche is untouched; nothing paid', owner: 'account', date: '2026-05-12' }],
+      },
+    },
+    {
+      id: 'first-coupon', covers: 'premium', action: 'clock', to: at('2026-06-22'),
+      expect: {
+        events: [{ type: 'cds.premium', summary: `CDS premium received on ${TR_NAME} for 2026-03-20 to 2026-06-21 included (94 days on 10,000,000.00 USD): 130,555.56 USD; the accrued premium of 45,833.33 USD exchanged at trade is settled with it`, cash: { USD: 130_555.56 } }],
+        cash: { account: { USD: { settled: 10_334_522.23, availableToTrade: 10_334_522.23, availableToWithdraw: 10_334_522.23 } } },
+        positions: [{ instrument: 'main', lot: 'tranche', accrued: 0 }],
+        lifecycle: [
+          { type: 'cds.premium', instrument: 'main', dueDate: '2026-09-21', status: 'pending' },
+          { type: 'cds.maturity', instrument: 'main', dueDate: '2031-06-20', status: 'pending' },
+        ],
+        pnl: { account: { realized: 84_722.23, total: 84_522.23 } },
+        nav: { account: 10_084_522.23, book: 15_084_522.23 },
+        balance: { account: { cash: 10_334_522.23, accruedIncome: null, assets: 10_084_522.23, netAssets: 10_084_522.23 } },
+      },
+    },
+    { id: 'july', action: 'clock', to: at('2026-07-08'), expect: {} },
+    {
+      id: 'default-inside-the-tranche', covers: ['credit event', 'tranche writedown', 'collateral'], action: 'instrument_lifecycle', instrument: 'main',
+      body: { action: 'credit_event', eventType: 'failure_to_pay', eventDate: '2026-07-07', recovery: 0.50, entity: 'Brennick Steel Corp.', weight: 0.04, settlement: 'auction' },
+      expect: {
+        events: [
+          { type: 'cds.credit_event', summary: 'Failure to pay of Brennick Steel Corp. on 2026-07-07 recorded by hand for MCXB25-3-7, auction final price 50.000%; index loss 2.0000% to 4.0000%; 25.0000% of the tranche written down; outstanding 100.0000% to 75.0000%; protection 2,500,000.00 USD (2,500,000.00 USD x 100.000%); accrued premium 5,555.56 USD; paid 2,494,444.44 USD', owner: 'account' },
+          { type: 'cds.collateral', summary: `Collateral returned on ${TR_NAME} under its position-level terms: 250,000.00 USD (independent amount, 10.00% of 7,500,000.00 USD notional)`, cash: { USD: 250_000 } },
+        ],
+        cash: { account: { USD: { settled: 8_090_077.79, margin: 750_000, availableToTrade: 8_090_077.79, availableToWithdraw: 8_090_077.79 } } }, // 10,334,522.23 - 2,494,444.44 + 250,000
+        positions: [{ instrument: 'main', lot: 'tranche', qty: -10_000_000, cost: -937_500, avgCost: 12.5, price: 12.5, value: -937_500, unrealized: 0, notional: 7_500_000, margin: 750_000 }], // -1,250,000 + 312,500; -10,000,000 x 0.75 x 12.50 / 100
+        otc: [{ instrument: 'main', markValue: -937_500, iaRequired: 750_000, iaPosted: 750_000 }],
+        pnl: { account: { realized: -2_097_222.21, total: -2_097_422.21 } }, // 84,722.23 - 2,494,444.44 + 312,500
+        nav: { account: 7_902_577.79, book: 12_902_577.79 },
+        balance: { account: { cash: 8_090_077.79, margin: 750_000, positions: -937_500, assets: 7_902_577.79, netAssets: 7_902_577.79 } },
+      },
+    },
+    {
+      id: 'mark-after-the-writedown', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 40.00, note: 'Dealer Q upfront per 100 of tranche notional outstanding, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'tranche', price: 40, value: -3_000_000, unrealized: -2_062_500 }], // -10,000,000 x 0.75 x 40 / 100
+        otc: [{ instrument: 'main', mark: 40, markValue: -3_000_000 }],
+        pnl: { account: { unrealized: -2_062_500, total: -4_159_922.21 } },
+        nav: { account: 5_840_077.79, book: 10_840_077.79 },
+        balance: { account: { positions: -3_000_000, assets: 5_840_077.79, netAssets: 5_840_077.79 } },
+      },
+    },
+    {
+      id: 'coupon-on-the-written-down-tranche', covers: ['premium', 'tranche factor'], action: 'clock', to: at('2026-09-21'),
+      expect: {
+        events: [{ type: 'cds.premium', summary: `CDS premium received on ${TR_NAME} for 2026-06-22 to 2026-09-20 included (91 days on 7,500,000.00 USD): 94,791.67 USD`, cash: { USD: 94_791.67 } }],
+        cash: { account: { USD: { settled: 8_184_869.46, availableToTrade: 8_184_869.46, availableToWithdraw: 8_184_869.46 } } },
+        lifecycle: [
+          { type: 'cds.premium', instrument: 'main', dueDate: '2026-12-21', status: 'pending' },
+          { type: 'cds.maturity', instrument: 'main', dueDate: '2031-06-20', status: 'pending' },
+        ],
+        pnl: { account: { realized: -2_002_430.54, total: -4_065_130.54 } },
+        nav: { account: 5_934_869.46, book: 10_934_869.46 },
+        balance: { account: { cash: 8_184_869.46, assets: 5_934_869.46, netAssets: 5_934_869.46 } },
+      },
+    },
+    { id: 'october', action: 'clock', to: at('2026-10-14'), expect: {} },
+    {
+      id: 'default-exhausts-the-tranche', covers: ['credit event', 'tranche exhausted', 'collateral', 'close'], action: 'instrument_lifecycle', instrument: 'main',
+      body: { action: 'credit_event', eventType: 'bankruptcy', eventDate: '2026-10-13', recovery: 0.25, entity: 'Carrow Logistics plc', weight: 0.04, settlement: 'auction' },
+      expect: {
+        events: [
+          { type: 'cds.credit_event', summary: 'Bankruptcy of Carrow Logistics plc on 2026-10-13 recorded by hand for MCXB25-3-7, auction final price 25.000%; index loss 4.0000% to 7.0000%; 75.0000% of the tranche written down; outstanding 75.0000% to 0.0000%; protection 7,500,000.00 USD (7,500,000.00 USD x 100.000%); accrued premium 23,958.33 USD; paid 7,476,041.67 USD' },
+          { type: 'cds.terminated', summary: 'MCXB25-3-7 ended for this position: the tranche is exhausted (index loss 7.0000% reached the detachment point 7.00%)' },
+          { type: 'cds.collateral', summary: `Collateral returned on ${TR_NAME} under its position-level terms: 750,000.00 USD (independent amount, the position ended)`, cash: { USD: 750_000 } },
+        ],
+        cash: { account: { USD: { settled: 1_458_827.79, margin: 0, availableToTrade: 1_458_827.79, availableToWithdraw: 1_458_827.79 } } }, // 8,184,869.46 - 7,476,041.67 + 750,000
+        positions: [], holdings: { main: null }, lifecycle: [], otc: [],
+        pnl: { account: { realized: -8_540_972.21, commissions: -200, unrealized: 0, total: -8_541_172.21 } }, // -2,002,430.54 - 7,476,041.67 + 937,500
+        nav: { account: 1_458_827.79, book: 6_458_827.79 },
+        balance: { account: { cash: 1_458_827.79, margin: null, positions: null, assets: 1_458_827.79, liabilities: 0, netAssets: 1_458_827.79 } },
+      },
+    },
+    {
+      // 1,250,000 upfront; premium -45,833.33 + 130,555.56 + 5,555.56 + 94,791.67 + 23,958.33; writedowns -10,000,000; commission -200.
+      id: 'nothing-left', covers: 'close', action: 'clock', to: at('2026-12-21'),
+      expect: { events: [], positions: [], pending: [], lifecycle: [], otc: [], alerts: [] },
+    },
+  ],
+};
+
+export default [cdsSingleName, cdsSovereign, cdsIndex, cdsBasket, cdsTranche];

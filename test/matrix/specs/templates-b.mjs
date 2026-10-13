@@ -1602,4 +1602,541 @@ const longStrangle = {
   ],
 };
 
-export default [bearCall, longStraddle, longStrangle];
+// =====================================================================================================================
+// iron_condor
+// =====================================================================================================================
+// Ashgrove 100 Index options (Cboe, European, cash-settled at 100 x the index), 20 March 2026: buy the 90 put and the
+// 110 call (the wings), sell the 95 put and the 105 call (the inner legs), 5 each. Each written leg depends on the wing
+// that covers it, so the reserve is the width of one side only: 5 x 100 x (95 - 90) = 2,500.
+//   condor  opened short of cash (refused: the written put needs its whole reserve before the written call's premium
+//           arrives, so the shortfall is measured leg by leg), then with Treasury funding sized to it; the 110 call fills
+//           3 of 5 on its first cycle and the dependent 105 call follows it. The index fixes at 85: both put legs are
+//           settled in cash (the bought 90 put receives 5, the written 95 put pays 10, per unit), both calls lapse.
+//   retry / accept / unwind  1 of each when the written call has no fresh quote: it expires unfilled; Retry sells it,
+//           then Close (written legs bought back first, the wings sold after them); Accept keeps the other three to
+//           expiry; Unwind buys the written put back and then sells the wings.
+const CONDOR_PAGE = (contracts, financing) => ({ template: 'Iron Condor', underlying: 'index', expiration: '2026-03-20', strikes: { 'Lower wing (put bought)': 90, 'Inner put (sold)': 95, 'Inner call (sold)': 105, 'Upper wing (call bought)': 110 }, contracts, ...(financing ? { financing } : {}) });
+const condorInput = (contracts, financing) => templateInput('iron_condor', { underlyingId: '$inst:index', options: { expiration: '2026-03-20', strikes: { wingLower: 90, put: 95, call: 105, wingUpper: 110 }, contracts }, financing });
+const agxOption = (symbol, right, strike) => ({
+  productId: 'index_option', name: `AGX 20 March 2026 ${strike} ${right === 'C' ? 'call' : 'put'}`, symbol, marketView: 'US_DERIV', venue: 'Cboe Options Exchange', venueType: 'exchange', venueCountry: 'US', underlyingGeo: 'US', tradingCcy: 'USD', underlying: 'index', multiplier: 100,
+  terms: { right, strike, expiration: '2026-03-20', exercise: 'european', settlement: 'cash', deliverable: { units: 100 } },
+});
+const condorOne = (as) => ({ action: 'package', as, instrument: 'index', input: condorInput(1, null), strategyPage: CONDOR_PAGE(1, null) });
+const ironCondor = {
+  template: 'iron_condor',
+  title: 'Iron condor on the Ashgrove 100 Index (Cboe, cash-settled): 20 March 2026 90 / 95 puts and 105 / 110 calls',
+  matrix: {
+    ...OPTION_TEMPLATE_MATRIX,
+    settlement: 'Premium of each leg T+1 on the US calendar; Treasury funding moves at once; cash settlement of the put legs T+1 after expiry (receipts settled before payments)',
+    lifecycle: 'Four expiry items settled from the index fixing for 20 March 2026 (85: the outer and inner puts settled in cash, the calls lapse); a failed dependent leg leaves the instance needing attention: Retry, Unwind or Accept; Close and Unwind buy the written legs back before the wings are sold',
+    accounting: 'Net credit received; average premium per leg; commission expensed; premium realized on buy-back, sale, cash settlement and lapse',
+    collateral: 'Each written leg is covered by its wing: one side\'s width is reserved (5 x 100 x 5 = 2,500), released at settlement; the package\'s cash need is measured leg by leg in execution order',
+  },
+  start: MAR(2),
+  settlementCheck: { lag: 1, holidays: [] },
+  book: book('Templates iron condor'),
+  instruments: {
+    index: { productId: 'etf', name: 'Ashgrove 100 Index (reference level)', symbol: 'AGX', marketView: 'US_CASH', venue: 'Ashgrove Indices', venueType: 'exchange', venueCountry: 'US', issuer: 'Ashgrove Indices LLC', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', terms: {} },
+    p90: agxOption('AGX260320P90', 'P', 90),
+    p95: agxOption('AGX260320P95', 'P', 95),
+    c105: agxOption('AGX260320C105', 'C', 105),
+    c110: agxOption('AGX260320C110', 'C', 110),
+  },
+  quotes: {
+    index: { bid: 99.99, ask: 100.01, last: 100, bidSize: 1000, askSize: 1000 },
+    p90: { bid: 0.90, ask: 1.00, last: 0.95, bidSize: 20, askSize: 20 },
+    p95: { bid: 1.90, ask: 2.00, last: 1.95, bidSize: 20, askSize: 20 },
+    c105: { bid: 1.80, ask: 1.90, last: 1.85, bidSize: 20, askSize: 20 },
+    c110: { bid: 0.80, ask: 0.90, last: 0.85, bidSize: 20, askSize: 3 }, // only 3 contracts displayed at the ask
+  },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 1_000, unsettled: 0, reserved: 0, availableToTrade: 1_000, availableToWithdraw: 1_000 } },
+      treasury: { USD: { settled: 999_000, unsettled: 0, reserved: 0, availableToTrade: 999_000, availableToWithdraw: 999_000 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 1_000, treasury: 999_000, book: 1_000_000 },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+  },
+  steps: [
+    {
+      // Netted, the package needs 950 for the wings (500 + 450), 13 of commission and 2,500 reserved, and brings 1,850
+      // (950 + 900): 613 short. Leg by leg from 1,000: the wings leave 1,000 - 503.25 - 453.25 = 43.50 free; the written
+      // put brings 946.75 and must find 2,500: 43.50 + 946.75 - 2,500 = -1,509.75, before the written call's 896.75.
+      id: 'open-short-of-cash', covers: 'financing', action: 'package', as: 'refused', instrument: 'index',
+      input: condorInput(5, null), strategyPage: CONDOR_PAGE(5, null),
+      status: 'blocked', reason: 'The Account cannot fund the package as its legs execute: the preview is blocked until financing is chosen.',
+      expect: {
+        refused: 'Alpha is short 1,509.75 USD while the legs execute',
+        preview: {
+          blocking: 1, errors: ['cash'],
+          legs: [
+            { kind: 'trade', action: 'buy', instrument: 'p90', qty: 5, estimate: 1.00, settleDate: '2026-03-03', cash: -500, fees: 3.25, dependsOn: [] },
+            { kind: 'trade', action: 'buy', instrument: 'c110', qty: 5, estimate: 0.90, settleDate: '2026-03-03', cash: -450, fees: 3.25, dependsOn: [] },
+            { kind: 'trade', action: 'sell', instrument: 'p95', qty: 5, estimate: 1.90, settleDate: '2026-03-03', cash: 950, fees: 3.25, dependsOn: [1] },
+            { kind: 'trade', action: 'sell', instrument: 'c105', qty: 5, estimate: 1.80, settleDate: '2026-03-03', cash: 900, fees: 3.25, dependsOn: [2] },
+          ],
+          cash: { USD: { purchases: 950, proceeds: 1_850, fees: 13, reserved: 2_500, required: 3_463, available: 1_000, shortfall: 1_509.75 } },
+        },
+      },
+    },
+    {
+      // Treasury funding of 1,509.75 runs first. The 90 puts fill 5 at 1.00, the 110 calls 3 at 0.90; the 95 puts follow
+      // their wing with 5 at 1.90 and the 105 calls theirs with 3 at 1.80; on the next cycle 2 more 110 and 105 calls.
+      id: 'open', covers: ['open', 'financing', 'partial fill', 'dependency'], action: 'package', as: 'condor', instrument: 'index',
+      input: condorInput(5, { mode: 'treasury' }), strategyPage: CONDOR_PAGE(5, { mode: 'treasury' }),
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [
+            { kind: 'funding', action: 'treasury_funding', purpose: 'financing', qty: 1_509.75, cash: 1_509.75, dependsOn: [] },
+            { kind: 'trade', action: 'buy', purpose: 'primary', instrument: 'p90', qty: 5, estimate: 1.00, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2026-03-03', cash: -500, fees: 3.25, dependsOn: [1] },
+            { kind: 'trade', action: 'buy', purpose: 'primary', instrument: 'c110', qty: 5, estimate: 0.90, model: 'quoted-bid-ask', settleDate: '2026-03-03', cash: -450, fees: 3.25, dependsOn: [1] },
+            { kind: 'trade', action: 'sell', purpose: 'primary', instrument: 'p95', qty: 5, estimate: 1.90, model: 'quoted-bid-ask', settleDate: '2026-03-03', cash: 950, fees: 3.25, dependsOn: [2, 1] },
+            { kind: 'trade', action: 'sell', purpose: 'primary', instrument: 'c105', qty: 5, estimate: 1.80, model: 'quoted-bid-ask', settleDate: '2026-03-03', cash: 900, fees: 3.25, dependsOn: [3, 1] },
+          ],
+          cash: { USD: { purchases: 950, proceeds: 1_850, fees: 13, reserved: 2_500, financingIn: 1_509.75, required: 3_463, available: 1_000, shortfall: 0, netCash: 2_396.75 } }, // 1,850 + 1,509.75 - 950 - 13
+          netPremium: { amount: -900, ccy: 'USD', type: 'credit', complete: true },
+          optionRequirement: [{ ccy: 'USD', amount: 2_500, finite: 2_500, naked: 0, uncoveredCallUnits: 0 }],
+        },
+        result: {
+          status: 'partial',
+          orders: [
+            { kind: 'funding', status: 'filled', filledQty: 1_509.75 },
+            { action: 'buy', instrument: 'p90', status: 'filled', filledQty: 5, avgPrice: 1.00 },
+            { action: 'buy', instrument: 'c110', status: 'partial', filledQty: 3, avgPrice: 0.90 },
+            { action: 'sell', instrument: 'p95', status: 'filled', filledQty: 5, avgPrice: 1.90 },
+            { action: 'sell', instrument: 'c105', status: 'partial', filledQty: 3, avgPrice: 1.80 },
+          ],
+        },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'transfer.funding', summary: 'Treasury funding: 1,509.75 USD from Treasury to Alpha' },
+          { type: 'trade.fill', summary: 'Bought 5 AGX260320P90 @ 1.00 USD', date: '2026-03-02' },
+          { type: 'trade.fill', summary: 'Bought 3 AGX260320C110 @ 0.90 USD' },
+          { type: 'trade.fill', summary: 'Sold 5 AGX260320P95 @ 1.90 USD' },
+          { type: 'trade.fill', summary: 'Sold 3 AGX260320C105 @ 1.80 USD' },
+          { type: 'trade.fill', summary: 'Bought 2 AGX260320C110 @ 0.90 USD' },
+          { type: 'trade.fill', summary: 'Sold 2 AGX260320C105 @ 1.80 USD' },
+        ],
+        cash: {
+          // owed 503.25 + 271.95 + 181.30 = 956.50; owed to it 946.75 + 538.05 + 358.70 = 1,843.50; reserved 2,500.
+          // To trade: 2,509.75 + 887 - 2,500 = 896.75. To withdraw: 2,509.75 - 956.50 - 2,500 = -946.75.
+          account: { USD: { settled: 2_509.75, unsettled: 887, reserved: 2_500, availableToTrade: 896.75, availableToWithdraw: -946.75 } },
+          treasury: { USD: { settled: 997_490.25, unsettled: 0, availableToTrade: 997_490.25, availableToWithdraw: 997_490.25 } },
+        },
+        positions: [
+          { instrument: 'c105', lot: 'condor', owner: 'account', direction: 'short', qty: -5, avgCost: 1.80, cost: -900, price: 1.85, value: -925, unrealized: -25 },
+          { instrument: 'c110', lot: 'condor', owner: 'account', direction: 'long', qty: 5, avgCost: 0.90, cost: 450, price: 0.85, value: 425, unrealized: -25 },
+          { instrument: 'p90', lot: 'condor', owner: 'account', direction: 'long', qty: 5, avgCost: 1.00, cost: 500, price: 0.95, value: 475, unrealized: -25 },
+          { instrument: 'p95', lot: 'condor', owner: 'account', direction: 'short', qty: -5, avgCost: 1.90, cost: -950, price: 1.95, value: -975, unrealized: -25 },
+        ],
+        holdings: { c105: { long: 0, short: 5, net: -5 }, c110: { long: 5, short: 0, net: 5 }, p90: { long: 5, short: 0, net: 5 }, p95: { long: 0, short: 5, net: -5 } },
+        pending: [
+          { instrument: 'c105', lot: 'condor', dueDate: '2026-03-03', amount: 358.70, into: 'cash' },
+          { instrument: 'c105', lot: 'condor', dueDate: '2026-03-03', amount: 538.05, into: 'cash' },
+          { instrument: 'c110', lot: 'condor', dueDate: '2026-03-03', amount: -271.95, into: 'cash' },
+          { instrument: 'c110', lot: 'condor', dueDate: '2026-03-03', amount: -181.30, into: 'cash' },
+          { instrument: 'p90', lot: 'condor', dueDate: '2026-03-03', amount: -503.25, into: 'cash' },
+          { instrument: 'p95', lot: 'condor', dueDate: '2026-03-03', amount: 946.75, into: 'cash' },
+        ],
+        lifecycle: [
+          { type: 'option.expiry', instrument: 'c105', dueDate: '2026-03-20', status: 'pending' },
+          { type: 'option.expiry', instrument: 'c110', dueDate: '2026-03-20', status: 'pending' },
+          { type: 'option.expiry', instrument: 'p90', dueDate: '2026-03-20', status: 'pending' },
+          { type: 'option.expiry', instrument: 'p95', dueDate: '2026-03-20', status: 'pending' },
+        ],
+        pnl: {
+          account: { realized: 0, commissions: -13, fees: 0, unrealized: -100, total: -113 },
+          book: { realized: 0, commissions: -13, unrealized: -100, total: -113 },
+          treasury: { total: 0 },
+        },
+        nav: { account: 2_396.75, treasury: 997_490.25, book: 999_887 }, // 1,000 + 1,509.75 - 113
+        balance: {
+          account: { cash: 2_509.75, receivable: 1_843.50, payable: 956.50, positions: -1_000, assets: 3_353.25, liabilities: 956.50, netAssets: 2_396.75 },
+          treasury: { cash: 997_490.25, assets: 997_490.25, liabilities: 0, netAssets: 997_490.25 },
+          book: { cash: 1_000_000, receivable: 1_843.50, payable: 956.50, positions: -1_000, assets: 1_000_843.50, liabilities: 956.50, netAssets: 999_887 },
+        },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: MAR(3),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 946.75 USD into settled cash', date: '2026-03-03' },
+          { type: 'settlement.receive', summary: 'received 538.05 USD into settled cash' },
+          { type: 'settlement.receive', summary: 'received 358.70 USD into settled cash' },
+          { type: 'settlement.pay', summary: 'paid 503.25 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 271.95 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 181.30 USD from settled cash' },
+        ],
+        cash: { account: { USD: { settled: 3_396.75, unsettled: 0, availableToTrade: 896.75, availableToWithdraw: 896.75 } } },
+        pending: [],
+        balance: {
+          account: { cash: 3_396.75, receivable: null, payable: null, assets: 2_396.75, liabilities: 0 },
+          book: { cash: 1_000_887, receivable: null, payable: null, assets: 999_887, liabilities: 0 },
+        },
+      },
+    },
+    {
+      id: 'fund-account', covers: 'internal funding', action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 2_000,
+      expect: {
+        events: [{ type: 'transfer.funding', summary: 'Treasury funding: 2,000.00 USD from Treasury to Alpha' }],
+        cash: { account: { USD: { settled: 5_396.75, availableToTrade: 2_896.75, availableToWithdraw: 2_896.75 } }, treasury: { USD: { settled: 995_490.25, availableToTrade: 995_490.25, availableToWithdraw: 995_490.25 } } },
+        nav: { account: 4_396.75, treasury: 995_490.25 },
+        balance: { account: { cash: 5_396.75, assets: 4_396.75, netAssets: 4_396.75 }, treasury: { cash: 995_490.25, assets: 995_490.25, netAssets: 995_490.25 } },
+      },
+    },
+    // The written call's quote stops updating at 09:50.
+    { id: 'c105-quote-stops', action: 'quote', instrument: 'c105', quote: { bid: 1.80, ask: 1.90, last: 1.85, bidSize: 20, askSize: 20, asOf: MAR(3, '09:50') }, expect: {} },
+    {
+      // 1 of each: wings 100 + 90, inner legs 190 + 185 (the call estimated at its last 1.85), 2.60 commission, 500
+      // reserved. Leg by leg the deepest point is after the written put: 2,896.75 - 100.65 - 90.65 + 189.35 - 500.
+      ...condorOne('retry'), id: 'open-retry', covers: ['open', 'failed dependent leg'],
+      expect: {
+        preview: {
+          blocking: 0, warnings: ['not-executable'],
+          legs: [
+            { kind: 'trade', action: 'buy', instrument: 'p90', qty: 1, estimate: 1.00, settleDate: '2026-03-04', cash: -100, fees: 0.65, dependsOn: [] },
+            { kind: 'trade', action: 'buy', instrument: 'c110', qty: 1, estimate: 0.90, settleDate: '2026-03-04', cash: -90, fees: 0.65, dependsOn: [] },
+            { kind: 'trade', action: 'sell', instrument: 'p95', qty: 1, estimate: 1.90, settleDate: '2026-03-04', cash: 190, fees: 0.65, dependsOn: [1] },
+            { kind: 'trade', action: 'sell', instrument: 'c105', qty: 1, estimate: null, reference: 1.85, executable: false, settleDate: '2026-03-04', cash: 185, fees: 0.65, dependsOn: [2] },
+          ],
+          cash: { USD: { purchases: 190, proceeds: 375, fees: 2.60, reserved: 500, required: 692.60, available: 2_896.75, shortfall: 0 } },
+        },
+        result: { status: 'partial', orders: [{ instrument: 'p90', status: 'filled' }, { instrument: 'c110', status: 'filled' }, { instrument: 'p95', status: 'filled' }, { instrument: 'c105', status: 'working', filledQty: 0 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Bought 1 AGX260320P90 @ 1.00 USD', date: '2026-03-03' },
+          { type: 'trade.fill', summary: 'Bought 1 AGX260320C110 @ 0.90 USD' },
+          { type: 'trade.fill', summary: 'Sold 1 AGX260320P95 @ 1.90 USD' },
+        ],
+        // -100.65 - 90.65 + 189.35 = -1.95; reserved 2,500 + 500 (its written put, covered by its 90 put)
+        cash: { account: { USD: { settled: 5_396.75, unsettled: -1.95, reserved: 3_000, availableToTrade: 2_394.80, availableToWithdraw: 2_205.45 } } },
+        positions: [
+          { instrument: 'c105', lot: 'condor', value: -925 },
+          { instrument: 'c110', lot: 'condor', value: 425 },
+          { instrument: 'c110', lot: 'retry', owner: 'account', direction: 'long', qty: 1, avgCost: 0.90, cost: 90, price: 0.85, value: 85, unrealized: -5 },
+          { instrument: 'p90', lot: 'condor', value: 475 },
+          { instrument: 'p90', lot: 'retry', owner: 'account', direction: 'long', qty: 1, avgCost: 1.00, cost: 100, price: 0.95, value: 95, unrealized: -5 },
+          { instrument: 'p95', lot: 'condor', value: -975 },
+          { instrument: 'p95', lot: 'retry', owner: 'account', direction: 'short', qty: -1, avgCost: 1.90, cost: -190, price: 1.95, value: -195, unrealized: -5 },
+        ],
+        holdings: { c110: { long: 6, short: 0, net: 6 }, p90: { long: 6, short: 0, net: 6 }, p95: { long: 0, short: 6, net: -6 } },
+        pending: [
+          { instrument: 'c110', lot: 'retry', dueDate: '2026-03-04', amount: -90.65 },
+          { instrument: 'p90', lot: 'retry', dueDate: '2026-03-04', amount: -100.65 },
+          { instrument: 'p95', lot: 'retry', dueDate: '2026-03-04', amount: 189.35 },
+        ],
+        openOrders: [{ instrument: 'c105', kind: 'trade', action: 'sell', status: 'working', qty: 1, filledQty: 0 }],
+        lifecycle: [{ instrument: 'c105' }, { instrument: 'c110' }, { instrument: 'c110' }, { instrument: 'p90' }, { instrument: 'p90' }, { instrument: 'p95' }, { instrument: 'p95' }],
+        pnl: { account: { commissions: -14.95, unrealized: -115, total: -129.95 }, book: { commissions: -14.95, unrealized: -115, total: -129.95 } },
+        nav: { account: 4_379.80, book: 999_870.05 },
+        balance: {
+          account: { cash: 5_396.75, receivable: 189.35, payable: 191.30, positions: -1_015, assets: 4_571.10, liabilities: 191.30, netAssets: 4_379.80 },
+          book: { cash: 1_000_887, receivable: 189.35, payable: 191.30, positions: -1_015, assets: 1_000_061.35, liabilities: 191.30, netAssets: 999_870.05 },
+        },
+      },
+    },
+    {
+      ...condorOne('accept'), id: 'open-accept', covers: ['open', 'failed dependent leg'],
+      expect: {
+        preview: { blocking: 0, legs: [{ instrument: 'p90' }, { instrument: 'c110' }, { instrument: 'p95', dependsOn: [1] }, { instrument: 'c105', estimate: null, dependsOn: [2] }], cash: { USD: { required: 692.60, available: 2_394.80, shortfall: 0 } } },
+        result: { status: 'partial', orders: [{ status: 'filled' }, { status: 'filled' }, { status: 'filled' }, { instrument: 'c105', status: 'working' }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill' }, { type: 'trade.fill' }, { type: 'trade.fill' }],
+        cash: { account: { USD: { settled: 5_396.75, unsettled: -3.90, reserved: 3_500, availableToTrade: 1_892.85, availableToWithdraw: 1_514.15 } } },
+        positions: [
+          { instrument: 'c105', lot: 'condor', value: -925 },
+          { instrument: 'c110', lot: 'accept', value: 85 }, { instrument: 'c110', lot: 'condor', value: 425 }, { instrument: 'c110', lot: 'retry', value: 85 },
+          { instrument: 'p90', lot: 'accept', value: 95 }, { instrument: 'p90', lot: 'condor', value: 475 }, { instrument: 'p90', lot: 'retry', value: 95 },
+          { instrument: 'p95', lot: 'accept', value: -195 }, { instrument: 'p95', lot: 'condor', value: -975 }, { instrument: 'p95', lot: 'retry', value: -195 },
+        ],
+        holdings: { c110: { long: 7, short: 0, net: 7 }, p90: { long: 7, short: 0, net: 7 }, p95: { long: 0, short: 7, net: -7 } },
+        pending: [
+          { instrument: 'c110', lot: 'accept', amount: -90.65 }, { instrument: 'c110', lot: 'retry', amount: -90.65 },
+          { instrument: 'p90', lot: 'accept', amount: -100.65 }, { instrument: 'p90', lot: 'retry', amount: -100.65 },
+          { instrument: 'p95', lot: 'accept', amount: 189.35 }, { instrument: 'p95', lot: 'retry', amount: 189.35 },
+        ],
+        openOrders: [{ instrument: 'c105', status: 'working' }, { instrument: 'c105', status: 'working' }],
+        lifecycle: [{ instrument: 'c105' }, { instrument: 'c110' }, { instrument: 'c110' }, { instrument: 'c110' }, { instrument: 'p90' }, { instrument: 'p90' }, { instrument: 'p90' }, { instrument: 'p95' }, { instrument: 'p95' }, { instrument: 'p95' }],
+        pnl: { account: { commissions: -16.90, unrealized: -130, total: -146.90 }, book: { commissions: -16.90, unrealized: -130, total: -146.90 } },
+        nav: { account: 4_362.85, book: 999_853.10 },
+        balance: {
+          account: { cash: 5_396.75, receivable: 378.70, payable: 382.60, positions: -1_030, assets: 4_745.45, liabilities: 382.60, netAssets: 4_362.85 },
+          book: { cash: 1_000_887, receivable: 378.70, payable: 382.60, positions: -1_030, assets: 1_000_235.70, liabilities: 382.60, netAssets: 999_853.10 },
+        },
+      },
+    },
+    {
+      ...condorOne('unwind'), id: 'open-unwind', covers: ['open', 'failed dependent leg'],
+      expect: {
+        preview: { blocking: 0, legs: [{ instrument: 'p90' }, { instrument: 'c110' }, { instrument: 'p95' }, { instrument: 'c105', estimate: null }], cash: { USD: { required: 692.60, available: 1_892.85, shortfall: 0 } } },
+        result: { status: 'partial', orders: [{ status: 'filled' }, { status: 'filled' }, { status: 'filled' }, { instrument: 'c105', status: 'working' }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill' }, { type: 'trade.fill' }, { type: 'trade.fill' }],
+        cash: { account: { USD: { settled: 5_396.75, unsettled: -5.85, reserved: 4_000, availableToTrade: 1_390.90, availableToWithdraw: 822.85 } } },
+        positions: [
+          { instrument: 'c105', lot: 'condor', value: -925 },
+          { instrument: 'c110', lot: 'accept' }, { instrument: 'c110', lot: 'condor' }, { instrument: 'c110', lot: 'retry' }, { instrument: 'c110', lot: 'unwind', qty: 1, value: 85 },
+          { instrument: 'p90', lot: 'accept' }, { instrument: 'p90', lot: 'condor' }, { instrument: 'p90', lot: 'retry' }, { instrument: 'p90', lot: 'unwind', qty: 1, value: 95 },
+          { instrument: 'p95', lot: 'accept' }, { instrument: 'p95', lot: 'condor' }, { instrument: 'p95', lot: 'retry' }, { instrument: 'p95', lot: 'unwind', qty: -1, value: -195 },
+        ],
+        holdings: { c110: { long: 8, short: 0, net: 8 }, p90: { long: 8, short: 0, net: 8 }, p95: { long: 0, short: 8, net: -8 } },
+        pending: [
+          { instrument: 'c110', lot: 'accept' }, { instrument: 'c110', lot: 'retry' }, { instrument: 'c110', lot: 'unwind', amount: -90.65 },
+          { instrument: 'p90', lot: 'accept' }, { instrument: 'p90', lot: 'retry' }, { instrument: 'p90', lot: 'unwind', amount: -100.65 },
+          { instrument: 'p95', lot: 'accept' }, { instrument: 'p95', lot: 'retry' }, { instrument: 'p95', lot: 'unwind', amount: 189.35 },
+        ],
+        openOrders: [{ instrument: 'c105', status: 'working' }, { instrument: 'c105', status: 'working' }, { instrument: 'c105', status: 'working' }],
+        lifecycle: [{ instrument: 'c105' }, { instrument: 'c110' }, { instrument: 'c110' }, { instrument: 'c110' }, { instrument: 'c110' }, { instrument: 'p90' }, { instrument: 'p90' }, { instrument: 'p90' }, { instrument: 'p90' }, { instrument: 'p95' }, { instrument: 'p95' }, { instrument: 'p95' }, { instrument: 'p95' }],
+        pnl: { account: { commissions: -18.85, unrealized: -145, total: -163.85 }, book: { commissions: -18.85, unrealized: -145, total: -163.85 } },
+        nav: { account: 4_345.90, book: 999_836.15 },
+        balance: {
+          account: { cash: 5_396.75, receivable: 568.05, payable: 573.90, positions: -1_045, assets: 4_919.80, liabilities: 573.90, netAssets: 4_345.90 },
+          book: { cash: 1_000_887, receivable: 568.05, payable: 573.90, positions: -1_045, assets: 1_000_410.05, liabilities: 573.90, netAssets: 999_836.15 },
+        },
+      },
+    },
+    {
+      // End of 3 March: the three written-call legs expire unfilled; the other legs settle.
+      id: 'call-legs-expire', covers: ['failed dependent leg', 'settlement'], action: 'clock', to: MAR(4),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 189.35 USD into settled cash', date: '2026-03-04' },
+          { type: 'settlement.receive', summary: 'received 189.35 USD into settled cash' },
+          { type: 'settlement.receive', summary: 'received 189.35 USD into settled cash' },
+          { type: 'settlement.pay', summary: 'paid 100.65 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 90.65 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 100.65 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 90.65 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 100.65 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 90.65 USD from settled cash' },
+          { type: 'order.expired', summary: 'Leg 4 expired: sell 1 AGX260320C105. Day order did not fill before the end of the business day' },
+          { type: 'order.expired', summary: 'Leg 4 expired: sell 1 AGX260320C105. Day order did not fill before the end of the business day' },
+          { type: 'order.expired', summary: 'Leg 4 expired: sell 1 AGX260320C105. Day order did not fill before the end of the business day' },
+        ],
+        cash: { account: { USD: { settled: 5_390.90, unsettled: 0, availableToTrade: 1_390.90, availableToWithdraw: 1_390.90 } } },
+        pending: [], openOrders: [],
+        failed: { orders: 3 },
+        alerts: ['strategy.attention', 'strategy.attention', 'strategy.attention'],
+        balance: { account: { cash: 5_390.90, receivable: null, payable: null, assets: 4_345.90, liabilities: 0 }, book: { cash: 1_000_881.15, receivable: null, payable: null, assets: 999_836.15, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'c105-quote-day3', action: 'quote', instrument: 'c105', quote: { bid: 1.60, ask: 1.70, last: 1.65, bidSize: 20, askSize: 20 },
+      expect: {
+        positions: [
+          { instrument: 'c105', lot: 'condor', price: 1.65, value: -825, unrealized: 75 }, // -5 x 1.65 x 100 + 900
+          { instrument: 'c110', lot: 'accept' }, { instrument: 'c110', lot: 'condor' }, { instrument: 'c110', lot: 'retry' }, { instrument: 'c110', lot: 'unwind' },
+          { instrument: 'p90', lot: 'accept' }, { instrument: 'p90', lot: 'condor' }, { instrument: 'p90', lot: 'retry' }, { instrument: 'p90', lot: 'unwind' },
+          { instrument: 'p95', lot: 'accept' }, { instrument: 'p95', lot: 'condor' }, { instrument: 'p95', lot: 'retry' }, { instrument: 'p95', lot: 'unwind' },
+        ],
+        pnl: { account: { unrealized: -45, total: -63.85 }, book: { unrealized: -45, total: -63.85 } },
+        nav: { account: 4_445.90, book: 999_936.15 },
+        balance: { account: { positions: -945, assets: 4_445.90, netAssets: 4_445.90 }, book: { positions: -945, assets: 999_936.15, netAssets: 999_936.15 } },
+      },
+    },
+    {
+      // Retry sells the call at 1.60 (159.35 after commission). It is covered by the instance's 110 call: the reserve stays 500.
+      id: 'retry', covers: ['retry', 'failed dependent leg'], action: 'recover', how: 'retry', lot: 'retry',
+      expect: {
+        preview: { blocking: 0, errors: [], intent: 'retry', legs: [{ kind: 'trade', action: 'sell', instrument: 'c105', qty: 1, estimate: 1.60, settleDate: '2026-03-05', cash: 160, fees: 0.65 }], cash: { USD: { proceeds: 160, fees: 0.65, reserved: 0, required: 0.65, available: 1_390.90, shortfall: 0 } }, optionRequirement: [{ ccy: 'USD', amount: 500, finite: 500, naked: 0, uncoveredCallUnits: 0 }] },
+        result: { status: 'open', complete: true, orders: [{ action: 'sell', instrument: 'c105', status: 'filled', filledQty: 1, avgPrice: 1.60 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 1 AGX260320C105 @ 1.60 USD', date: '2026-03-04' }],
+        cash: { account: { USD: { settled: 5_390.90, unsettled: 159.35, reserved: 4_000, availableToTrade: 1_550.25, availableToWithdraw: 1_390.90 } } },
+        positions: [
+          { instrument: 'c105', lot: 'condor', value: -825 }, { instrument: 'c105', lot: 'retry', owner: 'account', direction: 'short', qty: -1, avgCost: 1.60, cost: -160, price: 1.65, value: -165, unrealized: -5 },
+          { instrument: 'c110', lot: 'accept' }, { instrument: 'c110', lot: 'condor' }, { instrument: 'c110', lot: 'retry' }, { instrument: 'c110', lot: 'unwind' },
+          { instrument: 'p90', lot: 'accept' }, { instrument: 'p90', lot: 'condor' }, { instrument: 'p90', lot: 'retry' }, { instrument: 'p90', lot: 'unwind' },
+          { instrument: 'p95', lot: 'accept' }, { instrument: 'p95', lot: 'condor' }, { instrument: 'p95', lot: 'retry' }, { instrument: 'p95', lot: 'unwind' },
+        ],
+        holdings: { c105: { long: 0, short: 6, net: -6 } },
+        pending: [{ instrument: 'c105', lot: 'retry', dueDate: '2026-03-05', amount: 159.35 }],
+        lifecycle: [{ instrument: 'c105' }, { instrument: 'c105' }, { instrument: 'c110' }, { instrument: 'c110' }, { instrument: 'c110' }, { instrument: 'c110' }, { instrument: 'p90' }, { instrument: 'p90' }, { instrument: 'p90' }, { instrument: 'p90' }, { instrument: 'p95' }, { instrument: 'p95' }, { instrument: 'p95' }, { instrument: 'p95' }],
+        alerts: ['strategy.attention', 'strategy.attention'],
+        pnl: { account: { commissions: -19.50, unrealized: -50, total: -69.50 }, book: { commissions: -19.50, unrealized: -50, total: -69.50 } },
+        nav: { account: 4_440.25, book: 999_930.50 },
+        balance: {
+          account: { cash: 5_390.90, receivable: 159.35, positions: -1_110, assets: 4_440.25, liabilities: 0, netAssets: 4_440.25 },
+          book: { cash: 1_000_881.15, receivable: 159.35, positions: -1_110, assets: 999_930.50, netAssets: 999_930.50 },
+        },
+      },
+    },
+    {
+      id: 'accept', covers: ['accept', 'failed dependent leg'], action: 'strategy_action', lot: 'accept', how: 'accept',
+      expect: { events: [{ type: 'strategy.accepted', summary: 'accepted as it stands with 1 leg unexecuted. The position no longer matches its template.' }], alerts: ['strategy.attention'] },
+    },
+    {
+      // Unwind: the written 95 put is bought back first at 2.00; the wings are sold after it (0.90 and 0.80). Realized
+      // -10 on each leg. The instance's 500 reserve is released.
+      id: 'unwind', covers: ['unwind', 'close', 'dependency'], action: 'recover', how: 'unwind', lot: 'unwind',
+      expect: {
+        preview: {
+          blocking: 0, errors: [], intent: 'unwind',
+          legs: [
+            { kind: 'trade', action: 'buy', instrument: 'p95', qty: 1, estimate: 2.00, settleDate: '2026-03-05', cash: -200, fees: 0.65, dependsOn: [] },
+            { kind: 'trade', action: 'sell', instrument: 'p90', qty: 1, estimate: 0.90, settleDate: '2026-03-05', cash: 90, fees: 0.65, dependsOn: [1] },
+            { kind: 'trade', action: 'sell', instrument: 'c110', qty: 1, estimate: 0.80, settleDate: '2026-03-05', cash: 80, fees: 0.65, dependsOn: [1] },
+          ],
+          cash: { USD: { purchases: 200, proceeds: 170, fees: 1.95, reserved: 0, required: 201.95, available: 1_550.25, shortfall: 0 } },
+        },
+        result: { status: 'closed', orders: [{ action: 'buy', instrument: 'p95', status: 'filled' }, { action: 'sell', instrument: 'p90', status: 'filled' }, { action: 'sell', instrument: 'c110', status: 'filled' }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Bought 1 AGX260320P95 @ 2.00 USD (realized -10.00 USD)' },
+          { type: 'trade.fill', summary: 'Sold 1 AGX260320P90 @ 0.90 USD (realized -10.00 USD)' },
+          { type: 'trade.fill', summary: 'Sold 1 AGX260320C110 @ 0.80 USD (realized -10.00 USD)' },
+        ],
+        // 159.35 - 200.65 + 89.35 + 79.35 = 127.40; reserved 4,000 - 500
+        cash: { account: { USD: { settled: 5_390.90, unsettled: 127.40, reserved: 3_500, availableToTrade: 2_018.30, availableToWithdraw: 1_690.25 } } },
+        positions: [
+          { instrument: 'c105', lot: 'condor', value: -825 }, { instrument: 'c105', lot: 'retry', value: -165 },
+          { instrument: 'c110', lot: 'accept' }, { instrument: 'c110', lot: 'condor' }, { instrument: 'c110', lot: 'retry' },
+          { instrument: 'p90', lot: 'accept' }, { instrument: 'p90', lot: 'condor' }, { instrument: 'p90', lot: 'retry' },
+          { instrument: 'p95', lot: 'accept' }, { instrument: 'p95', lot: 'condor' }, { instrument: 'p95', lot: 'retry' },
+        ],
+        holdings: { c110: { long: 7, short: 0, net: 7 }, p90: { long: 7, short: 0, net: 7 }, p95: { long: 0, short: 7, net: -7 } },
+        pending: [
+          { instrument: 'c105', lot: 'retry', amount: 159.35 },
+          { instrument: 'c110', lot: 'unwind', dueDate: '2026-03-05', amount: 79.35 },
+          { instrument: 'p90', lot: 'unwind', dueDate: '2026-03-05', amount: 89.35 },
+          { instrument: 'p95', lot: 'unwind', dueDate: '2026-03-05', amount: -200.65 },
+        ],
+        lifecycle: [{ instrument: 'c105' }, { instrument: 'c105' }, { instrument: 'c110' }, { instrument: 'c110' }, { instrument: 'c110' }, { instrument: 'p90' }, { instrument: 'p90' }, { instrument: 'p90' }, { instrument: 'p95' }, { instrument: 'p95' }, { instrument: 'p95' }],
+        alerts: [],
+        pnl: { account: { realized: -30, commissions: -21.45, unrealized: -35, total: -86.45 }, book: { realized: -30, commissions: -21.45, unrealized: -35, total: -86.45 } },
+        nav: { account: 4_423.30, book: 999_913.55 }, // 4,440.25 - 15 (each leg 0.05 from its mark) - 1.95
+        balance: {
+          account: { cash: 5_390.90, receivable: 328.05, payable: 200.65, positions: -1_095, assets: 4_623.95, liabilities: 200.65, netAssets: 4_423.30 },
+          book: { cash: 1_000_881.15, receivable: 328.05, payable: 200.65, positions: -1_095, assets: 1_000_114.20, liabilities: 200.65, netAssets: 999_913.55 },
+        },
+      },
+    },
+    {
+      id: 'settle-recovery', covers: 'settlement', action: 'clock', to: MAR(5),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 159.35 USD into settled cash', date: '2026-03-05' },
+          { type: 'settlement.receive', summary: 'received 89.35 USD into settled cash' },
+          { type: 'settlement.receive', summary: 'received 79.35 USD into settled cash' },
+          { type: 'settlement.pay', summary: 'paid 200.65 USD from settled cash' },
+        ],
+        cash: { account: { USD: { settled: 5_518.30, unsettled: 0, availableToTrade: 2_018.30, availableToWithdraw: 2_018.30 } } },
+        pending: [],
+        balance: { account: { cash: 5_518.30, receivable: null, payable: null, assets: 4_423.30, liabilities: 0 }, book: { cash: 1_001_008.55, receivable: null, payable: null, assets: 999_913.55, liabilities: 0 } },
+      },
+    },
+    {
+      // Close "retry": the written 95 put (2.00) and 105 call (1.70) are bought back first; the wings (0.90, 0.80) are
+      // sold after them. Realized -10 on each of the four legs.
+      id: 'close-retry', covers: ['close', 'dependency'], action: 'close', lot: 'retry', instrument: 'p90', scope: 'strategy', percent: 100,
+      expect: {
+        preview: {
+          blocking: 0, errors: [], intent: 'close',
+          legs: [
+            { kind: 'trade', action: 'buy', instrument: 'p95', qty: 1, estimate: 2.00, settleDate: '2026-03-06', cash: -200, fees: 0.65, dependsOn: [] },
+            { kind: 'trade', action: 'buy', instrument: 'c105', qty: 1, estimate: 1.70, settleDate: '2026-03-06', cash: -170, fees: 0.65, dependsOn: [] },
+            { kind: 'trade', action: 'sell', instrument: 'p90', qty: 1, estimate: 0.90, settleDate: '2026-03-06', cash: 90, fees: 0.65, dependsOn: [1, 2] },
+            { kind: 'trade', action: 'sell', instrument: 'c110', qty: 1, estimate: 0.80, settleDate: '2026-03-06', cash: 80, fees: 0.65, dependsOn: [1, 2] },
+          ],
+          cash: { USD: { purchases: 370, proceeds: 170, fees: 2.60, reserved: 0, required: 372.60, available: 2_018.30, shortfall: 0 } },
+        },
+        result: { status: 'closed', orders: [{ instrument: 'p95', status: 'filled' }, { instrument: 'c105', status: 'filled' }, { instrument: 'p90', status: 'filled' }, { instrument: 'c110', status: 'filled' }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Bought 1 AGX260320P95 @ 2.00 USD (realized -10.00 USD)' },
+          { type: 'trade.fill', summary: 'Bought 1 AGX260320C105 @ 1.70 USD (realized -10.00 USD)' },
+          { type: 'trade.fill', summary: 'Sold 1 AGX260320P90 @ 0.90 USD (realized -10.00 USD)' },
+          { type: 'trade.fill', summary: 'Sold 1 AGX260320C110 @ 0.80 USD (realized -10.00 USD)' },
+        ],
+        // -200.65 - 170.65 + 89.35 + 79.35 = -202.60; reserved 2,500 (condor) + 500 (accept)
+        cash: { account: { USD: { settled: 5_518.30, unsettled: -202.60, reserved: 3_000, availableToTrade: 2_315.70, availableToWithdraw: 2_147 } } },
+        positions: [
+          { instrument: 'c105', lot: 'condor', value: -825 },
+          { instrument: 'c110', lot: 'accept', value: 85 }, { instrument: 'c110', lot: 'condor', value: 425 },
+          { instrument: 'p90', lot: 'accept', value: 95 }, { instrument: 'p90', lot: 'condor', value: 475 },
+          { instrument: 'p95', lot: 'accept', value: -195 }, { instrument: 'p95', lot: 'condor', value: -975 },
+        ],
+        holdings: { c105: { long: 0, short: 5, net: -5 }, c110: { long: 6, short: 0, net: 6 }, p90: { long: 6, short: 0, net: 6 }, p95: { long: 0, short: 6, net: -6 } },
+        pending: [
+          { instrument: 'c105', lot: 'retry', dueDate: '2026-03-06', amount: -170.65 },
+          { instrument: 'c110', lot: 'retry', dueDate: '2026-03-06', amount: 79.35 },
+          { instrument: 'p90', lot: 'retry', dueDate: '2026-03-06', amount: 89.35 },
+          { instrument: 'p95', lot: 'retry', dueDate: '2026-03-06', amount: -200.65 },
+        ],
+        lifecycle: [{ instrument: 'c105' }, { instrument: 'c110' }, { instrument: 'c110' }, { instrument: 'p90' }, { instrument: 'p90' }, { instrument: 'p95' }, { instrument: 'p95' }],
+        pnl: { account: { realized: -70, commissions: -24.05, unrealized: -15, total: -109.05 }, book: { realized: -70, commissions: -24.05, unrealized: -15, total: -109.05 } },
+        nav: { account: 4_400.70, book: 999_890.95 },
+        balance: {
+          account: { cash: 5_518.30, receivable: 168.70, payable: 371.30, positions: -915, assets: 4_772, liabilities: 371.30, netAssets: 4_400.70 },
+          book: { cash: 1_001_008.55, receivable: 168.70, payable: 371.30, positions: -915, assets: 1_000_262.25, liabilities: 371.30, netAssets: 999_890.95 },
+        },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: MAR(6),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 89.35 USD into settled cash', date: '2026-03-06' },
+          { type: 'settlement.receive', summary: 'received 79.35 USD into settled cash' },
+          { type: 'settlement.pay', summary: 'paid 200.65 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 170.65 USD from settled cash' },
+        ],
+        cash: { account: { USD: { settled: 5_315.70, unsettled: 0, availableToTrade: 2_315.70, availableToWithdraw: 2_315.70 } } },
+        pending: [],
+        balance: { account: { cash: 5_315.70, receivable: null, payable: null, assets: 4_400.70, liabilities: 0 }, book: { cash: 1_000_805.95, receivable: null, payable: null, assets: 999_890.95, liabilities: 0 } },
+      },
+    },
+    { id: 'expiry-fixing', action: 'close_price', instrument: 'index', date: '2026-03-20', value: 85, expect: {} },
+    {
+      // The index fixes at 85, below both puts. Outer legs: the bought 90 puts receive 5 x 100 = 500 a contract (realized
+      // 2,500 - 500 = 2,000 in "condor", 500 - 100 = 400 in "accept"); inner legs: the written 95 puts pay 10 x 100 =
+      // 1,000 a contract (-5,000 + 950 = -4,050; -1,000 + 190 = -810). The calls lapse: written 105s keep 900, bought
+      // 110s lose 450 and 90. Realized -70 - 2,100 = -2,170: the maximum loss of each condor, its width less its credit.
+      id: 'expiry', covers: ['expiry', 'cash settlement', 'assignment'], action: 'clock', to: MAR(20, '17:30'),
+      expect: {
+        events: [
+          { type: 'option.cash_settled', summary: /^Exercised \(cash settlement\): 5 AGX260320P90 at 5(\.00)? per unit/, date: '2026-03-20' },
+          { type: 'option.expired', summary: 'Expired worthless: 5 AGX260320C110 (fixing 85)' },
+          { type: 'option.cash_settled', summary: /^Assigned \(cash settlement\): 5 AGX260320P95 at 10(\.00)? per unit/ },
+          { type: 'option.expired', summary: 'Expired worthless: 5 AGX260320C105 (fixing 85)' },
+          { type: 'option.cash_settled', summary: /^Exercised \(cash settlement\): 1 AGX260320P90 at 5(\.00)? per unit/ },
+          { type: 'option.expired', summary: 'Expired worthless: 1 AGX260320C110 (fixing 85)' },
+          { type: 'option.cash_settled', summary: /^Assigned \(cash settlement\): 1 AGX260320P95 at 10(\.00)? per unit/ },
+        ],
+        cash: { account: { USD: { settled: 5_315.70, unsettled: -3_000, reserved: 0, availableToTrade: 2_315.70, availableToWithdraw: -684.30 } } },
+        positions: [],
+        holdings: { c105: null, c110: null, p90: null, p95: null },
+        pending: [
+          { instrument: 'p90', lot: 'accept', dueDate: '2026-03-23', amount: 500, into: 'cash' },
+          { instrument: 'p90', lot: 'condor', dueDate: '2026-03-23', amount: 2_500, into: 'cash' },
+          { instrument: 'p95', lot: 'condor', dueDate: '2026-03-23', amount: -5_000, into: 'cash' },
+          { instrument: 'p95', lot: 'accept', dueDate: '2026-03-23', amount: -1_000, into: 'cash' },
+        ],
+        lifecycle: [],
+        pnl: { account: { realized: -2_170, commissions: -24.05, unrealized: 0, total: -2_194.05 }, book: { realized: -2_170, commissions: -24.05, unrealized: 0, total: -2_194.05 } },
+        nav: { account: 2_315.70, book: 997_805.95 }, // 1,000 + 1,509.75 + 2,000 - 2,194.05
+        balance: {
+          account: { cash: 5_315.70, receivable: 3_000, payable: 6_000, positions: null, assets: 8_315.70, liabilities: 6_000, netAssets: 2_315.70 },
+          book: { cash: 1_000_805.95, receivable: 3_000, payable: 6_000, positions: null, assets: 1_003_805.95, liabilities: 6_000, netAssets: 997_805.95 },
+        },
+      },
+    },
+    {
+      id: 'cash-settlement', covers: 'settlement', action: 'clock', to: MAR(23),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 2,500.00 USD into settled cash', date: '2026-03-23' },
+          { type: 'settlement.receive', summary: 'received 500.00 USD into settled cash' },
+          { type: 'settlement.pay', summary: 'paid 5,000.00 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 1,000.00 USD from settled cash' },
+        ],
+        cash: { account: { USD: { settled: 2_315.70, unsettled: 0, availableToTrade: 2_315.70, availableToWithdraw: 2_315.70 } } },
+        pending: [],
+        balance: { account: { cash: 2_315.70, receivable: null, payable: null, assets: 2_315.70, liabilities: 0 }, book: { cash: 997_805.95, receivable: null, payable: null, assets: 997_805.95, liabilities: 0 } },
+      },
+    },
+  ],
+};
+
+export default [bearCall, longStraddle, longStrangle, ironCondor];
