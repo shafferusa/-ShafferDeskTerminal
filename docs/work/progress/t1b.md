@@ -24,9 +24,10 @@ Results/tmp: SDT_MATRIX_RESULTS=$SP/t1b/results SDT_MATRIX_TMP=$SP/t1b/tmp. Prob
 
 - T:bear_put_spread passes engine, API, browser (29 passed, 1 blocked). Index puts cash-settled, legs net at expiry.
 
+- T:bull_put_spread passes engine, API, browser (29 passed, 1 blocked). Fix: server/core/engine.js orders same-day physical option expiries of one strategy receive-before-deliver (option.js expiryDelivery helper); test 5 in templates-t1b.test.js.
+
 ## In progress
-- bull_put_spread next.
+- Step 3: full family run at 3 levels from clean, npm test.
 
 ## Next
-1. bull_put_spread: each engine -> API -> browser -> save 0.2
 3. Fix audit failures (add leg actions; futures_hedge settlementCheck), full family run at 3 levels, npm test green, save 0.5

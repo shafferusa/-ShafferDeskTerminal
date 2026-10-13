@@ -304,3 +304,4 @@
 - 2026-10-13T22:04Z | s9 | +1 | s9: demo-mode interface check complete (sweeps, tickets, previews, hedge states, fixes)
 - 2026-10-13T22:08Z | t1b | +0.2 | T:bull_call_spread passes at engine, API and browser (fix: spread resize and roll keep the written leg covered)
 - 2026-10-13T22:13Z | t1b | +0.2 | T:bear_put_spread passes at engine, API and browser
+- 2026-10-13T22:23Z | t1b | +0.2 | T:bull_put_spread passes at engine, API and browser (fix: same-day spread expiries net, receive before deliver)

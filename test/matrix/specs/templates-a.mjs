@@ -6277,4 +6277,423 @@ const bearPutSpread = {
   ],
 };
 
-export default [longTemplate, shortTemplate, protectivePut, protectiveCall, coveredCall, coveredPut, longCollar, shortCollar, cashSecuredPut, longCall, longPut, bullCallSpread, bearPutSpread];
+// ---------------------------------------------------------------------------------------------
+// bull_put_spread
+// ---------------------------------------------------------------------------------------------
+// Two legs: buy the lower-strike put, sell the higher-strike put of the same expiration (a net credit). The written put
+// waits for the bought put and is scaled to it; the instance reserves the spread's width (its worst value at expiry:
+// contracts x 100 x (upper - lower)). A small displayed ask fills the bought put in parts and the written put follows;
+// the remainders are retried. In two packages (44/46) the written put is held at a limit never reached: one accepted as
+// it stands (a bought put alone, nothing reserved), the other unwound. The first package is resized and rolled to April
+// with its written leg kept covered. Cash short: the width reserved is part of what is needed; refused, funded from
+// Treasury, borrowed and repaid. At the March expiry (close 47.00) the 48/50 spread is in the money: the written 50 puts
+// are assigned (400 shares received at 50) before the bought 48 puts are exercised (the same shares delivered at 48): the
+// legs net, -200 a spread; the reservation is released. The 40/42 spread and the 44 puts are out of the money and lapse.
+const bup = (contracts, lower, upper, extra = {}) => pageInput('bull_put_spread', { hedgeRatio: undefined, options: { expiration: '2026-03-20', strikes: { lower, upper }, contracts }, ...extra });
+const bupPage = (contracts, lower, upper, extra = {}) => ({ template: 'Bull Put Spread', underlying: 'main', expiration: '2026-03-20', strikes: { 'Lower strike (bought)': lower, 'Upper strike (sold)': upper }, contracts, ...extra });
+const BUP_CORE = (extra = []) => [...[-301.5, -301.5, -301.5, ...extra, -100.5].map((amount) => ({ instrument: 'put48', lot: 'core', amount }))]; // 3 x 100 + 1.50; 1 x 100 + 0.50
+
+const bullPutSpread = {
+  template: 'bull_put_spread',
+  title: 'Bull put spread on Kestrel Logistics: buy the 48 put, sell the 50 put (a credit); width reserved, partial fills, failed written leg, financing, roll, netting at expiry',
+  matrix: {
+    ...SPREAD_MATRIX,
+    ticket: 'Strategies page (Bull Put Spread): Trading owner and intent, Underlying of the options, Option contracts (expiration, lower strike bought, upper strike sold, contracts), Order and funding; then the package preview (legs editable). The strategy instance drawer for Cancel working legs, Retry, Unwind, Accept, Resize, Roll and Close',
+    automaticInputs: [...SPREAD_MATRIX.automaticInputs, 'cash reserved against the written put: the spread width (contracts x 100 x strike difference) from the Book margin rules'],
+    settlement: 'Premium of each leg T+1 on the US calendar; on assignment and exercise the shares are received at the upper strike and delivered at the lower strike, each paid T+1; Treasury funding moves at once; a margin loan is drawn at once and repaid with interest to the day',
+    lifecycle: 'The written put waits for the bought put and is scaled to it (open, retry, resize, roll); partial fills; a written leg that does not fill leaves the package needing attention: retry, unwind or accept; roll to April; at expiry in the money the written put is assigned before the bought put is exercised (simulated delivery, netting to the strike difference); out of the money both lapse; close by share and in full (written puts bought back first)',
+    accounting: 'Net credit received; each leg at its own premium; premium realized at buy-back, sale, exercise, assignment or lapse; shares received and delivered at the strikes; commissions expensed',
+    collateral: 'The spread width reserved from free cash while the written put is open (covered by the bought put); released as the spread is closed or settles',
+  },
+  start: MAR(2),
+  settlementCheck: { lag: 1, holidays: [] },
+  book: book('Matrix template bull put spread'),
+  instruments: { main: STOCK, put48: option('P', 48), put50: option('P', 50), put44: option('P', 44), put46: option('P', 46), put40: option('P', 40), put42: option('P', 42), put48apr: option('P', 48, '2026-04-17'), put50apr: option('P', 50, '2026-04-17') },
+  quotes: {
+    main: { bid: 49.95, ask: 50.05, last: 50.00, bidSize: 10000, askSize: 10000 },
+    put48: { bid: 0.90, ask: 1.00, last: 0.95, bidSize: 100, askSize: 3 }, // only 3 contracts displayed at the ask
+    put50: { bid: 1.80, ask: 1.90, last: 1.85, bidSize: 100, askSize: 100 },
+    put44: { bid: 0.20, ask: 0.25, last: 0.22, bidSize: 100, askSize: 100 },
+    put46: { bid: 0.45, ask: 0.50, last: 0.47, bidSize: 100, askSize: 100 },
+    put40: { bid: 0.05, ask: 0.08, last: 0.06, bidSize: 100, askSize: 100 },
+    put42: { bid: 0.12, ask: 0.15, last: 0.13, bidSize: 100, askSize: 100 },
+    put48apr: { bid: 1.60, ask: 1.70, last: 1.65, bidSize: 100, askSize: 100 },
+    put50apr: { bid: 2.60, ask: 2.70, last: 2.65, bidSize: 100, askSize: 100 },
+  },
+  expectAtStart: startState(),
+  steps: [
+    {
+      // 10 spreads: buy 10 48 puts at 1.00 (1,000), sell 10 50 puts at 1.80 (1,800): a net credit of 800, commission 10.
+      // The width is reserved: 10 x 100 x (50 - 48) = 2,000. 3 + 3 of each fill (the written put follows the bought put);
+      // 4 of each work. Reserved for the 6 written so far: 6 x 200 = 1,200.
+      id: 'open-partial', covers: ['open', 'partial fill', 'dependent leg scaled', 'reserve'], action: 'package', as: 'core', instrument: 'put48', input: bup(10, 48, 50), strategyPage: bupPage(10, 48, 50),
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: [], template: 'bull_put_spread',
+          legs: [
+            { kind: 'trade', action: 'buy', purpose: 'primary', instrument: 'put48', qty: 10, estimate: 1, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2026-03-03', calendar: 'US', cash: -1_000, fees: 5, dependsOn: [] },
+            { kind: 'trade', action: 'sell', purpose: 'primary', instrument: 'put50', qty: 10, estimate: 1.8, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2026-03-03', calendar: 'US', cash: 1_800, fees: 5, dependsOn: [1] },
+          ],
+          cash: { USD: { purchases: 1_000, proceeds: 1_800, fees: 10, reserved: 2_000, required: 3_010, available: 200_000, shortfall: 0, netCash: 790 } },
+          netPremium: { amount: -800, ccy: 'USD', type: 'credit' }, optionRequirement: [{ ccy: 'USD', amount: 2_000, finite: 2_000, naked: 0, uncoveredCallUnits: 0 }],
+        },
+        result: { status: 'partial', orders: [{ instrument: 'put48', status: 'partial', qty: 10, filledQty: 3, avgPrice: 1 }, { instrument: 'put50', status: 'partial', qty: 10, filledQty: 3, avgPrice: 1.8, reason: 'Waiting on leg 1' }] },
+        events: [{ type: 'strategy.submitted', summary: 'Package submitted: Bull Put Spread KSTL (2 legs; open)' }, { type: 'trade.fill', summary: 'Bought 3 KSTL260320P48 @ 1.00 USD' }, { type: 'trade.fill', summary: 'Sold 3 KSTL260320P50 @ 1.80 USD' }, { type: 'trade.fill', summary: 'Bought 3 KSTL260320P48 @ 1.00 USD' }, { type: 'trade.fill', summary: 'Sold 3 KSTL260320P50 @ 1.80 USD' }],
+        // Owed 2 x 301.50 = 603; to receive 2 x 538.50 = 1,077. To trade: 200,000 + 474 - 1,200; to withdraw: 200,000 - 603 - 1,200.
+        cash: { account: { USD: { settled: 200_000, unsettled: 474, receivable: 1_077, payable: 603, reserved: 1_200, availableToTrade: 199_274, availableToWithdraw: 198_197 } } },
+        positions: [boughtPos('put48', 'core', 6, 1, 0.95), writtenPos('put50', 'core', 6, 1.8, 1.85)],
+        holdings: { put48: { long: 6, short: 0, net: 6 }, put50: { long: 0, short: 6, net: -6 } },
+        pending: [{ instrument: 'put48', amount: -301.5 }, { instrument: 'put48', amount: -301.5 }, { instrument: 'put50', amount: 538.5 }, { instrument: 'put50', amount: 538.5 }].map((x) => ({ ...x, lot: 'core', owner: 'account', dueDate: '2026-03-03', ccy: 'USD', into: 'cash' })),
+        openOrders: [{ instrument: 'put48', status: 'partial', qty: 10, filledQty: 6 }, { instrument: 'put50', status: 'partial', qty: 10, filledQty: 6 }],
+        lifecycle: [expiryItem('put48'), expiryItem('put50')],
+        pnl: { account: { realized: 0, commissions: -6, borrowFunding: 0, unrealized: -60, total: -66 }, book: { realized: 0, commissions: -6, unrealized: -60, total: -66 }, treasury: { total: 0 } },
+        nav: { account: 199_934, treasury: 800_000, book: 999_934 },
+        balance: {
+          account: { cash: 200_000, receivable: 1_077, positions: -540, payable: 603, assets: 200_537, liabilities: 603, netAssets: 199_934 },
+          book: { cash: 1_000_000, receivable: 1_077, positions: -540, payable: 603, assets: 1_000_537, liabilities: 603, netAssets: 999_934 },
+          treasury: { cash: 800_000, assets: 800_000, liabilities: 0, netAssets: 800_000 },
+        },
+        oversight: { accountBorrowings: [], accounts: { account: { cashBorrowed: 0, fundingReceived: 200_000 } }, treasuryOwn: [] },
+      },
+    },
+    {
+      id: 'cancel-remainder', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'core',
+      expect: {
+        result: { status: 'attention', orders: [{ instrument: 'put48', status: 'cancelled', filledQty: 6 }, { instrument: 'put50', status: 'cancelled', filledQty: 6 }] },
+        events: [{ type: 'order.cancelled', summary: 'Leg 1 cancelled: buy 10 KSTL260320P48. Cancelled by user (6 of 10 had filled and remains in place)' }, { type: 'order.cancelled', summary: 'Leg 2 cancelled: sell 10 KSTL260320P50. Cancelled by user (6 of 10 had filled and remains in place)' }],
+        openOrders: [], failed: { orders: 2 }, alerts: ['strategy.attention'],
+      },
+    },
+    {
+      // The 4 of each not done: 800 more reserved (2,000 for 10 written, 1,200 held).
+      id: 'retry', covers: ['retry', 'dependent leg scaled'], action: 'recover', how: 'retry', lot: 'core',
+      expect: {
+        preview: { blocking: 0, intent: 'retry', legs: [{ action: 'buy', instrument: 'put48', qty: 4, estimate: 1, cash: -400, fees: 2, dependsOn: [] }, { action: 'sell', instrument: 'put50', qty: 4, estimate: 1.8, cash: 720, fees: 2, dependsOn: [1] }], cash: { USD: { purchases: 400, proceeds: 720, fees: 4, reserved: 800, required: 1_204, available: 199_274, shortfall: 0 } } },
+        result: { status: 'partial', orders: [{ instrument: 'put48', status: 'partial', qty: 4, filledQty: 3 }, { instrument: 'put50', status: 'partial', qty: 4, filledQty: 3, reason: 'Waiting on leg 3' }] },
+        events: [{ type: 'strategy.legs_added', summary: 'Legs added to Bull Put Spread KSTL (2 legs; retry)' }, { type: 'trade.fill', summary: 'Bought 3 KSTL260320P48 @ 1.00 USD' }, { type: 'trade.fill', summary: 'Sold 3 KSTL260320P50 @ 1.80 USD' }, { type: 'trade.fill', summary: 'Bought 1 KSTL260320P48 @ 1.00 USD' }, { type: 'trade.fill', summary: 'Sold 1 KSTL260320P50 @ 1.80 USD' }],
+        cash: { account: { USD: { unsettled: 790, receivable: 1_795, payable: 1_005, reserved: 2_000, availableToTrade: 198_790, availableToWithdraw: 196_995 } } }, // 1,077 + 538.50 + 179.50; 603 + 301.50 + 100.50
+        positions: [boughtPos('put48', 'core', 10, 1, 0.95), writtenPos('put50', 'core', 10, 1.8, 1.85)],
+        holdings: { put48: { long: 10, short: 0, net: 10 }, put50: { long: 0, short: 10, net: -10 } },
+        pending: [...BUP_CORE(), ...[179.5, 538.5, 538.5, 538.5].map((amount) => ({ instrument: 'put50', lot: 'core', amount }))],
+        pnl: { account: { commissions: -10, unrealized: -100, total: -110 }, book: { commissions: -10, unrealized: -100, total: -110 } },
+        nav: { account: 199_890, book: 999_890 },
+        balance: { account: { receivable: 1_795, positions: -900, payable: 1_005, assets: 200_895, liabilities: 1_005, netAssets: 199_890 }, book: { receivable: 1_795, positions: -900, payable: 1_005, assets: 1_000_895, liabilities: 1_005, netAssets: 999_890 } },
+        alerts: [],
+      },
+    },
+    {
+      // 6 spreads of 44/46; the written 46 put at a limit of 0.90, above its 0.45 bid: the bought 44 puts fill
+      // (6 x 25 + 3 = 153 owed); a bought put alone needs nothing reserved.
+      id: 'kept-limit', covers: ['failed dependent leg'], action: 'package', as: 'kept', instrument: 'put44', input: bup(6, 44, 46), strategyPage: bupPage(6, 44, 46), editLegs: { 2: { orderType: 'limit', limitPrice: 0.9 } },
+      expect: {
+        preview: { blocking: 0, legs: [{ action: 'buy', instrument: 'put44', qty: 6, estimate: 0.25, cash: -150, fees: 3, dependsOn: [] }, { action: 'sell', instrument: 'put46', qty: 6, orderType: 'limit', estimate: 0.45, cash: 270, fees: 3, dependsOn: [1] }], cash: { USD: { purchases: 150, proceeds: 270, fees: 6, reserved: 1_200, required: 1_356, available: 198_790, shortfall: 0 } } },
+        result: { status: 'partial', orders: [{ instrument: 'put44', status: 'filled', filledQty: 6 }, { instrument: 'put46', status: 'working', filledQty: 0, reason: 'Limit not reached: executable price 0.45 is below the limit 0.9.' }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 6 KSTL260320P44 @ 0.25 USD' }],
+        cash: { account: { USD: { unsettled: 637, payable: 1_158, availableToTrade: 198_637, availableToWithdraw: 196_842 } } },
+        positions: [boughtPos('put44', 'kept', 6, 0.25, 0.22), boughtPos('put48', 'core', 10, 1, 0.95), writtenPos('put50', 'core', 10, 1.8, 1.85)], // 6 x 0.22 x 100 = 132
+        holdings: { put44: { long: 6, short: 0, net: 6 } },
+        pending: [{ instrument: 'put44', lot: 'kept', amount: -153 }, ...BUP_CORE(), ...[179.5, 538.5, 538.5, 538.5].map((amount) => ({ instrument: 'put50', lot: 'core', amount }))],
+        openOrders: [{ instrument: 'put46', status: 'working', qty: 6, filledQty: 0 }],
+        lifecycle: [expiryItem('put44'), expiryItem('put48'), expiryItem('put50')],
+        pnl: { account: { commissions: -13, unrealized: -118, total: -131 }, book: { commissions: -13, unrealized: -118, total: -131 } },
+        nav: { account: 199_869, book: 999_869 },
+        balance: { account: { positions: -768, payable: 1_158, assets: 201_027, liabilities: 1_158, netAssets: 199_869 }, book: { positions: -768, payable: 1_158, assets: 1_001_027, liabilities: 1_158, netAssets: 999_869 } },
+      },
+    },
+    { id: 'cancel-kept', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'kept', expect: { result: { status: 'attention', orders: [{ status: 'filled' }, { status: 'cancelled', filledQty: 0 }] }, events: [{ type: 'order.cancelled', summary: 'Leg 2 cancelled: sell 6 KSTL260320P46. Cancelled by user' }], openOrders: [], failed: { orders: 3 }, alerts: ['strategy.attention'] } },
+    { id: 'accept-kept', covers: ['accept as it stands'], action: 'strategy_action', how: 'accept', lot: 'kept', expect: { result: { status: 'open' }, events: [{ type: 'strategy.accepted', summary: 'Bull Put Spread KSTL: accepted as it stands with 1 leg unexecuted. The position no longer matches its template.' }], alerts: [] } },
+    {
+      id: 'unwound-limit', covers: ['failed dependent leg'], action: 'package', as: 'unwound', instrument: 'put44', input: bup(6, 44, 46), strategyPage: bupPage(6, 44, 46), editLegs: { 2: { orderType: 'limit', limitPrice: 0.9 } },
+      expect: {
+        preview: { blocking: 0, legs: [{ action: 'buy', instrument: 'put44', qty: 6, cash: -150, fees: 3, dependsOn: [] }, { action: 'sell', instrument: 'put46', qty: 6, orderType: 'limit', cash: 270, fees: 3, dependsOn: [1] }], cash: { USD: { required: 1_356, available: 198_637 } } },
+        result: { status: 'partial', orders: [{ instrument: 'put44', status: 'filled', filledQty: 6 }, { instrument: 'put46', status: 'working', filledQty: 0 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 6 KSTL260320P44 @ 0.25 USD' }],
+        cash: { account: { USD: { unsettled: 484, payable: 1_311, availableToTrade: 198_484, availableToWithdraw: 196_689 } } },
+        positions: [boughtPos('put44', 'kept', 6, 0.25, 0.22), boughtPos('put44', 'unwound', 6, 0.25, 0.22), boughtPos('put48', 'core', 10, 1, 0.95), writtenPos('put50', 'core', 10, 1.8, 1.85)],
+        holdings: { put44: { long: 12, short: 0, net: 12 } },
+        pending: [{ instrument: 'put44', lot: 'kept', amount: -153 }, { instrument: 'put44', lot: 'unwound', amount: -153 }, ...BUP_CORE(), ...[179.5, 538.5, 538.5, 538.5].map((amount) => ({ instrument: 'put50', lot: 'core', amount }))],
+        openOrders: [{ instrument: 'put46', status: 'working', qty: 6, filledQty: 0 }],
+        lifecycle: [expiryItem('put44'), expiryItem('put44'), expiryItem('put48'), expiryItem('put50')],
+        pnl: { account: { commissions: -16, unrealized: -136, total: -152 }, book: { commissions: -16, unrealized: -136, total: -152 } },
+        nav: { account: 199_848, book: 999_848 },
+        balance: { account: { positions: -636, payable: 1_311, assets: 201_159, liabilities: 1_311, netAssets: 199_848 }, book: { positions: -636, payable: 1_311, assets: 1_001_159, liabilities: 1_311, netAssets: 999_848 } },
+      },
+    },
+    { id: 'cancel-unwound', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'unwound', expect: { result: { status: 'attention' }, events: [{ type: 'order.cancelled', summary: 'Leg 2 cancelled: sell 6 KSTL260320P46. Cancelled by user' }], openOrders: [], failed: { orders: 4 }, alerts: ['strategy.attention'] } },
+    {
+      // Unwind sells the 6 bought 44 puts at 0.20: 120 - 3; 6 x (0.20 - 0.25) x 100 = -30 realized.
+      id: 'unwind', covers: ['unwind'], action: 'recover', how: 'unwind', lot: 'unwound',
+      expect: {
+        preview: { blocking: 0, intent: 'unwind', legs: [{ action: 'sell', instrument: 'put44', qty: 6, estimate: 0.2, cash: 120, fees: 3, dependsOn: [] }], cash: { USD: { proceeds: 120, fees: 3, required: 3, available: 198_484 } } },
+        result: { status: 'closed', orders: [{ action: 'sell', instrument: 'put44', status: 'filled', filledQty: 6, avgPrice: 0.2 }] },
+        events: [{ type: 'strategy.legs_added', summary: 'Legs added to Bull Put Spread KSTL (1 leg; unwind)' }, { type: 'trade.fill', summary: 'Sold 6 KSTL260320P44 @ 0.20 USD (realized -30.00 USD)' }],
+        cash: { account: { USD: { unsettled: 601, receivable: 1_912, availableToTrade: 198_601, availableToWithdraw: 196_689 } } },
+        positions: [boughtPos('put44', 'kept', 6, 0.25, 0.22), boughtPos('put48', 'core', 10, 1, 0.95), writtenPos('put50', 'core', 10, 1.8, 1.85)],
+        holdings: { put44: { long: 6, short: 0, net: 6 } },
+        pending: [{ instrument: 'put44', lot: 'kept', amount: -153 }, { instrument: 'put44', lot: 'unwound', amount: -153 }, { instrument: 'put44', lot: 'unwound', amount: 117 }, ...BUP_CORE(), ...[179.5, 538.5, 538.5, 538.5].map((amount) => ({ instrument: 'put50', lot: 'core', amount }))],
+        lifecycle: [expiryItem('put44'), expiryItem('put48'), expiryItem('put50')],
+        pnl: { account: { realized: -30, commissions: -19, unrealized: -118, total: -167 }, book: { realized: -30, commissions: -19, unrealized: -118, total: -167 } },
+        nav: { account: 199_833, book: 999_833 },
+        balance: { account: { receivable: 1_912, positions: -768, assets: 201_144, netAssets: 199_833 }, book: { receivable: 1_912, positions: -768, assets: 1_001_144, netAssets: 999_833 } },
+        alerts: [],
+      },
+    },
+    { id: 'deep-book', action: 'quote', instrument: 'put48', quote: { bid: 0.90, ask: 1.00, last: 0.95, bidSize: 100, askSize: 100 }, expect: {} },
+    {
+      // 10 x 1.2 = 12: 2 more of each (the written puts after the bought ones); 2 x 200 = 400 more reserved.
+      id: 'resize-up', covers: ['resize', 'increase', 'dependent leg scaled'], action: 'resize', lot: 'core', factor: 1.2,
+      expect: {
+        preview: { blocking: 0, intent: 'resize', legs: [{ action: 'buy', instrument: 'put48', qty: 2, estimate: 1, cash: -200, fees: 1, dependsOn: [] }, { action: 'sell', instrument: 'put50', qty: 2, estimate: 1.8, cash: 360, fees: 1, dependsOn: [1] }], cash: { USD: { purchases: 200, proceeds: 360, fees: 2, reserved: 400, required: 602, available: 198_601 } }, optionRequirement: [{ ccy: 'USD', amount: 2_400 }] },
+        result: { status: 'open', orders: [{ instrument: 'put48', status: 'filled', filledQty: 2 }, { instrument: 'put50', status: 'filled', filledQty: 2 }] },
+        events: [{ type: 'strategy.legs_added', summary: 'Legs added to Bull Put Spread KSTL (2 legs; resize)' }, { type: 'trade.fill', summary: 'Bought 2 KSTL260320P48 @ 1.00 USD' }, { type: 'trade.fill', summary: 'Sold 2 KSTL260320P50 @ 1.80 USD' }],
+        cash: { account: { USD: { unsettled: 759, receivable: 2_271, payable: 1_512, reserved: 2_400, availableToTrade: 198_359, availableToWithdraw: 196_088 } } },
+        positions: [boughtPos('put44', 'kept', 6, 0.25, 0.22), boughtPos('put48', 'core', 12, 1, 0.95), writtenPos('put50', 'core', 12, 1.8, 1.85)],
+        holdings: { put48: { long: 12, short: 0, net: 12 }, put50: { long: 0, short: 12, net: -12 } },
+        pending: [{ instrument: 'put44', lot: 'kept', amount: -153 }, { instrument: 'put44', lot: 'unwound', amount: -153 }, { instrument: 'put44', lot: 'unwound', amount: 117 }, ...BUP_CORE([-201]), ...[179.5, 359, 538.5, 538.5, 538.5].map((amount) => ({ instrument: 'put50', lot: 'core', amount }))],
+        pnl: { account: { commissions: -21, unrealized: -138, total: -189 }, book: { commissions: -21, unrealized: -138, total: -189 } },
+        nav: { account: 199_811, book: 999_811 },
+        balance: { account: { receivable: 2_271, positions: -948, payable: 1_512, assets: 201_323, liabilities: 1_512, netAssets: 199_811 }, book: { receivable: 2_271, positions: -948, payable: 1_512, assets: 1_001_323, liabilities: 1_512, netAssets: 999_811 } },
+      },
+    },
+    {
+      // Roll to April: the written 50 puts bought back first at 1.90 (12 x (1.80 - 1.90) x 100 = -120), the 48 puts sold
+      // after at 0.90 (-120); the April 48 puts bought at 1.70 and the April 50 puts written at 2.60 after them. The April
+      // spread needs the same 2,400 reserved. Net 1,080 + 3,120 - 2,280 - 2,040 = -120 (a debit).
+      id: 'roll', covers: ['roll'], action: 'roll', lot: 'core', newExpiration: '2026-04-17',
+      expect: {
+        preview: {
+          blocking: 0, intent: 'roll',
+          legs: [
+            { action: 'buy', instrument: 'put50', qty: 12, estimate: 1.9, cash: -2_280, fees: 6, dependsOn: [] },
+            { action: 'sell', instrument: 'put48', qty: 12, estimate: 0.9, cash: 1_080, fees: 6, dependsOn: [1] },
+            { action: 'buy', instrument: 'put48apr', qty: 12, estimate: 1.7, cash: -2_040, fees: 6, dependsOn: [] },
+            { action: 'sell', instrument: 'put50apr', qty: 12, estimate: 2.6, cash: 3_120, fees: 6, dependsOn: [3] },
+          ],
+          cash: { USD: { purchases: 4_320, proceeds: 4_200, fees: 24, reserved: 0, required: 4_344, available: 198_359 } }, netPremium: { amount: 120, type: 'debit' },
+        },
+        result: { status: 'open', orders: [{ instrument: 'put50', status: 'filled', filledQty: 12 }, { instrument: 'put48', status: 'filled', filledQty: 12 }, { instrument: 'put48apr', status: 'filled', filledQty: 12 }, { instrument: 'put50apr', status: 'filled', filledQty: 12 }] },
+        events: [{ type: 'strategy.legs_added', summary: 'Legs added to Bull Put Spread KSTL (4 legs; roll)' }, { type: 'trade.fill', summary: 'Bought 12 KSTL260320P50 @ 1.90 USD (realized -120.00 USD)' }, { type: 'trade.fill', summary: 'Sold 12 KSTL260320P48 @ 0.90 USD (realized -120.00 USD)' }, { type: 'trade.fill', summary: 'Bought 12 KSTL260417P48 @ 1.70 USD' }, { type: 'trade.fill', summary: 'Sold 12 KSTL260417P50 @ 2.60 USD' }],
+        // Owed 1,512 + 2,286 + 2,046 = 5,844; to receive 2,271 + 1,074 + 3,114 = 6,459.
+        cash: { account: { USD: { unsettled: 615, receivable: 6_459, payable: 5_844, availableToTrade: 198_215, availableToWithdraw: 191_756 } } },
+        positions: [boughtPos('put44', 'kept', 6, 0.25, 0.22), boughtPos('put48apr', 'core', 12, 1.7, 1.65), writtenPos('put50apr', 'core', 12, 2.6, 2.65)],
+        holdings: { put48: null, put50: null, put48apr: { long: 12, short: 0, net: 12 }, put50apr: { long: 0, short: 12, net: -12 } },
+        pending: [
+          { instrument: 'put44', lot: 'kept', amount: -153 }, { instrument: 'put44', lot: 'unwound', amount: -153 }, { instrument: 'put44', lot: 'unwound', amount: 117 },
+          ...BUP_CORE([-201]), { instrument: 'put48', lot: 'core', amount: 1_074 },
+          { instrument: 'put48apr', lot: 'core', amount: -2_046 },
+          ...[-2_286, 179.5, 359, 538.5, 538.5, 538.5].map((amount) => ({ instrument: 'put50', lot: 'core', amount })),
+          { instrument: 'put50apr', lot: 'core', dueDate: '2026-03-03', amount: 3_114 },
+        ],
+        lifecycle: [expiryItem('put44'), expiryItem('put48apr', '2026-04-17'), expiryItem('put50apr', '2026-04-17')],
+        pnl: { account: { realized: -270, commissions: -45, unrealized: -138, total: -453 }, book: { realized: -270, commissions: -45, unrealized: -138, total: -453 } },
+        nav: { account: 199_547, book: 999_547 },
+        balance: { account: { receivable: 6_459, positions: -1_068, payable: 5_844, assets: 205_391, liabilities: 5_844, netAssets: 199_547 }, book: { receivable: 6_459, positions: -1_068, payable: 5_844, assets: 1_005_391, liabilities: 5_844, netAssets: 999_547 } },
+      },
+    },
+    {
+      id: 'next-day', covers: ['settlement'], action: 'clock', to: MAR(3),
+      expect: {
+        events: [
+          ...[538.5, 538.5, 538.5, 179.5, 117, 359, 1_074, 3_114].map((x) => ({ type: 'settlement.receive', cash: { USD: x } })),
+          ...[301.5, 301.5, 301.5, 100.5, 153, 153, 201, 2_286, 2_046].map((x) => ({ type: 'settlement.pay', cash: { USD: -x } })),
+        ],
+        cash: { account: { USD: { settled: 200_615, unsettled: 0, receivable: 0, payable: 0, availableToTrade: 198_215, availableToWithdraw: 198_215 } } }, // 200,000 + 6,459 - 5,844; less 2,400 reserved
+        pending: [],
+        balance: { account: { cash: 200_615, receivable: null, payable: null, assets: 199_547, liabilities: 0 }, book: { cash: 1_000_615, receivable: null, payable: null, assets: 999_547, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'sweep-to-treasury', covers: ['transfer'], action: 'transfer', from: 'account', to: 'treasury', ccy: 'USD', amount: 198_000,
+      expect: {
+        events: [{ type: 'transfer.return', summary: 'Return to Treasury: 198,000.00 USD from Alpha to Treasury' }],
+        cash: { account: { USD: { settled: 2_615, availableToTrade: 215, availableToWithdraw: 215 } }, treasury: { USD: { settled: 998_000, availableToTrade: 998_000 } } },
+        nav: { account: 1_547, treasury: 998_000 },
+        balance: { account: { cash: 2_615, assets: 1_547, netAssets: 1_547 }, treasury: { cash: 998_000, assets: 998_000, netAssets: 998_000 } },
+        oversight: { accounts: { account: { fundingReceived: 2_000 } } },
+      },
+    },
+    {
+      // 4 spreads need 400 + 4 + 800 reserved = 1,204, bring 720, and 215 is free: short 269.
+      id: 'cash-short-not-financed', covers: ['financing: not financed'], action: 'package', instrument: 'put48', input: bup(4, 48, 50), strategyPage: bupPage(4, 48, 50),
+      status: 'blocked', reason: 'The package needs 1,204.00 with the width reserved, brings 720.00 of premium, and 215.00 is free; "Do not finance" leaves it blocked.',
+      expect: { refused: 'Alpha is short 269.00 USD' },
+    },
+    {
+      id: 'funded-from-treasury', covers: ['financing: Treasury funding'], action: 'package', as: 'funded', instrument: 'put48',
+      input: bup(4, 48, 50, { financing: { mode: 'treasury' } }), strategyPage: bupPage(4, 48, 50, { financing: { mode: 'treasury' } }),
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'funding', action: 'treasury_funding', purpose: 'financing', qty: 269, cash: 269, dependsOn: [] }, { action: 'buy', instrument: 'put48', qty: 4, estimate: 1, settleDate: '2026-03-04', cash: -400, fees: 2, dependsOn: [1] }, { action: 'sell', instrument: 'put50', qty: 4, estimate: 1.8, settleDate: '2026-03-04', cash: 720, fees: 2, dependsOn: [2, 1] }],
+          cash: { USD: { purchases: 400, proceeds: 720, fees: 4, reserved: 800, financingIn: 269, required: 1_204, available: 215, shortfall: 0, netCash: 585 } }, // 720 + 269 - 400 - 4
+        },
+        result: { status: 'open', orders: [{ kind: 'funding', status: 'filled', filledQty: 269 }, { instrument: 'put48', status: 'filled', filledQty: 4 }, { instrument: 'put50', status: 'filled', filledQty: 4 }] },
+        events: [{ type: 'strategy.submitted', summary: 'Package submitted: Bull Put Spread KSTL (3 legs; open)' }, { type: 'transfer.funding', summary: 'Treasury funding: 269.00 USD from Treasury to Alpha (Funding for Bull Put Spread KSTL)', owner: 'treasury' }, { type: 'trade.fill', summary: 'Bought 4 KSTL260320P48 @ 1.00 USD', date: '2026-03-03' }, { type: 'trade.fill', summary: 'Sold 4 KSTL260320P50 @ 1.80 USD' }],
+        // Settled 2,615 + 269; reserved 2,400 + 800. To trade: 2,884 + 316 - 3,200 = 0; to withdraw: 2,884 - 402 - 3,200.
+        cash: { account: { USD: { settled: 2_884, unsettled: 316, receivable: 718, payable: 402, reserved: 3_200, availableToTrade: 0, availableToWithdraw: -718 } }, treasury: { USD: { settled: 997_731, availableToTrade: 997_731 } } },
+        positions: [boughtPos('put44', 'kept', 6, 0.25, 0.22), boughtPos('put48', 'funded', 4, 1, 0.95), boughtPos('put48apr', 'core', 12, 1.7, 1.65), writtenPos('put50', 'funded', 4, 1.8, 1.85), writtenPos('put50apr', 'core', 12, 2.6, 2.65)],
+        holdings: { put48: { long: 4, short: 0, net: 4 }, put50: { long: 0, short: 4, net: -4 } },
+        pending: [{ instrument: 'put48', lot: 'funded', owner: 'account', dueDate: '2026-03-04', amount: -402, ccy: 'USD', into: 'cash' }, { instrument: 'put50', lot: 'funded', owner: 'account', dueDate: '2026-03-04', amount: 718, ccy: 'USD', into: 'cash' }],
+        lifecycle: [expiryItem('put44'), expiryItem('put48'), expiryItem('put50'), expiryItem('put48apr', '2026-04-17'), expiryItem('put50apr', '2026-04-17')],
+        pnl: { account: { commissions: -49, unrealized: -178, total: -497 }, book: { commissions: -49, unrealized: -178, total: -497 }, treasury: { total: 0 } },
+        nav: { account: 1_772, treasury: 997_731, book: 999_503 }, // 2,884 + 718 - 1,428 - 402
+        balance: { account: { cash: 2_884, receivable: 718, positions: -1_428, payable: 402, assets: 2_174, liabilities: 402, netAssets: 1_772 }, book: { cash: 1_000_615, receivable: 718, positions: -1_428, payable: 402, assets: 999_905, liabilities: 402, netAssets: 999_503 }, treasury: { cash: 997_731, assets: 997_731, netAssets: 997_731 } },
+        oversight: { accounts: { account: { fundingReceived: 2_269 } } },
+      },
+    },
+    {
+      // 40 spreads of 40/42: the 40 puts cost 320 + 20; the 42 puts bring 480 - 20 but reserve the width, 40 x 100 x 2 =
+      // 8,000, as they execute; nothing is free: a margin loan of 340 + 8,000 - 460 = 7,880 at 6% (1.313 a day).
+      id: 'funded-by-loan', covers: ['financing: borrow', 'reserve'], action: 'package', as: 'levered', instrument: 'put40', contractAs: 'loan',
+      input: bup(40, 40, 42, { financing: { mode: 'loan', rateType: 'fixed', rate: 0.06 } }), strategyPage: bupPage(40, 40, 42, { financing: { mode: 'loan', rate: 0.06 } }),
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'loan', action: 'borrow_cash', purpose: 'financing', qty: 7_880, cash: 7_880, dailyCost: 1.31, dependsOn: [], financing: { amount: 7_880, rateType: 'fixed', rate: 0.06, interestFrom: '2026-03-03' } }, { action: 'buy', instrument: 'put40', qty: 40, estimate: 0.08, cash: -320, fees: 20, dependsOn: [1] }, { action: 'sell', instrument: 'put42', qty: 40, estimate: 0.12, cash: 480, fees: 20, dependsOn: [2, 1] }],
+          cash: { USD: { purchases: 320, proceeds: 480, fees: 40, reserved: 8_000, financingIn: 7_880, required: 8_360, available: 0, shortfall: 0, netCash: 8_000 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'loan', action: 'borrow_cash', instrument: 'loan', status: 'filled', filledQty: 7_880 }, { instrument: 'put40', status: 'filled', filledQty: 40 }, { instrument: 'put42', status: 'filled', filledQty: 40 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'loan.drawdown', summary: 'Borrowed 7,880.00 USD (margin, 6.000% fixed, open-ended)', cash: { USD: 7_880 } }, { type: 'trade.fill', summary: 'Bought 40 KSTL260320P40 @ 0.08 USD' }, { type: 'trade.fill', summary: 'Sold 40 KSTL260320P42 @ 0.12 USD' }],
+        cash: { account: { USD: { settled: 10_764, unsettled: 436, receivable: 1_178, payable: 742, reserved: 11_200, availableToTrade: 0, availableToWithdraw: -1_178, borrowed: 7_880 } } },
+        positions: [
+          { instrument: 'loan', lot: 'levered', owner: 'account', direction: 'borrowed', qty: -7_880, carrying: -7_880, accrued: 0 },
+          boughtPos('put40', 'levered', 40, 0.08, 0.06), writtenPos('put42', 'levered', 40, 0.12, 0.13), // 40 x 0.06 x 100 = 240; -40 x 0.13 x 100 = -520
+          boughtPos('put44', 'kept', 6, 0.25, 0.22), boughtPos('put48', 'funded', 4, 1, 0.95), boughtPos('put48apr', 'core', 12, 1.7, 1.65), writtenPos('put50', 'funded', 4, 1.8, 1.85), writtenPos('put50apr', 'core', 12, 2.6, 2.65),
+        ],
+        holdings: { put40: { long: 40, short: 0, net: 40 }, put42: { long: 0, short: 40, net: -40 } },
+        pending: [{ instrument: 'put40', lot: 'levered', dueDate: '2026-03-04', amount: -340 }, { instrument: 'put42', lot: 'levered', dueDate: '2026-03-04', amount: 460 }, { instrument: 'put48', lot: 'funded', amount: -402 }, { instrument: 'put50', lot: 'funded', amount: 718 }],
+        lifecycle: [expiryItem('put40'), expiryItem('put42'), expiryItem('put44'), expiryItem('put48'), expiryItem('put50'), { type: 'loan.interest', instrument: 'loan', dueDate: '2026-04-01', status: 'pending', owner: 'account' }, expiryItem('put48apr', '2026-04-17'), expiryItem('put50apr', '2026-04-17')],
+        borrowings: [{ owner: 'account', family: 'loan', type: 'Margin loan', lot: 'levered', principal: 7_880, ccy: 'USD', rate: 0.06, accrued: 0, costToDate: 0, origin: 'account', lender: 'Simulated lender', dayCount: 'ACT/360', startDate: '2026-03-03', nextPayment: '2026-04-01' }],
+        pnl: { account: { commissions: -89, unrealized: -298, total: -657 }, book: { commissions: -89, unrealized: -298, total: -657 } },
+        nav: { account: 1_612, book: 999_343 }, // 10,764 + 1,178 - 1,708 - 742 - 7,880
+        balance: {
+          account: { cash: 10_764, receivable: 1_178, positions: -1_708, payable: 742, borrowed: 7_880, assets: 10_234, liabilities: 8_622, netAssets: 1_612 },
+          book: { cash: 1_008_495, receivable: 1_178, positions: -1_708, payable: 742, borrowed: 7_880, assets: 1_007_965, liabilities: 8_622, netAssets: 999_343 },
+        },
+        oversight: { accountBorrowings: [oversee('levered', 0, 7_880)], accounts: { account: { cashBorrowed: 7_880 } } },
+      },
+    },
+    {
+      id: 'settle-financed', covers: ['settlement'], action: 'clock', to: MAR(4),
+      expect: {
+        events: [{ type: 'settlement.receive', cash: { USD: 718 } }, { type: 'settlement.receive', cash: { USD: 460 } }, { type: 'settlement.pay', cash: { USD: -402 } }, { type: 'settlement.pay', cash: { USD: -340 } }],
+        cash: { account: { USD: { settled: 11_200, unsettled: 0, receivable: 0, payable: 0, availableToTrade: 0, availableToWithdraw: 0 } } }, // all of it reserved
+        pending: [],
+        balance: { account: { cash: 11_200, receivable: null, payable: null, assets: 9_492, liabilities: 7_880 }, book: { cash: 1_008_931, receivable: null, payable: null, assets: 1_007_223, liabilities: 7_880 } },
+      },
+    },
+    {
+      // Treasury sends 20,000: at expiry the assignment of the 50 puts pays 20,000 on the day the exercise of the 48 puts brings 19,200.
+      id: 'treasury-top-up', covers: ['transfer'], action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 20_000,
+      expect: { events: [{ type: 'transfer.funding', summary: 'Treasury funding: 20,000.00 USD from Treasury to Alpha' }], cash: { account: { USD: { settled: 31_200, availableToTrade: 20_000, availableToWithdraw: 20_000 } }, treasury: { USD: { settled: 977_731, availableToTrade: 977_731 } } }, nav: { account: 21_612, treasury: 977_731 }, balance: { account: { cash: 31_200, assets: 29_492, netAssets: 21_612 }, treasury: { cash: 977_731, assets: 977_731, netAssets: 977_731 } }, oversight: { accounts: { account: { fundingReceived: 22_269 } } } },
+    },
+    {
+      // Repay: 7,880 with one day's interest (7,880 x 0.06 / 360 = 1.313 -> 1.31). The 40/42 spread stays open, and its
+      // 8,000 stays reserved.
+      id: 'repay-loan', covers: ['repay'], action: 'repay', lot: 'levered', instrument: 'loan',
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'repay', action: 'repay_cash', instrument: 'loan', qty: 7_880, cash: -7_881.31, financing: { principal: 7_880, interest: 1.31, full: true, interestThrough: '2026-03-04' } }], cash: { USD: { financingOut: 7_881.31, required: 7_881.31, available: 20_000, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ kind: 'repay', status: 'filled', filledQty: 7_880 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'accrual.interest', summary: ': 1.31 USD' }, { type: 'loan.repayment', summary: 'Repaid 7,880.00 USD of principal', cash: { USD: -7_880 } }, { type: 'interest.payment', summary: ': 1.31 USD', cash: { USD: -1.31 } }],
+        cash: { account: { USD: { settled: 23_318.69, availableToTrade: 12_118.69, availableToWithdraw: 12_118.69, borrowed: 0 } } },
+        positions: [boughtPos('put40', 'levered', 40, 0.08, 0.06), writtenPos('put42', 'levered', 40, 0.12, 0.13), boughtPos('put44', 'kept', 6, 0.25, 0.22), boughtPos('put48', 'funded', 4, 1, 0.95), boughtPos('put48apr', 'core', 12, 1.7, 1.65), writtenPos('put50', 'funded', 4, 1.8, 1.85), writtenPos('put50apr', 'core', 12, 2.6, 2.65)],
+        lifecycle: [expiryItem('put40'), expiryItem('put42'), expiryItem('put44'), expiryItem('put48'), expiryItem('put50'), expiryItem('put48apr', '2026-04-17'), expiryItem('put50apr', '2026-04-17')],
+        borrowings: [], oversight: { accountBorrowings: [], accounts: { account: { cashBorrowed: 0 } } },
+        pnl: { account: { borrowFunding: -1.31, total: -658.31 }, book: { borrowFunding: -1.31, total: -658.31 } },
+        nav: { account: 21_610.69, book: 999_341.69 },
+        balance: { account: { cash: 23_318.69, borrowed: null, assets: 21_610.69, liabilities: 0, netAssets: 21_610.69 }, book: { cash: 1_001_049.69, borrowed: null, assets: 999_341.69, liabilities: 0, netAssets: 999_341.69 } },
+      },
+    },
+    { id: 'expiry-close', action: 'close_price', instrument: 'main', date: '2026-03-20', value: 47, expect: {} },
+    { id: 'expiry-quote', action: 'quote', instrument: 'main', quote: { bid: 46.95, ask: 47.05, last: 47.00, bidSize: 10000, askSize: 10000 }, expect: {} },
+    {
+      // Expiration, close 47.00.
+      //   'funded' (4 x 48/50): the written 50 puts are assigned first: 400 shares received at 50 (20,000 to pay; +720 of
+      //   premium kept); then the bought 48 puts are exercised: the same 400 shares delivered at 48 (19,200 to receive;
+      //   -400 of premium; -800 on the shares). The legs net to -800 = 4 x (48 - 50) x 100, and no share is left.
+      //   'kept' (6 bought 44 puts) and 'levered' (40 x 40/42) are out of the money: they lapse (-150; -320, +480).
+      //   Realized: -270 - 150 + 720 - 400 - 800 - 320 + 480 = -740. The reservations of 'funded' (800) and 'levered'
+      //   (8,000) are released; 'core' keeps 2,400.
+      id: 'expiry', covers: ['expiry', 'exercise', 'assignment', 'lapse', 'netting', 'reserve released'], action: 'clock', to: MAR(20, '17:30'),
+      expect: {
+        events: [
+          { type: 'option.expired', summary: 'Expired worthless: 6 KSTL260320P44 (fixing 47)', date: '2026-03-20' },
+          { type: 'option.assigned', summary: 'Assigned: 4 KSTL260320P50 at strike 50' },
+          { type: 'option.delivery', summary: 'Simulated delivery: received 400 KSTL at strike 50 on assignment of KSTL260320P50' },
+          { type: 'option.expired', summary: 'Expired worthless: 40 KSTL260320P40 (fixing 47)' },
+          { type: 'option.expired', summary: 'Expired worthless: 40 KSTL260320P42 (fixing 47)' },
+          { type: 'option.exercised', summary: 'Exercised: 4 KSTL260320P48 at strike 48' },
+          { type: 'option.delivery', summary: 'Simulated delivery: delivered 400 KSTL at strike 48 on exercise of KSTL260320P48' },
+        ],
+        // To trade: 23,318.69 - 800 - 2,400; to withdraw: 23,318.69 - 20,000 - 2,400.
+        cash: { account: { USD: { unsettled: -800, receivable: 19_200, payable: 20_000, reserved: 2_400, availableToTrade: 20_118.69, availableToWithdraw: 918.69 } } },
+        positions: [boughtPos('put48apr', 'core', 12, 1.7, 1.65), writtenPos('put50apr', 'core', 12, 2.6, 2.65)],
+        holdings: { put40: null, put42: null, put44: null, put48: null, put50: null, main: null },
+        pending: [{ instrument: 'main', lot: 'funded', dueDate: '2026-03-23', amount: -20_000, into: 'cash' }, { instrument: 'main', lot: 'funded', dueDate: '2026-03-23', amount: 19_200, into: 'cash' }],
+        lifecycle: [expiryItem('put48apr', '2026-04-17'), expiryItem('put50apr', '2026-04-17')],
+        pnl: { account: { realized: -740, unrealized: -120, total: -950.31 }, book: { realized: -740, unrealized: -120, total: -950.31 } },
+        nav: { account: 21_318.69, book: 999_049.69 },
+        balance: { account: { receivable: 19_200, positions: -1_200, payable: 20_000, assets: 41_318.69, liabilities: 20_000, netAssets: 21_318.69 }, book: { receivable: 19_200, positions: -1_200, payable: 20_000, assets: 1_019_049.69, liabilities: 20_000, netAssets: 999_049.69 } },
+        alerts: [],
+      },
+    },
+    { id: 'after-expiry-funded', covers: ['package state after expiry'], action: 'strategy_check', lot: 'funded', expect: { result: { status: 'closed', orders: [{ kind: 'funding', status: 'filled' }, { instrument: 'put48', status: 'filled', filledQty: 4 }, { instrument: 'put50', status: 'filled', filledQty: 4 }] } } },
+    {
+      id: 'settle-expiry', covers: ['settlement'], action: 'clock', to: MAR(23),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'Settlement: received 19,200.00 USD into settled cash' }, { type: 'settlement.pay', summary: 'Settlement: paid 20,000.00 USD from settled cash' }],
+        cash: { account: { USD: { settled: 22_518.69, unsettled: 0, receivable: 0, payable: 0, availableToTrade: 20_118.69, availableToWithdraw: 20_118.69 } } },
+        pending: [],
+        balance: { account: { cash: 22_518.69, receivable: null, payable: null, assets: 21_318.69, liabilities: 0 }, book: { cash: 1_000_249.69, receivable: null, payable: null, assets: 999_049.69, liabilities: 0 } },
+      },
+    },
+    {
+      // Half of 'core': the written April 50 puts bought back first at 2.70 (6 x (2.60 - 2.70) x 100 = -60), then 6 April
+      // 48 puts sold at 1.60 (-60). The 6 spreads left reserve 1,200.
+      id: 'close-share', covers: ['reduce', 'close share', 'reserve released'], action: 'close', lot: 'core', instrument: 'put48apr', scope: 'strategy', percent: 50,
+      expect: {
+        preview: { blocking: 0, legs: [{ action: 'buy', instrument: 'put50apr', qty: 6, estimate: 2.7, settleDate: '2026-03-24', cash: -1_620, fees: 3, dependsOn: [] }, { action: 'sell', instrument: 'put48apr', qty: 6, estimate: 1.6, settleDate: '2026-03-24', cash: 960, fees: 3, dependsOn: [1] }], cash: { USD: { purchases: 1_620, proceeds: 960, fees: 6, required: 1_626, available: 20_118.69 } }, optionRequirement: [{ ccy: 'USD', amount: 1_200 }] },
+        result: { status: 'open', orders: [{ instrument: 'put50apr', status: 'filled', filledQty: 6 }, { instrument: 'put48apr', status: 'filled', filledQty: 6 }] },
+        events: [{ type: 'strategy.legs_added', summary: 'Legs added to Bull Put Spread KSTL (2 legs; close)' }, { type: 'trade.fill', summary: 'Bought 6 KSTL260417P50 @ 2.70 USD (realized -60.00 USD)' }, { type: 'trade.fill', summary: 'Sold 6 KSTL260417P48 @ 1.60 USD (realized -60.00 USD)' }],
+        cash: { account: { USD: { unsettled: -666, receivable: 957, payable: 1_623, reserved: 1_200, availableToTrade: 20_652.69, availableToWithdraw: 19_695.69 } } },
+        positions: [boughtPos('put48apr', 'core', 6, 1.7, 1.65), writtenPos('put50apr', 'core', 6, 2.6, 2.65)],
+        holdings: { put48apr: { long: 6, short: 0, net: 6 }, put50apr: { long: 0, short: 6, net: -6 } },
+        pending: [{ instrument: 'put48apr', lot: 'core', dueDate: '2026-03-24', amount: 957, into: 'cash' }, { instrument: 'put50apr', lot: 'core', dueDate: '2026-03-24', amount: -1_623, into: 'cash' }],
+        pnl: { account: { realized: -860, commissions: -95, unrealized: -60, total: -1_016.31 }, book: { realized: -860, commissions: -95, unrealized: -60, total: -1_016.31 } },
+        nav: { account: 21_252.69, book: 998_983.69 },
+        balance: { account: { receivable: 957, positions: -600, payable: 1_623, assets: 22_875.69, liabilities: 1_623, netAssets: 21_252.69 }, book: { receivable: 957, positions: -600, payable: 1_623, assets: 1_000_606.69, liabilities: 1_623, netAssets: 998_983.69 } },
+      },
+    },
+    {
+      id: 'close-all', covers: ['close', 'reserve released'], action: 'close', lot: 'core', instrument: 'put48apr', scope: 'strategy',
+      expect: {
+        preview: { blocking: 0, legs: [{ action: 'buy', instrument: 'put50apr', qty: 6, estimate: 2.7, cash: -1_620, fees: 3, dependsOn: [] }, { action: 'sell', instrument: 'put48apr', qty: 6, estimate: 1.6, cash: 960, fees: 3, dependsOn: [1] }], cash: { USD: { purchases: 1_620, proceeds: 960, fees: 6, required: 1_626, available: 20_652.69 } } },
+        result: { status: 'closed', orders: [{ instrument: 'put50apr', status: 'filled', filledQty: 6 }, { instrument: 'put48apr', status: 'filled', filledQty: 6 }] },
+        events: [{ type: 'strategy.legs_added', summary: 'Legs added to Bull Put Spread KSTL (2 legs; close)' }, { type: 'trade.fill', summary: 'Bought 6 KSTL260417P50 @ 2.70 USD (realized -60.00 USD)' }, { type: 'trade.fill', summary: 'Sold 6 KSTL260417P48 @ 1.60 USD (realized -60.00 USD)' }],
+        cash: { account: { USD: { unsettled: -1_332, receivable: 1_914, payable: 3_246, reserved: 0, availableToTrade: 21_186.69, availableToWithdraw: 19_272.69 } } },
+        positions: [],
+        holdings: { put48apr: null, put50apr: null },
+        pending: [{ instrument: 'put48apr', lot: 'core', amount: 957 }, { instrument: 'put48apr', lot: 'core', amount: 957 }, { instrument: 'put50apr', lot: 'core', amount: -1_623 }, { instrument: 'put50apr', lot: 'core', amount: -1_623 }],
+        lifecycle: [],
+        pnl: { account: { realized: -980, commissions: -101, unrealized: 0, total: -1_082.31 }, book: { realized: -980, commissions: -101, unrealized: 0, total: -1_082.31 } },
+        nav: { account: 21_186.69, book: 998_917.69 },
+        balance: { account: { receivable: 1_914, positions: null, payable: 3_246, assets: 24_432.69, liabilities: 3_246, netAssets: 21_186.69 }, book: { receivable: 1_914, positions: null, payable: 3_246, assets: 1_002_163.69, liabilities: 3_246, netAssets: 998_917.69 } },
+      },
+    },
+    {
+      // Nothing held, reserved, borrowed or scheduled. Whole scenario: realized -980 (unwind -30, roll -240, expiry -470,
+      // April spread closed -240); commissions 101; loan interest 1.31. The Account holds what Treasury funded net (22,269)
+      // less 1,082.31.
+      id: 'settle-closes', covers: ['settlement'], action: 'clock', to: MAR(24),
+      expect: {
+        events: [{ type: 'settlement.receive', cash: { USD: 957 } }, { type: 'settlement.receive', cash: { USD: 957 } }, { type: 'settlement.pay', cash: { USD: -1_623 } }, { type: 'settlement.pay', cash: { USD: -1_623 } }],
+        cash: { account: { USD: { settled: 21_186.69, unsettled: 0, receivable: 0, payable: 0, reserved: 0, availableToTrade: 21_186.69, availableToWithdraw: 21_186.69 } }, treasury: { USD: { settled: 977_731 } } },
+        pending: [], openOrders: [], lifecycle: [], borrowings: [],
+        nav: { account: 21_186.69, treasury: 977_731, book: 998_917.69 },
+        balance: { account: { cash: 21_186.69, receivable: null, payable: null, assets: 21_186.69, liabilities: 0, netAssets: 21_186.69 }, book: { cash: 998_917.69, receivable: null, payable: null, assets: 998_917.69, liabilities: 0, netAssets: 998_917.69 } },
+      },
+    },
+  ],
+};
+
+export default [longTemplate, shortTemplate, protectivePut, protectiveCall, coveredCall, coveredPut, longCollar, shortCollar, cashSecuredPut, longCall, longPut, bullCallSpread, bearPutSpread, bullPutSpread];

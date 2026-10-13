@@ -403,6 +403,20 @@ function makeOptionPlugin(family, listed) {
       if (task?.type === 'option.expiry' && inst.terms.fixingRate) return { rateCodes: [inst.terms.fixingRate], rateFrom: addBusinessDays(inst.terms.expiration, -10, 'ALLDAYS') };
       return {};
     },
+    /**
+     * t1b: what an expiry item will do to the underlying, for ordering the items of one day: 'receive' (a long call or a
+     * short put in the money at its fixing, settled by delivery) or 'deliver' (a long put or a short call in the money);
+     * null when it lapses, settles in cash or has no fixing yet. Nothing is booked here.
+     */
+    expiryDelivery(app, task, { inst, pos }) {
+      if (task.type !== 'option.expiry' || !pos || Math.abs(pos.qty) < 1e-9) return null;
+      const t = inst.terms;
+      if (t.settlement !== 'physical' || !inst.underlying_id || !(t.strike > 0)) return null;
+      const fx = fixingFor(app, inst, t.expiration);
+      if (!fx || fx.value === null || fx.value === undefined) return null;
+      if (!(t.right === 'C' ? fx.value > t.strike : fx.value < t.strike)) return null;
+      return (t.right === 'C') === (pos.qty > 0) ? 'receive' : 'deliver';
+    },
     runTask(app, task, { book, unit, inst, pos }) {
       if (task.type !== 'option.expiry') return { failed: `Unknown task ${task.type}` };
       if (!pos || Math.abs(pos.qty) < 1e-9) return 'done';

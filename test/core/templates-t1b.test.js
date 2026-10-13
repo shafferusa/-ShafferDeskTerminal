@@ -1,7 +1,7 @@
 // Engine regressions found while driving the cash-secured put template as a linked package (test matrix, templates-a, t1b).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { makeApp, makeBook, ledgerImbalance } from '../helpers.js';
+import { makeApp, makeBook, ledgerImbalance, goTo } from '../helpers.js';
 
 const pin = (app, inst, bid, ask, size = 1e6) => app.data.market.set(inst.id, { bid, ask, value: (bid + ask) / 2, bidSize: size, askSize: size });
 const putOn = (app, und, strike) => app.instruments.ensureOption({ underlyingId: und.id, expiration: '2026-04-17', strike, right: 'P', multiplier: 100, deliverableUnits: 100, exercise: 'american', settlement: 'physical', refSource: 'demo' });
@@ -76,5 +76,27 @@ test('a vertical spread keeps its written leg covered when resized and rolled', 
   assert.deepEqual(roll.legs.map((l) => [l.action, l.strike, l.expiration, l.dependsOn]), [['buy', 210, '2026-04-17', []], ['sell', 200, '2026-04-17', [1]], ['buy', 200, '2026-05-15', []], ['sell', 210, '2026-05-15', [3]]]);
   const done = await app.packages.submit({ bookId: book.id, unitId: acct.id, template: 'custom', attachTo: sid, intent: 'roll', legs: roll.legs, clientToken: roll.token, confirm: true });
   assert.equal(done.strategy.status, 'open', done.strategy.orders.map((o) => `${o.status} ${o.statusReason || ''}`).join(' | '));
+  assert.deepEqual(ledgerImbalance(app), []);
+});
+
+test('a bull put spread in the money at expiry nets: the written put is assigned before the bought put is exercised', async () => {
+  const { app, clock, inst } = makeApp();
+  const { book, acct } = makeBook(app);
+  pin(app, inst.ALFA, 190, 190.04);
+  const p180 = putOn(app, inst.ALFA, 180), p185 = putOn(app, inst.ALFA, 185);
+  // Same expiry for both: 2026-04-17 (putOn). Bought 180, written 185, 2 contracts.
+  pin(app, p180, 1, 1.1); pin(app, p185, 2.4, 2.5);
+  const r = await confirm(app, { bookId: book.id, unitId: acct.id, template: 'bull_put_spread', underlyingId: inst.ALFA.id, options: { expiration: '2026-04-17', strikes: { lower: 180, upper: 185 }, contracts: 2 } });
+  // Both puts in the money: close 170 on the expiration date.
+  app.data.market.set(`${inst.ALFA.id}@2026-04-17`, { value: 170 });
+  await goTo(app, clock, '2026-04-17T21:30:00.000Z');
+  const types = app.accounting.history(book.id, acct.id).events.filter((e) => ['option.assigned', 'option.exercised'].includes(e.type)).map((e) => e.type).reverse(); // history lists the newest first
+  assert.deepEqual(types, ['option.assigned', 'option.exercised'], 'the shares are received before they are delivered');
+  const v = app.packages.strategyView(r.strategy.id);
+  assert.equal(v.positions.length, 0, 'the 200 shares received at 185 are delivered at 180: nothing is left, no short sale');
+  assert.ok(!app.alerts.open(book.id).some((a) => a.code === 'delivery.short'), 'no short delivery is reported');
+  // Each leg settles in plain cash: 200 x 185 paid, 200 x 180 received.
+  const due = app.settle.pending([acct.id]).filter((x) => x.due_date > '2026-04-17').map((x) => [x.amount, x.accounts.startsWith('["cash.restricted"')]);
+  assert.deepEqual(due.sort((a, b) => a[0] - b[0]), [[-37_000, false], [36_000, false]]);
   assert.deepEqual(ledgerImbalance(app), []);
 });

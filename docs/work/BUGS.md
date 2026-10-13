@@ -381,9 +381,11 @@ Open (s9, not fixed: larger than a small interface fix):
   cancelled trades, Failed settlements). server/core/settlement.js settleDue retries each cycle and increments attempts each time.
   Not wrong, but the number reads as user-visible retries; consider counting per business day or showing "retried every cycle since".
   Repro: $SP/s9/seed-demo.mjs + seed-demo2.mjs (Global Macro, Granite Partners Fund IV, due 2026-10-16).
-- Balance-sheet column choices (grouping, combined, filters) are kept in sessionStorage (web/views/accounting.js bsLoad/bsSave): they
-  survive a reload and a server restart in the same tab, but not a new tab or a browser restart. If they are meant to persist like the
-  theme and the Marketplace tab, they need localStorage.
 - server/core/packages.js growLegs / rollLegs (t1b, fixed): resizing a vertical spread sent the added written option with no
   dependency on the added bought option, and rolling it sold the covering option before the written one was bought back (and
   wrote the new option independently of the new cover). Found by T:bull_call_spread resize-up / roll. Now as in the template.
+- server/core/engine.js + server/products/option.js (t1b, fixed): the expiry items of one day were settled in creation order, so a
+  physically settled bull put spread in the money exercised its bought put first: it delivered 400 shares the strategy did not hold
+  (a short sale with no borrow, alert delivery.short left open, the later assignment booked as a cover paid from restricted cash).
+  Now, within a strategy instance and underlying, options in the money that receive the underlying settle before those that deliver
+  it (option plugin expiryDelivery; ordering only when both kinds are due the same day). Found by T:bull_put_spread expiry.

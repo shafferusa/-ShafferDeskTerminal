@@ -90,6 +90,21 @@ export function createEngine(app) {
         lastError = `${fresh.type}: ${err.message}`;
       }
     };
+    // t1b: options of one strategy instance that expire together and settle by delivery: those that receive the underlying
+    // are settled before those that deliver it, so the legs of a spread net (a bull put spread's bought put delivers the
+    // shares its written put receives) instead of delivering shares the instance does not hold and leaving a short sale.
+    const delivery = new Map();
+    for (const t of due) {
+      if (t.type !== 'option.expiry' || !t.strategy_id || !t.instrument_id) continue;
+      const inst = instruments.get(t.instrument_id);
+      const plugin = inst ? app.products.get(inst.family) : null;
+      if (!plugin?.expiryDelivery) continue;
+      const d = plugin.expiryDelivery(app, t, { inst, pos: t.position_id ? positions.get(t.position_id) : null });
+      if (d) delivery.set(t.id, { d, key: `${t.strategy_id}|${inst.underlying_id}|${t.due_date}` });
+    }
+    const receiving = new Set([...delivery.values()].filter((x) => x.d === 'receive').map((x) => x.key));
+    const deferred = (t) => (delivery.get(t.id)?.d === 'deliver' && receiving.has(delivery.get(t.id).key) ? 1 : 0);
+    due.sort((a, b) => deferred(a) - deferred(b));
     for (const t of due) runOne(t);
     // One more look, in this pass, at the blocked tasks of positions where another task has just completed.
     for (const t of due) if (t.position_id && completedFor.has(t.position_id) && app.tasks.get(t.id)?.status === 'blocked') runOne(t);
