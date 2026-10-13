@@ -111,3 +111,4 @@
 - 2026-10-13T17:00Z | b2 | +0.2 | abcp passes at engine, API and browser
 - 2026-10-13T17:01Z | c2 | +0.2 | physical_commodity passes at engine, API and browser
 - 2026-10-13T17:01Z | c2 | +0.2 | precious_metal passes at engine, API and browser
+- 2026-10-13T17:02Z | c2 | +0.2 | industrial_metal passes at engine, API and browser

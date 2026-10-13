@@ -290,101 +290,101 @@
   "SA:refusals:quote-missing": {
    "status": "passed",
    "message": "",
-   "ms": 400,
+   "ms": 946,
    "checks": 21,
    "area": "refusals",
    "case": "quote-missing",
    "title": "Missing quote: trade preview, order and valuation",
-   "commit": "2ab1aad",
-   "at": "2026-10-13T15:15:53.358Z"
+   "commit": "37191c6",
+   "at": "2026-10-13T17:01:48.789Z"
   },
   "SA:refusals:quote-stale": {
    "status": "passed",
    "message": "",
-   "ms": 399,
+   "ms": 904,
    "checks": 11,
    "area": "refusals",
    "case": "quote-stale",
    "title": "Stale quote: trade preview, order and valuation",
-   "commit": "2ab1aad",
-   "at": "2026-10-13T15:15:53.769Z"
+   "commit": "37191c6+changes",
+   "at": "2026-10-13T17:01:49.701Z"
   },
   "SA:refusals:fx-missing": {
    "status": "passed",
    "message": "",
-   "ms": 318,
+   "ms": 404,
    "checks": 11,
    "area": "refusals",
    "case": "fx-missing",
    "title": "Missing FX rate: trade preview and valuation",
-   "commit": "2ab1aad",
-   "at": "2026-10-13T15:15:54.099Z"
+   "commit": "37191c6+changes",
+   "at": "2026-10-13T17:01:50.117Z"
   },
   "SA:refusals:fx-stale": {
    "status": "passed",
    "message": "",
-   "ms": 356,
+   "ms": 549,
    "checks": 7,
    "area": "refusals",
    "case": "fx-stale",
    "title": "Stale FX rate: trade preview and valuation",
-   "commit": "2ab1aad",
-   "at": "2026-10-13T15:15:54.469Z"
+   "commit": "37191c6+changes",
+   "at": "2026-10-13T17:01:50.743Z"
   },
   "SA:refusals:incomplete-terms": {
    "status": "passed",
-   "message": "a loan with no rate: \"Enter the interest rate as a decimal (0.05 = 5%). The Terminal does not assume a rate.\"\nan option with no strike: \"Strike must be a positive number.\"\na swap with no legs: \"A swap needs at least one leg, each with its side, type, currency and terms.\"\na future with no multiplier: \"Contract multiplier (point value) is required.\"\na bond with no maturity: \"Maturity date is required (or mark the bond as perpetual).\"\na repo with no collateral security: \"Choose the collateral security.\"\nan instrument with no product: \"Choose a product type from the catalog.\"\na currency pair with no quote currency: \"A currency pair needs a base and a quote currency code.\"\na package leg whose inline loan has no rate: \"Enter the interest rate as a decimal (0.05 = 5%). The Terminal does not assume a rate.\"\ntrading it: \"Leg 1: CDS Acme no basis states no collateral terms. Choose a collateral agreement, enter position-level terms, or choose \"Uncollateralized (paper assumption)\" on the contract. Nothing is assumed for you.\"\ntrading it: confirming the blocked preview anyway: \"Leg 1: CDS Acme no basis states no collateral terms. Choose a collateral agreement, enter position-level terms, or choose \"Uncollateralized (paper assumption)\" on the contract. Nothing is assumed for you.\"",
-   "ms": 333,
+   "message": "a loan with no rate: \"Enter the interest rate as a decimal (0.05 = 5%). The Terminal does not assume a rate.\"\nan option with no strike: \"Strike must be a positive number.\"\na swap with no legs: \"A swap needs at least one leg, each with its side, type, currency and terms.\"\na future with no multiplier: \"Contract multiplier (point value) is required.\"\na bond with no maturity: \"Maturity date is required (or mark the bond as perpetual).\"\na repo with no collateral security: \"Choose the collateral security.\"\nan instrument with no product: \"Choose a product type from the catalog.\"\na currency pair with no quote currency: \"A currency pair needs a base and a quote currency code.\"\na package leg whose inline loan has no rate: \"Enter the interest rate as a decimal (0.05 = 5%). The Terminal does not assume a rate.\"\ntrading it: \"Leg 1: CDS Acme no basis states no collateral terms. Choose a collateral agreement, enter position-level terms, or choose \"Uncollateralized (paper assumption)\": one of the three is needed, and nothing is assumed for you. The contract is registered and not yet traded: record the basis on the contract (in this preview, or on the instrument), then re-check.\"\ntrading it: confirming the blocked preview anyway: \"Leg 1: CDS Acme no basis states no collateral terms. Choose a collateral agreement, enter position-level terms, or choose \"Uncollateralized (paper assumption)\": one of the three is needed, and nothing is assumed for you....\"",
+   "ms": 897,
    "checks": 17,
    "area": "refusals",
    "case": "incomplete-terms",
    "title": "Incomplete contract terms",
-   "commit": "2ab1aad",
-   "at": "2026-10-13T15:15:54.814Z"
+   "commit": "37191c6+changes",
+   "at": "2026-10-13T17:01:51.656Z"
   },
   "SA:refusals:invalid-quantity": {
    "status": "passed",
    "message": "buy 0 shares: \"Leg 1: quantity must be positive.\"\nbuy -5 shares: \"Leg 1: quantity must be positive.\"\nbuy \"abc\" shares: \"Leg 1: quantity must be positive.\"\nbuy null shares: \"Leg 1: quantity must be positive.\"\nbuy 10.5 shares: \"Leg 1: quantity must be a multiple of 1.\"\nbuy 10.5 shares: confirming the blocked preview anyway: \"Leg 1: quantity must be a multiple of 1.\"\nbuy 1.5 option contracts: \"Leg 1: quantity must be a multiple of 1.\"\nsell 300 of the 200 held: \"That position is 200; 300 is more than it holds.\"\ncover 150 of the 100 short: \"That position is 100; 150 is more than it holds.\"\nexercise 5 contracts of the 2 held: \"You hold 2; cannot exercise 5.\"\nexercise 0 contracts: \"Enter the number of contracts as a positive number.\"\nexercise 1.5 contracts: \"The number of contracts must be a multiple of 1.\"\na transfer of \"lots\": \"Enter a positive amount.\"\na deposit of \"lots\": \"Enter a positive amount.\"\na deposit in \"dollars\": \"Enter a three-letter currency code.\"",
-   "ms": 407,
+   "ms": 1855,
    "checks": 20,
    "area": "refusals",
    "case": "invalid-quantity",
    "title": "Invalid quantities",
-   "commit": "2ab1aad",
-   "at": "2026-10-13T15:15:55.231Z"
+   "commit": "37191c6+changes",
+   "at": "2026-10-13T17:01:53.530Z"
   },
   "SA:refusals:expired-contract": {
    "status": "passed",
    "message": "a new order in the expired contract: \"Leg 1: RFEX 260306C100 expired on 2026-03-06.\"\na new order in the expired contract: confirming the blocked preview anyway: \"Leg 1: RFEX 260306C100 expired on 2026-03-06.\"",
-   "ms": 636,
+   "ms": 2650,
    "checks": 17,
    "area": "refusals",
    "case": "expired-contract",
    "title": "Expired contracts",
-   "commit": "2ab1aad",
-   "at": "2026-10-13T15:15:55.879Z"
+   "commit": "37191c6+changes",
+   "at": "2026-10-13T17:01:56.262Z"
   },
   "SA:refusals:calendar-settlement": {
    "status": "passed",
    "message": "settling on Saturday 7 March: \"Leg 1: Calendar conflict: the stated settlement date 2026-03-07 (Saturday) is a Saturday, not a business day on the settlement calendar of RFCS (US: US equity markets (NYSE rules)). The nearest business days are 2026-03-06 and 2026-03-09.\"\nsettling on Saturday 7 March: confirming the blocked preview anyway: \"Leg 1: Calendar conflict: the stated settlement date 2026-03-07 (Saturday) is a Saturday, not a business day on the settlement calendar of RFCS (US: US equity markets (NYSE rules)). The nearest business days are 2026-03-...\"\nsettling on Good Friday: \"Leg 1: Calendar conflict: the stated settlement date 2026-04-03 (Friday) is a holiday on US, not a business day on the settlement calendar of RFCS (US: US equity markets (NYSE rules)). The nearest business days are 2026-04-02 and 2026-04-06.\"\nsettling on Good Friday: confirming the blocked preview anyway: \"Leg 1: Calendar conflict: the stated settlement date 2026-04-03 (Friday) is a holiday on US, not a business day on the settlement calendar of RFCS (US: US equity markets (NYSE rules)). The nearest business days are 2026-...\"\nsettling before the trade date: \"Leg 1: Calendar conflict: the stated settlement date 2026-02-27 is before the trade date 2026-03-02. A trade cannot settle before it is done.\"\nsettling before the trade date: confirming the blocked preview anyway: \"Leg 1: Calendar conflict: the stated settlement date 2026-02-27 is before the trade date 2026-03-02. A trade cannot settle before it is done.\"\na date that does not exist: \"Leg 1: The stated settlement date \"2026-02-31\" is not a calendar date in the form YYYY-MM-DD.\"\na date that does not exist: confirming the blocked preview anyway: \"Leg 1: The stated settlement date \"2026-02-31\" is not a calendar date in the form YYYY-MM-DD.\"\na lag of 1.5 days: \"Leg 1: The stated settlement lag must be a whole number of business days from 0 (same day) to 30.\"\na lag of 1.5 days: confirming the blocked preview anyway: \"Leg 1: The stated settlement lag must be a whole number of business days from 0 (same day) to 30.\"\na lag of -1 days: \"Leg 1: The stated settlement lag must be a whole number of business days from 0 (same day) to 30.\"\na lag of -1 days: confirming the blocked preview anyway: \"Leg 1: The stated settlement lag must be a whole number of business days from 0 (same day) to 30.\"\nsettling on the hand-entered holiday: \"Leg 1: Calendar conflict: the stated settlement date 2026-03-04 (Wednesday) is a holiday on US, not a business day on the settlement calendar of RFCS (US: US equity markets (NYSE rules)). The nearest business days are 2026-03-03 and 2026-03-05.\"",
-   "ms": 414,
+   "ms": 1363,
    "checks": 26,
    "area": "refusals",
    "case": "calendar-settlement",
    "title": "Calendar conflicts: a stated settlement date that cannot be honoured",
-   "commit": "2ab1aad",
-   "at": "2026-10-13T15:15:56.304Z"
+   "commit": "37191c6+changes",
+   "at": "2026-10-13T17:01:57.664Z"
   },
   "SA:refusals:calendar-closed-day": {
    "status": "passed",
    "message": "",
-   "ms": 374,
+   "ms": 1259,
    "checks": 16,
    "area": "refusals",
    "case": "calendar-closed-day",
    "title": "Calendar: an order on a day its market is closed waits, visibly, and fills once",
-   "commit": "2ab1aad",
-   "at": "2026-10-13T15:15:56.689Z"
+   "commit": "37191c6+changes",
+   "at": "2026-10-13T17:01:58.943Z"
   },
   "SA:stress:partial-fills": {
    "status": "passed",
@@ -519,7 +519,7 @@
    "at": "2026-10-13T15:16:21.019Z"
   }
  },
- "updatedAt": "2026-10-13T17:01:47.804Z",
+ "updatedAt": "2026-10-13T17:01:58.943Z",
  "environment": {
   "node": "v22.22.0",
   "platform": "linux",

@@ -41,6 +41,10 @@ export async function observeState(t, ctx) {
     carrying: p.ledgerCarried ? p.carrying ?? null : null, pledged: p.pledgedQty || 0, onLoan: p.onLoanQty || 0,
     // A contract on a notional amount (swap, credit default swap, future, forward): its notional, and the margin or independent amount posted for it.
     notional: p.notional ?? null, margin: p.marginPosted || 0,
+    // Financing arrangements: the securities a reverse repo holds (not owned: never a position of the holder), the cash
+    // collateral held against securities lent, and a lender's recall of borrowed securities.
+    collateralHeld: p.data?.collateralHeld ? { instrument: ctx.instrumentKey(p.data.collateralHeld.instrumentId), qty: p.data.collateralHeld.qty } : null,
+    collateralCash: p.family === 'secloan' ? p.collateral ?? null : null, recall: p.recall ? { qty: p.recall.qty, dueDate: p.recall.dueDate } : null,
   })).sort(byKeys('instrument', 'lot', 'qty'));
 
   // OTC collateral (swaps, credit default swaps, forwards, OTC options), one row per open position: the basis on

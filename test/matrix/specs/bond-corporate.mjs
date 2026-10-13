@@ -2336,4 +2336,139 @@ const abcp = {
   ],
 };
 
-export default [corporateBondIg, highYieldBond, eurobond, foreignMarketBond, corporateSukuk, floatingRateNote, zeroCouponBond, perpetualBond, subordinatedDebt, coveredBond, commercialPaper, abcp];
+// ---------------------------------------------------------------------------------------------
+// bankers_acceptance
+// ---------------------------------------------------------------------------------------------
+// A bankers' acceptance: an importer's time draft accepted by its bank, so the bank owes the face amount at
+// maturity. A discount instrument with no coupon, quoted as a bank discount rate on ACT/360 and converted by
+// hand (price = 100 - rate x days from settlement to maturity / 360), T+1 on the US bond calendar, pieces of
+// 100,000. It matures on Monday 17 January 2028, Martin Luther King Jr. Day: paid on Tuesday 18 January.
+//   - Bought Friday 12 November 2027 for settlement Monday 15 November, 63 days before maturity:
+//     ask 4.68% -> 100 - 4.68 x 63/360 = 99.181; bid 4.72% -> 99.174; last 4.70% -> 99.1775.
+//   - A sale of 1,000,000 at 99.42 or better, good until cancelled, rests across Thanksgiving and fills on
+//     Thursday 2 December when the bid moves through it (settling Friday 3 December, 45 days before maturity):
+//     ask 4.40% -> 100 - 4.40 x 45/360 = 99.45; bid 4.48% -> 99.44; last 4.44% -> 99.445.
+//   - The rest is held to maturity and paid at par.
+// Commission: 0.2 basis point of principal.
+const bankersAcceptance = {
+  productId: 'bankers_acceptance',
+  title: 'Ridgefield National Bank bankers\' acceptance due 17 January 2028: bought at a discount, a good-until-cancelled limit sale across Thanksgiving, redeemed at par after Martin Luther King Jr. Day',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount (a multiple of 100,000)', 'Order type, Limit price, Time in force for the resting sale'],
+    automaticInputs: ['bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData)', 'fill price and fill model (a resting limit order fills at the bid once the bid reaches it)', 'settlement date from the instrument convention and settlement calendar', 'commission from the Book fee schedule'],
+    manualInputs: ['the bank discount rate is converted to a price in % of par by hand (the Terminal has no discount-rate quotation)'],
+    settlement: 'T+1 on the US bond calendar; the resting order settles T+1 from the day it fills, and the history says it differs from what was confirmed',
+    lifecycle: 'No coupon and no accrual; a good-until-cancelled limit order rests across days; redemption at par on the next business day after a holiday maturity, automatic',
+    accounting: 'Clean cost at average; no accrued interest; the discount is unrealized P&L while held and realized P&L at sale and redemption',
+    collateral: 'None for a long position',
+  },
+  start: EST('2027-11-12'), // Friday
+  settlementCheck: { lag: 1, holidays: [] },
+  book: {
+    name: 'Matrix bankers acceptance', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 5_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 4_000_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.2 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'bankers_acceptance', name: 'Ridgefield National Bank Bankers Acceptance 17-Jan-2028', symbol: 'RIDGE-BA-17JAN28', marketView: 'US_CASH', venueType: 'otc', issuer: 'Ridgefield National Bank', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      terms: { couponType: 'zero', maturity: '2028-01-17', issueDate: '2027-10-18', dayCount: 'ACT/360', redemption: 100, minDenomination: 100_000, seniority: 'Bank obligation (accepted time draft)' } },
+  },
+  quotes: { main: { bid: 99.174, ask: 99.181, last: 99.1775, bidSize: 20_000_000, askSize: 20_000_000 } },
+  expectAtStart: { ...startState(4_000_000, 1_000_000), cash: { account: usdCash(4_000_000), treasury: usdCash(1_000_000) } },
+  steps: [
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 3_000_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 3_000_000, estimate: 99.181, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2027-11-15', calendar: 'USBOND',
+            gross: 2_975_430, // 3,000,000 x 99.181 / 100
+            accrued: 0, cash: -2_975_430, fees: 59.51 }], // 0.2 bp of 2,975,430 = 59.5086
+          cash: { USD: { purchases: 2_975_430, fees: 59.51, required: 2_975_489.51, available: 4_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 3_000_000, avgPrice: 99.181, fills: [{ qty: 3_000_000, price: 99.181, model: 'quoted-bid-ask', settleDate: '2027-11-15', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 3,000,000 RIDGE-BA-17JAN28 @ 99.181 USD', owner: 'account', date: '2027-11-12' }],
+        cash: { account: { USD: { settled: 4_000_000, unsettled: -2_975_489.51, availableToTrade: 1_024_510.49 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 3_000_000, avgCost: 99.181, cost: 2_975_430, price: 99.1775,
+          value: 2_975_325, unrealized: -105, accrued: 0, priceSource: 'Test fixture' }], // 3,000,000 x 99.1775%
+        holdings: { main: { long: 3_000_000, short: 0, net: 3_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2027-11-15', amount: -2_975_489.51, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'bond.maturity', instrument: 'main', dueDate: '2028-01-18', status: 'pending' }], // 17 Jan 2028 is Martin Luther King Jr. Day
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -59.51, fees: 0, borrowFunding: 0, unrealized: -105, total: -164.51 } },
+        nav: { account: 3_999_835.49, book: 4_999_835.49 },
+        balance: { account: { cash: 4_000_000, positions: 2_975_325, payable: 2_975_489.51, assets: 6_975_325, liabilities: 2_975_489.51, netAssets: 3_999_835.49 } },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EST('2027-11-15'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 2,975,489.51 USD from settled cash', cash: { USD: -2_975_489.51 }, date: '2027-11-15' }],
+        cash: { account: { USD: { settled: 1_024_510.49, unsettled: 0, availableToTrade: 1_024_510.49 } } },
+        pending: [],
+        balance: { account: { cash: 1_024_510.49, payable: null, assets: 3_999_835.49, liabilities: 0 } },
+      },
+    },
+    {
+      // A sale of 1,000,000 at 99.42 or better, good until cancelled. The bid is 99.174: the order rests.
+      id: 'limit-sell-rests', covers: ['reduce', 'limit order'], action: 'ticket', instrument: 'main', side: 'sell', qty: 1_000_000, from: 'lot', order: { orderType: 'limit', limitPrice: 99.42, tif: 'gtc' },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 1_000_000, estimate: 99.174, executable: false, settleDate: '2027-11-16', orderType: 'limit',
+          gross: 991_740, accrued: 0, cash: 991_740, fees: 19.83 }] }, // what it would fetch at today's bid: 1,000,000 x 99.174 / 100; 0.2 bp = 19.8348
+        result: { orders: [{ kind: 'trade', action: 'sell', status: 'working', filledQty: 0, reason: 'Limit not reached: executable price 99.174 is below the limit 99.42.', fills: [] }] },
+        events: [{ type: 'strategy.legs_added' }],
+        openOrders: [{ instrument: 'main', kind: 'trade', action: 'sell', status: 'working', qty: 1_000_000, filledQty: 0 }],
+      },
+    },
+    // The order rests across Thanksgiving (25 November): good until cancelled, it does not expire. Nothing accrues on a discount instrument.
+    { id: 'order-rests-over-thanksgiving', covers: ['limit order', 'market holiday'], action: 'clock', to: EST('2027-12-02'), expect: { events: [] } },
+    {
+      // Thursday 2 December: the bid moves through the limit. The order fills at the bid, 99.44, and settles T+1 from today, Friday 3 December.
+      id: 'limit-sell-fills', covers: ['reduce', 'limit order'], action: 'quote', instrument: 'main', quote: { bid: 99.44, ask: 99.45, last: 99.445, bidSize: 20_000_000, askSize: 20_000_000 },
+      expect: {
+        // Proceeds 1,000,000 x 99.44% = 994,400; commission 0.2 bp = 19.888 -> 19.89. Realized 994,400 - 1,000,000 x 99.181% = 2,590.
+        events: [
+          { type: 'trade.fill', summary: 'Sold 1,000,000 RIDGE-BA-17JAN28 @ 99.44 USD (realized 2,590.00 USD)', date: '2027-12-02' },
+          { type: 'order.fill_variance', summary: /Filled at the bid on a later matching cycle.*99\.44 against 99\.174 confirmed.*Settles 2027-12-03, not 2027-11-16 as confirmed/s },
+        ],
+        cash: { account: { USD: { settled: 1_024_510.49, unsettled: 994_380.11, availableToTrade: 2_018_890.60 } } }, // 994,400 - 19.89
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_000_000, cost: 1_983_620, avgCost: 99.181, price: 99.445, value: 1_988_900, unrealized: 5_280 }], // 2,000,000 x 99.445%
+        holdings: { main: { long: 2_000_000, short: 0, net: 2_000_000 } },
+        pending: [{ instrument: 'main', dueDate: '2027-12-03', amount: 994_380.11, into: 'cash' }],
+        openOrders: [],
+        pnl: { account: { realized: 2_590, commissions: -79.40, unrealized: 5_280, total: 7_790.60 } }, // 59.51 + 19.89
+        nav: { account: 4_007_790.60, book: 5_007_790.60 },
+        balance: { account: { cash: 1_024_510.49, receivable: 994_380.11, positions: 1_988_900, assets: 4_007_790.60, liabilities: 0, netAssets: 4_007_790.60 } },
+      },
+    },
+    {
+      id: 'settle-sale', covers: 'settlement', action: 'clock', to: EST('2027-12-03'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 994,380.11 USD into settled cash', cash: { USD: 994_380.11 } }],
+        cash: { account: { USD: { settled: 2_018_890.60, unsettled: 0, availableToTrade: 2_018_890.60 } } },
+        pending: [],
+        balance: { account: { cash: 2_018_890.60, receivable: null, assets: 4_007_790.60 } },
+      },
+    },
+    {
+      // Tuesday 18 January 2028, the day after the Martin Luther King Jr. Day maturity: 2,000,000 at par. Realized 2,000,000 - 1,983,620 = 16,380.
+      id: 'maturity', covers: ['maturity', 'close', 'market holiday'], action: 'clock', to: EST('2028-01-18'),
+      expect: {
+        events: [
+          { type: 'bond.redemption', summary: 'Redeemed at maturity: 2,000,000 RIDGE-BA-17JAN28 at 100.00% of par', owner: 'account' },
+          { type: 'settlement.receive', summary: 'received 2,000,000.00 USD into settled cash', cash: { USD: 2_000_000 } },
+        ],
+        cash: { account: { USD: { settled: 4_018_890.60, unsettled: 0, availableToTrade: 4_018_890.60 } }, treasury: { USD: { settled: 1_000_000 } } },
+        positions: [],
+        holdings: { main: null },
+        lifecycle: [],
+        pnl: { account: { realized: 18_970, couponInterest: 0, commissions: -79.40, unrealized: 0, total: 18_890.60 } }, // 2,590 + 16,380
+        nav: { account: 4_018_890.60, book: 5_018_890.60 },
+        balance: { account: { cash: 4_018_890.60, positions: null, assets: 4_018_890.60, liabilities: 0, netAssets: 4_018_890.60 } },
+      },
+    },
+  ],
+};
+
+export default [corporateBondIg, highYieldBond, eurobond, foreignMarketBond, corporateSukuk, floatingRateNote, zeroCouponBond, perpetualBond, subordinatedDebt, coveredBond, commercialPaper, abcp, bankersAcceptance];
