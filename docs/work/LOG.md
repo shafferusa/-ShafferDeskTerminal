@@ -124,3 +124,4 @@
 - 2026-10-13T17:06Z | c2 | +0.2 | electricity passes at engine, API and browser
 - 2026-10-13T17:07Z | c2 | +0.2 | agricultural_commodity passes at engine, API and browser
 - 2026-10-13T17:07Z | c2 | +0.2 | livestock passes at engine, API and browser
+- 2026-10-13T17:08Z | s8 | +0.3 | s8: browser case SB:hedge:reconnection passes; all eight unfinished browser cases now written and passing
