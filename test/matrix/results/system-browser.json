@@ -374,9 +374,31 @@
    "title": "Double click on Register instrument, Save price, Save assumptions and Save request",
    "commit": "3afb8a5+changes",
    "at": "2026-10-13T18:04:02.376Z"
+  },
+  "SB:stress:double-click-agreements": {
+   "status": "passed",
+   "message": "",
+   "ms": 5509,
+   "checks": 16,
+   "area": "stress",
+   "case": "double-click-agreements",
+   "title": "Double click on Record agreement, Close agreement and Retry failed calls",
+   "commit": "28011ab",
+   "at": "2026-10-13T18:04:07.956Z"
+  },
+  "SB:stress:confirm-changed": {
+   "status": "passed",
+   "message": "Confirm the new figures double-clicked: 1 request left the page",
+   "ms": 3565,
+   "checks": 13,
+   "area": "stress",
+   "case": "confirm-changed",
+   "title": "A confirmation refused because the price moved, then confirmed on the new figures",
+   "commit": "28011ab",
+   "at": "2026-10-13T18:04:11.553Z"
   }
  },
- "updatedAt": "2026-10-13T18:04:02.376Z",
+ "updatedAt": "2026-10-13T18:04:11.553Z",
  "environment": {
   "node": "v22.22.0",
   "platform": "linux",

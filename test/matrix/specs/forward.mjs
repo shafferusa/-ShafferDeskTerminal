@@ -608,4 +608,171 @@ const fra = {
   ],
 };
 
-export default [fxForward, ndf, fra];
+// ---------------------------------------------------------------------------------------------
+// equity_forward
+// ---------------------------------------------------------------------------------------------
+// An equity forward settled by physical delivery. The Account holds 10,000 shares of Ridgeway Industrial
+// Holdings (NYSE) bought at 50.10, and sells them forward to a dealer at 52.40 for value Friday 17 April 2026
+// (held across Good Friday, 3 April). On the value date the shares are delivered at the dealt price: a
+// simulated delivery (no securities move), booked as a sale of the shares the Account holds at 52.40,
+// settling T+1 like any sale of the stock. The forward's own value before then is quantity x (mark - dealt)
+// on the dealer's indication for the forward.
+// Collateral: position-level terms, a fixed independent amount of 20,000 USD, no variation margin.
+// Commission: shares 0.005 USD a share (at least 1.00 an order); the forward 0.01 USD a share, paid on the value date.
+const equityForward = {
+  productId: 'equity_forward',
+  title: 'Equity forward: 10,000 Ridgeway Industrial shares held and sold forward at 52.40, physically delivered (simulated) on 17 April 2026, fixed independent amount',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: ['Kind of forward (Forward on an asset)', 'Underlying (the stock)', 'Settlement (Physical delivery)', 'Multiplier (shares per unit)', 'Value date', 'Counterparty', 'Collateral basis and its terms', 'Account', 'Action (Sell)', 'quantity (shares)', 'State a fill price'],
+    automaticInputs: ['stock bid and ask (quote fixture)', 'forward mark (quote fixture standing in for a dealer indication)', 'commission from the Book fee schedule', 'independent amount from the position-level terms'],
+    manualInputs: ['dealt forward price (stated fill price)'],
+    settlement: 'No cash at entry other than the independent amount; on the value date the shares held are delivered at the dealt price (simulated, labelled), the proceeds settling T+1; forward commission paid on the value date',
+    lifecycle: 'Physical delivery on the value date (automatic), from the shares the Account holds; without them the delivery waits visibly (engine test)',
+    accounting: 'Nil cost; forward value = quantity x (mark - dealt); the delivery is a sale of the shares at the dealt price, realizing against their cost',
+    collateral: 'Position-level terms: fixed independent amount 20,000 USD posted at entry and returned at delivery; no variation margin',
+  },
+  start: AM('2026-03-23'),
+  settlementCheck: { lag: 1, holidays: ['2026-04-03'] },
+  book: {
+    name: 'Matrix equity forward', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 2_000_000 }],
+    account: { name: 'Equities', funding: [{ ccy: 'USD', amount: 1_000_000 }] },
+    settings: { fees: { equity: { perUnit: 0.005, minimum: 1, bps: 0 }, forward: { perUnit: 0.01, minimum: 0, bps: 0 } }, fill: FILL, settlement: { equity: 1 } },
+  },
+  instruments: {
+    stock: { productId: 'common_stock', name: 'Ridgeway Industrial Holdings Inc.', symbol: 'RWIH', marketView: 'US_CASH', venue: 'NYSE', venueType: 'exchange', venueCountry: 'US', issuer: 'Ridgeway Industrial Holdings Inc.', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', terms: {} },
+    main: {
+      productId: 'equity_forward', name: 'Ridgeway Industrial forward, value 17 April 2026', symbol: 'RWIH-F0417', marketView: 'US_DERIV', venueType: 'otc', jurisdiction: 'US', tradingCcy: 'USD', underlying: 'stock', multiplier: 1,
+      terms: { forwardType: 'asset', settlement: 'physical', valueDate: '2026-04-17', counterparty: 'Harbourline Bank N.A., New York',
+        collateralBasis: { type: 'position', independentAmount: { type: 'fixed', amount: 20_000 }, variationMargin: false } },
+    },
+  },
+  quotes: {
+    stock: { bid: 50.08, ask: 50.10, last: 50.09, bidSize: 100_000, askSize: 100_000 },
+    main: { bid: 52.38, ask: 52.42, last: 52.40, bidSize: 100_000, askSize: 100_000 },
+  },
+  expectAtStart: {
+    ...NO_STATE,
+    cash: { account: { USD: cashOf(1_000_000) }, treasury: { USD: cashOf(1_000_000) } },
+    positions: [], otc: [],
+    nav: { account: 1_000_000, treasury: 1_000_000, book: 2_000_000 },
+  },
+  steps: [
+    {
+      // 10,000 x 50.10 (the ask) = 501,000.00; commission 10,000 x 0.005 = 50.00; settles T+1, Tuesday 24 March.
+      id: 'buy-shares', covers: 'underlying', action: 'ticket', ticketOf: 'equity', instrument: 'stock', side: 'buy', qty: 10_000, as: 'shares',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'stock', qty: 10_000, estimate: 50.10, model: 'quoted-bid-ask', settleDate: '2026-03-24', calendar: 'US', cash: -501_000, fees: 50 }],
+          cash: { USD: { purchases: 501_000, fees: 50, required: 501_050, available: 1_000_000, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 10_000, avgPrice: 50.10 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 10,000 RWIH @ 50.10 USD', owner: 'account', date: '2026-03-23' }],
+        cash: { account: { USD: cashOf(1_000_000, { unsettled: -501_050 }) } },
+        positions: [{ instrument: 'stock', lot: 'shares', owner: 'account', direction: 'long', qty: 10_000, avgCost: 50.10, cost: 501_000, price: 50.09, value: 500_900, unrealized: -100 }],
+        holdings: { stock: { long: 10_000, short: 0, net: 10_000 } },
+        pending: [{ instrument: 'stock', lot: 'shares', owner: 'account', dueDate: '2026-03-24', amount: -501_050, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: 0, commissions: -50, fees: 0, unrealized: -100, total: -150 } },
+        nav: { account: 999_850, book: 1_999_850 },
+        balance: { account: { cash: 1_000_000, positions: 500_900, payable: 501_050, assets: 1_500_900, liabilities: 501_050, netAssets: 999_850 } },
+      },
+    },
+    {
+      // 10,000 x 52.40 = 524,000.00 notional; fixed independent amount 20,000.00; commission 10,000 x 0.01 = 100.00 on the value date.
+      id: 'sell-forward', covers: ['open short', 'collateral'], action: 'ticket', instrument: 'main', side: 'sell', qty: 10_000, as: 'fwd', order: { statedPrice: 52.40 }, settlementCheck: false,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 10_000, estimate: 52.40, model: 'stated-price', settleDate: '2026-04-17', cash: 0, fees: 100 }],
+          cash: { USD: { purchases: 0, fees: 100, margin: 20_000, required: 20_100, available: 498_950, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 10_000, avgPrice: 52.40 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Sold forward 10,000 RWIH-F0417 @ 52.40 for 2026-04-17', owner: 'account', date: '2026-03-23' },
+          { type: 'forward.collateral', summary: '20,000.00 USD (independent amount', cash: { USD: -20_000 }, owner: 'account' },
+        ],
+        cash: { account: { USD: cashOf(980_000, { unsettled: -501_150, margin: 20_000 }) } },
+        positions: [
+          { instrument: 'main', lot: 'fwd', owner: 'account', direction: 'short', qty: -10_000, avgCost: 52.40, cost: 0, price: 52.40, value: 0, unrealized: 0, notional: 524_000, margin: 20_000 },
+          { instrument: 'stock', lot: 'shares', owner: 'account', direction: 'long', qty: 10_000, avgCost: 50.10, cost: 501_000, price: 50.09, value: 500_900, unrealized: -100 },
+        ],
+        holdings: { main: { long: 0, short: 10_000, net: -10_000 }, stock: { long: 10_000, short: 0, net: 10_000 } },
+        pending: [
+          { instrument: 'stock', lot: 'shares', owner: 'account', dueDate: '2026-03-24', amount: -501_050, ccy: 'USD', into: 'cash' },
+          { instrument: 'main', lot: 'fwd', owner: 'account', dueDate: '2026-04-17', amount: -100, ccy: 'USD', into: 'cash' },
+        ],
+        lifecycle: [{ type: 'forward.maturity', instrument: 'main', dueDate: '2026-04-17', status: 'pending' }],
+        pnl: { account: { commissions: -150, unrealized: -100, total: -250 } },
+        nav: { account: 999_750, book: 1_999_750 },
+        balance: { account: { cash: 980_000, margin: 20_000, positions: 500_900, payable: 501_150, assets: 1_500_900, liabilities: 501_150, netAssets: 999_750 } },
+        otc: [{ instrument: 'main', lot: 'fwd', owner: 'account', qty: -10_000, basis: 'position', agreement: null, flagged: false, mark: 52.40, markValue: 0, iaRequired: 20_000, iaPosted: 20_000, iaCcy: 'USD', iaStatus: 'ok', postedBy: 'account', vmPosted: 0, vmHeld: 0 }],
+      },
+    },
+    {
+      id: 'shares-settle', covers: 'settlement', action: 'clock', to: AM('2026-03-24'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 501,050.00 USD from settled cash', cash: { USD: -501_050 }, owner: 'account', date: '2026-03-24' }],
+        cash: { account: { USD: cashOf(478_950, { unsettled: -100, margin: 20_000 }) } },
+        pending: [{ instrument: 'main', lot: 'fwd', owner: 'account', dueDate: '2026-04-17', amount: -100, ccy: 'USD', into: 'cash' }],
+        balance: { account: { cash: 478_950, payable: 100, assets: 999_850, liabilities: 100 } },
+      },
+    },
+    { id: 'day-before-value-date', action: 'clock', to: AM('2026-04-16'), expect: {} }, // across Good Friday
+    { id: 'stock-up', action: 'quote', instrument: 'stock', quote: { bid: 51.58, ask: 51.62, last: 51.60, bidSize: 100_000, askSize: 100_000 },
+      expect: {
+        positions: [
+          { instrument: 'main', lot: 'fwd', owner: 'account', direction: 'short', qty: -10_000, avgCost: 52.40, cost: 0, price: 52.40, value: 0, unrealized: 0, notional: 524_000, margin: 20_000 },
+          { instrument: 'stock', lot: 'shares', owner: 'account', direction: 'long', qty: 10_000, avgCost: 50.10, cost: 501_000, price: 51.60, value: 516_000, unrealized: 15_000 },
+        ],
+        pnl: { account: { unrealized: 15_000, total: 14_850 } },
+        nav: { account: 1_014_850, book: 2_014_850 },
+        balance: { account: { positions: 516_000, assets: 1_014_950, netAssets: 1_014_850 } },
+      },
+    },
+    {
+      // The forward's indication: 51.65. -10,000 x (51.65 - 52.40) = +7,500.00.
+      id: 'forward-mark', covers: 'mark', action: 'quote', instrument: 'main', quote: { bid: 51.63, ask: 51.67, last: 51.65, bidSize: 100_000, askSize: 100_000 },
+      expect: {
+        positions: [
+          { instrument: 'main', lot: 'fwd', owner: 'account', direction: 'short', qty: -10_000, avgCost: 52.40, cost: 0, price: 51.65, value: 7_500, unrealized: 7_500, notional: 524_000, margin: 20_000 },
+          { instrument: 'stock', lot: 'shares', owner: 'account', direction: 'long', qty: 10_000, avgCost: 50.10, cost: 501_000, price: 51.60, value: 516_000, unrealized: 15_000 },
+        ],
+        pnl: { account: { unrealized: 22_500, total: 22_350 } },
+        nav: { account: 1_022_350, book: 2_022_350 }, // 478,950 + 20,000 + 516,000 + 7,500 - 100
+        balance: { account: { positions: 523_500, assets: 1_022_450, netAssets: 1_022_350 } },
+        otc: [{ instrument: 'main', lot: 'fwd', owner: 'account', qty: -10_000, basis: 'position', agreement: null, flagged: false, mark: 51.65, markValue: 7_500, iaRequired: 20_000, iaPosted: 20_000, iaCcy: 'USD', iaStatus: 'ok', postedBy: 'account', vmPosted: 0, vmHeld: 0 }],
+      },
+    },
+    {
+      // Value date. The forward commission (100.00) is paid. The 10,000 shares held are delivered at 52.40 (simulated):
+      // 524,000.00 receivable T+1 (Monday 20 April); realized on the shares (52.40 - 50.10) x 10,000 = 23,000.00.
+      // The forward ends at its dealt price (nothing realized on it); its independent amount 20,000.00 comes back.
+      // By hand, the whole scenario: 23,000 - 50 - 100 = 22,850.00.
+      id: 'value-date-delivery', covers: ['physical delivery', 'settlement', 'collateral'], action: 'clock', to: AM('2026-04-17'),
+      expect: {
+        events: [
+          { type: 'settlement.pay', summary: 'paid 100.00 USD from settled cash', cash: { USD: -100 }, owner: 'account', date: '2026-04-17' },
+          { type: 'forward.delivery', summary: 'Simulated forward delivery (paper entry, no goods or securities move): delivered 10,000 RWIH at 52.40 on RWIH-F0417', owner: 'account', date: '2026-04-17' },
+          { type: 'forward.collateral', summary: '20,000.00 USD (independent amount, the position ended)', cash: { USD: 20_000 }, owner: 'account' },
+        ],
+        cash: { account: { USD: cashOf(498_850, { unsettled: 524_000, trade: 1_022_850, withdraw: 498_850 }) } },
+        positions: [],
+        holdings: { main: null, stock: null },
+        pending: [{ instrument: 'stock', lot: 'shares', owner: 'account', dueDate: '2026-04-20', amount: 524_000, ccy: 'USD', into: 'cash' }],
+        lifecycle: [],
+        pnl: { account: { realized: 23_000, commissions: -150, unrealized: 0, total: 22_850 } },
+        nav: { account: 1_022_850, book: 2_022_850 },
+        balance: { account: { cash: 498_850, margin: null, positions: null, receivable: 524_000, payable: null, assets: 1_022_850, liabilities: 0, netAssets: 1_022_850 } },
+        otc: [],
+      },
+    },
+    {
+      id: 'proceeds-settle', covers: 'settlement', action: 'clock', to: AM('2026-04-20'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 524,000.00 USD into settled cash', cash: { USD: 524_000 }, owner: 'account', date: '2026-04-20' }],
+        cash: { account: { USD: cashOf(1_022_850) } },
+        pending: [],
+        balance: { account: { cash: 1_022_850, receivable: null, assets: 1_022_850 } },
+      },
+    },
+  ],
+};
+
+export default [equityForward, fxForward, ndf, fra];
