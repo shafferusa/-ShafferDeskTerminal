@@ -183,3 +183,4 @@
 - 2026-10-13T18:17Z | m1 | +0.2 | correlation_swap passes at engine, API and browser
 - 2026-10-13T18:18Z | fw | +0.2 | fw: fx_swap passes at engine, API and browser
 - 2026-10-13T18:19Z | o2 | +0.2 | swaption passes at engine, API and browser
+- 2026-10-13T18:19Z | m1 | +0.2 | dispersion_swap passes at engine, API and browser
