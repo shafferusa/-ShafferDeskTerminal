@@ -868,12 +868,48 @@ const bondForward = {
         events: [
           { type: 'settlement.pay', summary: 'paid 20.00 USD from settled cash', cash: { USD: -20 }, owner: 'account', date: '2026-05-18' },
           { type: 'forward.delivery', summary: 'Simulated forward delivery (paper entry, no goods or securities move): received 2,000,000 UST-4-NOV30 at 99.25 on UST30-F0518', owner: 'account', date: '2026-05-18' },
+          { type: 'settlement.pay', summary: 'paid 1,985,652.17 USD from settled cash', cash: { USD: -1_985_652.17 }, owner: 'account', date: '2026-05-18' },
+          { type: 'forward.collateral', summary: '19,850.00 USD (independent amount, the position ended)', cash: { USD: 19_850 }, owner: 'account' },
         ],
         cash: { account: { USD: cashOf(514_327.83) } },
         positions: [{ instrument: 'note', lot: 'fwd', owner: 'account', direction: 'long', qty: 2_000_000, avgCost: 99.25, cost: 1_985_000, price: 99.55, value: 1_991_000, unrealized: 6_000, accrued: 652.17 }],
         holdings: { main: null, note: { long: 2_000_000, short: 0, net: 2_000_000 } },
         pending: [],
+        // The forward's item is done; the note's own coupon (15 November, a Sunday: paid Monday 16 November) and maturity are scheduled.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'note', dueDate: '2026-11-16', status: 'pending' }, { type: 'bond.maturity', instrument: 'note', dueDate: '2030-11-15', status: 'pending' }],
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -20, unrealized: 6_000, total: 5_980 } }, // buying accrued interest is not a cost
+        nav: { account: 2_505_980, book: 3_005_980 }, // 514,327.83 + 1,991,000 + 652.17
+        balance: { account: { cash: 514_327.83, margin: null, payable: null, accruedIncome: 652.17, positions: 1_991_000, assets: 2_505_980, liabilities: 0, netAssets: 2_505_980 } },
         otc: [],
+      },
+    },
+    {
+      // The delivered note is sold at the bid, 99.50, settling T+1 (Tuesday 19 May) with 4 days of accrued interest:
+      // 2,000,000 x 2% x 4 / 184 = 869.5652 = 869.57. Proceeds 1,990,000.00 + 869.57 = 1,990,869.57.
+      // Realized on the price: (99.50 - 99.25) x 2,000,000 / 100 = 5,000.00. Interest earned while held: 869.57 - 652.17 = 217.40.
+      id: 'sell-note', covers: ['close', 'accrued interest'], action: 'ticket', ticketOf: 'bond', instrument: 'note', side: 'sell', qty: 2_000_000, from: 'fwd',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'note', qty: 2_000_000, estimate: 99.50, model: 'quoted-bid-ask', settleDate: '2026-05-19', accrued: 869.57, cash: 1_990_869.57, fees: 0 }] },
+        result: { orders: [{ action: 'sell', status: 'filled', filledQty: 2_000_000, avgPrice: 99.50 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 2,000,000 UST-4-NOV30 @ 99.50 USD (realized 5,000.00 USD)', owner: 'account', date: '2026-05-18' },
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of UST-4-NOV30: 217.40 USD', owner: 'account' }],
+        cash: { account: { USD: cashOf(514_327.83, { unsettled: 1_990_869.57, trade: 2_505_197.40, withdraw: 514_327.83 }) } },
+        positions: [],
+        holdings: { note: null },
+        pending: [{ instrument: 'note', lot: 'fwd', owner: 'account', dueDate: '2026-05-19', amount: 1_990_869.57, ccy: 'USD', into: 'cash' }],
+        lifecycle: [],
+        pnl: { account: { realized: 5_000, couponInterest: 217.40, commissions: -20, unrealized: 0, total: 5_197.40 } },
+        nav: { account: 2_505_197.40, book: 3_005_197.40 },
+        balance: { account: { cash: 514_327.83, accruedIncome: null, positions: null, receivable: 1_990_869.57, assets: 2_505_197.40, liabilities: 0, netAssets: 2_505_197.40 } },
+      },
+    },
+    {
+      id: 'sale-settles', covers: 'settlement', action: 'clock', to: AM('2026-05-19'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 1,990,869.57 USD into settled cash', cash: { USD: 1_990_869.57 }, owner: 'account', date: '2026-05-19' }],
+        cash: { account: { USD: cashOf(2_505_197.40) } },
+        pending: [],
+        balance: { account: { cash: 2_505_197.40, receivable: null, assets: 2_505_197.40 } },
       },
     },
   ],

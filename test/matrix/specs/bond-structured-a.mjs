@@ -1695,7 +1695,7 @@ const cocoBond = {
       // 100 of principal), valued 250,000 x 97.80 / 100 = 244,500.
       id: 'trigger-write-down', covers: 'trigger event (by hand)', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'writedown', newFactor: 0.25, kind: 'writedown' },
       expect: {
-        events: [{ type: 'bond.writedown', summary: 'Principal written down by hand on NORDH-7.25-AT1: factor 1 to 0.25, 750,000 of 1,000,000 face written off with no payment; cost 735,000.00 USD written off as realized loss', owner: 'account', date: '2028-09-20' }],
+        events: [{ type: 'bond.writedown', summary: 'Principal written down by hand on NORDH-7.25-AT1: factor 1 to 0.25, 750,000 of principal written off with no payment (1,000,000 original face); cost 735,000.00 USD written off as realized loss', owner: 'account', date: '2028-09-20' }],
         positions: [{ instrument: 'main', lot: 'lot', qty: 1_000_000, cost: 245_000, avgCost: 98, price: 97.8, value: 244_500, unrealized: -500, accrued: 0 }],
         pnl: { account: { realized: -736_600, unrealized: -500, total: -763_899.85 } }, // -1,600 - 735,000
         nav: { account: 1_236_100.15, book: 2_236_100.15 },

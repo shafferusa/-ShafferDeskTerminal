@@ -697,7 +697,7 @@ export const bond = {
       const faceOff = money(Math.abs(p.qty) * (old - nf), ccy);
       eventIds.push(app.ledger.post({
         bookId: book.id, unitId: unit.id, type: loss ? 'bond.loss' : 'bond.writedown', instrumentId: inst.id, strategyId: p.strategy_id, positionId: p.id, actor: 'user',
-        summary: `${loss ? 'Realized loss allocated by hand to' : 'Principal written down by hand on'} ${name}${note ? ` (${note})` : ''}: factor ${old} to ${nf}${from !== today ? ` from ${from}` : ''}, ${fmtQty(faceOff)} of ${fmtQty(Math.abs(p.qty))} face written off with no payment; cost ${fmt(Math.abs(costOut), ccy)} written off as realized ${p.qty > 0 ? 'loss' : 'gain'}`,
+        summary: `${loss ? 'Realized loss allocated by hand to' : 'Principal written down by hand on'} ${name}${note ? ` (${note})` : ''}: factor ${old} to ${nf}${from !== today ? ` from ${from}` : ''}, ${fmtQty(faceOff)} of principal written off with no payment (${fmtQty(Math.abs(p.qty))} original face); cost ${fmt(Math.abs(costOut), ccy)} written off as realized ${p.qty > 0 ? 'loss' : 'gain'}`,
         data: { kind: loss ? 'loss' : 'writedown', oldFactor: old, newFactor: nf, effective: from, costOut, manual: true },
         entries: [{ account: 'pos', ccy, amount: -costOut, positionId: p.id }, { account: 'pnl.realized', ccy, amount: costOut, positionId: p.id }],
       }));

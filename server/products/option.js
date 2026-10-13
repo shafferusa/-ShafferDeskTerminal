@@ -79,11 +79,12 @@ function normalizeOption(app, draft, listed) {
     else if (ISO_DATE_RE.test(t.expiration || '') && t.paymentDate < t.expiration) errors.push('The cash settlement payment date cannot be before the expiration date.');
     if (t.optionType === 'asian') {
       // Average-price option: the arithmetic mean of the underlying's closes on the averaging dates replaces the final fixing.
+      // Without averaging dates the averaged settlement amount is entered by hand at expiry instead.
       t.averagingDates = dateList(t.averagingDates);
-      if (!t.averagingDates.length) errors.push('An Asian option needs its averaging dates (YYYY-MM-DD, separated by commas).');
+      if (!t.averagingDates.length) delete t.averagingDates;
       else if (t.averagingDates.some((x) => !ISO_DATE_RE.test(x))) errors.push('Each averaging date is a date (YYYY-MM-DD).');
       else if (ISO_DATE_RE.test(t.expiration || '') && t.averagingDates.some((x) => x > t.expiration)) errors.push('An averaging date cannot be after the expiration date.');
-      if (!draft.underlying_id) errors.push('An Asian option averages the closes of an underlying instrument: choose it.');
+      if (t.averagingDates && !draft.underlying_id) errors.push('An Asian option averages the closes of an underlying instrument: choose it.');
       t.settlement = 'cash';
     } else delete t.averagingDates;
     if (t.optionType === 'lookback') {
@@ -275,6 +276,7 @@ function otcExpiryInput(app, { inst, pos, task }) {
   const undName = und ? und.symbol || und.name : 'the underlying';
   const awaiting = app.data.describe().awaitingMessage;
   if (t.optionType === 'asian') {
+    if (!t.averagingDates) return { blocked: `Enter the settlement amount for this asian option: no averaging dates are stated on the contract, so the average is not worked out by the Terminal.`, needs: [{ kind: 'settlement-amount', taskId: task.id }] };
     const got = t.averagingDates.map((d) => ({ d, o: app.data.closeFor(inst.underlying_id, d) }));
     const missing = got.filter((x) => !x.o || x.o.value === null).map((x) => x.d);
     if (missing.length) return { blocked: `Awaiting the averaging fixings of ${undName} for ${missing.join(', ')}. ${awaiting}, or enter each closing price by hand (instrument drawer, Overview, "Closing price or fixing for date").`, needs: missing.map((d) => ({ kind: 'price', subject: inst.underlying_id, date: d })) };
