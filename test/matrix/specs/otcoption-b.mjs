@@ -1521,4 +1521,254 @@ const compoundOption = {
   ],
 };
 
-export default [barrierOption, asianOption, lookbackOption, basketOption, spreadOption, quantoOption, compoundOption];
+// ---------------------------------------------------------------------------------------------
+// cds_swaption
+// ---------------------------------------------------------------------------------------------
+// Two payer credit-default swaptions (a call is the right to buy protection) on 5-year single-name credit default swaps
+// starting 22 June 2026 and maturing 20 June 2031, dealt with Dealer S, European, physical, expiring Wednesday 17 June
+// 2026. Quantity is the notional; premium and the CDS upfront are per 100 of notional (multiplier 0.01). Both swaptions
+// knock out on a credit event of their reference entity.
+//   - on Kestrel Airlines (1% running coupon), strike 150 bp, bought on 10,000,000; position-level terms: variation margin
+//     over 25,000. At expiry the item asks for the exercise decision; it is exercised by hand into the registered CDS at a
+//     stated upfront of 1.20 per 100 (protection bought). The CDS then lives with its own premium schedule and collateral
+//     basis (independent amount 2% of notional) and is terminated the next day at a stated 1.35 per 100.
+//   - on Halloran Steel (5% running coupon), strike 500 bp, bought on 5,000,000; uncollateralized. Halloran Steel files
+//     for bankruptcy in April: the credit event knocks the swaption out, recorded by hand, and it ends with nothing paid.
+// The CDS is not valued by the Terminal: the exercise decision, the entry upfront, marks and the termination amount are
+// stated by hand.
+const KSTL_CDS = 'Kestrel Airlines 5Y CDS, 1% coupon, 22 Jun 2026 to 20 Jun 2031 (Dealer S)';
+const HLRN_CDS = 'Halloran Steel 5Y CDS, 5% coupon, 22 Jun 2026 to 20 Jun 2031 (Dealer S)';
+const KSWPN = 'Payer swaption on KSTL-CDS-5Y, strike 150 bp, 17 Jun 2026, physical (Dealer S)';
+const HSWPN = 'Payer swaption on HLRN-CDS-5Y, strike 500 bp, 17 Jun 2026, physical (Dealer S)';
+const cdsSwaption = {
+  productId: 'cds_swaption',
+  title: 'Payer credit-default swaptions: Kestrel exercised by hand into its CDS (then terminated); Halloran knocked out by a credit event',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'Underlying instrument: the registered credit default swap the swaption is exercised into', 'Payoff: Swaption', 'Multiplier 0.01 (premium per 100 of notional)'],
+    automaticInputs: ['premium settlement date, T+2 on the US calendar; the CDS upfront T+1 (settlement.cds = 1)', 'commission per unit of notional from the Book fee schedule', 'variation margin from the position-level terms of the swaption', 'after exercise: the CDS premium schedule, maturity and independent amount from its own registered terms', 'knock-out on a credit event recorded on the underlying CDS'],
+    manualInputs: ['premium per 100 of notional (stated fill price)', 'marks entered by hand (Manual entry)', 'the credit event knocking out a swaption, recorded by hand (Lifecycle, Credit event knock-out)', 'the exercise decision and the CDS upfront per 100 at exercise (Lifecycle, Exercise)', 'termination of the CDS at a stated upfront per 100'],
+    settlement: 'Premiums and commission T+2 on the US calendar; the CDS upfront at exercise and at termination T+1 (the termination across Juneteenth)',
+    lifecycle: 'Credit event knock-out recorded by hand: the swaption ends now with nothing paid; at expiry the other waits for the exercise decision, is exercised into its CDS (which schedules its premium and maturity), then the CDS is terminated; nothing scheduled afterwards',
+    accounting: 'Premium per 100 x notional x 0.01; premium realized on knock-out and on exercise; the CDS carried at its entry upfront, then at its mark; commission expensed. Neither the swaption nor the CDS is valued by the Terminal',
+    collateral: 'Kestrel swaption (bought): position-level terms, variation margin over 25,000, received from the dealer and returned on exercise. Halloran swaption: uncollateralized. The Kestrel CDS: its own basis, independent amount 2% of notional, posted on exercise and returned on termination',
+  },
+  start: at('2026-03-02'),
+  settlementCheck: { lag: 2, holidays: [] }, // option premium T+2 (the CDS legs, T+1, are exempted step by step)
+  book: {
+    name: 'Matrix CDS swaption', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 3_000_000 }],
+    account: { name: 'Credit', funding: [{ ccy: 'USD', amount: 1_000_000 }] },
+    settings: { fees: { otcoption: { perUnit: 0.00002, minimum: 0, bps: 0 }, cds: NO_FEE }, fill: FILL, settlement: { otcoption: 2, cds: 1 } }, // 20.00 per million of notional
+  },
+  instruments: {
+    kcds: {
+      productId: 'cds_single_name', name: KSTL_CDS, symbol: 'KSTL-CDS-5Y', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD',
+      terms: { referenceEntity: 'Kestrel Airlines Inc.', coupon: 0.01, effective: '2026-06-22', maturity: '2031-06-20', recovery: 0.4, counterparty: 'Dealer S',
+        collateralBasis: { type: 'position', independentAmount: { type: 'pct', pct: 0.02 }, variationMargin: false, threshold: 0, minimumTransfer: 0 } },
+    },
+    hcds: {
+      productId: 'cds_single_name', name: HLRN_CDS, symbol: 'HLRN-CDS-5Y', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD',
+      terms: { referenceEntity: 'Halloran Steel Corp.', coupon: 0.05, effective: '2026-06-22', maturity: '2031-06-20', recovery: 0.4, counterparty: 'Dealer S', collateralBasis: { type: 'uncollateralized' } },
+    },
+    kswpn: {
+      productId: 'cds_swaption', name: KSWPN, symbol: 'KSTL-PSWPN-JUN26', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', underlying: 'kcds', multiplier: 0.01,
+      terms: { right: 'C', strike: 1.50, expiration: '2026-06-17', optionType: 'swaption', exercise: 'european', settlement: 'physical', counterparty: 'Dealer S',
+        collateralBasis: { type: 'position', independentAmount: { type: 'none' }, variationMargin: true, threshold: 25_000, minimumTransfer: 5_000 } },
+    },
+    hswpn: {
+      productId: 'cds_swaption', name: HSWPN, symbol: 'HLRN-PSWPN-JUN26', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', underlying: 'hcds', multiplier: 0.01,
+      terms: { right: 'C', strike: 5.00, expiration: '2026-06-17', optionType: 'swaption', exercise: 'european', settlement: 'physical', counterparty: 'Dealer S', collateralBasis: { type: 'uncollateralized' } },
+    },
+  },
+  expectAtStart: usdStart(1_000_000, 2_000_000),
+  steps: [
+    otcTicket({
+      id: 'buy-kestrel-swaption', covers: ['open', 'collateral'], instrument: 'kswpn', side: 'buy', qty: 10_000_000, premium: 0.60, as: 'kestrel',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'kswpn', qty: 10_000_000, estimate: 0.6, model: 'stated-price', settleDate: '2026-03-04', calendar: 'US', cash: -60_000, fees: 200, notional: 10_000_000 }], // 10,000,000 x 0.60 x 0.01; 10,000,000 x 0.00002
+          cash: { USD: { purchases: 60_000, fees: 200, margin: 0, required: 60_200, available: 1_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 10_000_000, avgPrice: 0.6 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 10,000,000 KSTL-PSWPN-JUN26 @ 0.60 USD', owner: 'account', date: '2026-03-02' }],
+        cash: { account: { USD: { settled: 1_000_000, unsettled: -60_200, availableToTrade: 939_800, availableToWithdraw: 939_800 } } },
+        positions: [{ instrument: 'kswpn', lot: 'kestrel', owner: 'account', direction: 'long', qty: 10_000_000, avgCost: 0.6, cost: 60_000, price: null, value: null, unrealized: null, provisional: true, notional: 10_000_000, margin: 0 }],
+        holdings: { kswpn: { long: 10_000_000, short: 0, net: 10_000_000 } },
+        pending: [{ instrument: 'kswpn', owner: 'account', dueDate: '2026-03-04', amount: -60_200, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'option.expiry', instrument: 'kswpn', dueDate: '2026-06-17', status: 'pending' }],
+        otc: [{ instrument: 'kswpn', lot: 'kestrel', qty: 10_000_000, basis: 'position', mark: null, iaRequired: 0, iaPosted: 0, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: -200, unrealized: 0, total: -200 } },
+        nav: { account: 999_800, book: 2_999_800 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 1_000_000, payable: 60_200, positions: 60_000, assets: 1_060_000, liabilities: 60_200, netAssets: 999_800 } },
+      },
+    }),
+    { id: 'half-an-hour-later', action: 'clock', to: at('2026-03-02', '15:30'), expect: {} },
+    otcTicket({
+      id: 'buy-halloran-swaption', covers: 'open', instrument: 'hswpn', side: 'buy', qty: 5_000_000, premium: 0.80, as: 'halloran',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'hswpn', qty: 5_000_000, estimate: 0.8, model: 'stated-price', settleDate: '2026-03-04', calendar: 'US', cash: -40_000, fees: 100, notional: 5_000_000 }],
+          cash: { USD: { purchases: 40_000, fees: 100, margin: 0, required: 40_100, available: 939_800, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 5_000_000, avgPrice: 0.8 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 5,000,000 HLRN-PSWPN-JUN26 @ 0.80 USD', owner: 'account' }],
+        cash: { account: { USD: { unsettled: -100_300, availableToTrade: 899_700, availableToWithdraw: 899_700 } } },
+        positions: [
+          { instrument: 'hswpn', lot: 'halloran', owner: 'account', direction: 'long', qty: 5_000_000, avgCost: 0.8, cost: 40_000, price: null, value: null, unrealized: null, provisional: true, notional: 5_000_000, margin: 0 },
+          { instrument: 'kswpn', lot: 'kestrel', qty: 10_000_000 },
+        ],
+        holdings: { hswpn: { long: 5_000_000, short: 0, net: 5_000_000 } },
+        pending: [
+          { instrument: 'hswpn', owner: 'account', dueDate: '2026-03-04', amount: -40_100, ccy: 'USD', into: 'cash' },
+          { instrument: 'kswpn', owner: 'account', dueDate: '2026-03-04', amount: -60_200, ccy: 'USD', into: 'cash' },
+        ],
+        lifecycle: [{ type: 'option.expiry', instrument: 'hswpn', dueDate: '2026-06-17', status: 'pending' }, { type: 'option.expiry', instrument: 'kswpn', dueDate: '2026-06-17', status: 'pending' }],
+        otc: [{ instrument: 'hswpn', lot: 'halloran', qty: 5_000_000, basis: 'uncollateralized', iaPosted: 0, vmPosted: 0, vmHeld: 0 }, { instrument: 'kswpn' }],
+        pnl: { account: { commissions: -300, total: -300 } },
+        nav: { account: 999_700, book: 2_999_700 }, // 1,000,000 - 100,300 + 100,000 at cost
+        balance: { account: { payable: 100_300, positions: 100_000, assets: 1_100_000, liabilities: 100_300, netAssets: 999_700 } },
+      },
+    }),
+    {
+      id: 'mark-kestrel-swaption', covers: 'manual mark', action: 'manual_price', instrument: 'kswpn', value: 1.10, note: 'Dealer S mark per 100 of notional, by hand',
+      expect: {
+        positions: [{ instrument: 'hswpn', lot: 'halloran' }, { instrument: 'kswpn', lot: 'kestrel', price: 1.1, value: 110_000, unrealized: 50_000, provisional: false }], // 10,000,000 x 1.10 x 0.01
+        otc: [{ instrument: 'hswpn' }, { instrument: 'kswpn', mark: 1.1, markValue: 110_000 }],
+        pnl: { account: { unrealized: 50_000, total: 49_700 } },
+        nav: { account: 1_049_700, book: 3_049_700 },
+        balance: { account: { positions: 150_000, assets: 1_150_000, netAssets: 1_049_700 } }, // 110,000 + 40,000 (Halloran, unpriced, at cost)
+      },
+    },
+    {
+      // Kestrel swaption marked at 110,000: 85,000 beyond its 25,000 threshold, posted by Dealer S. Halloran: uncollateralized.
+      id: 'variation-margin-received', covers: 'variation margin', action: 'clock', to: eod('2026-03-02'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under position-level terms: 85,000.00 USD received. Netting set of 1 position marked at 110,000.00 USD; threshold 25,000.00 USD.', owner: 'account' }],
+        cash: { account: { USD: { restricted: 85_000 } } },
+        otc: [{ instrument: 'hswpn', vmHeld: 0 }, { instrument: 'kswpn', vmHeld: 85_000, vmExposure: 110_000, vmStatus: 'ok' }],
+        balance: { account: { restricted: 85_000, collateralReceived: 85_000, assets: 1_235_000, liabilities: 185_300, netAssets: 1_049_700 } },
+      },
+    },
+    {
+      id: 'settle-premiums', covers: 'settlement', action: 'clock', to: at('2026-03-04'),
+      expect: {
+        events: [
+          { type: 'settlement.pay', summary: 'paid 60,200.00 USD from settled cash', cash: { USD: -60_200 } },
+          { type: 'settlement.pay', summary: 'paid 40,100.00 USD from settled cash', cash: { USD: -40_100 } },
+        ],
+        cash: { account: { USD: { settled: 899_700, unsettled: 0, availableToTrade: 899_700, availableToWithdraw: 899_700 } } },
+        pending: [],
+        balance: { account: { cash: 899_700, payable: null, assets: 1_134_700, liabilities: 85_000 } }, // 899,700 + 85,000 + 150,000
+      },
+    },
+    { id: 'wednesday-15-april', action: 'clock', to: at('2026-04-15'), expect: {} },
+    {
+      // Halloran Steel's credit event (a bankruptcy filing on 14 April), recorded by hand on the swaption: it knocks out
+      // and ends with nothing paid. Its 40,000 premium is realized; its expiry is no longer scheduled.
+      id: 'halloran-knocked-out', covers: ['credit event knock-out'], action: 'lifecycle', lot: 'halloran', body: { action: 'knockout', note: 'Halloran Steel filed for Chapter 11 on 14 April 2026 (bankruptcy credit event)' },
+      expect: {
+        events: [{ type: 'option.knocked_out', summary: 'Knocked out by a credit event on Halloran Steel Corp.: 5,000,000 HLRN-PSWPN-JUN26 ends with nothing paid (recorded by hand). Halloran Steel filed for Chapter 11 on 14 April 2026 (bankruptcy credit event)', owner: 'account', date: '2026-04-15' }],
+        positions: [{ instrument: 'kswpn', lot: 'kestrel', qty: 10_000_000 }],
+        holdings: { hswpn: null },
+        lifecycle: [{ type: 'option.expiry', instrument: 'kswpn', dueDate: '2026-06-17', status: 'pending' }],
+        otc: [{ instrument: 'kswpn', lot: 'kestrel' }],
+        pnl: { account: { realized: -40_000, unrealized: 50_000, total: 9_700 } },
+        nav: { account: 1_009_700, book: 3_009_700 }, // 899,700 + 110,000
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 110_000, assets: 1_094_700, liabilities: 85_000, netAssets: 1_009_700 } },
+      },
+    },
+    {
+      id: 'expiry-waits-for-decision', covers: 'expiry', action: 'clock', to: eod('2026-06-17'),
+      expect: {
+        events: [],
+        lifecycle: [{ type: 'option.expiry', instrument: 'kswpn', dueDate: '2026-06-17', status: 'blocked', reason: /^Record the exercise decision: exercise into KSTL-CDS-5Y from the position's Lifecycle menu/ }],
+      },
+    },
+    {
+      // Exercised by hand: the swaption closes at zero (60,000 realized) and protection is bought on 10,000,000 of the
+      // Kestrel CDS at a stated upfront of 1.20 per 100: 120,000, T+1. The CDS posts its 2% independent amount (200,000)
+      // and schedules its first premium (period to Sunday 20 September, paid Monday 21) and its maturity; the 85,000 Dealer
+      // S posted against the swaption goes back.
+      id: 'exercise-into-cds', covers: ['exercise into the CDS', 'physical settlement', 'collateral'], action: 'lifecycle', lot: 'kestrel', body: { action: 'exercise', contracts: 10_000_000, price: 1.20 },
+      expect: {
+        events: [
+          { type: 'option.exercised', summary: 'Exercised: 10,000,000 KSTL-PSWPN-JUN26 at strike 1.5', owner: 'account', date: '2026-06-17' },
+          { type: 'option.delivery', summary: 'Simulated exercise into KSTL-CDS-5Y: bought protection on 10,000,000 notional at 1.20 per 100 on exercise of KSTL-PSWPN-JUN26', owner: 'account' },
+          { type: 'cds.collateral', summary: `Collateral posted on ${KSTL_CDS} under its position-level terms: 200,000.00 USD (independent amount, 2.00% of 10,000,000.00 USD notional)`, cash: { USD: -200_000 } },
+          { type: 'collateral.variation', summary: 'Variation margin under position-level terms: 85,000.00 USD returned to the counterparty. The last position of the netting set ended.', owner: 'account' },
+        ],
+        cash: { account: { USD: { settled: 699_700, restricted: 0, margin: 200_000, unsettled: -120_000, availableToTrade: 579_700, availableToWithdraw: 579_700 } } },
+        positions: [{ instrument: 'kcds', lot: 'kestrel', owner: 'account', qty: 10_000_000, avgCost: 1.2, cost: 120_000, price: null, value: null, unrealized: null, provisional: true, notional: 10_000_000, margin: 200_000 }],
+        holdings: { kswpn: null, kcds: { long: 10_000_000, short: 0, net: 10_000_000 } },
+        pending: [{ instrument: 'kcds', owner: 'account', dueDate: '2026-06-18', amount: -120_000, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'cds.premium', instrument: 'kcds', dueDate: '2026-09-21', status: 'pending' },
+          { type: 'cds.maturity', instrument: 'kcds', dueDate: '2031-06-20', status: 'pending' },
+        ],
+        otc: [{ instrument: 'kcds', lot: 'kestrel', qty: 10_000_000, basis: 'position', mark: null, iaRequired: 200_000, iaPosted: 200_000, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: -100_000, unrealized: 0, total: -100_300 } },
+        nav: { account: 899_700, book: 2_899_700 }, // 699,700 + 200,000 - 120,000 + 120,000 (CDS at cost)
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 699_700, margin: 200_000, restricted: null, collateralReceived: null, payable: 120_000, positions: 120_000, assets: 1_019_700, liabilities: 120_000, netAssets: 899_700 } },
+      },
+    },
+    {
+      id: 'pay-cds-upfront', covers: 'settlement', action: 'clock', to: at('2026-06-18'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 120,000.00 USD from settled cash', cash: { USD: -120_000 } }],
+        cash: { account: { USD: { settled: 579_700, unsettled: 0, availableToTrade: 579_700, availableToWithdraw: 579_700 } } },
+        pending: [],
+        balance: { account: { cash: 579_700, payable: null, assets: 899_700, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'mark-cds', covers: 'manual mark', action: 'manual_price', instrument: 'kcds', value: 1.35, note: 'Dealer S upfront per 100, by hand',
+      expect: {
+        positions: [{ instrument: 'kcds', lot: 'kestrel', price: 1.35, value: 135_000, unrealized: 15_000, provisional: false }], // 10,000,000 x 1.35 / 100
+        otc: [{ instrument: 'kcds', mark: 1.35, markValue: 135_000 }],
+        pnl: { account: { unrealized: 15_000, total: -85_300 } },
+        nav: { account: 914_700, book: 2_914_700 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 135_000, assets: 914_700, netAssets: 914_700 } },
+      },
+    },
+    {
+      // The CDS terminated with Dealer S at 1.35 per 100: protection sold back, 135,000 received T+1, which is Monday 22 June
+      // (19 June is Juneteenth). Realized 135,000 - 120,000. Its 200,000 comes back; its premium and maturity are no
+      // longer scheduled.
+      id: 'terminate-cds', covers: ['termination at a stated amount', 'close'], action: 'close', lot: 'kestrel', instrument: 'kcds', scope: 'strategy', percent: 100, order: { statedPrice: 1.35 },
+      settlementCheck: false, // the CDS settles T+1: Thursday 18 June to Monday 22 June across Juneteenth
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'kcds', qty: 10_000_000, estimate: 1.35, model: 'stated-price', settleDate: '2026-06-22', cash: 135_000, fees: 0 }] },
+        result: { orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 10_000_000, avgPrice: 1.35 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 10,000,000 KSTL-CDS-5Y @ 1.35 USD (realized 15,000.00 USD)' },
+          { type: 'cds.collateral', summary: `Collateral returned on ${KSTL_CDS} under its position-level terms: 200,000.00 USD (independent amount, the position ended)`, cash: { USD: 200_000 } },
+        ],
+        cash: { account: { USD: { settled: 779_700, margin: 0, unsettled: 135_000, availableToTrade: 914_700, availableToWithdraw: 779_700 } } },
+        positions: [], holdings: { kcds: null }, otc: [], lifecycle: [],
+        pending: [{ instrument: 'kcds', owner: 'account', dueDate: '2026-06-22', amount: 135_000, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: -85_000, unrealized: 0, total: -85_300 } },
+        nav: { account: 914_700, book: 2_914_700 },
+        balance: { account: { cash: 779_700, margin: null, receivable: 135_000, positions: null, assets: 914_700, liabilities: 0, netAssets: 914_700 } },
+      },
+    },
+    {
+      id: 'settle-termination', covers: ['settlement', 'holiday'], action: 'clock', to: at('2026-06-22'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 135,000.00 USD into settled cash', cash: { USD: 135_000 } }],
+        cash: { account: { USD: { settled: 914_700, unsettled: 0, availableToTrade: 914_700, availableToWithdraw: 914_700 } } },
+        pending: [],
+        balance: { account: { cash: 914_700, receivable: null } },
+      },
+    },
+  ],
+};
+
+export default [barrierOption, asianOption, lookbackOption, basketOption, spreadOption, quantoOption, compoundOption, cdsSwaption];

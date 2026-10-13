@@ -48,11 +48,11 @@ const ROWS = [
   ['warrant', 'Warrant', 'Equities', 'equity', 'cash', P, 'Exercise and expiry are recorded by hand.'],
   ['subscription_right', 'Subscription right', 'Equities', 'equity', 'cash', P, 'Exercise and lapse are recorded by hand.'],
   ['convertible_preferred', 'Convertible security (preferred)', 'Equities', 'equity', 'cash', P, 'Conversion is recorded by hand.'],
-  ['private_equity', 'Private equity interest', 'Private markets', 'manual', 'cash', M, 'Capital calls, distributions and valuations are entered by hand.'],
-  ['venture_capital', 'Venture capital interest', 'Private markets', 'manual', 'cash', M, 'Capital calls, distributions and valuations are entered by hand.'],
-  ['hedge_fund', 'Hedge fund interest', 'Private markets', 'manual', 'cash', M, 'Subscriptions, redemptions and NAV are entered by hand.'],
-  ['infrastructure', 'Infrastructure investment', 'Private markets', 'manual', 'cash', M, 'Cash flows and valuations are entered by hand.'],
-  ['direct_real_estate', 'Direct real estate', 'Private markets', 'manual', 'cash', M, 'Cash flows and valuations are entered by hand.'],
+  ['private_equity', 'Private equity interest', 'Private markets', 'manual', 'cash', M, 'Entered by hand: the commitment (registration), capital calls with their fee part, distributions split into return of capital, gain and income with carried interest withheld, valuations with date and source (stale after the contract\'s limit; rolled forward for later calls and distributions), secondary sales and the wind-up.'],
+  ['venture_capital', 'Venture capital interest', 'Private markets', 'manual', 'cash', M, 'Entered by hand: the commitment (registration), capital calls with their fee part, distributions split into return of capital, gain and income with carried interest withheld, valuations with date and source (stale after the contract\'s limit; rolled forward for later calls and distributions), secondary sales and the wind-up.'],
+  ['hedge_fund', 'Hedge fund interest', 'Private markets', 'manual', 'cash', M, 'Entered by hand: subscriptions at a stated NAV, NAV per share with date and source, redemption notices and each dealing date\'s NAV. The Terminal works out the dealing date (notice period, frequency), the investor-level gate and the payment date; each dealing date waits, visibly, for its NAV.'],
+  ['infrastructure', 'Infrastructure investment', 'Private markets', 'manual', 'cash', M, 'Entered by hand: purchase and sale prices with their closing dates, income, operating expenses, capital expenditure (added to cost), appraisals with date and source (rolled forward for capex).'],
+  ['direct_real_estate', 'Direct real estate', 'Private markets', 'manual', 'cash', M, 'Entered by hand: purchase and sale prices with their closing dates, income, operating expenses, capital expenditure (added to cost), appraisals with date and source (rolled forward for capex).'],
 
   // ---- Government and agency debt ----
   ['treasury_bill', 'US Treasury bill', 'Government debt', 'bond', 'cash', F, 'Discount instrument; redeems at par.'],
@@ -101,7 +101,7 @@ const ROWS = [
   ['credit_linked_note', 'Credit-linked note', 'Securitised debt', 'bond', 'cash', P, 'Credit events are recorded by hand.'],
   ['structured_note', 'Structured note', 'Securitised debt', 'bond', 'cash', P, 'Coupons follow the stated schedule; payoff-linked amounts are recorded by hand.'],
   ['catastrophe_bond', 'Catastrophe bond', 'Insurance-linked', 'bond', 'cash', P, 'Trigger events and principal losses are recorded by hand.'],
-  ['insurance_linked_security', 'Insurance-linked security', 'Insurance-linked', 'manual', 'cash', M, 'Cash flows and valuations are entered by hand.'],
+  ['insurance_linked_security', 'Insurance-linked security', 'Insurance-linked', 'manual', 'cash', M, 'Entered by hand: coupons, valuations in % of face with date and source, loss events writing face down, and the redemption at maturity (the maturity waits for it).'],
 
   // ---- Money market ----
   ['commercial_paper', 'Commercial paper', 'Money market', 'bond', 'cash', F, 'Discount instrument; redeems at par.'],
@@ -131,7 +131,7 @@ const ROWS = [
   ['securities_borrowing', 'Securities borrowing', 'Securities finance', 'secloan', 'cash', F, 'Borrow availability and fee come from supplied data or a stated assumption; recalls are triggered by hand or by supplied data.'],
   ['securities_lending', 'Securities lending', 'Securities finance', 'secloan', 'cash', F, ''],
   ['stock_loan', 'Stock loan', 'Securities finance', 'secloan', 'cash', F, ''],
-  ['bond_loan', 'Bond loan', 'Securities finance', 'secloan', 'cash', F, ''],
+  ['bond_loan', 'Bond loan', 'Securities finance', 'secloan', 'cash', F, 'Cash collateral on the bonds\' dirty value; the fee accrues on clean market value.'],
   ['short_sale', 'Short sale', 'Securities finance', 'equity', 'cash', F, 'Always paired with a securities borrow; proceeds are held as restricted collateral.'],
   ['repo', 'Repo', 'Securities finance', 'repo', 'cash', F, ''],
   ['reverse_repo', 'Reverse repo', 'Securities finance', 'repo', 'cash', F, ''],
@@ -139,12 +139,12 @@ const ROWS = [
   ['term_repo', 'Term repo', 'Securities finance', 'repo', 'cash', F, ''],
   ['open_repo', 'Open repo', 'Securities finance', 'repo', 'cash', F, 'Runs until terminated; the rate can be reset.'],
   ['bilateral_repo', 'Bilateral repo', 'Securities finance', 'repo', 'cash', F, ''],
-  ['triparty_repo', 'Tri-party repo', 'Securities finance', 'repo', 'cash', F, 'The tri-party agent is recorded as an attribute; collateral substitution is not automated.'],
+  ['triparty_repo', 'Tri-party repo', 'Securities finance', 'repo', 'cash', F, 'The tri-party agent is recorded as a term; otherwise simulated as a bilateral repo. Basket allocation and the agent\'s substitutions are not automated: collateral changes are recorded by hand.'],
   ['gc_repo', 'General-collateral repo', 'Securities finance', 'repo', 'cash', F, ''],
-  ['special_repo', 'Special-collateral repo', 'Securities finance', 'repo', 'cash', F, ''],
-  ['buy_sell_back', 'Buy/sell-back', 'Securities finance', 'repo', 'cash', F, 'Accounted with the same cash flows as a reverse repo.'],
-  ['sell_buy_back', 'Sell/buy-back', 'Securities finance', 'repo', 'cash', F, 'Accounted with the same cash flows as a repo.'],
-  ['collateral_swap', 'Securities collateral swap', 'Securities finance', 'manual', 'cash', M, 'Book the two securities loans separately, or hold as a manual arrangement.'],
+  ['special_repo', 'Special-collateral repo', 'Securities finance', 'repo', 'cash', F, 'The special rate is entered on the ticket (not derived); the named security cannot be substituted.'],
+  ['buy_sell_back', 'Buy/sell-back', 'Securities finance', 'repo', 'cash', F, 'Two outright trades: bought spot, sold back at a forward price fixed at inception (net of the coupon falling in the term, which the buyer receives). Accounted as cash lent against the bond; no rate reset, margin or substitution.'],
+  ['sell_buy_back', 'Sell/buy-back', 'Securities finance', 'repo', 'cash', F, 'Two outright trades: sold spot, bought back at a forward price fixed at inception (net of the coupon falling in the term, passed to the buyer). Accounted as a financing: the bond stays on the balance sheet, pledged; no rate reset, margin or substitution.'],
+  ['collateral_swap', 'Securities collateral swap', 'Securities finance', 'manual', 'cash', M, 'Book the two securities loans separately to move the securities, or hold it as a manual arrangement: baskets recorded on the contract (not moved), fees per period worked out from its terms, marks and termination by hand. A collateral basis is required.'],
 
   // ---- Commodities and environmental ----
   ['physical_commodity', 'Physical / spot commodity', 'Commodities', 'spot', 'cash', P, 'Storage, delivery and insurance costs are recorded by hand.'],
@@ -161,7 +161,7 @@ const ROWS = [
   ['emissions_allowance', 'Emissions allowance', 'Environmental', 'spot', 'cash', F, 'Surrender/retirement is recorded as a sale at zero by hand.'],
   ['carbon_credit', 'Carbon credit', 'Environmental', 'spot', 'cash', F, 'Retirement is recorded by hand.'],
   ['renewable_energy_certificate', 'Renewable energy certificate', 'Environmental', 'spot', 'cash', F, 'Retirement is recorded by hand.'],
-  ['freight_contract', 'Freight contract', 'Commodities', 'manual', 'deriv', M, 'Cash flows and valuations are entered by hand.'],
+  ['freight_contract', 'Freight contract', 'Commodities', 'manual', 'deriv', M, 'Entered by hand: marks per unit with date and source, and each period\'s index average; each period settles (average - contract rate) x quantity. A collateral basis is required.'],
 
   // ---- Digital assets ----
   ['cryptocurrency', 'Cryptocurrency', 'Digital assets', 'crypto', 'cash', F, 'Forks, airdrops and staking rewards are recorded by hand.'],
@@ -189,7 +189,7 @@ const ROWS = [
   ['commodity_forward', 'Commodity forward', 'Forwards', 'forward', 'deriv', F, 'In the commodity\'s own units. Cash-settled against its close on the value date (a missing fixing waits visibly), or delivered (simulated).'],
   ['fra', 'Forward-rate agreement', 'Forwards', 'forward', 'deriv', F, 'Settled at the start of the period, discounted at the fixing.'],
   ['fx_swap', 'FX swap', 'Forwards', 'forward', 'deriv', F, 'Booked as a near leg and a far leg (each a deliverable FX forward of its own value date) in one package on the Strategies page.'],
-  ['credit_spread_forward', 'Credit-spread forward', 'Credit derivatives', 'manual', 'deriv', M, 'Settlement amount and valuation are entered by hand.'],
+  ['credit_spread_forward', 'Credit-spread forward', 'Credit derivatives', 'manual', 'deriv', M, 'Entered by hand: marks with date and source, and the realised value at expiry; the settlement is worked out with the contract\'s stated formula. A collateral basis is required.'],
 
   // ---- Listed and OTC options ----
   ['listed_option', 'Listed option', 'Options', 'option', 'deriv', F, 'Expiration, exercise and assignment are automated from the contract deliverable.'],
@@ -216,7 +216,7 @@ const ROWS = [
   ['spread_option', 'Spread option', 'Options', 'otcoption', 'deriv', P, 'The settlement amount is entered by hand at expiry.'],
   ['quanto_option', 'Quanto option', 'Options', 'otcoption', 'deriv', P, 'The settlement amount is entered by hand at expiry.'],
   ['compound_option', 'Compound option', 'Options', 'otcoption', 'deriv', P, 'Exercise into the underlying option is recorded by hand.'],
-  ['credit_spread_option', 'Credit-spread option', 'Credit derivatives', 'manual', 'deriv', M, 'Settlement amount and valuation are entered by hand.'],
+  ['credit_spread_option', 'Credit-spread option', 'Credit derivatives', 'manual', 'deriv', M, 'Entered by hand: marks with date and source, and the realised value at expiry; the settlement is worked out with the contract\'s stated formula. A collateral basis is required.'],
 
   // ---- Rate swaps ----
   ['interest_rate_swap', 'Interest-rate swap', 'Swaps', 'swap', 'deriv', F, 'Fixed and floating legs pay on their schedules; floating payments need their fixings.'],
@@ -252,10 +252,10 @@ const ROWS = [
   ['electricity_swap', 'Electricity swap', 'Swaps', 'swap', 'deriv', F, 'Averaged prices are entered as the period fixing.'],
   ['freight_swap', 'Freight swap', 'Swaps', 'swap', 'deriv', F, 'Averaged route assessments are entered as the period fixing.'],
   ['dividend_swap', 'Dividend swap', 'Swaps', 'swap', 'deriv', P, 'Realised dividends are entered as the period fixing.'],
-  ['variance_swap', 'Variance swap', 'Swaps', 'manual', 'deriv', M, 'Realised variance and the settlement amount are entered by hand.'],
-  ['volatility_swap', 'Volatility swap', 'Swaps', 'manual', 'deriv', M, 'Realised volatility and the settlement amount are entered by hand.'],
-  ['correlation_swap', 'Correlation swap', 'Swaps', 'manual', 'deriv', M, 'Settlement amount and valuation are entered by hand.'],
-  ['dispersion_swap', 'Dispersion swap', 'Swaps', 'manual', 'deriv', M, 'Settlement amount and valuation are entered by hand.'],
+  ['variance_swap', 'Variance swap', 'Swaps', 'manual', 'deriv', M, 'Entered by hand: marks with date and source, and the realised value at expiry; the settlement is worked out with the contract\'s stated formula. A collateral basis is required.'],
+  ['volatility_swap', 'Volatility swap', 'Swaps', 'manual', 'deriv', M, 'Entered by hand: marks with date and source, and the realised value at expiry; the settlement is worked out with the contract\'s stated formula. A collateral basis is required.'],
+  ['correlation_swap', 'Correlation swap', 'Swaps', 'manual', 'deriv', M, 'Entered by hand: marks with date and source, and the realised value at expiry; the settlement is worked out with the contract\'s stated formula. A collateral basis is required.'],
+  ['dispersion_swap', 'Dispersion swap', 'Swaps', 'manual', 'deriv', M, 'Entered by hand: marks with date and source, and the realised value at expiry; the settlement is worked out with the contract\'s stated formula. A collateral basis is required.'],
 
   // ---- Credit derivatives ----
   ['cds_single_name', 'Single-name credit-default swap', 'Credit derivatives', 'cds', 'deriv', F, 'Premiums pay quarterly; a credit event is triggered by hand with the recovery rate.'],
@@ -265,10 +265,10 @@ const ROWS = [
   ['cds_index_tranche', 'Credit-index tranche swap', 'Credit derivatives', 'cds', 'deriv', P, 'Tranche losses are recorded by hand.'],
   ['loan_cds', 'Loan credit-default swap', 'Credit derivatives', 'cds', 'deriv', P, 'Cancellation on refinancing is recorded by hand.'],
   ['abs_cds', 'Asset-backed credit-default swap', 'Credit derivatives', 'cds', 'deriv', P, 'Pay-as-you-go amounts are recorded by hand.'],
-  ['recovery_swap', 'Recovery swap', 'Credit derivatives', 'manual', 'deriv', M, 'Settlement amount and valuation are entered by hand.'],
+  ['recovery_swap', 'Recovery swap', 'Credit derivatives', 'manual', 'deriv', M, 'Entered by hand: marks with date and source, the credit event, and the recovery rate from the auction; settles notional x (recovery - fixed rate) only after a credit event. A collateral basis is required.'],
 
   // ---- Other ----
-  ['weather_derivative', 'Weather derivative', 'Insurance-linked', 'manual', 'deriv', M, 'Settlement amount and valuation are entered by hand.'],
+  ['weather_derivative', 'Weather derivative', 'Insurance-linked', 'manual', 'deriv', M, 'Entered by hand: marks with date and source, and the index for the period; the payment is worked out from the strike, tick and cap stated on the contract. A collateral basis is required.'],
 ];
 
 export const PRODUCTS = ROWS.map(([id, name, group, family, cls, support, note]) => ({ id, name, group, family, cls, support, note }));

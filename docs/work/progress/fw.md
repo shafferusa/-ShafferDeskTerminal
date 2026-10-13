@@ -30,22 +30,12 @@
 - fx_forward: passed engine / API / browser (saved 0.2).
 
 ## In progress
-- Part 1 done apart from the 1-point save (retry npm test).
-- Next: core tests for asset-forward fixes (delivery from holdings / blocked, bond forward units, TBA allocation);
-  full npm test; rerun all forwards + touched futures at 3 levels; 1-point save; final report.
-- ndf: passed engine / API / browser (saved 0.2).
-- fra: passed E/A/B. Terminal fixes for it: contracts.js shows Fixing date for an FRA; api.js refreshBook also refreshes
-  FX pairs of open positions' currencies (and the engine driver mirror) - NAV was provisional on a stale EUR rate.
-  FRA offset discounting logged in BUGS.md (not fixed).
-- Asset forwards (fx.js): units delivered = qty x multiplier / underlying multiplier; multiplier defaults to the
-  underlying's; quantity/price labels from the underlying (qtyLabelFor, terms.quantityUnit/priceUnits); delivery
-  against payment ON the value date (was the underlying's lag from it). bond.js fillsOf counts 'forward.delivery' and
-  'option.delivery' events as fills (accrued interest bought on delivery was reversed by the next EOD).
-- bond_forward passes E/A/B; equity_forward re-passes E/A/B with same-day delivery. commodity_forward passes E/A/B. fx_swap passes E/A/B (package on the Strategies page: driver actions.package). tba_mortgage passes E/A/B (fx.js: TBA terms.tba/coupon, no underlying needed, multiplier 0.01; `allocate` lifecycle
-  action + api.js case; delivery of the allocated pool, blocked visibly without one; UI "Pool allocation" dialog and
-  "Pool coupon" form field). ALL 8 forward products pass at engine, API and browser. catalog.js forward notes updated.
-- test/core/forwards.test.js (4 tests) passes. equity_forward passes E/A/B (delivery from holdings fix in fx.js settleForwardTask).
-  then equity_forward (agreement basis? physical delivery), bond_forward, commodity_forward, fx_swap, tba_mortgage.
+- Nothing half-edited. test/core/forwards.test.js now 7 tests (adds delivery from holdings, bond forward, TBA).
+- Final checks 19:10 UTC: all 8 forwards pass E/A/B (rerun); commodity_future, equity_future, equity_index_future,
+  gov_bond_future, treasury_future pass E/A/B (rerun); npm test 620/623, the 3 failures are others' (convertible_preferred
+  'convert' action; system route lists missing POST /api/tasks/:id/settlement-value), logged in BUGS.md.
+- Screens checked: $SP/fw/screens (delivery notice, early termination, pool allocation dialogs, futures form; light/dark,
+  1440 and 390), no console errors.
 
 ## Next
-1. Part 2: forwards family, 8 products, one at a time, save 0.2 each.
+- Part 1's 1-point save waits for a fully green npm test (others' failures). Final report delivered.

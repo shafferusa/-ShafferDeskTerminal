@@ -388,7 +388,10 @@ export function createApi(app) {
         case 'assign': need(plugin.assign, 'Assignment does not apply to this position.'); result = plugin.assign(app, { ...ctx, contracts: body.contracts }); break;
         case 'redeem': need(plugin.redeemEarly, 'Early redemption does not apply to this position.'); result = plugin.redeemEarly(app, { ...ctx, price: body.price, face: body.face, label: body.label }); break;
         // A holder's put and a conversion or exchange into shares, recorded by hand (server/products/bond.js).
-        case 'put': case 'convert': need(plugin.positionEvent, 'This event applies to debt securities.'); result = plugin.positionEvent(app, { ...ctx, action: body.action, body }); break;
+        case 'put': case 'convert':
+          // Only debt securities record these here; any other family answers as before (an unknown lifecycle action).
+          if (inst.family !== 'bond' || !plugin.positionEvent) throw new AppError(`Unknown lifecycle action "${body.action}".`);
+          result = plugin.positionEvent(app, { ...ctx, action: body.action, body }); break;
         case 'recall': need(plugin.recall, 'A lender recall does not apply to this position.'); result = plugin.recall(app, { ...ctx, qty: body.qty, days: num(body.days) ?? 2 }); break;
         // r1: a repo's collateral changed by agreement (margin call met, excess returned, substitution).
         case 'collateral': need(plugin.collateralChange, 'A collateral change applies to repos and reverse repos.'); result = plugin.collateralChange(app, { ...ctx, change: body.change, qty: body.qty, positionId: body.positionId, instrumentId: body.instrumentId }); break;
@@ -433,7 +436,22 @@ export function createApi(app) {
     const plugin = app.products.get(inst.family);
     const out = db.tx(() => {
       switch (body.action) {
-        case 'credit_event': need(plugin.creditEvent, 'A credit event applies to credit default swaps.'); return plugin.creditEvent(app, { inst, recovery: body.recovery, weight: body.weight });
+        case 'credit_event': {
+          need(plugin.creditEvent, 'A credit event applies to credit default swaps.');
+          const ce = plugin.creditEvent(app, { inst, recovery: body.recovery, weight: body.weight });
+          // A credit-default swaption on this contract that knocks out on a credit event ends with it, nothing paid.
+          const otc = app.products.get('otcoption');
+          for (const o of instruments.list({ family: 'otcoption' }).filter((i) => i.underlying_id === inst.id && i.terms.knockOutOnCredit)) {
+            for (const p of positions.heldAround(o.id)) {
+              if (isZero(p.qty)) continue;
+              const b = books.getBook(p.book_id), u = books.getUnit(p.unit_id);
+              otc.knockOut(app, { book: b, unit: u, inst: o, pos: p, note: `Credit event recorded on ${inst.symbol || inst.name}` });
+              otc.onPositionChange(app, { book: b, unit: u, inst: o, pos: positions.get(p.id) });
+              touchStrategy(p.strategy_id);
+            }
+          }
+          return ce;
+        }
         case 'paydown': {
           need(plugin.paydown, 'A principal paydown applies to debt securities.');
           const holder = positions.heldAround(inst.id)[0];

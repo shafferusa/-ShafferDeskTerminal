@@ -206,3 +206,4 @@
 - 2026-10-13T18:38Z | r1 | +0.2 | stock_loan passes at engine, API and browser
 - 2026-10-13T18:40Z | o2 | +0.2 | compound_option passes at engine, API and browser
 - 2026-10-13T18:41Z | r1 | +0.2 | bond_loan passes at engine, API and browser
+- 2026-10-13T18:44Z | fw | +0 | fw: final state - 8 forwards and 5 touched futures pass E/A/B; npm test 620/623 (3 failures in other areas, in BUGS.md); part 1 point withheld until npm test is green

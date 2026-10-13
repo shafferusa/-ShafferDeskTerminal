@@ -103,3 +103,23 @@ test('a price entered by hand today as the close of an earlier date is not taken
   app.data.enterManual({ kind: 'price', subject: inst.id, value: 2445, units: 'USD per troy ounce' });
   assert.equal(app.data.closeFor(inst.id, '2026-05-29').value, 2445, 'a price entered today with no other date stands for today');
 });
+
+test('a credit event recorded on a credit default swap knocks out the credit-default swaptions on it, nothing paid', async () => {
+  const { app } = makeApp();
+  const { book, acct } = makeBook(app);
+  const cdsInst = app.instruments.create({ productId: 'cds_single_name', name: 'Test CDS 5Y', symbol: 'TCDS', marketView: 'US_DERIV', venueType: 'otc', tradingCcy: USD,
+    terms: { referenceEntity: 'Test Corp', coupon: 0.01, effective: '2026-06-22', maturity: '2031-06-20', collateralBasis: { type: 'uncollateralized' } } });
+  const sw = { productId: 'cds_swaption', name: 'Payer swaption on TCDS', marketView: 'US_DERIV', venueType: 'otc', tradingCcy: USD, underlyingId: cdsInst.id, multiplier: 0.01,
+    terms: { right: 'C', strike: 1.5, expiration: '2026-06-17', optionType: 'swaption', settlement: 'physical', collateralBasis: { type: 'uncollateralized' } } };
+  const s = await trade(app, { bookId: book.id, unitId: acct.id, template: 'custom', legs: [leg(sw, 1_000_000, 'buy', 0.5)] }); // premium 1,000,000 x 0.5 x 0.01 = 5,000
+  const p = s.positions[0];
+  assert.equal(app.instruments.get(p.instrument.id).terms.knockOutOnCredit, true, 'a swaption on a CDS knocks out on a credit event');
+  const api = createApi(app);
+  const m = api.match('POST', `/api/instruments/${cdsInst.id}/lifecycle`);
+  await m.handler({ params: m.params, query: {}, body: { action: 'credit_event', recovery: 0.4 } });
+  assert.equal(app.positions.get(p.positionId).qty, 0, 'the swaption is closed');
+  const ev = app.db.get(`SELECT summary FROM events WHERE type = 'option.knocked_out' ORDER BY id DESC LIMIT 1`);
+  assert.match(ev.summary, /^Knocked out by a credit event on Test Corp: 1,000,000 Payer swaption on TCDS ends with nothing paid/);
+  assert.equal(app.tasks.open([acct.id]).filter((t) => t.position_id === p.positionId).length, 0, 'its expiry is no longer scheduled');
+  assert.deepEqual(ledgerImbalance(app), []);
+});

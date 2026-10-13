@@ -189,3 +189,34 @@ start fixing never asked of the data service; a return or price fixing asked for
   because a new route `POST /api/tasks/:id/settlement-value` (server/api.js, basket / spread option settlement value by
   hand; OTC options work, test/matrix/drivers/browser/otcoption.mjs) is not classified in either system case's route
   list (test/system). The route's owner should add it to both lists with its repeat-safety rule.
+
+- (b3, 2026-10-13) RESOLVED: the `convertible_preferred` entry above (fw). server/api.js now routes `put` / `convert`
+  to the bond plugin only for debt securities; any other family answers `Unknown lifecycle action "<action>"` as before.
+  convertible_preferred passes again at engine and API level.
+
+- (b3, 2026-10-13) Structured bonds, limitations established while testing structured group A (bond-structured-a.mjs).
+  None is presented as supported; each is stated in the spec headers and matrix metadata.
+  1. Inflation index: the index ratio is entered by hand and stays constant until the next entry; the Terminal does not
+     interpolate a daily reference CPI (needs an inflation-index feed from Shaffer MarketData). Recording a new ratio while
+     a trade is unsettled re-values that trade's accrued at the new ratio (the cash already agreed is not changed).
+  2. Gilt (and old Bulldog) ex-dividend periods are not modelled: a coupon belongs to the face settled before the coupon
+     date. A trade settling in the seven business days before a gilt coupon would book accrued wrongly.
+  3. Call and put notice periods are not modelled: a call or put is recorded on its redemption date. A make-whole call
+     price is not computed (needs a Treasury curve from Shaffer Analytics Lab); only the scheduled call prices are accepted.
+  4. A paydown (or loss) must be recorded before trades that settle in its month are booked: a factor recorded after such
+     a trade does not re-price it, and a position that was sold out before the factor is recorded but was entitled at the
+     record date is not paid the principal (record it as a manual cash flow). A full fix needs the monthly factor
+     schedule from Shaffer MarketData (factor feed) ahead of trading, or re-pricing of booked trades.
+  5. Yield maintenance / prepayment premiums are not computed (need loan terms and a Treasury curve: Shaffer Analytics
+     Lab); they are recorded by hand as a manual cash flow (category Coupon).
+  6. Contingent convertibles: the trigger is recorded as a write-down (partial, permanent). A conversion-type trigger
+     into shares at an instrument-wide forced conversion is not built (a holder conversion exists for convertibles only);
+     a full write-down (factor 0) is recorded on each position as an early redemption at 0. Write-up of a temporary
+     write-down is not built.
+  7. Conversion and exchange into shares in another currency are refused. Cash in lieu uses a share price entered by
+     hand. Accrued interest is always forfeited on conversion (US practice); a market that pays accrued on conversion is
+     not supported.
+  8. Cosmetic: after a delayed MBS coupon paid at a rounded amount, a 0.01 accrual event can appear (the rounding cent
+     returns as income). The minimum-denomination refusal prints the step without a thousands separator
+     ("multiple of 200000", server/core/packages.js); other specs assert that text, so it was left.
+  9. Not exercised for these products: short sales, Treasury-owned linkers or convertibles, partial calls of a short.
