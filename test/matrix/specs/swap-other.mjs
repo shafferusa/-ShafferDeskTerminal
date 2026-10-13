@@ -1916,7 +1916,7 @@ const commoditySwap = {
   title: 'Two-month crude oil swap: pay 72.00 fixed, receive the monthly average of a daily assessment on London pricing days, net settled, under a collateral agreement',
   matrix: {
     ...OTC_TICKET,
-    requiredFields: [...OTC_TICKET.requiredFields, 'Net settlement', 'fixed leg: Leg type "Price of a reference asset", Fixed price, Units per unit of notional, Payment monthly, Payment lag 5', 'floating leg: Reference asset (the assessment), Floating price "Average of each pricing day", Pricing calendar UK, Payment monthly, Payment lag 5'],
+    requiredFields: [...OTC_TICKET.requiredFields, 'Net settlement', 'fixed leg: Leg type "Price of a reference asset", Fixed price, Units per unit of notional, Payment monthly, Payment lag 5', 'floating leg: Reference asset (the assessment), Floating price "Daily average", Pricing calendar UK, Payment monthly, Payment lag 5'],
     automaticInputs: ['monthly periods and payment dates (5 USD business days after each month)', 'pricing days of each month on the UK calendar (bank holidays excluded)', 'daily assessments (close fixtures standing in for Shaffer MarketData) and their average', 'net amount of each month', 'settlement date, T+2 USD', 'commission from the Book fee schedule (per barrel)', 'independent amount and variation margin from the agreement'],
     manualInputs: ['collateral agreement (Treasury, Collateral)', 'the reference assessment, registered as a crude oil spot instrument (never traded)', 'an assessment the data service did not supply, entered by hand as the close of its date', 'settlement amount of the partial termination (stated fill price)', 'mark of the contract, entered by hand'],
     settlement: 'Upfront and termination amounts and commission settle T+2 USD; each month settles net, 5 USD business days after it ends',
@@ -2137,7 +2137,7 @@ const commodityBasisSwap = {
   title: 'Two-month crude location basis swap, Houston against Cushing less a fixed differential, three averaged legs net settled, opposite side',
   matrix: {
     ...OTC_TICKET,
-    requiredFields: [...OTC_TICKET.requiredFields, 'Net settlement', 'two floating price legs: Reference asset, Floating price "Average of each pricing day", Pricing calendar US', 'differential leg: Fixed price 0.85', 'every leg: Payment monthly, Payment lag 5'],
+    requiredFields: [...OTC_TICKET.requiredFields, 'Net settlement', 'two floating price legs: Reference asset, Floating price "Daily average", Pricing calendar US', 'differential leg: Fixed price 0.85', 'every leg: Payment monthly, Payment lag 5'],
     automaticInputs: ['monthly periods, US pricing days, payment 5 USD business days after each month', 'both references\' daily prices (close fixtures standing in for Shaffer MarketData) and their averages', 'the net amount of the three legs', 'settlement date, T+2 USD', 'commission from the Book fee schedule (per barrel)', 'independent amount from the position-level terms'],
     manualInputs: ['the two reference prices, registered as crude oil spot instruments (never traded)', 'a price the data service did not supply, entered by hand as the close of its date', 'upfront amount and settlement amount of the partial termination (stated fill prices)', 'mark of the contract, entered by hand'],
     settlement: 'Upfront and termination amounts and commission settle T+2 USD; each month settles net 5 USD business days after it ends',
@@ -2512,7 +2512,7 @@ const energySwap = {
   title: 'Natural gas swap, 10,000 MMBtu a day for two months against the daily Henry Hub average, opposite side (producer), net settled, variation margin only, terminated early',
   matrix: {
     ...OTC_TICKET,
-    requiredFields: [...OTC_TICKET.requiredFields, 'Net settlement', 'both legs: Delivery hours "Per calendar day (gas)", Units per unit of notional 1 (MMBtu a day), Payment monthly, Payment lag 5', 'fixed leg: Fixed price 3.20', 'floating leg: Reference asset (the index), Floating price "Average of each pricing day", Pricing calendar US'],
+    requiredFields: [...OTC_TICKET.requiredFields, 'Net settlement', 'both legs: Delivery hours "Per calendar day (gas)", Units per unit of notional 1 (MMBtu a day), Payment monthly, Payment lag 5', 'fixed leg: Fixed price 3.20', 'floating leg: Reference asset (the index), Floating price "Daily average", Pricing calendar US'],
     automaticInputs: ['monthly periods and quantities (MMBtu a day x calendar days)', 'US pricing days (Labor Day excluded)', 'daily index fixings (close fixtures standing in for Shaffer MarketData) and their average', 'net amount of each month', 'settlement date, T+2 USD', 'commission from the Book fee schedule', 'variation margin from the position-level terms'],
     manualInputs: ['the reference index, registered as a natural gas spot instrument (never traded)', 'a fixing the data service did not supply, entered by hand', 'settlement amount of the termination (stated fill price)', 'mark of the contract, entered by hand'],
     settlement: 'Termination amount and commission settle T+2 USD; each month settles net 5 USD business days after it ends',
@@ -2717,7 +2717,7 @@ const electricitySwap = {
   title: 'German power swap, 10 MW in peak and off-peak hours for two months against the day-ahead index averages, in a EUR Book',
   matrix: {
     ...OTC_TICKET,
-    requiredFields: [...OTC_TICKET.requiredFields, 'Net settlement', 'four price legs: Fixed price or Reference asset with Floating price "Average of each pricing day", Delivery hours "Peak hours" or "Off-peak hours", Peak hours a day 12, Peak-day calendar WEEKEND, Pricing calendar (WEEKEND for peak, ALLDAYS for off-peak), Payment monthly, Payment lag 5'],
+    requiredFields: [...OTC_TICKET.requiredFields, 'Net settlement', 'four price legs: Fixed price or Reference asset with Floating price "Daily average", Delivery hours "Peak hours" or "Off-peak hours", Peak hours a day 12, Peak-day calendar WEEKEND, Pricing calendar (WEEKEND for peak, ALLDAYS for off-peak), Payment monthly, Payment lag 5'],
     automaticInputs: ['delivery hours of each month (peak: 12 x weekdays; off-peak: the rest) and the MWh on them', 'daily peak and off-peak index fixings (close fixtures standing in for Shaffer MarketData) and their averages', 'the net amount of the four legs', 'payment 5 TARGET business days after each month', 'settlement date, T+2 TARGET', 'commission from the Book fee schedule (per MW)', 'independent amount from the position-level terms'],
     manualInputs: ['the two index references, registered as electricity spot instruments (never traded)', 'a fixing the data service did not supply, entered by hand', 'settlement amount of the partial termination (stated fill price)', 'mark of the contract, entered by hand'],
     settlement: 'Termination amount and commission settle T+2 TARGET; each month settles net 5 TARGET business days after it ends',
@@ -2926,7 +2926,7 @@ const freightSwap = {
   title: 'Panamax time-charter freight swap (FFA), 30 days a month for two months against the route average on London days, cleared',
   matrix: {
     ...OTC_TICKET,
-    requiredFields: [...OTC_TICKET.requiredFields, 'Net settlement', 'fixed leg: Fixed price (USD a day), Units per unit of notional 1 (days)', 'floating leg: Reference asset (the route average), Floating price "Average of each pricing day", Pricing calendar UK', 'both legs: Payment monthly, Payment lag 5'],
+    requiredFields: [...OTC_TICKET.requiredFields, 'Net settlement', 'fixed leg: Fixed price (USD a day), Units per unit of notional 1 (days)', 'floating leg: Reference asset (the route average), Floating price "Daily average", Pricing calendar UK', 'both legs: Payment monthly, Payment lag 5'],
     automaticInputs: ['monthly periods, London pricing days (Christmas and Boxing Day excluded), payment 5 USD business days after each month', 'daily route assessments (close fixtures standing in for Shaffer MarketData) and their average', 'net amount of each month', 'settlement date, T+2 USD', 'commission from the Book fee schedule (per day)', 'independent amount and variation margin from the clearing terms'],
     manualInputs: ['clearing terms (Treasury, Collateral, kind Cleared)', 'the route average, registered as a reference instrument because the catalog has no freight index product', 'an assessment the data service did not supply, entered by hand', 'settlement amount of the partial termination (stated fill price)', 'mark of the contract, entered by hand'],
     settlement: 'Termination amount and commission settle T+2 USD; each month settles net 5 USD business days after it ends',

@@ -1603,7 +1603,6 @@ const protectiveCall = {
     { id: 'expiry-quote', action: 'quote', instrument: 'main', quote: { bid: 51.00, ask: 51.10, last: 51.00, bidSize: 10000, askSize: 10000 }, expect: {} },
     { id: 'expiry', covers: ['expiry', 'exercise', 'lapse'], action: 'clock', to: MAR(20, '17:30'), expect: {} },
     { id: 'after-expiry-wrapped', covers: ['package state after expiry'], action: 'strategy_check', lot: 'wrapped', expect: {} },
-    { id: 'close-wrapped', covers: ['close', 'return', 'borrow fee'], action: 'close', lot: 'wrapped', instrument: 'borrow:main', scope: 'strategy', expect: {} },
     { id: 'settle-expiry', covers: ['settlement'], action: 'clock', to: MAR(23), expect: {} },
     { id: 'close-share', covers: ['reduce', 'close share', 'return'], action: 'close', lot: 'core', scope: 'strategy', percent: 50, expect: {} },
     { id: 'close-exact', covers: ['reduce', 'close exact amount', 'return'], action: 'close', lot: 'core', instrument: 'main', qty: 200, expect: {} },

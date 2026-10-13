@@ -336,14 +336,14 @@ function LegsEditor({ legs, onChange, ccy }) {
         ${['fixed', 'float', 'ois'].includes(l.type) ? html`<${Field} label="Notional"><${Check} checked=${l.exchangeNotional} onChange=${(v) => set(i, { exchangeNotional: v })}>Exchanged at start and maturity<//><//>` : null}
         ${l.type === 'price' ? html`<${PriceLegFields} leg=${l} set=${(patch) => set(i, patch)} />` : null}
         <${Field} label="Payment lag (business days)" hint="Paid this many business days after each period end; 0 = on the period end"><${Num} value=${l.paymentLag ?? 0} onInput=${(v) => set(i, { paymentLag: v })} /><//>
-        <${Field} label="Notional schedule" span=${2} hint="Amortizing or accreting: one step per line, the first day of a period and its factor of the notional (2026-09-05 0.75). Empty: the notional does not change."><${ScheduleText} value=${l.notionalSchedule} onChange=${(v) => set(i, { notionalSchedule: v })} /><//>
+        <${Field} label="Notional schedule" hint="Amortizing or accreting: one step per line, the first day of a period and its factor of the notional (2026-09-05 0.75). Empty: the notional does not change."><${ScheduleText} value=${l.notionalSchedule} onChange=${(v) => set(i, { notionalSchedule: v })} /><//>
       </div></div>`)}
     <div><${Button} small onClick=${() => onChange([...legs, { side: 'receive', type: 'float', ccy: ccy || 'USD', index: '', spread: 0, months: 3, dayCount: 'ACT/360' }])}>Add a leg<//></div>
   </div>`;
 }
 
 // ---- s2: notional schedule and averaged / volume-shaped price legs (commodity, energy, electricity, freight swaps) ----
-const AVERAGING = opt([['', 'Fixing of the period end'], ['daily', 'Average of each pricing day']]);
+const AVERAGING = opt([['', 'Period-end fixing'], ['daily', 'Daily average']]);
 const HOURS = opt([['', 'Per period (as stated)'], ['day', 'Per calendar day (gas)'], ['base', 'Base (24 hours a day)'], ['peak', 'Peak hours'], ['offpeak', 'Off-peak hours']]);
 function PriceLegFields({ leg: l, set }) {
   return html`
@@ -357,7 +357,7 @@ function PriceLegFields({ leg: l, set }) {
 function ScheduleText({ value, onChange }) {
   const shown = (value || []).map((s) => `${s.from} ${s.factor}`).join('\n');
   const [text, setText] = useState(shown);
-  return html`<textarea rows="3" value=${text} onInput=${(e) => { setText(e.target.value); onChange(parseSchedule(e.target.value)); }}></textarea>`;
+  return html`<textarea rows="3" style="width:100%;box-sizing:border-box;font:inherit" value=${text} onInput=${(e) => { setText(e.target.value); onChange(parseSchedule(e.target.value)); }}></textarea>`;
 }
 function parseSchedule(text) {
   const rows = String(text || '').split('\n').map((x) => x.trim()).filter(Boolean);

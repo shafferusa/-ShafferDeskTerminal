@@ -247,6 +247,22 @@ export function settleOption(app, { book, unit, inst, pos, S, date, contracts, m
   });
   const undNow = app.positions.find(unit.id, und.id, pos.strategy_id);
   if (undNow && undPlugin.onPositionChange) undPlugin.onPositionChange(app, { book, unit, inst: und, pos: undNow });
+  // t1: shares received on exercise or assignment that cover a short free the securities borrowed for it, which go back
+  // the same day, as they do when a package covers the short (a protective call exercised, a covered put assigned).
+  // Without this the borrow stayed open against nothing sold short, its fee accruing, and the strategy never closed.
+  if (action === 'buy_to_cover') {
+    const shortLeft = undNow && undNow.qty < 0 ? -undNow.qty : 0;
+    const loans = app.positions.list({ unitIds: [unit.id], strategyId: pos.strategy_id })
+      .filter((p) => p.qty > 0 && app.instruments.get(p.instrument_id)?.family === 'secloan' && app.instruments.get(p.instrument_id)?.underlying_id === und.id);
+    let spare = loans.reduce((a, p) => a + p.qty, 0) - shortLeft;
+    for (const lp of loans) {
+      if (!(spare > 1e-9)) break;
+      const q = Math.min(lp.qty, spare);
+      const lInst = app.instruments.get(lp.instrument_id);
+      app.products.get(lInst.family).close(app, { book, unit, inst: lInst, pos: lp, qty: q, tradeDate: date, actor: 'engine' });
+      spare -= q;
+    }
+  }
   return { outcome: long ? 'exercised' : 'assigned', eventId: r.eventId, realized: r.realized, deliveryEventId: d.eventId };
 }
 

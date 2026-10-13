@@ -392,6 +392,9 @@ export function createApi(app) {
           // Only debt securities record these here; any other family answers as before (an unknown lifecycle action).
           if (inst.family !== 'bond' || !plugin.positionEvent) throw new AppError(`Unknown lifecycle action "${body.action}".`);
           result = plugin.positionEvent(app, { ...ctx, action: body.action, body }); break;
+        // s3: a callable or puttable swap's right exercised on one of its dates; a loan TRS's pass-through (server/products/swap-partial.js).
+        case 'call_exercise': case 'put_exercise': need(plugin.exerciseTermination, 'An exercise of a call or put applies to callable and puttable swaps.'); result = plugin.exerciseTermination(app, ctx, { by: body.by }); break;
+        case 'pass_through': need(plugin.passThrough, 'A pass-through applies to a loan total-return swap.'); result = plugin.passThrough(app, ctx, { kind: body.kind, amount: body.amount, share: body.share, price: body.price, note: body.note }); break;
         case 'recall': need(plugin.recall, 'A lender recall does not apply to this position.'); result = plugin.recall(app, { ...ctx, qty: body.qty, days: num(body.days) ?? 2 }); break;
         // r1: a repo's collateral changed by agreement (margin call met, excess returned, substitution).
         case 'collateral': need(plugin.collateralChange, 'A collateral change applies to repos and reverse repos.'); result = plugin.collateralChange(app, { ...ctx, change: body.change, qty: body.qty, positionId: body.positionId, instrumentId: body.instrumentId }); break;

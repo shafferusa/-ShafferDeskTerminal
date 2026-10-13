@@ -2406,4 +2406,243 @@ const syndicatedLoanSpec = {
   ],
 };
 
-export default [specifiedPool, absSpec, cmoSpec, cloSpec, cdoSpec, clnSpec, structuredNoteSpec, catBondSpec, syndicatedLoanSpec];
+// ---------------------------------------------------------------------------------------------
+// leveraged_loan
+// ---------------------------------------------------------------------------------------------
+// A leveraged term loan B held at a price, traded by assignment on par documentation: Kestrel Dynamics Term Loan B due
+// 15 November 2032 (B-rated borrower), 3-month term SOFR (TSOFR3M) + 3.50%, interest quarterly on 15 February, May, August and
+// November, ACT/360 on the principal outstanding, amortising 0.25% of original principal a quarter (factor 0.985). Par trades
+// settle T+7. Within its six-month soft-call period the borrower reprices the loan: the lenders agree a lower spread, 3.00%,
+// from the May interest period, and are paid the 1% soft-call premium ("101 soft call"). Recorded by hand from the agent.
+//   - Bought on Tuesday 6 March 2029 at 98.25, settling on the standard date, Thursday 15 March (no delayed compensation).
+//   - Good Friday (30 March) passes. A repricing cannot be recorded off an interest payment date (refused on 11 May).
+//   - Tuesday 15 May: the interest at 7.35% is paid and the rate resets to the May fixing (3.70% + 3.50% = 7.20%); the quarterly
+//     amortisation is recorded by hand (0.985 to 0.9825); the repricing takes the period's rate to 3.70% + 3.00% = 6.70% and pays
+//     the 1% premium on the principal outstanding.
+//   - Memorial Day passes; the price rises; 1,600,000 sold on 31 May (settling T+7, Monday 11 June); the rest on 11 June, settling
+//     T+7 over Juneteenth (Tuesday 19 June) on Thursday 21 June.
+// Commission: 0.5 basis point of clean principal. Days (ACT/360) from 15 Feb: to 15 Mar 28, 29 Mar 42, 10 May 84, 15 May 89; from
+// 15 May: to 30 May 15, 8 Jun 24, 11 Jun 27, 21 Jun 37. Principal: 4,000,000 x 0.985 = 3,940,000; x 0.9825 = 3,930,000;
+// 1,600,000 x 0.9825 = 1,572,000; 2,400,000 x 0.9825 = 2,358,000.
+const leveragedLoanSpec = {
+  productId: 'leveraged_loan',
+  title: 'Kestrel Dynamics Term Loan B (TSOFR3M + 3.50%) on par documentation: assignment settling T+7, Good Friday, repricing refused off a payment date, interest and reset, amortisation by hand, repricing to +3.00% with the 101 soft-call premium by hand, Memorial Day, partial sale, close over Juneteenth',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action (Buy or Sell: no short sale of a loan)', 'Face amount (original principal)'],
+    automaticInputs: [...BOND_TICKET.automaticInputs, 'TSOFR3M fixing of each interest period (rate fixture standing in for Shaffer MarketData)'],
+    manualInputs: ['Registration: Trading documentation par, Settlement convention 7, Coupon Floating TSOFR3M + 3.50%, Current coupon, Pool factor', 'Quarterly amortisation recorded by hand as a paydown', 'Repricing recorded by hand on the instrument form (New spread, Repricing premium, Review repricing, Record repricing)'],
+    settlement: 'T+7 on the US bond calendar (par documentation), Juneteenth skipped',
+    lifecycle: 'Automatic: daily accrual on the principal outstanding, quarterly interest, reset from the fixing plus the spread in force. Manual: amortisation, the repricing (new spread from the interest period that starts on the payment date, soft-call premium). Refused: a repricing recorded off an interest payment date. Not modelled: a mid-period repricing with split interest, non-consenting lenders replaced',
+    accounting: 'Cost per 100 of principal outstanding; interest and the repricing premium in coupon and interest income; amortisation at par against cost realized; commission expensed',
+    collateral: 'None for a long position',
+  },
+  start: EST('2029-03-06'), // Tuesday
+  settlementCheck: { lag: 7, holidays: ['2029-03-30', '2029-05-28', '2029-06-19'] }, // Good Friday, Memorial Day, Juneteenth
+  book: {
+    name: 'Matrix leveraged loan', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 6_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 5_000_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.5 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'leveraged_loan', name: 'Kestrel Dynamics Term Loan B due 15-Nov-2032', symbol: 'KESTREL-TLB-32', marketView: 'US_CASH', venueType: 'otc', issuer: 'Kestrel Dynamics Holdings LLC', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { settleLag: 7 },
+      terms: { couponType: 'float', referenceRate: 'TSOFR3M', spread: 0.035, currentCoupon: 0.0735, frequency: 4, maturity: '2032-11-15', issueDate: '2027-11-15', dayCount: 'ACT/360', redemption: 100, factor: 0.985, minDenomination: 1_000, seniority: 'Senior secured first lien (B / B2)', tradingDocs: 'par' } },
+  },
+  quotes: { main: { bid: 98, ask: 98.25, last: 98.125, bidSize: 20_000_000, askSize: 20_000_000 } },
+  expectAtStart: { ...startState(5_000_000, 1_000_000), cash: { account: usdCash(5_000_000), treasury: usdCash(1_000_000) } },
+  steps: [
+    {
+      // 4,000,000 at 98.25: principal 3,940,000 x 98.25 / 100 = 3,871,050.00; 28 days at 7.35% 22,523.67; 0.5 bp = 193.55.
+      // Settles on the standard date (T+7): no delayed compensation.
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 4_000_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 4_000_000, estimate: 98.25, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2029-03-15', calendar: 'USBOND',
+            notional: 3_940_000, gross: 3_871_050, accrued: 22_523.67, cash: -3_893_573.67, fees: 193.55 }],
+          cash: { USD: { purchases: 3_893_573.67, fees: 193.55, required: 3_893_767.22, available: 5_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 4_000_000, avgPrice: 98.25, fills: [{ qty: 4_000_000, price: 98.25, model: 'quoted-bid-ask', settleDate: '2029-03-15', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 4,000,000 KESTREL-TLB-32 @ 98.25 USD', owner: 'account', date: '2029-03-06' }],
+        cash: { account: { USD: { settled: 5_000_000, unsettled: -3_893_767.22, availableToTrade: 1_106_232.78 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 4_000_000, avgCost: 98.25, cost: 3_871_050, price: 98.125, value: 3_866_125, unrealized: -4_925, accrued: 22_523.67, priceSource: 'Test fixture' }], // 3,940,000 x 98.125 / 100
+        holdings: { main: { long: 4_000_000, short: 0, net: 4_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2029-03-15', amount: -3_893_767.22, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2029-05-15', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2032-11-15', status: 'pending' }],
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -193.55, fees: 0, borrowFunding: 0, unrealized: -4_925, total: -5_118.55 } },
+        nav: { account: 4_994_881.45, book: 5_994_881.45 },
+        balance: { account: { cash: 5_000_000, accruedIncome: 22_523.67, positions: 3_866_125, payable: 3_893_767.22, assets: 8_888_648.67, liabilities: 3_893_767.22, netAssets: 4_994_881.45 } },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EDT('2029-03-15'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 3,893,767.22 USD from settled cash', cash: { USD: -3_893_767.22 }, date: '2029-03-15' }],
+        cash: { account: { USD: { settled: 1_106_232.78, unsettled: 0, availableToTrade: 1_106_232.78 } } },
+        pending: [],
+        balance: { account: { cash: 1_106_232.78, payable: null, assets: 4_994_881.45, liabilities: 0 } },
+      },
+    },
+    {
+      // Monday 2 April, after Good Friday. End of day Thursday 29 March: 3,940,000 x 7.35% x 42/360 = 33,785.50; 11,261.83 more.
+      id: 'after-good-friday', covers: ['accrual', 'market holiday'], action: 'clock', to: EDT('2029-04-02'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on KESTREL-TLB-32: 11,261.83 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 4_000_000, accrued: 33_785.5 }],
+        pnl: { account: { couponInterest: 11_261.83, total: 6_143.28 } },
+        nav: { account: 5_006_143.28, book: 6_006_143.28 },
+        balance: { account: { accruedIncome: 33_785.5, assets: 5_006_143.28, netAssets: 5_006_143.28 } },
+      },
+    },
+    {
+      // Friday 11 May. End of day 10 May: 84 days = 67,571.00; 33,785.50 more.
+      id: 'accrue-may', covers: 'accrual', action: 'clock', to: EDT('2029-05-11'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on KESTREL-TLB-32: 33,785.50 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 4_000_000, accrued: 67_571 }],
+        pnl: { account: { couponInterest: 45_047.33, total: 39_928.78 } },
+        nav: { account: 5_039_928.78, book: 6_039_928.78 },
+        balance: { account: { accruedIncome: 67_571, assets: 5_039_928.78, netAssets: 5_039_928.78 } },
+      },
+    },
+    {
+      // The repricing is agreed, but it takes effect at the start of an interest period: today is not an interest payment date.
+      id: 'reprice-off-payment-date', covers: 'repricing (by hand)', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'reprice', spread: 0.03, premium: 1 },
+      status: 'blocked', reason: 'A repricing takes effect at the start of an interest period, on an interest payment date.',
+      expect: { refused: 'Today is not one' },
+    },
+    // The May term SOFR fixing, 3.70%, from the fixture.
+    { id: 'may-fixing', covers: 'rate reset', action: 'rate', code: 'TSOFR3M', value: 3.7, date: '2029-05-11', expect: { events: [] } },
+    {
+      // Tuesday 15 May: the interest of 15 Feb to 15 May, 89 days at 7.35% on 3,940,000 = 71,593.08. The balance stands at 15 May: 0;
+      // 4,022.08 more. The rate resets to 3.70% + 3.50% = 7.20%.
+      id: 'interest-and-reset', covers: ['coupon', 'rate reset'], action: 'clock', to: EDT('2029-05-15'),
+      expect: {
+        events: [
+          { type: 'bond.coupon', summary: 'Coupon received on 4,000,000 KESTREL-TLB-32 (factor 0.985: current face 3,940,000): 71,593.08 USD', cash: { USD: 71_593.08 }, owner: 'account', date: '2029-05-15' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on KESTREL-TLB-32: 4,022.08 USD' },
+        ],
+        cash: { account: { USD: { settled: 1_177_825.86, availableToTrade: 1_177_825.86 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 4_000_000, accrued: 0 }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2029-08-15', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2032-11-15', status: 'pending' }],
+        pnl: { account: { couponInterest: 49_069.41, total: 43_950.86 } },
+        nav: { account: 5_043_950.86, book: 6_043_950.86 },
+        balance: { account: { cash: 1_177_825.86, accruedIncome: null, assets: 5_043_950.86, netAssets: 5_043_950.86 } },
+      },
+    },
+    {
+      // The quarterly amortisation, 0.25% of original principal: factor 0.985 to 0.9825 from 15 May, paid today: 10,000.00. Cost out
+      // 3,871,050 x 0.0025 / 0.985 = 9,825.00: realized 175.00.
+      id: 'amortisation', covers: 'amortisation (by hand)', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'paydown', newFactor: 0.9825, effective: '2029-05-15' },
+      expect: {
+        events: [{ type: 'bond.paydown', summary: 'Principal paydown on KESTREL-TLB-32: factor 0.985 to 0.9825, 10,000.00 USD received', cash: { USD: 10_000 }, owner: 'account', date: '2029-05-15' }],
+        cash: { account: { USD: { settled: 1_187_825.86, availableToTrade: 1_187_825.86 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 4_000_000, cost: 3_861_225, avgCost: 98.25, price: 98.125, value: 3_856_312.5, unrealized: -4_912.5 }], // 3,930,000 x 98.125 / 100
+        pnl: { account: { realized: 175, unrealized: -4_912.5, total: 44_138.36 } },
+        nav: { account: 5_044_138.36, book: 6_044_138.36 },
+        balance: { account: { cash: 1_187_825.86, positions: 3_856_312.5, assets: 5_044_138.36, netAssets: 5_044_138.36 } },
+      },
+    },
+    {
+      // The repricing, recorded by hand on the payment date: spread 3.50% to 3.00% from the period starting today, so the period's
+      // rate is 3.70% + 3.00% = 6.70%. The 101 soft call: 1% of principal outstanding, 3,930,000 x 1% = 39,300.00, received now.
+      id: 'repricing', covers: ['repricing (by hand)', 'rate reset'], action: 'instrument_lifecycle', instrument: 'main', body: { action: 'reprice', spread: 0.03, premium: 1 },
+      expect: {
+        events: [{ type: 'loan.repricing', summary: 'Repricing of KESTREL-TLB-32 recorded by hand: spread 3.500% to 3.000% from 2029-05-15, the period\'s rate 6.700%; repricing premium 1.00% of principal: 39,300.00 USD received', cash: { USD: 39_300 }, owner: 'account', date: '2029-05-15' }],
+        cash: { account: { USD: { settled: 1_227_125.86, availableToTrade: 1_227_125.86 } } },
+        pnl: { account: { couponInterest: 88_369.41, total: 83_438.36 } },
+        nav: { account: 5_083_438.36, book: 6_083_438.36 },
+        balance: { account: { cash: 1_227_125.86, assets: 5_083_438.36, netAssets: 5_083_438.36 } },
+      },
+    },
+    {
+      // Thursday 31 May, after Memorial Day. End of day 30 May: 3,930,000 x 6.70% x 15/360 = 10,971.25.
+      id: 'after-memorial-day', covers: ['accrual', 'market holiday'], action: 'clock', to: EDT('2029-05-31'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on KESTREL-TLB-32: 10,971.25 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 4_000_000, accrued: 10_971.25 }],
+        pnl: { account: { couponInterest: 99_340.66, total: 94_409.61 } },
+        nav: { account: 5_094_409.61, book: 6_094_409.61 },
+        balance: { account: { accruedIncome: 10_971.25, assets: 5_094_409.61, netAssets: 5_094_409.61 } },
+      },
+    },
+    {
+      id: 'price-rises', action: 'quote', instrument: 'main', quote: { bid: 99.75, ask: 100, last: 99.875, bidSize: 20_000_000, askSize: 20_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 4_000_000, price: 99.875, value: 3_925_087.5, unrealized: 63_862.5 }],
+        pnl: { account: { unrealized: 63_862.5, total: 163_184.61 } },
+        nav: { account: 5_163_184.61, book: 6_163_184.61 },
+        balance: { account: { positions: 3_925_087.5, assets: 5_163_184.61, netAssets: 5_163_184.61 } },
+      },
+    },
+    {
+      // 1,600,000 sold at 99.75, settling Monday 11 June (T+7): principal 1,572,000 x 99.75 / 100 = 1,568,070.00; 27 days at 6.70%
+      // 7,899.30; 0.5 bp = 78.40. Cost out 3,861,225 x 1.6 / 4 = 1,544,490: realized 23,580.
+      id: 'reduce', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 1_600_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 1_600_000, estimate: 99.75, settleDate: '2029-06-11', notional: 1_572_000, gross: 1_568_070, accrued: 7_899.3, cash: 1_575_969.3, fees: 78.4 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 1_600_000, avgPrice: 99.75 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 1,600,000 KESTREL-TLB-32 @ 99.75 USD (realized 23,580.00 USD)' }],
+        cash: { account: { USD: { settled: 1_227_125.86, unsettled: 1_575_890.9, availableToTrade: 2_803_016.76 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_400_000, cost: 2_316_735, avgCost: 98.25, price: 99.875, value: 2_355_052.5, unrealized: 38_317.5, accrued: 3_071.95 }], // 2,358,000 x 99.875 / 100
+        holdings: { main: { long: 2_400_000, short: 0, net: 2_400_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2029-06-11', amount: 1_575_890.9, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: 23_755, commissions: -271.95, unrealized: 38_317.5, total: 161_141.21 } },
+        nav: { account: 5_161_141.21, book: 6_161_141.21 },
+        balance: { account: { receivable: 1_575_890.9, accruedIncome: 3_071.95, positions: 2_355_052.5, assets: 5_161_141.21, netAssets: 5_161_141.21 } },
+      },
+    },
+    {
+      // Monday 11 June. End of day Friday 8 June: 3,930,000 x 6.70% x 24/360 = 17,554.00 less the 27 days sold 7,899.30: 9,654.70.
+      // 6,582.75 more.
+      id: 'settle-reduce', covers: ['settlement', 'accrual'], action: 'clock', to: EDT('2029-06-11'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 1,575,890.90 USD into settled cash', cash: { USD: 1_575_890.9 } },
+          { type: 'accrual.coupon', summary: 'Interest accrued on KESTREL-TLB-32: 6,582.75 USD' },
+        ],
+        cash: { account: { USD: { settled: 2_803_016.76, unsettled: 0, availableToTrade: 2_803_016.76 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_400_000, accrued: 9_654.7 }],
+        pending: [],
+        pnl: { account: { couponInterest: 105_923.41, total: 167_723.96 } },
+        nav: { account: 5_167_723.96, book: 6_167_723.96 },
+        balance: { account: { cash: 2_803_016.76, receivable: null, accruedIncome: 9_654.7, assets: 5_167_723.96, netAssets: 5_167_723.96 } },
+      },
+    },
+    {
+      // The rest sold at 99.75, settling T+7 over Juneteenth: Thursday 21 June. 2,358,000 x 99.75 / 100 = 2,352,105.00; 37 days at
+      // 6.70% 16,237.45 (6,582.75 more than on the books); 0.5 bp = 117.605. Realized 2,352,105 - 2,316,735 = 35,370.
+      id: 'close', covers: ['close', 'market holiday'], action: 'close', lot: 'lot', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 2_400_000, estimate: 99.75, settleDate: '2029-06-21', notional: 2_358_000, gross: 2_352_105, accrued: 16_237.45, cash: 2_368_342.45, fees: 117.61 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 2_400_000, avgPrice: 99.75 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 2,400,000 KESTREL-TLB-32 @ 99.75 USD (realized 35,370.00 USD)' },
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of KESTREL-TLB-32: 6,582.75 USD' },
+        ],
+        cash: { account: { USD: { settled: 2_803_016.76, unsettled: 2_368_224.84, availableToTrade: 5_171_241.6 } } },
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2029-06-21', amount: 2_368_224.84, ccy: 'USD', into: 'cash' }],
+        lifecycle: [],
+        pnl: { account: { realized: 59_125, couponInterest: 112_506.16, commissions: -389.56, unrealized: 0, total: 171_241.6 } },
+        nav: { account: 5_171_241.6, book: 6_171_241.6 },
+        balance: { account: { cash: 2_803_016.76, receivable: 2_368_224.84, positions: null, accruedIncome: null, assets: 5_171_241.6, liabilities: 0, netAssets: 5_171_241.6 } },
+      },
+    },
+    {
+      id: 'settle-close', covers: ['settlement', 'market holiday'], action: 'clock', to: EDT('2029-06-21'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 2,368,224.84 USD into settled cash', cash: { USD: 2_368_224.84 } }],
+        cash: { account: { USD: { settled: 5_171_241.6, unsettled: 0, availableToTrade: 5_171_241.6 } }, treasury: usdCash(1_000_000) },
+        pending: [],
+        balance: { account: { cash: 5_171_241.6, receivable: null, assets: 5_171_241.6, liabilities: 0 } },
+      },
+    },
+  ],
+};
+
+export default [specifiedPool, absSpec, cmoSpec, cloSpec, cdoSpec, clnSpec, structuredNoteSpec, catBondSpec, syndicatedLoanSpec, leveragedLoanSpec];

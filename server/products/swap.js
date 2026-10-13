@@ -28,8 +28,9 @@ import { normalizeBasis } from '../core/agreements.js';
 import { bookSecurityFill, fmtPx, fmtQty } from './common.js';
 import { calendarFor, paymentCalendarFor, standardSettleDate } from './security.js';
 import * as credit from './credit.js'; // s3: credit default swap conventions and events recorded by hand
+import { PARTIAL_LEG_TYPES, normalizePartialLeg, normalizePartialTerms, partialRows, partialLegAmount, nonDeliverablePayment, partialMethods } from './swap-partial.js'; // s3: the swaps marked partial
 
-const LEG_TYPES = ['fixed', 'float', 'ois', 'return', 'price', 'cap', 'floor'];
+const LEG_TYPES = ['fixed', 'float', 'ois', 'return', 'price', 'cap', 'floor', ...PARTIAL_LEG_TYPES];
 const pct = (x, dp = 3) => `${(x * 100).toFixed(dp)}%`;
 
 export function describeLeg(leg, app) {
@@ -121,6 +122,9 @@ const exact = (x) => (Number.isFinite(x) ? Number(x.toPrecision(14)) : x);
 
 /** Contractual amount of one leg for one period, unsigned for side. Returns {amount} or {missing}. */
 function legAmount(app, inst, pos, leg, period) {
+  // s3: a quanto, CMS-spread, basket or dividend leg (products/swap-partial.js); null for every other leg.
+  const partial = partialLegAmount(app, inst, pos, leg, period, { legAmount, fixingDate });
+  if (partial) return partial;
   const state = pos.data.legs?.[leg.id] || {};
   // The notional reset in force for this period (s2): a reset made at the end of a period applies from the next one, so the
   // financing of the period that just ended is on the notional it started with, whichever leg is paid first.
@@ -325,7 +329,7 @@ export const swap = {
         if (l.strike === null) errors.push(`${at}: strike rate is required as a decimal.`);
       }
       if (l.type === 'return' || (l.type === 'price' && (l.fixedPrice === null || l.fixedPrice === undefined || l.fixedPrice === ''))) {
-        if (!l.underlyingId) errors.push(`${at}: choose the reference asset.`);
+        if (!l.underlyingId && !l.basket) errors.push(`${at}: choose the reference asset.`); // s3: or state a basket
       }
       if (l.type === 'price') {
         l.units = num(l.units) ?? 1;
@@ -336,6 +340,7 @@ export const swap = {
       l.passDividends = Boolean(l.passDividends);
       if (Array.isArray(l.notionalSchedule)) l.notionalSchedule = normalizeNotionalSchedule(l, t, at, errors);
       if (l.type === 'price') normalizePriceLeg(l, at, errors);
+      normalizePartialLeg(l, at, errors); // s3: CMS spread, quanto, basket and dividend legs
       l.paymentLag = num(l.paymentLag) ?? 0;
       if (!(Number.isInteger(l.paymentLag) && l.paymentLag >= 0 && l.paymentLag <= 10)) errors.push(`${at}: the payment lag is a whole number of business days from 0 to 10.`);
       if (!l.paymentLag) delete l.paymentLag;
@@ -351,7 +356,8 @@ export const swap = {
     // leg's own notional is the quantity x its notional factor. The currency stated on the contract is kept when a leg is
     // in it; it is never replaced silently by another one. Left empty, it is the first leg's.
     const stated = String(draft.trading_ccy || '').toUpperCase();
-    const legCcys = t.legs.map((l) => l.ccy).filter((c) => CCY_RE.test(c));
+    // s3: a non-deliverable swap is traded and settled in its settlement currency, whatever its legs' currencies.
+    const legCcys = normalizePartialTerms(draft.productId, t, errors);
     if (stated && legCcys.length && !legCcys.includes(stated)) errors.push(`The trading currency ${stated} is not the currency of any leg (${[...new Set(legCcys)].join(', ')}). The notional and the price of a swap are stated in its trading currency: use the currency of one of the legs.`);
     const ccy = legCcys.includes(stated) ? stated : (t.legs[0]?.ccy || stated);
     // Collateral follows the basis stated on the contract (an agreement, position-level terms, or an explicit
@@ -375,6 +381,7 @@ export const swap = {
     const ccys = [...new Set(t.legs.map((l) => l.ccy))];
     rows.push(['Currencies', ccys.join(', ')]);
     if (t.legs.some((l) => l.exchangeNotional)) rows.push(['Notional exchange', 'At start and maturity']);
+    rows.push(...partialRows(inst, app)); // s3
     rows.push(['Counterparty', t.counterparty || 'Simulated counterparty']);
     rows.push(...collateralRows(inst, app));
     return rows;
@@ -461,6 +468,7 @@ export const swap = {
     else out.rateFrom = addDays(inst.terms.effective, -10);
     for (const l of inst.terms.legs) {
       if (l.index) out.rateCodes.push(l.index);
+      if (l.index2) out.rateCodes.push(l.index2); // s3: the second index of a CMS spread leg
       if (l.underlyingId) {
         const u = app.instruments.get(l.underlyingId);
         if (u) {
@@ -516,8 +524,9 @@ export const swap = {
       if (t.netSettlement) return netPayment(app, task, { book, unit, inst, pos, leg, sched, period, base, awaiting });
       // A position opened part-way through a period pays from its own start date.
       const from = pos.data.cashflowsFrom || t.effective;
-      const eff = { ...period, start: from > period.start && from < period.end && leg.type !== 'return' ? from : period.start };
+      const eff = { ...period, start: from > period.start && from < period.end && leg.type !== 'return' ? from : period.start, basketLevel: task.data?.basketLevel }; // s3: a basket level entered on this item
       const r = legAmount(app, inst, pos, leg, eff);
+      if (r.missing?.message) return { blocked: r.missing.message, needs: [r.missing] }; // s3: an input with its own wording (a basket level)
       if (r.missing) {
         const refName = app.instruments.get(r.missing.subject)?.symbol || 'the reference asset';
         // An averaged price leg names every pricing day still without its fixing (s2).
@@ -526,6 +535,8 @@ export const swap = {
         const what = r.missing.kind === 'rate' ? `the ${r.missing.subject} fixing for ${r.missing.date}` : `the ${r.missing.date} fixing for ${refName}`;
         return { blocked: `Awaiting ${what}. ${awaiting}, or enter the fixing manually.`, needs: [r.missing] };
       }
+      // s3: a non-deliverable leg is paid in the settlement currency at its FX fixing (products/swap-partial.js).
+      if (t.settlementCcy && leg.ccy !== t.settlementCcy) return nonDeliverablePayment(app, task, { book, unit, inst, pos, leg, sched, period, eff, r, base, exact });
       const s = sign(pos.qty) * (leg.side === 'receive' ? 1 : -1);
       const amount = money(s * exact(r.amount), leg.ccy);
       if (amount < 0 && app.ledger.balance(unit.id, 'cash', leg.ccy) < -amount - 0.004) {
@@ -595,6 +606,8 @@ export const swap = {
     return null;
   },
 };
+// s3: the exercise of a callable or puttable swap's right and a loan TRS's pass-through, recorded by hand (products/swap-partial.js).
+Object.assign(swap, partialMethods({ legAmount, legSchedule, bookSecurityFill, exact }));
 
 /**
  * What a fill did to a swap-family contract, for the audit trail: entered (as written or on the
