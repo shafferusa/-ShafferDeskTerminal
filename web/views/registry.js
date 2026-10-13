@@ -709,6 +709,15 @@ function LifecycleAdmin({ inst, onChanged }) {
       text: r === 0 ? `${t.seniorTranche} is retired, recorded by hand. ${name} receives principal from now on: record its own factor as a paydown. No cash moves now; every holder gets a history line.`
         : `${t.seniorTranche} has ${fmtNum(r, 0)} outstanding (was ${fmtNum(t.seniorRemaining, 0)}), recorded by hand. ${name} still receives no principal: its paydowns stay refused until ${t.seniorTranche} is retired. No cash moves; every holder gets a history line.` };
   };
+  // b4: the observation of a structured note's linked underlying on a coupon date.
+  const observation = () => {
+    const d = v.obsDate || '', l = v.obsLevel;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return { invalid: 'Enter the observation date (a coupon date) as YYYY-MM-DD.' };
+    if (!isNum(l) || l <= 0) return { invalid: `Enter the level of ${t.linkedTo} observed on that date.` };
+    const hit = l >= t.couponBarrier * t.initialLevel;
+    return { action: 'observation', body: { date: d, level: l }, confirm: 'Record observation', done: 'Observation recorded.',
+      text: `${t.linkedTo} observed at ${fmtNum(l, 2)} on ${d}, recorded by hand: ${fmtNum((l / t.initialLevel) * 100, 2)}% of the initial ${fmtNum(t.initialLevel, 2)}. ${hit ? 'At or above the coupon barrier: the contingent coupon of that date is paid to every holder.' : 'Below the coupon barrier: no coupon for that date.'}${d === t.maturity ? (t.principalProtected ? ' Principal is protected: par at maturity.' : l / t.initialLevel >= t.principalBarrier ? ' At or above the principal barrier: par at maturity.' : ` Below the principal barrier: principal is repaid at ${fmtNum((l / t.initialLevel) * 100, 2)}% of par.`) : ''}` };
+  };
   // b4: the credit event of a credit-linked note's reference entity.
   const clnCreditEvent = () => {
     const R = v.clnRecovery;
@@ -750,6 +759,10 @@ function LifecycleAdmin({ inst, onChanged }) {
       <${Field} label="Kind of write-down"><${Select} value=${v.wdKind || (inst.productId === 'coco_bond' ? 'writedown' : 'loss')} onChange=${(x) => { setV({ ...v, wdKind: x }); setStep(null); }} options=${[{ value: 'writedown', label: 'Trigger event: write-down' }, { value: 'loss', label: 'Realized loss allocated' }]} /><//>
       <${Field} label="Write-down effective from" hint="Today if empty; for a monthly pool, the first day of the period"><${Text} type="date" value=${v.wdFrom || ''} onInput=${(x) => { setV({ ...v, wdFrom: x }); setStep(null); }} /><//>
       ${button('Review write-down', writeDown)}</div>` : null}
+    ${inst.family === 'bond' && isNum(t.couponBarrier) ? html`<div class="grid-form" style=${GRID}>
+      <${Field} label="Observation date" hint=${`A coupon date. Recorded so far: ${Object.keys(t.observations || {}).join(', ') || 'none'}.`}><${Text} type="date" value=${v.obsDate || ''} onInput=${(x) => { setV({ ...v, obsDate: x }); setStep(null); }} /><//>
+      <${Field} label="Observed level" hint=${`${t.linkedTo}: coupon barrier ${fmtNum(t.couponBarrier * t.initialLevel, 2)}${t.principalProtected ? '' : `, principal barrier ${fmtNum(t.principalBarrier * t.initialLevel, 2)}`}. Entered by hand; no index feed.`}><${Num} value=${v.obsLevel ?? null} onInput=${(x) => { setV({ ...v, obsLevel: x }); setStep(null); }} /><//>
+      ${button('Review observation', observation)}</div>` : null}
     ${inst.family === 'bond' && t.referenceEntity && !t.creditEvent ? html`<div class="grid-form" style=${GRID}>
       <${Field} label="Recovery rate (decimal)" hint=${`Credit event of ${t.referenceEntity}: the final price from the auction, 0.38 = 38% of par. Not assumed.`}><${Num} value=${v.clnRecovery ?? null} onInput=${(x) => { setV({ ...v, clnRecovery: x }); setStep(null); }} /><//>
       <${Field} label="Recovery settles on" hint="The auction settlement date. Today if empty."><${Text} type="date" value=${v.clnSettle || ''} onInput=${(x) => { setV({ ...v, clnSettle: x }); setStep(null); }} /><//>

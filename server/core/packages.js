@@ -1292,7 +1292,10 @@ export function createPackages(app) {
     if (action === 'retry') {
       const dead = app.orders.forStrategy(strategyId).filter((o) => app.orders.DEAD.has(o.status) && o.required && !o.data.resolved && o.filled_qty < o.qty - 1e-9);
       need(dead.length, 'There are no failed legs to retry.');
-      const legs = dead.map((o) => retryLeg(o));
+      // t1: retried legs keep their dependencies on each other (a protective put still waits for the shares it protects and
+      // is scaled to what of them fills); a dependency on a leg that completed is satisfied and dropped.
+      const at = new Map(dead.map((o, i) => [o.leg_no, i + 1]));
+      const legs = dead.map((o) => ({ ...retryLeg(o), dependsOn: (o.depends_on || []).map((d) => at.get(d)).filter(Boolean) }));
       return preview({ ...base, intent: 'retry', retryOf: dead.map((o) => o.id), legs });
     }
     throw new AppError(`Unknown action "${action}".`);

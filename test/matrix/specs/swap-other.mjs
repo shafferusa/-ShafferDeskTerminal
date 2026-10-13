@@ -1881,4 +1881,235 @@ const indexTrs = {
   ],
 };
 
-export default [amortizingSwap, accretingSwap, equitySwap, equityIndexSwap, equityTrs, bondTrs, indexTrs];
+// ---------------------------------------------------------------------------------------------
+// commodity_swap
+// ---------------------------------------------------------------------------------------------
+// A two-month crude oil swap (a fuel buyer's hedge): pay a fixed 72.00 USD a barrel, receive the average of the daily North
+// Sea Dated assessment, on 50,000 barrels a month, May and June 2026. Net settlement: each month one amount moves,
+// quantity x (average - 72.00), 5 USD business days after the month ends. Collateral under a bilateral agreement: a fixed
+// independent amount of 200,000 and variation margin over a threshold of 100,000, minimum transfer 25,000.
+//
+// Pricing days: London business days (the assessment is not published on UK bank holidays), from the first day of the month up
+// to, not including, the first day of the next. May 2026 has 21 weekdays less the bank holidays of 4 and 25 May: 19 pricing days;
+// June has 22 (Juneteenth, a US holiday, is a London business day and is priced). The average is the plain mean, not rounded.
+//   May  19 fixings summing to 1,388.90: average 73.10 (the 14 May assessment is not supplied: entered by hand as 72.95)
+//   June 22 fixings summing to 1,558.70: average 70.85
+//   paid Monday 8 June (1 June + 5 business days) and Wednesday 8 July (1 July + 5: the Federal Reserve is open on Friday 3 July)
+const NSEA = { productId: 'crude_oil', name: 'North Sea Dated crude assessment (reference price)', symbol: 'NSEA-DTD', marketView: 'FOREIGN_CASH', venue: 'Price assessment (OTC)', venueType: 'otc', venueCountry: 'GB', tradingCcy: 'USD', terms: { quantityUnit: 'barrels', priceUnits: 'USD per barrel' } };
+const NSEA_MAY = { '2026-05-01': 73.45, '2026-05-05': 72.90, '2026-05-06': 73.65, '2026-05-07': 72.65, '2026-05-08': 73.20, '2026-05-11': 73.90, '2026-05-12': 72.45, '2026-05-13': 73.35, /* 14 May by hand: 72.95 */ '2026-05-15': 73.50, '2026-05-18': 72.80, '2026-05-19': 73.70, '2026-05-20': 72.60, '2026-05-21': 73.15, '2026-05-22': 73.80, '2026-05-26': 72.70, '2026-05-27': 73.30, '2026-05-28': 72.85, '2026-05-29': 72.00 };
+const NSEA_JUNE = { '2026-06-01': 71.20, '2026-06-02': 70.65, '2026-06-03': 71.40, '2026-06-04': 70.40, '2026-06-05': 70.95, '2026-06-08': 71.65, '2026-06-09': 70.20, '2026-06-10': 71.10, '2026-06-11': 70.70, '2026-06-12': 71.25, '2026-06-15': 70.55, '2026-06-16': 71.45, '2026-06-17': 70.35, '2026-06-18': 70.90, '2026-06-19': 71.55, '2026-06-22': 70.45, '2026-06-23': 71.05, '2026-06-24': 70.60, '2026-06-25': 71.30, '2026-06-26': 70.75, '2026-06-29': 71.15, '2026-06-30': 69.10 };
+const CMS_NAME = 'Crude swap 72.00 v North Sea Dated monthly average May-Jun 2026';
+const CMDTY_DRAFT = {
+  productId: 'commodity_swap', name: CMS_NAME, symbol: 'CMDS-NSEA-0626', marketView: 'FOREIGN_DERIV', venueType: 'otc', venueCountry: 'GB', tradingCcy: 'USD', multiplier: 0.01,
+  conventions: USD_CALENDARS,
+  terms: {
+    effective: '2026-05-01', maturity: '2026-07-01', counterparty: 'Energy dealer U', netSettlement: true,
+    collateralBasis: { type: 'agreement', agreementId: '$agreement:csa' },
+    legs: [
+      { side: 'pay', type: 'price', ccy: 'USD', months: 1, units: 1, fixedPrice: 72, paymentLag: 5 },
+      { side: 'receive', type: 'price', ccy: 'USD', months: 1, units: 1, underlyingId: '$inst:nsea', averaging: 'daily', pricingCalendar: 'UK', paymentLag: 5 },
+    ],
+  },
+};
+const commoditySwap = {
+  productId: 'commodity_swap',
+  title: 'Two-month crude oil swap: pay 72.00 fixed, receive the monthly average of a daily assessment on London pricing days, net settled, under a collateral agreement',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'Net settlement', 'fixed leg: Leg type "Price of a reference asset", Fixed price, Units per unit of notional, Payment monthly, Payment lag 5', 'floating leg: Reference asset (the assessment), Floating price "Average of each pricing day", Pricing calendar UK, Payment monthly, Payment lag 5'],
+    automaticInputs: ['monthly periods and payment dates (5 USD business days after each month)', 'pricing days of each month on the UK calendar (bank holidays excluded)', 'daily assessments (close fixtures standing in for Shaffer MarketData) and their average', 'net amount of each month', 'settlement date, T+2 USD', 'commission from the Book fee schedule (per barrel)', 'independent amount and variation margin from the agreement'],
+    manualInputs: ['collateral agreement (Treasury, Collateral)', 'the reference assessment, registered as a crude oil spot instrument (never traded)', 'an assessment the data service did not supply, entered by hand as the close of its date', 'settlement amount of the partial termination (stated fill price)', 'mark of the contract, entered by hand'],
+    settlement: 'Upfront and termination amounts and commission settle T+2 USD; each month settles net, 5 USD business days after it ends',
+    lifecycle: 'Each month: the average of the London pricing days (19 in May with two bank holidays, 22 in June) against the fixed price, one net amount; a missing assessment holds the month visibly, naming the day, until it is entered by hand; partial termination; maturity; nothing left afterwards',
+    accounting: 'Carried at the mark; net monthly amounts (each leg\'s amount kept in the event) and the termination result are realized P&L; commission expensed',
+    collateral: 'Bilateral agreement: fixed independent amount 200,000; variation margin on the mark entered by hand over a 100,000 threshold: received (restricted, not spendable), returned; independent amount returned at maturity',
+  },
+  start: at('2026-04-28'),
+  settlementCheck: { lag: 2, holidays: [] }, // no Federal Reserve holiday in the windows used (28 to 30 April, 10 to 12 June 2026)
+  book: bookOf('Matrix commodity swap', 'Fuel hedging', 'USD', 4_000_000, 1_500_000, { perUnit: 0.02, minimum: 0, bps: 0 }, { spot: NO_FEE }), // 0.02 USD a barrel
+  instruments: { nsea: NSEA },
+  tradedOn: 'The contract is registered by the step register-under-agreement (registry form), after the collateral agreement it names has been recorded.',
+  closes: { nsea: { ...NSEA_MAY, ...NSEA_JUNE } },
+  expectAtStart: startOf('USD', 4_000_000, 1_500_000),
+  steps: [
+    {
+      id: 'record-agreement', covers: 'collateral', action: 'agreement', as: 'csa',
+      agreement: { name: 'CSA Energy dealer U', counterparty: 'Energy dealer U', kind: 'bilateral', covers: ['account'], independentAmount: { type: 'fixed', amount: 200_000 }, variationMargin: true, threshold: 100_000, minimumTransfer: 25_000, baseCcy: 'USD', postingCcy: 'USD', haircut: 0, nettingScope: 'position' },
+      expect: { events: [{ type: 'collateral.agreement', summary: 'Collateral agreement recorded: CSA Energy dealer U with Energy dealer U (Bilateral (CSA-style))', owner: 'treasury' }] },
+    },
+    { id: 'register-under-agreement', covers: 'registration', action: 'register_instrument', as: 'main', draft: CMDTY_DRAFT, expect: {} },
+    {
+      // 50,000 barrels a month, as written, no upfront. Commission 50,000 x 0.02 = 1,000, settling Thursday 30 April. Independent amount 200,000.
+      id: 'open', covers: ['open', 'collateral'], action: 'ticket', instrument: 'main', side: 'buy', qty: 50_000, as: 'cmds', order: { statedPrice: 0 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 50_000, estimate: 0, model: 'stated-price', settleDate: '2026-04-30', calendar: 'USD', cash: 0, fees: 1_000 }],
+          cash: { USD: { purchases: 0, fees: 1_000, margin: 200_000, required: 201_000, available: 1_500_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 50_000, avgPrice: 0, fills: [{ qty: 50_000, price: 0, model: 'stated-price', settleDate: '2026-04-30' }] }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Entered as written: 50,000 notional of CMDS-NSEA-0626 at 0.00 per 100 notional', owner: 'account', date: '2026-04-28' },
+          { type: 'swap.collateral', summary: `Collateral posted on ${CMS_NAME} under "CSA Energy dealer U" (Energy dealer U): 200,000.00 USD (independent amount, fixed amount for the position)`, cash: { USD: -200_000 }, owner: 'account' },
+        ],
+        cash: { account: { USD: { settled: 1_300_000, unsettled: -1_000, margin: 200_000, restricted: 0, availableToTrade: 1_299_000, availableToWithdraw: 1_299_000 } } },
+        positions: [{ instrument: 'main', lot: 'cmds', owner: 'account', direction: 'as written', qty: 50_000, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, notional: 50_000, margin: 200_000 }],
+        holdings: { main: { long: 50_000, short: 0, net: 50_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-04-30', amount: -1_000, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-06-08', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-06-08', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2026-07-08', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', lot: 'cmds', owner: 'account', qty: 50_000, basis: 'agreement', agreement: 'CSA Energy dealer U', mark: null, iaRequired: 200_000, iaPosted: 200_000, vmPosted: 0, vmHeld: 0, vmStatus: 'not_valued_yet' }],
+        pnl: { account: { realized: 0, commissions: -1_000, unrealized: 0, total: -1_000 } },
+        nav: { account: 1_499_000, book: 3_999_000 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 1_300_000, margin: 200_000, payable: 1_000, positions: null, assets: 1_500_000, liabilities: 1_000, netAssets: 1_499_000 } },
+      },
+    },
+    {
+      id: 'settle-commission', covers: 'settlement', action: 'clock', to: at('2026-04-30'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 1,000.00 USD from settled cash', cash: { USD: -1_000 }, date: '2026-04-30' }],
+        cash: { account: { USD: { settled: 1_299_000, unsettled: 0, availableToTrade: 1_299_000, availableToWithdraw: 1_299_000 } } },
+        pending: [],
+        otc: [{ instrument: 'main', vmStatus: 'cannot_value', vmReason: /CMDS-NSEA-0626 has no mark/ }], alerts: ['collateral.unvalued'],
+        balance: { account: { cash: 1_299_000, payable: null, assets: 1_499_000, liabilities: 0 } },
+      },
+    },
+    {
+      // Mark 300 per 100 barrels: 50,000 x 300 / 100 = 150,000.
+      id: 'mark', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 300, note: 'Dealer mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'cmds', price: 300, value: 150_000, unrealized: 150_000, provisional: false, priceSource: 'Manual entry', priceStatus: 'manual' }],
+        otc: [{ instrument: 'main', mark: 300, markValue: 150_000 }],
+        pnl: { account: { unrealized: 150_000, total: 149_000 } },
+        nav: { account: 1_649_000, book: 4_149_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 150_000, assets: 1_649_000, netAssets: 1_649_000 } },
+      },
+    },
+    {
+      // 150,000 is 50,000 beyond the 100,000 threshold: the dealer posts 50,000. Restricted cash and a liability.
+      id: 'variation-margin-received', covers: 'variation margin', action: 'clock', to: eod('2026-04-30'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under "CSA Energy dealer U" (Energy dealer U): 50,000.00 USD received. Netting set of 1 position marked at 150,000.00 USD; threshold 100,000.00 USD.', owner: 'account' }],
+        cash: { account: { USD: { settled: 1_299_000, restricted: 50_000, margin: 200_000, availableToTrade: 1_299_000, availableToWithdraw: 1_299_000 } } },
+        otc: [{ instrument: 'main', vmPosted: 0, vmHeld: 50_000, vmExposure: 150_000, vmStatus: 'ok' }],
+        alerts: [],
+        balance: { account: { restricted: 50_000, collateralReceived: 50_000, assets: 1_699_000, liabilities: 50_000, netAssets: 1_649_000 } },
+      },
+    },
+    {
+      // 1,299,000 settled plus 50,000 held would cover 1,320,000: refused, collateral received is not the Account's.
+      id: 'spend-collateral-received', covers: 'variation margin', action: 'transfer', from: 'account', to: 'treasury', ccy: 'USD', amount: 1_320_000,
+      status: 'blocked', reason: 'Cash collateral received is restricted: it is owed back and cannot be spent or moved.',
+      expect: { refused: 'Fuel hedging has 1,299,000.00 USD of settled USD available; 1,320,000.00 USD requested' },
+    },
+    {
+      // Monday 8 June. The May average needs 19 assessments; the one for Thursday 14 May has not been supplied. Nothing moves.
+      id: 'may-blocked-assessment-missing', covers: ['missing fixing', 'averaging'], action: 'clock', to: at('2026-06-08'),
+      expect: {
+        events: [],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-06-08', status: 'blocked', reason: /Awaiting the averaging fixings of NSEA-DTD for 2026-05-14 \(1 of the 19 pricing days of the period 2026-05-01 to 2026-06-01\)/ },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-06-08', status: 'blocked', reason: /Awaiting the averaging fixings of NSEA-DTD for 2026-05-14/ },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2026-07-08', status: 'pending' },
+        ],
+      },
+    },
+    {
+      // 72.95 for 14 May, by hand. May: 19 assessments summing to 1,388.90, average 73.10 (the bank holidays of 4 and 25 May are not pricing days).
+      //   fixed, paid:     50,000 x 72.00 = 3,600,000.00
+      //   average, received: 50,000 x 73.10 = 3,655,000.00
+      //   net, received:   50,000 x (73.10 - 72.00) = 55,000.00
+      id: 'assessment-entered-may-settled', covers: ['missing fixing', 'averaging', 'net settlement', 'holiday in the pricing period'], action: 'manual_price', instrument: 'nsea', value: 72.95, forDate: '2026-05-14', note: 'Published assessment, entered by hand',
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Net swap receipt on ${CMS_NAME}, period 2026-05-01 to 2026-06-01: 55,000.00 USD (leg A, fixed price 72.00 x 50,000: 3,600,000.00 USD paid; leg B, average of 19 fixings 73.10 x 50,000: 3,655,000.00 USD received)`, cash: { USD: 55_000 }, owner: 'account', date: '2026-06-08' }],
+        cash: { account: { USD: { settled: 1_354_000, availableToTrade: 1_354_000, availableToWithdraw: 1_354_000 } } },
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2026-07-08', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-07-08', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-07-08', status: 'pending' },
+        ],
+        pnl: { account: { realized: 55_000, total: 204_000 } },
+        nav: { account: 1_704_000, book: 4_204_000 },
+        balance: { account: { cash: 1_354_000, assets: 1_754_000, netAssets: 1_704_000 } },
+      },
+    },
+    {
+      // 50,000 x 100 / 100 = 50,000.
+      id: 'mark-lower', action: 'manual_price', instrument: 'main', value: 100, note: 'Dealer mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'cmds', price: 100, value: 50_000, unrealized: 50_000 }],
+        otc: [{ instrument: 'main', mark: 100, markValue: 50_000 }],
+        pnl: { account: { unrealized: 50_000, total: 104_000 } },
+        nav: { account: 1_604_000, book: 4_104_000 },
+        balance: { account: { positions: 50_000, assets: 1_654_000, netAssets: 1_604_000 } },
+      },
+    },
+    {
+      // 50,000 is inside the threshold: the 50,000 held goes back to the dealer.
+      id: 'variation-margin-returned', covers: 'variation margin', action: 'clock', to: eod('2026-06-08'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under "CSA Energy dealer U" (Energy dealer U): 50,000.00 USD returned to the counterparty. Netting set of 1 position marked at 50,000.00 USD; threshold 100,000.00 USD.', owner: 'account' }],
+        cash: { account: { USD: { settled: 1_354_000, restricted: 0 } } },
+        otc: [{ instrument: 'main', vmHeld: 0, vmExposure: 50_000 }],
+        balance: { account: { restricted: null, collateralReceived: null, assets: 1_604_000, liabilities: 0 } },
+      },
+    },
+    { id: 'june-tenth', action: 'clock', to: at('2026-06-10'), expect: {} },
+    {
+      // 40% (20,000 barrels a month) terminated at 60 per 100 barrels: 20,000 x 60 / 100 = 12,000 received; commission 400; realized 12,000. Settles Friday 12 June.
+      id: 'partial-termination', covers: ['reduce', 'partial termination'], action: 'close', lot: 'cmds', scope: 'strategy', percent: 40, order: { statedPrice: 60 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 20_000, estimate: 60, model: 'stated-price', settleDate: '2026-06-12', cash: 12_000, fees: 400 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 20_000, avgPrice: 60 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Terminated in part: 20,000 of 50,000 notional of CMDS-NSEA-0626 at 60.00 per 100 notional (realized 12,000.00 USD)' }],
+        cash: { account: { USD: { settled: 1_354_000, unsettled: 11_600, availableToTrade: 1_365_600, availableToWithdraw: 1_354_000 } } },
+        positions: [{ instrument: 'main', lot: 'cmds', qty: 30_000, cost: 0, avgCost: 0, price: 100, value: 30_000, unrealized: 30_000, notional: 30_000, margin: 200_000 }],
+        holdings: { main: { long: 30_000, short: 0, net: 30_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-06-12', amount: 11_600, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: 30_000, markValue: 30_000, iaRequired: 200_000, iaPosted: 200_000 }],
+        pnl: { account: { realized: 67_000, commissions: -1_400, unrealized: 30_000, total: 95_600 } },
+        nav: { account: 1_595_600, book: 4_095_600 },
+        balance: { account: { cash: 1_354_000, receivable: 11_600, positions: 30_000, assets: 1_595_600, liabilities: 0, netAssets: 1_595_600 } },
+      },
+    },
+    {
+      id: 'settle-partial-termination', covers: 'settlement', action: 'clock', to: at('2026-06-12'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 11,600.00 USD into settled cash', cash: { USD: 11_600 } }],
+        cash: { account: { USD: { settled: 1_365_600, unsettled: 0, availableToTrade: 1_365_600, availableToWithdraw: 1_365_600 } } },
+        pending: [],
+        balance: { account: { cash: 1_365_600, receivable: null } },
+      },
+    },
+    {
+      // June on the 30,000 barrels left: 22 assessments summing to 1,558.70, average 70.85.
+      //   fixed, paid: 30,000 x 72.00 = 2,160,000.00; average, received: 30,000 x 70.85 = 2,125,500.00; net, paid: 34,500.00.
+      // The swap matures; the 200,000 independent amount comes back. 1,500,000 - 1,000 + 55,000 + 12,000 - 400 - 34,500 = 1,531,100.
+      id: 'june-settled-and-maturity', covers: ['averaging', 'net settlement', 'maturity', 'close', 'collateral'], action: 'clock', to: at('2026-07-08'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Net swap payment on ${CMS_NAME}, period 2026-06-01 to 2026-07-01: 34,500.00 USD (leg A, fixed price 72.00 x 30,000: 2,160,000.00 USD paid; leg B, average of 22 fixings 70.85 x 30,000: 2,125,500.00 USD received)`, cash: { USD: -34_500 }, owner: 'account', date: '2026-07-08' },
+          { type: 'swap.matured', summary: `Swap matured: ${CMS_NAME} (notional 30,000)`, owner: 'account' },
+          { type: 'swap.collateral', summary: `Collateral returned on ${CMS_NAME} under "CSA Energy dealer U" (Energy dealer U): 200,000.00 USD (independent amount, the position ended)`, cash: { USD: 200_000 } },
+        ],
+        cash: { account: { USD: { settled: 1_531_100, unsettled: 0, margin: 0, restricted: 0, reserved: 0, availableToTrade: 1_531_100, availableToWithdraw: 1_531_100 } }, treasury: { USD: { settled: 2_500_000 } } },
+        positions: [], holdings: { main: null }, lifecycle: [], otc: [], pending: [], alerts: [],
+        pnl: { account: { realized: 32_500, commissions: -1_400, unrealized: 0, total: 31_100 } },
+        nav: { account: 1_531_100, treasury: 2_500_000, book: 4_031_100 },
+        balance: { account: { cash: 1_531_100, margin: null, positions: null, assets: 1_531_100, liabilities: 0, netAssets: 1_531_100 } },
+      },
+    },
+    {
+      id: 'nothing-left', action: 'clock', to: at('2026-07-09'),
+      expect: { events: [], lifecycle: [], positions: [], pending: [], otc: [], alerts: [], cash: { account: { USD: { settled: 1_531_100, margin: 0, restricted: 0 } } } },
+    },
+  ],
+};
+
+export default [amortizingSwap, accretingSwap, equitySwap, equityIndexSwap, equityTrs, bondTrs, indexTrs, commoditySwap];

@@ -98,6 +98,25 @@ function couponDue(inst, couponDate) {
   return adjust(delay ? addBusinessDays(couponDate, delay, 'ALLDAYS') : couponDate, 'following', paymentCalendarFor(inst));
 }
 
+/**
+ * b4: a structured note with a contingent coupon. The coupon of each coupon date is paid only if the linked underlying, observed
+ * on that date and recorded by hand (terms.observations), is at or above the coupon barrier (a fraction of the initial level).
+ * Nothing accrues between coupon dates (the note trades flat). At maturity the principal is par if protected; otherwise par if
+ * the final observation is at or above the principal barrier, else par x final / initial.
+ */
+const isContingent = (inst) => typeof inst.terms?.couponBarrier === 'number' && typeof inst.terms?.initialLevel === 'number';
+function contingentPer100(inst, couponDate) {
+  const lvl = inst.terms.observations?.[couponDate];
+  if (lvl === undefined || lvl === null) return null;
+  return lvl >= inst.terms.couponBarrier * inst.terms.initialLevel - 1e-9 ? (100 * inst.terms.couponRate) / inst.terms.frequency : 0;
+}
+/** Coupon per 100 of principal for the coupon of `couponDate` (null while its fixing or observation is missing). */
+function per100Of(inst, couponDate) {
+  return isContingent(inst) ? contingentPer100(inst, couponDate) : couponPer100(couponTerms(inst, couponDate), couponDate);
+}
+const fmtLevel = (x) => Number(x).toLocaleString('en-US', { maximumFractionDigits: 6 });
+const pctText = (x, dp = 2) => `${(x * 100).toFixed(dp)}%`;
+
 /** The trades booked on a position: signed face, trade date and settlement date of each fill. */
 function fillsOf(app, positionId) {
   // fw: a bond delivered on a physically settled forward or option is a fill of the position as well (its own event type).
@@ -124,7 +143,7 @@ function accrualTarget(app, inst, pos, date, { paying = null } = {}) {
   }
   for (const c of unpaidCoupons(app, pos.id)) {
     if (c.couponDate > date || c.couponDate === paying) continue;
-    const per100 = couponPer100(couponTerms(inst, c.couponDate), c.couponDate);
+    const per100 = per100Of(inst, c.couponDate);
     if (per100 === null) return null;
     total += (entitledFace(app, pos, c.couponDate) * couponScale(inst, c.couponDate) * per100) / 100;
   }
@@ -247,6 +266,24 @@ export const bond = {
       else if (t.couponType === 'zero') errors.push('A servicing fee is deducted from interest: a zero-coupon instrument has none to deduct it from.');
       else if (t.couponType === 'fixed' && !(t.servicingFeeRate < t.couponRate)) errors.push('The servicing fee must be below the gross coupon rate it is deducted from.');
     }
+    // b4: a contingent coupon (structured note): the underlying observed, its initial level, the coupon barrier, and the principal
+    // at maturity (protected, or a principal barrier below which it follows the underlying).
+    const given = (v) => v !== undefined && v !== null && v !== '';
+    if (typeof t.linkedTo === 'string') t.linkedTo = t.linkedTo.trim();
+    if (given(t.couponBarrier) || given(t.initialLevel)) {
+      t.couponBarrier = num(t.couponBarrier); t.initialLevel = num(t.initialLevel);
+      if (!t.linkedTo) errors.push('A contingent coupon needs the underlying it is observed on (Linked to).');
+      if (!(t.initialLevel > 0)) errors.push('A contingent coupon needs the underlying\'s initial level.');
+      if (!(t.couponBarrier > 0 && t.couponBarrier <= 2)) errors.push('The coupon barrier is a fraction of the initial level, such as 0.7 for 70%.');
+      if (t.couponType !== 'fixed') errors.push('A contingent coupon is a fixed rate paid when the barrier condition is met: choose a fixed coupon.');
+      t.principalProtected = Boolean(t.principalProtected);
+      if (t.principalProtected) delete t.principalBarrier;
+      else {
+        t.principalBarrier = num(t.principalBarrier);
+        if (!(t.principalBarrier > 0 && t.principalBarrier <= 1)) errors.push('A note without principal protection needs its principal barrier, a fraction of the initial level such as 0.6.');
+      }
+      if (t.observations && typeof t.observations !== 'object') delete t.observations;
+    } else { delete t.couponBarrier; delete t.initialLevel; delete t.principalProtected; delete t.principalBarrier; delete t.observations; if (!t.linkedTo) delete t.linkedTo; }
     // b4: a credit-linked note pays its coupon and principal unless its reference entity has a credit event: the entity is part of
     // what the note is.
     if (typeof t.referenceEntity === 'string') t.referenceEntity = t.referenceEntity.trim();
@@ -295,6 +332,12 @@ export const bond = {
     if (t.paymentDelayDays) rows.push(['Payment delay', `${t.paymentDelayDays} days after each accrual period ends`]);
     if (t.guarantor) rows.push(['Guarantor', `${t.guarantor} (principal and interest guaranteed; no loss allocation)`]);
     if (t.poolCharacteristics) rows.push(['Pool characteristics', `${t.poolCharacteristics} (stated at registration)`]);
+    if (typeof t.couponBarrier === 'number') {
+      rows.push(['Contingent coupon', `${(t.couponRate * 100).toFixed(3)}% a year, paid on a coupon date only if ${t.linkedTo} is at or above ${fmtLevel(t.couponBarrier * t.initialLevel)} (${pctText(t.couponBarrier, 0)} of the initial ${fmtLevel(t.initialLevel)}) on that date; observations recorded by hand; trades flat`]);
+      rows.push(['Principal at maturity', t.principalProtected ? 'Protected: par' : `Par if ${t.linkedTo} finishes at or above ${fmtLevel(t.principalBarrier * t.initialLevel)} (${pctText(t.principalBarrier, 0)} of initial), else par x final / initial (not protected)`]);
+      const obs = Object.entries(t.observations || {});
+      if (obs.length) rows.push(['Observations', obs.map(([d, l]) => `${d}: ${fmtLevel(l)}`).join('; ')]);
+    }
     if (t.referenceEntity) rows.push(['Reference entity', t.creditEvent ? `${t.referenceEntity}: credit event recorded ${t.creditEvent.date}, principal settled at the recovery ${fmtPx(t.creditEvent.recovery * 100)}% of par on ${t.creditEvent.settleDate}; coupons ended` : `${t.referenceEntity} (a credit event, recorded by hand, ends the coupon and settles principal at the recovery)`]);
     if (t.pikAllowed) rows.push(['Interest deferral', `Deferrable: a coupon may be paid in kind (capitalised into principal), elected by hand for each coupon${t.pikCoupons?.length ? `; paid in kind: ${t.pikCoupons.join(', ')}` : ''}`]);
     if (t.seniorTranche) rows.push(['Priority', `Sequential: principal only after ${t.seniorTranche} (stated balance ${fmtQty(t.seniorBalance)}) is retired; ${t.seniorRemaining > 0 ? `${fmtQty(t.seniorRemaining)} of it outstanding, as last recorded by hand` : `retired${t.seniorRetiredOn ? ` (recorded ${t.seniorRetiredOn})` : ''}: this tranche now receives principal`}`]);
@@ -333,6 +376,7 @@ export const bond = {
     // Coupons suspended (a default, a missed or cancelled coupon recorded by hand): nothing accrues and the bond trades
     // flat, without accrued interest, until coupons are resumed.
     if (inst.terms.couponSuspended) return 0;
+    if (isContingent(inst)) return 0; // b4: a contingent coupon does not accrue: the note trades flat
     const ai = accruedPer100(schedTerms(inst), date);
     return ai === null ? null : (qty * scaleOn(inst, date) * ai) / 100;
   },
@@ -345,6 +389,7 @@ export const bond = {
     const notes = [];
     if (ai === null) notes.push('Accrued interest cannot be computed: the floating coupon has no fixing. It is booked as zero until the fixing is supplied.');
     if (inst.terms.couponSuspended) notes.push('Coupons are suspended: the bond trades flat, without accrued interest.');
+    if (isContingent(inst)) notes.push('Contingent coupon: nothing accrues between coupon dates, so the note trades flat.');
     // Principal and accrued interest are each rounded to the cent, as the fill books them, so the previewed
     // settlement amount is the amount that settles.
     const total = money(principal, ccy) + money(ai || 0, ccy);
@@ -392,7 +437,7 @@ export const bond = {
         const face = inst.terms.couponSuspended ? 0 : entitledFace(app, pos, c.couponDate);
         if (isZero(face)) continue;
         app.tasks.schedule({ ...common, type: 'bond.coupon', dueDate: c.dueDate, data: { key: c.couponDate, couponDate: c.couponDate } });
-        const per100 = couponPer100(couponTerms(inst, c.couponDate), c.couponDate);
+        const per100 = per100Of(inst, c.couponDate);
         if (per100 === null) owed = null; // a floating coupon without its fixing: the balance waits for it
         else if (owed !== null) owed += (face * couponScale(inst, c.couponDate) * per100) / 100;
       }
@@ -455,7 +500,17 @@ export const bond = {
         scheduleNext();
         return { done: true, eventId };
       }
-      const per100 = couponPer100(couponTerms(inst, couponDate), couponDate);
+      const per100 = per100Of(inst, couponDate);
+      // b4: a contingent coupon waits for its observation, entered by hand.
+      if (per100 === null && isContingent(inst)) {
+        return { blocked: `Awaiting the observation of ${inst.terms.linkedTo} on ${couponDate} for the contingent coupon: record it by hand (instrument form, Observation).`, needs: [] };
+      }
+      if (per100 === 0 && isContingent(inst)) {
+        const lvl = inst.terms.observations[couponDate];
+        const eventId = ledger.post({ ...base, type: 'bond.contingent_coupon', summary: `Contingent coupon of ${couponDate} not paid on ${fmtQty(Math.abs(face))} ${inst.symbol || inst.name}: ${inst.terms.linkedTo} observed at ${fmtLevel(lvl)}, below the coupon barrier ${fmtLevel(inst.terms.couponBarrier * inst.terms.initialLevel)} (${pctText(inst.terms.couponBarrier, 0)} of the initial ${fmtLevel(inst.terms.initialLevel)})`, data: { couponDate, face, observation: lvl, paid: false } });
+        scheduleNext();
+        return { done: true, eventId };
+      }
       if (per100 === null) {
         return { blocked: `Awaiting the ${inst.terms.referenceRate} fixing of ${periodStart} for the coupon period ${periodStart} to ${couponDate}. ${app.data.describe().awaitingMessage}, or enter the fixing manually.`, needs: [{ kind: 'rate', subject: inst.terms.referenceRate, date: periodStart }] };
       }
@@ -491,6 +546,7 @@ export const bond = {
         const gross = money((face * cScale * grossPer100) / 100, ccy);
         servicing = `; gross interest ${fmt(Math.abs(gross), ccy)} less servicing fee ${fmt(Math.abs(money(gross - amount, ccy)), ccy)} (${(inst.terms.servicingFeeRate * 100).toFixed(3)}% a year)`;
       }
+      if (isContingent(inst)) servicing = ` (contingent coupon: ${inst.terms.linkedTo} observed at ${fmtLevel(inst.terms.observations[couponDate])}, at or above the coupon barrier ${fmtLevel(inst.terms.couponBarrier * inst.terms.initialLevel)})`;
       const eventId = ledger.post({
         // A short owes the coupon to the lender of the securities: it is paid, on the face sold short.
         ...base, type: 'bond.coupon', summary: `Coupon ${amount >= 0 ? 'received' : 'paid'} on ${fmtQty(Math.abs(face))} ${inst.symbol || inst.name}${face < 0 ? ' sold short' : ''}${principalNote(inst, face, cScale)}${servicing}: ${fmt(Math.abs(amount), ccy)}`,
@@ -515,6 +571,23 @@ export const bond = {
       // Final coupon first if it has not been paid yet.
       const pendingCoupon = app.db.get(`SELECT id FROM tasks WHERE position_id = ? AND type = 'bond.coupon' AND status IN ('pending','blocked') AND due_date <= ?`, pos.id, task.due_date);
       if (pendingCoupon) return { blocked: 'Waiting for the final coupon to be paid first.', needs: [] };
+      // b4: a structured note's principal at maturity follows its final observation unless it is protected.
+      if (isContingent(inst)) {
+        const t2 = inst.terms;
+        const fin = t2.observations?.[t2.maturity];
+        let price = t2.redemption, note = '';
+        if (!t2.principalProtected) {
+          if (fin === undefined || fin === null) return { blocked: `Awaiting the final observation of ${t2.linkedTo} on ${t2.maturity}: the principal repaid depends on it. Record it by hand (instrument form, Observation).`, needs: [] };
+          const ratio = fin / t2.initialLevel;
+          if (ratio < t2.principalBarrier - 1e-12) {
+            price = Math.round(t2.redemption * ratio * 1e6) / 1e6;
+            note = ` (final observation ${fmtLevel(fin)} is ${pctText(ratio)} of the initial ${fmtLevel(t2.initialLevel)}, below the principal barrier ${pctText(t2.principalBarrier, 0)}: not protected, principal repaid at the underlying's performance)`;
+          } else note = ` (final observation ${fmtLevel(fin)} at or above the principal barrier ${pctText(t2.principalBarrier, 0)} of the initial: par)`;
+        } else note = ' (principal protected: par whatever the final observation)';
+        const r = redeem(app, { book, unit, inst, pos: live, price, face: Math.abs(live.qty), date: inst.terms.maturity, type: 'bond.redemption', label: 'Redeemed at maturity', note: `${note}` });
+        bond.onPositionChange(app, { book, unit, inst, pos: positions.get(pos.id) });
+        return { done: true, eventId: r.eventId };
+      }
       // An inflation-linked bond repays its adjusted principal (face x index ratio); with a deflation floor (US TIPS) never
       // less than the face.
       const ratio = ratioOf(inst);
@@ -568,6 +641,7 @@ export const bond = {
     if (action === 'senior_balance') return bond.recordSeniorBalance(app, { inst, remaining: body.remaining, note: body.note });
     if (action === 'pik') return bond.electPik(app, { inst, couponDate: body.couponDate, note: body.note });
     if (action === 'credit_event') return bond.creditEvent(app, { inst, recovery: body.recovery, settleDate: body.settleDate, note: body.note });
+    if (action === 'observation') return bond.recordObservation(app, { inst, date: body.date, level: body.level, note: body.note });
     throw new AppError(`Unknown debt-security event "${action}".`);
   },
   /** Position-level events recorded by hand (POST /api/positions/:id/lifecycle). */
@@ -807,6 +881,36 @@ export const bond = {
    *   scheduledFactor   optional: the factor after the scheduled amortisation only. The history then says how much of the
    *                     principal was scheduled and how much was prepaid (and the single monthly mortality, SMM).
    */
+  /**
+   * The observation of a structured note's linked underlying on a coupon date, recorded by hand (b4; the Terminal has no index
+   * feed for it). It decides that date's contingent coupon (paid if at or above the coupon barrier) and, on the maturity date,
+   * the principal repaid. Each holder gets a history line; the coupon or redemption waiting for it then completes.
+   */
+  recordObservation(app, { inst, date, level, note }) {
+    const name = inst.symbol || inst.name;
+    const t = inst.terms;
+    need(isContingent(inst), `${name} has no contingent coupon: there is nothing to observe.`);
+    const d = String(date || '');
+    need(ISO_DATE_RE.test(d), 'Enter the observation date (a coupon date) as YYYY-MM-DD.');
+    need(d <= app.clock.today(), `${d} is in the future: an observation is recorded on or after its date.`);
+    const st = schedTerms(inst);
+    need(nextCouponDate(st, addBusinessDays(d, -1, 'ALLDAYS')) === d, `${d} is not an observation (coupon) date of ${name}.`);
+    need(!(t.observations && t.observations[d] !== undefined), `The observation of ${d} is already recorded: ${fmtLevel(t.observations?.[d])}.`);
+    const lvl = num(level);
+    need(lvl !== null && lvl > 0, `Enter the level of ${t.linkedTo} observed on ${d}.`);
+    app.instruments.update(inst.id, { terms: { ...t, observations: { ...(t.observations || {}), [d]: lvl } } }, { system: true });
+    const hit = lvl >= t.couponBarrier * t.initialLevel - 1e-9;
+    const atMaturity = d === t.maturity;
+    const ratio = lvl / t.initialLevel;
+    const principal = !atMaturity ? '' : t.principalProtected ? '; principal protected: par at maturity' : ratio >= t.principalBarrier - 1e-12 ? `; at or above the principal barrier ${pctText(t.principalBarrier, 0)}: par at maturity` : `; below the principal barrier ${pctText(t.principalBarrier, 0)}: principal repaid at ${pctText(ratio)} of par`;
+    const summary = `Observation of ${t.linkedTo} on ${d} recorded by hand${note ? ` (${note})` : ''}: ${fmtLevel(lvl)} (${pctText(ratio)} of the initial ${fmtLevel(t.initialLevel)}): ${hit ? `at or above the coupon barrier, the contingent coupon of ${pctText(t.couponRate / t.frequency)} is paid` : 'below the coupon barrier, no coupon'}${principal}`;
+    const eventIds = [];
+    for (const p of app.positions.heldAround(inst.id)) {
+      if (isZero(p.qty) && !unpaidCoupons(app, p.id).length) continue;
+      eventIds.push(app.ledger.post({ bookId: p.book_id, unitId: p.unit_id, type: 'bond.observation', instrumentId: inst.id, strategyId: p.strategy_id, positionId: p.id, actor: 'user', summary, data: { date: d, level: lvl, couponPaid: hit, manual: true } }));
+    }
+    return { date: d, level: lvl, couponPaid: hit, eventIds };
+  },
   /**
    * Credit event of a credit-linked note's reference entity, recorded by hand (b4). The rule the Terminal applies, for every holder
    * in every Book:

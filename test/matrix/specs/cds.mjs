@@ -973,4 +973,199 @@ const cdsIndex = {
   ],
 };
 
-export default [cdsSingleName, cdsSovereign, cdsIndex];
+// ---------------------------------------------------------------------------------------------
+// credit_basket_swap
+// ---------------------------------------------------------------------------------------------
+// A bespoke first-to-default basket on five names, 500 bp a year, effective Wednesday 15 April 2026, maturity 20 June 2028,
+// physically settled: on the first credit event the protection buyer delivers obligations of the defaulted name against
+// par (simulated on paper). Bespoke premium convention: periods from the effective date to the IMM 20ths (first period a
+// short stub, 15 April to 20 June), accrual dates not adjusted, payment on the next business day, premium from the trade
+// date, nothing exchanged at trade; a termination is at an all-in settlement amount. Dealer P; position-level terms: a
+// fixed independent amount of 250,000, no variation margin. Commission 20.00 per million; T+3 (USD calendar).
+//   bought 5,000,000 on Tue 14 April at 2.00: 100,000.00 paid; settles Fri 17 April. Premium from 15 April (effective).
+//   coupon Mon 22 June (20 June is a Saturday): 15 April to 20 June, 66 days: 5,000,000 x 5% x 66/360 = 45,833.33
+//   2,000,000 terminated on Wed 15 July at 2.40, all-in: 48,000.00 received; cost out 100,000 x 2/5 = 40,000: realized 8,000
+//   Pellworth Retail plc goes bankrupt on Mon 3 August: the first default, so protection on the whole 3,000,000 left;
+//     final price 20 recorded Thu 20 August, physical settlement on Tue 25 August: 3,000,000 face delivered against par,
+//     3,000,000.00, the obligations taken as bought at the final price, 600,000.00; premium 20 June to 3 August (excluded),
+//     44 days: 3,000,000 x 5% x 44/360 = 18,333.33; net receivable 2,381,666.67; the basket then ends
+const FTD_NAME = 'Five-name first-to-default basket 500bp 20 Jun 2028 (Dealer P)';
+const cdsBasket = {
+  productId: 'credit_basket_swap',
+  title: 'Bespoke first-to-default basket, physically settled: short first stub, partial termination, the first default settles in full and ends the basket',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'Basket reference entities', 'Protection on default number', 'Deliverable obligation (physical settlement)'],
+    automaticInputs: ['premium schedule from the effective date to the IMM roll dates (short first stub) on the USD payment calendar', 'premium from the effective date for a trade dealt the day before', 'settlement date T+3', 'commission from the Book fee schedule', 'fixed independent amount from the position-level terms', 'count of defaults against the trigger; on the trigger, protection on the whole notional and the end of the contract'],
+    manualInputs: ['the basket names and the trigger (first default)', 'upfront and the all-in termination amount (stated fill prices)', 'marks per 100 entered by hand', 'credit event: the defaulted name (chosen from the basket), kind, date, final price, settlement date'],
+    settlement: 'Upfront and termination amounts T+3 on the USD calendar; quarterly premium on the next business day after each roll date; physical settlement of the trigger simulated on paper on the stated date',
+    lifecycle: 'Buy protection on the basket; first period a short stub; partial termination at an all-in amount; a name outside the basket refused; the first default (bankruptcy) settles physically on the whole notional and ends the basket; a second default refused',
+    accounting: 'Carried at the mark less the upfront; premiums and the settlement realized; the physical settlement shown as par received for the obligations delivered and the obligations taken at the final price (simulated: no bond position is created or delivered)',
+    collateral: 'Position-level terms: a fixed independent amount of 250,000 posted at entry, unchanged by the partial termination, returned when the basket ends; no variation margin',
+  },
+  start: at('2026-04-14'),
+  settlementCheck: { lag: 3, holidays: [] },
+  book: {
+    name: 'Matrix credit basket', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 5_000_000 }],
+    account: { name: 'Correlation', funding: [{ ccy: 'USD', amount: 2_000_000 }] },
+    settings: { fees: { cds: { perUnit: 0.00002, minimum: 0, bps: 0 } }, fill: FILL, settlement: { cds: 3 } },
+  },
+  instruments: {
+    main: {
+      productId: 'credit_basket_swap', name: FTD_NAME, symbol: 'FTD5-0628', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { tradingCalendar: 'USD', settlementCalendar: 'USD', paymentCalendar: 'USD' },
+      terms: {
+        referenceEntity: 'First-to-default basket of five North American and European names', coupon: 0.05, effective: '2026-04-15', maturity: '2028-06-20', recovery: 0.4,
+        convention: 'bespoke', firstStub: 'short', creditEventSet: 'corporate', settlement: 'physical', deliverable: 'Senior unsecured bonds or loans of the defaulted name (Bond or Loan)',
+        basket: ['Corvane Chemicals Inc.', 'Ostrava Shipping AS', 'Pellworth Retail plc', 'Quillon Media Corp.', 'Ravensmoor Energy Ltd.'], nth: 1, counterparty: 'Dealer P',
+        collateralBasis: { type: 'position', independentAmount: { type: 'fixed', amount: 250_000 }, variationMargin: false, threshold: 0, minimumTransfer: 0 },
+      },
+    },
+  },
+  expectAtStart: {
+    cash: { account: { USD: { settled: 2_000_000, unsettled: 0, margin: 0, restricted: 0, availableToTrade: 2_000_000, availableToWithdraw: 2_000_000 } }, treasury: { USD: { settled: 3_000_000 } } },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [], otc: [], alerts: [],
+    nav: { account: 2_000_000, treasury: 3_000_000, book: 5_000_000 },
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+  },
+  steps: [
+    otcTicket({
+      id: 'buy-basket-protection', covers: ['open', 'buy protection', 'collateral'], instrument: 'main', side: 'buy', qty: 5_000_000, upfront: 2.00, as: 'ftd',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 5_000_000, estimate: 2, model: 'stated-price', settleDate: '2026-04-17', calendar: 'USD', cash: -100_000, accrued: 0, fees: 100 }], // 5,000,000 x 2.00 / 100; 5,000,000 x 0.00002
+          cash: { USD: { fees: 100, margin: 250_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 5_000_000, avgPrice: 2 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Bought 5,000,000 FTD5-0628 @ 2.00 USD', owner: 'account', date: '2026-04-14' },
+          { type: 'cds.collateral', summary: `Collateral posted on ${FTD_NAME} under its position-level terms: 250,000.00 USD`, cash: { USD: -250_000 }, owner: 'account' },
+        ],
+        cash: { account: { USD: { settled: 1_750_000, unsettled: -100_100, margin: 250_000, availableToTrade: 1_649_900, availableToWithdraw: 1_649_900 } } },
+        positions: [{ instrument: 'main', lot: 'ftd', owner: 'account', direction: 'protection bought', qty: 5_000_000, avgCost: 2, cost: 100_000, price: null, value: null, unrealized: null, provisional: true, notional: 5_000_000, margin: 250_000, accrued: 0 }],
+        holdings: { main: { long: 5_000_000, short: 0, net: 5_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-04-17', amount: -100_100, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'cds.premium', instrument: 'main', dueDate: '2026-06-22', status: 'pending' },
+          { type: 'cds.maturity', instrument: 'main', dueDate: '2028-06-20', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', lot: 'ftd', owner: 'account', qty: 5_000_000, basis: 'position', iaRequired: 250_000, iaPosted: 250_000, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: -100, unrealized: 0, total: -100 } },
+        nav: { account: 1_999_900, book: 4_999_900 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 1_750_000, margin: 250_000, positions: 100_000, payable: 100_100, assets: 2_100_000, liabilities: 100_100, netAssets: 1_999_900 } },
+      },
+    }),
+    {
+      id: 'mark-at-trade', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 2.00, note: 'Dealer P upfront per 100, by hand',
+      expect: { positions: [{ instrument: 'main', lot: 'ftd', price: 2, value: 100_000, unrealized: 0, provisional: false }], otc: [{ instrument: 'main', mark: 2, markValue: 100_000 }], provisional: { account: false, book: false } },
+    },
+    {
+      id: 'settle-upfront', covers: 'settlement', action: 'clock', to: at('2026-04-17'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 100,100.00 USD from settled cash', cash: { USD: -100_100 } }],
+        cash: { account: { USD: { settled: 1_649_900, unsettled: 0, availableToTrade: 1_649_900, availableToWithdraw: 1_649_900 } } },
+        pending: [],
+        balance: { account: { cash: 1_649_900, payable: null, assets: 1_999_900, liabilities: 0 } },
+      },
+    },
+    {
+      // The short first stub: 15 April (effective) to 20 June, 66 days: 5,000,000 x 5% x 66/360 = 45,833.33, paid Mon 22 June.
+      id: 'first-premium-short-stub', covers: ['premium', 'short first stub'], action: 'clock', to: at('2026-06-22'),
+      expect: {
+        events: [{ type: 'cds.premium', summary: `CDS premium paid on ${FTD_NAME} for 2026-04-15 to 2026-06-20: 45,833.33 USD`, cash: { USD: -45_833.33 }, owner: 'account', date: '2026-06-22' }],
+        cash: { account: { USD: { settled: 1_604_066.67, availableToTrade: 1_604_066.67, availableToWithdraw: 1_604_066.67 } } },
+        lifecycle: [
+          { type: 'cds.premium', instrument: 'main', dueDate: '2026-09-21', status: 'pending' }, // 20 September is a Sunday
+          { type: 'cds.maturity', instrument: 'main', dueDate: '2028-06-20', status: 'pending' },
+        ],
+        pnl: { account: { realized: -45_833.33, total: -45_933.33 } },
+        nav: { account: 1_954_066.67, book: 4_954_066.67 },
+        balance: { account: { cash: 1_604_066.67, assets: 1_954_066.67, netAssets: 1_954_066.67 } },
+      },
+    },
+    {
+      id: 'name-outside-the-basket', covers: 'credit event', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'credit_event', eventType: 'bankruptcy', recovery: 0.3, entity: 'Zephyr Holdings Inc.' },
+      status: 'blocked', reason: 'Only a credit event of one of the five reference entities counts for the basket.',
+      expect: { refused: { engine: 'Zephyr Holdings Inc. is not in the basket of FTD5-0628 (Corvane Chemicals Inc.; Ostrava Shipping AS; Pellworth Retail plc; Quillon Media Corp.; Ravensmoor Energy Ltd.).', api: 'Zephyr Holdings Inc. is not in the basket of FTD5-0628', browser: '"Defaulted name" does not offer "Zephyr Holdings Inc." for FTD5-0628: it offers Corvane Chemicals Inc., Ostrava Shipping AS, Pellworth Retail plc, Quillon Media Corp., Ravensmoor Energy Ltd.' } },
+    },
+    { id: 'mid-july', action: 'clock', to: at('2026-07-15'), expect: {} },
+    {
+      id: 'mark-wider', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 2.40, note: 'Dealer P upfront per 100, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'ftd', price: 2.4, value: 120_000, unrealized: 20_000 }],
+        otc: [{ instrument: 'main', mark: 2.4, markValue: 120_000 }],
+        pnl: { account: { unrealized: 20_000, total: -25_933.33 } },
+        nav: { account: 1_974_066.67, book: 4_974_066.67 },
+        balance: { account: { positions: 120_000, assets: 1_974_066.67, netAssets: 1_974_066.67 } },
+      },
+    },
+    {
+      // 2,000,000 terminated at 2.40, all-in (bespoke: no accrued premium is exchanged): 48,000.00 received; cost out
+      // 40,000.00; realized 8,000.00. The fixed independent amount does not change. Settles Mon 20 July.
+      id: 'partial-termination', covers: ['reduce', 'partial termination'], action: 'close', lot: 'ftd', scope: 'strategy', percent: 40, order: { statedPrice: 2.40 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 2_000_000, estimate: 2.4, model: 'stated-price', settleDate: '2026-07-20', cash: 48_000, accrued: 0, fees: 40 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 2_000_000, avgPrice: 2.4 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 2,000,000 FTD5-0628 @ 2.40 USD (realized 8,000.00 USD)' }],
+        cash: { account: { USD: { settled: 1_604_066.67, unsettled: 47_960, availableToTrade: 1_652_026.67, availableToWithdraw: 1_604_066.67 } } },
+        positions: [{ instrument: 'main', lot: 'ftd', qty: 3_000_000, cost: 60_000, avgCost: 2, price: 2.4, value: 72_000, unrealized: 12_000, notional: 3_000_000, margin: 250_000 }],
+        holdings: { main: { long: 3_000_000, short: 0, net: 3_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-07-20', amount: 47_960, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: 3_000_000, markValue: 72_000, iaRequired: 250_000, iaPosted: 250_000 }],
+        pnl: { account: { realized: -37_833.33, commissions: -140, unrealized: 12_000, total: -25_973.33 } },
+        nav: { account: 1_974_026.67, book: 4_974_026.67 },
+        balance: { account: { cash: 1_604_066.67, margin: 250_000, receivable: 47_960, positions: 72_000, assets: 1_974_026.67, liabilities: 0, netAssets: 1_974_026.67 } },
+      },
+    },
+    {
+      id: 'settle-termination', covers: 'settlement', action: 'clock', to: at('2026-07-20'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 47,960.00 USD into settled cash', cash: { USD: 47_960 } }],
+        cash: { account: { USD: { settled: 1_652_026.67, unsettled: 0, availableToTrade: 1_652_026.67, availableToWithdraw: 1_652_026.67 } } },
+        pending: [],
+        balance: { account: { cash: 1_652_026.67, receivable: null } },
+      },
+    },
+    { id: 'final-price-day', action: 'clock', to: at('2026-08-20'), expect: {} },
+    {
+      id: 'first-default-physical', covers: ['credit event', 'first to default', 'physical settlement', 'collateral'], action: 'instrument_lifecycle', instrument: 'main',
+      body: { action: 'credit_event', eventType: 'bankruptcy', eventDate: '2026-08-03', recovery: 0.20, entity: 'Pellworth Retail plc', settlement: 'physical', settleDate: '2026-08-25' },
+      expect: {
+        events: [
+          { type: 'cds.credit_event', summary: 'Bankruptcy of Pellworth Retail plc on 2026-08-03 recorded by hand for FTD5-0628, physical settlement (simulated on paper), final price 20.000%; deliverable obligation Senior unsecured bonds or loans of the defaulted name (Bond or Loan), 3,000,000.00 USD face delivered against par (simulated on paper: the Terminal moves no securities; the obligation is taken as bought at the final price, 600,000.00 USD); accrued premium 18,333.33 USD; receivable 2,381,666.67 USD on 2026-08-25', owner: 'account', date: '2026-08-20' },
+          { type: 'cds.terminated', summary: 'FTD5-0628 ended for this position: 1st default in the basket (Pellworth Retail plc), settled in full' },
+          { type: 'cds.collateral', summary: `Collateral returned on ${FTD_NAME} under its position-level terms: 250,000.00 USD (independent amount, the position ended)`, cash: { USD: 250_000 } },
+        ],
+        cash: { account: { USD: { settled: 1_902_026.67, unsettled: 2_381_666.67, margin: 0, availableToTrade: 4_283_693.34, availableToWithdraw: 1_902_026.67 } } },
+        positions: [], holdings: { main: null }, lifecycle: [], otc: [],
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-08-25', amount: 2_381_666.67, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: 2_283_833.34, commissions: -140, unrealized: 0, total: 2_283_693.34 } }, // -37,833.33 + 2,381,666.67 - 60,000
+        nav: { account: 4_283_693.34, book: 7_283_693.34 },
+        balance: { account: { cash: 1_902_026.67, margin: null, receivable: 2_381_666.67, positions: null, assets: 4_283_693.34, liabilities: 0, netAssets: 4_283_693.34 } },
+      },
+    },
+    {
+      id: 'second-default-refused', covers: 'credit event', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'credit_event', eventType: 'failure_to_pay', recovery: 0.35, entity: 'Quillon Media Corp.' },
+      status: 'blocked', reason: 'A first-to-default basket ends at its first default: nothing is left to protect.',
+      expect: { refused: { engine: 'FTD5-0628 has ended (2026-08-03: 1st default in the basket (Pellworth Retail plc), settled in full). No further credit event is recorded on it.', api: 'FTD5-0628 has ended', browser: 'FTD5-0628 ended on 2026-08-03: 1st default in the basket (Pellworth Retail plc), settled in full. No further event is recorded on it.' } },
+    },
+    {
+      // 2,000,000 - 100,100 - 45,833.33 + 47,960 + 2,381,666.67 = 4,283,693.34.
+      id: 'physical-settlement-date', covers: ['settlement', 'physical settlement'], action: 'clock', to: at('2026-08-25'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 2,381,666.67 USD into settled cash', cash: { USD: 2_381_666.67 } }],
+        cash: { account: { USD: { settled: 4_283_693.34, unsettled: 0, availableToTrade: 4_283_693.34, availableToWithdraw: 4_283_693.34 } } },
+        pending: [],
+        balance: { account: { cash: 4_283_693.34, receivable: null } },
+      },
+    },
+    { id: 'nothing-left', covers: 'close', action: 'clock', to: at('2026-09-21'), expect: { events: [], positions: [], pending: [], lifecycle: [], otc: [], alerts: [] } },
+  ],
+};
+
+export default [cdsSingleName, cdsSovereign, cdsIndex, cdsBasket];
