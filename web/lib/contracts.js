@@ -343,13 +343,13 @@ function LegsEditor({ legs, onChange, ccy }) {
 
 // ---- s2: notional schedule and averaged / volume-shaped price legs (commodity, energy, electricity, freight swaps) ----
 const AVERAGING = opt([['', 'Fixing of the period end'], ['daily', 'Average of each pricing day']]);
-const HOURS = opt([['', 'Not by the hour'], ['base', 'Base (24 hours a day)'], ['peak', 'Peak hours'], ['offpeak', 'Off-peak hours']]);
+const HOURS = opt([['', 'Per period (as stated)'], ['day', 'Per calendar day (gas)'], ['base', 'Base (24 hours a day)'], ['peak', 'Peak hours'], ['offpeak', 'Off-peak hours']]);
 function PriceLegFields({ leg: l, set }) {
   return html`
     ${l.fixedPrice === null || l.fixedPrice === undefined || l.fixedPrice === '' ? html`<${Field} label="Floating price"><${Select} value=${l.averaging || ''} onChange=${(v) => set({ averaging: v || null })} options=${AVERAGING} /><//>` : null}
     <${Field} label="Pricing calendar" hint="Pricing (and peak) days; empty: the payment calendar"><${Text} value=${l.pricingCalendar || ''} onInput=${(v) => set({ pricingCalendar: v.toUpperCase() || null })} /><//>
-    <${Field} label="Delivery hours" hint="Electricity: quantity = units x hours of the period"><${Select} value=${l.hours || ''} onChange=${(v) => set({ hours: v || null })} options=${HOURS} /><//>
-    ${l.hours ? html`<${Field} label="Peak hours a day"><${Num} value=${l.peakHours ?? 16} onInput=${(v) => set({ peakHours: v })} /><//>` : null}`;
+    <${Field} label="Delivery hours" hint="Quantity = units x the days (gas) or hours (electricity) of each period"><${Select} value=${l.hours || ''} onChange=${(v) => set({ hours: v || null })} options=${HOURS} /><//>
+    ${l.hours && l.hours !== 'day' ? html`<${Field} label="Peak hours a day"><${Num} value=${l.peakHours ?? 16} onInput=${(v) => set({ peakHours: v })} /><//>` : null}`;
 }
 /** The schedule as typed: "YYYY-MM-DD factor" a line. A line that cannot be read is sent as typed, for the server to refuse by name. */
 function ScheduleText({ value, onChange }) {

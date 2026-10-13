@@ -54,6 +54,20 @@ async function pickInstrument(ui, scope, label, inst) {
 }
 
 /** '$inst:key', '$unit:key', '$lot:name' anywhere in a body, as the engine and API levels resolve them. */
+/** '$pos:<lot>:<instrument key>': the open position of that instrument in that lot, as lib/actions.mjs resolves it. */
+async function resolvePositionRefs(t, ctx, x) {
+  if (typeof x === 'string' && x.startsWith('$pos:')) {
+    const [, lot, key] = x.split(':');
+    const s = await t.strategy(ctx.lot(lot).strategyId);
+    const p = s.positions.find((q) => q.instrument.id === ctx.inst(key).id);
+    if (!p) throw new Error(`"${lot}" holds no ${key} for ${x}.`);
+    return p.positionId;
+  }
+  if (Array.isArray(x)) return Promise.all(x.map((v) => resolvePositionRefs(t, ctx, v)));
+  if (x && typeof x === 'object') return Object.fromEntries(await Promise.all(Object.entries(x).map(async ([k, v]) => [k, await resolvePositionRefs(t, ctx, v)])));
+  return x;
+}
+
 function resolveRefs(x, ctx) {
   if (typeof x === 'string') {
     if (x.startsWith('$inst:')) return ctx.inst(x.slice(6)).id;
@@ -252,8 +266,8 @@ export const actions = {
   /** A package built on the Strategies page from an execution template, previewed and confirmed. */
   async package(ui, t, ctx, step, { previewAndConfirm, expectsRefusal }) {
     if (!step.strategyPage) return undefined;
+    const want = resolveRefs(await resolvePositionRefs(t, ctx, { ...step.input }), ctx);
     const { main } = await fillStrategyPage(ui, t, ctx, step);
-    const want = resolveRefs({ ...step.input }, ctx);
     let sentInput = null;
     const out = await previewAndConfirm(ui, ctx, async () => {
       const req = ui.page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/strategies/preview');

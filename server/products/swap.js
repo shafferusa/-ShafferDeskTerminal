@@ -684,16 +684,16 @@ function checkScheduleProduct(productId, t, errors) {
   }
 }
 
-const PRICE_HOURS = ['base', 'peak', 'offpeak'];
+const PRICE_HOURS = ['base', 'peak', 'offpeak', 'day']; // 'day': quantity per calendar day of the period (natural gas)
 /** Fields of a price leg: averaging of the floating price, the calendar of pricing days, delivery hours (electricity). */
 function normalizePriceLeg(l, at, errors) {
   l.averaging = l.averaging === 'daily' ? 'daily' : null;
   l.pricingCalendar = l.pricingCalendar ? String(l.pricingCalendar).toUpperCase() : null;
   if (l.pricingCalendar && !isKnownCalendar(l.pricingCalendar)) errors.push(`${at}: pricing calendar ${l.pricingCalendar} is not one the Terminal knows.`);
   l.hours = PRICE_HOURS.includes(l.hours) ? l.hours : null;
-  l.peakHours = l.hours ? num(l.peakHours) ?? 16 : null;
-  if (l.hours && !(l.peakHours > 0 && l.peakHours <= 24)) errors.push(`${at}: peak hours a day must be between 1 and 24.`);
-  if (!l.hours) delete l.peakHours;
+  l.peakHours = l.hours && l.hours !== 'day' ? num(l.peakHours) ?? 16 : null;
+  if (l.peakHours !== null && !(l.peakHours > 0 && l.peakHours <= 24)) errors.push(`${at}: peak hours a day must be between 1 and 24.`);
+  if (l.peakHours === null) delete l.peakHours;
 }
 
 /** Pricing days of a period: business days of the leg's pricing calendar (default the payment calendar) from its start up to, not including, its end. */
@@ -711,6 +711,7 @@ function pricingDays(inst, leg, period) {
 function deliveryHours(inst, leg, period) {
   const base = 24 * diffDays(period.start, period.end);
   const peak = leg.peakHours * pricingDays(inst, leg, period).length;
+  if (leg.hours === 'day') return diffDays(period.start, period.end);
   return leg.hours === 'base' ? base : leg.hours === 'peak' ? peak : base - peak;
 }
 
@@ -794,7 +795,7 @@ function netPart(leg, r, amount) {
   let what;
   if (leg.type === 'price') {
     const px = d.average !== undefined ? `average of ${d.days} fixings ${fmtPx(d.average)}` : leg.fixedPrice !== null && leg.fixedPrice !== undefined ? `fixed price ${fmtPx(leg.fixedPrice)}` : `fixing ${fmtPx(d.price)}`;
-    what = `${px} x ${fmtQty(d.units)}${d.hours ? ` (${fmtQty(d.hours)} hours)` : ''}`;
+    what = `${px} x ${fmtQty(d.units)}${d.hours ? ` (${fmtQty(d.hours)} ${leg.hours === 'day' ? 'days' : 'hours'})` : ''}`;
   } else if (leg.type === 'fixed') what = `fixed ${pct(leg.rate)}`;
   else what = `${leg.index}${d.fixing !== undefined ? ` ${pct(d.fixing / 100)}` : ''}`;
   return `leg ${leg.id}, ${what}: ${fmt(Math.abs(amount), leg.ccy)} ${amount >= 0 ? 'received' : 'paid'}`;
@@ -850,7 +851,8 @@ function netPayment(app, task, { book, unit, inst, pos, leg, sched, period, base
 function priceLegExtras(leg) {
   const out = [];
   if (leg.averaging === 'daily') out.push(`average of the daily fixings on the business days of ${leg.pricingCalendar ? `the ${leg.pricingCalendar} calendar` : 'the payment calendar'} in each period`);
-  if (leg.hours) out.push(`${leg.hours === 'offpeak' ? 'off-peak' : leg.hours} hours (${leg.hours === 'base' ? '24 a day' : `${leg.peakHours} a peak day`}; clock changes not counted)`);
+  if (leg.hours === 'day') out.push('quantity per calendar day of each period');
+  else if (leg.hours) out.push(`${leg.hours === 'offpeak' ? 'off-peak' : leg.hours} hours (${leg.hours === 'base' ? '24 a day' : `${leg.peakHours} a peak day`}; clock changes not counted)`);
   return out.length ? `, ${out.join(', ')}` : '';
 }
 

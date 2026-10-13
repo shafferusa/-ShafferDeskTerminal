@@ -18,7 +18,7 @@
 //
 // A draft states: marketView, conventions { tradingCalendar, settlementCalendar, paymentCalendar, settleLag },
 // terms.referenceEntity, coupon (decimal), effective, maturity, recovery, indexFactor, seniority, convention
-// ('standard' | 'bespoke'), firstStub, creditEventSet, settlement ('auction' | 'cash' | 'physical'), deliverable, basket
+// ('standard' | 'bespoke'), firstStub, paymentDay (monthly, bespoke ABS CDS), creditEventSet, settlement ('auction' | 'cash' | 'physical'), deliverable, basket
 // (array or ';' text), nth, attachment, detachment, cancellable, referenceObligation, counterparty, collateralBasis (as on
 // a swap), collateral (free text).
 
@@ -90,6 +90,7 @@ export async function contractTerms(ui, dialog, draft, ctx) {
   // s3: the credit terms.
   if (t.convention) { await ui.select(dialog, 'Premium convention').selectOption(t.convention); await ui.drawn(); }
   if (t.firstStub && t.convention !== 'standard') await ui.select(dialog, 'First period').selectOption(t.firstStub);
+  if (has(t.paymentDay)) await ui.input(dialog, 'Monthly payment day').fill(String(t.paymentDay));
   if (t.creditEventSet) await ui.select(dialog, /^\s*Credit events/).selectOption(t.creditEventSet);
   if (t.settlement) { await ui.select(dialog, 'Settlement after a credit event').selectOption(t.settlement); await ui.drawn(); }
   if (t.deliverable) await ui.input(dialog, 'Deliverable obligation').fill(t.deliverable);

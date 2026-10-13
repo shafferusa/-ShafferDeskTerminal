@@ -39,7 +39,7 @@
 //       fixedPrice (price), months 0 | 1 | 3 | 6 | 12 (Payment), dayCount, compounding (fixed leg paid at
 //       maturity only), passDividends and resetNotional (return), exchangeNotional (fixed, float, ois)
 //       notionalSchedule [{ from, factor }] (any leg: the "Notional schedule" box, one "date factor" a line),
-//       averaging 'daily', pricingCalendar, hours 'base' | 'peak' | 'offpeak', peakHours (price legs; s2),
+//       averaging 'daily', pricingCalendar, hours 'day' | 'base' | 'peak' | 'offpeak', peakHours (price legs; s2),
 //       paymentLag (any leg: business days after the period end)
 // Not on the form, so not typed here: the initial fixings of a return leg (`terms.initialPrices`); the API accepts them.
 
@@ -128,7 +128,7 @@ async function fillLegs(ui, scope, legs, ctx) {
       else if (leg.averaging) throw new Error('A fixed-price leg has no averaging.');
       await ui.input(p, 'Pricing calendar').fill(leg.pricingCalendar || '');
       await ui.select(p, 'Delivery hours').selectOption(leg.hours || '');
-      if (leg.hours) { await ui.drawn(); await ui.input(p, 'Peak hours a day').fill(String(leg.peakHours ?? 16)); }
+      if (leg.hours && leg.hours !== 'day') { await ui.drawn(); await ui.input(p, 'Peak hours a day').fill(String(leg.peakHours ?? 16)); }
     }
     await ui.input(p, 'Payment lag (business days)').fill(String(leg.paymentLag ?? 0));
     const sched = (leg.notionalSchedule || []).map((s) => `${s.from} ${s.factor ?? ''}`.trim()).join('\n');
