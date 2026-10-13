@@ -5781,10 +5781,11 @@ const bullCallSpread = {
           { type: 'option.delivery', summary: 'Simulated delivery: received 600 KSTL at strike 50 on exercise of KSTL260320C50' },
           { type: 'option.exercised', summary: 'Exercised: 4 KSTL260320C50 at strike 50' },
           { type: 'option.delivery', summary: 'Simulated delivery: received 400 KSTL at strike 50 on exercise of KSTL260320C50' },
-          { type: 'option.assigned', summary: 'Assigned: 4 KSTL260320C55 at strike 55' },
-          { type: 'option.delivery', summary: 'Simulated delivery: delivered 400 KSTL at strike 55 on assignment of KSTL260320C55' },
           { type: 'option.expired', summary: 'Expired worthless: 40 KSTL260320C60 (fixing 57)' },
           { type: 'option.expired', summary: 'Expired worthless: 40 KSTL260320C65 (fixing 57)' },
+          // The written 55 calls deliver shares: they settle after the options of the same instance that receive them.
+          { type: 'option.assigned', summary: 'Assigned: 4 KSTL260320C55 at strike 55' },
+          { type: 'option.delivery', summary: 'Simulated delivery: delivered 400 KSTL at strike 55 on assignment of KSTL260320C55' },
         ],
         // Owed 30,000 + 20,000; to receive 22,000. To trade: 39,637.92 - 28,000; to withdraw: 39,637.92 - 50,000.
         cash: { account: { USD: { unsettled: -28_000, receivable: 22_000, payable: 50_000, availableToTrade: 11_637.92, availableToWithdraw: -10_362.08 } } },
