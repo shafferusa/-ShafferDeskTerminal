@@ -1590,4 +1590,152 @@ const loanTrs = {
   ],
 };
 
-export default [dividendSwap, cmsSpreadSwap, nonDeliverableSwap, quantoSwap, callableSwap, puttableSwap, equityBasketSwap, loanTrs];
+// ---------------------------------------------------------------------------------------------
+// asset_swap
+// ---------------------------------------------------------------------------------------------
+// Par asset swap package, bought on Thu 13 August 2026 for settlement Mon 17 August: 5,000,000 face of the Brightwater
+// Utilities 4.50% notes of 15 June 2029 (semi-annual 30/360) at the quoted ask of 96.25, and a swap on the same notional
+// from 17 August to 15 June 2029: pay the bond's 4.50% (semi-annual 30/360 on the bond's coupon dates, short first period
+// to 15 December), receive 3-month Term SOFR + 1.80% quarterly ACT/360 (short first period to 15 September). The swap's
+// upfront is 100 less the bond's dirty price, so the package costs par: accrued 15 June to 17 August (62 days of 30/360)
+// 4.50% x 62/360 = 0.775; dirty 97.025; upfront 2.975 per 100 = 148,750.00 paid. Both are legs of one package
+// (Strategies page, custom template, two instrument legs); each is closed on its own position. Swap position-level terms:
+// a fixed independent amount of 50,000; no variation margin. Swap commission 20.00 per million; bonds free; T+2.
+//   bond: 5,000,000 x 96.25 / 100 = 4,812,500.00 + accrued 5,000,000 x 0.775% = 38,750.00 = 4,851,250.00
+//   15 September: float 17 August to 15 September (29 days) at 4.20% + 1.80%: 5,000,000 x 6.00% x 29/360 = 24,166.67
+//   15 December: bond coupon 5,000,000 x 4.50% / 2 = 112,500.00 (38,750.00 of it bought); swap fixed 17 August to
+//     15 December (118 days of 30/360): 5,000,000 x 4.50% x 118/360 = 73,750.00 paid; float 15 September to 15 December
+//     (91 days) at 4.10% + 1.80%: 5,000,000 x 5.90% x 91/360 = 74,569.44 received
+//   Wed 20 January 2027: bond sold at the bid of 97.10: 4,855,000.00 + accrued 15 December to 22 January (37 days)
+//     5,000,000 x 4.50% x 37/360 = 23,125.00; swap terminated at -0.60: 30,000.00 paid, commission 100.00
+//   cash: 6,000,000 - 5,000,100 + 24,166.67 + 112,500 - 73,750 + 74,569.44 + 4,878,125 - 30,100 = 5,985,411.11
+const BWU = { productId: 'corporate_bond', name: 'Brightwater Utilities 4.50% Notes 15-Jun-2029', symbol: 'BWU-4.5-JUN29', marketView: 'US_CASH', venueType: 'otc', issuer: 'Brightwater Utilities Inc.', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+  terms: { couponType: 'fixed', couponRate: 0.045, frequency: 2, maturity: '2029-06-15', issueDate: '2024-06-15', dayCount: '30/360', redemption: 100, minDenomination: 1_000, seniority: 'Senior unsecured' } };
+const ASW_NAME = 'BWU 4.50% 2029 par asset swap TSFR3M+1.80%';
+const assetSwap = {
+  productId: 'asset_swap',
+  title: 'Par asset swap: the bond and the swap bought as one package at par, coupons and swap legs, each leg closed on its own',
+  matrix: {
+    ticket: 'Strategies page, custom template: two instrument legs (Add a leg): the bond (Quantity, at the quoted ask) and the swap registered first in the registry (Notional, State a fill price: the upfront); the strategy instance for each position\'s Close',
+    requiredFields: ['bond: registered as a corporate bond (coupon, frequency, day count, maturity)', 'swap: Effective date (the bond\'s settlement date), Maturity (the bond\'s), fixed leg at the bond coupon on the bond\'s dates, floating leg Index and Spread, Collateral basis', 'each leg: Side, Quantity or Notional; the swap leg: State a fill price (100 less the bond\'s dirty price)'],
+    automaticInputs: ['bond price from its quote (fixture standing in for Shaffer MarketData)', 'bond accrued interest at settlement', 'swap payment schedule (short first periods) on the USD calendar', 'Term SOFR fixings (rate fixtures)', 'bond coupon', 'settlement dates T+2', 'commission from the Book fee schedule', 'swap independent amount'],
+    manualInputs: ['the swap upfront, worked out by hand as 100 less the dirty price', 'marks of the swap entered by hand'],
+    settlement: 'Bond purchase and sale with accrued interest, swap upfront and termination amounts and commission, all T+2 on the USD calendar; swap legs on their payment dates',
+    lifecycle: 'Float stub received; bond coupon received and swap fixed stub paid on the same day; floating received; the bond sold at the bid and the swap terminated at a stated amount, each on its own position',
+    accounting: 'Bond at clean cost with accrued interest as income; the swap at its upfront cost, carried at the mark; swap legs realized; both closing results realized; commission expensed',
+    collateral: 'Swap position-level terms: a fixed independent amount of 50,000 posted at entry and returned on termination; none for the long bond',
+  },
+  start: at('2026-08-13'),
+  settlementCheck: false,
+  book: {
+    name: 'Matrix asset swap', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 8_000_000 }],
+    account: { name: 'Credit', funding: [{ ccy: 'USD', amount: 6_000_000 }] },
+    settings: { fees: { swap: { perUnit: 0.00002, minimum: 0, bps: 0 }, bond: NO_FEE }, fill: FILL, settlement: { swap: 2, bond: 2 } },
+  },
+  instruments: {
+    bond: BWU,
+    main: {
+      productId: 'asset_swap', name: ASW_NAME, symbol: 'ASW-BWU-0629', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { tradingCalendar: 'USD', settlementCalendar: 'USD', paymentCalendar: 'USD' },
+      terms: {
+        effective: '2026-08-17', maturity: '2029-06-15', counterparty: 'Dealer A',
+        collateralBasis: { type: 'position', independentAmount: { type: 'fixed', amount: 50_000 }, variationMargin: false },
+        legs: [
+          { side: 'pay', type: 'fixed', ccy: 'USD', rate: 0.045, months: 6, dayCount: '30/360' },
+          { side: 'receive', type: 'float', ccy: 'USD', index: 'TSFR3M', spread: 0.018, months: 3, dayCount: 'ACT/360' },
+        ],
+      },
+    },
+  },
+  quotes: { bond: { bid: 96.05, ask: 96.25, last: 96.25, bidSize: 20_000_000, askSize: 20_000_000 } },
+  rates: { TSFR3M: { byDate: { '2026-08-17': 4.20, '2026-09-15': 4.10, '2026-12-15': 3.95 } } },
+  expectAtStart: usdStart(6_000_000, 2_000_000),
+  steps: [
+    {
+      id: 'open-package', covers: ['open', 'package', 'collateral'], action: 'package', as: 'asw', instrument: 'main',
+      input: { template: 'custom', origin: 'strategy_page', legs: [
+        { kind: 'trade', action: 'buy', purpose: 'primary', role: 'leg', instrumentId: '$inst:bond', qty: 5_000_000, orderType: 'market' },
+        { kind: 'trade', action: 'buy', purpose: 'primary', role: 'leg', instrumentId: '$inst:main', qty: 5_000_000, orderType: 'market', statedPrice: 2.975 },
+      ] },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [
+            { kind: 'trade', action: 'buy', instrument: 'bond', qty: 5_000_000, estimate: 96.25, model: 'quoted-bid-ask', settleDate: '2026-08-17', gross: 4_812_500, accrued: 38_750, cash: -4_851_250, fees: 0 },
+            { kind: 'trade', action: 'buy', instrument: 'main', qty: 5_000_000, estimate: 2.975, model: 'stated-price', settleDate: '2026-08-17', cash: -148_750, fees: 100 },
+          ],
+          cash: { USD: { fees: 100, margin: 50_000, shortfall: 0 } },
+        },
+        result: { status: 'open' },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Bought 5,000,000 BWU-4.5-JUN29 @ 96.25 USD', owner: 'account', date: '2026-08-13' },
+          { type: 'trade.fill', summary: 'Entered as written: 5,000,000 notional of ASW-BWU-0629 at 2.975 per 100 notional', owner: 'account', date: '2026-08-13' },
+          { type: 'swap.collateral', summary: `Collateral posted on ${ASW_NAME} under its position-level terms: 50,000.00 USD (independent amount, fixed amount for the position)`, cash: { USD: -50_000 } },
+        ],
+        cash: { account: { USD: { settled: 5_950_000, unsettled: -5_000_100, margin: 50_000, availableToTrade: 949_900 } } },
+        positions: [
+          { instrument: 'bond', lot: 'asw', owner: 'account', direction: 'long', qty: 5_000_000, avgCost: 96.25, cost: 4_812_500, price: 96.25, value: 4_812_500, unrealized: 0, accrued: 38_750 },
+          { instrument: 'main', lot: 'asw', owner: 'account', direction: 'as written', qty: 5_000_000, avgCost: 2.975, cost: 148_750, price: null, value: null, unrealized: null, provisional: true, notional: 5_000_000, margin: 50_000 },
+        ],
+        pending: [
+          { instrument: 'bond', owner: 'account', dueDate: '2026-08-17', amount: -4_851_250, ccy: 'USD', into: 'cash' },
+          { instrument: 'main', owner: 'account', dueDate: '2026-08-17', amount: -148_850, ccy: 'USD', into: 'cash' },
+        ],
+        holdings: { bond: { long: 5_000_000, short: 0, net: 5_000_000 }, main: { long: 5_000_000, short: 0, net: 5_000_000 } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-09-15', status: 'pending' },
+          { type: 'bond.coupon', instrument: 'bond', dueDate: '2026-12-15', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-12-15', status: 'pending' },
+          { type: 'bond.maturity', instrument: 'bond', dueDate: '2029-06-15', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2029-06-15', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', lot: 'asw', owner: 'account', qty: 5_000_000, basis: 'position', mark: null, iaRequired: 50_000, iaPosted: 50_000, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -100, unrealized: 0, total: -100 } },
+        nav: { account: 5_999_900, book: 7_999_900 },
+        provisional: { account: true, book: true },
+        // Positions: the bond at 4,812,500 and the swap carried at its upfront cost until it is marked.
+        balance: { account: { cash: 5_950_000, margin: 50_000, accruedIncome: 38_750, positions: 4_961_250, payable: 5_000_100, assets: 11_000_000, liabilities: 5_000_100, netAssets: 5_999_900 } },
+      },
+    },
+    {
+      id: 'mark-swap', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 2.975, note: 'Dealer A mark, by hand',
+      expect: {
+        positions: [{ instrument: 'bond', lot: 'asw' }, { instrument: 'main', lot: 'asw', price: 2.975, value: 148_750, unrealized: 0, provisional: false }],
+        otc: [{ instrument: 'main', mark: 2.975, markValue: 148_750 }],
+        provisional: { account: false, book: false },
+      },
+    },
+    {
+      id: 'settle-package', covers: 'settlement', action: 'clock', to: at('2026-08-17'),
+      expect: {
+        events: [
+          { type: 'settlement.pay', summary: 'paid 4,851,250.00 USD from settled cash', cash: { USD: -4_851_250 } },
+          { type: 'settlement.pay', summary: 'paid 148,850.00 USD from settled cash', cash: { USD: -148_850 } },
+        ],
+        cash: { account: { USD: { settled: 949_900, unsettled: 0, availableToTrade: 949_900, availableToWithdraw: 949_900 } } },
+        pending: [],
+        balance: { account: { cash: 949_900, payable: null, assets: 5_999_900, liabilities: 0 } },
+      },
+    },
+    {
+      // Float 17 August to 15 September: 24,166.67 received (see the header).
+      id: 'float-stub', covers: 'floating payment', action: 'clock', to: at('2026-09-15'),
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Swap receipt on ${ASW_NAME}, leg B (float), period 2026-08-17 to 2026-09-15: 24,166.67 USD`, cash: { USD: 24_166.67 } }],
+        cash: { account: { USD: { settled: 974_066.67, availableToTrade: 974_066.67, availableToWithdraw: 974_066.67 } } },
+      },
+    },
+    {
+      // Bond coupon 112,500.00; fixed stub 73,750.00 paid; float 74,569.44 received (see the header).
+      id: 'december-coupon-and-legs', covers: ['coupon', 'fixed payment', 'floating payment'], action: 'clock', to: at('2026-12-15'),
+      expect: {
+        events: [],
+        cash: { account: { USD: { settled: 1_087_386.11, availableToTrade: 1_087_386.11, availableToWithdraw: 1_087_386.11 } } },
+      },
+    },
+  ],
+};
+
+export default [dividendSwap, cmsSpreadSwap, nonDeliverableSwap, quantoSwap, callableSwap, puttableSwap, equityBasketSwap, loanTrs, assetSwap];

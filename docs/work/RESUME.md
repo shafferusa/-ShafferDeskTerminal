@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 97.4% of the pass** (last milestone 2026-10-13T20:51Z, t2: futures_calendar passes at engine, API and browser)
+**Completeness: about 97.4% of the pass** (last milestone 2026-10-13T20:53Z, b4: bond driver: manual cash flow waits for the Lifecycle menu (flake seen in private_credit))
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 
