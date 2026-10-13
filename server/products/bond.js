@@ -773,7 +773,8 @@ export const bond = {
       if (from < today && !fresh.terms.couponSuspended && after.data?.accruedThrough && after.data.accruedThrough >= from) {
         const target = accrualTarget(app, fresh, after, after.data.accruedThrough);
         if (target !== null) {
-          const id = trueUpAccrual(app, { book: b, unit: u, pos: after, inst: fresh, account: 'accrued.asset', pnlAccount: 'pnl.coupon', ccy, target: money(target, ccy), summary: `Accrued interest restated on the new factor of ${name}`, type: 'accrual.coupon' });
+          const down = money(target, ccy) < app.ledger.positionBalance(after.id, 'accrued.asset', ccy);
+          const id = trueUpAccrual(app, { book: b, unit: u, pos: after, inst: fresh, account: 'accrued.asset', pnlAccount: 'pnl.coupon', ccy, target: money(target, ccy), summary: `Accrued interest restated on the new factor of ${name}, ${down ? 'down' : 'up'}`, type: 'accrual.coupon' });
           if (id) out.push(id);
         }
       }

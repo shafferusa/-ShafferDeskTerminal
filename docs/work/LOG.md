@@ -163,3 +163,4 @@
 - 2026-10-13T18:04Z | r1 | +0.2 | bilateral_repo passes at engine, API and browser
 - 2026-10-13T18:04Z | m1 | +0.2 | direct_real_estate passes at engine, API and browser (GBP building in a USD Book)
 - 2026-10-13T18:04Z | s8 | +0.5 | final full runs recorded: system engine 41/41, API 47/47, browser 37/37 (57 cases mapped); README and TEST-MATRIX System behaviour regenerated
+- 2026-10-13T18:05Z | fw | +0.2 | fw: equity_forward passes at engine, API and browser

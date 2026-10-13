@@ -33,6 +33,8 @@
 //     forward delivers the underlying at the dealt price (simulated, labelled) or pays the difference
 //     against the underlying's close on the value date, by its terms. After settlement nothing is left
 //     posted, accrued or scheduled.
+//   - A forward's trade settles on its own value date, not on a settlement lag: its ticket steps set
+//     `settlementCheck: false` and state the value date as the leg's settlement date.
 
 export const family = 'forward';
 
@@ -120,10 +122,10 @@ const fxForward = {
     },
     {
       // 1,000,000 x 1.0850 = 1,085,000.00 USD notional; independent amount 2% = 21,700.00; commission 1,000,000 x 0.00002 = 20.00.
-      id: 'open-buy', covers: ['open', 'collateral'], action: 'ticket', instrument: 'main', side: 'buy', qty: 1_000_000, as: 'buy', order: { statedPrice: 1.0850 },
+      id: 'open-buy', covers: ['open', 'collateral'], action: 'ticket', instrument: 'main', side: 'buy', qty: 1_000_000, as: 'buy', settlementCheck: false, order: { statedPrice: 1.0850 },
       expect: {
         preview: { blocking: 0, errors: [],
-          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 1_000_000, estimate: 1.0850, model: 'stated-price', settleDate: '2026-06-22', cash: 0, fees: 20 }],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 1_000_000, estimate: 1.0850, model: 'stated-price', settleDate: '2026-06-22', fees: 20 }],
           cash: { USD: { purchases: 0, fees: 20, margin: 21_700, required: 21_720, available: 200_000, shortfall: 0 } } },
         result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 1_000_000, avgPrice: 1.0850 }] },
         events: [
@@ -145,10 +147,10 @@ const fxForward = {
     {
       // 400,000 x 1.0870 = 434,800.00 USD notional; independent amount 2% = 8,696.00; commission 400,000 x 0.00002 = 8.00.
       // Marked at 1.0850: -400,000 x (1.0850 - 1.0870) = +800.00.
-      id: 'open-sell', covers: ['open short', 'collateral'], action: 'ticket', instrument: 'main', side: 'sell', qty: 400_000, as: 'sell', order: { statedPrice: 1.0870 },
+      id: 'open-sell', covers: ['open short', 'collateral'], action: 'ticket', instrument: 'main', side: 'sell', qty: 400_000, as: 'sell', settlementCheck: false, order: { statedPrice: 1.0870 },
       expect: {
         preview: { blocking: 0, errors: [],
-          legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 400_000, estimate: 1.0870, model: 'stated-price', settleDate: '2026-06-22', cash: 0, fees: 8 }],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 400_000, estimate: 1.0870, model: 'stated-price', settleDate: '2026-06-22', fees: 8 }],
           cash: { USD: { purchases: 0, fees: 8, margin: 8_696, required: 8_704, available: 178_280, shortfall: 0 } } }, // available: settled less the 20.00 owed
         result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 400_000, avgPrice: 1.0870 }] },
         events: [
@@ -361,9 +363,9 @@ const ndf = {
   },
   steps: [
     {
-      id: 'open-sell', covers: ['open short', 'treasury'], action: 'ticket', owner: 'treasury', instrument: 'main', side: 'sell', qty: 5_000_000, as: 'hedge', order: { statedPrice: 87.50 },
+      id: 'open-sell', covers: ['open short', 'treasury'], action: 'ticket', owner: 'treasury', instrument: 'main', side: 'sell', qty: 5_000_000, as: 'hedge', settlementCheck: false, order: { statedPrice: 87.50 },
       expect: {
-        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 5_000_000, estimate: 87.50, model: 'stated-price', settleDate: '2026-05-04', cash: 0, fees: 0 }] },
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 5_000_000, estimate: 87.50, model: 'stated-price', settleDate: '2026-05-04', fees: 0 }] },
         result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 5_000_000, avgPrice: 87.50 }] },
         events: [{ type: 'strategy.submitted', owner: 'treasury' }, { type: 'trade.fill', summary: 'Sold forward 5,000,000 USDINR-NDF0430 @ 87.50 for 2026-05-04', owner: 'treasury', date: '2026-03-02' }],
         positions: [{ instrument: 'main', lot: 'hedge', owner: 'treasury', direction: 'short', qty: -5_000_000, avgCost: 87.50, cost: 0, price: 87.50, value: 0, unrealized: 0, notional: 437_500_000, margin: 0 }], // 5,000,000 x 87.50 INR
@@ -510,9 +512,9 @@ const fra = {
     { id: 'register', covers: 'registration', action: 'register_instrument', as: 'main', draft: FRA_DRAFT, expect: {} },
     { id: 'indication', action: 'quote', instrument: 'main', quote: { bid: 2.14, ask: 2.16, last: 2.15, bidSize: 100_000_000, askSize: 100_000_000 }, expect: {} },
     {
-      id: 'open', covers: ['open', 'collateral'], action: 'ticket', instrument: 'main', side: 'buy', qty: 25_000_000, as: 'fra', order: { statedPrice: 2.15 },
+      id: 'open', covers: ['open', 'collateral'], action: 'ticket', instrument: 'main', side: 'buy', qty: 25_000_000, as: 'fra', settlementCheck: false, order: { statedPrice: 2.15 },
       expect: {
-        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 25_000_000, estimate: 2.15, model: 'stated-price', settleDate: '2026-06-03', cash: 0, fees: 0 }] },
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 25_000_000, estimate: 2.15, model: 'stated-price', settleDate: '2026-06-03', fees: 0 }] },
         result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 25_000_000, avgPrice: 2.15 }] },
         events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought forward 25,000,000 EUR-FRA-3X6-0603 @ 2.15 for 2026-06-03', owner: 'account', date: '2026-03-02' }],
         positions: [{ instrument: 'main', lot: 'fra', owner: 'account', direction: 'long', qty: 25_000_000, avgCost: 2.15, cost: 0, price: 2.15, value: 0, unrealized: 0, notional: 25_000_000, margin: 0 }],
@@ -680,7 +682,7 @@ const equityForward = {
       // 10,000 x 52.40 = 524,000.00 notional; fixed independent amount 20,000.00; commission 10,000 x 0.01 = 100.00 on the value date.
       id: 'sell-forward', covers: ['open short', 'collateral'], action: 'ticket', instrument: 'main', side: 'sell', qty: 10_000, as: 'fwd', order: { statedPrice: 52.40 }, settlementCheck: false,
       expect: {
-        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 10_000, estimate: 52.40, model: 'stated-price', settleDate: '2026-04-17', cash: 0, fees: 100 }],
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 10_000, estimate: 52.40, model: 'stated-price', settleDate: '2026-04-17', fees: 100 }],
           cash: { USD: { purchases: 0, fees: 100, margin: 20_000, required: 20_100, available: 498_950, shortfall: 0 } } },
         result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 10_000, avgPrice: 52.40 }] },
         events: [

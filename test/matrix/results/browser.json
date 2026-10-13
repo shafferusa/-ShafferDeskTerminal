@@ -12373,184 +12373,6 @@
     "restart"
    ]
   },
-  "B:crude_oil:setup": {
-   "status": "passed",
-   "message": "",
-   "ms": 3220,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:55.880Z",
-   "product": "crude_oil",
-   "template": null,
-   "family": "spot",
-   "step": "setup",
-   "covers": []
-  },
-  "B:crude_oil:buy": {
-   "status": "passed",
-   "message": "",
-   "ms": 1816,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:55.880Z",
-   "product": "crude_oil",
-   "template": null,
-   "family": "spot",
-   "step": "buy",
-   "covers": [
-    "open"
-   ]
-  },
-  "B:crude_oil:short-sale": {
-   "status": "unsupported",
-   "message": "A physical commodity cannot be borrowed in the Terminal; a short position is not offered. Terminal: \"The ticket does not offer \"Sell short\" for WTI-CUSH in Alpha.\"",
-   "ms": 1100,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:55.880Z",
-   "product": "crude_oil",
-   "template": null,
-   "family": "spot",
-   "step": "short-sale",
-   "covers": [
-    "open"
-   ]
-  },
-  "B:crude_oil:settle-purchase": {
-   "status": "passed",
-   "message": "",
-   "ms": 633,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:55.880Z",
-   "product": "crude_oil",
-   "template": null,
-   "family": "spot",
-   "step": "settle-purchase",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "B:crude_oil:tank-storage": {
-   "status": "passed",
-   "message": "",
-   "ms": 1269,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:55.880Z",
-   "product": "crude_oil",
-   "template": null,
-   "family": "spot",
-   "step": "tank-storage",
-   "covers": [
-    "storage"
-   ]
-  },
-  "B:crude_oil:quality-bank": {
-   "status": "passed",
-   "message": "",
-   "ms": 1247,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:55.880Z",
-   "product": "crude_oil",
-   "template": null,
-   "family": "spot",
-   "step": "quality-bank",
-   "covers": [
-    "quality adjustment"
-   ]
-  },
-  "B:crude_oil:pipeline-tariff": {
-   "status": "passed",
-   "message": "",
-   "ms": 1484,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:55.880Z",
-   "product": "crude_oil",
-   "template": null,
-   "family": "spot",
-   "step": "pipeline-tariff",
-   "covers": [
-    "delivery cost"
-   ]
-  },
-  "B:crude_oil:quote-up": {
-   "status": "passed",
-   "message": "",
-   "ms": 865,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:55.880Z",
-   "product": "crude_oil",
-   "template": null,
-   "family": "spot",
-   "step": "quote-up",
-   "covers": []
-  },
-  "B:crude_oil:physical-delivery": {
-   "status": "unsupported",
-   "message": "Lifting the barrels from the tank is a physical delivery, which the Terminal does not simulate. Terminal: \"The Lifecycle menu of this position offers only: Manual cash flow. \"deliver\" is not offered.\"",
-   "ms": 1334,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:55.880Z",
-   "product": "crude_oil",
-   "template": null,
-   "family": "spot",
-   "step": "physical-delivery",
-   "covers": [
-    "physical delivery"
-   ]
-  },
-  "B:crude_oil:reduce": {
-   "status": "passed",
-   "message": "",
-   "ms": 2071,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:55.880Z",
-   "product": "crude_oil",
-   "template": null,
-   "family": "spot",
-   "step": "reduce",
-   "covers": [
-    "reduce"
-   ]
-  },
-  "B:crude_oil:close": {
-   "status": "passed",
-   "message": "",
-   "ms": 1843,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:55.880Z",
-   "product": "crude_oil",
-   "template": null,
-   "family": "spot",
-   "step": "close",
-   "covers": [
-    "close"
-   ]
-  },
-  "B:crude_oil:settle-sales": {
-   "status": "passed",
-   "message": "",
-   "ms": 952,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:55.880Z",
-   "product": "crude_oil",
-   "template": null,
-   "family": "spot",
-   "step": "settle-sales",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "B:crude_oil:restart": {
-   "status": "passed",
-   "message": "",
-   "ms": 4319,
-   "commit": "8e99315+changes",
-   "at": "2026-10-13T17:37:55.880Z",
-   "product": "crude_oil",
-   "template": null,
-   "family": "spot",
-   "step": "restart",
-   "covers": [
-    "restart"
-   ]
-  },
   "B:interest_rate_swap:setup": {
    "status": "passed",
    "message": "",
@@ -14732,6 +14554,184 @@
    "covers": [
     "restart"
    ]
+  },
+  "B:crude_oil:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 4543,
+   "commit": "9ef2b9e",
+   "at": "2026-10-13T18:05:03.519Z",
+   "product": "crude_oil",
+   "template": null,
+   "family": "spot",
+   "step": "setup",
+   "covers": []
+  },
+  "B:crude_oil:buy": {
+   "status": "passed",
+   "message": "",
+   "ms": 2351,
+   "commit": "9ef2b9e",
+   "at": "2026-10-13T18:05:03.519Z",
+   "product": "crude_oil",
+   "template": null,
+   "family": "spot",
+   "step": "buy",
+   "covers": [
+    "open"
+   ]
+  },
+  "B:crude_oil:short-sale": {
+   "status": "unsupported",
+   "message": "A physical commodity cannot be borrowed in the Terminal; a short position is not offered. Terminal: \"The ticket does not offer \"Sell short\" for WTI-CUSH in Alpha.\"",
+   "ms": 1315,
+   "commit": "9ef2b9e",
+   "at": "2026-10-13T18:05:03.519Z",
+   "product": "crude_oil",
+   "template": null,
+   "family": "spot",
+   "step": "short-sale",
+   "covers": [
+    "open"
+   ]
+  },
+  "B:crude_oil:settle-purchase": {
+   "status": "passed",
+   "message": "",
+   "ms": 716,
+   "commit": "9ef2b9e",
+   "at": "2026-10-13T18:05:03.519Z",
+   "product": "crude_oil",
+   "template": null,
+   "family": "spot",
+   "step": "settle-purchase",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:crude_oil:tank-storage": {
+   "status": "passed",
+   "message": "",
+   "ms": 1218,
+   "commit": "9ef2b9e",
+   "at": "2026-10-13T18:05:03.519Z",
+   "product": "crude_oil",
+   "template": null,
+   "family": "spot",
+   "step": "tank-storage",
+   "covers": [
+    "storage"
+   ]
+  },
+  "B:crude_oil:quality-bank": {
+   "status": "passed",
+   "message": "",
+   "ms": 1166,
+   "commit": "9ef2b9e",
+   "at": "2026-10-13T18:05:03.519Z",
+   "product": "crude_oil",
+   "template": null,
+   "family": "spot",
+   "step": "quality-bank",
+   "covers": [
+    "quality adjustment"
+   ]
+  },
+  "B:crude_oil:pipeline-tariff": {
+   "status": "passed",
+   "message": "",
+   "ms": 1100,
+   "commit": "9ef2b9e",
+   "at": "2026-10-13T18:05:03.519Z",
+   "product": "crude_oil",
+   "template": null,
+   "family": "spot",
+   "step": "pipeline-tariff",
+   "covers": [
+    "delivery cost"
+   ]
+  },
+  "B:crude_oil:quote-up": {
+   "status": "passed",
+   "message": "",
+   "ms": 601,
+   "commit": "9ef2b9e",
+   "at": "2026-10-13T18:05:03.519Z",
+   "product": "crude_oil",
+   "template": null,
+   "family": "spot",
+   "step": "quote-up",
+   "covers": []
+  },
+  "B:crude_oil:physical-delivery": {
+   "status": "unsupported",
+   "message": "Lifting the barrels from the tank is a physical delivery, which the Terminal does not simulate. Terminal: \"The Lifecycle menu of this position offers only: Manual cash flow. \"deliver\" is not offered.\"",
+   "ms": 870,
+   "commit": "9ef2b9e",
+   "at": "2026-10-13T18:05:03.519Z",
+   "product": "crude_oil",
+   "template": null,
+   "family": "spot",
+   "step": "physical-delivery",
+   "covers": [
+    "physical delivery"
+   ]
+  },
+  "B:crude_oil:reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 1495,
+   "commit": "9ef2b9e",
+   "at": "2026-10-13T18:05:03.519Z",
+   "product": "crude_oil",
+   "template": null,
+   "family": "spot",
+   "step": "reduce",
+   "covers": [
+    "reduce"
+   ]
+  },
+  "B:crude_oil:close": {
+   "status": "passed",
+   "message": "",
+   "ms": 1317,
+   "commit": "9ef2b9e",
+   "at": "2026-10-13T18:05:03.519Z",
+   "product": "crude_oil",
+   "template": null,
+   "family": "spot",
+   "step": "close",
+   "covers": [
+    "close"
+   ]
+  },
+  "B:crude_oil:settle-sales": {
+   "status": "passed",
+   "message": "",
+   "ms": 617,
+   "commit": "9ef2b9e",
+   "at": "2026-10-13T18:05:03.519Z",
+   "product": "crude_oil",
+   "template": null,
+   "family": "spot",
+   "step": "settle-sales",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:crude_oil:restart": {
+   "status": "passed",
+   "message": "",
+   "ms": 3216,
+   "commit": "9ef2b9e",
+   "at": "2026-10-13T18:05:03.519Z",
+   "product": "crude_oil",
+   "template": null,
+   "family": "spot",
+   "step": "restart",
+   "covers": [
+    "restart"
+   ]
   }
  },
  "runs": {
@@ -15838,9 +15838,9 @@
    }
   },
   "crude_oil": {
-   "at": "2026-10-13T17:37:55.880Z",
-   "commit": "8e99315+changes",
-   "ms": 22155,
+   "at": "2026-10-13T18:05:03.519Z",
+   "commit": "9ef2b9e",
+   "ms": 20525,
    "family": "spot",
    "steps": 13,
    "ran": 13,
@@ -15857,5 +15857,5 @@
    }
   }
  },
- "updatedAt": "2026-10-13T18:04:42.920Z"
+ "updatedAt": "2026-10-13T18:05:03.519Z"
 }

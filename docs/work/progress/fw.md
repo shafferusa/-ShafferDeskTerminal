@@ -35,7 +35,7 @@
 - fra: passed E/A/B. Terminal fixes for it: contracts.js shows Fixing date for an FRA; api.js refreshBook also refreshes
   FX pairs of open positions' currencies (and the engine driver mirror) - NAV was provisional on a stale EUR rate.
   FRA offset discounting logged in BUGS.md (not fixed).
-- Next: core regression tests test/core/forwards.test.js (terminate, value-date check, position-currency FX refresh);
+- test/core/forwards.test.js (4 tests) passes. equity_forward passes E/A/B (delivery from holdings fix in fx.js settleForwardTask).
   then equity_forward (agreement basis? physical delivery), bond_forward, commodity_forward, fx_swap, tba_mortgage.
 
 ## Next
