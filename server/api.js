@@ -310,8 +310,10 @@ export function createApi(app) {
     const units = books.scopeUnits(query.bookId, query.scope || 'book').map((u) => u.id);
     return { items: app.packages.listStrategies({ bookId: query.bookId, unitIds: units, status: query.status }) };
   });
-  r.get('/api/strategies/:id', async ({ params }) => {
+  r.get('/api/strategies/:id', async ({ params, query }) => {
     const s = app.packages.requireStrategy(params.id);
+    // Asked for on behalf of a Book (a screen of the selected Book): another Book's strategy instance is not found.
+    need(!query.bookId || s.book_id === query.bookId, 'This strategy instance belongs to another Book.', { status: 404 });
     const held = positions.list({ unitIds: [s.unit_id], strategyId: s.id }).map((p) => instruments.get(p.instrument_id));
     await freshQuotes(held);
     return app.packages.strategyView(params.id);

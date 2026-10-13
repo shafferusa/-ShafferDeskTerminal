@@ -557,4 +557,19 @@ CREATE TABLE request_tokens (
 CREATE INDEX idx_request_tokens_created ON request_tokens(created_at);
 `,
   },
+  {
+    id: 8,
+    name: 'instrument classification (ui1)',
+    sql: `
+-- Explicit classification for the Marketplaces (see docs/ARCHITECTURE.md, "Marketplace routing").
+-- jurisdiction: two-letter country of the instrument's legal jurisdiction (the issuer's for a security, the
+-- governing law for an OTC contract). NULL: not stated.
+ALTER TABLE instruments ADD COLUMN jurisdiction TEXT;
+-- routing_basis: why the instrument sits in its market view: 'listed' (listing-venue country), 'underlying'
+-- (a derivative follows its underlying), 'jurisdiction', 'convention' (global FX, crypto and OTC products with
+-- no US listing or jurisdiction), 'financing' (arranged on Treasury and Account pages), 'manual' (set by hand).
+-- NULL: registered before this column existed; the basis is then worked out when the instrument is read.
+ALTER TABLE instruments ADD COLUMN routing_basis TEXT;
+`,
+  },
 ];

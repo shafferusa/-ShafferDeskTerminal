@@ -69,3 +69,4 @@
 - 2026-10-07T12:06Z | s8 | +0 | browser cases: repayment refused, failed tab, closed day, confirm-changed, double-click-records pass
 - 2026-10-07T12:14Z | coord | +0 | PAUSED on the owner's instruction, Fable at 99 percent; state written to RESUME.md
 - 2026-10-13T16:04Z | coord | +0 | resumed on the owner's new request; wave A starting with Opus workers
+- 2026-10-13T16:13Z | b2 | +0.2 | corporate_bond_ig passes at engine, API and browser

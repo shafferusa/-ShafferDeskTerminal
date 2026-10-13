@@ -5,8 +5,13 @@ import { thirdFriday } from '../quant/calendar.js';
 import { ymd } from '../quant/dates.js';
 import { DEMO_BONDS, DEMO_FUTURES, DEMO_UNIVERSE } from './demo.js';
 
-// Listing-venue country of the fictional demo venues. It selects the settlement calendar.
+// Listing-venue country of the fictional demo venues. It decides the market view of a listed product (US venue: US
+// Based or US Derivatives; any other country: Foreign) and selects the settlement calendar. SIM-CRYPTO is a global
+// platform with no country: a digital asset traded there has no US listing and is routed by the convention
+// (catalog.js, "Marketplace routing convention") to Foreign Based. Nothing here is placed by its price currency:
+// market views are worked out by the registry from these facts, not passed in.
 const VENUE_COUNTRY = { 'SIM-US': 'US', 'SIM-JP': 'JP', 'SIM-UK': 'GB', 'SIM-EU': 'DE', 'SIM-FUT-US': 'US', 'SIM-FUT-JP': 'JP' };
+const GLOBAL_VENUES = new Set(['SIM-CRYPTO']);
 
 export function seedDemoInstruments(app) {
   const have = new Set(app.instruments.list({ limit: 2000 }).map((i) => i.symbol));
@@ -14,18 +19,21 @@ export function seedDemoInstruments(app) {
   for (const u of DEMO_UNIVERSE) {
     if (have.has(u.symbol)) { out[u.symbol] = app.instruments.list({ q: u.symbol }).find((i) => i.symbol === u.symbol); continue; }
     out[u.symbol] = app.instruments.create({
-      productId: u.product, name: u.name, symbol: u.symbol, marketView: u.view, venue: u.venue, venueType: 'exchange', venueCountry: VENUE_COUNTRY[u.venue] || null, domicile: u.domicile || null, underlyingGeo: u.underlyingGeo || u.domicile || null,
+      productId: u.product, name: u.name, symbol: u.symbol, venue: u.venue, venueType: GLOBAL_VENUES.has(u.venue) ? 'global' : 'exchange', venueCountry: VENUE_COUNTRY[u.venue] || null, domicile: u.domicile || null, underlyingGeo: u.underlyingGeo || u.domicile || null,
       issuer: u.name.replace(' (demo)', ''), tradingCcy: u.ccy, terms: u.lot ? { lotSize: u.lot } : {}, refSource: 'demo',
     }, { actor: 'demo' });
   }
-  for (const [pair, view] of [['EUR/USD', 'FOREIGN_CASH'], ['GBP/USD', 'FOREIGN_CASH'], ['USD/JPY', 'FOREIGN_CASH']]) {
+  // Spot FX is a global OTC market with no listing venue: the convention routes the pairs to Foreign Based, FX and
+  // Currencies (no cross-market tag, so a pair has one place only).
+  for (const pair of ['EUR/USD', 'GBP/USD', 'USD/JPY']) {
     if (have.has(pair)) { out[pair] = app.instruments.list({ family: 'fx' }).find((i) => i.symbol === pair); continue; }
     const [base, quote] = pair.split('/');
-    out[pair] = app.instruments.create({ productId: 'fx_spot', name: `${pair} spot (demo)`, symbol: pair, marketView: view, venueType: 'otc', tags: ['US_CASH'], tradingCcy: quote, terms: { base, quote, settleDays: 2 }, refSource: 'demo' }, { actor: 'demo' });
+    out[pair] = app.instruments.create({ productId: 'fx_spot', name: `${pair} spot (demo)`, symbol: pair, venueType: 'global', tradingCcy: quote, terms: { base, quote, settleDays: 2 }, refSource: 'demo' }, { actor: 'demo' });
   }
   for (const [sym, b] of Object.entries(DEMO_BONDS)) {
     if (have.has(sym)) { out[sym] = app.instruments.list({ family: 'bond' }).find((i) => i.symbol === sym); continue; }
-    out[sym] = app.instruments.create({ productId: b.product, name: b.name, symbol: sym, marketView: b.view, venueType: 'otc', issuer: b.name.split(' 4')[0].split(' 5')[0], domicile: 'US', tradingCcy: b.ccy, terms: b.terms, refSource: 'demo' }, { actor: 'demo' });
+    // Both demo bonds are issued under US law by US issuers and trade OTC: the stated jurisdiction places them.
+    out[sym] = app.instruments.create({ productId: b.product, name: b.name, symbol: sym, venueType: 'otc', issuer: b.name.split(' 4')[0].split(' 5')[0], domicile: 'US', jurisdiction: 'US', tradingCcy: b.ccy, terms: b.terms, refSource: 'demo' }, { actor: 'demo' });
   }
   const today = app.clock.today();
   const { y } = ymd(today);
@@ -37,7 +45,7 @@ export function seedDemoInstruments(app) {
       if (have.has(symbol)) { out[symbol] = app.instruments.list({ family: 'future' }).find((i) => i.symbol === symbol); continue; }
       const und = out[spec.underlying];
       out[symbol] = app.instruments.create({
-        productId: 'equity_index_future', name: `${spec.name} ${exp.slice(0, 7)}`, symbol, marketView: spec.view, venue: spec.venue, venueType: 'exchange', venueCountry: VENUE_COUNTRY[spec.venue] || null, underlyingId: und?.id || null,
+        productId: 'equity_index_future', name: `${spec.name} ${exp.slice(0, 7)}`, symbol, venue: spec.venue, venueType: 'exchange', venueCountry: VENUE_COUNTRY[spec.venue] || null, underlyingId: und?.id || null,
         tradingCcy: spec.ccy, multiplier: spec.multiplier, terms: { root, expiration: exp, tickSize: spec.tickSize, initialMargin: spec.initialMargin, settlement: spec.settlement, priceUnits: 'index points' }, refSource: 'demo',
       }, { actor: 'demo' });
     }

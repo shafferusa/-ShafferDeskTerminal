@@ -194,12 +194,26 @@ export function createAccounting(app) {
   }
 
   // ---- 2. Open positions -------------------------------------------------------------------------------
+  const OTC_COLLATERAL = ['swap', 'cds', 'forward', 'otcoption'];
+  /** A short form of agreements.positionView for a position row. */
+  function otcCollateralOf(pos, ctx) {
+    if (!pos) return null;
+    const v = app.agreements.positionView(pos, ctx);
+    const b = v.basis;
+    return {
+      basis: { type: b.type, label: b.label, flagged: b.flagged, problem: b.problem, agreement: b.agreement ? { id: b.agreement.id, name: b.agreement.name, counterparty: b.agreement.counterparty } : null },
+      independent: v.independent ? { required: v.independent.required, held: v.independent.held, ccy: v.independent.ccy, holder: v.independent.holder, status: v.independent.status, reason: v.independent.reason } : null,
+      variation: v.variation ? { level: v.variation.level, positionsInSet: v.variation.positionsInSet, posted: v.variation.posted, received: v.variation.received, ccy: v.variation.ccy, holder: v.variation.holder,
+        status: v.variation.status, reason: v.variation.reason, asOf: v.variation.asOf, provisional: v.variation.provisional, staleNote: v.variation.staleNote, pending: v.variation.pending } : null,
+    };
+  }
   function openPositions(bookId, scope) {
     const book = books.requireBook(bookId);
     const units = books.scopeUnits(bookId, scope);
     const ids = units.map((u) => u.id);
     const unitName = new Map(units.map((u) => [u.id, u]));
     const stratName = new Map();
+    const collCtx = {};
     const rows = app.valuation.positionsOf(ids).map((p) => {
       if (p.strategyId && !stratName.has(p.strategyId)) stratName.set(p.strategyId, app.packages.getStrategyRow(p.strategyId));
       const s = p.strategyId ? stratName.get(p.strategyId) : null;
@@ -212,7 +226,7 @@ export function createAccounting(app) {
       }
       return {
         ...p, owner: { id: p.unitId, name: unitName.get(p.unitId)?.name, kind: unitName.get(p.unitId)?.kind },
-        strategy: s ? { id: s.id, name: s.name, template: s.template, status: s.status, investmentStrategy: s.params.investmentStrategy || null } : null,
+        strategy: s ? { id: s.id, name: s.name, template: s.template, status: s.status, openedAt: s.created_at || null, investmentStrategy: s.params.investmentStrategy || null } : null,
         borrowing,
         // The hedge request still open for this position's strategy, so it stays visible on the position.
         hedgeRequest: p.strategyId && app.hedge ? app.hedge.openForStrategy(p.strategyId) : null,
@@ -221,6 +235,8 @@ export function createAccounting(app) {
         // allocations that exist) and `hedgeOf` (this position's capacity and allocations when it is a hedge).
         ...(app.hedge?.positionLinks ? app.hedge.positionLinks(p.unitId, p.positionId) : {}),
         collateral: { pledgedQty: p.pledgedQty, onLoanQty: p.onLoanQty, restrictedCash: p.restrictedCash, marginPosted: p.marginPosted, received: p.collateral, held: p.data.collateralHeld || null },
+        // OTC positions: the collateral basis on record and what is posted or held for it (variation margin at netting-set level when the set has several positions).
+        otcCollateral: app.agreements && OTC_COLLATERAL.includes(p.family) ? otcCollateralOf(positions.get(p.positionId), collCtx) : null,
         support: instruments.support(inst),
       };
     });
@@ -299,7 +315,7 @@ export function createAccounting(app) {
         // and the daily mark tops them up), so it is read from that position as well as from the borrow itself.
         const shortPos = und ? positions.find(p.unit_id, und.id, p.strategy_id) : null;
         const held = money(ledger.positionBalance(p.id, 'cash.restricted', ccy) + (shortPos ? ledger.positionBalance(shortPos.id, 'cash.restricted', ccy) : 0), ccy);
-        collateral = { kind: 'cash', description: `Cash collateral ${((t.collateralPct || 1) * 100).toFixed(0)}% of market value, held as restricted cash`, cash: held || null }; }
+        collateral = { kind: 'cash', description: `Cash collateral ${((t.collateralPct || 1) * 100).toFixed(0)}% of market value, held as restricted cash`, cash: held, ccy }; }
       else if (Array.isArray(t.collateral) && t.collateral.length) collateral = { kind: 'securities', description: t.collateral.map((c) => { const cp = positions.get(c.positionId); const ci = cp ? instruments.get(cp.instrument_id) : null; return `${c.qty} ${ci ? ci.symbol || ci.name : 'securities'}`; }).join(', ') };
       else collateral = { kind: 'none', description: t.loanType === 'margin' ? 'Secured on the Account\'s holdings (margin loan); no specific pledge recorded' : 'None (unsecured)' };
       out.push({

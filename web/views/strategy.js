@@ -359,7 +359,7 @@ function Instances({ book, reloadKey }) {
 export default function Strategy({ args, book, status }) {
   const attachId = args[0] === 'attach' ? args[1] : '';
   const meta = useLive(async () => { const [t, c] = await Promise.all([get('/api/templates'), get('/api/catalog')]); return { templates: t.templates, catalog: c }; }, [], { interval: false });
-  const attach = useLive(() => (attachId ? get(`/api/strategies/${attachId}`) : null), [attachId], { interval: false });
+  const attach = useLive(() => (attachId ? get(`/api/strategies/${attachId}`, { bookId: book.id }) : null), [attachId], { interval: false });
   const templates = meta.data?.templates || [];
 
   const [unitId, setUnitId] = useState(defaultUnit(book));

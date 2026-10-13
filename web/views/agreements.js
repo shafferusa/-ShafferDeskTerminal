@@ -183,6 +183,7 @@ function Positions({ book, v, unit, reload }) {
     { label: 'Variation margin', align: 'r', title: 'From the last end-of-day valuation of its netting set', render: (p) => (!p.variation ? none(p.basis.flagged || p.basis.type === 'uncollateralized' ? 'none' : 'not exchanged')
       : html`<div class="nowrap">${p.variation.posted ? html`${fmtMoney(p.variation.posted, p.variation.ccy)} posted` : p.variation.received ? html`${fmtMoney(p.variation.received, p.variation.ccy)} held` : 'nothing posted or held'} <${CallPill} status=${p.variation.status} reason=${p.variation.reason} /></div>
         <div class="sub">${p.variation.positionsInSet > 1 ? `netting set of ${p.variation.positionsInSet} positions, ` : ''}${isNum(p.variation.exposure) ? html`marked at <${Money} value=${p.variation.exposure} ccy=${p.variation.baseCcy} signed />` : 'not marked yet'}${p.variation.asOf ? ` on ${p.variation.asOf}` : ''}</div>
+        ${p.variation.provisional ? html`<div class="sub"><${Pill} tone="warn" title=${p.variation.staleNote}>provisional<//> <span class="coll-sentence two" style="display:inline" title=${p.variation.staleNote}>${p.variation.staleNote}</span></div>` : null}
         ${p.variation.pending ? html`<div class="sub loss">${fmtMoney(p.variation.pending, p.variation.ccy)} call outstanding</div>` : null}${by(p.variation.holder, p)}`) },
     { label: 'Last movement', title: 'Positive: posted by this Book, or collateral it held and gave back. Negative: returned to this Book, or received from the counterparty. Hover a row for the full entry.',
       render: (p) => (p.lastMovement ? html`<div class="nowrap" title=${p.lastMovement.summary}>${p.lastMovement.businessDate}</div><div class="sub nowrap" title=${p.lastMovement.summary}>${p.lastMovement.kind === 'independent' ? 'independent' : 'variation'} ${fmtMoney(p.lastMovement.amount, p.lastMovement.ccy, { sign: true })}</div>` : none('none')) },
@@ -205,7 +206,7 @@ function Sets({ v }) {
       { label: 'Held', align: 'r', render: (s) => (s.received ? fmtMoney(s.received, s.ccy) : none()) },
       { label: 'Moved by', render: (s) => unitName(s.holder) },
       { label: 'Allocated to', cls: 'wrap', title: 'How the balance is attributed to each Account whose positions it collateralises', render: (s) => (s.allocations.length ? s.allocations.map((a) => html`<div class="nowrap">${unitName(a.unit)}: ${fmtMoney(Math.abs(a.amount), s.ccy)}</div>`) : none()) },
-      { label: 'Status', render: (s) => html`<${CallPill} status=${s.status} reason=${s.reason} />${s.asOf ? html`<div class="sub">${s.asOf}</div>` : null}` },
+      { label: 'Status', render: (s) => html`<${CallPill} status=${s.status} reason=${s.reason} />${s.provisional ? html` <${Pill} tone="warn" title=${s.staleNote}>provisional<//>` : null}${s.asOf ? html`<div class="sub">${s.asOf}</div>` : null}${s.provisional ? html`<div class="sub coll-sentence two" title=${s.staleNote}>${s.staleNote}</div>` : null}` },
     ]} /><//>`;
 }
 
@@ -218,7 +219,7 @@ function Movements({ v, unit }) {
       { label: 'Moved by', render: (m) => unitName(m.holder) },
       { label: 'Allocated to', render: (m) => unitName(m.allocatedTo) },
       { label: 'Change', align: 'r', title: 'Positive: collateral this Book posted, or collateral it held and gave back. Negative: collateral returned to this Book, or received from the counterparty.', render: (m) => html`<span class="nowrap">${fmtMoney(m.amount, m.ccy, { sign: true })}</span>` },
-      { label: 'What happened', cls: 'wrap', render: (m) => html`<div class="coll-sentence" title=${m.summary}>${m.summary}</div><div class="sub">event #${m.eventId}</div>` },
+      { label: 'What happened', cls: 'wrap', render: (m) => html`<div class="coll-sentence" title=${m.summary}>${m.summary}</div><div class="sub">${m.provisional ? html`<${Pill} tone="warn" title=${m.staleNote}>provisional: stale mark<//> ` : null}event #${m.eventId}</div>` },
     ]} empty=${{ title: 'No collateral has moved', children: 'An independent amount moves when a position opens, changes size or ends. Variation margin moves at the end-of-day pass, when the mark calls for it.' }} />
     ${v.movements.length ? html`<div class="small muted" style="padding:8px 12px">The same events are in ${unit ? html`<a href=${`#/accounting/history/${unit.id}`}>this Account's history</a>` : html`<a href="#/accounting/history">the Book's history</a>`}, with their entries and the observation each mark came from.${v.movements.length > 60 ? ' The 60 most recent are listed here.' : ''}</div>` : null}<//>`;
 }

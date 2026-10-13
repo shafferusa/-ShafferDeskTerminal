@@ -196,7 +196,7 @@ function Borrowings({ items, rc, empty }) {
     { label: 'Principal', align: 'r', render: (b) => (b.securities ? html`${fmtQty(b.securities.qty)} ${instName(b.securities.instrument)}<div class="sub">${isNum(b.securities.value) ? `worth ${fmtMoney(b.securities.value, b.ccy)}` : html`value <${Missing} reason="The borrowed security has no price" />`}</div>`
       : html`${fmtMoney(b.principal, b.ccy)}${b.ccy !== rc ? html`<div class="sub">${isNum(b.principalRc) ? fmtMoney(b.principalRc, rc) : html`<${Missing} reason=${`No FX rate from ${b.ccy} to ${rc}`} /> ${rc}`}</div>` : null}`) },
     { label: 'Rate and maturity', render: (b) => box(125, html`<span title=${b.rate.dayCount ? `Day count ${b.rate.dayCount}` : undefined}>${b.rate.text || html`<${Missing} reason="No rate recorded" />`}</span><div class="sub" style="white-space:nowrap" title=${b.startDate ? `Started ${b.startDate}` : undefined}>${b.maturity ? `matures ${b.maturity}` : words(b.term)}</div>`) },
-    { label: 'Collateral', render: (b) => box(145, b.collateral.description) },
+    { label: 'Collateral', render: (b) => box(145, `${b.collateral.description}${b.collateral.kind === 'cash' && isNum(b.collateral.cash) ? `: ${fmtMoney(b.collateral.cash, b.ccy)} held` : ''}`) },
     { label: 'Payment schedule', render: (b) => box(140, html`${b.schedule.interest}<div class="sub">${next(b.schedule.next)}</div>`) },
     { label: 'Interest and fees', align: 'r', title: 'Interest accrued and not yet paid, then interest and fees charged since the borrowing began', render: (b) => html`${amt('accrued', b.accrued, b.ccy)}${amt('interest to date', b.interestToDate, b.ccy)}${amt('fees to date', b.feesToDate, b.ccy)}` },
   ]} empty=${{ children: empty }} />`;
@@ -398,15 +398,35 @@ function BalanceTab({ book, scope, whole, multi, scopeName, openBalance }) {
 // ---- 3. Open positions ------------------------------------------------------------------------------------
 function valueCell(p) {
   const sub = (t) => html`<div class="sub">${t}</div>`;
-  if (NOTIONAL_FAMILIES.includes(p.family)) return html`<div title="A contract on a notional amount. The notional is not paid or owned.">${isNum(p.notional) ? html`${fmtMoney(p.notional, p.ccy)}` : html`<${Missing} reason=${p.missingReason || 'Needs a price'} />`}</div>${sub('notional')}${p.marginPosted ? sub(`margin ${fmtMoney(p.marginPosted, p.ccy)}`) : null}`;
+  // OTC contracts show their collateral in the next column, independent amount and variation margin together; futures show clearing margin here.
+  if (NOTIONAL_FAMILIES.includes(p.family)) return html`<div title="A contract on a notional amount. The notional is not paid or owned.">${isNum(p.notional) ? html`${fmtMoney(p.notional, p.ccy)}` : html`<${Missing} reason=${p.missingReason || 'Needs a price'} />`}</div>${sub('notional')}${p.marginPosted && !p.otcCollateral ? sub(`margin ${fmtMoney(p.marginPosted, p.ccy)}`) : null}`;
   if (p.ledgerCarried) return html`<div>${fmtMoney(isNum(p.carrying) ? p.carrying : p.notional, p.ccy)}</div>${sub(p.family === 'secloan' ? 'value of the securities' : 'principal outstanding')}`;
   return html`<${Money} value=${p.mv} ccy=${p.ccy} reason=${p.missingReason} />${['option', 'otcoption'].includes(p.family) && isNum(p.notional) ? sub(`notional ${fmtMoney(p.notional, p.ccy)}`) : null}`;
+}
+// Collateral of an OTC position: its basis on record, the independent amount and the variation margin of its netting set.
+// Variation margin belongs to the netting set; when the set holds several positions the amount is the set's and is labelled so.
+function otcCollateralLines(p) {
+  const o = p.otcCollateral, out = [];
+  const b = o.basis;
+  const ia = o.independent, vm = o.variation;
+  out.push(b.flagged ? html`<${Pill} tone="warn" title=${`${b.problem || 'No collateral basis is on record for this position.'} Treated as uncollateralized. Record its basis under Treasury, Collateral.`}>${b.problem ? 'basis cannot be used' : 'no collateral terms recorded'}<//>`
+    : html`<span title=${b.agreement ? `Collateral agreement with ${b.agreement.counterparty}` : b.label}>basis: ${b.agreement ? b.agreement.name : b.type === 'position' ? 'position-level terms' : 'uncollateralized (paper assumption)'}</span>`);
+  if (ia && (ia.held || ia.required)) out.push(html`<span title=${ia.reason || `Required under the terms: ${isNum(ia.required) ? fmtMoney(ia.required, ia.ccy) : 'cannot be valued'}`}>independent amount ${fmtMoney(ia.held, ia.ccy)} posted${ia.holder && ia.holder.id !== p.owner.id ? ` by ${unitLabel(ia.holder)}` : ''}</span>`);
+  if (vm) {
+    const amt = vm.posted ? `${fmtMoney(vm.posted, vm.ccy)} posted` : vm.received ? `${fmtMoney(vm.received, vm.ccy)} held` : 'nothing posted or held';
+    out.push(html`<span title=${vm.reason || ''}>variation margin ${amt}${vm.level === 'netting-set' ? `, for its netting set of ${vm.positionsInSet} positions` : ''}${vm.status === 'not_valued_yet' ? ', first valuation at end of day' : ''}</span>`);
+    if (vm.status === 'cannot_value') out.push(html`<span class="loss" title=${vm.reason}>variation margin cannot be valued</span>`);
+    if (vm.provisional) out.push(html`<${Pill} tone="warn" title=${vm.staleNote}>provisional: stale mark<//>`);
+    if (vm.pending) out.push(html`<span class="loss">${fmtMoney(vm.pending, vm.ccy)} call outstanding</span>`);
+  } else if (!b.flagged && b.type !== 'uncollateralized') out.push('no variation margin');
+  return out;
 }
 function holdCell(p) {
   const c = p.collateral, out = [];
   if (p.accrued) out.push(html`accrued <${Money} value=${p.accrued} ccy=${p.ccy} signed />`);
   if (c.restrictedCash) out.push(`restricted cash ${fmtMoney(c.restrictedCash, p.ccy)}`);
-  if (c.marginPosted && !NOTIONAL_FAMILIES.includes(p.family)) out.push(`margin posted ${fmtMoney(c.marginPosted, p.ccy)}`);
+  if (p.otcCollateral) out.push(...otcCollateralLines(p));
+  else if (c.marginPosted && !NOTIONAL_FAMILIES.includes(p.family)) out.push(`margin posted ${fmtMoney(c.marginPosted, p.ccy)}`);
   if (c.pledgedQty) out.push(`pledged ${fmtQty(c.pledgedQty)}`);
   if (c.onLoanQty) out.push(`on loan ${fmtQty(c.onLoanQty)}`);
   if (c.received) out.push(`cash collateral received ${fmtMoney(c.received, p.ccy)}`);
@@ -414,7 +434,7 @@ function holdCell(p) {
   if (p.borrowing) out.push(`borrowed ${fmtQty(p.borrowing.securitiesBorrowed)}${isNum(p.borrowing.feeRate) ? ` at ${fmtNum(p.borrowing.feeRate * 100, 3)}% a year` : ''}`);
   if (p.borrowing?.uncovered) out.push(html`<span class="loss strong">${fmtQty(p.borrowing.uncovered)} short with no borrow</span>`);
   if (p.recall) out.push(html`<span class="loss">recalled ${fmtQty(p.recall.qty)}, due ${p.recall.dueDate}</span>`);
-  return out.length ? html`<div style="white-space:normal;min-width:125px;max-width:150px">${out.map((x) => html`<div class="sub">${x}</div>`)}</div>` : '';
+  return out.length ? html`<div style=${`white-space:normal;min-width:125px;max-width:${p.otcCollateral ? 200 : 150}px`}>${out.map((x) => html`<div class="sub">${x}</div>`)}</div>` : '';
 }
 // A hedge request still open for the position's strategy instance stays visible on the row.
 // The pill says the request's one state; for a recommendation it also shows where it came from, when it was
@@ -454,12 +474,12 @@ function PositionsTab({ book, d, units, multi, owner, setOwner, reload }) {
   const rc = book.reportingCcy;
   const order = new Map(book.units.map((u, i) => [u.id, i]));
   const mine = (id) => !owner || id === owner;
-  const sorted = d.positions.filter((p) => mine(p.owner.id)).sort((a, b) => order.get(a.owner.id) - order.get(b.owner.id) || (a.strategy?.name || '~').localeCompare(b.strategy?.name || '~') || (a.strategyId || '').localeCompare(b.strategyId || '') || (a.purpose === 'financing') - (b.purpose === 'financing'));
+  const sorted = d.positions.filter((p) => mine(p.owner.id)).sort((a, b) => order.get(a.owner.id) - order.get(b.owner.id) || (a.strategy?.name || '~').localeCompare(b.strategy?.name || '~') || (a.strategy?.openedAt || '').localeCompare(b.strategy?.openedAt || '') || (a.strategyId || '').localeCompare(b.strategyId || '') || (a.purpose === 'financing') - (b.purpose === 'financing'));
   const rows = [];
   let last = null;
   for (const p of sorted) {
     const key = `${p.owner.id}|${p.strategyId}`;
-    if (key !== last) rows.push({ _group: html`${unitLabel(p.owner)}: <${StratLink} s=${p.strategy} /> ${p.strategy ? html`<span class="sub" style="font-weight:400">${sentence(p.strategy.template)}${p.strategy.investmentStrategy?.name ? html`, <${StrategyRef} s=${p.strategy.investmentStrategy} />` : ''}</span> <${StrategyStatus} status=${p.strategy.status} />` : ''}` });
+    if (key !== last) rows.push({ _group: html`${unitLabel(p.owner)}: <${StratLink} s=${p.strategy} /> ${p.strategy ? html`<span class="sub" style="font-weight:400">${sentence(p.strategy.template)}${p.strategy.openedAt ? `, opened ${fmtTime(p.strategy.openedAt, { seconds: true })}` : ''}${p.strategy.investmentStrategy?.name ? html`, <${StrategyRef} s=${p.strategy.investmentStrategy} />` : ''}</span> <${StrategyStatus} status=${p.strategy.status} />` : ''}` });
     last = key;
     rows.push(p);
   }

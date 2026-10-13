@@ -102,7 +102,9 @@ export function createOrders(app) {
   }
 
   function expireDayOrders(date) {
-    const rows = db.all(`SELECT * FROM orders WHERE status IN ('pending','working','partial') AND tif = 'day'`).map(parse).filter((o) => goodFor(o) <= date);
+    // A fund order waiting for the NAV of its dealing date is not a day order in a market: it stays until dealt.
+    const forwardPriced = (o) => o.kind === 'trade' && o.instrument_id && Boolean(app.products.get(app.instruments.get(o.instrument_id)?.family)?.forwardEstimate) && (o.data.statedPrice === null || o.data.statedPrice === undefined);
+    const rows = db.all(`SELECT * FROM orders WHERE status IN ('pending','working','partial') AND tif = 'day'`).map(parse).filter((o) => goodFor(o) <= date && !forwardPriced(o));
     const touched = new Set();
     for (const o of rows) {
       db.tx(() => setStatus(o, 'expired', 'Day order did not fill before the end of the business day'));
@@ -239,10 +241,15 @@ export function createOrders(app) {
 
   function tryTrade({ o, book, unit, inst, plugin, remaining }) {
     if (filledThisCycle.has(o.id)) return false;
-    const today = clock.today();
-    const obs = app.data.price(inst.id);
     const stopTriggered = Boolean(o.data.stopTriggered);
-    const est = estimateFill(app, { inst, action: o.action, obs, book, statedPrice: o.data.statedPrice ?? null, limitPrice: o.limit_price, stopPrice: o.stop_price, orderType: o.order_type, stopTriggered });
+    // A fund is forward-priced (products/security.js): the order deals at the NAV of its dealing date, which is then
+    // its trade date. A fill price stated for the leg overrides that, as for any other instrument.
+    const forward = Boolean(plugin.forwardEstimate) && (o.data.statedPrice === null || o.data.statedPrice === undefined);
+    const fwd = forward ? plugin.forwardEstimate(app, { inst, action: o.action, placedAt: o.created_at, orderType: o.order_type }) : null;
+    if (fwd?.refusal) return reject(o, fwd.refusal);
+    const today = fwd ? fwd.dealingDate : clock.today();
+    const obs = fwd ? fwd.navObs : app.data.price(inst.id);
+    const est = fwd || estimateFill(app, { inst, action: o.action, obs, book, statedPrice: o.data.statedPrice ?? null, limitPrice: o.limit_price, stopPrice: o.stop_price, orderType: o.order_type, stopTriggered });
     if (est.stopHit && !stopTriggered) db.run('UPDATE orders SET data = ? WHERE id = ?', j({ ...o.data, stopTriggered: true }), o.id);
     if (!est.executable) return wait(o, est.reason);
     let qty = remaining;
@@ -592,17 +599,20 @@ export function createOrders(app) {
 
   /** Subjects the data adapter should refresh before a matching pass. */
   function dataNeeds(strategyId) {
-    const instruments = new Map(), borrow = new Map();
+    const instruments = new Map(), borrow = new Map(), closes = [];
     for (const o of active(strategyId)) {
       const inst = o.instrument_id ? app.instruments.get(o.instrument_id) : null;
       if (!inst) continue;
       if (o.kind === 'trade') {
         instruments.set(inst.id, inst);
+        // A fund order deals at the NAV of its dealing date: ask the data service for that close.
+        const navNeeds = app.products.get(inst.family)?.navNeeds;
+        if (navNeeds) closes.push(...navNeeds(inst, o.created_at));
         if (inst.underlying_id) { const u = app.instruments.get(inst.underlying_id); if (u) instruments.set(u.id, u); }
       }
       if (o.kind === 'borrow_sec') { borrow.set(inst.id, inst); instruments.set(inst.id, inst); }
     }
-    return { instruments: [...instruments.values()], borrow: [...borrow.values()] };
+    return { instruments: [...instruments.values()], borrow: [...borrow.values()], closes };
   }
 
   return { insert, get, forStrategy, fillsFor, active, cancel, setStatus, expireDayOrders, process, dataNeeds, relink, borrowedQty, describe, FILL_MODEL_LABEL, ACTIVE, DEAD };

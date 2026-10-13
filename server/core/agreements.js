@@ -673,7 +673,17 @@ export function createAgreements(app) {
     const T = eff.threshold || 0;
     // + : we must have posted this much value. - : we must hold this much from the counterparty.
     const requirementValue = money(exposure > T ? -(exposure - T) : exposure < -T ? -exposure - T : 0, base);
-    return { ok: true, rows, exposure, byUnit, requirementValue, factor: pf.factor, fxPosting: pf.rate, haircut: pf.haircut };
+    // A mark past its freshness limit still values the set (a missing one does not), but the call made on it is provisional.
+    const staleMarks = rows.filter((r) => r.observation?.freshness === 'stale').map((r) => ({ positionId: r.positionId, name: r.name, asOf: r.observation.asOf, status: r.observation.status, source: r.observation.source }));
+    return { ok: true, rows, exposure, byUnit, requirementValue, factor: pf.factor, fxPosting: pf.rate, haircut: pf.haircut, staleMarks };
+  }
+
+  /** "based on a stale mark (as of ...)" for the marks of a set that are past their freshness limit; null when every mark is current. */
+  const asOfText = (iso) => (iso ? `${String(iso).slice(0, 16).replace('T', ' ')} UTC` : 'an unknown time');
+  function staleText(staleMarks, members = 1) {
+    if (!staleMarks?.length) return null;
+    if (staleMarks.length === 1 && members <= 1) return `based on a stale mark (as of ${asOfText(staleMarks[0].asOf)})`;
+    return `based on ${staleMarks.length === 1 ? 'a stale mark' : 'stale marks'} (${staleMarks.map((s) => `${s.name} as of ${asOfText(s.asOf)}`).join('; ')})`;
   }
 
   /** Split a set's balance between the Accounts whose positions it collateralises. */
@@ -713,7 +723,12 @@ export function createAgreements(app) {
       setKey: key, nettingScope: eff?.nettingScope || 'position', basis: eff?.basis?.type || null, positions: valuation?.rows || (set.positions || []).map((p) => ({ positionId: p.id, unitId: p.unit_id, qty: p.qty })),
       exposure: valuation?.exposure ?? null, baseCcy: eff?.baseCcy || ccy, threshold: eff?.threshold ?? null, minimumTransfer: eff?.minimumTransfer ?? null,
       requirementValue: valuation?.requirementValue ?? null, haircut: valuation?.haircut ?? 0, fxPosting: valuation?.fxPosting ?? null, target: want, asOf: clock.today(),
+      staleMarks: valuation?.staleMarks?.length ? valuation.staleMarks : null,
     };
+    const stale = staleText(info.staleMarks, info.positions.length);
+    info.provisional = Boolean(stale);
+    info.staleNote = stale ? `${cap(stale)}: the requirement is provisional until a current mark is supplied.` : null;
+    if (stale) reason = [info.staleNote, reason].filter(Boolean).join(' ');
     if (money(want - B, ccy) === 0) {
       setState(stateKey, { ...base, status: want === 0 && !(set.positions || []).length ? 'closed' : 'ok', required: want, held: B, pending: 0, reason: reason || null, data: info });
       clearFailure(stateKey);
@@ -747,7 +762,7 @@ export function createAgreements(app) {
         bookId, unitId: owner, type: 'collateral.variation', actor: 'engine',
         instrumentId: key.startsWith('P:') && set.positions?.[0] ? set.positions[0].instrument_id : null,
         summary: `Variation margin${a ? ` under "${a.name}" (${a.counterparty})` : ' under position-level terms'}: ${parts.join(' and ')}. `
-          + (valuation ? `Netting set of ${n} position${n > 1 ? 's' : ''} marked at ${fmt(valuation.exposure, eff.baseCcy)}; threshold ${fmt(eff.threshold, eff.baseCcy)}.` : `${cap(reason || 'netting set ended')}.`)
+          + (valuation ? `Netting set of ${n} position${n > 1 ? 's' : ''} marked at ${fmt(valuation.exposure, eff.baseCcy)}; threshold ${fmt(eff.threshold, eff.baseCcy)}.${stale ? ` ${info.staleNote}` : ''}` : `${cap(reason || 'netting set ended')}.`)
           + (holder.id !== owner ? ` Moved by ${unitLabel(holder)}.` : ''),
         data: {
           kind: 'variation', agreementId: a?.id || null, agreementName: a?.name || null, counterparty: eff?.counterparty || a?.counterparty || null, ...info,
@@ -766,7 +781,7 @@ export function createAgreements(app) {
     }
     if (failure) {
       failCall(stateKey, { ...base, required: want, held: after, pending: failure.need, data: info, eventId },
-        `Variation margin call of ${fmt(failure.need, ccy)}${a ? ` under "${a.name}"` : ''} failed: ${unitLabel(holder)} has ${fmt(Math.max(failure.free, 0), ccy)} of settled ${ccy} cash free. It is retried each cycle. Fund ${unitLabel(holder)} or reduce the positions.`,
+        `Variation margin call of ${fmt(failure.need, ccy)}${a ? ` under "${a.name}"` : ''} failed: ${unitLabel(holder)} has ${fmt(Math.max(failure.free, 0), ccy)} of settled ${ccy} cash free. It is retried each cycle. Fund ${unitLabel(holder)} or reduce the positions.${stale ? ` ${info.staleNote}` : ''}`,
         { bookId, unitId: holderUnitId });
       return eventId;
     }
@@ -918,7 +933,7 @@ export function createAgreements(app) {
         const now = set.positions.map((p) => `${p.id}:${p.qty}`).sort().join('|');
         if (then !== now) return;
         const before = vmBalance(key, set.holderUnitId, set.ccy);
-        applyVariation(set, st.required, { rows: st.data.positions, exposure: st.data.exposure, requirementValue: st.data.requirementValue, haircut: st.data.haircut, fxPosting: st.data.fxPosting, byUnit: unitExposure(st.data.positions) }, { reason: 'retry of a failed call' });
+        applyVariation(set, st.required, { rows: st.data.positions, exposure: st.data.exposure, requirementValue: st.data.requirementValue, haircut: st.data.haircut, fxPosting: st.data.fxPosting, byUnit: unitExposure(st.data.positions), staleMarks: st.data.staleMarks || null }, { reason: 'retry of a failed call' });
         if (vmBalance(key, set.holderUnitId, set.ccy) !== before) done++;
       });
     }
@@ -993,12 +1008,12 @@ export function createAgreements(app) {
 
   /** The latest collateral event of a position or of its netting set, with the part of it allocated to the position's own unit. */
   function lastMovement(pos, setKey) {
-    const m = db.get(`SELECT m.*, e.summary FROM collateral_movements m JOIN events e ON e.id = m.event_id WHERE m.position_id = ? OR m.set_key = ? ORDER BY m.id DESC LIMIT 1`, pos.id, setKey);
+    const m = db.get(`SELECT m.*, e.summary, json_extract(e.data, '$.staleNote') AS stale_note FROM collateral_movements m JOIN events e ON e.id = m.event_id WHERE m.position_id = ? OR m.set_key = ? ORDER BY m.id DESC LIMIT 1`, pos.id, setKey);
     if (!m) return null;
     const rows = db.all('SELECT allocated_unit_id AS u, amount FROM collateral_movements WHERE event_id = ?', m.event_id);
     const mine = rows.filter((r) => r.u === pos.unit_id);
     const amount = money((mine.length ? mine : rows).reduce((a, r) => a + r.amount, 0), m.ccy);
-    return { eventId: m.event_id, ts: m.ts, businessDate: m.business_date, kind: m.kind, ccy: m.ccy, amount, total: money(rows.reduce((a, r) => a + r.amount, 0), m.ccy), summary: m.summary };
+    return { eventId: m.event_id, ts: m.ts, businessDate: m.business_date, kind: m.kind, ccy: m.ccy, amount, total: money(rows.reduce((a, r) => a + r.amount, 0), m.ccy), summary: m.summary, staleNote: m.stale_note || null };
   }
 
   /** Everything a screen shows about one position's collateral. */
@@ -1037,6 +1052,9 @@ export function createAgreements(app) {
         setKey: key, nettingScope: eff.nettingScope, positionsInSet: members, threshold: eff.threshold, minimumTransfer: eff.minimumTransfer, baseCcy: eff.baseCcy, ccy, holder: unitRef(eff.holderUnitId),
         balance: bal, posted: Math.max(bal, 0), received: Math.max(-bal, 0), exposure: vs?.data?.exposure ?? null, required: vs?.required ?? null, asOf: vs?.as_of || null,
         status: vs?.status || 'not_valued_yet', reason: vs?.reason || (vs ? null : 'Valued at the next end-of-day pass.'), pending: vs?.status === 'failed' ? vs.pending : 0,
+        // Variation margin belongs to the netting set: with several positions in the set, the amounts above are the set's, not this position's.
+        level: members > 1 ? 'netting-set' : 'position',
+        provisional: vs?.status !== 'cannot_value' && Boolean(vs?.data?.provisional), staleNote: vs?.status !== 'cannot_value' ? vs?.data?.staleNote || null : null, staleMarks: vs?.data?.staleMarks || null,
       };
     }
     return out;
@@ -1058,13 +1076,14 @@ export function createAgreements(app) {
       const alloc = db.all(`SELECT allocated_unit_id AS u, SUM(amount) AS s FROM collateral_movements WHERE set_key = ? AND kind = 'variation' GROUP BY allocated_unit_id`, r.key.slice(3)).map((x) => ({ unit: unitRef(x.u), amount: money(x.s, r.ccy) })).filter((x) => x.amount !== 0);
       return { key: r.key.slice(3), agreement: a ? { id: a.id, name: a.name, counterparty: a.counterparty } : null, holder: unitRef(r.holder_unit_id), ccy: r.ccy, status: r.status, reason: r.reason, asOf: r.as_of,
         exposure: d.exposure ?? null, baseCcy: d.baseCcy || r.ccy, threshold: d.threshold ?? null, minimumTransfer: d.minimumTransfer ?? null, required: r.required, balance: bal, posted: Math.max(bal, 0), received: Math.max(-bal, 0), pending: r.status === 'failed' ? r.pending : 0,
-        nettingScope: d.nettingScope || 'position', positions: d.positions || [], allocations: alloc };
+        nettingScope: d.nettingScope || 'position', positions: d.positions || [], allocations: alloc,
+        provisional: r.status !== 'cannot_value' && Boolean(d.provisional), staleNote: r.status !== 'cannot_value' ? d.staleNote || null : null };
     }).filter((s) => whole || ids.has(s.holder?.id) || s.positions.some((p) => ids.has(p.unitId)));
     const scopeIds = [...ids];
     const q = scopeIds.map(() => '?').join(',');
     const movements = db.all(
-      `SELECT m.*, e.summary, e.type FROM collateral_movements m JOIN events e ON e.id = m.event_id WHERE m.book_id = ? AND (m.holder_unit_id IN (${q}) OR m.allocated_unit_id IN (${q})) ORDER BY m.id DESC LIMIT 200`, bookId, ...scopeIds, ...scopeIds,
-    ).map((m) => ({ id: m.id, eventId: m.event_id, ts: m.ts, businessDate: m.business_date, kind: m.kind, agreement: m.agreement_id ? (() => { const a = get(m.agreement_id); return a ? { id: a.id, name: a.name } : null; })() : null,
+      `SELECT m.*, e.summary, e.type, json_extract(e.data, '$.staleNote') AS stale_note FROM collateral_movements m JOIN events e ON e.id = m.event_id WHERE m.book_id = ? AND (m.holder_unit_id IN (${q}) OR m.allocated_unit_id IN (${q})) ORDER BY m.id DESC LIMIT 200`, bookId, ...scopeIds, ...scopeIds,
+    ).map((m) => ({ id: m.id, staleNote: m.stale_note || null, provisional: Boolean(m.stale_note), eventId: m.event_id, ts: m.ts, businessDate: m.business_date, kind: m.kind, agreement: m.agreement_id ? (() => { const a = get(m.agreement_id); return a ? { id: a.id, name: a.name } : null; })() : null,
       setKey: m.set_key, holder: unitRef(m.holder_unit_id), allocatedTo: unitRef(m.allocated_unit_id), positionId: m.position_id, ccy: m.ccy, amount: m.amount, summary: m.summary, type: m.type }));
     const failures = db.all(`SELECT * FROM collateral_state WHERE book_id = ? AND status IN ('failed','cannot_value')`, bookId).map((r) => ({ key: r.key, kind: r.kind, status: r.status, reason: r.reason, pending: r.pending, ccy: r.ccy, holder: unitRef(r.holder_unit_id) }))
       .filter((f) => whole || ids.has(f.holder?.id));

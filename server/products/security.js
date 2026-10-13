@@ -4,6 +4,7 @@
 
 import { addBusinessDays, COUNTRY_CALENDAR, CURRENCY_CALENDAR, describeCalendar, fxValueDate, isBusinessDay, isEuroAreaVenue, isKnownCalendar, joinCalendars } from '../quant/calendar.js';
 import { addDays } from '../quant/dates.js';
+import { partsInTz } from '../core/clock.js';
 import { num } from '../core/util.js';
 import { bookSecurityFill, valueSecurity } from './common.js';
 
@@ -208,8 +209,69 @@ function makeSecurityPlugin(family, { label, qtyLabel, priceUnits, shortable = t
   };
 }
 
+// ---- funds: forward pricing ------------------------------------------------------------------------------
+//
+// An open-ended fund (mutual fund, money-market fund) is not traded against a live quote. A subscription or a
+// redemption is dealt at the next NAV struck after the order is placed ("forward pricing"): an order placed on a
+// dealing day before the fund's cut-off gets that day's NAV; one placed after the cut-off, or on a day the fund
+// does not deal, gets the next dealing day's NAV. Until that NAV is supplied (an official close of the dealing
+// date from Shaffer MarketData, or a NAV entered by hand for that date) the order waits, visibly, and is not
+// expired at the end of the day. The trade date is the dealing date; settlement is counted from it.
+// The cut-off is the instrument's `terms.dealingCutoff` ('HH:MM', New York time), 16:00 when not set.
+
+export const FUND_DEFAULT_CUTOFF = '16:00';
+const cutoffOf = (inst) => (/^\d{2}:\d{2}$/.test(String(inst.terms?.dealingCutoff || '')) ? inst.terms.dealingCutoff : FUND_DEFAULT_CUTOFF);
+
+/** The dealing date of a fund order placed at `placedAt` (ISO instant): that day before the cut-off on a dealing day, else the next dealing day. */
+export function fundDealingDate(inst, placedAt) {
+  const p = partsInTz(new Date(placedAt));
+  const cal = tradingCalendarFor(inst);
+  const [h, m] = cutoffOf(inst).split(':').map(Number);
+  if (isBusinessDay(p.date, cal) && p.minutes < h * 60 + m) return p.date;
+  return addBusinessDays(p.date, 1, cal);
+}
+
+/** The official NAV of a dealing date: a supplied close of that date, or a NAV entered by hand for it. Never a live quote. */
+export function fundNavFor(app, inst, date) {
+  const supplied = app.data._cache?.get(`close|${inst.id}@${date}`);
+  if (supplied && supplied.value !== null && supplied.value !== undefined) return supplied;
+  const manual = app.data.latestManual('price', inst.id, { forDate: date });
+  return manual && manual.value !== null && manual.value !== undefined ? manual : null;
+}
+
+/**
+ * Fill estimate of a fund order (the forward-pricing counterpart of fillmodel.estimateFill):
+ * { executable, price, model: 'next-nav', label, note, reason, maxQty: null, reference, dealingDate, navObs, refusal }.
+ * `refusal` is set for what a fund order cannot be (a limit or stop order).
+ */
+function fundEstimate(app, { inst, placedAt, orderType = 'market' }) {
+  const dealingDate = fundDealingDate(inst, placedAt);
+  const label = 'Next NAV (forward pricing)';
+  const last = app.data.price(inst.id);
+  const out = { executable: false, price: null, model: 'next-nav', label, note: '', reason: null, maxQty: null, reference: last?.value ?? null, obsStatus: last?.status ?? null, dealingDate, navObs: null, refusal: null };
+  if (orderType && orderType !== 'market') {
+    out.refusal = `A fund order is dealt at the next NAV struck after it is placed; a ${String(orderType).replace(/_/g, ' ')} order does not apply. Place it as a market order.`;
+    out.reason = out.refusal;
+    return out;
+  }
+  const nav = fundNavFor(app, inst, dealingDate);
+  if (!nav) {
+    out.note = `Dealt at the NAV of ${dealingDate} (cut-off ${cutoffOf(inst)} New York), not at a live quote.`;
+    out.reason = `Waiting for the NAV of ${dealingDate}: a fund order is dealt at the next NAV struck after it is placed (cut-off ${cutoffOf(inst)} New York), never at a live quote.${out.reference !== null ? ` The amounts shown use the last published NAV, ${fmtPrice(out.reference)}, as an estimate.` : ''}`;
+    return out;
+  }
+  return { ...out, executable: true, price: nav.value, reference: nav.value, navObs: nav, obsStatus: nav.status, note: `Dealt at the NAV of ${dealingDate} (${nav.source}), the next NAV struck after the order was placed.` };
+}
+const fmtPrice = (x) => Number(x).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 });
+
 export const equity = makeSecurityPlugin('equity', { label: 'Equity-like security', qtyLabel: 'Shares', priceUnits: 'per share' });
-export const fund = makeSecurityPlugin('fund', { label: 'Fund (NAV-priced)', qtyLabel: 'Shares', priceUnits: 'NAV per share', shortable: false });
+export const fund = {
+  ...makeSecurityPlugin('fund', { label: 'Fund (NAV-priced)', qtyLabel: 'Shares', priceUnits: 'NAV per share', shortable: false }),
+  /** Forward pricing: orders deal at the next NAV (see above). orders.js and packages.js use this instead of estimateFill. */
+  forwardEstimate: fundEstimate,
+  /** The close a working fund order needs from the data service: the NAV of its dealing date. */
+  navNeeds: (inst, placedAt) => [{ instrument: inst, date: fundDealingDate(inst, placedAt) }],
+};
 export const spot = makeSecurityPlugin('spot', { label: 'Spot asset', qtyLabel: 'Units', priceUnits: 'per unit', shortable: false });
 export const crypto = makeSecurityPlugin('crypto', { label: 'Digital asset', qtyLabel: 'Units', priceUnits: 'per unit', shortable: false });
 export const manual = makeSecurityPlugin('manual', { label: 'Manually valued holding', qtyLabel: 'Units', priceUnits: 'per unit', shortable: false });

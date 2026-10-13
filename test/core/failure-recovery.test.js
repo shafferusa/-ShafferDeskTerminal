@@ -182,3 +182,18 @@ test('a hedge request cannot name a strategy instance of another Book, and a con
   assert.equal(get(`/api/instruments/${loanId}`, { bookId: a.book.id }).id, loanId);
   assert.ok(names(b.book.id).includes(inst.ALFA.name), 'a listed security is shared reference data');
 });
+
+// Found by SB:isolation:book-routes: in Book B, the address #/strategy/attach/<a strategy instance of Book A> opened
+// Book A's strategy instance on the Strategy page ("Adding to Long ALFA in <A's Account>", with its positions).
+test('a strategy instance asked for on behalf of another Book is not found', async () => {
+  const { app, inst } = makeApp();
+  const a = makeBook(app, { name: 'Book A' });
+  const b = makeBook(app, { name: 'Book B' });
+  pin(app, inst.ALFA, 190);
+  const s = await trade(app, { bookId: a.book.id, unitId: a.acct.id, template: 'long', underlyingId: inst.ALFA.id, quantity: 100 });
+  const api = createApi(app);
+  const get = (path, query) => { const m = api.match('GET', path); return m.handler({ params: m.params, query, body: {} }); };
+  await assert.rejects(Promise.resolve().then(() => get(`/api/strategies/${s.id}`, { bookId: b.book.id })), (err) => err.status === 404 && /belongs to another Book/.test(err.message));
+  assert.equal((await get(`/api/strategies/${s.id}`, { bookId: a.book.id })).id, s.id, 'its own Book finds it');
+  assert.equal((await get(`/api/strategies/${s.id}`, {})).id, s.id, 'asked for by id alone (no Book), it is found as before');
+});

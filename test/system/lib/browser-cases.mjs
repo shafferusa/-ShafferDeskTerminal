@@ -1163,3 +1163,173 @@ export async function independentAmount(b, c) {
   await closeHedgePopup(b);
   await b.clean(c, book.id);
 }
+
+// ---------------------------------------------------------------------------------------------
+// Shared steps for the screens read whole: requests settled, and the page scanned for what must not be there
+// ---------------------------------------------------------------------------------------------
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/**
+ * Wait until the page has no API request in flight (the event stream excepted) and none has started for `quietMs`,
+ * then for the browser to draw. Screens load their data after they appear, so this is what "loaded" means here.
+ */
+async function settle(b, quietMs = 400) {
+  const { page } = b;
+  if (!b.net) {
+    const n = { busy: new Set(), last: Date.now() };
+    const api = (r) => { try { const p = new URL(r.url()).pathname; return p.startsWith('/api/') && p !== '/api/stream'; } catch { return false; } };
+    page.on('request', (r) => { if (api(r)) { n.busy.add(r); n.last = Date.now(); } });
+    const done = (r) => { if (n.busy.delete(r)) n.last = Date.now(); };
+    page.on('requestfinished', done);
+    page.on('requestfailed', done);
+    b.net = n;
+  }
+  const t0 = Date.now();
+  while (Date.now() - t0 < 20_000) {
+    if (!b.net.busy.size && Date.now() - b.net.last >= quietMs) { await b.ui.drawn(); return; }
+    await sleep(50);
+  }
+  throw new Error(`The page kept requesting for 20 seconds (${b.net.busy.size} in flight).`);
+}
+/** Go to a screen of the selected Book and wait until its data has loaded. */
+async function show(b, hash) {
+  await b.ui.closeOverlays().catch(() => {});
+  await b.ui.goto(hash);
+  await settle(b);
+}
+/**
+ * Everything the page shows and carries (text, titles, data attributes, option values), except the Book selector
+ * of the top bar, which lists every Book by name by design. Returns the needles found.
+ */
+async function foundOnPage(b, needles, scope = 'body') {
+  const html = await b.page.evaluate((sel) => {
+    const root = document.querySelector(sel);
+    if (!root) return '';
+    const copy = root.cloneNode(true);
+    copy.querySelectorAll('.topbar select').forEach((x) => x.remove());
+    return copy.innerHTML;
+  }, scope);
+  return needles.filter((x) => x && html.includes(x));
+}
+/** The labels of a select's options (placeholders, empty values and "+ New" entries left out). */
+const optionLabels = async (select) => (await select.locator('option').evaluateAll((os) => os.filter((o) => o.value && !o.value.startsWith('__')).map((o) => o.textContent.trim())));
+/** The Book selector of the top bar, used as a user does. */
+async function switchBook(b, book) {
+  const selector = b.page.locator('.topbar select').first();
+  await selector.selectOption({ label: book.name });
+  await selector.locator('option:checked', { hasText: exactly(book.name) }).waitFor({ state: 'attached' });
+  b.entered = book;
+  await settle(b);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Isolation: Book isolation through the interface, nothing netted across Books
+// ---------------------------------------------------------------------------------------------
+
+/** What belongs to one Book alone and must never be on another Book's screens: its ids and its names. */
+const needlesOf = (X) => [...new Set([...X.ids, ...X.names, `${X.name} loan`, `${X.name} IRS`])];
+
+/** SB:isolation:book-routes. */
+export async function bookIsolation(b, c) {
+  const { page, ui } = b;
+  const { twoBooks } = await import('../cases/isolation.mjs');
+  const { inst, A, B } = await twoBooks(b);
+  const notA = needlesOf(A), notB = needlesOf(B);
+  // Each Book's post-trade hedge popup is shown once (that marks it seen); from then on nothing may be stored.
+  await enter(b, A, '#/accounting');
+  await closeHedgePopup(b);
+  await switchBook(b, B);
+  await closeHedgePopup(b);
+  const stored = b.fingerprint();
+
+  // (1) Every screen of Book B, read whole.
+  const screens = [
+    ...['pnl', 'balance', 'positions', 'pending', 'failed', 'history'].flatMap((t) => ['book', B.treasuryId, B.accountId].map((s) => `#/accounting/${t}/${s}`)),
+    ...['cash', 'borrowings', 'collateral', 'holds', 'alerts'].map((t) => `#/treasury/${t}`),
+    `#/account/${B.accountId}`, '#/strategy', '#/markets/US_CASH', '#/markets/US_DERIV', '#/instruments',
+  ];
+  const leaks = [];
+  for (const hash of screens) {
+    await show(b, hash);
+    await closeHedgePopup(b);
+    const found = await foundOnPage(b, notA);
+    if (found.length) leaks.push(`${hash}: ${found.join(', ')}`);
+    const errs = await errorsIn(page.locator('main'));
+    c.eq(errs, [], `${hash} of Iso B loads without an error`);
+  }
+  c.eq(leaks, [], `${screens.length} screens of Iso B read whole: none shows or carries an id or a name of Iso A`);
+  c.note(`${screens.length} screens of Iso B scanned for ${notA.length} ids and names of Iso A`);
+  // The screens did show Book B's own: its Account and its short holding.
+  await show(b, '#/accounting/positions/book');
+  const holdings = flat(await ui.section(page.locator('main'), 'Holdings by instrument').innerText());
+  c.match(holdings, /ISO/, 'Iso B\'s Open positions list its own ISO holding');
+  c.match(flat(await page.locator('main').innerText()), /Bison/, 'and name its own Account, Bison');
+
+  // (2) The instrument everyone can trade, opened from the Marketplace: its drawer shows B's holding only.
+  const drawer = await ui.openInstrument(inst);
+  await settle(b);
+  c.eq(await foundOnPage(b, notA, '[role=dialog]'), [], 'the ISO drawer opened in Iso B carries nothing of Iso A');
+  await ui.tab(drawer, 'Trade');
+  const owners = await optionLabels(ui.select(drawer, 'Account'));
+  c.eq(owners.sort(), ['Bison', 'Treasury'], 'the ticket offers Iso B\'s owners only: Treasury and Bison');
+  await ui.closeOverlays();
+
+  // (3) Every picker that lists owners or positions.
+  await show(b, '#/treasury/cash');
+  await ui.button(page.locator('main'), 'Transfer cash').first().click();
+  let dlg = ui.dialog('Transfer cash');
+  await dlg.waitFor();
+  await settle(b);
+  c.eq((await optionLabels(ui.select(dlg, 'Source'))).sort(), ['Bison', 'Treasury'], 'Transfer cash: the sources are Iso B\'s Treasury and Bison');
+  c.eq(await optionLabels(ui.select(dlg, 'Destination')), ['Bison'], 'Transfer cash: from Treasury, the one destination is Bison');
+  await ui.select(dlg, 'Source').selectOption({ label: 'Bison' });
+  c.eq(await optionLabels(ui.select(dlg, 'Destination')), ['Treasury'], 'from Bison, the one destination is Treasury');
+  c.eq(await foundOnPage(b, notA, '[role=dialog]'), [], 'the Transfer dialog carries nothing of Iso A');
+  await ui.closeOverlays();
+  await show(b, '#/treasury/borrowings');
+  await ui.button(page.locator('main'), 'New repo or reverse repo').click();
+  dlg = ui.dialog('Repo or reverse repo');
+  await dlg.waitFor();
+  await settle(b);
+  c.eq((await optionLabels(ui.select(dlg, 'Borrower'))).sort(), ['Bison', 'Treasury'], 'the repo ticket\'s borrowers are Iso B\'s');
+  c.eq(await foundOnPage(b, notA, '[role=dialog]'), [], 'the repo ticket (its collateral positions included) carries nothing of Iso A');
+  await ui.closeOverlays();
+  await show(b, '#/accounting/history/book');
+  await ui.button(page.locator('main'), 'Record a manual adjustment').click();
+  dlg = ui.dialog('Record a manual adjustment');
+  await dlg.waitFor();
+  c.eq((await optionLabels(ui.select(dlg, 'Owner'))).sort(), ['Bison', 'Treasury'], 'the adjustment dialog\'s owners are Iso B\'s');
+  await ui.closeOverlays();
+
+  // (4) Addresses typed with an id of Book A, while Book B is selected.
+  for (const [hash, what] of [[`#/accounting/positions/${A.accountId}`, 'Accounting scoped to Aardvark'], [`#/accounting/balance/${A.accountId},${B.accountId}`, 'Accounting scoped to Aardvark and Bison'], [`#/account/${A.accountId}`, 'the Account page of Aardvark'], [`#/strategy/attach/${A.long.id}`, 'the Strategy page attaching to Iso A\'s strategy instance']]) {
+    await show(b, hash);
+    await closeHedgePopup(b);
+    const found = await foundOnPage(b, notA.filter((x) => !hash.includes(x)), 'main');
+    c.eq(found, [], `${what}, typed in the address while Iso B is selected: nothing of Iso A is shown`);
+    // A unit that is not of this Book is ignored: alone it leaves the whole Book; beside Bison it leaves Bison.
+    if (hash.startsWith('#/accounting/')) c.match(flat(await page.locator('main .page-head').innerText()), hash.includes(',') ? /The Account Bison in Iso B, alone/ : /Iso B, consolidated/, `${what}: only Iso B's own units are in scope`);
+    c.note(`${what}: "${flat(await page.locator('main').innerText()).slice(0, 160)}"`);
+  }
+
+  // (5) Switching Book leaves no stale row: on each screen, B -> A -> B.
+  for (const hash of ['#/accounting/positions/book', '#/treasury/cash', '#/strategy', '#/accounting/history/book', '#/markets/US_CASH']) {
+    await show(b, hash);
+    await closeHedgePopup(b);
+    await switchBook(b, A);
+    await closeHedgePopup(b);
+    c.eq(await foundOnPage(b, notB), [], `${hash}: switched from Iso B to Iso A, nothing of Iso B is left on the page`);
+    await switchBook(b, B);
+    await closeHedgePopup(b);
+    c.eq(await foundOnPage(b, notA), [], `${hash}: switched back to Iso B, nothing of Iso A is left on the page`);
+  }
+  await switchBook(b, A);
+  await show(b, '#/accounting/positions/book');
+  c.match(flat(await ui.section(page.locator('main'), 'Holdings by instrument').innerText()), /ISO/, 'after the switch Iso A shows its own ISO holding');
+  c.match(flat(await page.locator('main').innerText()), /Aardvark/, 'and its own Account, Aardvark');
+
+  // Behind the screens: reading and switching stored nothing; both Books are clean.
+  b.sameStored(c, stored, b.fingerprint(), 'reading every screen of both Books and switching between them stored nothing');
+  await b.clean(c, A.id, 'Iso A integrity');
+  await b.clean(c, B.id, 'Iso B integrity');
+}

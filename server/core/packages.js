@@ -296,7 +296,11 @@ export function createPackages(app) {
         if (inst.terms?.expiration && inst.terms.expiration < today) check('error', 'expired', `Leg ${l.n}: ${inst.symbol || inst.name} expired on ${inst.terms.expiration}.`, l.n);
         const obs = inst.draft ? l.chainObs || null : app.data.price(inst.id) || l.chainObs || null;
         const stated = num(l.statedPrice);
-        const fe = estimateFill(app, { inst, action: l.action, obs, book, statedPrice: stated, limitPrice: num(l.limitPrice), stopPrice: num(l.stopPrice), orderType: l.orderType || 'market' });
+        // A fund is forward-priced: the leg deals at the NAV of its dealing date (products/security.js), shown as an estimate.
+        const fwd = plugin.forwardEstimate && !inst.draft && stated === null ? plugin.forwardEstimate(app, { inst, action: l.action, placedAt: app.clock.now().toISOString(), orderType: l.orderType || 'market' }) : null;
+        if (fwd?.refusal) check('error', 'fund-order-type', `Leg ${l.n}: ${fwd.refusal}`, l.n);
+        if (fwd) row.dealingDate = fwd.dealingDate;
+        const fe = fwd || estimateFill(app, { inst, action: l.action, obs, book, statedPrice: stated, limitPrice: num(l.limitPrice), stopPrice: num(l.stopPrice), orderType: l.orderType || 'market' });
         const refPrice = fe.price ?? (num(l.limitPrice) || null) ?? markOf(obs);
         row.price = {
           estimate: fe.price, reference: markOf(obs), model: fe.model, label: fe.label, note: fe.note, executable: fe.executable, reason: fe.reason || null,
@@ -308,11 +312,11 @@ export function createPackages(app) {
         // Settlement: the instrument's convention, or the date / lag stated for this trade (l.settle),
         // validated against the instrument's settlement calendar. A calendar conflict blocks the preview.
         // Counted from the day the leg will be matched (today, unless its market is closed today).
-        const stl = resolveSettlement(app, { inst, book, tradeDate, stated: l.settle || null });
+        const stl = resolveSettlement(app, { inst, book, tradeDate: fwd ? fwd.dealingDate : tradeDate, stated: l.settle || null });
         const settleDate = stl.date;
         row.settleDate = settleDate;
         row.settle = stl.stated;
-        row.settlement = { date: stl.date, lag: stl.lag, basis: stl.basis, label: stl.label, stated: stl.stated, standard: stl.standard, calendarId: stl.calendar.id, conflict: stl.conflicts[0]?.message || null, tradeDate };
+        row.settlement = { date: stl.date, lag: stl.lag, basis: stl.basis, label: stl.label, stated: stl.stated, standard: stl.standard, calendarId: stl.calendar.id, conflict: stl.conflicts[0]?.message || null, tradeDate: fwd ? fwd.dealingDate : tradeDate };
         for (const cf of stl.conflicts) check('error', cf.code, `Leg ${l.n}: ${cf.message}`, l.n);
         // A product can refuse a trade outright for that settlement date (a debt security that has matured, or would by then).
         const refused = plugin.tradeRefusal ? plugin.tradeRefusal(app, { inst, action: l.action, tradeDate, settleDate }) : null;
@@ -860,7 +864,7 @@ export function createPackages(app) {
       const rc = b ? ledger.rcOf(b.book_id) : 'USD';
       if (i.trading_ccy !== rc) rcPairs.add(`${i.trading_ccy}/${rc}`);
     }
-    await app.data.refresh({ instruments: n.instruments, borrow: n.borrow, sessions: n.instruments, pairs: [...rcPairs] });
+    await app.data.refresh({ instruments: n.instruments, borrow: n.borrow, sessions: n.instruments, pairs: [...rcPairs], closes: n.closes || [] });
     return app.orders.process(strategyId);
   }
 

@@ -308,3 +308,165 @@ export const MARKET_VIEWS = {
   FOREIGN_CASH: { id: 'FOREIGN_CASH', label: 'Foreign Based', geo: 'FOREIGN', cls: 'cash', description: 'Foreign-listed cash securities, foreign government and corporate debt, and other foreign cash-market instruments.' },
   FOREIGN_DERIV: { id: 'FOREIGN_DERIV', label: 'Foreign Derivatives', geo: 'FOREIGN', cls: 'deriv', description: 'Foreign-listed derivatives and OTC contracts assigned to foreign market exposure.' },
 };
+
+// ---- Marketplace product-family tabs (ui1) ----------------------------------------------------------------------
+// Inside each of the four market views the instruments are split into product-family tabs. Every catalog product has
+// exactly one tab (test/core/marketplaces.test.js checks it); docs/COVERAGE.md prints the mapping. A tab belongs to
+// the cash views (US Based, Foreign Based) or the derivative views (US Derivatives, Foreign Derivatives), matching
+// the product's `cls`.
+export const MARKET_TABS = [
+  { id: 'equities', cls: 'cash', label: 'Equities', holds: 'Common and preferred stock, ADRs and GDRs, REITs, warrants, subscription rights and convertible preferred shares. A short sale is placed from the stock\'s own ticket.' },
+  { id: 'funds', cls: 'cash', label: 'Funds and ETFs', holds: 'Exchange-traded funds and notes, mutual funds, closed-end funds and hedge fund interests.' },
+  { id: 'bonds', cls: 'cash', label: 'Bonds and Credit', holds: 'Government, agency, municipal and corporate bonds, securitised debt (MBS, ABS, CLOs), insurance-linked bonds and traded loans held at a price.' },
+  { id: 'money', cls: 'cash', label: 'Money Market and Deposits', holds: 'Commercial paper, bankers\' acceptances and money-market funds. Deposits, loans, repo and securities lending are arranged on the Treasury and Account pages and listed here for reference.' },
+  { id: 'fx', cls: 'cash', label: 'FX and Currencies', holds: 'Spot currency pairs. Currency balances themselves are ledger cash in Treasury and each Account.' },
+  { id: 'commodities', cls: 'cash', label: 'Commodities', holds: 'Physical and spot commodities, metals, energy, agricultural products, emissions allowances and certificates.' },
+  { id: 'crypto', cls: 'cash', label: 'Crypto and Digital Assets', holds: 'Cryptocurrencies, stablecoins and tokenized assets.' },
+  { id: 'alternatives', cls: 'cash', label: 'Alternatives and Other', holds: 'Private equity and venture capital interests, infrastructure, direct real estate and insurance-linked securities, all valued by hand.' },
+  { id: 'options', cls: 'deriv', label: 'Options', holds: 'Listed options, OTC options on any underlying, interest-rate caps, floors and collars, swaptions and exotic options.' },
+  { id: 'futures', cls: 'deriv', label: 'Futures', holds: 'Equity, index, bond, rate, FX, commodity, volatility, dividend and crypto futures, and perpetual futures.' },
+  { id: 'forwards', cls: 'deriv', label: 'Forwards', holds: 'Equity, bond, FX and commodity forwards, non-deliverable forwards, FRAs, FX swaps and TBA mortgage contracts.' },
+  { id: 'swaps', cls: 'deriv', label: 'Swaps', holds: 'Interest-rate, cross-currency, inflation, equity, total-return, commodity and volatility swaps.' },
+  { id: 'credit', cls: 'deriv', label: 'Credit Derivatives', holds: 'Credit-default swaps (single name, sovereign, index, tranche), credit-default swaptions, recovery swaps and credit-spread forwards and options.' },
+  { id: 'structured', cls: 'deriv', label: 'Structured and Other Derivatives', holds: 'Weather derivatives, freight contracts and other contracts valued by hand.' },
+];
+const TAB_PRODUCTS = {
+  equities: ['common_stock', 'preferred_stock', 'adr', 'gdr', 'reit', 'warrant', 'subscription_right', 'convertible_preferred', 'short_sale'],
+  funds: ['etf', 'etn', 'mutual_fund', 'closed_end_fund', 'hedge_fund'],
+  bonds: [
+    'treasury_bill', 'treasury_note', 'treasury_bond', 'tips', 'strips', 'foreign_gov_bill', 'foreign_gov_bond', 'foreign_inflation_linked', 'em_local_debt', 'em_hard_debt',
+    'agency_debt', 'supranational_bond', 'municipal_bond', 'sovereign_sukuk',
+    'corporate_bond', 'corporate_bond_ig', 'high_yield_bond', 'eurobond', 'foreign_market_bond', 'corporate_sukuk', 'floating_rate_note', 'zero_coupon_bond', 'callable_bond',
+    'puttable_bond', 'convertible_bond', 'exchangeable_bond', 'perpetual_bond', 'subordinated_debt', 'coco_bond', 'covered_bond',
+    'mbs', 'rmbs', 'cmbs', 'agency_mbs', 'non_agency_mbs', 'specified_pool', 'abs', 'cmo', 'clo', 'cdo', 'credit_linked_note', 'structured_note', 'catastrophe_bond',
+    'syndicated_loan', 'leveraged_loan', 'private_credit', 'distressed_debt', 'loan_participation',
+  ],
+  money: [
+    'commercial_paper', 'abcp', 'bankers_acceptance', 'money_market_fund', 'certificate_of_deposit', 'bank_deposit', 'term_deposit',
+    'cash_loan', 'secured_loan', 'unsecured_loan', 'margin_loan', 'securities_backed_loan', 'revolving_credit_facility',
+    'repo', 'reverse_repo', 'overnight_repo', 'term_repo', 'open_repo', 'bilateral_repo', 'triparty_repo', 'gc_repo', 'special_repo', 'buy_sell_back', 'sell_buy_back',
+    'securities_borrowing', 'securities_lending', 'stock_loan', 'bond_loan', 'collateral_swap',
+  ],
+  fx: ['currency', 'fx_spot'],
+  commodities: ['physical_commodity', 'precious_metal', 'industrial_metal', 'crude_oil', 'refined_product', 'natural_gas', 'lng', 'coal', 'electricity', 'agricultural_commodity', 'livestock',
+    'emissions_allowance', 'carbon_credit', 'renewable_energy_certificate'],
+  crypto: ['cryptocurrency', 'stablecoin', 'tokenized_asset'],
+  alternatives: ['private_equity', 'venture_capital', 'infrastructure', 'direct_real_estate', 'insurance_linked_security'],
+  options: ['listed_option', 'equity_option', 'etf_option', 'index_option', 'option_on_future', 'otc_option', 'bond_option', 'interest_rate_option', 'fx_option', 'commodity_option',
+    'crypto_option', 'swaption', 'interest_rate_cap', 'interest_rate_floor', 'interest_rate_collar', 'digital_option', 'barrier_option', 'asian_option', 'lookback_option',
+    'basket_option', 'spread_option', 'quanto_option', 'compound_option'],
+  futures: ['equity_future', 'equity_index_future', 'gov_bond_future', 'treasury_future', 'stir_future', 'fx_future', 'commodity_future', 'volatility_future', 'dividend_future',
+    'crypto_future', 'perpetual_future'],
+  forwards: ['equity_forward', 'bond_forward', 'fx_forward', 'ndf', 'commodity_forward', 'fra', 'fx_swap', 'tba_mortgage'],
+  swaps: ['interest_rate_swap', 'ois', 'basis_swap', 'cross_currency_swap', 'cross_currency_basis_swap', 'non_deliverable_swap', 'zc_inflation_swap', 'yoy_inflation_swap',
+    'constant_maturity_swap', 'cms_spread_swap', 'forward_starting_swap', 'amortizing_swap', 'accreting_swap', 'callable_swap', 'puttable_swap', 'quanto_swap', 'asset_swap',
+    'equity_swap', 'equity_index_swap', 'equity_basket_swap', 'equity_trs', 'bond_trs', 'loan_trs', 'index_trs', 'commodity_swap', 'commodity_basis_swap', 'commodity_index_swap',
+    'energy_swap', 'electricity_swap', 'freight_swap', 'dividend_swap', 'variance_swap', 'volatility_swap', 'correlation_swap', 'dispersion_swap'],
+  credit: ['cds_single_name', 'cds_sovereign', 'cds_index', 'credit_basket_swap', 'cds_index_tranche', 'loan_cds', 'abs_cds', 'recovery_swap', 'cds_swaption',
+    'credit_spread_forward', 'credit_spread_option'],
+  structured: ['freight_contract', 'weather_derivative'],
+};
+/** Product id -> tab id. Built from TAB_PRODUCTS; a product listed twice is reported by the test, not silently kept. */
+export const PRODUCT_TAB = {};
+for (const [tab, ids] of Object.entries(TAB_PRODUCTS)) for (const id of ids) if (!(id in PRODUCT_TAB)) PRODUCT_TAB[id] = tab;
+export const TAB_LISTS = TAB_PRODUCTS;
+export const tabOf = (productId) => PRODUCT_TAB[productId] || null;
+export const tabsFor = (view) => MARKET_TABS.filter((t) => t.cls === (MARKET_VIEWS[view]?.cls || 'cash'));
+
+// Underlying asset class, for the filter on the derivative tabs. A product whose class depends on what it is written
+// on (a listed option, an OTC or exotic option, an option on a future, a perpetual future) takes it from its
+// underlying instrument's family; without an underlying it is "other".
+export const ASSET_CLASSES = [
+  { id: 'equity', label: 'Equity' }, { id: 'rates', label: 'Rates' }, { id: 'credit', label: 'Credit' }, { id: 'fx', label: 'FX' },
+  { id: 'commodity', label: 'Commodity' }, { id: 'crypto', label: 'Crypto' }, { id: 'volatility', label: 'Volatility' }, { id: 'other', label: 'Other' },
+];
+const ASSET_PRODUCTS = {
+  equity: ['equity_option', 'etf_option', 'index_option', 'equity_future', 'equity_index_future', 'dividend_future', 'equity_forward', 'equity_swap', 'equity_index_swap',
+    'equity_basket_swap', 'equity_trs', 'index_trs', 'dividend_swap'],
+  rates: ['bond_option', 'interest_rate_option', 'swaption', 'interest_rate_cap', 'interest_rate_floor', 'interest_rate_collar', 'gov_bond_future', 'treasury_future', 'stir_future',
+    'bond_forward', 'fra', 'tba_mortgage', 'interest_rate_swap', 'ois', 'basis_swap', 'cross_currency_swap', 'cross_currency_basis_swap', 'non_deliverable_swap', 'zc_inflation_swap',
+    'yoy_inflation_swap', 'constant_maturity_swap', 'cms_spread_swap', 'forward_starting_swap', 'amortizing_swap', 'accreting_swap', 'callable_swap', 'puttable_swap', 'quanto_swap', 'asset_swap'],
+  credit: ['cds_single_name', 'cds_sovereign', 'cds_index', 'credit_basket_swap', 'cds_index_tranche', 'loan_cds', 'abs_cds', 'recovery_swap', 'cds_swaption', 'credit_spread_forward',
+    'credit_spread_option', 'bond_trs', 'loan_trs'],
+  fx: ['fx_future', 'fx_forward', 'ndf', 'fx_swap', 'fx_option'],
+  commodity: ['commodity_future', 'commodity_forward', 'commodity_option', 'commodity_swap', 'commodity_basis_swap', 'commodity_index_swap', 'energy_swap', 'electricity_swap',
+    'freight_swap', 'freight_contract'],
+  crypto: ['crypto_future', 'crypto_option'],
+  volatility: ['volatility_future', 'variance_swap', 'volatility_swap', 'correlation_swap', 'dispersion_swap'],
+  other: ['weather_derivative'],
+  underlying: ['listed_option', 'otc_option', 'digital_option', 'barrier_option', 'asian_option', 'lookback_option', 'basket_option', 'spread_option', 'quanto_option',
+    'compound_option', 'option_on_future', 'perpetual_future'],
+};
+export const PRODUCT_ASSET = {};
+for (const [cls, ids] of Object.entries(ASSET_PRODUCTS)) for (const id of ids) if (!(id in PRODUCT_ASSET)) PRODUCT_ASSET[id] = cls;
+export const ASSET_LISTS = ASSET_PRODUCTS;
+const FAMILY_ASSET = { equity: 'equity', fund: 'equity', bond: 'rates', fx: 'fx', spot: 'commodity', crypto: 'crypto' };
+/** Asset class of a derivative instrument; `und` is its underlying registry row (or null), `undOfUnd` that one's. */
+export function assetClassOf(productId, und, undOfUnd) {
+  const c = PRODUCT_ASSET[productId];
+  if (!c) return null;
+  if (c !== 'underlying') return c;
+  if (!und) return 'other';
+  if (und.family === 'future' || und.family === 'option') return PRODUCT_ASSET[und.product_id] && PRODUCT_ASSET[und.product_id] !== 'underlying' ? PRODUCT_ASSET[und.product_id] : FAMILY_ASSET[undOfUnd?.family] || 'other';
+  return FAMILY_ASSET[und.family] || 'other';
+}
+
+// ---- Marketplace routing convention (ui1) -----------------------------------------------------------------------
+// Which market view an instrument sits in is decided from explicit metadata, never from its price currency:
+//   1. listed     Exchange-listed with a listing-venue country: US venue -> US view, any other country -> Foreign.
+//   2. financing  Loans, deposits, repo and securities loans are arrangements of one Book, held on the Treasury and
+//                 Account pages; they never appear as Marketplace rows (their view is kept only as a record).
+//   3. underlying A derivative with a registered underlying follows the underlying's view (US exposure -> US
+//                 Derivatives).
+//   4. jurisdiction An instrument with no listing country takes its stated jurisdiction (the governing law of an
+//                 OTC contract), or, for an issued security (bond, private interest), its issuer's domicile.
+//   5. convention Global FX and crypto, and OTC products with none of the above, have no US listing and no US
+//                 jurisdiction. They are routed BY CONVENTION to Foreign Based / Foreign Derivatives: a US view is
+//                 kept for instruments with a positive US connection, so it never implies a US listing that does
+//                 not exist. The row and the instrument page say so.
+//   6. manual     Set by hand. Any non-listed instrument can be moved by hand (the registry form offers it, and an
+//                 explicit market view that differs from the convention is stored as set by hand). A listed product
+//                 cannot: its listing venue decides.
+// An exchange-listed product with no venue country recorded (and no other basis) needs its view chosen by hand.
+export const ROUTING_BASES = {
+  listed: 'Listing venue', financing: 'Financing arrangement', underlying: 'Follows its underlying', jurisdiction: 'Jurisdiction', convention: 'Routing convention', manual: 'Set by hand',
+};
+const GLOBAL_FAMILIES = new Set(['fx', 'crypto']);
+const ISSUED_FAMILIES = new Set(['bond', 'manual', 'equity', 'fund', 'spot']);
+const FINANCING = new Set(['loan', 'repo', 'secloan']);
+const viewFor = (product, us) => `${us ? 'US' : 'FOREIGN'}_${product.cls === 'cash' ? 'CASH' : 'DERIV'}`;
+const upper2 = (x) => (x ? String(x).trim().toUpperCase() : null);
+
+/**
+ * The view the convention gives an instrument, and why. `null` when nothing decides it (an exchange-listed product
+ * with no venue country and no jurisdiction): the view must then be chosen by hand.
+ *   facts: { product, venueType, venueCountry, jurisdiction, domicile, underlying (registry row or null), requestedView }
+ */
+export function conventionRoute({ product, venueType, venueCountry, jurisdiction, domicile, underlying, requestedView }) {
+  const vc = upper2(venueCountry), jur = upper2(jurisdiction), dom = upper2(domicile);
+  if (venueType === 'exchange' && vc) return { view: viewFor(product, vc === 'US'), basis: 'listed' };
+  if (FINANCING.has(product.family)) {
+    const keep = requestedView && MARKET_VIEWS[requestedView]?.cls === product.cls ? requestedView : null;
+    return { view: jur ? viewFor(product, jur === 'US') : keep || viewFor(product, false), basis: 'financing' };
+  }
+  if (product.cls === 'deriv' && underlying) return { view: viewFor(product, MARKET_VIEWS[underlying.market_view]?.geo === 'US'), basis: 'underlying' };
+  if (jur) return { view: viewFor(product, jur === 'US'), basis: 'jurisdiction', via: 'stated' };
+  if (dom && venueType !== 'exchange' && ISSUED_FAMILIES.has(product.family)) return { view: viewFor(product, dom === 'US'), basis: 'jurisdiction', via: 'issuer' };
+  if (GLOBAL_FAMILIES.has(product.family) || venueType === 'global' || venueType === 'otc' || product.cls === 'deriv') return { view: viewFor(product, false), basis: 'convention' };
+  return null;
+}
+
+/** Short text for the row and the instrument page: what decided the view. */
+export function routingText({ basis, view, venue, venueCountry, jurisdiction, domicile, underlying, family, venueType, convention }) {
+  const label = MARKET_VIEWS[view]?.label || view;
+  const vc = upper2(venueCountry);
+  switch (basis) {
+    case 'listed': return `Listed in ${vc}${venue ? ` (${venue})` : ''}`;
+    case 'financing': return 'Financing, arranged on the Treasury and Account pages';
+    case 'underlying': return `Follows its underlying${underlying ? `, ${underlying.symbol || underlying.name}` : ''}`;
+    case 'jurisdiction': return upper2(jurisdiction) ? `Jurisdiction ${upper2(jurisdiction)}, not listed` : `Issuer domiciled in ${upper2(domicile)}, not listed`;
+    case 'convention': return `${GLOBAL_FAMILIES.has(family) || venueType === 'global' ? 'Global' : 'OTC'}, no US listing: routed by convention to ${label}`;
+    case 'manual': return `Set by hand${convention && convention.view !== view ? ` (the convention gives ${MARKET_VIEWS[convention.view]?.label})` : ''}`;
+    default: return '';
+  }
+}

@@ -45,8 +45,8 @@ const loanLeg = (name, qty) => ({ kind: 'loan', action: 'borrow_cash', qty, purp
 const swapLeg = (name, agreementId) => ({ kind: 'trade', action: 'buy', qty: 100_000, statedPrice: 0, contract: { productId: 'interest_rate_swap', name, marketView: 'US_DERIV', venueType: 'otc', tradingCcy: 'USD', terms: { effective: '2026-03-02', maturity: '2027-03-02', counterparty: 'Dealer I', collateralBasis: { type: 'agreement', agreementId }, legs: [
   { id: 'A', side: 'pay', type: 'fixed', ccy: 'USD', rate: 0.04, months: 6, dayCount: '30/360' }, { id: 'B', side: 'receive', type: 'float', ccy: 'USD', index: 'TEST-3M', spread: 0, months: 3, dayCount: 'ACT/360' }] } } });
 
-/** Two Books with an object of every kind. Book A: Account "Aardvark"; Book B: Account "Bison". */
-async function twoBooks(w) {
+/** Two Books with an object of every kind. Book A: Account "Aardvark"; Book B: Account "Bison". Also used by the browser level. */
+export async function twoBooks(w) {
   await w.fixture('rate', { code: 'TEST-3M', value: 4.0 });
   const inst = await w.stock('ISO', { bid: 50.00, ask: 50.02, last: 50.00, bidSize: 50_000, askSize: 50_000 });
   await w.fixture('borrow', { instrumentId: inst.id, available: true, quantity: 100_000, feeRate: 0.01 });
@@ -241,7 +241,7 @@ export default [
           await w.clean(c, X.id, `${X.name} integrity`);
         }
       }),
-      browser: async (bz, c) => bz.cases.bookIsolation(bz, c),
+      browser: async (bz, c) => bz.cases.noNetting(bz, c),
     },
   },
   {
@@ -334,7 +334,7 @@ export default [
         const tables = (x) => x.sql(`SELECT COUNT(*) AS n FROM books`)[0].n;
         c.eq([tables(n), tables(d)], [1, 2], 'terminal.db holds one Book, demo.db two');
       },
-      browser: async (bz, c) => bz.cases.normalMode(bz, c),
+      browser: async (bz, c) => bz.cases.demoNormalScreens(bz, c),
     },
   },
 ];

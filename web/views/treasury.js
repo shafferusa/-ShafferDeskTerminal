@@ -428,6 +428,8 @@ export function BorrowingTable({ book, rows, arrangements = [], onDone, compact,
     if (c.kind === 'securities' && c.instrument && isNum(c.qty)) return `${fmtQty(c.qty)} ${c.instrument.symbol || c.instrument.name} pledged${c.description.includes(', ') ? `, ${c.description.split(', ').slice(1).join(', ')}` : ''}`;
     return `${c.description}${isNum(c.cash) ? `: ${fmtMoney(c.cash, b.ccy)} held` : ''}`;
   };
+  // The compact table has no terms line, so a securities borrow's cash collateral gets its own column there.
+  const anyCashColl = rows.some((b) => b.collateral?.kind === 'cash');
   const columns = [
     { label: 'Borrowing ID', render: (b) => html`<div class="strong">${b.id}</div><div class="sub clip" style="max-width:140px" title=${b.name}>${b.name}</div>` },
     { label: 'Owner', render: (b) => html`${b.owner.name}<div class="sub">${b.accountOriginated ? 'Account-originated' : 'Treasury\'s own'}</div>` },
@@ -438,6 +440,8 @@ export function BorrowingTable({ book, rows, arrangements = [], onDone, compact,
     { label: 'Rate', render: (b) => html`${b.rate.text ? soft(b.rate.text, 115) : html`<${Missing} reason="No rate is recorded on this contract" />`}${b.rate.dayCount ? html`<div class="sub">${b.rate.dayCount}</div>` : null}
       ${noFixing(arr(b)) ? html`<div><${Pill} tone="warn" title="Interest has stopped accruing until a rate is supplied or set by hand">no fixing since ${noFixing(arr(b))}<//></div>` : null}` },
     { label: 'Maturity', render: (b) => (b.maturity ? html`${b.maturity}<div class="sub">${b.term}</div>` : none(b.term)) },
+    compact && anyCashColl ? { label: 'Cash collateral', align: 'r', title: 'Cash collateral of a securities borrow: the restricted cash held against it, including the short-sale proceeds it supports',
+      render: (b) => (b.collateral?.kind === 'cash' ? (isNum(b.collateral.cash) ? fmtMoney(b.collateral.cash, b.ccy, { bare: true }) : html`<${Missing} reason="The cash collateral of this borrow could not be read" />`) : none()) } : null,
     { label: 'Accrued', align: 'r', title: 'Interest or fee accrued and not yet paid. Owed by the owner of the borrowing.', render: (b) => fmtMoney(b.accrued, b.ccy, { bare: true }) },
     compact ? null : { label: html`Interest and fees<br />to date`, align: 'r', title: 'Charged to the owner\'s P&L since the borrowing began, paid or accrued: interest and borrow fees first, other fees beneath',
       render: (b) => html`<span title=${b.ccy !== rc && isNum(b.interestToDateRc) ? `${fmtMoney(b.interestToDateRc, rc)} at the rates when charged` : undefined}>${fmtMoney(b.interestToDate, b.ccy, { bare: true })}</span><div class="sub">fees ${fmtMoney(b.feesToDate, b.ccy, { bare: true })}</div>` },

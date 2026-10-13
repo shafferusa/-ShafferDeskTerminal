@@ -978,4 +978,391 @@ const bankDeposit = {
   ],
 };
 
-export default [unsecuredLoan, termDeposit, certificateOfDeposit, bankDeposit];
+// ---------------------------------------------------------------------------------------------
+// cash_loan
+// ---------------------------------------------------------------------------------------------
+// Cash borrowing and lending, in a foreign currency and in US dollars. Treasury borrows euros and sells them at
+// spot for dollars in one package ("Borrow and convert"), on Wednesday 1 April 2026: the euros are settled cash at
+// once and a liability of Treasury, the conversion settles on its spot value date. EUR/USD spot is T+2 counted on
+// the euro (TARGET2) calendar and must also be a US dollar banking day: 3 April (Good Friday) and 6 April (Easter
+// Monday) are TARGET2 closing days, so the value date is Tuesday 7 April. Until then the dollars count as buying
+// power but cannot be transferred, and the euros, sold, cannot be moved either. On 7 April Treasury buys euros back
+// (Convert currency, value 9 April); a repayment on 8 April is refused because the euros have not settled; on
+// 9 April the loan is repaid in full. The Account, meanwhile, lends dollars for two weeks with the same product.
+//
+// Inputs: EUR/USD 1.08 for reporting (labelled fixture), the pair quoted 1.0798 bid / 1.0802 ask (fixture); no fees.
+//   Loan: 360,000 EUR at 3.00% fixed, ACT/360: 360,000 x 0.03 / 360 = 30.00 EUR a day (32.40 USD at 1.08).
+//   Sale of the euros at the bid: 360,000 x 1.0798 = 388,728.00 USD; at the 1.08 mark they were worth 388,800.00, so
+//   the conversion costs 72.00 USD (half the spread).
+//   Purchase back at the ask: 360,500 x 1.0802 = 389,412.10 USD for euros worth 360,500 x 1.08 = 389,340.00: 72.10 USD.
+//   Repaid 9 April after 8 days: 360,000 + 240.00 EUR; 260.00 EUR is left over.
+//   The Account's loan: 150,000 USD at 4.80% ACT/360 = 20.00 USD a day; 2 to 14 April, 12 days: 240.00 USD.
+const EUR_LOAN_TERMS = { loanType: 'unsecured', rateType: 'fixed', rate: 0.03, dayCount: 'ACT/360', maturity: '2026-05-04', interestPayment: 'maturity', counterparty: 'Rheinufer Bank' };
+const LENT = { owner: 'account', page: 'account', side: 'lend_cash', productId: 'cash_loan', productLabel: 'Cash borrowing and lending', ccy: 'USD', principal: 150_000, name: 'Tidewater two-week cash loan', as: 'cashlent',
+  terms: { loanType: 'unsecured', rateType: 'fixed', rate: 0.048, dayCount: 'ACT/360', maturity: '2026-04-14', interestPayment: 'maturity', counterparty: 'Tidewater Securities' } };
+
+const cashLoan = {
+  productId: 'cash_loan',
+  title: 'Treasury borrows 360,000 EUR at 3.00% and converts it to dollars at spot (T+2 over Good Friday and Easter Monday); an Account lends 150,000 USD for two weeks',
+  matrix: {
+    ticket: 'Treasury page, "Borrow and convert" (the loan leg and its spot conversion, one preview and one confirmation); "Convert currency" for the conversion back; an Account page, "Borrow cash" with side "Lend or deposit cash" for cash lent; Repay on the row of the borrowing',
+    requiredFields: ['Borrower (Treasury or an Account)', 'Currency pair and the currency borrowed', 'Principal', 'Rate (fixed: the rate; floating: reference rate code and spread)', 'Day count', 'Maturity (empty for open-ended)', 'Interest paid', 'Counterparty'],
+    automaticInputs: ['interest start date (the confirmation date)', 'the spot value date: two TARGET2 business days, also a US dollar banking day', 'the conversion price: bid or ask of the quote in force (fixture)', 'daily interest accrual at the end-of-day run', 'settlement of both currencies on the value date', 'conversion of each entry to US dollars at the rate in force (fixture)', 'principal and interest returned at maturity'],
+    manualInputs: ['every term of the loan, entered on the ticket', 'the amount of euros bought back, entered on the Convert currency ticket'],
+    settlement: 'The loan has none: borrowed cash is settled cash at once. The conversion settles on its spot value date (T+2 on the joint calendar): until then the currency bought is buying power but cannot be withdrawn or transferred, and the currency sold is committed',
+    lifecycle: 'Interest accrues daily; early repayment in full with interest to the day; a repayment needs settled cash of the loan currency and is refused without it; cash lent is returned with its interest at maturity',
+    accounting: 'Borrowed euros are a liability of Treasury (carried at principal, converted at the current rate); interest is a funding expense; the cost of crossing the spread is part of the FX effect; cash lent is an asset of the Account and its interest is income',
+    collateral: 'None (unsecured)',
+  },
+  tradedOn: 'A cash loan is not a registry instrument: the borrowing is entered on the Borrow and convert ticket of the Treasury page and the lending on the Cash loan or deposit ticket of the Account page; each registers itself when the ticket is confirmed. The EUR/USD pair it converts through is a registered spot FX instrument.',
+  start: AT_1000('2026-04-01'), // Wednesday 1 April 2026, 10:00 New York
+  book: {
+    name: 'Matrix cash loan', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 1_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 200_000 }] },
+    settings: { fees: { fx: { perUnit: 0, minimum: 0, bps: 0 } }, fill: { ...FILL, halfSpreadBps: { equity: 2, fx: 0.5 } }, settlement: { fx: 2 } },
+  },
+  instruments: {
+    eurusd: { productId: 'fx_spot', name: 'EUR/USD spot', symbol: 'EUR/USD', marketView: 'FOREIGN_CASH', venueType: 'otc', tradingCcy: 'USD', terms: { base: 'EUR', quote: 'USD', settleDays: 2 } },
+  },
+  quotes: { eurusd: { bid: 1.0798, ask: 1.0802, last: 1.08, bidSize: 5_000_000, askSize: 5_000_000 } },
+  fx: { 'EUR/USD': 1.08 },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 200_000, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 200_000, availableToWithdraw: 200_000, borrowed: 0, lent: 0 } },
+      treasury: { USD: { settled: 800_000, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 800_000, availableToWithdraw: 800_000, borrowed: 0, lent: 0 } },
+    },
+    positions: [], holdings: {}, pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 200_000, treasury: 800_000, book: 1_000_000 },
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+    pnl: { account: { total: 0 }, treasury: { borrowFunding: 0, fx: 0, total: 0 }, book: { total: 0 } },
+    balance: { treasury: { cash: 800_000, assets: 800_000, liabilities: 0, netAssets: 800_000, internal: -200_000 }, account: { cash: 200_000, netAssets: 200_000, internal: 200_000 }, book: { cash: 1_000_000, netAssets: 1_000_000, internal: 0 } },
+    oversight: { accountBorrowings: [], treasuryOwn: [] },
+  },
+  steps: [
+    {
+      id: 'borrow-and-convert', covers: ['open', 'borrow', 'borrow and convert'], action: 'ticket', owner: 'treasury', as: 'eurloan', contractAs: 'eurloan',
+      ticket: { kind: 'borrow_convert', page: 'treasury', pair: 'eurusd', ccy: 'EUR', principal: 360_000, terms: EUR_LOAN_TERMS },
+      input: { template: 'custom', name: 'Borrow EUR and convert to USD', legs: [
+        { kind: 'loan', action: 'borrow_cash', purpose: 'financing', qty: 360_000, contract: contract('cash_loan', 'EUR loan (converted to USD)', 'EUR', EUR_LOAN_TERMS) },
+        { kind: 'trade', action: 'sell', instrumentId: '$inst:eurusd', qty: 360_000, dependsOn: [1] },
+      ] },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [
+            { kind: 'loan', action: 'borrow_cash', purpose: 'financing', qty: 360_000, cash: 360_000, fees: 0, ccy: 'EUR', dailyCost: 30, // 360,000 x 0.03 / 360
+              financing: { amount: 360_000, rateType: 'fixed', rate: 0.03, maturity: '2026-05-04', interestFrom: '2026-04-01' } },
+            // Sold at the bid; value date Tuesday 7 April (Good Friday and Easter Monday are TARGET2 closing days).
+            { kind: 'trade', action: 'sell', instrument: 'eurusd', qty: 360_000, estimate: 1.0798, model: 'quoted-bid-ask', settleDate: '2026-04-07', cash: 388_728, fees: 0, otherCash: { EUR: -360_000 }, dependsOn: [1] },
+          ],
+          // The euros sold are covered by the euros borrowed in the same package; the dollars are proceeds.
+          cash: { EUR: { purchases: 360_000, financingIn: 360_000, required: 360_000, available: 0, shortfall: 0, netCash: 0 }, USD: { proceeds: 388_728, required: 0, available: 800_000, shortfall: 0, netCash: 388_728 } },
+        },
+        result: { orders: [
+          { kind: 'loan', action: 'borrow_cash', instrument: 'eurloan', status: 'filled', qty: 360_000, filledQty: 360_000 },
+          { kind: 'trade', action: 'sell', instrument: 'eurusd', status: 'filled', qty: 360_000, filledQty: 360_000, avgPrice: 1.0798, fills: [{ qty: 360_000, price: 1.0798, model: 'quoted-bid-ask', settleDate: '2026-04-07', date: '2026-04-01' }] },
+        ] },
+        events: [
+          { type: 'strategy.submitted', owner: 'treasury' },
+          { type: 'loan.drawdown', summary: 'Borrowed 360,000.00 EUR (unsecured, 3.000% fixed, due 2026-05-04)', cash: { EUR: 360_000 }, owner: 'treasury', date: '2026-04-01' },
+          { type: 'fx.conversion', summary: /sold 360,000\.00 EUR against 388,728\.00 USD/, owner: 'treasury', date: '2026-04-01' },
+        ],
+        // Euros: 360,000 settled (borrowed) and 360,000 payable on 7 April, so none can be traded or withdrawn.
+        // Dollars: 388,728 receivable on 7 April, buying power at once, not withdrawable before it settles.
+        cash: { treasury: {
+          EUR: { settled: 360_000, unsettled: -360_000, receivable: 0, payable: 360_000, reserved: 0, restricted: 0, margin: 0, availableToTrade: 0, availableToWithdraw: 0, borrowed: 360_000, lent: 0 },
+          USD: { settled: 800_000, unsettled: 388_728, receivable: 388_728, payable: 0, availableToTrade: 1_188_728, availableToWithdraw: 800_000, borrowed: 0 },
+        } },
+        positions: [{ instrument: 'eurloan', lot: 'eurloan', owner: 'treasury', direction: 'borrowed', qty: -360_000, value: 360_000, carrying: -360_000, accrued: 0, provisional: false }],
+        holdings: {}, // a spot conversion creates no position
+        pending: [
+          { instrument: 'eurusd', lot: 'eurloan', owner: 'treasury', dueDate: '2026-04-07', amount: -360_000, ccy: 'EUR' },
+          { instrument: 'eurusd', lot: 'eurloan', owner: 'treasury', dueDate: '2026-04-07', amount: 388_728, ccy: 'USD' },
+        ],
+        lifecycle: [{ type: 'loan.maturity', instrument: 'eurloan', dueDate: '2026-05-04', status: 'pending', owner: 'treasury' }],
+        borrowings: [{ owner: 'treasury', origin: 'treasury', family: 'loan', type: 'Unsecured loan', lot: 'eurloan', principal: 360_000, principalRc: 388_800, ccy: 'EUR', rate: 0.03, rateType: 'fixed', rateText: '3.000% fixed', dayCount: 'ACT/360',
+          accrued: 0, costToDate: 0, feesToDate: 0, startDate: '2026-04-01', maturity: '2026-05-04', term: 'term', lender: 'Rheinufer Bank', collateral: 'None (unsecured)', schedule: 'Interest paid at maturity', nextPayment: '2026-05-04', nextPaymentType: 'loan.maturity', blocked: null }],
+        // 388,728 received for euros carried at 388,800: -72.00, an FX effect.
+        pnl: { treasury: { borrowFunding: 0, fx: -72, total: -72 }, book: { borrowFunding: 0, couponInterest: 0, fx: -72, total: -72 }, account: { total: 0 } },
+        nav: { account: 200_000, treasury: 799_928, book: 999_928 },
+        balance: {
+          // 800,000 + 360,000 x 1.08 = 1,188,800 cash; 388,728 receivable; 388,800 payable and 388,800 borrowed.
+          treasury: { cash: 1_188_800, receivable: 388_728, payable: 388_800, borrowed: 388_800, assets: 1_577_528, liabilities: 777_600, netAssets: 799_928, local: { EUR: { cash: 360_000, payable: 360_000, borrowed: 360_000 }, USD: { cash: 800_000, receivable: 388_728 } } },
+          account: { cash: 200_000, assets: 200_000, liabilities: 0, netAssets: 200_000 },
+          book: { cash: 1_388_800, receivable: 388_728, payable: 388_800, borrowed: 388_800, assets: 1_777_528, liabilities: 777_600, netAssets: 999_928, internal: 0 },
+        },
+        oversight: { accountBorrowings: [], treasuryOwn: [{ owner: 'treasury', origin: 'treasury', lot: 'eurloan', principal: 360_000, ccy: 'EUR', accrued: 0 }] },
+      },
+    },
+    { id: 'next-morning', action: 'clock', to: AT_1000('2026-04-02'), expect: {} }, // the end-of-day run of 1 April: no whole day has passed
+    loanTicket('lend-dollars', LENT, {
+      covers: ['open', 'lend'],
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'loan', action: 'lend_cash', purpose: 'financing', qty: 150_000, cash: -150_000, fees: 0, ccy: 'USD', dailyCost: 20, // 150,000 x 0.048 / 360
+            financing: { amount: -150_000, rateType: 'fixed', rate: 0.048, maturity: '2026-04-14', interestFrom: '2026-04-02' } }],
+          cash: { USD: { financingIn: 0, financingOut: 150_000, required: 150_000, available: 200_000, shortfall: 0, netCash: -150_000 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'loan', action: 'lend_cash', instrument: 'cashlent', status: 'filled', qty: 150_000, filledQty: 150_000 }] },
+        events: [
+          { type: 'strategy.submitted', owner: 'account' },
+          { type: 'loan.placed', summary: 'Lent 150,000.00 USD (unsecured, 4.800% fixed, due 2026-04-14)', cash: { USD: -150_000 }, owner: 'account', date: '2026-04-02' },
+        ],
+        cash: { account: { USD: { settled: 50_000, availableToTrade: 50_000, availableToWithdraw: 50_000, lent: 150_000, borrowed: 0 } } },
+        positions: [
+          { instrument: 'cashlent', lot: 'cashlent', owner: 'account', direction: 'lent', qty: 150_000, value: 150_000, carrying: 150_000, accrued: 0, provisional: false },
+          { instrument: 'eurloan', lot: 'eurloan', owner: 'treasury', direction: 'borrowed', qty: -360_000, value: 360_000, carrying: -360_000, accrued: 0, provisional: false },
+        ],
+        lifecycle: [{ type: 'loan.maturity', instrument: 'cashlent', dueDate: '2026-04-14', status: 'pending', owner: 'account' }, { type: 'loan.maturity', instrument: 'eurloan', dueDate: '2026-05-04', status: 'pending', owner: 'treasury' }],
+        balance: { account: { cash: 50_000, lent: 150_000, assets: 200_000, netAssets: 200_000 }, book: { cash: 1_238_800, lent: 150_000, assets: 1_777_528, netAssets: 999_928 } },
+      },
+    }),
+    {
+      id: 'accrue-thursday', covers: 'interest accrual', action: 'clock', to: AT_1730('2026-04-02'),
+      expect: {
+        // The euro loan: 1 to 2 April, one day, 30.00 EUR (32.40 USD). Cash lent today has no whole day yet.
+        events: [{ type: 'accrual.interest', summary: 'Interest accrued on EUR loan (converted to USD): 30.00 EUR', owner: 'treasury', date: '2026-04-02' }],
+        positions: [
+          { instrument: 'cashlent', lot: 'cashlent', qty: 150_000, accrued: 0 },
+          { instrument: 'eurloan', lot: 'eurloan', qty: -360_000, accrued: -30 },
+        ],
+        borrowings: [{ lot: 'eurloan', principal: 360_000, principalRc: 388_800, accrued: 30, costToDate: 30, costToDateRc: 32.40, nextPayment: '2026-05-04' }],
+        pnl: { treasury: { borrowFunding: -32.40, fx: -72, total: -104.40 }, book: { borrowFunding: -32.40, couponInterest: 0, fx: -72, total: -104.40 }, account: { total: 0 } },
+        nav: { treasury: 799_895.60, book: 999_895.60 },
+        balance: {
+          treasury: { accruedExpense: 32.40, liabilities: 777_632.40, netAssets: 799_895.60, local: { EUR: { accruedExpense: 30 } } },
+          book: { accruedExpense: 32.40, liabilities: 777_632.40, netAssets: 999_895.60 },
+        },
+        oversight: { treasuryOwn: [{ owner: 'treasury', origin: 'treasury', lot: 'eurloan', principal: 360_000, ccy: 'EUR', accrued: 30 }] },
+      },
+    },
+    {
+      // Good Friday: no end-of-day run (the New York exchange is closed). Easter Monday morning: TARGET2 is closed, so
+      // the conversion is still unsettled.
+      id: 'easter-monday-morning', covers: 'holiday', action: 'clock', to: AT_1000('2026-04-06'),
+      expect: { events: [], cash: { treasury: { USD: { settled: 800_000, receivable: 388_728, availableToWithdraw: 800_000 }, EUR: { settled: 360_000, payable: 360_000, availableToWithdraw: 0 } } } },
+    },
+    {
+      id: 'move-the-dollars-before-they-settle', covers: 'settlement', action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 900_000,
+      status: 'blocked', reason: 'The 388,728 USD from the conversion is buying power but has not settled: only 800,000 can leave Treasury.',
+      expect: { refused: 'Treasury has 800,000.00 USD of settled USD available; 900,000.00 USD requested' },
+    },
+    {
+      id: 'move-the-euros-sold', covers: 'settlement', action: 'transfer', from: 'treasury', to: 'account', ccy: 'EUR', amount: 1_000,
+      status: 'blocked', reason: 'The borrowed euros are settled but committed to the conversion: none is available to withdraw.',
+      expect: { refused: 'Treasury has 0.00 EUR of settled EUR available; 1,000.00 EUR requested' },
+    },
+    {
+      // Easter Monday's end-of-day run (New York is open): the euro loan 1 to 6 April, 5 days, 150.00, so 120.00 is added
+      // (129.60 USD); the cash lent 2 to 6 April, 4 days, 80.00 USD.
+      id: 'accrue-easter-monday', covers: ['interest accrual', 'holiday'], action: 'clock', to: AT_1730('2026-04-06'),
+      expect: {
+        events: [
+          { type: 'accrual.interest', summary: 'Interest accrued on EUR loan (converted to USD): 120.00 EUR', owner: 'treasury', date: '2026-04-06' },
+          { type: 'accrual.interest', summary: 'Interest accrued on Tidewater two-week cash loan: 80.00 USD', owner: 'account', date: '2026-04-06' },
+        ],
+        positions: [
+          { instrument: 'cashlent', lot: 'cashlent', qty: 150_000, accrued: 80 },
+          { instrument: 'eurloan', lot: 'eurloan', qty: -360_000, accrued: -150 },
+        ],
+        borrowings: [{ lot: 'eurloan', principal: 360_000, accrued: 150, costToDate: 150, costToDateRc: 162 }],
+        pnl: { treasury: { borrowFunding: -162, fx: -72, total: -234 }, account: { couponInterest: 80, total: 80 }, book: { borrowFunding: -162, couponInterest: 80, fx: -72, total: -154 } },
+        nav: { account: 200_080, treasury: 799_766, book: 999_846 },
+        balance: {
+          treasury: { accruedExpense: 162, liabilities: 777_762, netAssets: 799_766, local: { EUR: { accruedExpense: 150 } } },
+          account: { accruedIncome: 80, assets: 200_080, netAssets: 200_080 },
+          book: { accruedIncome: 80, accruedExpense: 162, assets: 1_777_608, liabilities: 777_762, netAssets: 999_846 },
+        },
+        oversight: { treasuryOwn: [{ owner: 'treasury', origin: 'treasury', lot: 'eurloan', principal: 360_000, ccy: 'EUR', accrued: 150 }] },
+      },
+    },
+    {
+      // Tuesday 7 April, the value date: the dollars are received, then the euros paid.
+      id: 'value-date', covers: 'settlement', action: 'clock', to: AT_1000('2026-04-07'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: /^Settlement: received 388,728\.00 USD/, owner: 'treasury', date: '2026-04-07' },
+          { type: 'settlement.pay', summary: /^Settlement: paid 360,000\.00 EUR/, owner: 'treasury', date: '2026-04-07' },
+        ],
+        cash: { treasury: {
+          EUR: { settled: 0, unsettled: 0, receivable: 0, payable: 0, availableToTrade: 0, availableToWithdraw: 0, borrowed: 360_000 },
+          USD: { settled: 1_188_728, unsettled: 0, receivable: 0, payable: 0, availableToTrade: 1_188_728, availableToWithdraw: 1_188_728 },
+        } },
+        pending: [],
+        nav: { treasury: 799_766, book: 999_846 },
+        balance: {
+          treasury: { cash: 1_188_728, receivable: null, payable: null, borrowed: 388_800, accruedExpense: 162, assets: 1_188_728, liabilities: 388_962, netAssets: 799_766, local: { EUR: { cash: null, payable: null, borrowed: 360_000, accruedExpense: 150 }, USD: { cash: 1_188_728, receivable: null } } },
+          book: { cash: 1_238_728, receivable: null, payable: null, assets: 1_388_808, liabilities: 388_962, netAssets: 999_846 },
+        },
+      },
+    },
+    {
+      // Treasury buys back euros for the repayment: 360,500 at the ask, 389,412.10 USD, value Thursday 9 April.
+      id: 'convert-dollars-back', covers: 'conversion', action: 'ticket', owner: 'treasury', as: 'convert',
+      ticket: { kind: 'convert', page: 'treasury', pair: 'eurusd', action: 'buy', qty: 360_500 },
+      input: { template: 'custom', name: 'Convert USD to EUR', legs: [{ kind: 'trade', action: 'buy', instrumentId: '$inst:eurusd', qty: 360_500 }] },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'eurusd', qty: 360_500, estimate: 1.0802, model: 'quoted-bid-ask', settleDate: '2026-04-09', cash: -389_412.10, fees: 0, otherCash: { EUR: 360_500 } }],
+          cash: { USD: { purchases: 389_412.10, required: 389_412.10, available: 1_188_728, shortfall: 0, netCash: -389_412.10 }, EUR: { proceeds: 360_500, required: 0, shortfall: 0, netCash: 360_500 } },
+        },
+        result: { orders: [{ kind: 'trade', action: 'buy', instrument: 'eurusd', status: 'filled', qty: 360_500, filledQty: 360_500, avgPrice: 1.0802, fills: [{ qty: 360_500, price: 1.0802, model: 'quoted-bid-ask', settleDate: '2026-04-09', date: '2026-04-07' }] }] },
+        events: [
+          { type: 'strategy.submitted', owner: 'treasury' },
+          { type: 'fx.conversion', summary: /bought 360,500\.00 EUR against 389,412\.10 USD/, owner: 'treasury', date: '2026-04-07' },
+        ],
+        cash: { treasury: {
+          EUR: { settled: 0, unsettled: 360_500, receivable: 360_500, payable: 0, availableToTrade: 360_500, availableToWithdraw: 0, borrowed: 360_000 },
+          USD: { settled: 1_188_728, unsettled: -389_412.10, receivable: 0, payable: 389_412.10, availableToTrade: 799_315.90, availableToWithdraw: 799_315.90 },
+        } },
+        pending: [
+          { instrument: 'eurusd', lot: 'convert', owner: 'treasury', dueDate: '2026-04-09', amount: -389_412.10, ccy: 'USD' },
+          { instrument: 'eurusd', lot: 'convert', owner: 'treasury', dueDate: '2026-04-09', amount: 360_500, ccy: 'EUR' },
+        ],
+        // Euros worth 360,500 x 1.08 = 389,340.00 bought for 389,412.10: -72.10, an FX effect.
+        pnl: { treasury: { borrowFunding: -162, fx: -144.10, total: -306.10 }, book: { borrowFunding: -162, couponInterest: 80, fx: -144.10, total: -226.10 } },
+        nav: { treasury: 799_693.90, book: 999_773.90 },
+        balance: {
+          treasury: { cash: 1_188_728, receivable: 389_340, payable: 389_412.10, assets: 1_578_068, liabilities: 778_374.10, netAssets: 799_693.90, local: { EUR: { receivable: 360_500 }, USD: { payable: 389_412.10 } } },
+          book: { cash: 1_238_728, receivable: 389_340, payable: 389_412.10, assets: 1_778_148, liabilities: 778_374.10, netAssets: 999_773.90 },
+        },
+      },
+    },
+    {
+      // Tuesday's end-of-day run: 6 days on the euro loan (180.00, +30.00); 5 days on the cash lent (100.00, +20.00).
+      id: 'accrue-tuesday', covers: 'interest accrual', action: 'clock', to: AT_1730('2026-04-07'),
+      expect: {
+        events: [
+          { type: 'accrual.interest', summary: 'Interest accrued on EUR loan (converted to USD): 30.00 EUR', date: '2026-04-07' },
+          { type: 'accrual.interest', summary: 'Interest accrued on Tidewater two-week cash loan: 20.00 USD', date: '2026-04-07' },
+        ],
+        positions: [{ instrument: 'cashlent', lot: 'cashlent', qty: 150_000, accrued: 100 }, { instrument: 'eurloan', lot: 'eurloan', qty: -360_000, accrued: -180 }],
+        borrowings: [{ lot: 'eurloan', accrued: 180, costToDate: 180, costToDateRc: 194.40 }],
+        pnl: { treasury: { borrowFunding: -194.40, fx: -144.10, total: -338.50 }, account: { couponInterest: 100, total: 100 }, book: { borrowFunding: -194.40, couponInterest: 100, fx: -144.10, total: -238.50 } },
+        nav: { account: 200_100, treasury: 799_661.50, book: 999_761.50 },
+        balance: {
+          treasury: { accruedExpense: 194.40, liabilities: 778_406.50, netAssets: 799_661.50, local: { EUR: { accruedExpense: 180 } } },
+          account: { accruedIncome: 100, assets: 200_100, netAssets: 200_100 },
+          book: { accruedIncome: 100, accruedExpense: 194.40, assets: 1_778_168, liabilities: 778_406.50, netAssets: 999_761.50 },
+        },
+        oversight: { treasuryOwn: [{ owner: 'treasury', origin: 'treasury', lot: 'eurloan', principal: 360_000, ccy: 'EUR', accrued: 180 }] },
+      },
+    },
+    { id: 'wednesday-morning', action: 'clock', to: AT_1000('2026-04-08'), expect: {} },
+    {
+      // Repaying today needs 360,000 + 7 days of interest (210.00) in settled euros. The euros bought arrive tomorrow.
+      id: 'repay-before-the-euros-settle', covers: 'repayment', action: 'repay', lot: 'eurloan', instrument: 'eurloan',
+      status: 'blocked', reason: 'A repayment is paid from settled cash of the loan currency; the euros bought back settle on 9 April.',
+      expect: { refused: 'Treasury has 0.00 EUR of settled EUR available; 360,210.00 EUR is needed (principal plus accrued interest).' },
+    },
+    {
+      id: 'accrue-wednesday', covers: 'interest accrual', action: 'clock', to: AT_1730('2026-04-08'), // 7 days: 210.00 (+30.00); 6 days lent: 120.00 (+20.00)
+      expect: {
+        events: [
+          { type: 'accrual.interest', summary: 'Interest accrued on EUR loan (converted to USD): 30.00 EUR', date: '2026-04-08' },
+          { type: 'accrual.interest', summary: 'Interest accrued on Tidewater two-week cash loan: 20.00 USD', date: '2026-04-08' },
+        ],
+        positions: [{ instrument: 'cashlent', lot: 'cashlent', qty: 150_000, accrued: 120 }, { instrument: 'eurloan', lot: 'eurloan', qty: -360_000, accrued: -210 }],
+        borrowings: [{ lot: 'eurloan', accrued: 210, costToDate: 210, costToDateRc: 226.80 }],
+        pnl: { treasury: { borrowFunding: -226.80, fx: -144.10, total: -370.90 }, account: { couponInterest: 120, total: 120 }, book: { borrowFunding: -226.80, couponInterest: 120, fx: -144.10, total: -250.90 } },
+        nav: { account: 200_120, treasury: 799_629.10, book: 999_749.10 },
+        balance: {
+          treasury: { accruedExpense: 226.80, liabilities: 778_438.90, netAssets: 799_629.10, local: { EUR: { accruedExpense: 210 } } },
+          account: { accruedIncome: 120, assets: 200_120, netAssets: 200_120 },
+          book: { accruedIncome: 120, accruedExpense: 226.80, assets: 1_778_188, liabilities: 778_438.90, netAssets: 999_749.10 },
+        },
+        oversight: { treasuryOwn: [{ owner: 'treasury', origin: 'treasury', lot: 'eurloan', principal: 360_000, ccy: 'EUR', accrued: 210 }] },
+      },
+    },
+    {
+      id: 'euros-settle', covers: 'settlement', action: 'clock', to: AT_1000('2026-04-09'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: /^Settlement: received 360,500\.00 EUR/, owner: 'treasury', date: '2026-04-09' },
+          { type: 'settlement.pay', summary: /^Settlement: paid 389,412\.10 USD/, owner: 'treasury', date: '2026-04-09' },
+        ],
+        cash: { treasury: {
+          EUR: { settled: 360_500, unsettled: 0, receivable: 0, payable: 0, availableToTrade: 360_500, availableToWithdraw: 360_500, borrowed: 360_000 },
+          USD: { settled: 799_315.90, unsettled: 0, receivable: 0, payable: 0, availableToTrade: 799_315.90, availableToWithdraw: 799_315.90 },
+        } },
+        pending: [],
+        balance: {
+          // 799,315.90 + 360,500 x 1.08 (389,340)
+          treasury: { cash: 1_188_655.90, receivable: null, payable: null, assets: 1_188_655.90, liabilities: 389_026.80, netAssets: 799_629.10, local: { EUR: { cash: 360_500, receivable: null }, USD: { cash: 799_315.90, payable: null } } },
+          book: { cash: 1_238_655.90, receivable: null, payable: null, assets: 1_388_775.90, liabilities: 389_026.80, netAssets: 999_749.10 },
+        },
+      },
+    },
+    {
+      // In full on 9 April: 8 days of interest, 240.00 EUR, with the 360,000 principal. 360,500 - 360,240 = 260 EUR is left.
+      id: 'repay-in-full', covers: ['close', 'repayment', 'early repayment'], action: 'repay', lot: 'eurloan', instrument: 'eurloan',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'repay', action: 'repay_cash', purpose: 'financing', instrument: 'eurloan', qty: 360_000, cash: -360_240, ccy: 'EUR', financing: { amount: -360_240, principal: 360_000, interest: 240, full: true, interestThrough: '2026-04-09', rate: 0.03, maturity: '2026-05-04' } }],
+          cash: { EUR: { financingIn: 0, financingOut: 360_240, required: 360_240, available: 360_500, shortfall: 0, netCash: -360_240 } },
+        },
+        result: { status: 'closed', orders: [{ kind: 'repay', action: 'repay_cash', status: 'filled', qty: 360_000, filledQty: 360_000 }] },
+        events: [
+          { type: 'strategy.legs_added', owner: 'treasury' },
+          { type: 'accrual.interest', summary: 'Interest accrued on EUR loan (converted to USD): 30.00 EUR', date: '2026-04-09' },
+          { type: 'loan.repayment', summary: 'Repaid 360,000.00 EUR of principal on EUR loan (converted to USD) (in full)', cash: { EUR: -360_000 }, owner: 'treasury', date: '2026-04-09' },
+          { type: 'interest.payment', summary: 'Interest paid on EUR loan (converted to USD): 240.00 EUR', cash: { EUR: -240 }, owner: 'treasury', date: '2026-04-09' },
+        ],
+        cash: { treasury: { EUR: { settled: 260, availableToTrade: 260, availableToWithdraw: 260, borrowed: 0 } } },
+        positions: [{ instrument: 'cashlent', lot: 'cashlent', owner: 'account', direction: 'lent', qty: 150_000, value: 150_000, carrying: 150_000, accrued: 120, provisional: false }],
+        lifecycle: [{ type: 'loan.maturity', instrument: 'cashlent', dueDate: '2026-04-14', status: 'pending', owner: 'account' }],
+        borrowings: [],
+        // 240 x 1.08 = 259.20 of funding expense in all.
+        pnl: { treasury: { borrowFunding: -259.20, fx: -144.10, total: -403.30 }, book: { borrowFunding: -259.20, couponInterest: 120, fx: -144.10, total: -283.30 } },
+        nav: { treasury: 799_596.70, book: 999_716.70 }, // 799,315.90 + 260 x 1.08
+        balance: {
+          treasury: { cash: 799_596.70, borrowed: null, accruedExpense: null, assets: 799_596.70, liabilities: 0, netAssets: 799_596.70, local: { EUR: { cash: 260, borrowed: null, accruedExpense: null } } },
+          book: { cash: 849_596.70, borrowed: null, accruedExpense: null, assets: 999_716.70, liabilities: 0, netAssets: 999_716.70 },
+        },
+        oversight: { treasuryOwn: [] },
+      },
+    },
+    {
+      // The cash lent: 9, 10 and 13 April end-of-day runs; 13 April is a Monday (3 days). 7, 8 and 11 days: 140, 160, 220.
+      id: 'accrue-the-cash-lent', covers: 'interest accrual', action: 'clock', to: AT_1730('2026-04-13'),
+      expect: {
+        events: [
+          { type: 'accrual.interest', summary: 'Interest accrued on Tidewater two-week cash loan: 20.00 USD', owner: 'account', date: '2026-04-09' },
+          { type: 'accrual.interest', summary: 'Interest accrued on Tidewater two-week cash loan: 20.00 USD', owner: 'account', date: '2026-04-10' },
+          { type: 'accrual.interest', summary: 'Interest accrued on Tidewater two-week cash loan: 60.00 USD', owner: 'account', date: '2026-04-13' },
+        ],
+        positions: [{ instrument: 'cashlent', lot: 'cashlent', qty: 150_000, accrued: 220 }],
+        pnl: { account: { couponInterest: 220, total: 220 }, book: { borrowFunding: -259.20, couponInterest: 220, fx: -144.10, total: -183.30 } },
+        nav: { account: 200_220, book: 999_816.70 },
+        balance: { account: { accruedIncome: 220, assets: 200_220, netAssets: 200_220 }, book: { accruedIncome: 220, assets: 999_816.70, netAssets: 999_816.70 } },
+      },
+    },
+    {
+      // Tuesday 14 April: the cash lent comes back with 12 days of interest, 240.00 USD.
+      id: 'cash-lent-matures', covers: ['maturity', 'close'], action: 'clock', to: AT_1000('2026-04-14'),
+      expect: {
+        events: [
+          { type: 'accrual.interest', summary: 'Interest accrued on Tidewater two-week cash loan: 20.00 USD', owner: 'account', date: '2026-04-14' },
+          { type: 'loan.withdrawal', summary: 'Received back 150,000.00 USD of principal on Tidewater two-week cash loan (in full)', cash: { USD: 150_000 }, owner: 'account', date: '2026-04-14' },
+          { type: 'interest.payment', summary: 'Interest received on Tidewater two-week cash loan: 240.00 USD', cash: { USD: 240 }, owner: 'account', date: '2026-04-14' },
+        ],
+        cash: { account: { USD: { settled: 200_240, availableToTrade: 200_240, availableToWithdraw: 200_240, lent: 0, borrowed: 0 } }, treasury: { EUR: { settled: 260, borrowed: 0 }, USD: { settled: 799_315.90 } } },
+        positions: [], lifecycle: [], borrowings: [], pending: [],
+        pnl: { account: { couponInterest: 240, total: 240 }, treasury: { borrowFunding: -259.20, fx: -144.10, total: -403.30 }, book: { borrowFunding: -259.20, couponInterest: 240, fx: -144.10, total: -163.30 } },
+        nav: { account: 200_240, treasury: 799_596.70, book: 999_836.70 },
+        balance: {
+          account: { cash: 200_240, lent: null, accruedIncome: null, assets: 200_240, liabilities: 0, netAssets: 200_240 },
+          book: { cash: 999_836.70, lent: null, accruedIncome: null, borrowed: null, assets: 999_836.70, liabilities: 0, netAssets: 999_836.70, internal: 0, capital: 1_000_000 },
+        },
+      },
+    },
+  ],
+};
+
+export default [unsecuredLoan, termDeposit, certificateOfDeposit, bankDeposit, cashLoan];

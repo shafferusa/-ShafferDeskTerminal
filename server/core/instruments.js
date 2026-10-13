@@ -6,7 +6,7 @@
 // so nothing here has to be re-keyed later.
 
 import { j, pj } from '../db/db.js';
-import { FAMILIES, MARKET_VIEWS, PRICING_BASIS, PRICING_LABEL, getProduct } from './catalog.js';
+import { FAMILIES, MARKET_TABS, MARKET_VIEWS, PRICING_BASIS, PRICING_LABEL, ROUTING_BASES, assetClassOf, conventionRoute, getProduct, routingText, tabOf } from './catalog.js';
 import { AppError, CCY_RE, need, newId, num } from './util.js';
 import { calendarInfo, FIXED_SETTLEMENT, MAX_SETTLE_LAG, settlementConvention } from '../products/security.js';
 import { CALENDARS, unknownCalendars } from '../quant/calendar.js';
@@ -15,7 +15,7 @@ const PREFIX = { equity: 'EQ', fund: 'FD', spot: 'SP', crypto: 'CR', manual: 'MN
 const ARRANGEMENT_FAMILIES = new Set(['loan', 'repo', 'secloan']);
 // Fields that stay editable after an instrument has been traded. Calendars and the settlement lag are
 // conventions, not contract terms: changing them affects dates worked out from then on, never what is booked.
-const DESCRIPTIVE_FIELDS = new Set(['name', 'symbol', 'tags', 'issuer', 'domicile', 'venue', 'venueCountry', 'underlyingGeo', 'externalIds', 'marketView', 'conventions']);
+const DESCRIPTIVE_FIELDS = new Set(['name', 'symbol', 'tags', 'issuer', 'domicile', 'venue', 'venueCountry', 'underlyingGeo', 'externalIds', 'marketView', 'conventions', 'jurisdiction', 'routingBasis']);
 const CALENDAR_ROLES = [['tradingCalendar', 'Trading calendar'], ['settlementCalendar', 'Settlement calendar'], ['paymentCalendar', 'Payment calendar']];
 
 /**
@@ -71,6 +71,30 @@ export function createInstruments(app) {
     return i;
   }
 
+  /**
+   * The market view of a draft and its basis. `draft.routingBasis === 'manual'` (or an explicit marketView that
+   * differs from what the convention gives a non-listed product) keeps the view chosen by hand. A listed product
+   * always follows its listing venue.
+   */
+  function routeFor(product, draft) {
+    const underlying = draft.underlyingId ? get(draft.underlyingId) : null;
+    const asked = draft.marketView && MARKET_VIEWS[draft.marketView] ? draft.marketView : null;
+    need(!draft.marketView || asked, 'Unknown market view. Use US_CASH, US_DERIV, FOREIGN_CASH or FOREIGN_DERIV.');
+    const conv = conventionRoute({ product, venueType: draft.venueType, venueCountry: draft.venueCountry, jurisdiction: draft.jurisdiction, domicile: draft.domicile, underlying, requestedView: asked });
+    if (conv?.basis === 'listed') {
+      need(!asked || asked === conv.view, `A product listed on a ${conv.view.startsWith('US') ? 'US' : 'non-US'} venue belongs in ${conv.view.startsWith('US') ? 'a US' : 'a Foreign'} market view (listing venue decides, not issuer domicile or currency).`);
+      return conv;
+    }
+    if (conv?.basis === 'financing') return conv;
+    const manual = draft.routingBasis === 'manual' || (asked && (!conv || asked !== conv.view));
+    if (manual) {
+      need(asked, 'Choose the market view by hand, or state the listing venue country or the jurisdiction so the routing convention can place it.');
+      return { view: asked, basis: 'manual' };
+    }
+    need(conv, `${product.name} is exchange-listed but no listing-venue country is recorded. Enter the venue country (it decides US or Foreign), state the jurisdiction, or choose the market view by hand.`);
+    return conv;
+  }
+
   function validate(draft, { existing } = {}) {
     const product = getProduct(draft.productId);
     need(product, 'Choose a product type from the catalog.');
@@ -81,14 +105,13 @@ export function createInstruments(app) {
     const plugin = app.products.get(product.family);
     const name = String(draft.name || '').trim();
     need(name, 'An instrument needs a name.');
-    const view = MARKET_VIEWS[draft.marketView];
-    need(view, 'Assign the instrument to one of the four market views.');
+    const venueType = draft.venueType === 'otc' ? 'otc' : draft.venueType === 'global' ? 'global' : 'exchange';
+    const jurisdiction = draft.jurisdiction ? String(draft.jurisdiction).trim().toUpperCase() : null;
+    if (jurisdiction && !/^[A-Z]{2}$/.test(jurisdiction)) throw new AppError('Jurisdiction is a two-letter country code, for example US, GB or JP.');
+    // Marketplace routing (catalog.js, "Marketplace routing convention"): explicit metadata decides, never the currency.
+    const route = routeFor(product, { ...draft, venueType, jurisdiction });
+    const view = MARKET_VIEWS[route.view];
     need(view.cls === product.cls, `${product.name} is a ${product.cls === 'cash' ? 'cash-market' : 'derivative'} product, so it belongs in ${product.cls === 'cash' ? 'US Based or Foreign Based' : 'US Derivatives or Foreign Derivatives'}.`);
-    const venueType = draft.venueType === 'otc' ? 'otc' : 'exchange';
-    if (venueType === 'exchange' && draft.venueCountry) {
-      const isUs = String(draft.venueCountry).toUpperCase() === 'US';
-      need((view.geo === 'US') === isUs, `A product listed on a ${isUs ? 'US' : 'non-US'} venue belongs in ${isUs ? 'a US' : 'a Foreign'} market view (listing venue decides, not issuer domicile or currency).`);
-    }
     const norm = plugin.normalize(app, {
       terms: draft.terms || {}, multiplier: draft.multiplier ?? existing?.multiplier, underlying_id: draft.underlyingId || null,
       trading_ccy: draft.tradingCcy, settle_ccy: draft.settleCcy,
@@ -103,7 +126,7 @@ export function createInstruments(app) {
     const venueCountry = draft.venueCountry ? String(draft.venueCountry).trim().toUpperCase() : null;
     if (venueCountry && !/^[A-Z]{2}$/.test(venueCountry)) throw new AppError('Venue country is a two-letter country code, for example US, GB or JP.');
     const conventions = normalizeConventions(draft.conventions, product.family);
-    return { product, plugin, name, view, venueType, venueCountry, terms: norm.terms, multiplier: norm.multiplier ?? 1, tradingCcy, settleCcy, conventions };
+    return { product, plugin, name, view, venueType, venueCountry, jurisdiction, routingBasis: route.basis, terms: norm.terms, multiplier: norm.multiplier ?? 1, tradingCcy, settleCcy, conventions };
   }
 
   function create(draft, { actor = 'user' } = {}) {
@@ -112,11 +135,11 @@ export function createInstruments(app) {
     const id = draft.id || newId(PREFIX[v.product.family] || 'INS');
     need(!get(id), 'An instrument with that ID already exists.', { status: 409 });
     db.run(
-      `INSERT INTO instruments (id, product_id, family, name, symbol, market_view, tags, issuer, domicile, venue, venue_type, venue_country, underlying_id, underlying_geo, trading_ccy, settle_ccy, multiplier, terms, external_ids, ref_source, status, created_at, updated_at, conventions)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
+      `INSERT INTO instruments (id, product_id, family, name, symbol, market_view, tags, issuer, domicile, venue, venue_type, venue_country, underlying_id, underlying_geo, trading_ccy, settle_ccy, multiplier, terms, external_ids, ref_source, status, created_at, updated_at, conventions, jurisdiction, routing_basis)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)`,
       id, v.product.id, v.product.family, v.name, draft.symbol ? String(draft.symbol).trim() : null, v.view.id, j(draft.tags || []), draft.issuer || null, draft.domicile || null,
       draft.venue || null, v.venueType, v.venueCountry, draft.underlyingId || null, draft.underlyingGeo || null, v.tradingCcy, v.settleCcy, v.multiplier, j(v.terms), j(draft.externalIds || {}),
-      draft.refSource || (actor === 'user' ? 'manual' : actor), now, now, v.conventions ? j(v.conventions) : null,
+      draft.refSource || (actor === 'user' ? 'manual' : actor), now, now, v.conventions ? j(v.conventions) : null, v.jurisdiction, v.routingBasis,
     );
     return get(id);
   }
@@ -128,11 +151,24 @@ export function createInstruments(app) {
       id, draft: true, product_id: v.product.id, family: v.product.family, name: v.name, symbol: d.symbol || null, market_view: v.view.id, tags: d.tags || [],
       issuer: d.issuer || null, domicile: d.domicile || null, venue: d.venue || null, venue_type: v.venueType, venue_country: v.venueCountry, underlying_id: d.underlyingId || null,
       underlying_geo: d.underlyingGeo || null, trading_ccy: v.tradingCcy, settle_ccy: v.settleCcy, multiplier: v.multiplier, terms: v.terms, external_ids: d.externalIds || {}, ref_source: 'draft',
-      conventions: v.conventions,
+      conventions: v.conventions, jurisdiction: v.jurisdiction, routing_basis: v.routingBasis,
     };
   }
 
   const inUse = (id) => Boolean(db.get('SELECT 1 FROM positions WHERE instrument_id = ? LIMIT 1', id) || db.get('SELECT 1 FROM orders WHERE instrument_id = ? LIMIT 1', id));
+
+  /**
+   * How an edit treats the market view. `routingBasis: 'auto'` hands it back to the convention; an explicit
+   * `marketView` is kept (set by hand when the convention gives another view); otherwise a view set by hand, or one
+   * recorded before routing bases were stored, stays where it is, and a view the convention gave is worked out again
+   * from the edited metadata (a new listing venue moves it).
+   */
+  function routingPatch(cur, patch) {
+    if (patch.routingBasis === 'auto') return { marketView: undefined, routingBasis: undefined };
+    if (patch.marketView !== undefined) return { marketView: patch.marketView, routingBasis: patch.routingBasis };
+    if (!cur.routing_basis || cur.routing_basis === 'manual') return { marketView: cur.market_view, routingBasis: cur.routing_basis === 'manual' ? 'manual' : undefined };
+    return { marketView: undefined, routingBasis: undefined };
+  }
 
   function update(id, patch, { system = false } = {}) {
     const cur = requireInst(id);
@@ -148,7 +184,8 @@ export function createInstruments(app) {
       need(!bad.length, 'This instrument has been traded, so its contract terms are locked. Descriptive fields can still be edited; for different terms create a new instrument.');
     }
     const draft = {
-      productId: cur.product_id, name: patch.name ?? cur.name, symbol: patch.symbol ?? cur.symbol, marketView: patch.marketView ?? cur.market_view, tags: patch.tags ?? cur.tags,
+      productId: cur.product_id, name: patch.name ?? cur.name, symbol: patch.symbol ?? cur.symbol, ...routingPatch(cur, patch), tags: patch.tags ?? cur.tags,
+      jurisdiction: patch.jurisdiction !== undefined ? patch.jurisdiction : cur.jurisdiction,
       issuer: patch.issuer ?? cur.issuer, domicile: patch.domicile ?? cur.domicile, venue: patch.venue ?? cur.venue, venueType: patch.venueType ?? cur.venue_type, venueCountry: patch.venueCountry !== undefined ? patch.venueCountry : cur.venue_country,
       underlyingId: patch.underlyingId ?? cur.underlying_id, underlyingGeo: patch.underlyingGeo ?? cur.underlying_geo, tradingCcy: patch.tradingCcy ?? cur.trading_ccy,
       settleCcy: patch.settleCcy ?? cur.settle_ccy, multiplier: patch.multiplier ?? cur.multiplier, terms: patch.terms ?? cur.terms, externalIds: { ...cur.external_ids, ...(patch.externalIds || {}) },
@@ -157,9 +194,9 @@ export function createInstruments(app) {
     };
     const v = validate(draft, { existing: cur });
     db.run(
-      `UPDATE instruments SET name = ?, symbol = ?, market_view = ?, tags = ?, issuer = ?, domicile = ?, venue = ?, venue_type = ?, venue_country = ?, underlying_id = ?, underlying_geo = ?, trading_ccy = ?, settle_ccy = ?, multiplier = ?, terms = ?, external_ids = ?, conventions = ?, updated_at = ? WHERE id = ?`,
+      `UPDATE instruments SET name = ?, symbol = ?, market_view = ?, tags = ?, issuer = ?, domicile = ?, venue = ?, venue_type = ?, venue_country = ?, underlying_id = ?, underlying_geo = ?, trading_ccy = ?, settle_ccy = ?, multiplier = ?, terms = ?, external_ids = ?, conventions = ?, jurisdiction = ?, routing_basis = ?, updated_at = ? WHERE id = ?`,
       v.name, draft.symbol || null, v.view.id, j(draft.tags || []), draft.issuer || null, draft.domicile || null, draft.venue || null, v.venueType, v.venueCountry, draft.underlyingId || null,
-      draft.underlyingGeo || null, v.tradingCcy, v.settleCcy, v.multiplier, j(locked ? cur.terms : v.terms), j(draft.externalIds), v.conventions ? j(v.conventions) : null, clock.now().toISOString(), id,
+      draft.underlyingGeo || null, v.tradingCcy, v.settleCcy, v.multiplier, j(locked ? cur.terms : v.terms), j(draft.externalIds), v.conventions ? j(v.conventions) : null, v.jurisdiction, v.routingBasis, clock.now().toISOString(), id,
     );
     cache.delete(id);
     return get(id);
@@ -243,7 +280,32 @@ export function createInstruments(app) {
       support: support(inst), qtyLabel: plugin.qtyLabel || fam.qty, priceUnits: plugin.priceUnits ? plugin.priceUnits(inst) : fam.price,
       actions: plugin.actions(inst), actionLabels: plugin.actionLabels || null, kind: plugin.kind, arrangement: ARRANGEMENT_FAMILIES.has(inst.family),
       details: plugin.describe ? plugin.describe(inst, app) : [], qtyStep: plugin.qtyStep ? plugin.qtyStep(inst) : 1, locked: inUse(inst.id),
+      jurisdiction: inst.jurisdiction || null, classification: classify(inst, und),
       createdAt: inst.created_at, updatedAt: inst.updated_at,
+    };
+  }
+
+  /**
+   * Where the instrument sits in the Marketplaces and why: its product-family tab, the underlying asset class (for
+   * derivatives), and the routing basis with a short sentence. A row registered before routing bases were stored is
+   * read against the convention: the same view is shown with the convention's basis, a different one as set by hand.
+   */
+  function classify(inst, und = inst.underlying_id ? get(inst.underlying_id) : null) {
+    const product = getProduct(inst.product_id);
+    const tab = tabOf(inst.product_id);
+    const facts = { product: product || { family: inst.family, cls: inst.market_view.endsWith('DERIV') ? 'deriv' : 'cash', name: inst.product_id }, venueType: inst.venue_type, venueCountry: inst.venue_country,
+      jurisdiction: inst.jurisdiction, domicile: inst.domicile, underlying: und, requestedView: inst.market_view };
+    let conv = null;
+    try { conv = conventionRoute(facts); } catch { conv = null; }
+    const basis = inst.routing_basis || (conv && conv.view === inst.market_view ? conv.basis : 'manual');
+    const undOfUnd = und?.underlying_id ? get(und.underlying_id) : null;
+    return {
+      tab, tabLabel: MARKET_TABS.find((t) => t.id === tab)?.label || null,
+      assetClass: product?.cls === 'deriv' ? assetClassOf(inst.product_id, und, undOfUnd) : null,
+      routing: {
+        basis, basisLabel: ROUTING_BASES[basis] || basis, stored: Boolean(inst.routing_basis), convention: conv ? { view: conv.view, basis: conv.basis } : null,
+        text: routingText({ basis, view: inst.market_view, venue: inst.venue, venueCountry: inst.venue_country, jurisdiction: inst.jurisdiction, domicile: inst.domicile, underlying: und, family: inst.family, venueType: inst.venue_type, convention: conv }),
+      },
     };
   }
 
@@ -287,5 +349,5 @@ export function createInstruments(app) {
   }
   const removeFromWatchlist = (id, instrumentId) => db.run('DELETE FROM watchlist_items WHERE watchlist_id = ? AND instrument_id = ?', id, instrumentId);
 
-  return { get, require: requireInst, create, draft, update, list, ensureOption, findOption, optionDraft, support, toView, inUse, watchlists, createWatchlist, renameWatchlist, deleteWatchlist, addToWatchlist, removeFromWatchlist, isArrangement: (inst) => ARRANGEMENT_FAMILIES.has(inst.family) };
+  return { get, require: requireInst, classify, create, draft, update, list, ensureOption, findOption, optionDraft, support, toView, inUse, watchlists, createWatchlist, renameWatchlist, deleteWatchlist, addToWatchlist, removeFromWatchlist, isArrangement: (inst) => ARRANGEMENT_FAMILIES.has(inst.family) };
 }

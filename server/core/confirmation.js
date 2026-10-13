@@ -319,7 +319,8 @@ export function fillVariance(confirmed, actual, { filledAt = null } = {}) {
   const asPricedAtConfirmation = !later && confirmed.atConfirmation && n0(confirmed.atConfirmation.price) !== null && act.price !== null && Math.abs(confirmed.atConfirmation.price - act.price) < 1e-9;
   if (none) parts.push(share < 1 - 1e-9 ? `Partial fill of ${round(share * 100, 2)}% of the confirmed quantity, on the confirmed figures pro rata.` : 'Filled on the confirmed figures.');
   else {
-    if (exp.price === null && act.price !== null) parts.push('No fill price was displayed at confirmation because the leg had no executable price then; it filled when one became available.');
+    if (actual.model === 'next-nav') parts.push(`Dealt at the NAV of its dealing date, ${act.price}: a fund order is forward-priced, so the confirmation could only estimate the amounts from the last published NAV${exp.price !== null ? ` (${exp.price})` : ''}.`);
+    else if (exp.price === null && act.price !== null) parts.push('No fill price was displayed at confirmation because the leg had no executable price then; it filled when one became available.');
     else if (variance.price) {
       const side = actual.model === 'quoted-bid-ask' ? (BUY.has(actual.action) ? 'at the ask' : 'at the bid') : actual.model === 'stated-price' ? 'at the stated price' : actual.model === 'manual-mark' ? 'against the manual mark' : 'at the last price with the assumed spread';
       const when = later ? 'on a later matching cycle' : asPricedAtConfirmation ? 'as priced at confirmation, after the price moved between the preview displayed and the confirmation' : 'of a quote that arrived between the preview and the fill';
@@ -330,7 +331,8 @@ export function fillVariance(confirmed, actual, { filledAt = null } = {}) {
     if (variance.cash && !variance.price) parts.push(`Cash differs by ${variance.cash} ${ccy}.`);
     if (variance.settleDate) parts.push(`Settles ${act.settleDate}, not ${exp.settleDate} as confirmed, because the fill happened on a later trade date.`);
     parts.push(within ? `Within the confirmation tolerances (price ${tol.legPricePct}%, amounts ${tol.legAmountPct}%).`
-      : `Outside the confirmation tolerances (price ${tol.legPricePct}%, amounts ${tol.legAmountPct}%): the order had been confirmed as a working order and filled at the market when it became executable.`);
+      : actual.model === 'next-nav' ? `Outside the confirmation tolerances (price ${tol.legPricePct}%, amounts ${tol.legAmountPct}%), as expected of forward pricing: the amounts were confirmed on an estimate and the order deals at the NAV whatever it is.`
+        : `Outside the confirmation tolerances (price ${tol.legPricePct}%, amounts ${tol.legAmountPct}%): the order had been confirmed as a working order and filled at the market when it became executable.`);
   }
   return { basis: confirmed.basis, confirmed: exp, actual: act, variance, exact: none, within, tolerances: tol, reason: parts.join(' ') };
 }
