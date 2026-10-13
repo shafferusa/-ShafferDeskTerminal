@@ -11858,250 +11858,6 @@
     "restart"
    ]
   },
-  "B:common_stock:setup": {
-   "status": "passed",
-   "message": "",
-   "ms": 3572,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:54:23.863Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "setup",
-   "covers": []
-  },
-  "B:common_stock:open": {
-   "status": "passed",
-   "message": "",
-   "ms": 1701,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:54:23.863Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "open",
-   "covers": [
-    "open"
-   ]
-  },
-  "B:common_stock:settle-open": {
-   "status": "passed",
-   "message": "",
-   "ms": 747,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:54:23.863Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "settle-open",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "B:common_stock:quote-up": {
-   "status": "passed",
-   "message": "",
-   "ms": 819,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:54:23.863Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "quote-up",
-   "covers": []
-  },
-  "B:common_stock:increase": {
-   "status": "passed",
-   "message": "",
-   "ms": 1481,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:54:23.863Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "increase",
-   "covers": [
-    "increase"
-   ]
-  },
-  "B:common_stock:settle-increase": {
-   "status": "passed",
-   "message": "",
-   "ms": 734,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:54:23.863Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "settle-increase",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "B:common_stock:oversell": {
-   "status": "blocked",
-   "message": "The Account holds 300 and cannot sell 500; going short needs a securities borrow. Terminal: \"Sells from Long NFTW in this Account, which is long 300 at an average 50.357. 500 is more than it holds.\"",
-   "ms": 1199,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:54:23.863Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "oversell",
-   "covers": [
-    "reduce"
-   ]
-  },
-  "B:common_stock:dividend-recorded": {
-   "status": "passed",
-   "message": "",
-   "ms": 1216,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:54:23.863Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "dividend-recorded",
-   "covers": [
-    "dividend"
-   ]
-  },
-  "B:common_stock:dividend-paid": {
-   "status": "passed",
-   "message": "",
-   "ms": 750,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:54:23.863Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "dividend-paid",
-   "covers": [
-    "dividend"
-   ]
-  },
-  "B:common_stock:quote-up-2": {
-   "status": "passed",
-   "message": "",
-   "ms": 750,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:54:23.863Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "quote-up-2",
-   "covers": []
-  },
-  "B:common_stock:reduce": {
-   "status": "passed",
-   "message": "",
-   "ms": 1500,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:54:23.863Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "reduce",
-   "covers": [
-    "reduce"
-   ]
-  },
-  "B:common_stock:settle-reduce": {
-   "status": "passed",
-   "message": "",
-   "ms": 800,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:54:23.863Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "settle-reduce",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "B:common_stock:split-recorded": {
-   "status": "passed",
-   "message": "",
-   "ms": 1349,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:54:23.863Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "split-recorded",
-   "covers": [
-    "split"
-   ]
-  },
-  "B:common_stock:split-applied": {
-   "status": "passed",
-   "message": "",
-   "ms": 683,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:54:23.863Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "split-applied",
-   "covers": [
-    "split"
-   ]
-  },
-  "B:common_stock:quote-post-split": {
-   "status": "passed",
-   "message": "",
-   "ms": 702,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:54:23.863Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "quote-post-split",
-   "covers": []
-  },
-  "B:common_stock:close": {
-   "status": "passed",
-   "message": "",
-   "ms": 1598,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:54:23.863Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "close",
-   "covers": [
-    "close"
-   ]
-  },
-  "B:common_stock:settle-close": {
-   "status": "passed",
-   "message": "",
-   "ms": 770,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:54:23.863Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "settle-close",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "B:common_stock:restart": {
-   "status": "passed",
-   "message": "",
-   "ms": 4383,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:54:23.863Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "restart",
-   "covers": [
-    "restart"
-   ]
-  },
   "B:unsecured_loan:setup": {
    "status": "passed",
    "message": "",
@@ -13959,13 +13715,257 @@
    "covers": [
     "restart"
    ]
+  },
+  "B:common_stock:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 6063,
+   "commit": "130d1ec",
+   "at": "2026-10-13T17:02:57.352Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "setup",
+   "covers": []
+  },
+  "B:common_stock:open": {
+   "status": "passed",
+   "message": "",
+   "ms": 3234,
+   "commit": "130d1ec",
+   "at": "2026-10-13T17:02:57.352Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "open",
+   "covers": [
+    "open"
+   ]
+  },
+  "B:common_stock:settle-open": {
+   "status": "passed",
+   "message": "",
+   "ms": 848,
+   "commit": "130d1ec",
+   "at": "2026-10-13T17:02:57.352Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "settle-open",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:common_stock:quote-up": {
+   "status": "passed",
+   "message": "",
+   "ms": 1167,
+   "commit": "130d1ec",
+   "at": "2026-10-13T17:02:57.352Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "quote-up",
+   "covers": []
+  },
+  "B:common_stock:increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 2281,
+   "commit": "130d1ec",
+   "at": "2026-10-13T17:02:57.352Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "increase",
+   "covers": [
+    "increase"
+   ]
+  },
+  "B:common_stock:settle-increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 1036,
+   "commit": "130d1ec",
+   "at": "2026-10-13T17:02:57.352Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "settle-increase",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:common_stock:oversell": {
+   "status": "blocked",
+   "message": "The Account holds 300 and cannot sell 500; going short needs a securities borrow. Terminal: \"Sells from Long NFTW in this Account, which is long 300 at an average 50.357. 500 is more than it holds.\"",
+   "ms": 1711,
+   "commit": "130d1ec",
+   "at": "2026-10-13T17:02:57.352Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "oversell",
+   "covers": [
+    "reduce"
+   ]
+  },
+  "B:common_stock:dividend-recorded": {
+   "status": "passed",
+   "message": "",
+   "ms": 2574,
+   "commit": "130d1ec",
+   "at": "2026-10-13T17:02:57.352Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "dividend-recorded",
+   "covers": [
+    "dividend"
+   ]
+  },
+  "B:common_stock:dividend-paid": {
+   "status": "passed",
+   "message": "",
+   "ms": 1314,
+   "commit": "130d1ec",
+   "at": "2026-10-13T17:02:57.352Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "dividend-paid",
+   "covers": [
+    "dividend"
+   ]
+  },
+  "B:common_stock:quote-up-2": {
+   "status": "passed",
+   "message": "",
+   "ms": 1302,
+   "commit": "130d1ec",
+   "at": "2026-10-13T17:02:57.352Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "quote-up-2",
+   "covers": []
+  },
+  "B:common_stock:reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 2582,
+   "commit": "130d1ec",
+   "at": "2026-10-13T17:02:57.352Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "reduce",
+   "covers": [
+    "reduce"
+   ]
+  },
+  "B:common_stock:settle-reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 1874,
+   "commit": "130d1ec",
+   "at": "2026-10-13T17:02:57.352Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "settle-reduce",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:common_stock:split-recorded": {
+   "status": "passed",
+   "message": "",
+   "ms": 2446,
+   "commit": "130d1ec",
+   "at": "2026-10-13T17:02:57.352Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "split-recorded",
+   "covers": [
+    "split"
+   ]
+  },
+  "B:common_stock:split-applied": {
+   "status": "passed",
+   "message": "",
+   "ms": 1388,
+   "commit": "130d1ec",
+   "at": "2026-10-13T17:02:57.352Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "split-applied",
+   "covers": [
+    "split"
+   ]
+  },
+  "B:common_stock:quote-post-split": {
+   "status": "passed",
+   "message": "",
+   "ms": 1375,
+   "commit": "130d1ec",
+   "at": "2026-10-13T17:02:57.352Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "quote-post-split",
+   "covers": []
+  },
+  "B:common_stock:close": {
+   "status": "passed",
+   "message": "",
+   "ms": 2840,
+   "commit": "130d1ec",
+   "at": "2026-10-13T17:02:57.352Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "close",
+   "covers": [
+    "close"
+   ]
+  },
+  "B:common_stock:settle-close": {
+   "status": "passed",
+   "message": "",
+   "ms": 1498,
+   "commit": "130d1ec",
+   "at": "2026-10-13T17:02:57.352Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "settle-close",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:common_stock:restart": {
+   "status": "passed",
+   "message": "",
+   "ms": 5637,
+   "commit": "130d1ec",
+   "at": "2026-10-13T17:02:57.352Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "restart",
+   "covers": [
+    "restart"
+   ]
   }
  },
  "runs": {
   "common_stock": {
-   "at": "2026-10-13T16:54:23.863Z",
-   "commit": "62ecddf+changes",
-   "ms": 24759,
+   "at": "2026-10-13T17:02:57.352Z",
+   "commit": "130d1ec",
+   "ms": 41170,
    "family": "equity",
    "steps": 18,
    "ran": 18,
@@ -15046,5 +15046,5 @@
    }
   }
  },
- "updatedAt": "2026-10-13T17:02:16.015Z"
+ "updatedAt": "2026-10-13T17:02:57.352Z"
 }
