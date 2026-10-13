@@ -599,3 +599,5 @@ table.ledger.pv-legs td.amt .sub, table.ledger.pv-legs td.amt .was { white-space
   .coll-desk .coll-sentence, .coll-desk .coll-sentence.two { max-width: none; }
   .coll-desk .tablewrap { overflow: visible; }
 }
+/* A panel's heading, note and actions take more than one line on a phone instead of widening the page. */
+@media (max-width: 820px) { .panel > header { flex-wrap: wrap; row-gap: 6px; } .panel { min-width: 0; } }

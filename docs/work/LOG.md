@@ -100,3 +100,4 @@
 - 2026-10-13T16:50Z | c1 | +0.2 | carbon_credit passes at engine, API and browser
 - 2026-10-13T16:51Z | c1 | +0.2 | renewable_energy_certificate passes at engine, API and browser (c1 group complete)
 - 2026-10-13T16:52Z | b2 | +0.2 | subordinated_debt passes at engine, API and browser
+- 2026-10-13T16:54Z | l1 | +0.2 | revolving_credit_facility passes at engine, API and browser (loan family 9 of 9)

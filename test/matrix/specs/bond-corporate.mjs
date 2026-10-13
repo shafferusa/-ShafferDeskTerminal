@@ -1897,4 +1897,194 @@ const subordinatedDebt = {
   ],
 };
 
-export default [corporateBondIg, highYieldBond, eurobond, foreignMarketBond, corporateSukuk, floatingRateNote, zeroCouponBond, perpetualBond, subordinatedDebt];
+// ---------------------------------------------------------------------------------------------
+// covered_bond
+// ---------------------------------------------------------------------------------------------
+// A German mortgage Pfandbrief (a covered bond: the bank's obligation, secured on a cover pool of mortgages),
+// held by TREASURY as part of a euro Book's liquidity buffer. The Book reports in euro. 2.50% paid ANNUALLY on
+// 12 February, ACT/ACT (ICMA), listed in Frankfurt, T+2 on the TARGET calendar (instrument convention), pieces
+// of 1,000.
+//   - Treasury buys 5,000,000 on Monday 8 February 2027 for settlement on Wednesday 10 February, two days
+//     before the coupon: it pays 363 days of accrued interest and receives the full annual coupon on Friday.
+//   - It sells 2,000,000 on Friday 12 February: T+2 on TARGET is Tuesday 16 February. Monday 15 February is
+//     Presidents' Day: New York is closed (no end of day), the euro market is open and settlement runs through it.
+//   - It sells the rest on Wednesday 17 February.
+// Coupon periods: 12 Feb 2026 to 12 Feb 2027 is 365 days; 12 Feb 2027 to 12 Feb 2028 is 365 days. A coupon is 2.50 per 100.
+// One day on 5,000,000 is 342.4658; on 3,000,000, 205.4795. Commission: 0.4 basis point of clean principal.
+const coveredBond = {
+  productId: 'covered_bond',
+  title: 'Hanseatische Pfandbriefbank 2.50% mortgage Pfandbrief due 12 February 2032 (covered bond), held by Treasury in a euro Book: annual coupon, T+2 TARGET over Presidents\' Day',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account (Treasury)', 'Action', 'Face amount (a multiple of 1,000)'],
+    manualInputs: ['none: annual coupon on ACT/ACT and T+2 TARGET settlement follow from the registered terms and conventions'],
+    settlement: 'T+2 on the TARGET calendar (instrument convention, settlement lag 2); a US holiday does not move it; amounts in euro, the Book\'s reporting currency',
+    lifecycle: 'Daily accrual on ACT/ACT (annual); one coupon a year to the face settled before the coupon date; next coupon (on a weekend date, paid the next TARGET day) and maturity scheduled',
+    accounting: 'Owned by Treasury: the figures are Treasury\'s and the Book\'s, not the Account\'s; clean cost at average; accrued interest through Accrued income; coupon income separate; realized P&L on the sales',
+    collateral: 'None for a long position (the cover pool secures the issuer\'s obligation; nothing is posted by the holder)',
+  },
+  start: EST('2027-02-08'), // Monday
+  settlementCheck: { lag: 2, holidays: [] }, // Presidents' Day is not a TARGET holiday
+  book: {
+    name: 'Matrix covered bond', reportingCcy: 'EUR',
+    capital: [{ ccy: 'EUR', amount: 10_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'EUR', amount: 500_000 }] }, // the Account stays idle: Treasury trades
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.4 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'covered_bond', name: 'Hanseatische Pfandbriefbank AG 2.50% Hypothekenpfandbrief 12-Feb-2032', symbol: 'HANSPF-2.5-32', marketView: 'FOREIGN_CASH', venueType: 'exchange', venue: 'Frankfurt Stock Exchange', venueCountry: 'DE', issuer: 'Hanseatische Pfandbriefbank AG', domicile: 'DE', underlyingGeo: 'DE', tradingCcy: 'EUR', multiplier: 0.01,
+      conventions: { settleLag: 2 },
+      terms: { couponType: 'fixed', couponRate: 0.025, frequency: 1, maturity: '2032-02-12', issueDate: '2022-02-12', dayCount: 'ACT/ACT', redemption: 100, minDenomination: 1_000, seniority: 'Covered (mortgage Pfandbrief, cover pool)' } },
+  },
+  quotes: { main: { bid: 98.8, ask: 98.9, last: 98.85, bidSize: 50_000_000, askSize: 50_000_000 } },
+  expectAtStart: { ...startState(500_000, 9_500_000), cash: { account: { EUR: idle(500_000) }, treasury: { EUR: idle(9_500_000) } } },
+  steps: [
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 5_000_000, as: 'lot', owner: 'treasury',
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 5_000_000, estimate: 98.9, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2027-02-10', calendar: 'TARGET',
+            gross: 4_945_000, // 5,000,000 x 98.90 / 100
+            accrued: 124_315.07, // settles 10 Feb, 363 of 365 days: 125,000 x 363/365 = 124,315.068
+            cash: -5_069_315.07, fees: 197.8 }], // 0.4 bp of 4,945,000
+          cash: { EUR: { purchases: 5_069_315.07, fees: 197.8, required: 5_069_512.87, available: 9_500_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 5_000_000, avgPrice: 98.9, fills: [{ qty: 5_000_000, price: 98.9, model: 'quoted-bid-ask', settleDate: '2027-02-10', source: 'Test fixture', status: 'simulated' }] }] },
+        events: [{ type: 'strategy.submitted', owner: 'treasury' }, { type: 'trade.fill', summary: 'Bought 5,000,000 HANSPF-2.5-32 @ 98.90 EUR', owner: 'treasury', date: '2027-02-08' }],
+        cash: { treasury: { EUR: { settled: 9_500_000, unsettled: -5_069_512.87, availableToTrade: 4_430_487.13 } }, account: { EUR: { settled: 500_000, availableToTrade: 500_000 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'treasury', direction: 'long', qty: 5_000_000, avgCost: 98.9, cost: 4_945_000, price: 98.85,
+          value: 4_942_500, unrealized: -2_500, accrued: 124_315.07, priceSource: 'Test fixture' }], // 5,000,000 x 98.85%
+        holdings: { main: { long: 5_000_000, short: 0, net: 5_000_000 } },
+        pending: [{ instrument: 'main', owner: 'treasury', dueDate: '2027-02-10', amount: -5_069_512.87, ccy: 'EUR', into: 'cash' }],
+        // 12 Feb 2027 is a Friday; 12 Feb 2032 is a Thursday.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-02-12', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2032-02-12', status: 'pending' }],
+        pnl: {
+          account: { realized: 0, couponInterest: 0, commissions: 0, unrealized: 0, total: 0 },
+          book: { realized: 0, couponInterest: 0, commissions: -197.8, fees: 0, borrowFunding: 0, unrealized: -2_500, total: -2_697.80 },
+        },
+        nav: { account: 500_000, treasury: 9_497_302.20, book: 9_997_302.20 },
+        balance: {
+          account: { cash: 500_000, assets: 500_000, liabilities: 0, netAssets: 500_000 },
+          book: { cash: 10_000_000, accruedIncome: 124_315.07, positions: 4_942_500, payable: 5_069_512.87, assets: 15_066_815.07, liabilities: 5_069_512.87, netAssets: 9_997_302.20 },
+        },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EST('2027-02-10'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 5,069,512.87 EUR from settled cash', cash: { EUR: -5_069_512.87 }, owner: 'treasury', date: '2027-02-10' }],
+        cash: { treasury: { EUR: { settled: 4_430_487.13, unsettled: 0, availableToTrade: 4_430_487.13 } } },
+        pending: [],
+        balance: { book: { cash: 4_930_487.13, payable: null, assets: 9_997_302.20, liabilities: 0 } }, // 4,430,487.13 + the Account's 500,000
+      },
+    },
+    { id: 'treasury-screens', covers: 'open', action: 'owner_screens', owner: 'treasury', expect: {} },
+    {
+      // Friday 12 February: the annual coupon on 5,000,000 settled before it: 125,000.00. On the books 124,315.07: 684.93 more (two days).
+      id: 'coupon', covers: 'coupon', action: 'clock', to: EST('2027-02-12'),
+      expect: {
+        events: [
+          { type: 'bond.coupon', summary: 'Coupon received on 5,000,000 HANSPF-2.5-32: 125,000.00 EUR', cash: { EUR: 125_000 }, owner: 'treasury', date: '2027-02-12' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on HANSPF-2.5-32: 684.93 EUR' },
+        ],
+        cash: { treasury: { EUR: { settled: 4_555_487.13, availableToTrade: 4_555_487.13 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'treasury', qty: 5_000_000, accrued: 0 }],
+        // 12 Feb 2028 is a Saturday: the next coupon is due Monday 14 Feb 2028.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2028-02-14', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2032-02-12', status: 'pending' }],
+        pnl: { book: { couponInterest: 684.93, total: -2_012.87 } },
+        nav: { treasury: 9_497_987.13, book: 9_997_987.13 },
+        balance: { book: { cash: 5_055_487.13, accruedIncome: null, assets: 9_997_987.13, netAssets: 9_997_987.13 } },
+      },
+    },
+    {
+      id: 'quote-up', action: 'quote', instrument: 'main', quote: { bid: 99.1, ask: 99.2, last: 99.15, bidSize: 50_000_000, askSize: 50_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'treasury', qty: 5_000_000, price: 99.15, value: 4_957_500, unrealized: 12_500 }], // 5,000,000 x 99.15% - 4,945,000
+        pnl: { book: { unrealized: 12_500, total: 12_987.13 } },
+        nav: { treasury: 9_512_987.13, book: 10_012_987.13 },
+        balance: { book: { positions: 4_957_500, assets: 10_012_987.13, netAssets: 10_012_987.13 } },
+      },
+    },
+    {
+      // Friday 12 Feb: T+2 on TARGET is Tuesday 16 Feb (Monday 15 Feb, Presidents' Day, is a TARGET business day).
+      id: 'reduce', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 2_000_000, from: 'lot', owner: 'treasury',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 2_000_000, estimate: 99.1, settleDate: '2027-02-16', calendar: 'TARGET',
+          gross: 1_982_000, // 2,000,000 x 99.10 / 100
+          accrued: 547.95, // settles 16 Feb, 4 of 365 days: 50,000 x 4/365 = 547.945
+          cash: 1_982_547.95, fees: 79.28 }] }, // 0.4 bp of 1,982,000
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 2_000_000, avgPrice: 99.1 }] },
+        // Realized 1,982,000 - 2,000,000 x 98.90% = 4,000.
+        events: [{ type: 'strategy.legs_added', owner: 'treasury' }, { type: 'trade.fill', summary: 'Sold 2,000,000 HANSPF-2.5-32 @ 99.10 EUR (realized 4,000.00 EUR)', owner: 'treasury' }],
+        cash: { treasury: { EUR: { settled: 4_555_487.13, unsettled: 1_982_468.67, availableToTrade: 6_537_955.80 } } }, // 1,982,547.95 - 79.28
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'treasury', qty: 3_000_000, cost: 2_967_000, avgCost: 98.9, price: 99.15, value: 2_974_500, unrealized: 7_500,
+          accrued: -547.95 }], // the interest sold, booked ahead of the four days it covers
+        holdings: { main: { long: 3_000_000, short: 0, net: 3_000_000 } },
+        pending: [{ instrument: 'main', owner: 'treasury', dueDate: '2027-02-16', amount: 1_982_468.67, ccy: 'EUR', into: 'cash' }],
+        pnl: { book: { realized: 4_000, commissions: -277.08, unrealized: 7_500, total: 11_907.85 } }, // 197.80 + 79.28
+        nav: { treasury: 9_511_907.85, book: 10_011_907.85 },
+        balance: { book: { cash: 5_055_487.13, receivable: 1_982_468.67, accruedIncome: -547.95, positions: 2_974_500, assets: 10_011_907.85, liabilities: 0, netAssets: 10_011_907.85 } },
+      },
+    },
+    {
+      // Tuesday 16 Feb, after the US holiday: the sale settles on the euro date. The only end of day since Friday's trade is Friday's
+      // own (New York was closed on Monday): 5,000,000 settled, 0 days into the period; less 547.95 sold: on the books already.
+      id: 'settle-reduce', covers: ['settlement', 'market holiday'], action: 'clock', to: EST('2027-02-16'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 1,982,468.67 EUR into settled cash', cash: { EUR: 1_982_468.67 }, owner: 'treasury' }],
+        cash: { treasury: { EUR: { settled: 6_537_955.80, unsettled: 0, availableToTrade: 6_537_955.80 } } },
+        pending: [],
+        balance: { book: { cash: 7_037_955.80, receivable: null, assets: 10_011_907.85 } },
+      },
+    },
+    {
+      // End of day 16 Feb: 3,000,000 settled, 4 days: 75,000 x 4/365 = 821.92. On the books -547.95: income 1,369.87 (four days on 5,000,000).
+      id: 'accrue', covers: 'accrual', action: 'clock', to: EST('2027-02-17'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on HANSPF-2.5-32: 1,369.87 EUR', owner: 'treasury' }],
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'treasury', qty: 3_000_000, accrued: 821.92 }],
+        pnl: { book: { couponInterest: 2_054.80, total: 13_277.72 } },
+        nav: { treasury: 9_513_277.72, book: 10_013_277.72 },
+        balance: { book: { accruedIncome: 821.92, assets: 10_013_277.72, netAssets: 10_013_277.72 } },
+      },
+    },
+    {
+      id: 'close', covers: 'close', action: 'close', lot: 'lot', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 3_000_000, estimate: 99.1, settleDate: '2027-02-19', calendar: 'TARGET',
+          gross: 2_973_000, // 3,000,000 x 99.10 / 100
+          accrued: 1_438.36, // settles Friday 19 Feb, 7 days: 75,000 x 7/365 = 1,438.356
+          cash: 2_974_438.36, fees: 118.92 }] }, // 0.4 bp of 2,973,000
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 3_000_000, avgPrice: 99.1 }] },
+        // Realized 2,973,000 - 2,967,000 = 6,000. Interest sold 1,438.36 against 821.92 on the books: 616.44 more (three days on 3,000,000).
+        events: [
+          { type: 'strategy.legs_added', owner: 'treasury' },
+          { type: 'trade.fill', summary: 'Sold 3,000,000 HANSPF-2.5-32 @ 99.10 EUR (realized 6,000.00 EUR)', owner: 'treasury' },
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of HANSPF-2.5-32: 616.44 EUR' },
+        ],
+        cash: { treasury: { EUR: { settled: 6_537_955.80, unsettled: 2_974_319.44, availableToTrade: 9_512_275.24 } } }, // 2,974,438.36 - 118.92
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', owner: 'treasury', dueDate: '2027-02-19', amount: 2_974_319.44, ccy: 'EUR', into: 'cash' }],
+        lifecycle: [],
+        // Interest in all: 125,000 coupon + 547.95 + 1,438.36 sold - 124,315.07 bought = 2,671.24.
+        pnl: { book: { realized: 10_000, couponInterest: 2_671.24, commissions: -396, unrealized: 0, total: 12_275.24 }, account: { total: 0 } },
+        nav: { account: 500_000, treasury: 9_512_275.24, book: 10_012_275.24 },
+        balance: { book: { cash: 7_037_955.80, receivable: 2_974_319.44, positions: null, accruedIncome: null, assets: 10_012_275.24, liabilities: 0, netAssets: 10_012_275.24 } },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: EST('2027-02-19'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 2,974,319.44 EUR into settled cash', cash: { EUR: 2_974_319.44 }, owner: 'treasury' }],
+        cash: { treasury: { EUR: { settled: 9_512_275.24, unsettled: 0, availableToTrade: 9_512_275.24 } }, account: { EUR: { settled: 500_000 } } },
+        pending: [],
+        balance: { book: { cash: 10_012_275.24, receivable: null, assets: 10_012_275.24, liabilities: 0, netAssets: 10_012_275.24 } },
+      },
+    },
+    { id: 'treasury-screens-at-close', covers: 'close', action: 'owner_screens', owner: 'treasury', expect: {} },
+  ],
+};
+
+export default [corporateBondIg, highYieldBond, eurobond, foreignMarketBond, corporateSukuk, floatingRateNote, zeroCouponBond, perpetualBond, subordinatedDebt, coveredBond];
