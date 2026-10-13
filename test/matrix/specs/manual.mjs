@@ -179,7 +179,7 @@ const privateEquity = {
     {
       // A quarter of the interest is sold to a secondary buyer at 3,200,000 for the whole interest (800,000 for the quarter);
       // the transfer closes on Friday 13 November 2026. The buyer takes over a quarter of the commitment and of what was called.
-      id: 'secondary-sale', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 0.25, from: 'interest', order: { statedPrice: 3_200_000, settle: { date: '2026-11-13' } },
+      id: 'secondary-sale', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 0.25, from: 'interest', order: { statedPrice: 3_200_000, settle: { date: '2026-11-13' } }, settlementCheck: false, // the transfer date is stated on the ticket
       expect: {
         preview: { blocking: 0, legs: [{ action: 'sell', qty: 0.25, estimate: 3_200_000, model: 'stated-price', settleDate: '2026-11-13', cash: 800_000, fees: 0 }] }, // 0.25 x 3,200,000
         result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 0.25, avgPrice: 3_200_000 }] },

@@ -51,6 +51,13 @@ const cashOf = (settled, { unsettled = 0, margin = 0, restricted = 0, trade, wit
   availableToWithdraw: withdraw ?? Math.round((settled + Math.min(unsettled, 0)) * 100) / 100,
 });
 
+/** The collateral row of a position under position-level terms (Treasury, Collateral). */
+const otcRow = (lot, qty, iaRequired, extra) => ({
+  instrument: 'main', lot, owner: 'account', qty, basis: 'position', agreement: null, flagged: false,
+  iaRequired, iaPosted: iaRequired, iaCcy: 'USD', iaStatus: 'ok', postedBy: 'account',
+  vmPosted: 0, vmHeld: 0, vmCcy: 'USD', vmExposure: null, vmStatus: 'not_valued_yet', vmPending: 0, ...extra,
+});
+
 // ---------------------------------------------------------------------------------------------
 // fx_forward
 // ---------------------------------------------------------------------------------------------
@@ -64,6 +71,8 @@ const cashOf = (settled, { unsettled = 0, margin = 0, restricted = 0, trade, wit
 // The Account is funded with 200,000 USD only: on the value date the 1,085,000.00 USD it must pay is not
 // there, the settlement fails visibly, and goes through once Treasury funds the Account.
 // Commission: 0.00002 USD per EUR of quantity (20.00 USD a million), paid on the value date.
+const OTC_BUY = (x) => otcRow('buy', 1_000_000, 21_700, x);
+const OTC_SELL = (x) => otcRow('sell', -400_000, 8_696, x);
 const fxForward = {
   productId: 'fx_forward',
   title: 'EUR/USD deliverable forward, bought and sold for value 22 June 2026, position-level collateral, held across Juneteenth, unfunded then funded on the value date',
@@ -120,7 +129,7 @@ const fxForward = {
         events: [
           { type: 'strategy.submitted' },
           { type: 'trade.fill', summary: 'Bought forward 1,000,000 EURUSD-F0622 @ 1.085 for 2026-06-22', owner: 'account', date: '2026-06-01' },
-          { type: /collateral/, summary: '21,700.00 USD (independent amount, 2.00% of 1,085,000.00 USD notional)', cash: { USD: -21_700 }, owner: 'account' },
+          { type: 'forward.collateral', summary: 'Collateral posted on EUR/USD outright forward, value 22 June 2026 under its position-level terms: 21,700.00 USD (independent amount, 2.00% of 1,085,000.00 USD notional)', cash: { USD: -21_700 }, owner: 'account' },
         ],
         cash: { account: { USD: cashOf(178_300, { unsettled: -20, margin: 21_700 }) } }, // 200,000 - 21,700
         positions: [{ instrument: 'main', lot: 'buy', owner: 'account', direction: 'long', qty: 1_000_000, avgCost: 1.0850, cost: 0, price: 1.0850, value: 0, unrealized: 0, notional: 1_085_000, margin: 21_700 }],
@@ -130,6 +139,63 @@ const fxForward = {
         pnl: { account: { realized: 0, commissions: -20, fees: 0, unrealized: 0, total: -20 } },
         nav: { account: 199_980, book: 2_999_980 },
         balance: { account: { cash: 178_300, margin: 21_700, payable: 20, assets: 200_000, liabilities: 20, netAssets: 199_980 } },
+        otc: [OTC_BUY({ mark: 1.0850, markValue: 0 })],
+      },
+    },
+    {
+      // 400,000 x 1.0870 = 434,800.00 USD notional; independent amount 2% = 8,696.00; commission 400,000 x 0.00002 = 8.00.
+      // Marked at 1.0850: -400,000 x (1.0850 - 1.0870) = +800.00.
+      id: 'open-sell', covers: ['open short', 'collateral'], action: 'ticket', instrument: 'main', side: 'sell', qty: 400_000, as: 'sell', order: { statedPrice: 1.0870 },
+      expect: {
+        preview: { blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 400_000, estimate: 1.0870, model: 'stated-price', settleDate: '2026-06-22', cash: 0, fees: 8 }],
+          cash: { USD: { purchases: 0, fees: 8, margin: 8_696, required: 8_704, available: 178_280, shortfall: 0 } } }, // available: settled less the 20.00 owed
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 400_000, avgPrice: 1.0870 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Sold forward 400,000 EURUSD-F0622 @ 1.087 for 2026-06-22', owner: 'account', date: '2026-06-01' },
+          { type: 'forward.collateral', summary: '8,696.00 USD (independent amount, 2.00% of 434,800.00 USD notional)', cash: { USD: -8_696 }, owner: 'account' },
+        ],
+        cash: { account: { USD: cashOf(169_604, { unsettled: -28, margin: 30_396 }) } }, // 178,300 - 8,696; 21,700 + 8,696
+        positions: [
+          { instrument: 'main', lot: 'buy', owner: 'account', direction: 'long', qty: 1_000_000, avgCost: 1.0850, cost: 0, price: 1.0850, value: 0, unrealized: 0, notional: 1_085_000, margin: 21_700 },
+          { instrument: 'main', lot: 'sell', owner: 'account', direction: 'short', qty: -400_000, avgCost: 1.0870, cost: 0, price: 1.0850, value: 800, unrealized: 800, notional: 434_800, margin: 8_696 },
+        ],
+        holdings: { main: { long: 1_000_000, short: 400_000, net: 600_000 } },
+        pending: [
+          { instrument: 'main', lot: 'buy', owner: 'account', dueDate: '2026-06-22', amount: -20, ccy: 'USD', into: 'cash' },
+          { instrument: 'main', lot: 'sell', owner: 'account', dueDate: '2026-06-22', amount: -8, ccy: 'USD', into: 'cash' },
+        ],
+        lifecycle: [{ type: 'forward.maturity', instrument: 'main', dueDate: '2026-06-22', status: 'pending' }, { type: 'forward.maturity', instrument: 'main', dueDate: '2026-06-22', status: 'pending' }],
+        pnl: { account: { commissions: -28, unrealized: 800, total: 772 } },
+        nav: { account: 200_772, book: 3_000_772 }, // 200,000 - 28 + 800
+        balance: { account: { cash: 169_604, margin: 30_396, positions: 800, payable: 28, assets: 200_800, liabilities: 28, netAssets: 200_772 } },
+        otc: [OTC_BUY({ mark: 1.0850, markValue: 0 }), OTC_SELL({ mark: 1.0850, markValue: 800 })],
+      },
+    },
+    {
+      // The dealer's indication moves to 1.0900: long 1,000,000 x (1.0900 - 1.0850) = 5,000.00; short -400,000 x (1.0900 - 1.0870) = -1,200.00.
+      id: 'mark-up', covers: 'mark', action: 'quote', instrument: 'main', quote: { bid: 1.0898, ask: 1.0902, last: 1.0900, bidSize: 10_000_000, askSize: 10_000_000 },
+      expect: {
+        positions: [
+          { instrument: 'main', lot: 'buy', owner: 'account', direction: 'long', qty: 1_000_000, avgCost: 1.0850, cost: 0, price: 1.0900, value: 5_000, unrealized: 5_000, notional: 1_085_000, margin: 21_700 },
+          { instrument: 'main', lot: 'sell', owner: 'account', direction: 'short', qty: -400_000, avgCost: 1.0870, cost: 0, price: 1.0900, value: -1_200, unrealized: -1_200, notional: 434_800, margin: 8_696 },
+        ],
+        pnl: { account: { unrealized: 3_800, total: 3_772 } }, // 5,000 - 1,200 - 28
+        nav: { account: 203_772, book: 3_003_772 },
+        balance: { account: { positions: 3_800, assets: 203_800, netAssets: 203_772 } },
+        otc: [OTC_BUY({ mark: 1.0900, markValue: 5_000 }), OTC_SELL({ mark: 1.0900, markValue: -1_200 })],
+      },
+    },
+    {
+      // End of day: each position is its own netting set. The long is worth +5,000.00, above the threshold of 0 and not
+      // below the minimum transfer of 2,000: the dealer posts 5,000.00, held as restricted cash against a liability.
+      // The short is worth -1,200.00: posting 1,200.00 would be below the minimum transfer, so nothing moves.
+      id: 'variation-margin', covers: ['variation margin', 'collateral'], action: 'clock', to: EOD('2026-06-01'),
+      expect: {
+        events: [{ type: 'forward.collateral', cash: { USD: 5_000 }, owner: 'account', date: '2026-06-01' }],
+        cash: { account: { USD: cashOf(169_604, { unsettled: -28, margin: 30_396, restricted: 5_000 }) } },
+        otc: [OTC_BUY({ mark: 1.0900, markValue: 5_000, vmHeld: 5_000, vmExposure: 5_000, vmStatus: 'ok' }), OTC_SELL({ mark: 1.0900, markValue: -1_200, vmExposure: -1_200, vmStatus: 'ok' })],
       },
     },
   ],
