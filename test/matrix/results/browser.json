@@ -11476,388 +11476,6 @@
    "step": "setup",
    "covers": []
   },
-  "B:equity_index_future:setup": {
-   "status": "passed",
-   "message": "",
-   "ms": 9159,
-   "commit": "bd4b571+changes",
-   "at": "2026-10-13T16:48:01.482Z",
-   "product": "equity_index_future",
-   "template": null,
-   "family": "future",
-   "step": "setup",
-   "covers": []
-  },
-  "B:equity_index_future:open": {
-   "status": "passed",
-   "message": "",
-   "ms": 2889,
-   "commit": "bd4b571+changes",
-   "at": "2026-10-13T16:48:01.482Z",
-   "product": "equity_index_future",
-   "template": null,
-   "family": "future",
-   "step": "open",
-   "covers": [
-    "open",
-    "initial margin"
-   ]
-  },
-  "B:equity_index_future:order-beyond-margin": {
-   "status": "blocked",
-   "message": "Initial margin for 10 more contracts is not covered by the Account's free cash. It is refused, not funded. Terminal: \"Alpha is short 8,031.50 USD: the package needs 220,022.50 USD (purchases 0.00 USD, fees 22.50 USD, margin and collateral 220,000.00 USD, reserved 0.00 USD) and 211,991.00 USD is available. Add Treasury funding or a borrowing leg, convert currency, or reduce the size.\"",
-   "ms": 2461,
-   "commit": "bd4b571+changes",
-   "at": "2026-10-13T16:48:01.482Z",
-   "product": "equity_index_future",
-   "template": null,
-   "family": "future",
-   "step": "order-beyond-margin",
-   "covers": [
-    "margin shortfall"
-   ]
-  },
-  "B:equity_index_future:withdraw-posted-margin": {
-   "status": "blocked",
-   "message": "Margin posted is not available to withdraw. Terminal: \"Alpha has 211,991.00 USD of settled USD available; 250,000.00 USD requested.\"",
-   "ms": 1852,
-   "commit": "bd4b571+changes",
-   "at": "2026-10-13T16:48:01.482Z",
-   "product": "equity_index_future",
-   "template": null,
-   "family": "future",
-   "step": "withdraw-posted-margin",
-   "covers": [
-    "margin not spendable"
-   ]
-  },
-  "B:equity_index_future:day-1-variation": {
-   "status": "passed",
-   "message": "",
-   "ms": 1369,
-   "commit": "bd4b571+changes",
-   "at": "2026-10-13T16:48:01.482Z",
-   "product": "equity_index_future",
-   "template": null,
-   "family": "future",
-   "step": "day-1-variation",
-   "covers": [
-    "variation margin"
-   ]
-  },
-  "B:equity_index_future:tuesday": {
-   "status": "passed",
-   "message": "",
-   "ms": 1205,
-   "commit": "bd4b571+changes",
-   "at": "2026-10-13T16:48:01.482Z",
-   "product": "equity_index_future",
-   "template": null,
-   "family": "future",
-   "step": "tuesday",
-   "covers": []
-  },
-  "B:equity_index_future:quote-down": {
-   "status": "passed",
-   "message": "",
-   "ms": 1186,
-   "commit": "bd4b571+changes",
-   "at": "2026-10-13T16:48:01.482Z",
-   "product": "equity_index_future",
-   "template": null,
-   "family": "future",
-   "step": "quote-down",
-   "covers": []
-  },
-  "B:equity_index_future:increase": {
-   "status": "passed",
-   "message": "",
-   "ms": 1955,
-   "commit": "bd4b571+changes",
-   "at": "2026-10-13T16:48:01.482Z",
-   "product": "equity_index_future",
-   "template": null,
-   "family": "future",
-   "step": "increase",
-   "covers": [
-    "increase"
-   ]
-  },
-  "B:equity_index_future:day-2-variation": {
-   "status": "passed",
-   "message": "",
-   "ms": 1085,
-   "commit": "bd4b571+changes",
-   "at": "2026-10-13T16:48:01.482Z",
-   "product": "equity_index_future",
-   "template": null,
-   "family": "future",
-   "step": "day-2-variation",
-   "covers": [
-    "variation margin"
-   ]
-  },
-  "B:equity_index_future:wednesday": {
-   "status": "passed",
-   "message": "",
-   "ms": 879,
-   "commit": "bd4b571+changes",
-   "at": "2026-10-13T16:48:01.482Z",
-   "product": "equity_index_future",
-   "template": null,
-   "family": "future",
-   "step": "wednesday",
-   "covers": []
-  },
-  "B:equity_index_future:quote-up": {
-   "status": "passed",
-   "message": "",
-   "ms": 816,
-   "commit": "bd4b571+changes",
-   "at": "2026-10-13T16:48:01.482Z",
-   "product": "equity_index_future",
-   "template": null,
-   "family": "future",
-   "step": "quote-up",
-   "covers": []
-  },
-  "B:equity_index_future:reduce": {
-   "status": "passed",
-   "message": "",
-   "ms": 1284,
-   "commit": "bd4b571+changes",
-   "at": "2026-10-13T16:48:01.482Z",
-   "product": "equity_index_future",
-   "template": null,
-   "family": "future",
-   "step": "reduce",
-   "covers": [
-    "reduce",
-    "margin release"
-   ]
-  },
-  "B:equity_index_future:open-short": {
-   "status": "passed",
-   "message": "",
-   "ms": 1652,
-   "commit": "bd4b571+changes",
-   "at": "2026-10-13T16:48:01.482Z",
-   "product": "equity_index_future",
-   "template": null,
-   "family": "future",
-   "step": "open-short",
-   "covers": [
-    "open short",
-    "gross holdings"
-   ]
-  },
-  "B:equity_index_future:day-3-variation": {
-   "status": "passed",
-   "message": "",
-   "ms": 898,
-   "commit": "bd4b571+changes",
-   "at": "2026-10-13T16:48:01.482Z",
-   "product": "equity_index_future",
-   "template": null,
-   "family": "future",
-   "step": "day-3-variation",
-   "covers": [
-    "variation margin"
-   ]
-  },
-  "B:equity_index_future:thursday": {
-   "status": "passed",
-   "message": "",
-   "ms": 1083,
-   "commit": "bd4b571+changes",
-   "at": "2026-10-13T16:48:01.482Z",
-   "product": "equity_index_future",
-   "template": null,
-   "family": "future",
-   "step": "thursday",
-   "covers": []
-  },
-  "B:equity_index_future:quote-down-2": {
-   "status": "passed",
-   "message": "",
-   "ms": 1492,
-   "commit": "bd4b571+changes",
-   "at": "2026-10-13T16:48:01.482Z",
-   "product": "equity_index_future",
-   "template": null,
-   "family": "future",
-   "step": "quote-down-2",
-   "covers": []
-  },
-  "B:equity_index_future:close-short": {
-   "status": "passed",
-   "message": "",
-   "ms": 2342,
-   "commit": "bd4b571+changes",
-   "at": "2026-10-13T16:48:01.482Z",
-   "product": "equity_index_future",
-   "template": null,
-   "family": "future",
-   "step": "close-short",
-   "covers": [
-    "close short",
-    "margin release"
-   ]
-  },
-  "B:equity_index_future:roll": {
-   "status": "passed",
-   "message": "",
-   "ms": 2734,
-   "commit": "bd4b571+changes",
-   "at": "2026-10-13T16:48:01.482Z",
-   "product": "equity_index_future",
-   "template": null,
-   "family": "future",
-   "step": "roll",
-   "covers": [
-    "roll"
-   ]
-  },
-  "B:equity_index_future:open-to-expiry": {
-   "status": "passed",
-   "message": "",
-   "ms": 3321,
-   "commit": "bd4b571+changes",
-   "at": "2026-10-13T16:48:01.482Z",
-   "product": "equity_index_future",
-   "template": null,
-   "family": "future",
-   "step": "open-to-expiry",
-   "covers": [
-    "open"
-   ]
-  },
-  "B:equity_index_future:day-4-variation": {
-   "status": "passed",
-   "message": "",
-   "ms": 1410,
-   "commit": "bd4b571+changes",
-   "at": "2026-10-13T16:48:01.482Z",
-   "product": "equity_index_future",
-   "template": null,
-   "family": "future",
-   "step": "day-4-variation",
-   "covers": [
-    "variation margin"
-   ]
-  },
-  "B:equity_index_future:last-trading-day": {
-   "status": "passed",
-   "message": "",
-   "ms": 1436,
-   "commit": "bd4b571+changes",
-   "at": "2026-10-13T16:48:01.482Z",
-   "product": "equity_index_future",
-   "template": null,
-   "family": "future",
-   "step": "last-trading-day",
-   "covers": [
-    "final settlement"
-   ]
-  },
-  "B:equity_index_future:june-quote": {
-   "status": "passed",
-   "message": "",
-   "ms": 1696,
-   "commit": "bd4b571+changes",
-   "at": "2026-10-13T16:48:01.482Z",
-   "product": "equity_index_future",
-   "template": null,
-   "family": "future",
-   "step": "june-quote",
-   "covers": []
-  },
-  "B:equity_index_future:final-settlement-price": {
-   "status": "passed",
-   "message": "",
-   "ms": 2389,
-   "commit": "bd4b571+changes",
-   "at": "2026-10-13T16:48:01.482Z",
-   "product": "equity_index_future",
-   "template": null,
-   "family": "future",
-   "step": "final-settlement-price",
-   "covers": [
-    "final settlement"
-   ]
-  },
-  "B:equity_index_future:expiry-cash-settlement": {
-   "status": "passed",
-   "message": "",
-   "ms": 1864,
-   "commit": "bd4b571+changes",
-   "at": "2026-10-13T16:48:01.482Z",
-   "product": "equity_index_future",
-   "template": null,
-   "family": "future",
-   "step": "expiry-cash-settlement",
-   "covers": [
-    "final settlement",
-    "expiry",
-    "variation margin",
-    "margin release"
-   ]
-  },
-  "B:equity_index_future:monday": {
-   "status": "passed",
-   "message": "",
-   "ms": 1765,
-   "commit": "bd4b571+changes",
-   "at": "2026-10-13T16:48:01.482Z",
-   "product": "equity_index_future",
-   "template": null,
-   "family": "future",
-   "step": "monday",
-   "covers": []
-  },
-  "B:equity_index_future:trade-after-expiry": {
-   "status": "blocked",
-   "message": "The March contract's last trading day was 20 March 2026. Terminal: \"Leg 1: M5H6 expired on 2026-03-20.\"",
-   "ms": 2770,
-   "commit": "bd4b571+changes",
-   "at": "2026-10-13T16:48:01.482Z",
-   "product": "equity_index_future",
-   "template": null,
-   "family": "future",
-   "step": "trade-after-expiry",
-   "covers": [
-    "expired contract"
-   ]
-  },
-  "B:equity_index_future:close": {
-   "status": "passed",
-   "message": "",
-   "ms": 2747,
-   "commit": "bd4b571+changes",
-   "at": "2026-10-13T16:48:01.482Z",
-   "product": "equity_index_future",
-   "template": null,
-   "family": "future",
-   "step": "close",
-   "covers": [
-    "close",
-    "margin release"
-   ]
-  },
-  "B:equity_index_future:restart": {
-   "status": "passed",
-   "message": "",
-   "ms": 5319,
-   "commit": "bd4b571+changes",
-   "at": "2026-10-13T16:48:01.482Z",
-   "product": "equity_index_future",
-   "template": null,
-   "family": "future",
-   "step": "restart",
-   "covers": [
-    "restart"
-   ]
-  },
   "B:unsecured_loan:setup": {
    "status": "passed",
    "message": "",
@@ -13959,6 +13577,388 @@
    "covers": [
     "restart"
    ]
+  },
+  "B:equity_index_future:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 7009,
+   "commit": "0e502fd",
+   "at": "2026-10-13T17:03:53.260Z",
+   "product": "equity_index_future",
+   "template": null,
+   "family": "future",
+   "step": "setup",
+   "covers": []
+  },
+  "B:equity_index_future:open": {
+   "status": "passed",
+   "message": "",
+   "ms": 1967,
+   "commit": "0e502fd",
+   "at": "2026-10-13T17:03:53.260Z",
+   "product": "equity_index_future",
+   "template": null,
+   "family": "future",
+   "step": "open",
+   "covers": [
+    "open",
+    "initial margin"
+   ]
+  },
+  "B:equity_index_future:order-beyond-margin": {
+   "status": "blocked",
+   "message": "Initial margin for 10 more contracts is not covered by the Account's free cash. It is refused, not funded. Terminal: \"Alpha is short 8,031.50 USD: the package needs 220,022.50 USD (purchases 0.00 USD, fees 22.50 USD, margin and collateral 220,000.00 USD, reserved 0.00 USD) and 211,991.00 USD is available. Add Treasury funding or a borrowing leg, convert currency, or reduce the size.\"",
+   "ms": 3353,
+   "commit": "0e502fd",
+   "at": "2026-10-13T17:03:53.260Z",
+   "product": "equity_index_future",
+   "template": null,
+   "family": "future",
+   "step": "order-beyond-margin",
+   "covers": [
+    "margin shortfall"
+   ]
+  },
+  "B:equity_index_future:withdraw-posted-margin": {
+   "status": "blocked",
+   "message": "Margin posted is not available to withdraw. Terminal: \"Alpha has 211,991.00 USD of settled USD available; 250,000.00 USD requested.\"",
+   "ms": 1470,
+   "commit": "0e502fd",
+   "at": "2026-10-13T17:03:53.260Z",
+   "product": "equity_index_future",
+   "template": null,
+   "family": "future",
+   "step": "withdraw-posted-margin",
+   "covers": [
+    "margin not spendable"
+   ]
+  },
+  "B:equity_index_future:day-1-variation": {
+   "status": "passed",
+   "message": "",
+   "ms": 939,
+   "commit": "0e502fd",
+   "at": "2026-10-13T17:03:53.260Z",
+   "product": "equity_index_future",
+   "template": null,
+   "family": "future",
+   "step": "day-1-variation",
+   "covers": [
+    "variation margin"
+   ]
+  },
+  "B:equity_index_future:tuesday": {
+   "status": "passed",
+   "message": "",
+   "ms": 888,
+   "commit": "0e502fd",
+   "at": "2026-10-13T17:03:53.260Z",
+   "product": "equity_index_future",
+   "template": null,
+   "family": "future",
+   "step": "tuesday",
+   "covers": []
+  },
+  "B:equity_index_future:quote-down": {
+   "status": "passed",
+   "message": "",
+   "ms": 1253,
+   "commit": "0e502fd",
+   "at": "2026-10-13T17:03:53.260Z",
+   "product": "equity_index_future",
+   "template": null,
+   "family": "future",
+   "step": "quote-down",
+   "covers": []
+  },
+  "B:equity_index_future:increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 1992,
+   "commit": "0e502fd",
+   "at": "2026-10-13T17:03:53.260Z",
+   "product": "equity_index_future",
+   "template": null,
+   "family": "future",
+   "step": "increase",
+   "covers": [
+    "increase"
+   ]
+  },
+  "B:equity_index_future:day-2-variation": {
+   "status": "passed",
+   "message": "",
+   "ms": 1133,
+   "commit": "0e502fd",
+   "at": "2026-10-13T17:03:53.260Z",
+   "product": "equity_index_future",
+   "template": null,
+   "family": "future",
+   "step": "day-2-variation",
+   "covers": [
+    "variation margin"
+   ]
+  },
+  "B:equity_index_future:wednesday": {
+   "status": "passed",
+   "message": "",
+   "ms": 1033,
+   "commit": "0e502fd",
+   "at": "2026-10-13T17:03:53.260Z",
+   "product": "equity_index_future",
+   "template": null,
+   "family": "future",
+   "step": "wednesday",
+   "covers": []
+  },
+  "B:equity_index_future:quote-up": {
+   "status": "passed",
+   "message": "",
+   "ms": 983,
+   "commit": "0e502fd",
+   "at": "2026-10-13T17:03:53.260Z",
+   "product": "equity_index_future",
+   "template": null,
+   "family": "future",
+   "step": "quote-up",
+   "covers": []
+  },
+  "B:equity_index_future:reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 2440,
+   "commit": "0e502fd",
+   "at": "2026-10-13T17:03:53.260Z",
+   "product": "equity_index_future",
+   "template": null,
+   "family": "future",
+   "step": "reduce",
+   "covers": [
+    "reduce",
+    "margin release"
+   ]
+  },
+  "B:equity_index_future:open-short": {
+   "status": "passed",
+   "message": "",
+   "ms": 3329,
+   "commit": "0e502fd",
+   "at": "2026-10-13T17:03:53.260Z",
+   "product": "equity_index_future",
+   "template": null,
+   "family": "future",
+   "step": "open-short",
+   "covers": [
+    "open short",
+    "gross holdings"
+   ]
+  },
+  "B:equity_index_future:day-3-variation": {
+   "status": "passed",
+   "message": "",
+   "ms": 1181,
+   "commit": "0e502fd",
+   "at": "2026-10-13T17:03:53.260Z",
+   "product": "equity_index_future",
+   "template": null,
+   "family": "future",
+   "step": "day-3-variation",
+   "covers": [
+    "variation margin"
+   ]
+  },
+  "B:equity_index_future:thursday": {
+   "status": "passed",
+   "message": "",
+   "ms": 1300,
+   "commit": "0e502fd",
+   "at": "2026-10-13T17:03:53.260Z",
+   "product": "equity_index_future",
+   "template": null,
+   "family": "future",
+   "step": "thursday",
+   "covers": []
+  },
+  "B:equity_index_future:quote-down-2": {
+   "status": "passed",
+   "message": "",
+   "ms": 1425,
+   "commit": "0e502fd",
+   "at": "2026-10-13T17:03:53.260Z",
+   "product": "equity_index_future",
+   "template": null,
+   "family": "future",
+   "step": "quote-down-2",
+   "covers": []
+  },
+  "B:equity_index_future:close-short": {
+   "status": "passed",
+   "message": "",
+   "ms": 2092,
+   "commit": "0e502fd",
+   "at": "2026-10-13T17:03:53.260Z",
+   "product": "equity_index_future",
+   "template": null,
+   "family": "future",
+   "step": "close-short",
+   "covers": [
+    "close short",
+    "margin release"
+   ]
+  },
+  "B:equity_index_future:roll": {
+   "status": "passed",
+   "message": "",
+   "ms": 3531,
+   "commit": "0e502fd",
+   "at": "2026-10-13T17:03:53.260Z",
+   "product": "equity_index_future",
+   "template": null,
+   "family": "future",
+   "step": "roll",
+   "covers": [
+    "roll"
+   ]
+  },
+  "B:equity_index_future:open-to-expiry": {
+   "status": "passed",
+   "message": "",
+   "ms": 2825,
+   "commit": "0e502fd",
+   "at": "2026-10-13T17:03:53.260Z",
+   "product": "equity_index_future",
+   "template": null,
+   "family": "future",
+   "step": "open-to-expiry",
+   "covers": [
+    "open"
+   ]
+  },
+  "B:equity_index_future:day-4-variation": {
+   "status": "passed",
+   "message": "",
+   "ms": 1295,
+   "commit": "0e502fd",
+   "at": "2026-10-13T17:03:53.260Z",
+   "product": "equity_index_future",
+   "template": null,
+   "family": "future",
+   "step": "day-4-variation",
+   "covers": [
+    "variation margin"
+   ]
+  },
+  "B:equity_index_future:last-trading-day": {
+   "status": "passed",
+   "message": "",
+   "ms": 1727,
+   "commit": "0e502fd",
+   "at": "2026-10-13T17:03:53.260Z",
+   "product": "equity_index_future",
+   "template": null,
+   "family": "future",
+   "step": "last-trading-day",
+   "covers": [
+    "final settlement"
+   ]
+  },
+  "B:equity_index_future:june-quote": {
+   "status": "passed",
+   "message": "",
+   "ms": 1192,
+   "commit": "0e502fd",
+   "at": "2026-10-13T17:03:53.260Z",
+   "product": "equity_index_future",
+   "template": null,
+   "family": "future",
+   "step": "june-quote",
+   "covers": []
+  },
+  "B:equity_index_future:final-settlement-price": {
+   "status": "passed",
+   "message": "",
+   "ms": 1265,
+   "commit": "0e502fd",
+   "at": "2026-10-13T17:03:53.260Z",
+   "product": "equity_index_future",
+   "template": null,
+   "family": "future",
+   "step": "final-settlement-price",
+   "covers": [
+    "final settlement"
+   ]
+  },
+  "B:equity_index_future:expiry-cash-settlement": {
+   "status": "passed",
+   "message": "",
+   "ms": 1382,
+   "commit": "0e502fd",
+   "at": "2026-10-13T17:03:53.260Z",
+   "product": "equity_index_future",
+   "template": null,
+   "family": "future",
+   "step": "expiry-cash-settlement",
+   "covers": [
+    "final settlement",
+    "expiry",
+    "variation margin",
+    "margin release"
+   ]
+  },
+  "B:equity_index_future:monday": {
+   "status": "passed",
+   "message": "",
+   "ms": 1149,
+   "commit": "0e502fd",
+   "at": "2026-10-13T17:03:53.260Z",
+   "product": "equity_index_future",
+   "template": null,
+   "family": "future",
+   "step": "monday",
+   "covers": []
+  },
+  "B:equity_index_future:trade-after-expiry": {
+   "status": "blocked",
+   "message": "The March contract's last trading day was 20 March 2026. Terminal: \"Leg 1: M5H6 expired on 2026-03-20.\"",
+   "ms": 1334,
+   "commit": "0e502fd",
+   "at": "2026-10-13T17:03:53.260Z",
+   "product": "equity_index_future",
+   "template": null,
+   "family": "future",
+   "step": "trade-after-expiry",
+   "covers": [
+    "expired contract"
+   ]
+  },
+  "B:equity_index_future:close": {
+   "status": "passed",
+   "message": "",
+   "ms": 2306,
+   "commit": "0e502fd",
+   "at": "2026-10-13T17:03:53.260Z",
+   "product": "equity_index_future",
+   "template": null,
+   "family": "future",
+   "step": "close",
+   "covers": [
+    "close",
+    "margin release"
+   ]
+  },
+  "B:equity_index_future:restart": {
+   "status": "passed",
+   "message": "",
+   "ms": 4028,
+   "commit": "0e502fd",
+   "at": "2026-10-13T17:03:53.260Z",
+   "product": "equity_index_future",
+   "template": null,
+   "family": "future",
+   "step": "restart",
+   "covers": [
+    "restart"
+   ]
   }
  },
  "runs": {
@@ -14457,9 +14457,9 @@
    }
   },
   "equity_index_future": {
-   "at": "2026-10-13T16:48:01.482Z",
-   "commit": "bd4b571+changes",
-   "ms": 61059,
+   "at": "2026-10-13T17:03:53.260Z",
+   "commit": "0e502fd",
+   "ms": 55822,
    "family": "future",
    "steps": 28,
    "ran": 28,
@@ -15046,5 +15046,5 @@
    }
   }
  },
- "updatedAt": "2026-10-13T17:02:57.352Z"
+ "updatedAt": "2026-10-13T17:03:53.260Z"
 }
