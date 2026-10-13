@@ -72,3 +72,4 @@
 - 2026-10-13T16:13Z | b2 | +0.2 | corporate_bond_ig passes at engine, API and browser
 - 2026-10-13T16:16Z | l1 | +0.2 | cash_loan passes at engine, API and browser
 - 2026-10-13T16:19Z | b2 | +0.2 | high_yield_bond passes at engine, API and browser (coupon suspension now non-accrual, flat trading, missed coupon listed)
+- 2026-10-13T16:19Z | c1 | +0.2 | mutual_fund passes at engine, API and browser (fund forward pricing at the next NAV built)

@@ -130,6 +130,8 @@ export const loan = {
     if (t.maturity && !ISO_DATE_RE.test(t.maturity)) errors.push('Maturity must be YYYY-MM-DD (leave empty for an open-ended arrangement).');
     if (!t.maturity) { t.maturity = null; t.interestPayment = 'monthly'; }
     t.collateral = Array.isArray(t.collateral) ? t.collateral.map((c) => ({ positionId: c.positionId, qty: num(c.qty) })).filter((c) => c.positionId && c.qty > 0) : [];
+    // A secured loan is secured by named positions; without a pledge it would be an unsecured loan under another name.
+    if (t.loanType === 'secured' && !t.collateral.length) errors.push('A secured loan pledges collateral: choose the position to pledge and the quantity.');
     return { terms: t, multiplier: 1, errors, settleCcy: draft.trading_ccy };
   },
   describe(inst) {

@@ -52,12 +52,15 @@ for (const spec of specs) {
           checked++;
           continue;
         }
-        if ((leg.kind || 'trade') !== 'trade' || typeof leg.estimate !== 'number' || typeof leg.qty !== 'number') continue;
+        // A fund leg (model 'next-nav') has no fill price before its NAV is struck: its amounts are estimated on the last
+        // published NAV, which the leg states as its `reference`.
+        const px = typeof leg.estimate === 'number' ? leg.estimate : leg.model === 'next-nav' && typeof leg.reference === 'number' ? leg.reference : null;
+        if ((leg.kind || 'trade') !== 'trade' || px === null || typeof leg.qty !== 'number') continue;
         const key = leg.instrument || step.instrument || lotInstrument.get(step.lot || step.from) || 'main';
         const inst = spec.instruments[key] || registered.get(key);
         assert.ok(inst, `${step.id}: instrument "${key}" is not in the spec`);
         const ccy = inst.tradingCcy;
-        const principal = leg.qty * leg.estimate * (inst.multiplier ?? 1);
+        const principal = leg.qty * px * (inst.multiplier ?? 1);
         const where = `${spec.productId}:${step.id}`;
         if (typeof leg.cash === 'number') {
           const action = leg.action || step.side;
@@ -65,7 +68,7 @@ for (const spec of specs) {
           // A debt security settles its principal plus the accrued interest the leg states (`accrued`), each to the cent.
           const accrued = typeof leg.accrued === 'number' ? leg.accrued : 0;
           const settles = money(principal, ccy) + accrued;
-          assert.equal(leg.cash, money(BUYS.has(action) ? -settles : settles, ccy), `${where}: cash is not quantity x estimated fill (${leg.qty} x ${leg.estimate})${accrued ? ` plus the stated accrued interest ${accrued}` : ''}`);
+          assert.equal(leg.cash, money(BUYS.has(action) ? -settles : settles, ccy), `${where}: cash is not quantity x estimated fill (${leg.qty} x ${px})${accrued ? ` plus the stated accrued interest ${accrued}` : ''}`);
           checked++;
         }
         if (typeof leg.fees === 'number') {

@@ -48,6 +48,32 @@ export function describeLeg(leg, app) {
   }
 }
 
+/**
+ * A swap trade in words, with its legs: "Enter as written: pay fixed 4.000%, receive SIM-3M on 10,000,000 IRS-5Y".
+ * A swap is never "bought" or "sold": entering the opposite side swaps every leg's pay and receive.
+ */
+export function swapTradeLabel(app, inst, action, qtyText) {
+  const flip = action === 'sell';
+  const short = (leg) => {
+    const side = (leg.side === 'pay') !== flip ? 'pay' : 'receive';
+    const und = leg.underlyingId && app ? app.instruments.get(leg.underlyingId) : null;
+    const ref = und ? (und.symbol || und.name) : leg.underlyingName || 'the reference asset';
+    const spread = leg.spread ? ` ${leg.spread > 0 ? '+' : '-'} ${pct(Math.abs(leg.spread), 2)}` : '';
+    switch (leg.type) {
+      case 'fixed': return `${side} fixed ${pct(leg.rate)}`;
+      case 'float': return `${side} ${leg.index}${spread}`;
+      case 'ois': return `${side} compounded ${leg.index}${spread}`;
+      case 'return': return `${side} the return on ${ref}`;
+      case 'price': return `${side} ${leg.fixedPrice !== null && leg.fixedPrice !== undefined ? `fixed price ${leg.fixedPrice}` : `the price of ${ref}`}`;
+      case 'cap': return `${side} a ${leg.index} cap at ${pct(leg.strike)}`;
+      case 'floor': return `${side} a ${leg.index} floor at ${pct(leg.strike)}`;
+      default: return `${side} ${leg.type}`;
+    }
+  };
+  const legs = (inst.terms?.legs || []).map(short).join(', ');
+  return `${flip ? 'Enter the opposite side' : 'Enter as written'}: ${legs} on ${qtyText}`;
+}
+
 function legSchedule(inst, leg) {
   const t = inst.terms;
   return generateSchedule({ start: t.effective, end: t.maturity, months: leg.months || 0, calendar: paymentCalendarFor(inst), convention: 'modified-following' });
@@ -249,6 +275,7 @@ export const swap = {
   qtyLabel: 'Notional',
   actions: () => ['buy', 'sell'],
   actionLabels: { buy: 'Enter as written', sell: 'Enter the opposite side' },
+  tradeLabel: (app, inst, action, qtyText) => swapTradeLabel(app, inst, action, qtyText),
   priceUnits: () => 'upfront / NPV per 100 notional',
   calendar: calendarFor,
   describeLeg,

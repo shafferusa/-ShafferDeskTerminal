@@ -727,7 +727,12 @@ export function createPackages(app) {
     const inst = l.inst;
     const what = inst ? (inst.symbol || inst.name) : '';
     switch (l.kind) {
-      case 'trade': return `${{ buy: 'Buy', sell: 'Sell', sell_short: 'Sell short', buy_to_cover: 'Buy to cover' }[l.action] || l.action} ${fmtQty(l.qty)} ${what}`;
+      // A swap is pay / receive with its legs, never buy / sell (the plugin words it); a CDS says which side of protection.
+      case 'trade': {
+        const plugin = inst ? app.products.get(inst.family) : null;
+        if (plugin?.tradeLabel && inst.terms?.legs) return plugin.tradeLabel(app, inst, l.action, `${fmtQty(l.qty)} ${what}`);
+        return `${plugin?.actionLabels?.[l.action] || { buy: 'Buy', sell: 'Sell', sell_short: 'Sell short', buy_to_cover: 'Buy to cover' }[l.action] || l.action} ${fmtQty(l.qty)} ${what}`;
+      }
       case 'borrow_sec': return `Borrow ${fmtQty(l.qty)} ${what}`;
       case 'return_sec': return `Return ${fmtQty(l.qty)} borrowed ${app.instruments.get(inst.underlying_id)?.symbol || ''}`.trim();
       case 'loan': return `${l.action === 'borrow_cash' ? 'Borrow' : 'Lend'} ${fmt(l.qty, inst.trading_ccy)}`;
@@ -969,6 +974,9 @@ export function createPackages(app) {
     if (o.kind === 'reserve') return `${act}: ${fmt(o.data.reserve?.amount || 0, o.data.reserve?.ccy || 'USD')}`;
     if (o.kind === 'funding') return `${act}: ${fmt(o.data.funding?.amount || 0, o.data.funding?.ccy || 'USD')}`;
     if (['loan', 'repay', 'repo_open'].includes(o.kind)) return `${act} ${fmt(o.qty, inst?.trading_ccy || 'USD')}${inst ? ` (${inst.name})` : ''}`;
+    const plugin = o.kind === 'trade' && inst ? app.products.get(inst.family) : null;
+    if (plugin?.tradeLabel && inst.terms?.legs) return plugin.tradeLabel(app, inst, o.action, `${fmtQty(o.qty)} ${what}`);
+    if (plugin?.actionLabels?.[o.action]) return `${plugin.actionLabels[o.action]} ${fmtQty(o.qty)} ${what}`.trim();
     return `${act} ${fmtQty(o.qty)} ${what}`.trim();
   }
 
