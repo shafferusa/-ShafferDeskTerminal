@@ -219,3 +219,4 @@
 - 2026-10-13T19:25Z | b4 | +0.2 | specified_pool passes at engine, API and browser
 - 2026-10-13T19:28Z | s2 | +0.2 | accreting_swap passes at engine, API and browser (independent amount follows the notional of the current period)
 - 2026-10-13T19:32Z | b4 | +0.2 | abs passes at engine, API and browser
+- 2026-10-13T19:32Z | t2 | +0.2 | bear_call_spread passes at engine, API and browser
