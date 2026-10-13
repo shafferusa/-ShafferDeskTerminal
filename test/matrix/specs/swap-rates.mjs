@@ -1245,29 +1245,31 @@ const interestRateCap = {
     },
     {
       // 4.55% for 16 December, by hand: 18,000,000 x (4.55% - 4.25%) x 90/360 = 13,500.00.
-      id: 'fixing-entered-by-hand', covers: ['missing fixing', 'caplet payment'], action: 'manual_rate', code: 'TSFR3M', value: 4.55, date: '2026-12-16', note: 'Published fixing, entered by hand',
+      // The caplet is paid, and the cap ends in the same engine pass (BUGS.md, s1 item 4: a blocked maturity is looked at again
+      // in the pass in which its final payment was made). The 74,400 of premium still carried is written off; the mark of 63,000 was never cash.
+      // 500,000 - 84,000 - 40,000 + 3,833.33 + 36,000 + 22,750 + 13,500 = 452,083.33. Realized 12,983.33 + 13,500 - 74,400 = -47,916.67.
+      id: 'fixing-entered-by-hand', covers: ['missing fixing', 'caplet payment', 'maturity', 'close'], action: 'manual_rate', code: 'TSFR3M', value: 4.55, date: '2026-12-16', note: 'Published fixing, entered by hand',
       expect: {
-        events: [{ type: 'swap.payment', summary: `Swap receipt on ${CAP_NAME}, leg A (cap), period 2026-12-16 to 2027-03-16: 13,500.00 USD`, cash: { USD: 13_500 }, owner: 'account', date: '2027-03-16' }],
-        cash: { account: { USD: { settled: 452_083.33, availableToTrade: 452_083.33, availableToWithdraw: 452_083.33 } } },
-        // Maturity was looked at before the payment in this pass, so it is still shown as waiting; the next pass ends the contract.
-        lifecycle: [{ type: 'swap.maturity', instrument: 'main', dueDate: '2027-03-16', status: 'blocked', reason: /Waiting for the final leg payments/ }],
-        pnl: { account: { realized: 26_483.33, total: 15_083.33 } }, // 12,983.33 + 13,500; then - 11,400
-        nav: { account: 515_083.33, book: 1_015_083.33 },
-        balance: { account: { cash: 452_083.33, assets: 515_083.33, netAssets: 515_083.33 } },
-      },
-    },
-    {
-      // The cap ends. The 74,400 of premium still carried is written off; the mark of 63,000 was never cash.
-      // 500,000 - 84,000 - 40,000 + 3,833.33 + 36,000 + 22,750 + 13,500 = 452,083.33.
-      id: 'matured', covers: ['maturity', 'close'], action: 'cycle',
-      expect: {
-        events: [{ type: 'swap.matured', summary: `Swap matured: ${CAP_NAME} (notional 18,000,000)`, owner: 'account' }],
+        events: [
+          { type: 'swap.payment', summary: `Swap receipt on ${CAP_NAME}, leg A (cap), period 2026-12-16 to 2027-03-16: 13,500.00 USD`, cash: { USD: 13_500 }, owner: 'account', date: '2027-03-16' },
+          { type: 'swap.matured', summary: `Swap matured: ${CAP_NAME} (notional 18,000,000)`, owner: 'account' },
+        ],
         cash: { account: { USD: { settled: 452_083.33, unsettled: 0, margin: 0, restricted: 0, reserved: 0, availableToTrade: 452_083.33, availableToWithdraw: 452_083.33 } }, treasury: { USD: { settled: 500_000 } } },
         positions: [], holdings: { main: null }, lifecycle: [], otc: [], pending: [], alerts: [],
-        pnl: { account: { realized: -47_916.67, commissions: 0, unrealized: 0, total: -47_916.67 } }, // 26,483.33 - 74,400
+        pnl: { account: { realized: -47_916.67, commissions: 0, unrealized: 0, total: -47_916.67 } },
         nav: { account: 452_083.33, treasury: 500_000, book: 952_083.33 },
         provisional: { account: false, book: false },
         balance: { account: { cash: 452_083.33, positions: null, assets: 452_083.33, liabilities: 0, netAssets: 452_083.33 } },
+      },
+    },
+    {
+      // A further engine pass changes nothing: the cap has already ended.
+      id: 'matured', covers: ['maturity', 'close'], action: 'cycle',
+      expect: {
+        events: [],
+        cash: { account: { USD: { settled: 452_083.33, availableToTrade: 452_083.33 } } },
+        positions: [], lifecycle: [],
+        nav: { account: 452_083.33, treasury: 500_000, book: 952_083.33 },
       },
     },
   ],
@@ -2401,22 +2403,13 @@ const constantMaturitySwap = {
     },
     {
       // 3.60% for 9 October, by hand. Leg B is received: 6,000,000 x 3.60% x 90/360 = 54,000.00.
-      id: 'cms-fixing-entered-by-hand', covers: ['missing fixing', 'CMS payment'], action: 'manual_rate', code: 'USDCMS5Y', value: 3.60, date: '2026-10-09', note: 'Published CMS fixing, entered by hand',
-      expect: {
-        events: [{ type: 'swap.payment', summary: `Swap receipt on ${CMS_NAME}, leg B (float), period 2026-10-12 to 2027-01-12: 54,000.00 USD`, cash: { USD: 54_000 }, owner: 'account', date: '2027-01-12' }],
-        cash: { account: { USD: { settled: 232_852.09, availableToTrade: 232_852.09, availableToWithdraw: 232_852.09 } } },
-        lifecycle: [{ type: 'swap.maturity', instrument: 'main', dueDate: '2027-01-12', status: 'blocked', reason: /Waiting for the final leg payments/ }], // looked at before the payment in this pass; the next pass ends the contract
-        pnl: { account: { realized: -2_347.91, total: -7_147.91 } },
-        nav: { account: 292_852.09, book: 992_852.09 },
-        balance: { account: { cash: 232_852.09, assets: 292_852.09, netAssets: 292_852.09 } },
-      },
-    },
-    {
-      // The swap ends. Nothing was paid to enter it; the mark of -4,800 was never cash. The 60,000 and the 4,800 posted come back.
+      // The payment is made and the swap ends in the same engine pass (BUGS.md, s1 item 4). Nothing was paid to enter it; the mark
+      // of -4,800 was never cash. The 60,000 and the 4,800 posted come back.
       // 300,000 - 73,125 + 74,062.50 - 72,989.58 + 75,937.50 - 1,500 - 57,500 + 55,500 - 56,733.33 + 54,000 = 297,652.09.
-      id: 'matured', covers: ['maturity', 'close', 'collateral'], action: 'cycle',
+      id: 'cms-fixing-entered-by-hand', covers: ['missing fixing', 'CMS payment', 'maturity', 'close', 'collateral'], action: 'manual_rate', code: 'USDCMS5Y', value: 3.60, date: '2026-10-09', note: 'Published CMS fixing, entered by hand',
       expect: {
         events: [
+          { type: 'swap.payment', summary: `Swap receipt on ${CMS_NAME}, leg B (float), period 2026-10-12 to 2027-01-12: 54,000.00 USD`, cash: { USD: 54_000 }, owner: 'account', date: '2027-01-12' },
           { type: 'swap.matured', summary: `Swap matured: ${CMS_NAME} (notional 6,000,000)`, owner: 'account' },
           { type: 'swap.collateral', summary: `Collateral returned on ${CMS_NAME} under "Clearing terms Broker D" (Clearing broker D): 60,000.00 USD (independent amount, the position ended)`, cash: { USD: 60_000 } },
           { type: 'collateral.variation', summary: /Variation margin under "Clearing terms Broker D" \(Clearing broker D\): 4,800\.00 USD returned to us\./, cash: { USD: 4_800 } },
@@ -2427,6 +2420,16 @@ const constantMaturitySwap = {
         nav: { account: 297_652.09, treasury: 700_000, book: 997_652.09 },
         provisional: { account: false, book: false },
         balance: { account: { cash: 297_652.09, margin: null, positions: null, assets: 297_652.09, liabilities: 0, netAssets: 297_652.09 } },
+      },
+    },
+    {
+      // A further engine pass changes nothing: the swap has already ended.
+      id: 'matured', covers: ['maturity', 'close', 'collateral'], action: 'cycle',
+      expect: {
+        events: [],
+        cash: { account: { USD: { settled: 297_652.09, availableToTrade: 297_652.09 } } },
+        positions: [], lifecycle: [],
+        nav: { account: 297_652.09, treasury: 700_000, book: 997_652.09 },
       },
     },
   ],

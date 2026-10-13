@@ -86,3 +86,4 @@
 - 2026-10-13T16:32Z | b2 | +0.2 | foreign_market_bond passes at engine, API and browser (shared driver: strategy close button disambiguated)
 - 2026-10-13T16:33Z | c1 | +0.2 | currency passes at engine, API and browser
 - 2026-10-13T16:35Z | b2 | +0.2 | corporate_sukuk passes at engine, API and browser
+- 2026-10-13T16:37Z | fix | +0 | BUGS fixes: forward notional currency, exact close, swap mark hint, same-pass maturity, principal in shortfall, index option form

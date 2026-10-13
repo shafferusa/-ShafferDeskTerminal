@@ -26,6 +26,7 @@ import { numbersAgree } from '../../lib/compare.mjs';
 import { normalizeResult } from '../../lib/normalize.mjs';
 import { shown } from '../browser.mjs';
 import { actions as swapActions } from './swap.mjs';
+import * as equity from './equity.mjs';
 
 export const family = 'loan';
 
@@ -319,8 +320,10 @@ async function arrangementRow(ui, ctx, p) {
 
 export const actions = {
   async ticket(ui, t, ctx, step, tools) {
-    if (!step.ticket) return undefined; // not one of this family's tickets: the shared path (another family's ticket)
-    const opened = await ticket(ui, t, ctx, step);
+    // The security ticket, borrowing what cash is short (a margin loan): the loan leg registers a contract the step names.
+    const security = !step.ticket && step.ticketOf === 'equity' && step.contractAs;
+    if (!step.ticket && !security) return undefined; // not one of this family's tickets: the shared path (another family's ticket)
+    const opened = security ? await equity.ticket(ui, t, ctx, step) : await ticket(ui, t, ctx, step);
     if (opened.refusal) return opened;
     let raw = null;
     const out = await tools.previewAndConfirm(ui, ctx, opened.preview, { expectsRefusal: tools.expectsRefusal, inspect: async (modal, pv) => { raw = pv; return financingOnScreen(ui, modal, pv); } });

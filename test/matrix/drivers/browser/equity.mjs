@@ -56,6 +56,13 @@ export async function ticket(ui, t, ctx, step) {
   if (o.stopPrice !== undefined && o.stopPrice !== null) await ui.input(drawer, 'Stop price').fill(String(o.stopPrice));
   if (o.tif && o.tif !== 'day') await ui.select(drawer, 'Time in force').selectOption({ label: TIF[o.tif] });
   if (o.statedPrice !== undefined && o.statedPrice !== null) await ui.input(drawer, 'State a fill price').fill(String(o.statedPrice));
+  // "If cash is short" (under Show funding and hedge context): fund the shortfall from Treasury, or borrow it (a margin
+  // loan from a simulated lender at the rate typed). Stated on a step as `financing: { mode: 'treasury' | 'loan', rate }`.
+  if (step.financing && step.financing.mode && step.financing.mode !== 'none') {
+    await ui.button(drawer, 'Show funding and hedge context').click();
+    await ui.select(drawer, 'If cash is short').selectOption(step.financing.mode);
+    if (step.financing.mode === 'loan') await ui.input(drawer, 'Loan rate (decimal a year)').fill(String(step.financing.rate));
+  }
   if (step.side === 'sell_short' && step.borrow) {
     // Only when no borrow data is supplied does the ticket ask for an assumption.
     await ui.input(drawer, 'Borrow fee').fill(String(step.borrow.feeRate));

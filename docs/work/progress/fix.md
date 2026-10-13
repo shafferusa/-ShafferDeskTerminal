@@ -14,8 +14,18 @@ Tools: $SP/fix/shot2.mjs (out hash port theme w h step full), steps/env.mjs (STE
 - B s1-1 swap labels: swap.js swapTradeLabel; packages.js legLabel/describeOrder; strategy.js describeLeg; harness regex in test/matrix/drivers/browser.mjs accepts "Enter as written/opposite side".
 - B s1-3 Strategies OTC ticket: symbol, primary view, ConventionFields (exported from registry.js).
 
+- Looked at: Accounting positions (light/dark), preview no-basis block for registered contract and new contract (fix applied in browser, block gone, confirm enabled), Strategies OTC ticket (symbol, view, calendars).
+- B v1b-1 forward notional: packages.js row.notionalCcy (base ccy), confirmation.js grossNotional by notionalCcy, preview.js label. Test labels-conventions.test.js.
+- B s1-5 exact close: strategy-detail.js Manage "Close an exact notional/amount". Test.
+- B s1-7 swap mark hint: data.js SWAP_MARK_HINT + instrument.js ManualPrice hint.
+- B s1-4 same-pass maturity: engine.js processTasks second look; test fails without fix; swap-rates.mjs cap and CMS steps updated (maturity in fixing step, cycle step expects nothing new).
+- B s1-11 shortfall message names principal; swap-rates.mjs xccy regex updated. Principal "not set aside" already stated in preview note.
+- B s1-8 convention note on increase (swap.js economics); s1-10 "Fixing dates" row in swap terms.
+- B o1-1/s1-2: listed-option form accepts a named index + index level code (contracts.js); engine test settles an index option on the level. Catalog index kind NOT added (redesign).
+- npm test 405/405 after these; test:api for 4 swap products passes.
+
 ## In progress
-- Screens for A5 and the OTC ticket not yet looked at.
+- Nothing half-edited.
 
 ## Next
-- Screens A5/OTC ticket; A4 narrow collateral screens; rest of B (v1b-1 forward notional ccy, s1-5 close notional, s1-7 mark hint, s1-4, s1-8..11, o1-1, v1b-2 already fixed by s1); C shell; D docs.
+- s1-9 balance-sheet cent note; mark BUGS.md entries; browser check of swap products + common set; A4 narrow collateral screens; C shell; D docs.
