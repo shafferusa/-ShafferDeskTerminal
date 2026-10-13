@@ -91,3 +91,93 @@ test('an accounting read refreshes the rate of a currency an open position is va
   const nav = app.accounting.overview(book.id);
   assert.equal(nav.navProvisional, false, JSON.stringify(nav.missing || {}));
 });
+
+// Asset forwards settled by delivery (found by equity_forward, bond_forward and tba_mortgage):
+//   - the seller delivers what the unit holds, in any strategy instance; without enough the delivery waits visibly
+//     instead of opening an unborrowed short;
+//   - delivery against payment on the value date itself, not a further settlement lag of the underlying;
+//   - a bond forward in face amount (multiplier 0.01, taken from the bond) delivers that face, not 1% of it, and the
+//     accrued interest bought on delivery is kept by the next end-of-day accrual;
+//   - a TBA contract delivers the pool allocated to it by hand, refuses a pool of another coupon, and waits without one.
+async function stockAndForward(app, book, acct, { valueDate = '2026-04-17' } = {}) {
+  const stock = app.instruments.create({ productId: 'common_stock', name: 'Delivery Test Inc.', symbol: 'DLVT', venue: 'NYSE', venueType: 'exchange', venueCountry: 'US', tradingCcy: 'USD', terms: {} });
+  const fwd = app.instruments.create({ productId: 'equity_forward', name: 'DLVT forward', symbol: 'DLVT-F', venueType: 'otc', jurisdiction: 'US', tradingCcy: 'USD', underlyingId: stock.id,
+    terms: { forwardType: 'asset', settlement: 'physical', valueDate, counterparty: 'Dealer', collateralBasis: { type: 'uncollateralized' } } });
+  app.data.market.set(stock.id, { bid: 50, ask: 50, value: 50, bidSize: 1e6, askSize: 1e6 });
+  return { stock, fwd };
+}
+
+test('a forward seller delivers shares held in another strategy instance, on the value date; without them it waits', async () => {
+  const { app, clock, book, acct } = setup('2026-04-13T14:00:00.000Z');
+  app.books.updateSettings(book.id, { fees: { forward: { perUnit: 0, minimum: 0, bps: 0 }, equity: { perUnit: 0, minimum: 0, bps: 0 } }, settlement: { equity: 1 } });
+  const { stock, fwd } = await stockAndForward(app, book, acct);
+  const sh = await trade(app, { bookId: book.id, unitId: acct.id, template: 'long', underlyingId: stock.id, legs: [{ kind: 'trade', action: 'buy', instrumentId: stock.id, qty: 600 }] });
+  const f = await trade(app, { bookId: book.id, unitId: acct.id, template: 'custom', legs: [{ kind: 'trade', action: 'sell', instrumentId: fwd.id, qty: 1_000, statedPrice: 52 }] });
+  // Value date: 1,000 to deliver, 600 held: nothing is delivered, the item waits with the reason.
+  clock.freeze('2026-04-17T14:00:00.000Z'); await app.engine.tick();
+  const task = app.db.get(`SELECT status, blocked_reason FROM tasks WHERE position_id = ? AND type = 'forward.maturity'`, f.positions[0].positionId);
+  assert.equal(task.status, 'blocked');
+  assert.match(task.blocked_reason, /1,000 DLVT must be delivered at 52\.00, but Alpha holds 600/);
+  assert.equal(app.positions.list({ unitIds: [acct.id] }).filter((p) => p.instrument_id === stock.id && p.qty < 0).length, 0, 'no short is opened');
+  // 400 more bought into a third strategy instance (settles T+1, but the shares are held at once): delivered from both, same day.
+  await trade(app, { bookId: book.id, unitId: acct.id, template: 'long', underlyingId: stock.id, legs: [{ kind: 'trade', action: 'buy', instrumentId: stock.id, qty: 400 }] });
+  await app.engine.tick();
+  const held = app.positions.list({ unitIds: [acct.id] }).filter((p) => p.instrument_id === stock.id).reduce((a, p) => a + p.qty, 0);
+  assert.equal(held, 0);
+  const recv = app.db.all(`SELECT due_date, amount, status FROM settlements WHERE instrument_id = ? AND amount > 0`, stock.id);
+  // 600 x 52 + 400 x 52 = 52,000, delivery against payment on the value date.
+  assert.deepEqual(recv.map((x) => [x.due_date, x.amount]).sort(), [['2026-04-17', 20_800], ['2026-04-17', 31_200]]);
+  assert.equal(sh.positions.length, 1);
+  assert.deepEqual(ledgerImbalance(app), []);
+});
+
+test('a bond forward delivers its face amount with the accrued interest of the value date, kept through the next end of day', async () => {
+  const { app, clock, book, acct } = setup('2026-05-04T14:00:00.000Z');
+  app.books.updateSettings(book.id, { fees: { forward: { perUnit: 0, minimum: 0, bps: 0 }, bond: { perUnit: 0, minimum: 0, bps: 0 } }, settlement: { bond: 1 } });
+  app.books.transfer({ bookId: book.id, fromUnitId: app.books.treasuryOf(book.id).id, toUnitId: acct.id, ccy: 'USD', amount: 1_500_000 });
+  const note = app.instruments.create({ productId: 'treasury_note', name: 'UST 4% Nov-2030', symbol: 'UST30-T', venueType: 'otc', domicile: 'US', tradingCcy: 'USD', multiplier: 0.01,
+    terms: { couponType: 'fixed', couponRate: 0.04, frequency: 2, maturity: '2030-11-15', issueDate: '2023-11-15', dayCount: 'ACT/ACT', redemption: 100 } });
+  const fwd = app.instruments.create({ productId: 'bond_forward', name: 'UST30 forward', symbol: 'UST30-FT', venueType: 'otc', jurisdiction: 'US', tradingCcy: 'USD', underlyingId: note.id,
+    terms: { forwardType: 'asset', settlement: 'physical', valueDate: '2026-05-18', counterparty: 'Dealer', collateralBasis: { type: 'uncollateralized' } } });
+  assert.equal(fwd.multiplier, 0.01, 'the bond\'s multiplier');
+  assert.equal(app.instruments.toView(fwd).qtyLabel, 'Face amount');
+  app.data.market.set(note.id, { bid: 99.25, ask: 99.25, value: 99.25, bidSize: 1e8, askSize: 1e8 });
+  await trade(app, { bookId: book.id, unitId: acct.id, template: 'custom', legs: [{ kind: 'trade', action: 'buy', instrumentId: fwd.id, qty: 2_000_000, statedPrice: 99.25 }] });
+  clock.freeze('2026-05-18T14:00:00.000Z'); await app.engine.tick();
+  const pos = app.positions.list({ unitIds: [acct.id] }).find((p) => p.instrument_id === note.id);
+  assert.equal(pos.qty, 2_000_000);
+  assert.equal(pos.cost, 1_985_000);
+  // 2,000,000 x 2% x 3 / 184 (15 to 18 May) = 652.17, paid on 18 May and still carried after the pass of 15 May.
+  assert.equal(app.ledger.positionBalance(pos.id, 'accrued.asset', 'USD'), 652.17);
+  const paid = app.db.all(`SELECT due_date, amount FROM settlements WHERE position_id = ?`, pos.id);
+  assert.deepEqual(paid.map((x) => [x.due_date, x.amount]), [['2026-05-18', -1_985_652.17]]);
+});
+
+test('a TBA contract delivers the pool allocated to it by hand; another coupon is refused; without one it waits', async () => {
+  const { app, clock, book, acct, call } = setup('2026-06-08T14:00:00.000Z');
+  app.books.updateSettings(book.id, { fees: { forward: { perUnit: 0, minimum: 0, bps: 0 }, bond: { perUnit: 0, minimum: 0, bps: 0 } } });
+  app.books.transfer({ bookId: book.id, fromUnitId: app.books.treasuryOf(book.id).id, toUnitId: acct.id, ccy: 'USD', amount: 1_000_000 });
+  const pool = (cpn, sym) => app.instruments.create({ productId: 'agency_mbs', name: `UMBS ${cpn} ${sym}`, symbol: sym, venueType: 'otc', domicile: 'US', tradingCcy: 'USD', multiplier: 0.01,
+    terms: { couponType: 'fixed', couponRate: cpn, frequency: 12, maturity: '2056-05-01', issueDate: '2026-05-01', dayCount: '30/360', redemption: 100, factor: 0.95, paymentDelayDays: 24 } });
+  const p55 = pool(0.055, 'POOL-55'), p60 = pool(0.06, 'POOL-60');
+  assert.throws(() => app.instruments.create({ productId: 'tba_mortgage', name: 'TBA no coupon', symbol: 'TBA-X', venueType: 'otc', jurisdiction: 'US', tradingCcy: 'USD',
+    terms: { forwardType: 'asset', valueDate: '2026-06-11', counterparty: 'Dealer', collateralBasis: { type: 'uncollateralized' } } }), /pass-through coupon/);
+  const tba = app.instruments.create({ productId: 'tba_mortgage', name: 'UMBS 5.5 TBA', symbol: 'TBA-55', venueType: 'otc', jurisdiction: 'US', tradingCcy: 'USD',
+    terms: { forwardType: 'asset', coupon: 0.055, valueDate: '2026-06-11', counterparty: 'Dealer', collateralBasis: { type: 'uncollateralized' } } });
+  assert.equal(tba.multiplier, 0.01);
+  const s = await trade(app, { bookId: book.id, unitId: acct.id, template: 'custom', legs: [{ kind: 'trade', action: 'buy', instrumentId: tba.id, qty: 1_000_000, statedPrice: 100 }] });
+  const posId = s.positions[0].positionId;
+  const allocate = (instrumentId) => call('POST', `/api/positions/${posId}/lifecycle`, { action: 'allocate', instrumentId });
+  await rejects(() => allocate(p60.id), 'allocation_coupon', /POOL-60 pays 6%; TBA-55 is settled with 5\.5% pools/);
+  // Settlement date without an allocation: it waits.
+  clock.freeze('2026-06-11T14:00:00.000Z'); await app.engine.tick();
+  assert.equal(app.db.get(`SELECT status FROM tasks WHERE position_id = ? AND type = 'forward.maturity'`, posId).status, 'blocked');
+  await allocate(p55.id);
+  await app.engine.tick();
+  const held = app.positions.list({ unitIds: [acct.id] }).find((p) => p.instrument_id === p55.id);
+  // 1,000,000 original face x 0.95 = 950,000 current face at 100: cost 950,000; accrued 10 days 30/360 = 1,451.39.
+  assert.equal(held.qty, 1_000_000);
+  assert.equal(held.cost, 950_000);
+  assert.equal(app.ledger.positionBalance(held.id, 'accrued.asset', 'USD'), 1_451.39);
+  assert.deepEqual(ledgerImbalance(app), []);
+});

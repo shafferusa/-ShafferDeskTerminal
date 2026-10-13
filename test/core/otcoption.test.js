@@ -92,3 +92,14 @@ test('the reporting-currency rate of a currency that has just appeared in a Book
   const ov = await read(); // the same instant: EUR has just appeared
   assert.equal(ov.navProvisional, false, `EUR is converted at a current rate: ${JSON.stringify(ov.navAffected)}`);
 });
+
+test('a price entered by hand today as the close of an earlier date is not taken as today\'s close', async () => {
+  const { app, clock } = makeApp();
+  const inst = app.instruments.create({ productId: 'precious_metal', name: 'Test gold bar', symbol: 'TGLD', marketView: 'US_CASH', venueType: 'otc', venueCountry: 'US', tradingCcy: USD, terms: { quantityUnit: 'troy ounces' } });
+  await goTo(app, clock, '2026-05-29T22:30:00.000Z'); // Friday 29 May, after the close
+  app.data.enterManual({ kind: 'price', subject: inst.id, value: 2440, forDate: '2026-05-27', units: 'USD per troy ounce' });
+  assert.equal(app.data.closeFor(inst.id, '2026-05-27').value, 2440, 'it is the close of 27 May');
+  assert.equal(app.data.closeFor(inst.id, '2026-05-29'), null, 'and not the close of 29 May, the day it was entered');
+  app.data.enterManual({ kind: 'price', subject: inst.id, value: 2445, units: 'USD per troy ounce' });
+  assert.equal(app.data.closeFor(inst.id, '2026-05-29').value, 2445, 'a price entered today with no other date stands for today');
+});

@@ -402,6 +402,13 @@ const asianOption = {
         balance: { account: { cash: 861_500, receivable: null, payable: null, assets: 1_038_000, liabilities: 27_000 } }, // 861,500 + 27,000 + 117,500 + 32,000
       },
     },
+    // The dealer's gold quote stops before the averaging window (it would otherwise stand in for a missing close): from
+    // here the only closes are the three the fixture supplies and those entered by hand.
+    { id: 'thursday-21-may', action: 'clock', to: at('2026-05-21'), expect: {} },
+    {
+      id: 'gold-quote-withdrawn', action: 'quote', instrument: 'gold', quote: { clear: true },
+      expect: { positions: [{ instrument: 'call', lot: 'calls', notional: null }, { instrument: 'put', lot: 'puts', notional: null }] }, // no gold price: the notional is missing, not zero
+    },
     {
       // Expiration, after the close: three of the five averaging closes are supplied; 27 and 29 May are missing.
       id: 'expiry-awaits-fixings', covers: ['expiry', 'averaging fixings', 'holiday'], action: 'clock', to: eod('2026-05-29'),
@@ -417,6 +424,8 @@ const asianOption = {
       id: 'fixing-27-may-by-hand', covers: 'averaging fixings', action: 'manual_price', instrument: 'gold', value: 2_440, forDate: '2026-05-27', note: 'Gold close for 27 May, entered by hand',
       expect: {
         events: [],
+        // The price entered by hand is now the latest gold price known: the notional is 1,000 x 2,440.
+        positions: [{ instrument: 'call', lot: 'calls', notional: 2_440_000 }, { instrument: 'put', lot: 'puts', notional: 2_440_000 }],
         lifecycle: [
           { type: 'option.expiry', instrument: 'call', dueDate: '2026-05-29', status: 'blocked', reason: /^Awaiting the averaging fixings of XAU-HB for 2026-05-29\./ },
           { type: 'option.expiry', instrument: 'put', dueDate: '2026-05-29', status: 'blocked', reason: /^Awaiting the averaging fixings of XAU-HB for 2026-05-29\./ },

@@ -291,7 +291,8 @@ export function createDataAdapter({ db, config, clock }) {
     const live = cache.get(`price|${instrumentId}`);
     if (live && live.asOf && dateInTz(new Date(live.asOf)) === date && dateInTz(clock.now()) > date) return { ...live, forDate: date };
     const m = latestManual('price', instrumentId);
-    if (m && m.asOf && dateInTz(new Date(m.asOf)) === date) return { ...m, forDate: date };
+    // A price entered by hand today stands for today's close, unless it was entered as the close of another date.
+    if (m && m.asOf && dateInTz(new Date(m.asOf)) === date && (!m.forDate || String(m.forDate).slice(0, 10) === date)) return { ...m, forDate: date };
     return null;
   }
 

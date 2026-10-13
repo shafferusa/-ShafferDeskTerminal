@@ -694,7 +694,7 @@ export function manualPlugin(base, { standardSettleDate, paymentCalendarFor }) {
       const amount = money(p.amount * fresh.qty, ccy);
       const payDate = payDateFor(app, ctx, b.payDate);
       const r = closeBy(app, ctx, { qty: fresh.qty, price: p.amount / inst.multiplier, unitCost: p.amount, settleDate: payDate, type: 'manual.settlement',
-        text: `Final settlement of ${label(inst)} entered by hand: ${p.text}${isZero(fresh.qty - 1) ? '' : `, x ${fmtQty(fresh.qty)} held`} = ${fmt(amount, ccy)} ${amount >= 0 ? 'received' : 'paid'}${amount ? ` ${payDate}` : ''}`,
+        text: `Final settlement of ${label(inst)} entered by hand: ${p.text}${isZero(fresh.qty - 1) ? '' : `, x ${fmtQty(fresh.qty)} held`} = ${fmt(amount, ccy)}${amount ? ` ${amount > 0 ? 'received' : 'paid'} ${payDate}` : ': nothing is paid'}`,
         data: { inputs: p.inputs, perContract: p.amount, amount, payDate } });
       finish(r.eventId);
       return { eventId: r.eventId, amount, payDate };
