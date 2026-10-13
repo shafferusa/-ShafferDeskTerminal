@@ -97,3 +97,4 @@
 - 2026-10-13T16:48Z | ui1 | +1 | Product-specific Marketplace columns and units-aware bond price display (BUGS b1 #1)
 - 2026-10-13T16:48Z | b2 | +0.2 | perpetual_bond passes at engine, API and browser
 - 2026-10-13T16:50Z | c1 | +0.2 | emissions_allowance passes at engine, API and browser (spot assets now carry their own units and lot size)
+- 2026-10-13T16:50Z | c1 | +0.2 | carbon_credit passes at engine, API and browser
