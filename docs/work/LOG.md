@@ -237,3 +237,4 @@
 - 2026-10-13T19:50Z | s2 | +0.2 | bond_trs passes at engine, API and browser (clean-price return with reset, coupon passed through by hand)
 - 2026-10-13T19:50Z | b4 | +0.2 | cdo passes at engine, API and browser
 - 2026-10-13T19:53Z | s2 | +0.2 | index_trs passes at engine, API and browser (index dividends passed through per period)
+- 2026-10-13T19:54Z | t1 | +0.2 | T:short template passes at engine, API and browser; fixes: cover preview uses restricted collateral, multi-borrow returns
