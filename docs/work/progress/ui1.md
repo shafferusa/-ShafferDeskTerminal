@@ -16,6 +16,8 @@
 - Milestone 2: registry.js form: Primary view Seg (By convention: X | US | Foreign; listed decided), Jurisdiction field, Global venue type, routing notice from GET /api/instruments/routing, save re-asks routing (race fix), payload marketView/routingBasis/jurisdiction; registry list "Market view" column shows tab + routing short; instrument.js Overview: Market view with tab + basis sentence, Jurisdiction row, Venue global. contracts.js newDraft default marketView '' (convention), draftToContract sends undefined. strategy.js LegDialog Primary view has "By convention".
 - Browser after M2: common_stock 17/0/1 OK; equity_option setup fails on "Underlying (required)" label: fixer commit 00d61ea changed the index option form (not mine). interest_rate_swap open fails "margin posted" screen vs API (not navigation; collateral work by others). npm test 410/411: fixed-income FRN test fails from others' bond.js edit.
 
+- Milestone 3: per-tab columns in markets.js verified on screen (equities, funds, bonds with coupon/maturity/accrued/yield-if-supplied, money with financing panel, fx value date convention, options, futures contract value + initial margin, swaps legs, credit coupon). fmtPriceUnits used in preview.js (estimate, reference, indicative, link avg cost), accounting.js positions (avg cost, Price units), instrument.js (bid/ask, price, avg cost). Checked in browser: 99.53125 -> "99.53125", 99.515625 -> "99.515625". Browser treasury_note/common_stock/equity_index_future pass as baseline.
+
 ## In progress
 - nothing half-edited.
 

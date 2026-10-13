@@ -1523,4 +1523,140 @@ const zeroCouponBond = {
   ],
 };
 
-export default [corporateBondIg, highYieldBond, eurobond, foreignMarketBond, corporateSukuk, floatingRateNote, zeroCouponBond];
+// ---------------------------------------------------------------------------------------------
+// perpetual_bond
+// ---------------------------------------------------------------------------------------------
+// A utility's perpetual hybrid notes: 6.125% semi-annual on 15 March and 15 September, 30/360, NO maturity
+// (registered as perpetual, with one coupon date to anchor the schedule), callable by the issuer at par on
+// coupon dates from 15 September 2027. T+1 on the US bond calendar, pieces of 1,000.
+// The catalog: no maturity; coupons continue until sold or called; a call is recorded by hand. So:
+//   - after the purchase only the next coupon is scheduled: no redemption, ever;
+//   - 300,000 is sold before the coupon (cost at the average, accrued interest sold);
+//   - the 15 September coupon is paid on the 700,000 settled before it, and the next one is scheduled;
+//   - the issuer exercises its first call: recorded by hand on the position (Lifecycle, Early redemption at 100)
+//     on the call date, after the coupon; nothing is accrued on the first day of a period, so par alone is paid.
+// Days of 30/360 from 15 March 2027: to 10 Sep 175, to 13 Sep 178. One 30/360 day at 6.125% on 1,000,000 is 170.1389.
+// Commission: 1 basis point of clean principal (none on the call).
+const perpetualBond = {
+  productId: 'perpetual_bond',
+  title: 'Ardent Utilities 6.125% perpetual hybrid notes: no maturity scheduled, a partial sale, a coupon, the issuer call recorded by hand at par',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount (a multiple of 1,000)'],
+    manualInputs: ['Registration: Perpetual (no maturity) and one coupon date to anchor the schedule', 'Issuer call: early redemption price 100, face amount and label, recorded on the position (Lifecycle, Early redemption)'],
+    settlement: 'T+1 on the US bond calendar; the call is paid on the day it is recorded',
+    lifecycle: 'Daily accrual on 30/360; semi-annual coupons scheduled one at a time with no end; no maturity or redemption task; a call recorded by hand closes the position and cancels the next coupon',
+    accounting: 'Clean cost at average; accrued interest bought and sold through Accrued income; coupon income separate; realized P&L on the sale and on the call',
+    collateral: 'None for a long position',
+  },
+  start: EDT('2027-09-09'), // Thursday
+  settlementCheck: { lag: 1, holidays: [] },
+  book: {
+    name: 'Matrix perpetual bond', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 2_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 1_500_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 1 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'perpetual_bond', name: 'Ardent Utilities Inc 6.125% Fixed Rate Perpetual Notes', symbol: 'ARDENT-6.125-PERP', marketView: 'US_CASH', venueType: 'otc', issuer: 'Ardent Utilities Inc', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      terms: { couponType: 'fixed', couponRate: 0.06125, frequency: 2, perpetual: true, anchorDate: '2025-03-15', issueDate: '2025-03-15', dayCount: '30/360', redemption: 100, minDenomination: 1_000, seniority: 'Junior subordinated (hybrid)' } },
+  },
+  quotes: { main: { bid: 99.4, ask: 99.6, last: 99.5, bidSize: 5_000_000, askSize: 5_000_000 } },
+  expectAtStart: { ...startState(1_500_000, 500_000), cash: { account: usdCash(1_500_000), treasury: usdCash(500_000) } },
+  steps: [
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 1_000_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 1_000_000, estimate: 99.6, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2027-09-10', calendar: 'USBOND',
+            gross: 996_000, // 1,000,000 x 99.60 / 100
+            accrued: 29_774.31, // settles 10 Sep, 175 days of 30/360: 1,000,000 x 6.125% x 175/360 = 29,774.306
+            cash: -1_025_774.31, fees: 99.6 }], // 1 bp of 996,000
+          cash: { USD: { purchases: 1_025_774.31, fees: 99.6, required: 1_025_873.91, available: 1_500_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 1_000_000, avgPrice: 99.6, fills: [{ qty: 1_000_000, price: 99.6, model: 'quoted-bid-ask', settleDate: '2027-09-10', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1,000,000 ARDENT-6.125-PERP @ 99.60 USD', owner: 'account', date: '2027-09-09' }],
+        cash: { account: { USD: { settled: 1_500_000, unsettled: -1_025_873.91, availableToTrade: 474_126.09 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 1_000_000, avgCost: 99.6, cost: 996_000, price: 99.5,
+          value: 995_000, unrealized: -1_000, accrued: 29_774.31, priceSource: 'Test fixture' }],
+        holdings: { main: { long: 1_000_000, short: 0, net: 1_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2027-09-10', amount: -1_025_873.91, ccy: 'USD', into: 'cash' }],
+        // Only the next coupon (15 Sep 2027, a Wednesday). A perpetual has no maturity: no redemption is scheduled.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-09-15', status: 'pending' }],
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -99.6, fees: 0, borrowFunding: 0, unrealized: -1_000, total: -1_099.60 } },
+        nav: { account: 1_498_900.40, book: 1_998_900.40 },
+        balance: { account: { cash: 1_500_000, accruedIncome: 29_774.31, positions: 995_000, payable: 1_025_873.91, assets: 2_524_774.31, liabilities: 1_025_873.91, netAssets: 1_498_900.40 } },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EDT('2027-09-10'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 1,025,873.91 USD from settled cash', cash: { USD: -1_025_873.91 }, date: '2027-09-10' }],
+        cash: { account: { USD: { settled: 474_126.09, unsettled: 0, availableToTrade: 474_126.09 } } },
+        pending: [],
+        balance: { account: { cash: 474_126.09, payable: null, assets: 1_498_900.40, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'reduce', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 300_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 300_000, estimate: 99.4, settleDate: '2027-09-13',
+          gross: 298_200, // 300,000 x 99.40 / 100
+          accrued: 9_085.42, // settles Monday 13 Sep, 178 days: 300,000 x 6.125% x 178/360 = 9,085.417
+          cash: 307_285.42, fees: 29.82 }] }, // 1 bp of 298,200
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 300_000, avgPrice: 99.4 }] },
+        // Realized 298,200 - 300,000 x 99.60% = -600.
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: /^Sold 300,000 ARDENT-6\.125-PERP @ 99\.40 USD \(realized [-−]600\.00 USD\)$/ }],
+        cash: { account: { USD: { settled: 474_126.09, unsettled: 307_255.60, availableToTrade: 781_381.69 } } }, // 307,285.42 - 29.82
+        positions: [{ instrument: 'main', lot: 'lot', qty: 700_000, cost: 697_200, avgCost: 99.6, price: 99.5, value: 696_500, unrealized: -700, accrued: 20_688.89 }], // 29,774.31 - 9,085.42
+        holdings: { main: { long: 700_000, short: 0, net: 700_000 } },
+        pending: [{ instrument: 'main', dueDate: '2027-09-13', amount: 307_255.60, into: 'cash' }],
+        pnl: { account: { realized: -600, commissions: -129.42, unrealized: -700, total: -1_429.42 } },
+        nav: { account: 1_498_570.58, book: 1_998_570.58 },
+        balance: { account: { cash: 474_126.09, receivable: 307_255.60, accruedIncome: 20_688.89, positions: 696_500, assets: 1_498_570.58, liabilities: 0, netAssets: 1_498_570.58 } },
+      },
+    },
+    {
+      // Wednesday 15 Sep. The sale settled on Monday. The coupon of 15 Sep on the 700,000 settled before it: 700,000 x 3.0625% =
+      // 21,437.50. On the books 20,688.89: 748.61 more (three days on 1,000,000 to 13 Sep, 510.42, and two on 700,000, 238.19).
+      // The next coupon is scheduled; still no redemption.
+      id: 'coupon', covers: ['coupon', 'settlement'], action: 'clock', to: EDT('2027-09-15'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 307,255.60 USD into settled cash', cash: { USD: 307_255.60 } },
+          { type: 'bond.coupon', summary: 'Coupon received on 700,000 ARDENT-6.125-PERP: 21,437.50 USD', cash: { USD: 21_437.50 }, owner: 'account', date: '2027-09-15' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on ARDENT-6.125-PERP: 748.61 USD' },
+        ],
+        cash: { account: { USD: { settled: 802_819.19, unsettled: 0, availableToTrade: 802_819.19 } } }, // 474,126.09 + 307,255.60 + 21,437.50
+        positions: [{ instrument: 'main', lot: 'lot', qty: 700_000, accrued: 0 }],
+        pending: [],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2028-03-15', status: 'pending' }],
+        pnl: { account: { couponInterest: 748.61, total: -680.81 } },
+        nav: { account: 1_499_319.19, book: 1_999_319.19 }, // 802,819.19 + 696,500
+        balance: { account: { cash: 802_819.19, receivable: null, accruedIncome: null, assets: 1_499_319.19, netAssets: 1_499_319.19 } },
+      },
+    },
+    {
+      // The issuer calls the notes at par on the first call date, recorded by hand. Paid today; no accrued interest (first day of
+      // the period). Realized 700,000 - 697,200 = 2,800. The scheduled coupon of 15 March 2028 is cancelled.
+      id: 'issuer-call', covers: ['call (by hand)', 'close'], action: 'lifecycle', lot: 'lot', body: { action: 'redeem', price: 100, face: 700_000, label: 'Issuer call at par on the first call date' },
+      expect: {
+        events: [
+          { type: 'bond.early_redemption', summary: 'Issuer call at par on the first call date: 700,000 ARDENT-6.125-PERP at 100.00% of par', owner: 'account', date: '2027-09-15' },
+          { type: 'settlement.receive', summary: 'received 700,000.00 USD into settled cash', cash: { USD: 700_000 } },
+        ],
+        cash: { account: { USD: { settled: 1_502_819.19, unsettled: 0, availableToTrade: 1_502_819.19 } }, treasury: { USD: { settled: 500_000 } } },
+        positions: [],
+        holdings: { main: null },
+        pending: [],
+        lifecycle: [],
+        pnl: { account: { realized: 2_200, couponInterest: 748.61, commissions: -129.42, unrealized: 0, total: 2_819.19 } }, // -600 + 2,800
+        nav: { account: 1_502_819.19, book: 2_002_819.19 },
+        balance: { account: { cash: 1_502_819.19, positions: null, accruedIncome: null, assets: 1_502_819.19, liabilities: 0, netAssets: 1_502_819.19 } },
+      },
+    },
+  ],
+};
+
+export default [corporateBondIg, highYieldBond, eurobond, foreignMarketBond, corporateSukuk, floatingRateNote, zeroCouponBond, perpetualBond];

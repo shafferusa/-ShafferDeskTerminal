@@ -1882,7 +1882,8 @@ export async function catchUpScreens(b, c) {
   c.match(s1.cash, /944,301\.76/, 'Cash and financing balances: settled cash 944,301.76');
   c.match(s1.cash, /15,300\.00/, 'restricted 15,300.00 (short collateral)');
   c.match(s1.cash, /5,000\.00/, 'margin 5,000.00');
-  for (const [fig, what] of [['250.00', 'dividend income 250.00'], ['194.44', 'loan interest 194.44'], ['420.00', 'option premium lost 420.00'], ['5.83', 'borrow fee 5.83']]) c.match(s1.pnl, new RegExp(fig.replace('.', '\\.')), `P&L: ${what}`);
+  for (const [fig, what] of [['250.00', 'dividend income 250.00'], ['420.00', 'option premium lost 420.00'], ['200.27', 'borrowing and funding expenses 200.27 (loan interest 194.44 + borrow fee 5.83)']]) c.match(s1.pnl, new RegExp(fig.replace('.', '\\.')), `P&L: ${what}`);
+  c.eq(lines.filter((x) => /194\.44/.test(x)).length, 1, 'the Full history shows the loan interest of 194.44 on one row');
   c.match(s1.pending, /Executed trades awaiting settlement[^]*?(Nothing|No )/i, 'Pending trades: nothing is left awaiting settlement');
   c.eq(s1.lifecycle.filter((x, i) => s1.lifecycle.indexOf(x) !== i), [], 'each lifecycle item is listed once');
   c.match(s1.failed, /No settlement has failed/, 'Failed: no settlement has failed');

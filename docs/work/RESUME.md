@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 52.6% of the pass** (last milestone 2026-10-13T16:46Z, b2: zero_coupon_bond passes at engine, API and browser)
+**Completeness: about 53.6% of the pass** (last milestone 2026-10-13T16:48Z, ui1: Product-specific Marketplace columns and units-aware bond price display (BUGS b1  1))
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 
