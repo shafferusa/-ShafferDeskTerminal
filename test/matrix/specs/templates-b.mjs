@@ -4853,4 +4853,561 @@ const syntheticShort = {
   ],
 };
 
-export default [bearCall, longStraddle, longStrangle, ironCondor, ironButterfly, longButterfly, longCalendar, longDiagonal, syntheticLong, syntheticShort];
+// =====================================================================================================================
+// pairs_trade
+// =====================================================================================================================
+// Buy Ashby Steel (NYSE) and sell short Brenmoor Steel (NYSE) against a simulated securities borrow, 0.8 shares short
+// per share long. The short sale depends on its borrow; the purchase stands alone. Short-sale proceeds are held as
+// restricted collateral (102% of market value) with a 30% margin reserve; the borrow fee accrues daily (0.9% a year).
+//   pair    refused short of cash; the Account is funded from Treasury (a transfer) and the pair opened: 1,000 long
+//           (600 fill first: 600 displayed at the ask), borrow 800, 800 short. Later the long leg rises and the pair is
+//           closed on both sides: the long sold, the short bought to cover, the borrow returned after the cover and its
+//           fee paid.
+//   retry / accept / unwind  100 long / 80 short each, when the short leg has no fresh quote: the purchase and the
+//           borrow go through, the short sale expires unfilled. Retry sells it short; Accept keeps the long and the
+//           borrow (closed later: sale and return); Unwind sells the long and returns the unused borrow.
+const PAIRS_PAGE = (quantity) => ({ template: 'Pairs Trade', underlying: 'long', quantity, pair: { instrument: 'short', ratio: 0.8 } });
+const pairsInput = (quantity) => templateInput('pairs_trade', { underlyingId: '$inst:long', mode: 'new', quantity, pair: { instrumentId: '$inst:short', ratio: 0.8 }, borrow: null, financing: null });
+const pairsOne = (as) => ({ action: 'package', as, instrument: 'long', input: pairsInput(100), strategyPage: PAIRS_PAGE(100) });
+const BRS_BORROW_FIXTURE = 'Test fixture';
+const pairsTrade = {
+  template: 'pairs_trade',
+  title: 'Pairs trade: buy Ashby Steel, borrow and sell short Brenmoor Steel (both NYSE), 0.8 short per share long',
+  matrix: {
+    ticket: 'Strategies page: Trading owner, Execution template (Pairs Trade), Ticker or instrument (the long leg), Quantity, Short leg of the pair (security to borrow and sell short, sizing ratio), Securities borrow (assumption only without borrow data); the package preview and one confirmation. Retry, Unwind, Accept and Close on the strategy instance',
+    requiredFields: ['Trading owner', 'Execution template', 'Long security', 'Quantity or target notional', 'Security to sell short', 'Sizing ratio'],
+    automaticInputs: ['bid, ask, last and displayed size of both securities (quote fixtures standing in for Shaffer MarketData)', 'borrow availability and fee of the short security (borrow fixture)', 'collateral top-up and margin reserve from the Book short assumptions', 'settlement dates', 'commission from the Book fee schedule', 'daily borrow fee accrual and the fee paid on return'],
+    manualInputs: ['Treasury funding of the Account (a transfer) when the package is refused for want of cash', 'Retry, Unwind or Accept as it stands after the short leg fails', 'Close of the pair'],
+    settlement: 'Both legs T+1 on the US calendar; the short-sale proceeds settle into restricted cash; a cover is paid from restricted cash; surplus collateral is released at settlement',
+    lifecycle: 'Daily borrow fee accrual; end-of-day collateral mark; the borrow is returned after the cover (it depends on it) and its fee paid at return; a failed short leg leaves the instance needing attention: Retry, Unwind or Accept',
+    accounting: 'Long leg at cost; short leg at negative cost (proceeds); realized on sale and cover; borrow fee under borrowing and funding expenses; each borrow one record in the borrowing register',
+    collateral: 'Restricted cash 102% of the short\'s market value, marked daily; 30% margin reserve; neither is buying power; released when the short is covered',
+  },
+  start: MAR(2),
+  settlementCheck: { lag: 1, holidays: [] },
+  book: book('Templates pairs trade', { funding: [{ ccy: 'USD', amount: 50_000 }] }),
+  instruments: {
+    long: stockDraft('Ashby Steel Corp.', 'ASH'),
+    short: stockDraft('Brenmoor Steel Inc.', 'BRS'),
+  },
+  quotes: {
+    long: { bid: 39.98, ask: 40.02, last: 40.00, bidSize: 10000, askSize: 600 }, // 600 shares displayed at the ask
+    short: { bid: 50.00, ask: 50.04, last: 50.00, bidSize: 10000, askSize: 10000 },
+  },
+  borrow: { short: { available: true, quantity: 50_000, feeRate: 0.009 } },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 50_000, unsettled: 0, reserved: 0, restricted: 0, availableToTrade: 50_000, availableToWithdraw: 50_000 } },
+      treasury: { USD: { settled: 950_000, unsettled: 0, reserved: 0, availableToTrade: 950_000, availableToWithdraw: 950_000 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 50_000, treasury: 950_000, book: 1_000_000 },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+  },
+  steps: [
+    {
+      // Long: 1,000 x 40.02 = 40,020, commission 5. Short: 800 x 50.00 = 40,000 to restricted cash (not buying power),
+      // commission 4, collateral top-up 2% = 800, margin reserve 30% = 12,000. Needs 40,020 + 9 + 800 + 12,000 = 52,829.
+      id: 'open-short-of-cash', covers: 'financing', action: 'package', as: 'refused', instrument: 'long',
+      input: pairsInput(1_000), strategyPage: PAIRS_PAGE(1_000),
+      status: 'blocked', reason: 'The Account cannot fund the long leg, the collateral top-up and the margin reserve.',
+      expect: {
+        refused: 'Alpha is short 2,829.00 USD',
+        preview: {
+          blocking: 1, errors: ['cash'],
+          legs: [
+            { kind: 'trade', action: 'buy', purpose: 'primary', instrument: 'long', qty: 1_000, estimate: 40.02, settleDate: '2026-03-03', cash: -40_020, fees: 5, dependsOn: [] },
+            { kind: 'borrow_sec', action: 'borrow_sec', purpose: 'financing', instrument: 'short', qty: 800, borrow: { available: true, feeRate: 0.009, dailyCost: 1, source: BRS_BORROW_FIXTURE }, dependsOn: [] }, // 800 x 50.00 x 0.009 / 360
+            { kind: 'trade', action: 'sell_short', purpose: 'primary', instrument: 'short', qty: 800, estimate: 50.00, settleDate: '2026-03-03', cash: 40_000, fees: 4, dependsOn: [2], shortCollateral: { topUp: 800, marginHold: 12_000 } },
+          ],
+          cash: { USD: { purchases: 40_020, restrictedProceeds: 40_000, fees: 9, collateral: 800, margin: 12_000, required: 52_829, available: 50_000, shortfall: 2_829 } },
+        },
+      },
+    },
+    {
+      // Financing chosen as a Treasury transfer to the Account.
+      id: 'fund-account', covers: ['financing', 'internal funding'], action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 30_000,
+      expect: {
+        events: [{ type: 'transfer.funding', summary: 'Treasury funding: 30,000.00 USD from Treasury to Alpha' }],
+        cash: { account: { USD: { settled: 80_000, availableToTrade: 80_000, availableToWithdraw: 80_000 } }, treasury: { USD: { settled: 920_000, availableToTrade: 920_000, availableToWithdraw: 920_000 } } },
+        nav: { account: 80_000, treasury: 920_000 },
+        balance: { account: { cash: 80_000, assets: 80_000, netAssets: 80_000 }, treasury: { cash: 920_000, assets: 920_000, netAssets: 920_000 } },
+      },
+    },
+    {
+      // The long leg fills 600 (displayed size), commission 3.00; the borrow is arranged; the short sale follows its
+      // borrow: 800 at 50.00, commission 4. On the next cycle the last 400 long fill, commission 2.00.
+      id: 'open', covers: ['open', 'borrow', 'short', 'partial fill', 'dependency'], action: 'package', as: 'pair', instrument: 'long',
+      input: pairsInput(1_000), strategyPage: PAIRS_PAGE(1_000),
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [
+            { kind: 'trade', action: 'buy', instrument: 'long', qty: 1_000, estimate: 40.02, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2026-03-03', cash: -40_020, fees: 5, dependsOn: [] },
+            { kind: 'borrow_sec', instrument: 'short', qty: 800, borrow: { available: true, feeRate: 0.009, dailyCost: 1 }, dependsOn: [] },
+            { kind: 'trade', action: 'sell_short', instrument: 'short', qty: 800, estimate: 50.00, settleDate: '2026-03-03', cash: 40_000, fees: 4, dependsOn: [2], shortCollateral: { topUp: 800, marginHold: 12_000 } },
+          ],
+          cash: { USD: { purchases: 40_020, restrictedProceeds: 40_000, fees: 9, collateral: 800, margin: 12_000, required: 52_829, available: 80_000, shortfall: 0 } },
+        },
+        result: {
+          status: 'partial',
+          orders: [
+            { kind: 'trade', action: 'buy', instrument: 'long', status: 'partial', qty: 1_000, filledQty: 600, avgPrice: 40.02 },
+            { kind: 'borrow_sec', status: 'filled', filledQty: 800 },
+            { kind: 'trade', action: 'sell_short', instrument: 'short', status: 'filled', filledQty: 800, avgPrice: 50.00 },
+          ],
+        },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Bought 600 ASH @ 40.02 USD', date: '2026-03-02' },
+          { type: 'secloan.borrow', summary: 'Borrowed 800 BRS at a fee of 0.900% p.a.' },
+          { type: 'trade.fill', summary: 'Sold short 800 BRS @ 50.00 USD' },
+          { type: 'trade.fill', summary: 'Bought 400 ASH @ 40.02 USD' },
+        ],
+        // Owed: 24,012 + 3 and 16,008 + 2 = 40,025. Owed to it 40,000 - 4 = 39,996, arriving as restricted cash (not
+        // buying power). Reserve 0.30 x 800 x 50.00 = 12,000. To trade: 80,000 - 40,025 - 12,000 = 27,975.
+        cash: {
+          account: { USD: { settled: 80_000, unsettled: -29, restricted: 0, reserved: 12_000, availableToTrade: 27_975, availableToWithdraw: 27_975 } },
+          treasury: { USD: { settled: 920_000 } },
+        },
+        positions: [
+          { instrument: 'borrow:short', lot: 'pair', owner: 'account', direction: 'securities borrowed', qty: 800, value: 40_000, accrued: 0 },
+          { instrument: 'long', lot: 'pair', owner: 'account', direction: 'long', qty: 1_000, avgCost: 40.02, cost: 40_020, price: 40, value: 40_000, unrealized: -20 },
+          { instrument: 'short', lot: 'pair', owner: 'account', direction: 'short', qty: -800, avgCost: 50, cost: -40_000, price: 50, value: -40_000, unrealized: 0, restrictedCash: 0 },
+        ],
+        holdings: { long: { long: 1_000, short: 0, net: 1_000 }, short: { long: 0, short: 800, net: -800 } },
+        pending: [
+          { instrument: 'long', lot: 'pair', dueDate: '2026-03-03', amount: -24_015, into: 'cash' },
+          { instrument: 'long', lot: 'pair', dueDate: '2026-03-03', amount: -16_010, into: 'cash' },
+          { instrument: 'short', lot: 'pair', dueDate: '2026-03-03', amount: 39_996, into: 'cash.restricted' },
+        ],
+        lifecycle: [{ type: 'secloan.fee', instrument: 'borrow:short', dueDate: '2026-04-01', status: 'pending' }],
+        borrowings: [{ owner: 'account', family: 'secloan', instrument: 'short', lot: 'pair', qty: 800, value: 40_000, rate: 0.009, accrued: 0, collateralCash: null, nextPayment: '2026-04-01' }],
+        pnl: {
+          account: { realized: 0, commissions: -9, fees: 0, borrowFunding: 0, unrealized: -20, total: -29 },
+          book: { realized: 0, commissions: -9, borrowFunding: 0, unrealized: -20, total: -29 },
+          treasury: { total: 0 },
+        },
+        nav: { account: 79_971, treasury: 920_000, book: 999_971 },
+        balance: {
+          account: { cash: 80_000, receivable: 39_996, payable: 40_025, positions: 0, assets: 119_996, liabilities: 40_025, netAssets: 79_971 },
+          treasury: { cash: 920_000, assets: 920_000, liabilities: 0, netAssets: 920_000 },
+          book: { cash: 1_000_000, receivable: 39_996, payable: 40_025, positions: 0, assets: 1_039_996, liabilities: 40_025, netAssets: 999_971 },
+        },
+      },
+    },
+    {
+      // The sale proceeds arrive as restricted cash, 39,996; collateral required 1.02 x 800 x 50.00 = 40,800, so 804 is
+      // posted from settled cash. The purchases are paid.
+      id: 'settle-open', covers: ['settlement', 'collateral mark'], action: 'clock', to: MAR(3),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 39,996.00 USD into restricted cash', date: '2026-03-03' },
+          { type: 'settlement.pay', summary: 'paid 24,015.00 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 16,010.00 USD from settled cash' },
+          { type: 'collateral.mark', summary: 'Short collateral on BRS marked to market: posted 804.00 USD', cash: { USD: -804 } },
+        ],
+        cash: { account: { USD: { settled: 39_171, unsettled: 0, restricted: 40_800, reserved: 12_000, availableToTrade: 27_171, availableToWithdraw: 27_171 } } },
+        positions: [{ instrument: 'borrow:short', lot: 'pair' }, { instrument: 'long', lot: 'pair' }, { instrument: 'short', lot: 'pair', restrictedCash: 40_800 }],
+        pending: [],
+        borrowings: [{ instrument: 'short', lot: 'pair', qty: 800, collateralCash: 40_800 }],
+        balance: {
+          account: { cash: 39_171, restricted: 40_800, receivable: null, payable: null, assets: 79_971, liabilities: 0 },
+          book: { cash: 959_171, restricted: 40_800, receivable: null, payable: null, assets: 999_971, liabilities: 0 },
+        },
+      },
+    },
+    // The short security's quote stops updating at 09:50.
+    { id: 'short-quote-stops', action: 'quote', instrument: 'short', quote: { bid: 50.00, ask: 50.04, last: 50.00, bidSize: 10000, askSize: 10000, asOf: MAR(3, '09:50') }, expect: {} },
+    {
+      // 100 long at 40.02 (commission 0.50, raised to the 1.00 minimum), borrow 80 (0.10 a day), 80 short estimated at
+      // the last 50.00 (commission 1.00), collateral top-up 80, margin 1,200.
+      ...pairsOne('retry'), id: 'open-retry', covers: ['open', 'failed dependent leg'],
+      expect: {
+        preview: {
+          blocking: 0, warnings: ['not-executable'],
+          legs: [
+            { kind: 'trade', action: 'buy', instrument: 'long', qty: 100, estimate: 40.02, settleDate: '2026-03-04', cash: -4_002, fees: 1, dependsOn: [] },
+            { kind: 'borrow_sec', instrument: 'short', qty: 80, borrow: { available: true, feeRate: 0.009, dailyCost: 0.10 }, dependsOn: [] },
+            { kind: 'trade', action: 'sell_short', instrument: 'short', qty: 80, estimate: null, reference: 50, executable: false, settleDate: '2026-03-04', cash: 4_000, fees: 1, dependsOn: [2], shortCollateral: { topUp: 80, marginHold: 1_200 } },
+          ],
+          cash: { USD: { purchases: 4_002, restrictedProceeds: 4_000, fees: 2, collateral: 80, margin: 1_200, required: 5_284, available: 27_171, shortfall: 0 } },
+        },
+        result: { status: 'partial', orders: [{ action: 'buy', status: 'filled', filledQty: 100 }, { kind: 'borrow_sec', status: 'filled', filledQty: 80 }, { action: 'sell_short', status: 'working', filledQty: 0 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 100 ASH @ 40.02 USD', date: '2026-03-03' }, { type: 'secloan.borrow', summary: 'Borrowed 80 BRS at a fee of 0.900% p.a.' }],
+        cash: { account: { USD: { settled: 39_171, unsettled: -4_003, restricted: 40_800, reserved: 12_000, availableToTrade: 23_168, availableToWithdraw: 23_168 } } },
+        positions: [
+          { instrument: 'borrow:short', lot: 'pair', qty: 800 }, { instrument: 'borrow:short', lot: 'retry', qty: 80, value: 4_000, accrued: 0 },
+          { instrument: 'long', lot: 'pair', qty: 1_000 }, { instrument: 'long', lot: 'retry', owner: 'account', direction: 'long', qty: 100, avgCost: 40.02, cost: 4_002, price: 40, value: 4_000, unrealized: -2 },
+          { instrument: 'short', lot: 'pair', qty: -800 },
+        ],
+        holdings: { long: { long: 1_100, short: 0, net: 1_100 } },
+        pending: [{ instrument: 'long', lot: 'retry', dueDate: '2026-03-04', amount: -4_003, into: 'cash' }],
+        openOrders: [{ instrument: 'short', kind: 'trade', action: 'sell_short', status: 'working', qty: 80, filledQty: 0 }],
+        lifecycle: [{ type: 'secloan.fee' }, { type: 'secloan.fee' }],
+        borrowings: [{ lot: 'pair', qty: 800 }, { lot: 'retry', qty: 80, value: 4_000, accrued: 0 }],
+        pnl: { account: { commissions: -10, unrealized: -22, total: -32 }, book: { commissions: -10, unrealized: -22, total: -32 } },
+        nav: { account: 79_968, book: 999_968 },
+        balance: {
+          account: { cash: 39_171, restricted: 40_800, payable: 4_003, positions: 4_000, assets: 83_971, liabilities: 4_003, netAssets: 79_968 },
+          book: { cash: 959_171, restricted: 40_800, payable: 4_003, positions: 4_000, assets: 1_003_971, liabilities: 4_003, netAssets: 999_968 },
+        },
+      },
+    },
+    {
+      ...pairsOne('accept'), id: 'open-accept', covers: ['open', 'failed dependent leg'],
+      expect: {
+        preview: { blocking: 0, legs: [{ instrument: 'long', qty: 100 }, { kind: 'borrow_sec', qty: 80 }, { action: 'sell_short', qty: 80, estimate: null }], cash: { USD: { required: 5_284, available: 23_168, shortfall: 0 } } },
+        result: { status: 'partial', orders: [{ status: 'filled' }, { status: 'filled' }, { action: 'sell_short', status: 'working' }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 100 ASH @ 40.02 USD' }, { type: 'secloan.borrow', summary: 'Borrowed 80 BRS at a fee of 0.900% p.a.' }],
+        cash: { account: { USD: { settled: 39_171, unsettled: -8_006, availableToTrade: 19_165, availableToWithdraw: 19_165 } } },
+        positions: [
+          { instrument: 'borrow:short', lot: 'accept', qty: 80 }, { instrument: 'borrow:short', lot: 'pair' }, { instrument: 'borrow:short', lot: 'retry' },
+          { instrument: 'long', lot: 'accept', qty: 100, value: 4_000 }, { instrument: 'long', lot: 'pair' }, { instrument: 'long', lot: 'retry' },
+          { instrument: 'short', lot: 'pair' },
+        ],
+        holdings: { long: { long: 1_200, short: 0, net: 1_200 } },
+        pending: [{ lot: 'accept', amount: -4_003 }, { lot: 'retry', amount: -4_003 }],
+        openOrders: [{ action: 'sell_short', status: 'working' }, { action: 'sell_short', status: 'working' }],
+        lifecycle: [{ type: 'secloan.fee' }, { type: 'secloan.fee' }, { type: 'secloan.fee' }],
+        borrowings: [{ lot: 'accept', qty: 80 }, { lot: 'pair' }, { lot: 'retry' }],
+        pnl: { account: { commissions: -11, unrealized: -24, total: -35 }, book: { commissions: -11, unrealized: -24, total: -35 } },
+        nav: { account: 79_965, book: 999_965 },
+        balance: {
+          account: { cash: 39_171, restricted: 40_800, payable: 8_006, positions: 8_000, assets: 87_971, liabilities: 8_006, netAssets: 79_965 },
+          book: { cash: 959_171, restricted: 40_800, payable: 8_006, positions: 8_000, assets: 1_007_971, liabilities: 8_006, netAssets: 999_965 },
+        },
+      },
+    },
+    {
+      ...pairsOne('unwind'), id: 'open-unwind', covers: ['open', 'failed dependent leg'],
+      expect: {
+        preview: { blocking: 0, legs: [{ instrument: 'long', qty: 100 }, { kind: 'borrow_sec', qty: 80 }, { action: 'sell_short', qty: 80, estimate: null }], cash: { USD: { required: 5_284, available: 19_165, shortfall: 0 } } },
+        result: { status: 'partial', orders: [{ status: 'filled' }, { status: 'filled' }, { action: 'sell_short', status: 'working' }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 100 ASH @ 40.02 USD' }, { type: 'secloan.borrow', summary: 'Borrowed 80 BRS at a fee of 0.900% p.a.' }],
+        cash: { account: { USD: { settled: 39_171, unsettled: -12_009, availableToTrade: 15_162, availableToWithdraw: 15_162 } } },
+        positions: [
+          { instrument: 'borrow:short', lot: 'accept' }, { instrument: 'borrow:short', lot: 'pair' }, { instrument: 'borrow:short', lot: 'retry' }, { instrument: 'borrow:short', lot: 'unwind', qty: 80 },
+          { instrument: 'long', lot: 'accept' }, { instrument: 'long', lot: 'pair' }, { instrument: 'long', lot: 'retry' }, { instrument: 'long', lot: 'unwind', qty: 100, value: 4_000 },
+          { instrument: 'short', lot: 'pair' },
+        ],
+        holdings: { long: { long: 1_300, short: 0, net: 1_300 } },
+        pending: [{ lot: 'accept', amount: -4_003 }, { lot: 'retry', amount: -4_003 }, { lot: 'unwind', amount: -4_003 }],
+        openOrders: [{ action: 'sell_short', status: 'working' }, { action: 'sell_short', status: 'working' }, { action: 'sell_short', status: 'working' }],
+        lifecycle: [{ type: 'secloan.fee' }, { type: 'secloan.fee' }, { type: 'secloan.fee' }, { type: 'secloan.fee' }],
+        borrowings: [{ lot: 'accept' }, { lot: 'pair' }, { lot: 'retry' }, { lot: 'unwind', qty: 80 }],
+        pnl: { account: { commissions: -12, unrealized: -26, total: -38 }, book: { commissions: -12, unrealized: -26, total: -38 } },
+        nav: { account: 79_962, book: 999_962 },
+        balance: {
+          account: { cash: 39_171, restricted: 40_800, payable: 12_009, positions: 12_000, assets: 91_971, liabilities: 12_009, netAssets: 79_962 },
+          book: { cash: 959_171, restricted: 40_800, payable: 12_009, positions: 12_000, assets: 1_011_971, liabilities: 12_009, netAssets: 999_962 },
+        },
+      },
+    },
+    {
+      // End of 3 March: the three short sales expire unfilled; the long purchases settle; the pair's borrow accrues its
+      // first day's fee, 1.00 (the borrows of 3 March have no day yet).
+      id: 'short-legs-expire', covers: ['failed dependent leg', 'settlement', 'borrow fee'], action: 'clock', to: MAR(4),
+      expect: {
+        events: [
+          { type: 'settlement.pay', summary: 'paid 4,003.00 USD from settled cash', date: '2026-03-04' },
+          { type: 'settlement.pay', summary: 'paid 4,003.00 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 4,003.00 USD from settled cash' },
+          { type: 'accrual.fee', summary: 'Borrow fee accrued on 800 BRS: 1.00 USD' },
+          { type: 'order.expired', summary: /^Leg 3 expired: .*80 BRS\. Day order did not fill before the end of the business day/ },
+          { type: 'order.expired', summary: /^Leg 3 expired: .*80 BRS\. Day order did not fill before the end of the business day/ },
+          { type: 'order.expired', summary: /^Leg 3 expired: .*80 BRS\. Day order did not fill before the end of the business day/ },
+        ],
+        cash: { account: { USD: { settled: 27_162, unsettled: 0, availableToTrade: 15_162, availableToWithdraw: 15_162 } } },
+        positions: [
+          { instrument: 'borrow:short', lot: 'accept' }, { instrument: 'borrow:short', lot: 'pair', accrued: -1 }, { instrument: 'borrow:short', lot: 'retry' }, { instrument: 'borrow:short', lot: 'unwind' },
+          { instrument: 'long', lot: 'accept' }, { instrument: 'long', lot: 'pair' }, { instrument: 'long', lot: 'retry' }, { instrument: 'long', lot: 'unwind' },
+          { instrument: 'short', lot: 'pair' },
+        ],
+        pending: [], openOrders: [],
+        borrowings: [{ lot: 'accept' }, { lot: 'pair', accrued: 1, costToDate: 1 }, { lot: 'retry' }, { lot: 'unwind' }],
+        failed: { orders: 3 },
+        alerts: ['strategy.attention', 'strategy.attention', 'strategy.attention'],
+        pnl: { account: { borrowFunding: -1, total: -39 }, book: { borrowFunding: -1, total: -39 } },
+        nav: { account: 79_961, book: 999_961 },
+        balance: {
+          account: { cash: 27_162, restricted: 40_800, payable: null, accruedExpense: 1, positions: 12_000, assets: 79_962, liabilities: 1, netAssets: 79_961 },
+          book: { cash: 947_162, restricted: 40_800, payable: null, accruedExpense: 1, positions: 12_000, assets: 999_962, liabilities: 1, netAssets: 999_961 },
+        },
+      },
+    },
+    { id: 'short-quote-fresh', action: 'quote', instrument: 'short', quote: { bid: 50.00, ask: 50.04, last: 50.00, bidSize: 10000, askSize: 10000 }, expect: {} }, // same figures, observed now
+    {
+      // Retry sells the 80 short against the borrow already arranged: 4,000 to restricted cash, commission 1.00, margin
+      // reserve 1,200 (0.30 x 80 x 50.00). Free: 27,162 - 13,200 = 13,962.
+      id: 'retry', covers: ['retry', 'failed dependent leg', 'short'], action: 'recover', how: 'retry', lot: 'retry',
+      expect: {
+        preview: {
+          blocking: 0, errors: [], intent: 'retry',
+          legs: [{ kind: 'trade', action: 'sell_short', instrument: 'short', qty: 80, estimate: 50.00, settleDate: '2026-03-05', cash: 4_000, fees: 1, shortCollateral: { topUp: 80, marginHold: 1_200 } }],
+          cash: { USD: { restrictedProceeds: 4_000, fees: 1, collateral: 80, margin: 1_200, required: 1_281, available: 15_162, shortfall: 0 } },
+        },
+        result: { status: 'open', complete: true, orders: [{ action: 'sell_short', status: 'filled', filledQty: 80, avgPrice: 50.00 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold short 80 BRS @ 50.00 USD', date: '2026-03-04' }],
+        cash: { account: { USD: { settled: 27_162, unsettled: 3_999, reserved: 13_200, availableToTrade: 13_962, availableToWithdraw: 13_962 } } },
+        positions: [
+          { instrument: 'borrow:short', lot: 'accept' }, { instrument: 'borrow:short', lot: 'pair' }, { instrument: 'borrow:short', lot: 'retry' }, { instrument: 'borrow:short', lot: 'unwind' },
+          { instrument: 'long', lot: 'accept' }, { instrument: 'long', lot: 'pair' }, { instrument: 'long', lot: 'retry' }, { instrument: 'long', lot: 'unwind' },
+          { instrument: 'short', lot: 'pair', qty: -800 }, { instrument: 'short', lot: 'retry', owner: 'account', direction: 'short', qty: -80, avgCost: 50, cost: -4_000, price: 50, value: -4_000, unrealized: 0, restrictedCash: 0 },
+        ],
+        holdings: { short: { long: 0, short: 880, net: -880 } },
+        pending: [{ instrument: 'short', lot: 'retry', dueDate: '2026-03-05', amount: 3_999, into: 'cash.restricted' }],
+        alerts: ['strategy.attention', 'strategy.attention'],
+        pnl: { account: { commissions: -13, total: -40 }, book: { commissions: -13, total: -40 } },
+        nav: { account: 79_960, book: 999_960 },
+        balance: {
+          account: { cash: 27_162, restricted: 40_800, receivable: 3_999, positions: 8_000, assets: 79_961, liabilities: 1, netAssets: 79_960 },
+          book: { cash: 947_162, restricted: 40_800, receivable: 3_999, positions: 8_000, assets: 999_961, liabilities: 1, netAssets: 999_960 },
+        },
+      },
+    },
+    {
+      id: 'accept', covers: ['accept', 'failed dependent leg'], action: 'strategy_action', lot: 'accept', how: 'accept',
+      expect: { events: [{ type: 'strategy.accepted', summary: 'accepted as it stands with 1 leg unexecuted. The position no longer matches its template.' }], alerts: ['strategy.attention'] },
+    },
+    {
+      // Unwind: the long 100 sold at 39.98 (3,998, commission 1.00; realized 100 x (39.98 - 40.02) = -4) and the unused
+      // borrow returned, its fee to today (one day, 0.10) accrued and paid.
+      id: 'unwind', covers: ['unwind', 'return', 'close'], action: 'recover', how: 'unwind', lot: 'unwind',
+      expect: {
+        preview: {
+          blocking: 0, errors: [], intent: 'unwind',
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'long', qty: 100, estimate: 39.98, settleDate: '2026-03-05', cash: 3_998, fees: 1 }, { kind: 'return_sec', action: 'return_sec', qty: 80, dependsOn: [] }],
+        },
+        result: { status: 'closed', orders: [{ action: 'sell', instrument: 'long', status: 'filled', filledQty: 100, avgPrice: 39.98 }, { kind: 'return_sec', status: 'filled', filledQty: 80 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 100 ASH @ 39.98 USD (realized -4.00 USD)' },
+          { type: 'accrual.fee', summary: 'Borrow fee accrued on 80 BRS: 0.10 USD' },
+          { type: 'secloan.return', summary: 'Returned 80 borrowed BRS' },
+          { type: 'interest.payment', summary: /Borrow fee paid on Borrow of BRS.*: 0\.10 USD/, cash: { USD: -0.10 } },
+        ],
+        cash: { account: { USD: { settled: 27_161.90, unsettled: 7_996, reserved: 13_200, availableToTrade: 17_958.90, availableToWithdraw: 13_961.90 } } },
+        positions: [
+          { instrument: 'borrow:short', lot: 'accept' }, { instrument: 'borrow:short', lot: 'pair' }, { instrument: 'borrow:short', lot: 'retry' },
+          { instrument: 'long', lot: 'accept' }, { instrument: 'long', lot: 'pair' }, { instrument: 'long', lot: 'retry' },
+          { instrument: 'short', lot: 'pair' }, { instrument: 'short', lot: 'retry' },
+        ],
+        holdings: { long: { long: 1_200, short: 0, net: 1_200 } },
+        pending: [{ instrument: 'long', lot: 'unwind', dueDate: '2026-03-05', amount: 3_997, into: 'cash' }, { instrument: 'short', lot: 'retry', amount: 3_999, into: 'cash.restricted' }],
+        lifecycle: [{ type: 'secloan.fee' }, { type: 'secloan.fee' }, { type: 'secloan.fee' }],
+        borrowings: [{ lot: 'accept' }, { lot: 'pair' }, { lot: 'retry' }],
+        alerts: [],
+        pnl: { account: { realized: -4, commissions: -14, borrowFunding: -1.10, unrealized: -24, total: -43.10 }, book: { realized: -4, commissions: -14, borrowFunding: -1.10, unrealized: -24, total: -43.10 } },
+        nav: { account: 79_956.90, book: 999_956.90 },
+        balance: {
+          account: { cash: 27_161.90, restricted: 40_800, receivable: 7_996, positions: 4_000, assets: 79_957.90, liabilities: 1, netAssets: 79_956.90 },
+          book: { cash: 947_161.90, restricted: 40_800, receivable: 7_996, positions: 4_000, assets: 999_957.90, liabilities: 1, netAssets: 999_956.90 },
+        },
+      },
+    },
+    {
+      // 5 March: the sale of the long settles; the retried short's proceeds arrive as restricted cash, 3,999, and its
+      // collateral is topped up to 1.02 x 4,000 = 4,080 (81 posted). Fees of 4 March: the pair 2.00 (1.00 new), "retry"
+      // and "accept" one day each, 0.10.
+      id: 'settle-recovery', covers: ['settlement', 'collateral mark', 'borrow fee'], action: 'clock', to: MAR(5),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 3,999.00 USD into restricted cash', date: '2026-03-05' },
+          { type: 'settlement.receive', summary: 'received 3,997.00 USD into settled cash' },
+          { type: 'accrual.fee', summary: 'Borrow fee accrued on 800 BRS: 1.00 USD' },
+          { type: 'accrual.fee', summary: 'Borrow fee accrued on 80 BRS: 0.10 USD' },
+          { type: 'accrual.fee', summary: 'Borrow fee accrued on 80 BRS: 0.10 USD' },
+          { type: 'collateral.mark', summary: 'Short collateral on BRS marked to market: posted 81.00 USD', cash: { USD: -81 } },
+        ],
+        cash: { account: { USD: { settled: 31_077.90, unsettled: 0, restricted: 44_880, reserved: 13_200, availableToTrade: 17_877.90, availableToWithdraw: 17_877.90 } } },
+        positions: [
+          { instrument: 'borrow:short', lot: 'accept', accrued: -0.10 }, { instrument: 'borrow:short', lot: 'pair', accrued: -2 }, { instrument: 'borrow:short', lot: 'retry', accrued: -0.10 },
+          { instrument: 'long', lot: 'accept' }, { instrument: 'long', lot: 'pair' }, { instrument: 'long', lot: 'retry' },
+          { instrument: 'short', lot: 'pair', restrictedCash: 40_800 }, { instrument: 'short', lot: 'retry', restrictedCash: 4_080 },
+        ],
+        pending: [],
+        borrowings: [{ lot: 'accept', accrued: 0.10 }, { lot: 'pair', accrued: 2, collateralCash: 40_800 }, { lot: 'retry', accrued: 0.10, collateralCash: 4_080 }],
+        pnl: { account: { borrowFunding: -2.30, total: -44.30 }, book: { borrowFunding: -2.30, total: -44.30 } },
+        nav: { account: 79_955.70, book: 999_955.70 },
+        balance: {
+          account: { cash: 31_077.90, restricted: 44_880, receivable: null, accruedExpense: 2.20, positions: 4_000, assets: 79_957.90, liabilities: 2.20, netAssets: 79_955.70 },
+          book: { cash: 951_077.90, restricted: 44_880, receivable: null, accruedExpense: 2.20, positions: 4_000, assets: 999_957.90, liabilities: 2.20, netAssets: 999_955.70 },
+        },
+      },
+    },
+    {
+      // Close "retry" on both sides: the long sold at 39.98 (realized -4), the short bought to cover at 50.04 (4,003.20,
+      // commission 1.00, paid from restricted cash; realized 80 x (50.00 - 50.04) = -3.20), the borrow returned after the
+      // cover and its fee to today (two days, 0.20) paid.
+      id: 'close-retry', covers: ['close', 'cover', 'return'], action: 'close', lot: 'retry', instrument: 'long', scope: 'strategy', percent: 100,
+      expect: {
+        preview: {
+          blocking: 0, errors: [], intent: 'close',
+          legs: [
+            { kind: 'trade', action: 'sell', instrument: 'long', qty: 100, estimate: 39.98, settleDate: '2026-03-06', cash: 3_998, fees: 1, dependsOn: [] },
+            { kind: 'trade', action: 'buy_to_cover', instrument: 'short', qty: 80, estimate: 50.04, settleDate: '2026-03-06', cash: -4_003.20, fees: 1, dependsOn: [] },
+            { kind: 'return_sec', action: 'return_sec', qty: 80, dependsOn: [2] },
+          ],
+        },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 100 }, { action: 'buy_to_cover', status: 'filled', filledQty: 80, avgPrice: 50.04 }, { kind: 'return_sec', status: 'filled', filledQty: 80 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 100 ASH @ 39.98 USD (realized -4.00 USD)' },
+          { type: 'trade.fill', summary: 'Bought to cover 80 BRS @ 50.04 USD (realized -3.20 USD)' },
+          { type: 'accrual.fee', summary: 'Borrow fee accrued on 80 BRS: 0.10 USD' },
+          { type: 'secloan.return', summary: 'Returned 80 borrowed BRS' },
+          { type: 'interest.payment', summary: /Borrow fee paid on Borrow of BRS.*: 0\.20 USD/, cash: { USD: -0.20 } },
+        ],
+        cash: { account: { USD: { settled: 31_077.70, unsettled: -7.20, restricted: 44_880, reserved: 12_000, availableToTrade: 19_070.50, availableToWithdraw: 15_073.50 } } },
+        positions: [
+          { instrument: 'borrow:short', lot: 'accept' }, { instrument: 'borrow:short', lot: 'pair' },
+          { instrument: 'long', lot: 'accept' }, { instrument: 'long', lot: 'pair' },
+          { instrument: 'short', lot: 'pair' },
+        ],
+        holdings: { long: { long: 1_100, short: 0, net: 1_100 }, short: { long: 0, short: 800, net: -800 } },
+        pending: [{ instrument: 'long', lot: 'retry', dueDate: '2026-03-06', amount: 3_997, into: 'cash' }, { instrument: 'short', lot: 'retry', dueDate: '2026-03-06', amount: -4_004.20, into: 'cash.restricted' }],
+        lifecycle: [{ type: 'secloan.fee' }, { type: 'secloan.fee' }],
+        borrowings: [{ lot: 'accept' }, { lot: 'pair' }],
+        pnl: { account: { realized: -11.20, commissions: -16, borrowFunding: -2.40, unrealized: -22, total: -51.60 }, book: { realized: -11.20, commissions: -16, borrowFunding: -2.40, unrealized: -22, total: -51.60 } },
+        nav: { account: 79_948.40, book: 999_948.40 },
+        balance: {
+          account: { cash: 31_077.70, restricted: 44_880, receivable: 3_997, payable: 4_004.20, accruedExpense: 2.10, positions: 4_000, assets: 83_954.70, liabilities: 4_006.30, netAssets: 79_948.40 },
+          book: { cash: 951_077.70, restricted: 44_880, receivable: 3_997, payable: 4_004.20, accruedExpense: 2.10, positions: 4_000, assets: 1_003_954.70, liabilities: 4_006.30, netAssets: 999_948.40 },
+        },
+      },
+    },
+    {
+      // The long leg rises: 1,100 shares marked at 41.00.
+      id: 'long-rises', action: 'quote', instrument: 'long', quote: { bid: 40.98, ask: 41.02, last: 41.00, bidSize: 10000, askSize: 10000 },
+      expect: {
+        positions: [
+          { instrument: 'borrow:short', lot: 'accept' }, { instrument: 'borrow:short', lot: 'pair' },
+          { instrument: 'long', lot: 'accept', price: 41, value: 4_100, unrealized: 98 }, { instrument: 'long', lot: 'pair', price: 41, value: 41_000, unrealized: 980 },
+          { instrument: 'short', lot: 'pair' },
+        ],
+        pnl: { account: { unrealized: 1_078, total: 1_048.40 }, book: { unrealized: 1_078, total: 1_048.40 } },
+        nav: { account: 81_048.40, book: 1_001_048.40 },
+        balance: { account: { positions: 5_100, assets: 85_054.70, netAssets: 81_048.40 }, book: { positions: 5_100, assets: 1_005_054.70, netAssets: 1_001_048.40 } },
+      },
+    },
+    {
+      // 6 March: the cover is paid from restricted cash (4,080 - 4,004.20 = 75.80 left) and the surplus is released; the
+      // sale settles. Fees of 5 March: the pair 3.00 (1.00 new), "accept" 0.20 (0.10 new).
+      id: 'settle-close-retry', covers: ['settlement', 'collateral mark', 'borrow fee'], action: 'clock', to: MAR(6),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 3,997.00 USD into settled cash', date: '2026-03-06' },
+          { type: 'settlement.pay', summary: 'paid 4,004.20 USD from restricted cash' },
+          { type: 'accrual.fee', summary: 'Borrow fee accrued on 800 BRS: 1.00 USD' },
+          { type: 'accrual.fee', summary: 'Borrow fee accrued on 80 BRS: 0.10 USD' },
+          { type: 'collateral.mark', summary: 'released 75.80 USD', cash: { USD: 75.80 } },
+        ],
+        cash: { account: { USD: { settled: 35_150.50, unsettled: 0, restricted: 40_800, reserved: 12_000, availableToTrade: 23_150.50, availableToWithdraw: 23_150.50 } } },
+        positions: [
+          { instrument: 'borrow:short', lot: 'accept', accrued: -0.20 }, { instrument: 'borrow:short', lot: 'pair', accrued: -3 },
+          { instrument: 'long', lot: 'accept' }, { instrument: 'long', lot: 'pair' },
+          { instrument: 'short', lot: 'pair' },
+        ],
+        pending: [],
+        borrowings: [{ lot: 'accept', accrued: 0.20 }, { lot: 'pair', accrued: 3 }],
+        pnl: { account: { borrowFunding: -3.50, total: 1_047.30 }, book: { borrowFunding: -3.50, total: 1_047.30 } },
+        nav: { account: 81_047.30, book: 1_001_047.30 },
+        balance: {
+          account: { cash: 35_150.50, restricted: 40_800, receivable: null, payable: null, accruedExpense: 3.20, positions: 5_100, assets: 81_050.50, liabilities: 3.20, netAssets: 81_047.30 },
+          book: { cash: 955_150.50, restricted: 40_800, receivable: null, payable: null, accruedExpense: 3.20, positions: 5_100, assets: 1_001_050.50, liabilities: 3.20, netAssets: 1_001_047.30 },
+        },
+      },
+    },
+    {
+      // Close the pair on both sides: 1,000 long sold at 40.98 (40,980, commission 5; realized 1,000 x 0.96 = 960), 800
+      // short bought to cover at 50.04 (40,032, commission 4, from restricted cash; realized -32), the borrow returned
+      // after the cover, its fee to today (four days, 4.00) paid.
+      id: 'close-pair', covers: ['close', 'cover', 'return'], action: 'close', lot: 'pair', instrument: 'long', scope: 'strategy', percent: 100,
+      expect: {
+        preview: {
+          blocking: 0, errors: [], intent: 'close',
+          legs: [
+            { kind: 'trade', action: 'sell', instrument: 'long', qty: 1_000, estimate: 40.98, settleDate: '2026-03-09', cash: 40_980, fees: 5, dependsOn: [] },
+            { kind: 'trade', action: 'buy_to_cover', instrument: 'short', qty: 800, estimate: 50.04, settleDate: '2026-03-09', cash: -40_032, fees: 4, dependsOn: [] },
+            { kind: 'return_sec', action: 'return_sec', qty: 800, dependsOn: [2] },
+          ],
+        },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 1_000, avgPrice: 40.98 }, { action: 'buy_to_cover', status: 'filled', filledQty: 800, avgPrice: 50.04 }, { kind: 'return_sec', status: 'filled', filledQty: 800 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 1,000 ASH @ 40.98 USD (realized 960.00 USD)' },
+          { type: 'trade.fill', summary: 'Bought to cover 800 BRS @ 50.04 USD (realized -32.00 USD)' },
+          { type: 'accrual.fee', summary: 'Borrow fee accrued on 800 BRS: 1.00 USD' },
+          { type: 'secloan.return', summary: 'Returned 800 borrowed BRS' },
+          { type: 'interest.payment', summary: /Borrow fee paid on Borrow of BRS.*: 4\.00 USD/, cash: { USD: -4 } },
+        ],
+        cash: { account: { USD: { settled: 35_146.50, unsettled: 939, restricted: 40_800, reserved: 0, availableToTrade: 36_085.50, availableToWithdraw: -4_889.50 } } },
+        positions: [{ instrument: 'borrow:short', lot: 'accept' }, { instrument: 'long', lot: 'accept', value: 4_100 }],
+        holdings: { long: { long: 100, short: 0, net: 100 }, short: null },
+        pending: [{ instrument: 'long', lot: 'pair', dueDate: '2026-03-09', amount: 40_975, into: 'cash' }, { instrument: 'short', lot: 'pair', dueDate: '2026-03-09', amount: -40_036, into: 'cash.restricted' }],
+        lifecycle: [{ type: 'secloan.fee' }],
+        borrowings: [{ lot: 'accept' }],
+        pnl: { account: { realized: 916.80, commissions: -25, borrowFunding: -4.50, unrealized: 98, total: 985.30 }, book: { realized: 916.80, commissions: -25, borrowFunding: -4.50, unrealized: 98, total: 985.30 } },
+        nav: { account: 80_985.30, book: 1_000_985.30 },
+        balance: {
+          account: { cash: 35_146.50, restricted: 40_800, receivable: 40_975, payable: 40_036, accruedExpense: 0.20, positions: 4_100, assets: 121_021.50, liabilities: 40_036.20, netAssets: 80_985.30 },
+          book: { cash: 955_146.50, restricted: 40_800, receivable: 40_975, payable: 40_036, accruedExpense: 0.20, positions: 4_100, assets: 1_041_021.50, liabilities: 40_036.20, netAssets: 1_000_985.30 },
+        },
+      },
+    },
+    {
+      // Close "accept": its 100 long sold at 40.98 (realized 96) and its unused borrow returned, fee three days 0.30 paid.
+      id: 'close-accept', covers: ['close', 'return'], action: 'close', lot: 'accept', instrument: 'long', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'sell', instrument: 'long', qty: 100, estimate: 40.98, settleDate: '2026-03-09', cash: 4_098, fees: 1 }, { kind: 'return_sec', qty: 80, dependsOn: [] }] },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 100 }, { kind: 'return_sec', status: 'filled', filledQty: 80 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 100 ASH @ 40.98 USD (realized 96.00 USD)' },
+          { type: 'accrual.fee', summary: 'Borrow fee accrued on 80 BRS: 0.10 USD' },
+          { type: 'secloan.return', summary: 'Returned 80 borrowed BRS' },
+          { type: 'interest.payment', summary: /Borrow fee paid on Borrow of BRS.*: 0\.30 USD/, cash: { USD: -0.30 } },
+        ],
+        cash: { account: { USD: { settled: 35_146.20, unsettled: 5_036, availableToTrade: 40_182.20, availableToWithdraw: -4_889.80 } } },
+        positions: [],
+        holdings: { long: null },
+        pending: [
+          { instrument: 'long', lot: 'accept', dueDate: '2026-03-09', amount: 4_097, into: 'cash' },
+          { instrument: 'long', lot: 'pair', dueDate: '2026-03-09', amount: 40_975, into: 'cash' },
+          { instrument: 'short', lot: 'pair', dueDate: '2026-03-09', amount: -40_036, into: 'cash.restricted' },
+        ],
+        lifecycle: [],
+        borrowings: [],
+        pnl: { account: { realized: 1_012.80, commissions: -26, borrowFunding: -4.60, unrealized: 0, total: 982.20 }, book: { realized: 1_012.80, commissions: -26, borrowFunding: -4.60, unrealized: 0, total: 982.20 } },
+        nav: { account: 80_982.20, book: 1_000_982.20 },
+        balance: {
+          account: { cash: 35_146.20, restricted: 40_800, receivable: 45_072, payable: 40_036, accruedExpense: null, positions: null, assets: 121_018.20, liabilities: 40_036, netAssets: 80_982.20 },
+          book: { cash: 955_146.20, restricted: 40_800, receivable: 45_072, payable: 40_036, accruedExpense: null, positions: null, assets: 1_041_018.20, liabilities: 40_036, netAssets: 1_000_982.20 },
+        },
+      },
+    },
+    {
+      // Monday 9 March: the sales settle, the cover is paid from restricted cash and the 764 left over (40,800 - 40,036)
+      // is released. Nothing is left: 50,000 + 30,000 funded, plus 982.20.
+      id: 'settle-final', covers: ['settlement', 'collateral release'], action: 'clock', to: MAR(9),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 40,975.00 USD into settled cash', date: '2026-03-09' },
+          { type: 'settlement.receive', summary: 'received 4,097.00 USD into settled cash' },
+          { type: 'settlement.pay', summary: 'paid 40,036.00 USD from restricted cash' },
+          { type: 'collateral.mark', summary: 'released 764.00 USD', cash: { USD: 764 } },
+        ],
+        cash: { account: { USD: { settled: 80_982.20, unsettled: 0, restricted: 0, reserved: 0, availableToTrade: 80_982.20, availableToWithdraw: 80_982.20 } } },
+        pending: [],
+        balance: {
+          account: { cash: 80_982.20, restricted: null, receivable: null, payable: null, assets: 80_982.20, liabilities: 0, netAssets: 80_982.20 },
+          book: { cash: 1_000_982.20, restricted: null, receivable: null, payable: null, assets: 1_000_982.20, liabilities: 0, netAssets: 1_000_982.20 },
+        },
+      },
+    },
+  ],
+};
+
+export default [bearCall, longStraddle, longStrangle, ironCondor, ironButterfly, longButterfly, longCalendar, longDiagonal, syntheticLong, syntheticShort, pairsTrade];

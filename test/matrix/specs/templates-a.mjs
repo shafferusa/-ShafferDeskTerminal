@@ -1288,7 +1288,7 @@ const protectivePut = {
       // 1,000 x 1.2 = 1,200: 200 shares and 2 puts more.
       id: 'resize-up', covers: ['resize', 'increase'], action: 'resize', lot: 'core', factor: 1.2,
       expect: {
-        preview: { blocking: 0, intent: 'resize', legs: [{ instrument: 'main', qty: 200, cash: -10_010, fees: 2 }, { instrument: 'put48', qty: 2, cash: -200, fees: 1 }], cash: { USD: { purchases: 10_210, fees: 3, required: 10_213, available: 143_714.5 } } },
+        preview: { blocking: 0, intent: 'resize', legs: [{ instrument: 'main', qty: 200, cash: -10_010, fees: 2, dependsOn: [] }, { instrument: 'put48', qty: 2, cash: -200, fees: 1, dependsOn: [1] }], cash: { USD: { purchases: 10_210, fees: 3, required: 10_213, available: 143_714.5 } } },
         result: { status: 'open', orders: [{ instrument: 'main', status: 'filled', filledQty: 200 }, { instrument: 'put48', status: 'filled', filledQty: 2 }] },
         events: [{ type: 'strategy.legs_added', summary: 'Legs added to Protective Put KSTL (2 legs; resize)' }, { type: 'trade.fill', summary: 'Bought 200 KSTL @ 50.05 USD' }, { type: 'trade.fill', summary: 'Bought 2 KSTL260320P48 @ 1.00 USD' }],
         cash: { account: { USD: { unsettled: -66_498.5, payable: 76_486.5, availableToTrade: 133_501.5, availableToWithdraw: 123_513.5 } } },

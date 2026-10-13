@@ -633,4 +633,148 @@ const nonDeliverableSwap = {
   ],
 };
 
-export default [dividendSwap, cmsSpreadSwap, nonDeliverableSwap];
+// ---------------------------------------------------------------------------------------------
+// quanto_swap
+// ---------------------------------------------------------------------------------------------
+// Six-month quanto equity swap: receive the price return of Kobori Precision Instruments (KOBR, Tokyo Stock Exchange, in
+// yen), worked out in yen on the notional at the contract's fixed rate of 0.0068 USD per yen and paid in dollars at that
+// same rate; pay 3-month term SOFR + 0.40% quarterly ACT/360 in dollars. USD notional 10,000,000 = 1,470,588,235 yen at
+// 0.0068 (whole yen). Resets and payments on the joint USD and Tokyo calendar. Spot USD/JPY moves from 150 to 160 during the
+// life: no payment changes (that is the quanto). Position-level terms: independent amount 10% of notional. Commission
+// 100.00 per million; T+2 (USD).
+//   period 15 June to 15 September: KOBR 4,200 to 4,452 (+6.000%): 1,470,588,235.29 x 6% = 88,235,294 yen x 0.0068 =
+//     600,000.00 USD received; financing (4.20% + 0.40%) x 10,000,000 x 92/360 = 117,555.56 paid
+//   period 15 September to 15 December: KOBR 4,452 to 4,229.40 (-5.000%): 73,529,412 yen x 0.0068 = 500,000.00 USD paid;
+//     financing (4.00% + 0.40%) x 10,000,000 x 91/360 = 111,222.22 paid; maturity
+const KOBR = { productId: 'common_stock', name: 'Kobori Precision Instruments K.K.', symbol: 'KOBR', marketView: 'FOREIGN_CASH', venue: 'Tokyo Stock Exchange', venueType: 'exchange', venueCountry: 'JP', issuer: 'Kobori Precision Instruments K.K.', domicile: 'JP', underlyingGeo: 'JP', tradingCcy: 'JPY', terms: {} };
+const QS_NAME = 'Quanto equity swap KOBR in USD at 0.0068 v TSFR3M + 0.40% 15 Dec 2026';
+const quantoSwap = {
+  productId: 'quanto_swap',
+  title: 'Quanto equity swap: the return of a Tokyo stock worked out in yen and paid in dollars at a fixed rate, against term SOFR',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'return leg: Reference asset (the Tokyo stock), Quanto currency (JPY), Fixed conversion rate (USD per JPY)'],
+    automaticInputs: ['reset and payment schedule on the USD and Tokyo calendars', 'KOBR closes for each reset date (close fixture standing in for Shaffer MarketData)', 'TSFR3M fixings (rate fixture)', 'the return in yen and its conversion at the fixed rate', 'settlement date T+2', 'commission', 'independent amount'],
+    manualInputs: ['the reference stock, registered as a Tokyo common stock', 'upfront amount (stated fill price)', 'marks entered by hand'],
+    settlement: 'Upfront and commission T+2 on the USD calendar; each leg paid in USD on its payment date',
+    lifecycle: 'Return and financing each quarter; the return worked out in yen and converted at the fixed 0.0068, unchanged by the move of spot USD/JPY; maturity with collateral returned',
+    accounting: 'USD contract: payments realized in USD; no yen balance; carried at the mark; commission expensed',
+    collateral: 'Position-level terms: independent amount 10% of notional posted at entry, returned at maturity; no variation margin',
+  },
+  start: at('2026-06-11'),
+  settlementCheck: { lag: 2, holidays: [] },
+  book: {
+    name: 'Matrix quanto swap', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 5_000_000 }],
+    account: { name: 'Global equity', funding: [{ ccy: 'USD', amount: 3_000_000 }] },
+    settings: { fees: { swap: { perUnit: 0.0001, minimum: 0, bps: 0 }, equity: NO_FEE }, fill: FILL, settlement: { swap: 2 } },
+  },
+  instruments: {
+    kobr: KOBR,
+    main: {
+      productId: 'quanto_swap', name: QS_NAME, symbol: 'QEQS-KOBR-1226', marketView: 'FOREIGN_DERIV', venueType: 'otc', venueCountry: 'JP', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { tradingCalendar: 'USD', settlementCalendar: 'USD', paymentCalendar: 'USD+JP' },
+      terms: {
+        effective: '2026-06-15', maturity: '2026-12-15', counterparty: 'Dealer Q',
+        collateralBasis: { type: 'position', independentAmount: { type: 'pct', pct: 0.10 }, variationMargin: false },
+        legs: [
+          { side: 'receive', type: 'return', ccy: 'USD', months: 3, underlyingId: '$inst:kobr', passDividends: false, resetNotional: false, quantoCcy: 'JPY', quantoRate: 0.0068 },
+          { side: 'pay', type: 'float', ccy: 'USD', index: 'TSFR3M', spread: 0.004, months: 3, dayCount: 'ACT/360' },
+        ],
+      },
+    },
+  },
+  fx: { 'USD/JPY': 150 },
+  rates: { TSFR3M: { byDate: { '2026-06-15': 4.20, '2026-09-15': 4.00 } } },
+  closes: { kobr: { '2026-06-15': 4_200 } },
+  expectAtStart: usdStart(3_000_000, 2_000_000),
+  steps: [
+    {
+      id: 'open', covers: ['open', 'collateral'], action: 'ticket', instrument: 'main', side: 'buy', qty: 10_000_000, as: 'qs', order: { statedPrice: 0 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 10_000_000, estimate: 0, model: 'stated-price', settleDate: '2026-06-15', calendar: 'USD', cash: 0, fees: 1_000 }],
+          cash: { USD: { fees: 1_000, margin: 1_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 10_000_000, avgPrice: 0 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Entered as written: 10,000,000 notional of QEQS-KOBR-1226 at 0.00 per 100 notional', owner: 'account', date: '2026-06-11' },
+          { type: 'swap.collateral', summary: `Collateral posted on ${QS_NAME} under its position-level terms: 1,000,000.00 USD (independent amount, 10.00% of 10,000,000.00 USD notional)`, cash: { USD: -1_000_000 } },
+        ],
+        cash: { account: { USD: { settled: 2_000_000, unsettled: -1_000, margin: 1_000_000, availableToTrade: 1_999_000, availableToWithdraw: 1_999_000 } } },
+        positions: [{ instrument: 'main', lot: 'qs', owner: 'account', direction: 'as written', qty: 10_000_000, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, notional: 10_000_000, margin: 1_000_000 }],
+        holdings: { main: { long: 10_000_000, short: 0, net: 10_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-06-15', amount: -1_000, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-09-15', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-09-15', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2026-12-15', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', lot: 'qs', owner: 'account', qty: 10_000_000, basis: 'position', iaRequired: 1_000_000, iaPosted: 1_000_000 }],
+        pnl: { account: { realized: 0, commissions: -1_000, unrealized: 0, total: -1_000 } },
+        nav: { account: 2_999_000, book: 4_999_000 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 2_000_000, margin: 1_000_000, payable: 1_000, positions: null, assets: 3_000_000, liabilities: 1_000, netAssets: 2_999_000 } },
+      },
+    },
+    {
+      id: 'mark-at-par', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 0, note: 'Dealer Q mark, by hand',
+      expect: { positions: [{ instrument: 'main', lot: 'qs', price: 0, value: 0, unrealized: 0, provisional: false }], otc: [{ instrument: 'main', mark: 0, markValue: 0 }], provisional: { account: false, book: false } },
+    },
+    {
+      id: 'settle-commission', covers: 'settlement', action: 'clock', to: at('2026-06-15'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 1,000.00 USD from settled cash', cash: { USD: -1_000 } }],
+        cash: { account: { USD: { settled: 1_999_000, unsettled: 0, availableToTrade: 1_999_000, availableToWithdraw: 1_999_000 } } },
+        pending: [],
+        balance: { account: { cash: 1_999_000, payable: null, assets: 2_999_000, liabilities: 0 } },
+      },
+    },
+    { id: 'kobr-september-close', covers: 'reset fixing', action: 'close_price', instrument: 'kobr', date: '2026-09-15', value: 4_452, expect: {} },
+    {
+      // +6.000% on 1,470,588,235 yen = 88,235,294 yen, at the fixed 0.0068 = 600,000.00 USD received; financing 117,555.56 paid.
+      // After the close of 15 September (a close exists once the day's close has passed): both legs are paid that day.
+      id: 'first-quarter', covers: ['quanto return', 'floating payment'], action: 'clock', to: eod('2026-09-15'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap receipt on ${QS_NAME}, leg A (return), period 2026-06-15 to 2026-09-15: 600,000.00 USD (worked out in JPY: 88,235,294 JPY, return +6.000% on 1,470,588,235 JPY, converted at the fixed rate 0.0068)`, cash: { USD: 600_000 }, date: '2026-09-15' },
+          { type: 'swap.payment', summary: `Swap payment on ${QS_NAME}, leg B (float), period 2026-06-15 to 2026-09-15: 117,555.56 USD`, cash: { USD: -117_555.56 }, date: '2026-09-15' },
+        ],
+        cash: { account: { USD: { settled: 2_481_444.44, availableToTrade: 2_481_444.44, availableToWithdraw: 2_481_444.44 }, JPY: null } },
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2026-12-15', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-12-15', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-12-15', status: 'pending' },
+        ],
+        pnl: { account: { realized: 482_444.44, total: 481_444.44 } },
+        nav: { account: 3_481_444.44, book: 5_481_444.44 },
+        balance: { account: { cash: 2_481_444.44, assets: 3_481_444.44, netAssets: 3_481_444.44 } },
+      },
+    },
+    // Spot USD/JPY 150 to 160: the Book holds no yen and the swap pays at its fixed rate, so nothing changes.
+    { id: 'yen-weakens', covers: 'quanto: spot FX plays no part', action: 'fx_rate', pair: 'USD/JPY', rate: 160, expect: {} },
+    { id: 'kobr-december-close', covers: 'reset fixing', action: 'close_price', instrument: 'kobr', date: '2026-12-15', value: 4_229.40, expect: {} },
+    {
+      // -5.000% on 1,470,588,235 yen = 73,529,412 yen, at 0.0068 = 500,000.00 USD paid; financing 111,222.22 paid; maturity.
+      // 3,000,000 - 1,000 + 600,000 - 117,555.56 - 500,000 - 111,222.22 = 2,870,222.22.
+      id: 'second-quarter-and-maturity', covers: ['quanto return', 'floating payment', 'maturity', 'collateral'], action: 'clock', to: eod('2026-12-15'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap payment on ${QS_NAME}, leg A (return), period 2026-09-15 to 2026-12-15: 500,000.00 USD (worked out in JPY: 73,529,412 JPY, return -5.000% on 1,470,588,235 JPY, converted at the fixed rate 0.0068)`, cash: { USD: -500_000 } },
+          { type: 'swap.payment', summary: `Swap payment on ${QS_NAME}, leg B (float), period 2026-09-15 to 2026-12-15: 111,222.22 USD`, cash: { USD: -111_222.22 } },
+          { type: 'swap.matured', summary: `Swap matured: ${QS_NAME} (notional 10,000,000)` },
+          { type: 'swap.collateral', summary: `Collateral returned on ${QS_NAME} under its position-level terms: 1,000,000.00 USD (independent amount, the position ended)`, cash: { USD: 1_000_000 } },
+        ],
+        cash: { account: { USD: { settled: 2_870_222.22, margin: 0, availableToTrade: 2_870_222.22, availableToWithdraw: 2_870_222.22 }, JPY: null } },
+        positions: [], holdings: { main: null }, lifecycle: [], otc: [],
+        pnl: { account: { realized: -128_777.78, commissions: -1_000, unrealized: 0, total: -129_777.78 } },
+        nav: { account: 2_870_222.22, book: 4_870_222.22 },
+        balance: { account: { cash: 2_870_222.22, margin: null, positions: null, assets: 2_870_222.22, liabilities: 0, netAssets: 2_870_222.22 } },
+      },
+    },
+  ],
+};
+
+export default [dividendSwap, cmsSpreadSwap, nonDeliverableSwap, quantoSwap];

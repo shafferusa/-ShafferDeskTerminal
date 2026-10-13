@@ -550,7 +550,7 @@ export const swap = {
         ...base, type: 'swap.payment',
         summary: nothing
           ? `Nothing due on ${inst.name}, leg ${leg.id} (${leg.type}), period ${eff.start} to ${period.end}: the ${leg.index} fixing ${pct(r.detail.fixing / 100)} is not ${leg.type === 'cap' ? 'above' : 'below'} the strike ${pct(leg.strike)}`
-          : `Swap ${amount >= 0 ? 'receipt' : 'payment'} on ${inst.name}, leg ${leg.id} (${leg.type}), period ${eff.start} to ${period.end}: ${fmt(Math.abs(amount), leg.ccy)}`,
+          : `Swap ${amount >= 0 ? 'receipt' : 'payment'} on ${inst.name}, leg ${leg.id} (${leg.type}), period ${eff.start} to ${period.end}: ${fmt(Math.abs(amount), leg.ccy)}${r.note ? ` (${r.note})` : ''}`, // s3: how a quanto leg was converted
         data: { legId: leg.id, period: eff, detail: r.detail, obsIds: r.used || [] },
         entries: [{ account: 'cash', ccy: leg.ccy, amount, positionId: pos.id }, { account: 'pnl.realized', ccy: leg.ccy, amount: -amount, positionId: pos.id }],
       });

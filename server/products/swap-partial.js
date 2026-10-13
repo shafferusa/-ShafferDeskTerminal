@@ -34,6 +34,7 @@ const RIGHT_WORD = { call: 'call', put: 'put' };
 const pct = (x, dp = 3) => `${(x * 100).toFixed(dp)}%`;
 const nameOf = (inst) => inst.symbol || inst.name;
 const fx = (x) => Number(x).toLocaleString('en-US', { maximumFractionDigits: 6 });
+const exact14 = (x) => (Number.isFinite(x) ? Number(x.toPrecision(14)) : x);
 
 /** The leg fields of these products, checked and completed. `l` is changed in place. */
 export function normalizePartialLeg(l, at, errors) {
@@ -118,7 +119,9 @@ export function partialLegAmount(app, inst, pos, leg, period, deps) {
     // Worked out in the quanto currency on the notional at the fixed rate, then paid at that same rate.
     const base = deps.legAmount(app, inst, pos, { ...leg, quantoRate: undefined, quantoCcy: undefined, ccy: leg.quantoCcy, notionalFactor: (leg.notionalFactor ?? 1) / leg.quantoRate }, period);
     if (base.missing) return base;
-    return { ...base, amount: base.amount * leg.quantoRate, detail: { ...base.detail, quanto: { ccy: leg.quantoCcy, amount: base.amount, rate: leg.quantoRate } } };
+    const local = money(exact14(base.amount), leg.quantoCcy);
+    const how = leg.type === 'return' && base.ratio ? `return ${base.ratio >= 1 ? '+' : ''}${((base.ratio - 1) * 100).toFixed(3)}% on ${fmt(base.detail.notional, leg.quantoCcy)}` : `on ${fmt(base.detail.notional, leg.quantoCcy)}`;
+    return { ...base, amount: base.amount * leg.quantoRate, note: `worked out in ${leg.quantoCcy}: ${fmt(Math.abs(local), leg.quantoCcy)}, ${how}, converted at the fixed rate ${fx(leg.quantoRate)}`, detail: { ...base.detail, quanto: { ccy: leg.quantoCcy, amount: base.amount, rate: leg.quantoRate } } };
   }
   if (leg.type === 'float' && leg.index2) {
     const one = deps.legAmount(app, inst, pos, { ...leg, index2: undefined }, period);

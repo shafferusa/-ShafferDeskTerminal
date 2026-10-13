@@ -3166,4 +3166,237 @@ const distressedSpec = {
   ],
 };
 
-export default [specifiedPool, absSpec, cmoSpec, cloSpec, cdoSpec, clnSpec, structuredNoteSpec, catBondSpec, syndicatedLoanSpec, leveragedLoanSpec, privateCreditSpec, distressedSpec];
+// ---------------------------------------------------------------------------------------------
+// loan_participation
+// ---------------------------------------------------------------------------------------------
+// A loan participation: a 25% participation in the 20,000,000 that Harwell Bank N.A. (the grantor, lender of record) holds of the
+// Stonebridge Hospitality Term Loan due 20 January 2034, TSOFR3M + 3.25%, interest quarterly on 20 January, April, July and
+// October, ACT/360. The participant is not a lender of record: the grantor passes on the participation's share of each cash
+// flow (face held / the grantor's 20,000,000) two days after the coupon date, and the participant is exposed to the grantor as
+// well as the borrower. Participations settle T+10 here (the instrument's convention); a participation cannot be sold short.
+//   - Bought on Monday 3 February 2031 at 99.50 (5,000,000: 25% of the grantor's face), settling T+10 over Presidents' Day:
+//     Tuesday 18 February. 2,000,000 sold on 6 March (settling 20 March): the share falls to 15%.
+//   - The 20 April interest (a Sunday) is passed through on Tuesday 22 April: 15% of the grantor's 342,500.00; the quarterly
+//     amortisation of 1% (recorded by hand on 21 April, effective 20 April) is passed through with it: 15% of 200,000.00. The rate
+//     resets to 3.55% + 3.25% = 6.80%.
+//   - The rest sold on 22 April, settling T+10 on Tuesday 6 May.
+// Commission: 0.5 basis point of clean principal. Days (ACT/360) from 20 Jan: to 18 Feb 29, 5 Mar 44, 19 Mar 58, 20 Mar 59,
+// 16 Apr 86, 18 Apr 88, 20 Apr 90; from 20 Apr: to 21 Apr 1, 6 May 16.
+const loanParticipationSpec = {
+  productId: 'loan_participation',
+  title: 'Participation in Harwell Bank\'s share of the Stonebridge Hospitality term loan: registration needs the grantor, bought T+10 over Presidents\' Day, partial sale, interest and amortisation passed through two days after the coupon date as the participation\'s share of the grantor\'s cash flows, reset, close',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action (Buy or Sell: no short sale)', 'Face amount (the participation\'s share of the grantor\'s face)'],
+    automaticInputs: [...BOND_TICKET.automaticInputs, 'TSOFR3M fixing of each interest period (rate fixture standing in for Shaffer MarketData)', 'the participation\'s share of each cash flow, passed through after the payment delay'],
+    manualInputs: ['Registration: Grantor, Face held by the grantor, Payment delay 2, Trading documentation par, Settlement convention 10, Coupon Floating TSOFR3M + 3.25%, Current coupon', 'Amortisation recorded by hand as a paydown passed through on the payment date'],
+    settlement: 'T+10 on the US bond calendar, Presidents\' Day skipped',
+    lifecycle: 'Automatic: daily accrual, quarterly interest passed through two days after the coupon date with the share of the grantor\'s amount in the history, reset from the fixing. Manual: amortisation (passed through as a receivable until the payment date). Not modelled: the grantor\'s own default (exposure noted on the instrument), voting rights',
+    accounting: 'Cost per 100 of principal outstanding; interest income; amortisation at par against cost realized; commission expensed',
+    collateral: 'None (an unsecured claim on the grantor for the pass-through)',
+  },
+  start: EST('2031-02-03'), // Monday
+  settlementCheck: { lag: 10, holidays: ['2031-02-17'] }, // Presidents' Day
+  book: {
+    name: 'Matrix loan participation', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 7_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 6_000_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.5 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'loan_participation', name: 'Participation in Harwell Bank share of Stonebridge Hospitality Term Loan due 20-Jan-2034', symbol: 'STONEB-TL-34-PART', marketView: 'US_CASH', venueType: 'otc', issuer: 'Stonebridge Hospitality LLC', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { settleLag: 10 },
+      terms: { couponType: 'float', referenceRate: 'TSOFR3M', spread: 0.0325, currentCoupon: 0.0685, frequency: 4, maturity: '2034-01-20', issueDate: '2027-01-20', dayCount: 'ACT/360', redemption: 100, paymentDelayDays: 2, seniority: 'Participation in a senior secured term loan', tradingDocs: 'par',
+        grantor: 'Harwell Bank N.A.', grantorHolding: 20_000_000 } },
+  },
+  quotes: { main: { bid: 99.25, ask: 99.5, last: 99.375, bidSize: 10_000_000, askSize: 10_000_000 } },
+  expectAtStart: { ...startState(6_000_000, 1_000_000), cash: { account: usdCash(6_000_000), treasury: usdCash(1_000_000) } },
+  steps: [
+    {
+      id: 'register-without-grantor', covers: 'registration', action: 'register_instrument',
+      draft: { productId: 'loan_participation', name: 'Participation in Stonebridge Hospitality Term Loan (no grantor)', symbol: 'STONEB-PART-X', marketView: 'US_CASH', venueType: 'otc', issuer: 'Stonebridge Hospitality LLC', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+        terms: { couponType: 'float', referenceRate: 'TSOFR3M', spread: 0.0325, currentCoupon: 0.0685, frequency: 4, maturity: '2034-01-20', issueDate: '2027-01-20', dayCount: 'ACT/360', redemption: 100 } },
+      status: 'blocked', reason: 'A participation is a share of a grantor\'s holding: it cannot be registered without the grantor and its face.',
+      expect: { refused: 'needs its grantor' },
+    },
+    {
+      // 5,000,000 at 99.50 = 4,975,000, settling T+10 on Tuesday 18 February; 29 days at 6.85% 27,590.28; 0.5 bp = 248.75.
+      id: 'open', covers: ['open', 'market holiday'], action: 'ticket', instrument: 'main', side: 'buy', qty: 5_000_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 5_000_000, estimate: 99.5, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2031-02-18', calendar: 'USBOND',
+            gross: 4_975_000, accrued: 27_590.28, cash: -5_002_590.28, fees: 248.75 }],
+          cash: { USD: { purchases: 5_002_590.28, fees: 248.75, required: 5_002_839.03, available: 6_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 5_000_000, avgPrice: 99.5, fills: [{ qty: 5_000_000, price: 99.5, model: 'quoted-bid-ask', settleDate: '2031-02-18', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 5,000,000 STONEB-TL-34-PART @ 99.50 USD', owner: 'account', date: '2031-02-03' }],
+        cash: { account: { USD: { settled: 6_000_000, unsettled: -5_002_839.03, availableToTrade: 997_160.97 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 5_000_000, avgCost: 99.5, cost: 4_975_000, price: 99.375, value: 4_968_750, unrealized: -6_250, accrued: 27_590.28, priceSource: 'Test fixture' }],
+        holdings: { main: { long: 5_000_000, short: 0, net: 5_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2031-02-18', amount: -5_002_839.03, ccy: 'USD', into: 'cash' }],
+        // 20 April 2031 (a Sunday) + 2 days = Tuesday 22 April. 20 January 2034 + 2 = Sunday 22 January: Monday 23 January 2034.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2031-04-22', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2034-01-23', status: 'pending' }],
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -248.75, fees: 0, borrowFunding: 0, unrealized: -6_250, total: -6_498.75 } },
+        nav: { account: 5_993_501.25, book: 6_993_501.25 },
+        balance: { account: { cash: 6_000_000, accruedIncome: 27_590.28, positions: 4_968_750, payable: 5_002_839.03, assets: 10_996_340.28, liabilities: 5_002_839.03, netAssets: 5_993_501.25 } },
+      },
+    },
+    {
+      // Tuesday 18 February, after Presidents' Day. (End of day Friday 14 Feb: the interest bought runs to 18 Feb, as on the books.)
+      id: 'settle-open', covers: ['settlement', 'market holiday'], action: 'clock', to: EST('2031-02-18'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 5,002,839.03 USD from settled cash', cash: { USD: -5_002_839.03 }, date: '2031-02-18' }],
+        cash: { account: { USD: { settled: 997_160.97, unsettled: 0, availableToTrade: 997_160.97 } } },
+        pending: [],
+        balance: { account: { cash: 997_160.97, payable: null, assets: 5_993_501.25, liabilities: 0 } },
+      },
+    },
+    {
+      // Thursday 6 March. End of day 5 Mar: 5,000,000 x 6.85% x 44/360 = 41,861.11; 14,270.83 more.
+      id: 'accrue', covers: 'accrual', action: 'clock', to: EST('2031-03-06'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on STONEB-TL-34-PART: 14,270.83 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 5_000_000, accrued: 41_861.11 }],
+        pnl: { account: { couponInterest: 14_270.83, total: 7_772.08 } },
+        nav: { account: 6_007_772.08, book: 7_007_772.08 },
+        balance: { account: { accruedIncome: 41_861.11, assets: 6_007_772.08, netAssets: 6_007_772.08 } },
+      },
+    },
+    {
+      // 2,000,000 sold at 99.25 = 1,985,000, settling T+10 on Thursday 20 March; 59 days 22,452.78; 0.5 bp = 99.25. Cost out
+      // 4,975,000 x 0.4 = 1,990,000: realized -5,000.
+      id: 'reduce', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 2_000_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 2_000_000, estimate: 99.25, settleDate: '2031-03-20', gross: 1_985_000, accrued: 22_452.78, cash: 2_007_452.78, fees: 99.25 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 2_000_000, avgPrice: 99.25 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: /^Sold 2,000,000 STONEB-TL-34-PART @ 99\.25 USD \(realized [-−]5,000\.00 USD\)$/ }],
+        cash: { account: { USD: { settled: 997_160.97, unsettled: 2_007_353.53, availableToTrade: 3_004_514.5 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 3_000_000, cost: 2_985_000, avgCost: 99.5, price: 99.375, value: 2_981_250, unrealized: -3_750, accrued: 19_408.33 }],
+        holdings: { main: { long: 3_000_000, short: 0, net: 3_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2031-03-20', amount: 2_007_353.53, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: -5_000, commissions: -348, unrealized: -3_750, total: 5_172.83 } },
+        nav: { account: 6_005_172.83, book: 7_005_172.83 },
+        balance: { account: { receivable: 2_007_353.53, accruedIncome: 19_408.33, positions: 2_981_250, assets: 6_005_172.83, netAssets: 6_005_172.83 } },
+      },
+    },
+    {
+      // Thursday 20 March. End of day 19 Mar: 5,000,000 x 58 days 55,180.56 less the 59 days sold 22,452.78: 32,727.78. 13,319.45 more.
+      id: 'settle-reduce', covers: ['settlement', 'accrual'], action: 'clock', to: EDT('2031-03-20'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 2,007,353.53 USD into settled cash', cash: { USD: 2_007_353.53 } },
+          { type: 'accrual.coupon', summary: 'Interest accrued on STONEB-TL-34-PART: 13,319.45 USD' },
+        ],
+        cash: { account: { USD: { settled: 3_004_514.5, unsettled: 0, availableToTrade: 3_004_514.5 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 3_000_000, accrued: 32_727.78 }],
+        pending: [],
+        pnl: { account: { couponInterest: 27_590.28, total: 18_492.28 } },
+        nav: { account: 6_018_492.28, book: 7_018_492.28 },
+        balance: { account: { cash: 3_004_514.5, receivable: null, accruedIncome: 32_727.78, assets: 6_018_492.28, netAssets: 6_018_492.28 } },
+      },
+    },
+    {
+      // Thursday 17 April. End of day 16 Apr: 3,000,000 x 6.85% x 86/360 = 49,091.67; 16,363.89 more.
+      id: 'accrue-april', covers: 'accrual', action: 'clock', to: EDT('2031-04-17'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on STONEB-TL-34-PART: 16,363.89 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 3_000_000, accrued: 49_091.67 }],
+        pnl: { account: { couponInterest: 43_954.17, total: 34_856.17 } },
+        nav: { account: 6_034_856.17, book: 7_034_856.17 },
+        balance: { account: { accruedIncome: 49_091.67, assets: 6_034_856.17, netAssets: 6_034_856.17 } },
+      },
+    },
+    { id: 'april-fixing', covers: 'rate reset', action: 'rate', code: 'TSOFR3M', value: 3.55, date: '2031-04-17', expect: { events: [] } },
+    {
+      // Monday 21 April. End of day Friday 18 Apr: 88 days = 50,233.33; 1,141.66 more.
+      id: 'accrue-to-coupon', covers: 'accrual', action: 'clock', to: EDT('2031-04-21'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on STONEB-TL-34-PART: 1,141.66 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 3_000_000, accrued: 50_233.33 }],
+        pnl: { account: { couponInterest: 45_095.83, total: 35_997.83 } },
+        nav: { account: 6_035_997.83, book: 7_035_997.83 },
+        balance: { account: { accruedIncome: 50_233.33, assets: 6_035_997.83, netAssets: 6_035_997.83 } },
+      },
+    },
+    {
+      // The 1% quarterly amortisation, from the agent through the grantor: factor 1 to 0.99 from 20 April, passed through on 22 April.
+      // The grantor receives 20,000,000 x 1% = 200,000.00; the participation's share, 3,000,000 / 20,000,000 = 15%: 30,000.00
+      // receivable. Cost out 2,985,000 x 1% = 29,850: realized 150.
+      id: 'amortisation', covers: ['amortisation (by hand)', 'participation share'], action: 'instrument_lifecycle', instrument: 'main', body: { action: 'paydown', newFactor: 0.99, effective: '2031-04-20', payDate: '2031-04-22' },
+      expect: {
+        events: [{ type: 'bond.paydown', summary: 'Principal paydown on STONEB-TL-34-PART: factor 1 to 0.99 from 2031-04-20, 30,000.00 USD receivable on 2031-04-22 (participation 15.0000% of the 200,000.00 USD principal paid to Harwell Bank N.A.)', owner: 'account', date: '2031-04-21' }],
+        cash: { account: { USD: { settled: 3_004_514.5, unsettled: 30_000, availableToTrade: 3_034_514.5 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 3_000_000, cost: 2_955_150, avgCost: 99.5, price: 99.375, value: 2_951_437.5, unrealized: -3_712.5, accrued: 50_233.33 }], // 2,970,000 x 99.375 / 100
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2031-04-22', amount: 30_000, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: -4_850, unrealized: -3_712.5, total: 36_185.33 } },
+        nav: { account: 6_036_185.33, book: 7_036_185.33 },
+        balance: { account: { receivable: 30_000, positions: 2_951_437.5, assets: 6_036_185.33, netAssets: 6_036_185.33 } },
+      },
+    },
+    {
+      // Tuesday 22 April: the grantor passes on the April interest: 3,000,000 x 6.85% x 90/360 = 51,375.00, 15% of its 342,500.00
+      // (20,000,000 x 6.85% x 90/360), and the principal. The balance stands at 20 April: 0, so 1,141.67 more. Reset to 6.80%.
+      // End of day 21 Apr: 1 day on 2,970,000 at 6.80% = 561.00.
+      id: 'pass-through', covers: ['coupon', 'participation share', 'amortisation (by hand)', 'settlement', 'rate reset'], action: 'clock', to: EDT('2031-04-22'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 30,000.00 USD into settled cash', cash: { USD: 30_000 }, date: '2031-04-22' },
+          { type: 'bond.coupon', summary: 'Coupon received on 3,000,000 STONEB-TL-34-PART (participation 15.0000% of the 342,500.00 USD coupon on the face held by Harwell Bank N.A.): 51,375.00 USD', cash: { USD: 51_375 }, owner: 'account', date: '2031-04-22' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on STONEB-TL-34-PART: 1,141.67 USD' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on STONEB-TL-34-PART: 561.00 USD' },
+        ],
+        cash: { account: { USD: { settled: 3_085_889.5, unsettled: 0, availableToTrade: 3_085_889.5 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 3_000_000, accrued: 561 }],
+        pending: [],
+        // 20 July 2031 (a Sunday) + 2 days = Tuesday 22 July.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2031-07-22', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2034-01-23', status: 'pending' }],
+        pnl: { account: { couponInterest: 46_798.5, total: 37_888 } },
+        nav: { account: 6_037_888, book: 7_037_888 },
+        balance: { account: { cash: 3_085_889.5, receivable: null, accruedIncome: 561, assets: 6_037_888, netAssets: 6_037_888 } },
+      },
+    },
+    {
+      id: 'price-rises', action: 'quote', instrument: 'main', quote: { bid: 99.625, ask: 99.875, last: 99.75, bidSize: 10_000_000, askSize: 10_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 3_000_000, price: 99.75, value: 2_962_575, unrealized: 7_425 }], // 2,970,000 x 99.75 / 100
+        pnl: { account: { unrealized: 7_425, total: 49_025.5 } },
+        nav: { account: 6_049_025.5, book: 7_049_025.5 },
+        balance: { account: { positions: 2_962_575, assets: 6_049_025.5, netAssets: 6_049_025.5 } },
+      },
+    },
+    {
+      // The rest sold at 99.625, settling T+10 on Tuesday 6 May: 2,970,000 x 99.625 / 100 = 2,958,862.50; 16 days at 6.80% 8,976.00
+      // (8,415.00 more than on the books); 0.5 bp = 147.94. Realized 2,958,862.50 - 2,955,150 = 3,712.50.
+      id: 'close', covers: 'close', action: 'close', lot: 'lot', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 3_000_000, estimate: 99.625, settleDate: '2031-05-06', notional: 2_970_000, gross: 2_958_862.5, accrued: 8_976, cash: 2_967_838.5, fees: 147.94 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 3_000_000, avgPrice: 99.625 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 3,000,000 STONEB-TL-34-PART @ 99.625 USD (realized 3,712.50 USD)' },
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of STONEB-TL-34-PART: 8,415.00 USD' },
+        ],
+        cash: { account: { USD: { settled: 3_085_889.5, unsettled: 2_967_690.56, availableToTrade: 6_053_580.06 } } },
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2031-05-06', amount: 2_967_690.56, ccy: 'USD', into: 'cash' }],
+        lifecycle: [],
+        pnl: { account: { realized: -1_137.5, couponInterest: 55_213.5, commissions: -495.94, unrealized: 0, total: 53_580.06 } },
+        nav: { account: 6_053_580.06, book: 7_053_580.06 },
+        balance: { account: { cash: 3_085_889.5, receivable: 2_967_690.56, positions: null, accruedIncome: null, assets: 6_053_580.06, liabilities: 0, netAssets: 6_053_580.06 } },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: EDT('2031-05-06'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 2,967,690.56 USD into settled cash', cash: { USD: 2_967_690.56 } }],
+        cash: { account: { USD: { settled: 6_053_580.06, unsettled: 0, availableToTrade: 6_053_580.06 } }, treasury: usdCash(1_000_000) },
+        pending: [],
+        balance: { account: { cash: 6_053_580.06, receivable: null, assets: 6_053_580.06, liabilities: 0 } },
+      },
+    },
+  ],
+};
+
+export default [specifiedPool, absSpec, cmoSpec, cloSpec, cdoSpec, clnSpec, structuredNoteSpec, catBondSpec, syndicatedLoanSpec, leveragedLoanSpec, privateCreditSpec, distressedSpec, loanParticipationSpec];
