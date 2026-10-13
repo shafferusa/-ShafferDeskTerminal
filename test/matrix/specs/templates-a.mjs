@@ -591,7 +591,6 @@ const shortTemplate = {
     { id: 'close-funded', covers: ['close', 'return'], action: 'close', lot: 'funded', scope: 'strategy', expect: {} },
     { id: 'close-kept', covers: ['close', 'return'], action: 'close', lot: 'kept', scope: 'strategy', expect: {} },
     { id: 'settle-covers', covers: ['settlement'], action: 'clock', to: MAR(6), expect: {} },
-    { id: 'repay-loan', covers: ['repay'], action: 'repay', lot: 'levered', instrument: 'loan', expect: {} },
     { id: 'return-to-treasury', covers: ['transfer'], action: 'transfer', from: 'account', to: 'treasury', ccy: 'USD', amount: 400_000, expect: {} },
   ],
 };

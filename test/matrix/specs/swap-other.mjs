@@ -1412,4 +1412,256 @@ const equityTrs = {
   ],
 };
 
-export default [amortizingSwap, accretingSwap, equitySwap, equityIndexSwap, equityTrs];
+// ---------------------------------------------------------------------------------------------
+// bond_trs
+// ---------------------------------------------------------------------------------------------
+// A six-month total-return swap on 10,000,000 face of Harlow Utilities 5.00% notes due 15 August 2031. The contract is
+// written "receive the total return of the bond, pay 3-month term SOFR + 1.00% ACT/360" quarterly; the Account enters the
+// opposite side (it pays the total return and receives the financing: the bank financing a client's bond position).
+//
+// Return on the CLEAN price (the bond's closes are clean prices, % of par), quarterly, with "Notional resets": the notional
+// starts at the market value, 10,000,000 x 98.00 / 100 = 9,800,000, and is multiplied by end / start price at each reset, so
+// each period's return is face x (end price - start price) / 100, and the financing is on the market value at the reset.
+// The coupon is passed through by hand: the Terminal does not follow the reference bond's coupons for a swap. When the bond
+// pays, the coupon on the face still referenced is recorded on the position as a manual coupon cash flow (paid, here).
+// Both legs paid 2 business days after each reset date (USD calendar). Position-level collateral terms: independent amount
+// 5% of the (reset) notional, variation margin over a threshold of 50,000 with a minimum transfer of 10,000.
+//
+//   trade     Thursday 12 February 2026, settles Tuesday 17 February: Monday the 16th is Presidents' Day
+//   period 1  2026-02-17 to 2026-05-17  89 days  clean 98.00 to 99.47 (Sunday the 17th: Friday 15 May's close)  TSFR3M 4.00%   paid Tuesday 19 May
+//   period 2  2026-05-17 to 2026-08-17  92 days  clean 99.47 to 98.97                                            TSFR3M 3.90% (of 15 May)  paid Wednesday 19 August
+//   coupon    15 August 2026 (a Saturday): 5.00% / 2 on the face left, recorded by hand on Monday 17 August
+//   terminated in part (30%) on Wednesday 17 June, settling Monday 22 June: Friday the 19th is Juneteenth
+const HARLOW = { productId: 'corporate_bond', name: 'Harlow Utilities Corp 5.00% Senior Notes 15-Aug-2031', symbol: 'HARLOW-5-AUG31', marketView: 'US_CASH', venueType: 'otc', issuer: 'Harlow Utilities Corp', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+  terms: { couponType: 'fixed', couponRate: 0.05, frequency: 2, maturity: '2031-08-15', issueDate: '2021-08-15', dayCount: '30/360', redemption: 100, minDenomination: 1_000, seniority: 'Senior unsecured' } };
+const BTRS_NAME = 'Bond TRS HARLOW 5% 2031 clean return v TSFR3M + 1.00% 17 Aug 2026';
+const bondTrs = {
+  productId: 'bond_trs',
+  title: 'Six-month bond total-return swap on a corporate note: pay the clean-price return and the coupon (by hand), receive term SOFR + 1.00%',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'return leg: Reference asset (the bond), Options "Total return" and "Notional resets"', 'financing leg: Index, Spread, Day count', 'both legs: Payment lag (business days) 2'],
+    automaticInputs: ['reset and payment schedule on the USD calendar', 'clean closing prices of the bond for the reset dates (close fixture standing in for Shaffer MarketData)', 'TSFR3M fixings (rate fixture)', 'notional reset to face x the period start price, and the financing on it', 'settlement date, T+2 USD', 'commission from the Book fee schedule', 'independent amount and variation margin from the position-level terms'],
+    manualInputs: ['the reference bond, registered as a corporate bond', 'the coupon pass-through: face still referenced x coupon / 2, recorded on the position as a manual coupon cash flow', 'settlement amount of the partial termination (stated fill price)', 'mark of the contract, entered by hand'],
+    settlement: 'Upfront and termination amounts and commission settle T+2 on the USD calendar (across Presidents\' Day and Juneteenth); leg payments are cash on their payment date; the coupon pass-through is cash on the day recorded',
+    lifecycle: 'Clean-price return each quarter on a notional reset to the market value; financing on the reset notional; partial termination; the coupon passed through by hand; maturity; nothing left afterwards',
+    accounting: 'Return, financing and termination results are realized P&L; the coupon passed through is coupon interest (paid); commission expensed',
+    collateral: 'Position-level terms: independent amount 5% of the notional (trued up at the reset and on the partial termination, returned at maturity); variation margin on the mark entered by hand over a 50,000 threshold, minimum transfer 10,000: posted, partly returned after the partial termination, returned at maturity',
+  },
+  start: at('2026-02-12'),
+  settlementCheck: { lag: 2, holidays: ['2026-02-16', '2026-06-19'] }, // Presidents' Day, Juneteenth (Federal Reserve holidays)
+  book: bookOf('Matrix bond TRS', 'Credit financing', 'USD', 5_000_000, 2_000_000, { perUnit: 0.00002, minimum: 0, bps: 0 }, { bond: NO_FEE }), // 20.00 per million of notional; the bond is never traded
+  instruments: {
+    bond: HARLOW,
+    main: {
+      productId: 'bond_trs', name: BTRS_NAME, symbol: 'BTRS-HRLW-0826', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: USD_CALENDARS,
+      terms: {
+        effective: '2026-02-17', maturity: '2026-08-17', counterparty: 'Client fund S',
+        collateralBasis: { type: 'position', independentAmount: { type: 'pct', pct: 0.05 }, variationMargin: true, threshold: 50_000, minimumTransfer: 10_000 },
+        legs: [
+          { side: 'receive', type: 'return', ccy: 'USD', months: 3, underlyingId: '$inst:bond', passDividends: true, resetNotional: true, paymentLag: 2 },
+          { side: 'pay', type: 'float', ccy: 'USD', index: 'TSFR3M', spread: 0.01, months: 3, dayCount: 'ACT/360', paymentLag: 2 },
+        ],
+      },
+    },
+  },
+  rates: { TSFR3M: { byDate: { '2026-02-17': 4.00 } } },
+  expectAtStart: startOf('USD', 5_000_000, 2_000_000),
+  steps: [
+    {
+      // Opposite side, 9,800,000 (10,000,000 face at 98.00), no upfront. Commission 9,800,000 x 0.00002 = 196. Independent amount 5% x 9,800,000 = 490,000.
+      id: 'open', covers: ['open', 'collateral', 'settlement across a holiday'], action: 'ticket', instrument: 'main', side: 'sell', qty: 9_800_000, as: 'btrs', order: { statedPrice: 0 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 9_800_000, estimate: 0, model: 'stated-price', settleDate: '2026-02-17', calendar: 'USD', cash: 0, fees: 196 }],
+          cash: { USD: { fees: 196, margin: 490_000, available: 2_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 9_800_000, avgPrice: 0, fills: [{ qty: 9_800_000, price: 0, model: 'stated-price', settleDate: '2026-02-17' }] }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Entered on the opposite side: 9,800,000 notional of BTRS-HRLW-0826 at 0.00 per 100 notional', owner: 'account', date: '2026-02-12' },
+          { type: 'swap.collateral', summary: `Collateral posted on ${BTRS_NAME} under its position-level terms: 490,000.00 USD (independent amount, 5.00% of 9,800,000.00 USD notional)`, cash: { USD: -490_000 }, owner: 'account' },
+        ],
+        cash: { account: { USD: { settled: 1_510_000, unsettled: -196, margin: 490_000, restricted: 0, availableToTrade: 1_509_804, availableToWithdraw: 1_509_804 } } },
+        positions: [{ instrument: 'main', lot: 'btrs', owner: 'account', direction: 'opposite side', qty: -9_800_000, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, notional: 9_800_000, margin: 490_000 }],
+        holdings: { main: { long: 0, short: 9_800_000, net: -9_800_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-02-17', amount: -196, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-05-19', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-05-19', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2026-08-19', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', lot: 'btrs', owner: 'account', qty: -9_800_000, basis: 'position', mark: null, iaRequired: 490_000, iaPosted: 490_000, vmPosted: 0, vmHeld: 0, vmStatus: 'not_valued_yet' }],
+        pnl: { account: { realized: 0, commissions: -196, couponInterest: 0, unrealized: 0, total: -196 } },
+        nav: { account: 1_999_804, book: 4_999_804 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 1_510_000, margin: 490_000, payable: 196, positions: null, assets: 2_000_000, liabilities: 196, netAssets: 1_999_804 } },
+      },
+    },
+    {
+      id: 'no-mark-no-call', covers: 'variation margin', action: 'clock', to: at('2026-02-13'),
+      expect: { otc: [{ instrument: 'main', vmStatus: 'cannot_value', vmReason: /BTRS-HRLW-0826 has no mark/ }], alerts: ['collateral.unvalued'] },
+    },
+    { id: 'presidents-day', covers: 'settlement across a holiday', action: 'clock', to: at('2026-02-16'), expect: { events: [], pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-02-17', amount: -196, ccy: 'USD', into: 'cash' }] } },
+    {
+      id: 'settle-commission', covers: 'settlement', action: 'clock', to: at('2026-02-17'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 196.00 USD from settled cash', cash: { USD: -196 }, date: '2026-02-17' }],
+        cash: { account: { USD: { settled: 1_509_804, unsettled: 0, availableToTrade: 1_509_804, availableToWithdraw: 1_509_804 } } },
+        pending: [],
+        balance: { account: { cash: 1_509_804, payable: null, assets: 1_999_804, liabilities: 0 } },
+      },
+    },
+    { id: 'start-price', covers: 'reset fixing', action: 'close_price', instrument: 'bond', date: '2026-02-17', value: 98.00, expect: {} },
+    {
+      // The mark is of the contract as written. Opposite side: -9,800,000 x -0.30 / 100 = +29,400, inside the 50,000 threshold.
+      id: 'mark', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: -0.30, note: 'Dealer mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'btrs', price: -0.3, value: 29_400, unrealized: 29_400, provisional: false, priceSource: 'Manual entry', priceStatus: 'manual' }],
+        otc: [{ instrument: 'main', mark: -0.3, markValue: 29_400 }],
+        pnl: { account: { unrealized: 29_400, total: 29_204 } },
+        nav: { account: 2_029_204, book: 5_029_204 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 29_400, assets: 2_029_204, netAssets: 2_029_204 } },
+      },
+    },
+    { id: 'within-threshold', covers: 'variation margin', action: 'clock', to: eod('2026-02-17'), expect: { events: [], otc: [{ instrument: 'main', vmStatus: 'ok', vmPosted: 0, vmHeld: 0, vmExposure: 29_400 }], alerts: [] } },
+    // Sunday 17 May ends the first period: the clean close of Friday 15 May is its fixing.
+    { id: 'first-reset-price', covers: 'reset fixing', action: 'close_price', instrument: 'bond', date: '2026-05-15', value: 99.47, expect: {} },
+    {
+      // First period, notional 9,800,000:
+      //   total return, as written: 9,800,000 x (99.47 / 98.00 - 1) = 147,000.00 (= 10,000,000 face x 1.47 / 100); the opposite side pays it
+      //   financing, received:      9,800,000 x (4.00% + 1.00%) x 89/360 = 121,138.89
+      // The notional resets to 9,800,000 x 99.47 / 98 = 9,947,000 (10,000,000 face at 99.47): independent amount 497,350, 7,350 more.
+      id: 'first-reset', covers: ['return payment', 'financing payment', 'notional reset', 'collateral'], action: 'clock', to: at('2026-05-19'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap payment on ${BTRS_NAME}, leg A (return), period 2026-02-17 to 2026-05-17: 147,000.00 USD`, cash: { USD: -147_000 }, owner: 'account', date: '2026-05-19' },
+          { type: 'swap.collateral', summary: `Collateral posted on ${BTRS_NAME} under its position-level terms: 7,350.00 USD (independent amount, 5.00% of 9,947,000.00 USD notional)`, cash: { USD: -7_350 } },
+          { type: 'swap.payment', summary: `Swap receipt on ${BTRS_NAME}, leg B (float), period 2026-02-17 to 2026-05-17: 121,138.89 USD`, cash: { USD: 121_138.89 }, owner: 'account', date: '2026-05-19' },
+        ],
+        cash: { account: { USD: { settled: 1_476_592.89, margin: 497_350, availableToTrade: 1_476_592.89, availableToWithdraw: 1_476_592.89 } } },
+        positions: [{ instrument: 'main', lot: 'btrs', notional: 9_947_000, margin: 497_350 }],
+        otc: [{ instrument: 'main', iaRequired: 497_350, iaPosted: 497_350 }],
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2026-08-19', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-08-19', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-08-19', status: 'pending' },
+        ],
+        pnl: { account: { realized: -25_861.11, total: 3_342.89 } }, // -147,000 + 121,138.89; then - 196 + 29,400
+        nav: { account: 2_003_342.89, book: 5_003_342.89 },
+        balance: { account: { cash: 1_476_592.89, margin: 497_350, assets: 2_003_342.89, netAssets: 2_003_342.89 } },
+      },
+    },
+    { id: 'may-fixing', action: 'rate', code: 'TSFR3M', value: 3.90, date: '2026-05-15', expect: {} },
+    {
+      // -9,800,000 x 0.80 / 100 = -78,400.
+      id: 'mark-falls', action: 'manual_price', instrument: 'main', value: 0.80, note: 'Dealer mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'btrs', price: 0.8, value: -78_400, unrealized: -78_400 }],
+        otc: [{ instrument: 'main', mark: 0.8, markValue: -78_400 }],
+        pnl: { account: { unrealized: -78_400, total: -104_457.11 } },
+        nav: { account: 1_895_542.89, book: 4_895_542.89 },
+        balance: { account: { positions: -78_400, assets: 1_895_542.89, netAssets: 1_895_542.89 } },
+      },
+    },
+    {
+      // -78,400 is 28,400 beyond the threshold: posted.
+      id: 'variation-margin-posted', covers: 'variation margin', action: 'clock', to: eod('2026-05-19'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under position-level terms: 28,400.00 USD posted. Netting set of 1 position marked at -78,400.00 USD; threshold 50,000.00 USD.', cash: { USD: -28_400 }, owner: 'account' }],
+        cash: { account: { USD: { settled: 1_448_192.89, margin: 525_750, availableToTrade: 1_448_192.89, availableToWithdraw: 1_448_192.89 } } },
+        otc: [{ instrument: 'main', vmPosted: 28_400, vmExposure: -78_400 }],
+        balance: { account: { cash: 1_448_192.89, margin: 525_750 } },
+      },
+    },
+    { id: 'mid-june', action: 'clock', to: at('2026-06-17'), expect: {} },
+    {
+      // 30% (2,940,000 of 9,800,000; 3,000,000 face) terminated at 0.75 per 100 as written: closing the opposite side pays 2,940,000 x 0.75 / 100 = 22,050;
+      // commission 58.80; nothing carried, so realized -22,050. Wednesday 17 June, T+2 across Juneteenth (Friday 19th): settles Monday 22 June.
+      // Left: 6,860,000 x 99.47 / 98 = 6,962,900 of notional (7,000,000 face): independent amount 348,145, 149,205 back. Marked 0.80: -54,880.
+      id: 'partial-termination', covers: ['reduce', 'partial termination', 'collateral', 'settlement across a holiday'], action: 'close', lot: 'btrs', scope: 'strategy', percent: 30, order: { statedPrice: 0.75 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 2_940_000, estimate: 0.75, model: 'stated-price', settleDate: '2026-06-22', cash: -22_050, fees: 58.8 }] },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 2_940_000, avgPrice: 0.75 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Terminated in part: 2,940,000 of 9,800,000 notional of BTRS-HRLW-0826 at 0.75 per 100 notional (realized -22,050.00 USD)' },
+          { type: 'swap.collateral', summary: `Collateral returned on ${BTRS_NAME} under its position-level terms: 149,205.00 USD (independent amount, 5.00% of 6,962,900.00 USD notional)`, cash: { USD: 149_205 } },
+        ],
+        cash: { account: { USD: { settled: 1_597_397.89, unsettled: -22_108.80, margin: 376_545, availableToTrade: 1_575_289.09, availableToWithdraw: 1_575_289.09 } } },
+        positions: [{ instrument: 'main', lot: 'btrs', qty: -6_860_000, cost: 0, avgCost: 0, price: 0.8, value: -54_880, unrealized: -54_880, notional: 6_962_900, margin: 348_145 }],
+        holdings: { main: { long: 0, short: 6_860_000, net: -6_860_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-06-22', amount: -22_108.80, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: -6_860_000, markValue: -54_880, iaRequired: 348_145, iaPosted: 348_145 }],
+        pnl: { account: { realized: -47_911.11, commissions: -254.80, unrealized: -54_880, total: -103_045.91 } },
+        nav: { account: 1_896_954.09, book: 4_896_954.09 },
+        balance: { account: { cash: 1_597_397.89, margin: 376_545, payable: 22_108.80, positions: -54_880, assets: 1_919_062.89, liabilities: 22_108.80, netAssets: 1_896_954.09 } },
+      },
+    },
+    {
+      // -54,880 needs 4,880 posted; 28,400 is: 23,520 comes back (above the minimum transfer).
+      id: 'variation-margin-returned', covers: 'variation margin', action: 'clock', to: eod('2026-06-17'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under position-level terms: 23,520.00 USD returned to us. Netting set of 1 position marked at -54,880.00 USD; threshold 50,000.00 USD.', cash: { USD: 23_520 }, owner: 'account' }],
+        cash: { account: { USD: { settled: 1_620_917.89, margin: 353_025, availableToTrade: 1_598_809.09, availableToWithdraw: 1_598_809.09 } } },
+        otc: [{ instrument: 'main', vmPosted: 4_880, vmExposure: -54_880 }],
+        balance: { account: { cash: 1_620_917.89, margin: 353_025 } },
+      },
+    },
+    { id: 'juneteenth', covers: 'settlement across a holiday', action: 'clock', to: at('2026-06-19'), expect: { events: [] } },
+    {
+      id: 'settle-partial-termination', covers: 'settlement', action: 'clock', to: at('2026-06-22'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 22,108.80 USD from settled cash', cash: { USD: -22_108.80 } }],
+        cash: { account: { USD: { settled: 1_598_809.09, unsettled: 0, availableToTrade: 1_598_809.09, availableToWithdraw: 1_598_809.09 } } },
+        pending: [],
+        balance: { account: { cash: 1_598_809.09, payable: null, assets: 1_896_954.09, liabilities: 0 } },
+      },
+    },
+    { id: 'august-coupon-day', action: 'clock', to: at('2026-08-17'), expect: { events: [] } },
+    {
+      // The bond paid its coupon on 15 August (a Saturday; paid Monday 17th). On the 7,000,000 face still referenced: 7,000,000 x 5.00% / 2 = 175,000.00,
+      // passed through to the counterparty by hand: the opposite side pays it.
+      id: 'coupon-passed-through-by-hand', covers: ['coupon pass-through (by hand)'], action: 'cashflow', lot: 'btrs', category: 'coupon', amount: -175_000, note: 'Coupon of 15 August on 7,000,000 face (5.00% / 2), passed through',
+      expect: {
+        events: [{ type: 'manual.cashflow', summary: 'Manual coupon on BTRS-HRLW-0826: paid 175,000.00 USD. Coupon of 15 August on 7,000,000 face (5.00% / 2), passed through', cash: { USD: -175_000 }, owner: 'account' }],
+        cash: { account: { USD: { settled: 1_423_809.09, availableToTrade: 1_423_809.09, availableToWithdraw: 1_423_809.09 } } },
+        pnl: { account: { couponInterest: -175_000, total: -278_045.91 } },
+        nav: { account: 1_721_954.09, book: 4_721_954.09 },
+        balance: { account: { cash: 1_423_809.09, assets: 1_721_954.09, netAssets: 1_721_954.09 } },
+      },
+    },
+    { id: 'end-price', covers: 'reset fixing', action: 'close_price', instrument: 'bond', date: '2026-08-17', value: 98.97, expect: {} },
+    {
+      // Second period, on the 6,962,900 left (7,000,000 face at 99.47):
+      //   total return, as written: 6,962,900 x (98.97 / 99.47 - 1) = -35,000.00 (= 7,000,000 x -0.50 / 100); the opposite side receives 35,000.00
+      //   financing, received:      6,962,900 x (3.90% + 1.00%) x 92/360 = 87,190.98
+      // The swap matures; the 348,145 independent amount and the 4,880 posted come back.
+      // 2,000,000 - 196 - 147,000 + 121,138.89 - 22,050 - 58.80 - 175,000 + 35,000 + 87,190.98 = 1,899,025.07.
+      id: 'second-reset-and-maturity', covers: ['return payment', 'financing payment', 'maturity', 'close', 'collateral'], action: 'clock', to: at('2026-08-19'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap receipt on ${BTRS_NAME}, leg A (return), period 2026-05-17 to 2026-08-17: 35,000.00 USD`, cash: { USD: 35_000 }, owner: 'account', date: '2026-08-19' },
+          { type: 'swap.payment', summary: `Swap receipt on ${BTRS_NAME}, leg B (float), period 2026-05-17 to 2026-08-17: 87,190.98 USD`, cash: { USD: 87_190.98 }, owner: 'account', date: '2026-08-19' },
+          { type: 'swap.matured', summary: `Swap matured: ${BTRS_NAME} (notional 6,860,000)`, owner: 'account' },
+          { type: 'swap.collateral', summary: `Collateral returned on ${BTRS_NAME} under its position-level terms: 348,145.00 USD (independent amount, the position ended)`, cash: { USD: 348_145 } },
+          { type: 'collateral.variation', summary: 'Variation margin under position-level terms: 4,880.00 USD returned to us. The last position of the netting set ended.', cash: { USD: 4_880 } },
+        ],
+        cash: { account: { USD: { settled: 1_899_025.07, unsettled: 0, margin: 0, restricted: 0, reserved: 0, availableToTrade: 1_899_025.07, availableToWithdraw: 1_899_025.07 } }, treasury: { USD: { settled: 3_000_000 } } },
+        positions: [], holdings: { main: null }, lifecycle: [], otc: [], pending: [], alerts: [],
+        pnl: { account: { realized: 74_279.87, commissions: -254.80, couponInterest: -175_000, unrealized: 0, total: -100_974.93 } }, // -47,911.11 + 35,000 + 87,190.98
+        nav: { account: 1_899_025.07, treasury: 3_000_000, book: 4_899_025.07 },
+        balance: { account: { cash: 1_899_025.07, margin: null, positions: null, assets: 1_899_025.07, liabilities: 0, netAssets: 1_899_025.07 } },
+      },
+    },
+    {
+      id: 'nothing-left', action: 'clock', to: at('2026-08-20'),
+      expect: { events: [], lifecycle: [], positions: [], pending: [], otc: [], alerts: [], cash: { account: { USD: { settled: 1_899_025.07, margin: 0, restricted: 0 } } } },
+    },
+  ],
+};
+
+export default [amortizingSwap, accretingSwap, equitySwap, equityIndexSwap, equityTrs, bondTrs];

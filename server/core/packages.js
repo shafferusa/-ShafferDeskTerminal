@@ -544,13 +544,24 @@ export function createPackages(app) {
       if (r.uncoveredCallUnits > 0) check('warning', 'naked-call', `Uncovered short calls on ${fmtQty(r.uncoveredCallUnits)} units: loss is unbounded as the underlying rises. ${fmt(r.naked, r.ccy)} is reserved (${(book.settings.margin.nakedCallPct * 100).toFixed(0)}% of ${r.priceBasis}).`);
     }
 
+    // ---- cash needed leg by leg (t2) ---------------------------------------------------------------------
+    // The totals below net every leg of the package, but the legs execute one after another (each after the legs it
+    // depends on) and each is checked against the cash free at that moment (core/orders.js): a written option must find
+    // its reserve before the premium of a later written leg has arrived. An iron condor funded to its netted shortfall
+    // would have both written legs rejected. The deepest point of that path is what the package needs, so the
+    // shortfall (and the Treasury funding or borrowing sized to it) is never smaller than it. Worked out for packages of
+    // listed options and security purchases or sales; other legs keep the netted figure.
+    const peak = interimNeeds({ legs, rows: out, unit, attach, book });
+
     // ---- cash by currency -------------------------------------------------------------------------------
     const cash = {};
     for (const [ccy, n] of Object.entries(needs)) {
       const have = ledger.cash(unit.id, ccy);
       const required = n.purchases + n.fees + n.margin + n.collateral + n.reserved + n.financingOut;
       const sources = n.proceeds + n.financingIn + n.coverCollateral;
-      const shortfall = Math.max(0, required - sources - have.availableToTrade);
+      const netted = Math.max(0, required - sources - have.availableToTrade);
+      const interim = peak[ccy]?.deficit || 0;
+      const shortfall = Math.max(netted, interim);
       cash[ccy] = {
         ccy, purchases: money(n.purchases, ccy), proceeds: money(n.proceeds, ccy), restrictedProceeds: money(n.restrictedProceeds, ccy), fees: money(n.fees, ccy), margin: money(n.margin, ccy),
         collateral: money(n.collateral, ccy), reserved: money(n.reserved, ccy), financingIn: money(n.financingIn, ccy), financingOut: money(n.financingOut, ccy), coverCollateral: money(n.coverCollateral, ccy),
@@ -558,7 +569,9 @@ export function createPackages(app) {
         netCash: money(n.proceeds + n.financingIn - n.purchases - n.fees - n.financingOut, ccy),
       };
       cashEffect[ccy] = cash[ccy].netCash;
-      if (shortfall > 0.004) {
+      if (interim > netted + 0.004) {
+        check('error', 'cash', `${unit.name} is short ${fmt(interim, ccy)} while the legs execute: netted over the whole package it needs ${fmt(required, ccy)} against ${fmt(have.availableToTrade + sources, ccy)}, but leg ${peak[ccy].leg} must find ${fmt(interim, ccy)} more than is free at that point (the cash reserved against a written option is needed before the premium of a later leg arrives). Add Treasury funding or a borrowing leg, or reduce the size.`);
+      } else if (shortfall > 0.004) {
         check('error', 'cash', `${unit.name} is short ${fmt(shortfall, ccy)}: the package needs ${fmt(required, ccy)} (purchases ${fmt(money(n.purchases - (principalOut[ccy] || 0), ccy), ccy)}${principalOut[ccy] ? `, principal exchanged when the trade settles ${fmt(money(principalOut[ccy], ccy), ccy)}` : ''}, fees ${fmt(n.fees, ccy)}, margin and collateral ${fmt(n.margin + n.collateral, ccy)}, reserved ${fmt(n.reserved, ccy)}) and ${fmt(have.availableToTrade + sources, ccy)} is available. Add Treasury funding or a borrowing leg, convert currency, or reduce the size.`);
       }
     }
@@ -667,6 +680,54 @@ export function createPackages(app) {
       feeModel: 'Fees come from the Book\'s fee schedule. Fill prices use the fill model named on each leg.',
     };
     return { legs: out, totals, checks, payoff, protection };
+  }
+
+  /**
+   * t2: the deepest cash need of a package while its legs execute, by currency: { [ccy]: { deficit, leg } }.
+   * Legs are taken in the order the engine runs them (leg order, each after the legs it depends on), assuming each
+   * fills in full, and each is charged as core/orders.js checks it against the cash free to trade: a purchase its cost
+   * and commission; a sale its proceeds less commission; any change in the cash reserved against written options
+   * (core/payoff.js optionRequirement on the instance's positions as they stand after the leg); funding and borrowing
+   * legs their cash at once. Packages with legs of other kinds (short sales, covers, futures, OTC contracts) are left
+   * to the netted figure: an empty result.
+   */
+  function interimNeeds({ legs, rows, unit, attach, book }) {
+    const SIMPLE = new Set(['option', 'equity', 'fund', 'spot', 'crypto', 'bond', 'manual']);
+    const trades = legs.filter((l) => l.kind === 'trade');
+    if (!trades.some((l) => l.inst?.family === 'option' && !BUY.has(l.action))) return {};
+    if (!trades.every((l) => l.inst && SIMPLE.has(l.inst.family) && ['buy', 'sell'].includes(l.action))) return {};
+    if (legs.some((l) => !['trade', 'funding', 'loan', 'link'].includes(l.kind))) return {};
+    const free = {}, low = {};
+    const move = (ccy, x, n) => {
+      if (!(ccy in free)) { free[ccy] = ledger.cash(unit.id, ccy).availableToTrade; low[ccy] = { deficit: 0, leg: null }; }
+      free[ccy] = money(free[ccy] + x, ccy);
+      if (-free[ccy] > low[ccy].deficit + 0.004) low[ccy] = { deficit: money(-free[ccy], ccy), leg: n };
+    };
+    const bucket = (attach ? positions.list({ unitIds: [unit.id], strategyId: attach.id }) : []).filter((p) => !isZero(p.qty)).map((p) => ({ inst: instruments.get(p.instrument_id), qty: p.qty }));
+    const reserve = () => {
+      const by = {};
+      for (const r of optionRequirement(app, bucket.filter((b) => !isZero(b.qty)), book.settings.margin)) by[r.ccy] = (by[r.ccy] || 0) + r.amount;
+      return by;
+    };
+    const add = (inst, dq) => { const hit = bucket.find((b) => b.inst.id === inst.id); if (hit) hit.qty += dq; else bucket.push({ inst, qty: dq }); };
+    const done = new Set();
+    for (let pass = 0; pass <= legs.length && done.size < legs.length; pass++) {
+      legs.forEach((l, i) => {
+        if (done.has(l.n) || (l.dependsOn || []).some((d) => !done.has(d))) return;
+        done.add(l.n);
+        const r = rows[i];
+        if (l.kind === 'funding' || (l.kind === 'loan' && l.action === 'borrow_cash')) { if (typeof r.cash === 'number') move(r.currency, r.cash, l.n); return; }
+        if (l.kind === 'loan') { if (typeof r.cash === 'number') move(r.currency, r.cash, l.n); return; }
+        if (l.kind === 'link') { const src = positions.get(l.sourcePositionId); if (src && !bucket.some((b) => b.inst.id === l.inst.id)) add(l.inst, Math.sign(src.qty) * l.qty); return; }
+        if (typeof r.cash !== 'number') return; // no price: the netted figure already says the requirement is incomplete
+        const before = reserve();
+        add(l.inst, (BUY.has(l.action) ? 1 : -1) * l.qty);
+        const after = reserve();
+        const ccy = r.currency;
+        move(ccy, r.cash - (r.feeTotal || 0) - ((after[ccy] || 0) - (before[ccy] || 0)), l.n);
+      });
+    }
+    return low;
   }
 
   /**

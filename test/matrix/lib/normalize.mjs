@@ -171,6 +171,7 @@ export function normalizePreview(pv, ctx) {
     cash: Object.fromEntries(Object.values(pv.totals.cash || {}).map((c) => [c.ccy, {
       purchases: c.purchases, proceeds: c.proceeds, restrictedProceeds: c.restrictedProceeds, fees: c.fees, margin: c.margin, collateral: c.collateral, reserved: c.reserved,
       financingIn: c.financingIn, financingOut: c.financingOut, required: c.required, available: c.available, shortfall: c.shortfall, netCash: c.netCash,
+      coverCollateral: c.coverCollateral ?? 0, // t1: what a cover in the package takes from its short's restricted collateral
     }])),
     // Option legs: the net premium of the package before fees (a roll or a spread shows it as a net debit or credit),
     // and the cash each underlying must have reserved against the written options of the resulting position.

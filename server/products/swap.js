@@ -541,7 +541,8 @@ export const swap = {
       const patch = { legs };
       if (leg.type === 'return') {
         legs[leg.id].lastFixing = r.fixing;
-        if (leg.resetNotional) {
+        // No reset after the last period: there is no next period for it to apply to (s2).
+        if (leg.resetNotional && period.end < sched.at(-1).end) {
           patch.notionalScale = (pos.data.notionalScale ?? 1) * r.ratio;
           patch.scaleSteps = [...(pos.data.scaleSteps || []), { from: period.end, scale: patch.notionalScale }];
         }

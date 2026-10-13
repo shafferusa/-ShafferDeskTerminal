@@ -917,4 +917,287 @@ const cmoSpec = {
   ],
 };
 
-export default [specifiedPool, absSpec, cmoSpec];
+// ---------------------------------------------------------------------------------------------
+// clo
+// ---------------------------------------------------------------------------------------------
+// A European CLO mezzanine class in euros, reported in dollars: Lindqvist Park CLO 2025-1 DAC Class D Senior Secured
+// Deferrable Floating Rate Notes, listed on Euronext Dublin (TARGET calendar), 3-month EURIBOR + 4.25%, quarterly on 15 January,
+// April, July and October, ACT/360 on current face, T+2. Class D is deferrable: when its coverage test fails, its interest is
+// paid in kind (added to principal) instead of in cash. The coupon of the period running at registration is entered on the
+// form (Current coupon 6.55%: the January fixing 2.30% + 4.25%); later fixings come from the rate fixture standing in for
+// Shaffer MarketData (code EURIBOR3M). EUR/USD 1.10 (fixture) throughout.
+//   - Bought on Monday 6 March 2028 (settling Wednesday 8 March).
+//   - 13 April: the trustee report shows the Class D overcollateralisation test failing: the 15 April coupon is recorded by
+//     hand as paid in kind; the April fixing (2.45%) is published.
+//   - 15 April is a Saturday, 17 April Easter Monday (TARGET closed; NYSE open): on Tuesday 18 April the coupon is added to
+//     principal (factor 1 to 1.0165569444) and the next period runs at 6.70% on the larger current face.
+//   - 1 May (TARGET holiday) passes; on Monday 17 July (15 July a Saturday) the coupon is paid in cash on current face; the July
+//     fixing does not arrive: interest stops accruing, an alert is raised, and a sale is refused. It arrives (2.60%: 6.85%).
+//   - A realized loss is allocated to Class D by hand, factor 1.0165569444 to 0.9148 from 15 July; the price falls; 2,000,000 sold,
+//     then the rest.
+// Commission: 0.5 basis point of clean principal. Days (ACT/360) from 15 Jan 2028: to 8 Mar 53, 12 Apr 88, 15 Apr 91; from
+// 15 Apr: to 17 Apr 2, 1 May 16, 15 Jul 91; from 15 Jul: to 18 Jul 3, 20 Jul 5, 21 Jul 6, 25 Jul 10.
+// Dollar figures: every booking is translated at 1.10 and rounded to the cent when it is booked; P&L lines are the sums of the
+// translated bookings, balance lines and net asset value the euro figures x 1.10, rounded; the FX effect is what the rounding
+// of the translated asset and liability bookings leaves (a cent here and there).
+const cloSpec = {
+  productId: 'clo',
+  title: 'Lindqvist Park CLO 2025-1 Class D (EUR, deferrable, 3M EURIBOR + 4.25%) reported in dollars: coupon paid in kind by hand over Easter, next coupon on the larger current face, missing fixing stops accrual and blocks a sale, fixing arrives, realized loss allocated by hand, partial sale, close',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount (original face)'],
+    automaticInputs: [...BOND_TICKET.automaticInputs, 'EURIBOR3M fixing of each coupon period (rate fixture standing in for Shaffer MarketData)', 'EUR/USD rate (FX fixture)'],
+    manualInputs: ['Registration: Coupon Floating, Reference rate EURIBOR3M, Spread, Current coupon, Interest deferrable (PIK)', 'Coupon paid in kind recorded by hand on the instrument form (Coupon paid in kind, Review, Record)', 'Realized loss allocated by hand (Principal written down to, Kind of write-down, Write-down effective from)'],
+    settlement: 'T+2 on the TARGET calendar (Euronext Dublin); Good Friday, Easter Monday and 1 May are not business days; a trade is refused while the period has no fixing',
+    lifecycle: 'Automatic: daily accrual on current face at the period rate, quarterly coupon at the fixing plus the spread, reset after each coupon, missing fixing raises an alert and stops accrual. Manual: a coupon paid in kind (capitalised: factor up, cost up, no cash), the loss allocation',
+    accounting: 'Euro position; cost per 100 of current face (PIK capitalised into cost); coupon and interest income including the PIK coupon; loss and sales realized; dollar figures translated at 1.10 per booking, FX effect from rounding',
+    collateral: 'None for a long position',
+  },
+  start: EST('2028-03-06'), // Monday
+  settlementCheck: { lag: 2, holidays: ['2028-04-14', '2028-04-17', '2028-05-01'] }, // Good Friday, Easter Monday, Labour Day (TARGET)
+  book: {
+    name: 'Matrix euro CLO', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 1_000_000 }, { ccy: 'EUR', amount: 6_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'EUR', amount: 5_500_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.5 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  fx: { 'EUR/USD': 1.1 },
+  instruments: {
+    main: { productId: 'clo', name: 'Lindqvist Park CLO 2025-1 DAC Class D Senior Secured Deferrable Floating Rate Notes due 2038', symbol: 'LPARK-25-1-D', marketView: 'FOREIGN_CASH', venueType: 'exchange', venue: 'Euronext Dublin', venueCountry: 'IE', issuer: 'Lindqvist Park CLO 2025-1 DAC', domicile: 'IE', underlyingGeo: 'EU', tradingCcy: 'EUR', multiplier: 0.01,
+      conventions: { settleLag: 2 },
+      terms: { couponType: 'float', referenceRate: 'EURIBOR3M', spread: 0.0425, currentCoupon: 0.0655, frequency: 4, maturity: '2038-04-15', issueDate: '2025-04-15', dayCount: 'ACT/360', redemption: 100, minDenomination: 1_000, seniority: 'Class D (deferrable mezzanine)', pikAllowed: true } },
+  },
+  quotes: { main: { bid: 98.25, ask: 98.5, last: 98.375, bidSize: 20_000_000, askSize: 20_000_000 } },
+  expectAtStart: {
+    ...startState(6_050_000, 1_550_000), // 5,500,000 EUR x 1.10; 1,000,000 USD + 500,000 EUR x 1.10
+    cash: { account: { EUR: idle(5_500_000) }, treasury: { USD: idle(1_000_000), EUR: idle(500_000) } }, alerts: [],
+  },
+  steps: [
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 5_000_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 5_000_000, estimate: 98.5, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2028-03-08', calendar: 'TARGET',
+            gross: 4_925_000, // 5,000,000 x 98.50 / 100
+            accrued: 48_215.28, // 53 days at 6.55%: 5,000,000 x 6.55% x 53/360 = 48,215.278
+            cash: -4_973_215.28, fees: 246.25 }], // 0.5 bp of 4,925,000
+          cash: { EUR: { purchases: 4_973_215.28, fees: 246.25, required: 4_973_461.53, available: 5_500_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 5_000_000, avgPrice: 98.5, fills: [{ qty: 5_000_000, price: 98.5, model: 'quoted-bid-ask', settleDate: '2028-03-08', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 5,000,000 LPARK-25-1-D @ 98.50 EUR', owner: 'account', date: '2028-03-06' }],
+        cash: { account: { EUR: { settled: 5_500_000, unsettled: -4_973_461.53, availableToTrade: 526_538.47 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 5_000_000, avgCost: 98.5, cost: 4_925_000, price: 98.375,
+          value: 4_918_750, unrealized: -6_250, accrued: 48_215.28, priceSource: 'Test fixture' }],
+        holdings: { main: { long: 5_000_000, short: 0, net: 5_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2028-03-08', amount: -4_973_461.53, ccy: 'EUR', into: 'cash' }],
+        // 15 April 2028 is a Saturday and Monday 17 April Easter Monday (TARGET): the coupon is due Tuesday 18 April.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2028-04-18', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2038-04-15', status: 'pending' }],
+        // Dollars: commission 246.25 x 1.10 = 270.875 -> 270.88; unrealized -6,250 x 1.10 = -6,875. FX effect -0.01: the payable
+        // -4,973,461.53 is booked as -5,470,807.68 (x 1.10 = -5,470,807.683), the accrued 48,215.28 as 53,036.81 (53,036.808):
+        // residuals -0.003 and -0.002, -0.005, rounded -0.01.
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -270.88, fees: 0, borrowFunding: 0, unrealized: -6_875, fx: -0.01, total: -7_145.89 } },
+        nav: { account: 6_042_854.13, book: 7_592_854.13 }, // 5,493,503.75 EUR x 1.10 = 6,042,854.125
+        balance: { account: { cash: 6_050_000, accruedIncome: 53_036.81, positions: 5_410_625, payable: 5_470_807.68, assets: 11_513_661.81, liabilities: 5_470_807.68, netAssets: 6_042_854.13,
+          local: { EUR: { cash: 5_500_000, accruedIncome: 48_215.28, positions: 4_918_750, payable: 4_973_461.53 } } } },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EST('2028-03-08'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 4,973,461.53 EUR from settled cash', cash: { EUR: -4_973_461.53 }, date: '2028-03-08' }],
+        cash: { account: { EUR: { settled: 526_538.47, unsettled: 0, availableToTrade: 526_538.47 } } },
+        pending: [],
+        balance: { account: { cash: 579_192.32, payable: null, assets: 6_042_854.13, liabilities: 0, local: { EUR: { cash: 526_538.47, payable: null } } } },
+      },
+    },
+    {
+      // Thursday 13 April. End of day 12 Apr: 5,000,000 x 6.55% x 88/360 = 80,055.556; 31,840.28 more (35,024.31 dollars).
+      id: 'accrue', covers: 'accrual', action: 'clock', to: EDT('2028-04-13'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on LPARK-25-1-D: 31,840.28 EUR' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 5_000_000, accrued: 80_055.56 }],
+        pnl: { account: { couponInterest: 35_024.31, total: 27_878.42 } },
+        nav: { account: 6_077_878.43, book: 7_627_878.43 },
+        balance: { account: { accruedIncome: 88_061.12, assets: 6_077_878.43, netAssets: 6_077_878.43, local: { EUR: { accruedIncome: 80_055.56 } } } },
+      },
+    },
+    {
+      // The trustee report: the Class D overcollateralisation test fails, so the 15 April coupon is paid in kind. Recorded by hand.
+      id: 'pik-elected', covers: 'coupon paid in kind (by hand)', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'pik', couponDate: '2028-04-15' },
+      expect: {
+        events: [{ type: 'bond.pik_election', summary: 'Coupon of 2028-04-15 on LPARK-25-1-D to be paid in kind, recorded by hand: interest is still earned; on 2028-04-18 it is added to principal instead of paid', owner: 'account', date: '2028-04-13' }],
+      },
+    },
+    // The April fixing, 2.45%, published on 13 April (two TARGET days before the period starts): it sets the next period's rate.
+    { id: 'april-fixing', covers: 'reset', action: 'rate', code: 'EURIBOR3M', value: 2.45, date: '2028-04-13', expect: { events: [] } },
+    {
+      // Tuesday 18 April. The coupon of 15 Jan to 15 Apr, 91 days at 6.55%: 5,000,000 x 6.55% x 91/360 = 82,784.722, is paid in kind:
+      // added to principal, factor 1 x (1 + 1.6556944%) = 1.0165569444 (current face 5,082,784.72), cost 4,925,000 + 82,784.72 =
+      // 5,007,784.72. No cash. The balance then stands at 15 April (0): 82,784.72 - 80,055.56 = 2,729.16 more income. The next
+      // period runs at 2.45% + 4.25% = 6.70%. End of day Monday 17 April (Easter Monday: TARGET closed, NYSE open): 2 days on
+      // 5,082,784.72 at 6.70% = 1,891.925.
+      id: 'coupon-paid-in-kind', covers: ['coupon paid in kind (by hand)', 'reset', 'market holiday'], action: 'clock', to: EDT('2028-04-18'),
+      expect: {
+        events: [
+          { type: 'bond.pik', summary: 'Coupon of 2028-04-15 paid in kind on 5,000,000 LPARK-25-1-D: 82,784.72 EUR added to principal, factor 1 to 1.0165569444', owner: 'account', date: '2028-04-18' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on LPARK-25-1-D: 2,729.16 EUR' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on LPARK-25-1-D: 1,891.93 EUR' },
+        ],
+        // avgCost per 100 of current face: 5,007,784.72 / 50,827.8472 = 98.524431. Value 5,082,784.72 x 98.375 / 100 = 5,000,189.469.
+        positions: [{ instrument: 'main', lot: 'lot', qty: 5_000_000, cost: 5_007_784.72, avgCost: 98.524431, price: 98.375, value: 5_000_189.47, unrealized: -7_595.25, accrued: 1_891.93 }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2028-07-17', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2038-04-15', status: 'pending' }],
+        pnl: { account: { couponInterest: 40_107.51, unrealized: -8_354.78, total: 31_481.84 } }, // + (2,729.16 + 1,891.93) x 1.10 per booking: 3,002.08 + 2,081.12
+        nav: { account: 6_081_481.86, book: 7_631_481.86 },
+        balance: { account: { accruedIncome: 2_081.12, positions: 5_500_208.42, assets: 6_081_481.86, netAssets: 6_081_481.86, local: { EUR: { accruedIncome: 1_891.93, positions: 5_000_189.47 } } } },
+      },
+    },
+    {
+      // Tuesday 2 May, after Labour Day (TARGET; NYSE open on 1 May). End of day 1 May: 16 days on 5,082,784.72 at 6.70% =
+      // 15,135.403; 13,243.47 more (14,567.82 dollars).
+      id: 'accrue-may', covers: ['accrual', 'market holiday'], action: 'clock', to: EDT('2028-05-02'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on LPARK-25-1-D: 13,243.47 EUR' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 5_000_000, accrued: 15_135.4 }],
+        pnl: { account: { couponInterest: 54_675.33, total: 46_049.66 } },
+        nav: { account: 6_096_049.67, book: 7_646_049.67 },
+        balance: { account: { accruedIncome: 16_648.94, assets: 6_096_049.67, netAssets: 6_096_049.67, local: { EUR: { accruedIncome: 15_135.4 } } } },
+      },
+    },
+    {
+      // Monday 17 July (15 July a Saturday). The coupon of 15 Apr to 15 Jul, 91 days at 6.70%, on the current face:
+      // 5,000,000 x 1.0165569444 x 6.70% x 91/360 = 86,082.607: paid in cash, 86,082.61. The balance stands at 15 July: 0, so
+      // 86,082.61 - 15,135.40 = 70,947.21 more. No EURIBOR3M fixing for 15 July: an alert, and no rate for the new period.
+      id: 'july-coupon-no-fixing', covers: ['coupon', 'missing fixing'], action: 'clock', to: EDT('2028-07-17'),
+      expect: {
+        events: [
+          { type: 'bond.coupon', summary: 'Coupon received on 5,000,000 LPARK-25-1-D (factor 1.0165569444: current face 5,082,784.72): 86,082.61 EUR', cash: { EUR: 86_082.61 }, owner: 'account', date: '2028-07-17' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on LPARK-25-1-D: 70,947.21 EUR' },
+        ],
+        cash: { account: { EUR: { settled: 612_621.08, availableToTrade: 612_621.08 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 5_000_000, accrued: 0 }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2028-10-16', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2038-04-15', status: 'pending' }],
+        alerts: ['bond.fixing'],
+        pnl: { account: { couponInterest: 132_717.26, total: 124_091.59 } },
+        nav: { account: 6_174_091.61, book: 7_724_091.61 },
+        balance: { account: { cash: 673_883.19, accruedIncome: null, assets: 6_174_091.61, netAssets: 6_174_091.61, local: { EUR: { cash: 612_621.08, accruedIncome: null } } } },
+      },
+    },
+    {
+      id: 'sell-without-fixing', covers: ['reduce', 'missing fixing'], action: 'ticket', instrument: 'main', side: 'sell', qty: 2_000_000, from: 'lot',
+      status: 'blocked', reason: 'The accrued interest of the sale cannot be computed without the period\'s fixing; it is not booked as zero.',
+      expect: { refused: 'has no EURIBOR3M fixing for its current coupon period' },
+    },
+    // The July fixing, 2.60%, arrives from the fixture on 17 July (for 13 July).
+    { id: 'july-fixing-arrives', covers: 'reset', action: 'rate', code: 'EURIBOR3M', value: 2.6, date: '2028-07-13', expect: { events: [] } },
+    {
+      // Wednesday 19 July. The end of day of 18 July takes the July fixing: 2.60% + 4.25% = 6.85%; the alert is resolved.
+      // 3 days on 5,082,784.72 at 6.85% = 2,901.423.
+      id: 'fixing-taken', covers: ['reset', 'accrual'], action: 'clock', to: EDT('2028-07-19'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on LPARK-25-1-D: 2,901.42 EUR' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 5_000_000, accrued: 2_901.42 }],
+        alerts: [],
+        pnl: { account: { couponInterest: 135_908.82, total: 127_283.15 } },
+        nav: { account: 6_177_283.17, book: 7_727_283.17 },
+        balance: { account: { accruedIncome: 3_191.56, assets: 6_177_283.17, netAssets: 6_177_283.17, local: { EUR: { accruedIncome: 2_901.42 } } } },
+      },
+    },
+    {
+      // A realized loss allocated to Class D by hand: factor 1.0165569444 to 0.9148 from 15 July. 5,000,000 x 0.1017569444 =
+      // 508,784.72 of principal written off. Cost out 5,007,784.72 x 0.1017569444 / 1.0165569444 = 501,277.249: realized
+      // -501,277.25 (-551,404.98 dollars). July's 3 days on the principal written off are cancelled: on 4,574,000 at 6.85% they are
+      // 2,610.99, 290.43 down.
+      id: 'loss-allocated', covers: 'loss allocation (by hand)', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'writedown', newFactor: 0.9148, kind: 'loss', effective: '2028-07-15' },
+      expect: {
+        events: [
+          { type: 'bond.loss', summary: 'Realized loss allocated by hand to LPARK-25-1-D: factor 1.0165569444 to 0.9148 from 2028-07-15, 508,784.72 of principal written off with no payment (5,000,000 original face); cost 501,277.25 EUR written off as realized loss', owner: 'account', date: '2028-07-19' },
+          { type: 'accrual.coupon', summary: 'Accrued interest cancelled with the principal written off on LPARK-25-1-D: 290.43 EUR' },
+        ],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 5_000_000, cost: 4_506_507.47, avgCost: 98.524431, price: 98.375, value: 4_499_672.5, unrealized: -6_834.97, accrued: 2_610.99 }], // 4,574,000 x 98.375 / 100
+        pnl: { account: { realized: -551_404.98, couponInterest: 135_589.35, unrealized: -7_518.47, total: -423_604.99 } },
+        nav: { account: 5_626_395.03, book: 7_176_395.03 },
+        balance: { account: { accruedIncome: 2_872.09, positions: 4_949_639.75, assets: 5_626_395.03, netAssets: 5_626_395.03, local: { EUR: { accruedIncome: 2_610.99, positions: 4_499_672.5 } } } },
+      },
+    },
+    {
+      id: 'price-falls', action: 'quote', instrument: 'main', quote: { bid: 91, ask: 91.5, last: 91.25, bidSize: 20_000_000, askSize: 20_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 5_000_000, price: 91.25, value: 4_173_775, unrealized: -332_732.47 }], // 4,574,000 x 91.25 / 100
+        pnl: { account: { unrealized: -366_005.72, total: -782_092.24 } },
+        nav: { account: 5_267_907.78, book: 6_817_907.78 },
+        balance: { account: { positions: 4_591_152.5, assets: 5_267_907.78, netAssets: 5_267_907.78, local: { EUR: { positions: 4_173_775 } } } },
+      },
+    },
+    {
+      // 2,000,000 sold at 91.00, settling Friday 21 July: current face 1,829,600 x 91 / 100 = 1,664,936; 6 days at 6.85%
+      // 2,088.793; 0.5 bp = 83.247. Cost out 4,506,507.47 x 2 / 5 = 1,802,602.988: realized 1,664,936 - 1,802,602.99 = -137,666.99.
+      id: 'reduce', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 2_000_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 2_000_000, estimate: 91, settleDate: '2028-07-21', calendar: 'TARGET', notional: 1_829_600,
+          gross: 1_664_936, accrued: 2_088.79, cash: 1_667_024.79, fees: 83.25 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 2_000_000, avgPrice: 91 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: /^Sold 2,000,000 LPARK-25-1-D @ 91\.00 EUR \(realized [-−]137,666\.99 EUR\)$/ }],
+        cash: { account: { EUR: { settled: 612_621.08, unsettled: 1_666_941.54, availableToTrade: 2_279_562.62 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 3_000_000, cost: 2_703_904.48, avgCost: 98.524431, price: 91.25, value: 2_504_265, unrealized: -199_639.48, accrued: 522.2 }], // 2,744,400 x 91.25 / 100
+        holdings: { main: { long: 3_000_000, short: 0, net: 3_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2028-07-21', amount: 1_666_941.54, ccy: 'EUR', into: 'cash' }],
+        pnl: { account: { realized: -702_838.67, commissions: -362.46, unrealized: -219_603.43, fx: 0, total: -787_215.21 } },
+        nav: { account: 5_262_784.8, book: 6_812_784.8 },
+        balance: { account: { receivable: 1_833_635.69, accruedIncome: 574.42, positions: 2_754_691.5, assets: 5_262_784.8, netAssets: 5_262_784.8, local: { EUR: { receivable: 1_666_941.54, accruedIncome: 522.2, positions: 2_504_265 } } } },
+      },
+    },
+    {
+      // Friday 21 July. End of day 20 Jul: 4,574,000 x 6.85% x 5/360 = 4,351.597, less the 6 days sold 2,088.793: 2,262.86.
+      // 1,740.66 more.
+      id: 'settle-reduce', covers: ['settlement', 'accrual'], action: 'clock', to: EDT('2028-07-21'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 1,666,941.54 EUR into settled cash', cash: { EUR: 1_666_941.54 } },
+          { type: 'accrual.coupon', summary: 'Interest accrued on LPARK-25-1-D: 1,740.66 EUR' },
+        ],
+        cash: { account: { EUR: { settled: 2_279_562.62, unsettled: 0, availableToTrade: 2_279_562.62 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 3_000_000, accrued: 2_262.86 }],
+        pending: [],
+        pnl: { account: { couponInterest: 137_504.08, total: -785_300.48 } },
+        nav: { account: 5_264_699.53, book: 6_814_699.53 },
+        balance: { account: { cash: 2_507_518.88, receivable: null, accruedIncome: 2_489.15, assets: 5_264_699.53, netAssets: 5_264_699.53, local: { EUR: { cash: 2_279_562.62, receivable: null, accruedIncome: 2_262.86 } } } },
+      },
+    },
+    {
+      // The rest sold at 91.00 for settlement on Tuesday 25 July: 2,744,400 x 91 / 100 = 2,497,404; 10 days at 6.85% 5,221.983
+      // (2,959.12 more than on the books); 0.5 bp = 124.870. Realized 2,497,404 - 2,703,904.48 = -206,500.48.
+      id: 'close', covers: 'close', action: 'close', lot: 'lot', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 3_000_000, estimate: 91, settleDate: '2028-07-25', notional: 2_744_400,
+          gross: 2_497_404, accrued: 5_221.98, cash: 2_502_625.98, fees: 124.87 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 3_000_000, avgPrice: 91 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: /^Sold 3,000,000 LPARK-25-1-D @ 91\.00 EUR \(realized [-−]206,500\.48 EUR\)$/ },
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of LPARK-25-1-D: 2,959.12 EUR' },
+        ],
+        cash: { account: { EUR: { settled: 2_279_562.62, unsettled: 2_502_501.11, availableToTrade: 4_782_063.73 } } },
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2028-07-25', amount: 2_502_501.11, ccy: 'EUR', into: 'cash' }],
+        lifecycle: [],
+        pnl: { account: { realized: -929_989.2, couponInterest: 140_759.11, commissions: -499.82, unrealized: 0, fx: 0, total: -789_729.91 } },
+        nav: { account: 5_260_270.1, book: 6_810_270.1 },
+        balance: { account: { cash: 2_507_518.88, receivable: 2_752_751.22, positions: null, accruedIncome: null, assets: 5_260_270.1, liabilities: 0, netAssets: 5_260_270.1,
+          local: { EUR: { receivable: 2_502_501.11, positions: null, accruedIncome: null } } } },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: EDT('2028-07-25'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 2,502,501.11 EUR into settled cash', cash: { EUR: 2_502_501.11 } }],
+        cash: { account: { EUR: { settled: 4_782_063.73, unsettled: 0, availableToTrade: 4_782_063.73 } }, treasury: { USD: { settled: 1_000_000 }, EUR: { settled: 500_000 } } },
+        pending: [],
+        balance: { account: { cash: 5_260_270.1, receivable: null, assets: 5_260_270.1, liabilities: 0, local: { EUR: { cash: 4_782_063.73, receivable: null } } } },
+      },
+    },
+  ],
+};
+
+export default [specifiedPool, absSpec, cmoSpec, cloSpec];

@@ -370,4 +370,267 @@ const cdsSingleName = {
   ],
 };
 
-export default [cdsSingleName];
+
+// ---------------------------------------------------------------------------------------------
+// cds_sovereign
+// ---------------------------------------------------------------------------------------------
+// One-year standard contract on the Republic of Valmora (a euro-area sovereign), in euros, 100 bp, maturity 20 June 2027,
+// Western European sovereign terms: credit events failure to pay, repudiation/moratorium, restructuring and obligation
+// acceleration; no bankruptcy (a sovereign is not a company). Settled at the auction final price. TARGET calendar for
+// settlement (T+3) and coupons. The spread is tight: the upfront is negative (the protection buyer receives it).
+// Protection is SOLD, under a collateral agreement recorded first: CSA Dealer M, variation margin in EUR cash, no
+// threshold, 25,000 EUR minimum transfer, no independent amount. Book reporting currency USD: EUR/USD 1.10, then 1.12.
+//
+// Dates (Monday 21 September 2026 opens the period: 20 September is a Sunday; the coupon dates are Monday 21 December
+// 2026, Monday 22 March 2027 (20 March is a Saturday), and maturity, Sunday 20 June 2027, paid Monday 21 June):
+//   sold 10,000,000 on Tue 6 October 2026 at -0.60: we pay 10,000,000 x 0.60 / 100 = 60,000.00 and the accrued premium
+//     from 21 September to the step-in date 7 October, 16 days: 10,000,000 x 1% x 16/360 = 4,444.44; settles Fri 9 October
+//   coupon 21 December: 10,000,000 x 1% x 91/360 = 25,277.78 received; less the 4,444.44 paid at trade: 20,833.34
+//   4,000,000 bought back on Wed 23 December at -0.45: 4,000,000 x 0.45 / 100 = 18,000.00 received and 3 days of accrued
+//     (to the step-in date 24 December): 4,000,000 x 1% x 3/360 = 333.33 received; settles Tue 29 December, T+3 across the
+//     TARGET Christmas holiday (25 December; 26 December is a Saturday)
+//   coupon 22 March 2027: 6,000,000 x 1% x 91/360 = 15,166.67; last period 22 March to 20 June included (to 21 June),
+//     91 days: 15,166.67 on 21 June, then the contract matures. Good Friday and Easter Monday (26 and 29 March) pass.
+const VALM_NAME = 'Republic of Valmora 1Y CDS 100bp 20 Jun 2027 (EUR)';
+const VALM_DRAFT = {
+  productId: 'cds_sovereign', name: VALM_NAME, symbol: 'VALM-CDS-0627', marketView: 'FOREIGN_DERIV', venueType: 'otc', venueCountry: 'GB', tradingCcy: 'EUR', multiplier: 0.01,
+  conventions: { tradingCalendar: 'TARGET', settlementCalendar: 'TARGET', paymentCalendar: 'TARGET' },
+  terms: {
+    referenceEntity: 'Republic of Valmora', seniority: 'Senior unsecured (sovereign)', coupon: 0.01, effective: '2026-09-21', maturity: '2027-06-20', recovery: 0.4,
+    convention: 'standard', creditEventSet: 'sovereign', settlement: 'auction', counterparty: 'Dealer M',
+    collateralBasis: { type: 'agreement', agreementId: '$agreement:csa' },
+  },
+};
+const cdsSovereign = {
+  productId: 'cds_sovereign',
+  title: 'Euro-area sovereign CDS in EUR, protection sold under a CSA, USD reporting, partly bought back across Christmas, run to maturity',
+  matrix: {
+    ...OTC_TICKET,
+    ticket: `${OTC_TICKET.ticket}; the agreement is recorded first under Treasury, Collateral`,
+    automaticInputs: ['coupon dates from the IMM roll dates and the TARGET calendar', 'premium accrued to the step-in date, exchanged at trade', 'full quarterly coupons', 'settlement date T+3 on the TARGET calendar', 'commission from the Book fee schedule', 'variation margin from the agreement', 'EUR/USD rate (FX fixture) for the reporting-currency figures', 'maturity with collateral returned'],
+    manualInputs: ['the agreement (counterparty, minimum transfer, currency)', 'upfront of each trade (stated fill price; negative: received by the buyer)', 'marks per 100 entered by hand', 'a credit event would be recorded by hand (a bankruptcy is refused: not a sovereign credit event)'],
+    settlement: 'Upfront, accrued premium and commission settle T+3 on the TARGET calendar (across 25 December); coupons on the adjusted coupon dates',
+    lifecycle: 'Sell protection, full coupons received, partial buy-back across the Christmas holiday, bankruptcy refused (sovereign terms), coupons through Easter, maturity at 20 June 2027 (paid Monday 21 June); nothing scheduled afterwards',
+    accounting: 'EUR contract in a USD Book: P&L entries at the rate of the day, unrealized at the current rate, the difference the FX effect; carried at the mark; the accrued premium paid at trade carried as accrued income until the coupon; the cost written off at maturity',
+    collateral: 'Agreement "CSA Dealer M": variation margin in EUR cash on the mark, no threshold, 25,000 EUR minimum transfer, no independent amount; received collateral restricted and owed back; returned at maturity',
+  },
+  start: at('2026-10-06'),
+  settlementCheck: { lag: 3, holidays: ['2026-12-25'] }, // TARGET: Christmas Day (26 December 2026 is a Saturday)
+  book: {
+    name: 'Matrix sovereign CDS', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 2_000_000 }, { ccy: 'EUR', amount: 1_500_000 }],
+    account: { name: 'Sovereign credit', funding: [{ ccy: 'USD', amount: 500_000 }, { ccy: 'EUR', amount: 1_000_000 }] },
+    settings: { fees: { cds: { perUnit: 0.00002, minimum: 0, bps: 0 } }, fill: FILL, settlement: { cds: 3 } }, // 20.00 EUR per million of notional
+  },
+  instruments: {},
+  tradedOn: 'The contract is registered by the step "register-under-agreement" (registry form), once the agreement it names is recorded: an agreement basis needs the agreement first.',
+  fx: { 'EUR/USD': 1.10 },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 500_000, unsettled: 0, margin: 0, restricted: 0, availableToTrade: 500_000 }, EUR: { settled: 1_000_000, unsettled: 0, margin: 0, restricted: 0, availableToTrade: 1_000_000 } },
+      treasury: { USD: { settled: 1_500_000 }, EUR: { settled: 500_000 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [], otc: [], alerts: [],
+    nav: { account: 1_600_000, treasury: 2_050_000, book: 3_650_000 }, // 500,000 + 1,000,000 EUR at 1.10; 1,500,000 + 500,000 EUR at 1.10
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+  },
+  steps: [
+    {
+      id: 'record-agreement', covers: 'collateral', action: 'agreement', as: 'csa',
+      agreement: { name: 'CSA Dealer M', counterparty: 'Dealer M', kind: 'bilateral', covers: ['account'], independentAmount: { type: 'none' }, variationMargin: true, threshold: 0, minimumTransfer: 25_000, baseCcy: 'EUR', postingCcy: 'EUR', haircut: 0, nettingScope: 'position' },
+      expect: { events: [{ type: 'collateral.agreement', summary: 'Collateral agreement recorded: CSA Dealer M with Dealer M (Bilateral (CSA-style))', owner: 'treasury' }] },
+    },
+    { id: 'register-under-agreement', covers: 'registration', action: 'register_instrument', as: 'main', draft: VALM_DRAFT, expect: {} },
+    otcTicket({
+      // Sold at -0.60: we pay 60,000.00 and the 4,444.44 accrued; commission 200 EUR. Nothing to post: no independent amount.
+      id: 'sell-protection', covers: ['open', 'sell protection', 'accrued at trade'], instrument: 'main', side: 'sell', qty: 10_000_000, upfront: -0.60, as: 'cds',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 10_000_000, estimate: -0.6, model: 'stated-price', settleDate: '2026-10-09', calendar: 'TARGET',
+            cash: -64_444.44, // 10,000,000 x -0.60 / 100 - 4,444.44
+            accrued: -4_444.44, fees: 200 }],
+          cash: { EUR: { fees: 200, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 10_000_000, avgPrice: -0.6, fills: [{ qty: 10_000_000, price: -0.6, model: 'stated-price', settleDate: '2026-10-09' }] }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Sold 10,000,000 VALM-CDS-0627 @ -0.60 EUR; premium accrued from 2026-09-21 to the step-in date 2026-10-07 (16 days), 4,444.44 EUR, paid to the counterparty with the settlement', owner: 'account', date: '2026-10-06' },
+        ],
+        cash: { account: { EUR: { settled: 1_000_000, unsettled: -64_644.44, availableToTrade: 935_355.56, availableToWithdraw: 935_355.56 } } },
+        positions: [{ instrument: 'main', lot: 'cds', owner: 'account', direction: 'protection sold', qty: -10_000_000, avgCost: -0.6, cost: 60_000, price: null, value: null, unrealized: null, provisional: true, notional: 10_000_000, margin: 0, accrued: 4_444.44 }],
+        holdings: { main: { long: 0, short: 10_000_000, net: -10_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-10-09', amount: -64_644.44, ccy: 'EUR', into: 'cash' }],
+        lifecycle: [
+          { type: 'cds.premium', instrument: 'main', dueDate: '2026-12-21', status: 'pending' },
+          { type: 'cds.maturity', instrument: 'main', dueDate: '2027-06-21', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', lot: 'cds', owner: 'account', qty: -10_000_000, basis: 'agreement', agreement: 'CSA Dealer M', mark: null, iaRequired: 0, iaPosted: 0, vmPosted: 0, vmHeld: 0, vmStatus: 'not_valued_yet' }],
+        pnl: { account: { realized: 0, commissions: -220, unrealized: 0, fx: 0, total: -220 } }, // 200 EUR at 1.10
+        nav: { account: 1_599_780, book: 3_649_780 },
+        provisional: { account: true, book: true },
+        // At 1.10: cash 500,000 + 1,100,000; payable 64,644.44 EUR = 71,108.88; position at cost 60,000 EUR = 66,000; accrued 4,444.44 EUR = 4,888.88.
+        balance: { account: { cash: 1_600_000, payable: 71_108.88, positions: 66_000, accruedIncome: 4_888.88, assets: 1_670_888.88, liabilities: 71_108.88, netAssets: 1_599_780 } },
+      },
+    }),
+    {
+      // The contract as written (the buyer's side) is marked at -0.55; our side is worth -10,000,000 x -0.55 / 100 = 55,000 EUR,
+      // against 60,000 paid: unrealized -5,000 EUR = -5,500 USD.
+      id: 'mark', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: -0.55, note: 'Dealer M upfront per 100, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'cds', price: -0.55, value: 55_000, unrealized: -5_000, provisional: false, priceSource: 'Manual entry' }],
+        otc: [{ instrument: 'main', mark: -0.55, markValue: 55_000 }],
+        pnl: { account: { unrealized: -5_500, total: -5_720 } },
+        nav: { account: 1_594_280, book: 3_644_280 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 60_500, assets: 1_665_388.88, netAssets: 1_594_280 } },
+      },
+    },
+    {
+      id: 'variation-margin-received', covers: 'variation margin', action: 'clock', to: eod('2026-10-06'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under "CSA Dealer M" (Dealer M): 55,000.00 EUR received. Netting set of 1 position marked at 55,000.00 EUR; threshold 0.00 EUR.', owner: 'account', date: '2026-10-06' }],
+        cash: { account: { EUR: { restricted: 55_000 } } },
+        otc: [{ instrument: 'main', vmHeld: 55_000, vmExposure: 55_000, vmStatus: 'ok' }],
+        balance: { account: { restricted: 60_500, collateralReceived: 60_500, assets: 1_725_888.88, liabilities: 131_608.88 } },
+      },
+    },
+    {
+      id: 'settle-upfront', covers: 'settlement', action: 'clock', to: at('2026-10-09'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 64,644.44 EUR from settled cash', cash: { EUR: -64_644.44 }, date: '2026-10-09' }],
+        cash: { account: { EUR: { settled: 935_355.56, unsettled: 0, availableToTrade: 935_355.56, availableToWithdraw: 935_355.56 } } },
+        pending: [],
+        balance: { account: { cash: 1_528_891.12, payable: null, assets: 1_654_780, liabilities: 60_500 } }, // 500,000 + 935,355.56 x 1.10
+      },
+    },
+    {
+      // EUR/USD 1.12: the account's euro net assets, 994,800.00 EUR, are worth 1,114,176.00; Treasury's 500,000 EUR 560,000.
+      // FX effect: (1.12 - 1.10) x 999,800 EUR of balances carried at 1.10 = 19,996.00; unrealized -5,000 EUR is now -5,600 USD.
+      id: 'euro-strengthens', covers: 'fx', action: 'fx_rate', pair: 'EUR/USD', rate: 1.12,
+      expect: {
+        pnl: { account: { unrealized: -5_600, fx: 19_996, total: 14_176 } },
+        nav: { account: 1_614_176, treasury: 2_060_000, book: 3_674_176 },
+        balance: { account: { cash: 1_547_598.23, restricted: 61_600, collateralReceived: 61_600, positions: 61_600, accruedIncome: 4_977.77, assets: 1_675_776, liabilities: 61_600, netAssets: 1_614_176 } },
+      },
+    },
+    {
+      id: 'bankruptcy-not-a-sovereign-credit-event', covers: 'credit event', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'credit_event', eventType: 'bankruptcy', recovery: 0.3 },
+      status: 'blocked', reason: 'A sovereign does not go bankrupt: bankruptcy is not a credit event of sovereign terms.',
+      expect: { refused: { engine: 'Bankruptcy is not a credit event under the terms of VALM-CDS-0627. Its credit events: Failure to pay, Repudiation/moratorium, Restructuring, Obligation acceleration.', api: 'Bankruptcy is not a credit event under the terms of VALM-CDS-0627', browser: '"Kind of credit event" does not offer "bankruptcy" for VALM-CDS-0627: it offers Failure to pay, Repudiation/moratorium, Restructuring, Obligation acceleration.' } },
+    },
+    {
+      // 21 September to 20 December included, 91 days: 25,277.78 EUR received; with the 4,444.44 paid at trade, 20,833.34 EUR
+      // of premium income, booked at 1.12: 23,333.34 USD.
+      id: 'first-coupon', covers: ['premium', 'payment across a weekend roll date'], action: 'clock', to: at('2026-12-21'),
+      expect: {
+        events: [{ type: 'cds.premium', summary: `CDS premium received on ${VALM_NAME} for 2026-09-21 to 2026-12-20 included (91 days on 10,000,000.00 EUR): 25,277.78 EUR; the accrued premium of 4,444.44 EUR exchanged at trade is settled with it`, cash: { EUR: 25_277.78 }, owner: 'account', date: '2026-12-21' }],
+        cash: { account: { EUR: { settled: 960_633.34, availableToTrade: 960_633.34, availableToWithdraw: 960_633.34 } } },
+        positions: [{ instrument: 'main', lot: 'cds', accrued: 0 }],
+        lifecycle: [
+          { type: 'cds.premium', instrument: 'main', dueDate: '2027-03-22', status: 'pending' },
+          { type: 'cds.maturity', instrument: 'main', dueDate: '2027-06-21', status: 'pending' },
+        ],
+        pnl: { account: { realized: 23_333.34, total: 37_509.34 } },
+        nav: { account: 1_637_509.34, book: 3_697_509.34 }, // 1,015,633.34 EUR x 1.12 + 500,000
+        balance: { account: { cash: 1_575_909.34, accruedIncome: null, assets: 1_699_109.34, netAssets: 1_637_509.34 } },
+      },
+    },
+    { id: 'christmas-week', action: 'clock', to: at('2026-12-23'), expect: {} },
+    {
+      id: 'mark-before-buy-back', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: -0.45, note: 'Dealer M upfront per 100, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'cds', price: -0.45, value: 45_000, unrealized: -15_000 }], // -10,000,000 x -0.45 / 100
+        otc: [{ instrument: 'main', mark: -0.45, markValue: 45_000 }],
+        pnl: { account: { unrealized: -16_800, total: 26_309.34 } },
+        nav: { account: 1_626_309.34, book: 3_686_309.34 },
+        balance: { account: { positions: 50_400, assets: 1_687_909.34, netAssets: 1_626_309.34 } },
+      },
+    },
+    {
+      // 4,000,000 bought back at -0.45: 18,000.00 received; cost out 60,000 x 4/10 = 24,000.00: realized -6,000.00 EUR.
+      // Accrued 21 to 24 December, 3 days, received: 333.33 EUR, premium earned on the part bought back (realized at once).
+      // Settles Tue 29 December: T+3 on TARGET skipping Christmas Day.
+      id: 'partial-buy-back', covers: ['reduce', 'partial termination', 'accrued at trade', 'settlement across a holiday'], action: 'close', lot: 'cds', scope: 'strategy', percent: 40, order: { statedPrice: -0.45 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 4_000_000, estimate: -0.45, model: 'stated-price', settleDate: '2026-12-29', cash: 18_333.33, accrued: -333.33, fees: 80 }] },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 4_000_000, avgPrice: -0.45 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Bought 4,000,000 VALM-CDS-0627 @ -0.45 EUR (realized -6,000.00 EUR); premium accrued from 2026-12-21 to the step-in date 2026-12-24 (3 days), 333.33 EUR, received from the counterparty with the settlement' },
+          { type: 'cds.accrued', summary: 'Premium accrued on the 4,000,000 terminated on VALM-CDS-0627, 333.33 EUR, received with the termination: realized as premium for the time it was held' },
+        ],
+        cash: { account: { EUR: { settled: 960_633.34, unsettled: 18_253.33, availableToTrade: 978_886.67, availableToWithdraw: 960_633.34 } } }, // 18,333.33 - 80
+        positions: [{ instrument: 'main', lot: 'cds', qty: -6_000_000, cost: 36_000, avgCost: -0.6, price: -0.45, value: 27_000, unrealized: -9_000, notional: 6_000_000, accrued: 0 }],
+        holdings: { main: { long: 0, short: 6_000_000, net: -6_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-12-29', amount: 18_253.33, ccy: 'EUR', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: -6_000_000, markValue: 27_000 }],
+        // At 1.12: realized 23,333.34 - 6,720.00 + 373.33; commission 220 + 89.60; unrealized -9,000 EUR = -10,080.
+        pnl: { account: { realized: 16_986.67, commissions: -309.6, unrealized: -10_080, fx: 19_996, total: 26_593.07 } },
+        nav: { account: 1_626_593.07, book: 3_686_593.07 }, // 1,005,886.67 EUR x 1.12 + 500,000
+        balance: { account: { cash: 1_575_909.34, receivable: 20_443.73, positions: 30_240, assets: 1_688_193.07, liabilities: 61_600, netAssets: 1_626_593.07 } },
+      },
+    },
+    {
+      // 27,000 required, 55,000 held: 28,000 goes back, above the 25,000 minimum transfer.
+      id: 'variation-margin-returned', covers: 'variation margin', action: 'clock', to: eod('2026-12-23'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under "CSA Dealer M" (Dealer M): 28,000.00 EUR returned to the counterparty. Netting set of 1 position marked at 27,000.00 EUR; threshold 0.00 EUR.' }],
+        cash: { account: { EUR: { restricted: 27_000 } } },
+        otc: [{ instrument: 'main', vmHeld: 27_000, vmExposure: 27_000 }],
+        balance: { account: { restricted: 30_240, collateralReceived: 30_240, assets: 1_656_833.07, liabilities: 30_240 } },
+      },
+    },
+    { id: 'still-pending-after-christmas', covers: 'settlement across a holiday', action: 'clock', to: at('2026-12-28'), expect: {} },
+    {
+      id: 'settle-buy-back', covers: ['settlement', 'settlement across a holiday'], action: 'clock', to: at('2026-12-29'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 18,253.33 EUR into settled cash', cash: { EUR: 18_253.33 }, date: '2026-12-29' }],
+        cash: { account: { EUR: { settled: 978_886.67, unsettled: 0, availableToTrade: 978_886.67, availableToWithdraw: 978_886.67 } } },
+        pending: [],
+        balance: { account: { cash: 1_596_353.07, receivable: null } }, // 500,000 + 978,886.67 x 1.12
+      },
+    },
+    {
+      // 21 December to 21 March included, 91 days, on 6,000,000: 15,166.67 EUR = 16,986.67 USD at 1.12.
+      id: 'second-coupon', covers: 'premium', action: 'clock', to: at('2027-03-22'),
+      expect: {
+        events: [{ type: 'cds.premium', summary: `CDS premium received on ${VALM_NAME} for 2026-12-21 to 2027-03-21 included (91 days on 6,000,000.00 EUR): 15,166.67 EUR`, cash: { EUR: 15_166.67 }, date: '2027-03-22' }],
+        cash: { account: { EUR: { settled: 994_053.34, availableToTrade: 994_053.34, availableToWithdraw: 994_053.34 } } },
+        lifecycle: [
+          { type: 'cds.maturity', instrument: 'main', dueDate: '2027-06-21', status: 'pending' }, // same day: listed by type
+          { type: 'cds.premium', instrument: 'main', dueDate: '2027-06-21', status: 'pending' },
+        ],
+        pnl: { account: { realized: 33_973.34, total: 43_579.74 } },
+        nav: { account: 1_643_579.74, book: 3_703_579.74 },
+        balance: { account: { cash: 1_613_339.74, assets: 1_673_819.74, netAssets: 1_643_579.74 } },
+      },
+    },
+    { id: 'across-easter', covers: 'holding across a holiday', action: 'clock', to: at('2027-03-30'), expect: {} }, // Good Friday 26 March and Easter Monday 29 March: TARGET closed
+    {
+      // Last period 22 March to 20 June included, 91 days: 15,166.67 EUR received; then the contract matures, the 36,000 EUR
+      // of cost left is written off (realized -40,320.00 USD at 1.12) and the 27,000 EUR held goes back to Dealer M.
+      id: 'final-coupon-and-maturity', covers: ['premium', 'maturity', 'collateral'], action: 'clock', to: at('2027-06-21'),
+      expect: {
+        events: [
+          { type: 'cds.premium', summary: `CDS premium received on ${VALM_NAME} for 2027-03-22 to 2027-06-20 included (91 days on 6,000,000.00 EUR): 15,166.67 EUR`, cash: { EUR: 15_166.67 }, date: '2027-06-21' },
+          { type: 'cds.matured', summary: `CDS matured without a credit event: ${VALM_NAME}` },
+          { type: 'collateral.variation', summary: 'Variation margin under "CSA Dealer M" (Dealer M): 27,000.00 EUR returned to the counterparty. The last position of the netting set ended.' },
+        ],
+        cash: { account: { EUR: { settled: 1_009_220.01, restricted: 0, availableToTrade: 1_009_220.01, availableToWithdraw: 1_009_220.01 } } },
+        positions: [], holdings: { main: null }, lifecycle: [], otc: [],
+        pnl: { account: { realized: 10_640.01, unrealized: 0, total: 30_326.41 } }, // 33,973.34 + 16,986.67 - 40,320.00
+        nav: { account: 1_630_326.41, book: 3_690_326.41 }, // 1,009,220.01 EUR x 1.12 + 500,000
+        balance: { account: { cash: 1_630_326.41, restricted: null, collateralReceived: null, positions: null, assets: 1_630_326.41, liabilities: 0, netAssets: 1_630_326.41 } },
+      },
+    },
+    {
+      // 1,000,000 - 64,644.44 + 25,277.78 + 18,253.33 + 15,166.67 + 15,166.67 = 1,009,220.01 EUR. Nothing is scheduled or held.
+      id: 'nothing-left', covers: 'close', action: 'clock', to: at('2027-06-22'),
+      expect: { events: [], positions: [], pending: [], lifecycle: [], otc: [], alerts: [] },
+    },
+  ],
+};
+
+export default [cdsSingleName, cdsSovereign];
