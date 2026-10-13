@@ -158,134 +158,134 @@
   "SA:refusals:cash-trade": {
    "status": "passed",
    "message": "buy 20,000: \"Alpha is short 500,500.00 USD: the package needs 1,000,500.00 USD (purchases 1,000,400.00 USD, fees 100.00 USD, margin and collateral 0.00 USD, reserved 0.00 USD) and 500,000.00 USD is available. Add Treasury funding or a borrowing leg, convert currency, or reduce the size.\"\nbuy 20,000: confirming the blocked preview anyway: \"Alpha is short 500,500.00 USD: the package needs 1,000,500.00 USD (purchases 1,000,400.00 USD, fees 100.00 USD, margin and collateral 0.00 USD, reserved 0.00 USD) and 500,000.00 USD is available. Add Treasury funding or ...\"",
-   "ms": 394,
+   "ms": 788,
    "checks": 9,
    "area": "refusals",
    "case": "cash-trade",
    "title": "Insufficient cash: a purchase larger than the cash available",
-   "commit": "2ab1aad",
-   "at": "2026-10-13T15:15:48.322Z"
+   "commit": "13590e3+changes",
+   "at": "2026-10-13T17:01:36.117Z"
   },
   "SA:refusals:cash-transfer": {
    "status": "passed",
    "message": "transfer 600,000: \"Alpha has 500,000.00 USD of settled USD available; 600,000.00 USD requested.\"\ntransfer 1,000 EUR with no EUR held: \"Alpha has 0.00 EUR of settled EUR available; 1,000.00 EUR requested.\"\ntransfer of zero: \"Enter a positive amount.\"\ntransfer of a negative amount: \"Enter a positive amount.\"\ntransfer to itself: \"Source and destination must be different.\"\ntransfer of cash committed to an unsettled purchase: \"Alpha has 489,995.00 USD of settled USD available; 495,000.00 USD requested.\"",
-   "ms": 502,
+   "ms": 610,
    "checks": 14,
    "area": "refusals",
    "case": "cash-transfer",
    "title": "Insufficient cash: a transfer larger than the settled cash that is free",
-   "commit": "2ab1aad",
-   "at": "2026-10-13T15:15:48.837Z"
+   "commit": "13590e3+changes",
+   "at": "2026-10-13T17:01:36.752Z"
   },
   "SA:refusals:cash-withdrawal": {
    "status": "passed",
    "message": "withdraw 600,000: \"Treasury has 500,000.00 USD available to withdraw; 600,000.00 USD requested.\"\nwithdraw zero: \"Enter a positive amount.\"\nwithdraw a negative amount: \"Enter a positive amount.\"\nan unknown capital movement: \"Capital movement must be a deposit or a withdrawal.\"\nwithdraw 0.01 from an empty Treasury: \"Treasury has 0.00 USD available to withdraw; 0.01 USD requested.\"",
-   "ms": 381,
+   "ms": 527,
    "checks": 11,
    "area": "refusals",
    "case": "cash-withdrawal",
    "title": "Insufficient cash: a capital withdrawal larger than Treasury holds",
-   "commit": "2ab1aad",
-   "at": "2026-10-13T15:15:49.231Z"
+   "commit": "13590e3+changes",
+   "at": "2026-10-13T17:01:37.291Z"
   },
   "SA:refusals:cash-repayment": {
    "status": "passed",
    "message": "early repayment: \"Alpha is short 90,000.00 USD: the package needs 100,000.00 USD (purchases 0.00 USD, fees 0.00 USD, margin and collateral 0.00 USD, reserved 0.00 USD) and 10,000.00 USD is available. Add Treasury funding or a borrowing leg, convert currency, or reduce the size.\"\nearly repayment: confirming the blocked preview anyway: \"Alpha is short 90,000.00 USD: the package needs 100,000.00 USD (purchases 0.00 USD, fees 0.00 USD, margin and collateral 0.00 USD, reserved 0.00 USD) and 10,000.00 USD is available. Add Treasury funding or a borrowing le...\"\nFailed tab: \"Alpha has 10,000.00 USD of settled USD available; 100,416.67 USD is needed (principal plus accrued interest).\"",
-   "ms": 401,
+   "ms": 703,
    "checks": 21,
    "area": "refusals",
    "case": "cash-repayment",
    "title": "Insufficient cash: repaying a loan early, and at maturity",
-   "commit": "2ab1aad",
-   "at": "2026-10-13T15:15:49.642Z"
+   "commit": "13590e3+changes",
+   "at": "2026-10-13T17:01:38.019Z"
   },
   "SA:refusals:cash-settlement-day": {
    "status": "passed",
    "message": "",
-   "ms": 442,
+   "ms": 615,
    "checks": 19,
    "area": "refusals",
    "case": "cash-settlement-day",
    "title": "Insufficient cash on settlement day",
-   "commit": "2ab1aad",
-   "at": "2026-10-13T15:15:50.098Z"
+   "commit": "13590e3+changes",
+   "at": "2026-10-13T17:01:38.645Z"
   },
   "SA:refusals:borrow-unavailable": {
    "status": "passed",
    "message": "short with no borrow data: \"Leg 1: no borrow availability data for RFBU. None is supplied for this instrument. State a borrow assumption (availability and fee) to proceed.\"\nshort with the borrow unavailable: \"Leg 1: RFBU is not available to borrow (Test fixture). The dependent short sale cannot execute.\"\nshort with the borrow unavailable: confirming the blocked preview anyway: \"Leg 1: RFBU is not available to borrow (Test fixture). The dependent short sale cannot execute.\"",
-   "ms": 373,
+   "ms": 719,
    "checks": 23,
    "area": "refusals",
    "case": "borrow-unavailable",
    "title": "Securities borrow unavailable: the short sale is blocked",
-   "commit": "2ab1aad",
-   "at": "2026-10-13T15:15:50.482Z"
+   "commit": "13590e3+changes",
+   "at": "2026-10-13T17:01:39.384Z"
   },
   "SA:refusals:borrow-exhausted": {
    "status": "passed",
    "message": "short 500 with 300 available: \"Leg 1: only 300 RFBE is available to borrow (Test fixture); 500 is needed.\"\nshort 500 with 300 available: confirming the blocked preview anyway: \"Leg 1: only 300 RFBE is available to borrow (Test fixture); 500 is needed.\"",
-   "ms": 408,
+   "ms": 1195,
    "checks": 12,
    "area": "refusals",
    "case": "borrow-exhausted",
    "title": "Securities borrow exhausted: more than is available to borrow",
-   "commit": "2ab1aad",
-   "at": "2026-10-13T15:15:50.902Z"
+   "commit": "13590e3+changes",
+   "at": "2026-10-13T17:01:40.607Z"
   },
   "SA:refusals:borrow-recalled": {
    "status": "passed",
    "message": "second recall: accepted",
-   "ms": 435,
+   "ms": 1165,
    "checks": 15,
    "area": "refusals",
    "case": "borrow-recalled",
    "title": "Securities borrow recalled by the lender",
-   "commit": "2ab1aad",
-   "at": "2026-10-13T15:15:51.349Z"
+   "commit": "13590e3+changes",
+   "at": "2026-10-13T17:01:41.852Z"
   },
   "SA:refusals:collateral-repo": {
    "status": "passed",
-   "message": "(a) pledging more than is held: \"Leg 1: Only 1,000,000 of the collateral is unencumbered; 2,000,000 is needed.\"\n(a): confirming the blocked preview anyway: \"Leg 1: Only 1,000,000 of the collateral is unencumbered; 2,000,000 is needed.\"\n(b) more cash than the collateral supports: \"Leg 1: The collateral supports at most 998,300.55 USD: 1,000,000 TTSY31 is worth 1,018,674.03 USD and the haircut is 2.00%; 2,000,000.00 USD requested.\"\n(b): confirming the blocked preview anyway: \"Leg 1: The collateral supports at most 998,300.55 USD: 1,000,000 TTSY31 is worth 1,018,674.03 USD and the haircut is 2.00%; 2,000,000.00 USD requested.\"\n(d) pledging the same holding again: \"Leg 1: Only 0 of the collateral is unencumbered; 100,000 is needed.\"",
-   "ms": 409,
+   "message": "(a) pledging more than is held: \"Leg 1: Only 1,000,000 of the collateral is unencumbered; 2,000,000 is needed.\"\n(a): confirming the blocked preview anyway: \"Leg 1: Only 1,000,000 of the collateral is unencumbered; 2,000,000 is needed.\"\n(b) more cash than the collateral supports: \"Leg 1: The collateral supports at most 998,300.55 USD: 1,000,000 TTSY31 is worth 1,018,674.03 USD (1,000,000.00 USD clean plus 18,674.03 USD accrued interest) and the haircut is 2.00%; 2,000,000.00 USD requested.\"\n(b): confirming the blocked preview anyway: \"Leg 1: The collateral supports at most 998,300.55 USD: 1,000,000 TTSY31 is worth 1,018,674.03 USD (1,000,000.00 USD clean plus 18,674.03 USD accrued interest) and the haircut is 2.00%; 2,000,000.00 USD requested.\"\n(d) pledging the same holding again: \"Leg 1: Only 0 of the collateral is unencumbered; 100,000 is needed.\"",
+   "ms": 1146,
    "checks": 13,
    "area": "refusals",
    "case": "collateral-repo",
    "title": "Insufficient collateral: repo",
-   "commit": "2ab1aad",
-   "at": "2026-10-13T15:15:51.767Z"
+   "commit": "13590e3+changes",
+   "at": "2026-10-13T17:01:43.013Z"
   },
   "SA:refusals:collateral-pledged-position": {
    "status": "passed",
    "message": "selling the pledged note: \"Leg 1: only 0 of the 1,000,000 TTSY31 held is unencumbered; the rest is pledged or out on loan and cannot be sold until it is released.\"\nselling the pledged note: confirming the blocked preview anyway: \"Leg 1: only 0 of the 1,000,000 TTSY31 held is unencumbered; the rest is pledged or out on loan and cannot be sold until it is released.\"",
-   "ms": 414,
+   "ms": 1849,
    "checks": 8,
    "area": "refusals",
    "case": "collateral-pledged-position",
    "title": "Insufficient collateral: selling a pledged position",
-   "commit": "2ab1aad",
-   "at": "2026-10-13T15:15:52.199Z"
+   "commit": "13590e3+changes",
+   "at": "2026-10-13T17:01:44.898Z"
   },
   "SA:refusals:collateral-independent-amount": {
    "status": "passed",
-   "message": "1,000,000 notional: \"Leg 1: The independent amount of 50,000.00 USD on CDS Acme 1000000 cannot be posted: Alpha has 30,000.00 USD of settled USD cash free. Fund it first, or reduce the size. | Alpha is short 20,000.00 USD: the package needs 50,000.00 USD (purchases 0.00 USD, fees 0.00 USD, margin and collateral 50,000.00 USD, reserved 0.00 USD) and 30,000.00 USD is available. Add Treasury funding ...\n1,000,000 notional: confirming the blocked preview anyway: \"Leg 1: The independent amount of 50,000.00 USD on CDS Acme 1000000 cannot be posted: Alpha has 30,000.00 USD of settled USD cash free. Fund it first, or reduce the size.\"\na contract with no collateral basis: \"Leg 1: CDS Acme 1000000 states no collateral terms. Choose a collateral agreement, enter position-level terms, or choose \"Uncollateralized (paper assumption)\" on the contract. Nothing is assumed for you.\"",
-   "ms": 327,
+   "message": "1,000,000 notional: \"Leg 1: The independent amount of 50,000.00 USD on CDS Acme 1000000 cannot be posted: Alpha has 30,000.00 USD of settled USD cash free. Fund it first, or reduce the size. | Alpha is short 20,000.00 USD: the package needs 50,000.00 USD (purchases 0.00 USD, fees 0.00 USD, margin and collateral 50,000.00 USD, reserved 0.00 USD) and 30,000.00 USD is available. Add Treasury funding ...\n1,000,000 notional: confirming the blocked preview anyway: \"Leg 1: The independent amount of 50,000.00 USD on CDS Acme 1000000 cannot be posted: Alpha has 30,000.00 USD of settled USD cash free. Fund it first, or reduce the size.\"\na contract with no collateral basis: \"Leg 1: CDS Acme 1000000 states no collateral terms. Choose a collateral agreement, enter position-level terms, or choose \"Uncollateralized (paper assumption)\": one of the three is needed, and nothing is assumed for you. Choose it in this preview, or under Edit contract terms on the leg, then re-check.\"",
+   "ms": 1365,
    "checks": 12,
    "area": "refusals",
    "case": "collateral-independent-amount",
    "title": "Insufficient collateral: an OTC independent amount that cannot be posted",
-   "commit": "2ab1aad",
-   "at": "2026-10-13T15:15:52.539Z"
+   "commit": "13590e3+changes",
+   "at": "2026-10-13T17:01:46.427Z"
   },
   "SA:refusals:collateral-margin-call": {
    "status": "passed",
    "message": "",
-   "ms": 395,
+   "ms": 1337,
    "checks": 14,
    "area": "refusals",
    "case": "collateral-margin-call",
    "title": "Insufficient collateral: a variation-margin call that cannot be met",
-   "commit": "2ab1aad",
-   "at": "2026-10-13T15:15:52.946Z"
+   "commit": "13590e3+changes",
+   "at": "2026-10-13T17:01:47.804Z"
   },
   "SA:refusals:quote-missing": {
    "status": "passed",
@@ -519,7 +519,7 @@
    "at": "2026-10-13T15:16:21.019Z"
   }
  },
- "updatedAt": "2026-10-13T15:16:21.019Z",
+ "updatedAt": "2026-10-13T17:01:47.804Z",
  "environment": {
   "node": "v22.22.0",
   "platform": "linux",

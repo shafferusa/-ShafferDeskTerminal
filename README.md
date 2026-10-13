@@ -21,7 +21,12 @@ git clone https://github.com/shafferusa/-ShafferDeskTerminal.git
 cd -ShafferDeskTerminal
 npm start          # your paper books        http://127.0.0.1:8787
 npm run demo       # isolated demo           http://127.0.0.1:8788
-npm test           # engine test suite
+npm test           # engine test suite (includes the matrix and system suites at engine level)
+npm run test:api             # product matrix through the HTTP API, disposable servers
+npm run test:browser         # product matrix in Chromium (Playwright installed outside the repository)
+npm run test:system:api      # failure and recovery cases through the API
+npm run test:system:browser  # the same cases in the browser
+npm run matrix               # regenerate docs/TEST-MATRIX.md from the results
 ```
 
 `npm start` opens your real paper books in `data/terminal.db`. Until the Shaffer services are
@@ -105,8 +110,12 @@ server/
   quant/       calendars, day counts, schedules, bond maths, option payoff helpers
   db/          SQLite schema and migrations
 web/           the front end: no build step, native ES modules (Preact + htm, vendored)
-test/          engine tests on a controllable clock
-docs/          ARCHITECTURE.md, COVERAGE.md
+  http/        router; once.js: a mutating request with a client token takes effect once
+test/
+  core/        engine tests on a controllable clock (npm test)
+  matrix/      one scenario per product at engine, API and browser level (npm test, npm run test:api, npm run test:browser)
+  system/      failure and recovery cases at the same three levels (npm test, npm run test:system:api, npm run test:system:browser)
+docs/          ARCHITECTURE.md, COVERAGE.md, TEST-MATRIX.md (npm run matrix)
 ```
 
 More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
@@ -118,6 +127,11 @@ More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - Margin and holds are rule-based paper-desk assumptions that you can edit per Book. They are not a risk model. Listed futures and options are cleared products: their margin follows these clearing terms and each contract's own initial margin.
 - OTC collateral is configured under Treasury, Collateral. Simulated from an agreement's terms: counterparty, covered Treasury and Accounts, independent amount (a share of notional or a fixed amount per position), variation margin at each end-of-day pass with threshold and minimum transfer amount, netting per position, per Account or shared across listed Accounts, one eligible cash currency with its haircut, and release on reduction, close, maturity and termination. Recorded on the agreement but not simulated, and labelled so wherever they appear: securities as eligible collateral, rehypothecation, interest on collateral, rating-based thresholds, intraday calls, dispute handling, rounding of transfers, an independent amount posted by the counterparty, and default and close-out provisions. A call that cannot be met from settled cash fails visibly and is retried; a netting set with a missing mark is not called at all.
 - Settlement and payment dates use rule-based holiday calendars for US equities, US bonds, US dollar payments, the UK, the euro payment system (TARGET), Japan and Canada; FX value dates use both currencies' calendars. One-off closures can be entered by hand in Settings. Any other market falls back to weekends only, and the preview and the instrument say so. Euro-area exchanges use TARGET days, which is an approximation. Shaffer MarketData calendars replace all of this when connected.
-- The demo clock can be moved forward; it stays where it was left when the demo is restarted.
+- The demo clock can be moved forward; it stays where it was left when the demo is restarted. In demo mode the test fixture routes (`/api/demo/fixtures/:kind` for quotes, closes, FX, rates and borrow; `/api/demo/hedge-script`) set controlled values, each labelled "Test fixture" wherever it appears.
+- Every mutating request can carry a client token (`clientToken` or the `Idempotency-Key` header); the same request sent again under it is answered from the first and records nothing. The interface always sends one.
+- `GET /api/books/:id/integrity` re-reads a Book's ledger, fills, settlements and positions and reports whether they agree, without writing anything.
+- A trade is confirmed only on the figures it was previewed with, within the Book's confirmation tolerances (Settings; 0.5% on prices, amounts and totals and a 300-second preview age by default). Beyond them nothing is submitted and the changes are shown, was and now.
+- Each instrument can carry its own trading, settlement and payment calendars and settlement lag (registry form, and the Strategies page for a new OTC contract). OTC collateral, its routes and the conventions the Terminal follows (swap wording, fixing dates, marks, rounding) are described in docs/ARCHITECTURE.md.
+- Below 820 px wide the sidebar is behind a Menu button, with the connection chips, the clock and the theme control.
 - If the Terminal was not running when something fell due, it catches up in date order when it next starts, and books the events on the day it processes them.
 - The demo environment includes a canned hedge fixture so the Hedge workflow can be exercised. It answers only complete requests, it is labelled "demo fixture, not Shaffer Hedge" wherever its output appears (queue row, popup, position, top bar), it supplies a small fictional list of investment Strategies with IDs, and it can be switched off on the Data connection page. Analytics Lab itself stays "awaiting" in demo mode.
