@@ -19,7 +19,7 @@
 
 import { fmt } from '../core/books.js';
 import { addBusinessDays, adjust } from '../quant/calendar.js';
-import { accruedPer100, couponPer100, nextCouponDate } from '../quant/bond.js';
+import { accruedPer100, couponPeriod, couponPer100, nextCouponDate } from '../quant/bond.js';
 import { DAY_COUNTS } from '../quant/daycount.js';
 import { ISO_DATE_RE, isZero, money, need, num } from '../core/util.js';
 import { bookSecurityFill, dqOf, fmtPx, fmtQty, trueUpAccrual } from './common.js';
@@ -156,6 +156,11 @@ export const bond = {
    * last days before maturity can still state an earlier settlement on its ticket.)
    */
   tradeRefusal(app, { inst, settleDate }) {
+    // A floating-rate note whose coupon rate for the period is not known: the accrued interest that changes hands cannot be
+    // computed, and booking it as zero would be a figure made up. The trade waits for the fixing.
+    if (inst.terms?.couponType === 'float' && settleDate && !inst.terms.couponSuspended && bond.accruedAmount(inst, 1, settleDate) === null) {
+      return { code: 'no_fixing', message: `${inst.symbol || inst.name} has no ${inst.terms.referenceRate} fixing for its current coupon period, so the accrued interest of this trade cannot be computed. Supply or enter the fixing (Data connection, Manual entries) first.` };
+    }
     const m = inst.terms?.perpetual ? null : inst.terms?.maturity;
     if (!m || !settleDate || settleDate < m) return null;
     const name = inst.symbol || inst.name;
@@ -240,15 +245,23 @@ export const bond = {
     if (next && inst.terms.couponType !== 'zero') app.tasks.schedule({ ...common, type: 'bond.coupon', dueDate: adjust(next, 'following', paymentCalendarFor(inst)), data: { key: next, couponDate: next } });
     if (inst.terms.maturity) app.tasks.schedule({ ...common, type: 'bond.maturity', dueDate: adjust(inst.terms.maturity, 'following', paymentCalendarFor(inst)) });
   },
-  dataNeeds(app, { inst }) {
+  dataNeeds(app, { inst, task, date }) {
     if (inst.terms.couponType !== 'float') return {};
-    return { rateCodes: [inst.terms.referenceRate], rateFrom: addBusinessDays(app.clock.today(), -15, 'ALLDAYS') };
+    // Back far enough for the fixing of the coupon period being paid or accrued (a quarterly period is three months long).
+    const ref = task?.data?.couponDate ? addBusinessDays(task.data.couponDate, -1, 'ALLDAYS') : (date || app.clock.today());
+    const start = couponPeriod(schedTerms(inst), ref)?.start || ref;
+    const recent = addBusinessDays(app.clock.today(), -15, 'ALLDAYS');
+    const from = addBusinessDays(start, -15, 'ALLDAYS');
+    return { rateCodes: [inst.terms.referenceRate], rateFrom: from < recent ? from : recent };
   },
   /** Daily accrual true-up: earned interest goes to coupon income as it accrues. */
   eod(app, { book, unit, inst, pos, date }) {
     if (isZero(pos.qty) || inst.terms.couponSuspended) return;
     // The balance already stands at a later date (a coupon was paid before this end-of-day run caught up).
     if (pos.data?.accruedThrough && date < pos.data.accruedThrough) return;
+    // A floating rate missing for the period that is running is taken as soon as it is supplied or entered. Not while a
+    // coupon that has fallen due still waits for the fixing of the period before (that is the coupon's to take).
+    if (inst.terms.couponType === 'float' && !unpaidCoupons(app, pos.id).some((c) => c.couponDate <= date)) inst = takeFixing(app, inst, couponPeriod(schedTerms(inst), date)?.start);
     accrueTo(app, { book, unit, inst, pos, date });
   },
   runTask(app, task, { book, unit, inst, pos }) {
@@ -258,6 +271,10 @@ export const bond = {
     if (!pos) return 'done';
     if (task.type === 'bond.coupon') {
       const couponDate = task.data.couponDate;
+      // A floating coupon whose period had no fixing takes it now if it has since been supplied or entered (the fixing of the
+      // period's first day; never a later one).
+      const periodStart = couponPeriod(schedTerms(inst), addBusinessDays(couponDate, -1, 'ALLDAYS'))?.start || null;
+      if (inst.terms.couponType === 'float') inst = takeFixing(app, inst, periodStart);
       const t = schedTerms(inst);
       // Entitlement: face settled before the coupon date.
       const face = entitledFace(app, pos, couponDate);
@@ -275,7 +292,7 @@ export const bond = {
       }
       const per100 = couponPer100(t, couponDate);
       if (per100 === null) {
-        return { blocked: `Awaiting the ${inst.terms.referenceRate} fixing for the coupon period ending ${couponDate}. ${app.data.describe().awaitingMessage}, or enter the fixing manually.`, needs: [{ kind: 'rate', subject: inst.terms.referenceRate, date: couponDate }] };
+        return { blocked: `Awaiting the ${inst.terms.referenceRate} fixing of ${periodStart} for the coupon period ${periodStart} to ${couponDate}. ${app.data.describe().awaitingMessage}, or enter the fixing manually.`, needs: [{ kind: 'rate', subject: inst.terms.referenceRate, date: periodStart }] };
       }
       const amount = money((face * factorOf(inst) * per100) / 100, ccy);
       const eventId = ledger.post({
@@ -385,6 +402,27 @@ function redeem(app, { book, unit, inst, pos, price, face, date, type, label, ac
     book, unit, inst, action: long ? 'sell' : 'buy_to_cover', qty: face, price, fees: [], strategyId: pos.strategy_id, tradeDate: date, settleDate: app.clock.today(),
     eventType: type, actor, summary: `${label}: ${fmtQty(face)} ${inst.symbol || inst.name} at ${fmtPx(price)}% of par`,
   }, { unitCost: (price * factorOf(inst)) / 100, accrued });
+}
+
+/** The reference-rate fixing of a floating coupon period, set on its first day (or up to five days before it). */
+function fixingFor(app, inst, start) {
+  const o = app.data.rate(inst.terms.referenceRate, start);
+  return o && (o.forDate || '').slice(0, 10) >= addBusinessDays(start, -5, 'ALLDAYS') ? o : null;
+}
+
+/**
+ * A floating-rate note with no coupon rate for the period starting `start` takes that period's fixing as soon as it has
+ * been supplied or entered by hand, and the missing-fixing alert is resolved. Never a guess: without that fixing nothing
+ * changes. Returns the instrument as it now stands.
+ */
+function takeFixing(app, inst, start) {
+  const t = inst.terms;
+  if (t.couponType !== 'float' || (t.currentCoupon !== null && t.currentCoupon !== undefined) || !start) return inst;
+  const o = fixingFor(app, inst, start);
+  if (!o) return inst;
+  app.instruments.update(inst.id, { terms: { ...t, currentCoupon: o.value / 100 + (t.spread || 0), currentCouponFixing: { date: o.forDate, value: o.value, obsId: app.data.recordUsed(o) } } }, { system: true });
+  app.alerts.resolve({ refType: 'instrument', refId: inst.id, code: 'bond.fixing' });
+  return app.instruments.get(inst.id);
 }
 
 /** After a floating coupon is paid, set the coupon for the new period from the reference-rate fixing. */

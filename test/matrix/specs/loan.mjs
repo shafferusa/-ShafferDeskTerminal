@@ -1904,4 +1904,265 @@ const securitiesBackedLoan = {
   ],
 };
 
-export default [unsecuredLoan, termDeposit, certificateOfDeposit, bankDeposit, cashLoan, securedLoan, securitiesBackedLoan];
+// ---------------------------------------------------------------------------------------------
+// margin_loan
+// ---------------------------------------------------------------------------------------------
+// An Account buys shares on margin from the security ticket: "If cash is short: Borrow the shortfall (simulated
+// lender)" at 7.20% adds a margin loan sized to the shortfall, in the same package and the same confirmation, ahead of
+// the purchase. The loan is open-ended (interest monthly) and secured on the Account's holdings as a whole, with no
+// named pledge, so the shares stay sellable. Part of the shares are sold after a rise; repaying from the sale is refused
+// until it settles; a part repayment, a rate change by the lender (entered by hand), the monthly interest and the
+// final repayment follow.
+//
+// Inputs: KSTR quoted 50.00 / 50.02, last 50.01, then 54.00 / 54.02, last 54.01 (fixture); commission 0.005 a share,
+// at least 1.00; T+1. The Account holds 100,075.00: 3,000 at 50.02 = 150,060.00 plus 15.00 commission leaves it
+// 50,000.00 short, which is borrowed.
+//   50,000 at 7.20%, ACT/360: 10.00 a day. 2 to 17 March, 15 days: 150.00.
+//   30,000 at 7.20% from 17 March: 6.00 a day; one day to 18 March: 6.00. At 7.80% from 18 March: 6.50 a day;
+//   18 March to 1 April, 14 days: 91.00. Paid 1 April: 150 + 6 + 91 = 247.00. Repaid 2 April: one day, 6.50.
+
+const marginLoan = {
+  productId: 'margin_loan',
+  title: 'Kestrel Aerospace shares bought on margin by an Account: 50,000 USD borrowed at 7.20% from the security ticket, open-ended; repaid in part and in full',
+  matrix: {
+    ticket: 'Instrument drawer, Trade: the security ticket with "If cash is short: Borrow the shortfall (simulated lender)" and its loan rate; the margin loan is a leg of the same preview and confirmation. Repay and Set rate on the row of the borrowing (Account page)',
+    requiredFields: ['Account', 'Action (buy)', 'Quantity', 'If cash is short: borrow the shortfall', 'Loan rate (fixed, decimal a year)'],
+    automaticInputs: ['the amount borrowed: the package\'s cash shortfall', 'the lender (simulated)', 'interest start date', 'daily interest accrual at the end-of-day run', 'interest paid on the first business day of each month (open-ended)'],
+    manualInputs: ['the loan rate, typed on the ticket', 'a rate change by the lender, entered with Set rate', 'the amount of a part repayment, entered in the preview'],
+    settlement: 'The loan has none (settled cash at once, ahead of the purchase it funds); the shares settle T+1. A repayment needs settled cash: sale proceeds count only once settled',
+    lifecycle: 'Open-ended: interest accrues daily and is paid monthly; repaid in part or in full at any time with interest to the day; the rate can be reset by hand',
+    accounting: 'Borrowed cash is a liability of the Account; interest is a funding expense; the shares bought are an asset at market value',
+    collateral: 'Secured on the Account\'s holdings as a whole: no named pledge, so the shares stay sellable (no margin call is simulated)',
+  },
+  tradedOn: 'A margin loan is not a registry instrument: it is a leg the security ticket adds when "Borrow the shortfall" is chosen, registered when the package is confirmed. The shares are a registered common stock.',
+  start: AT_1000('2026-03-02'),
+  book: {
+    name: 'Matrix margin loan', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 1_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 100_075 }] },
+    settings: { fees: EQUITY_FEES, fill: FILL, settlement: { equity: 1 } },
+  },
+  instruments: {
+    kstr: { productId: 'common_stock', name: 'Kestrel Aerospace Inc.', symbol: 'KSTR', marketView: 'US_CASH', venue: 'NYSE', venueType: 'exchange', venueCountry: 'US', issuer: 'Kestrel Aerospace Inc.', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', terms: {} },
+  },
+  quotes: { kstr: { bid: 50.00, ask: 50.02, last: 50.01, bidSize: 10_000, askSize: 10_000 } },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 100_075, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 100_075, availableToWithdraw: 100_075, borrowed: 0, lent: 0 } },
+      treasury: { USD: { settled: 899_925, availableToTrade: 899_925, availableToWithdraw: 899_925, borrowed: 0 } },
+    },
+    positions: [], holdings: {}, pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 100_075, treasury: 899_925, book: 1_000_000 },
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+    pnl: { account: { realized: 0, commissions: 0, unrealized: 0, borrowFunding: 0, total: 0 }, book: { total: 0 } },
+    balance: { account: { cash: 100_075, assets: 100_075, liabilities: 0, netAssets: 100_075 }, book: { cash: 1_000_000, netAssets: 1_000_000 } },
+    oversight: { accountBorrowings: [], treasuryOwn: [] },
+  },
+  steps: [
+    {
+      id: 'buy-without-financing', covers: 'open', action: 'ticket', ticketOf: 'equity', instrument: 'kstr', side: 'buy', qty: 3_000,
+      status: 'blocked', reason: 'With "Do not finance", a purchase the Account cannot pay for is refused.',
+      expect: { refused: 'Alpha is short 50,000.00 USD: the package needs 150,075.00 USD' },
+    },
+    {
+      id: 'buy-on-margin', covers: ['open', 'borrow'], action: 'ticket', ticketOf: 'equity', instrument: 'kstr', side: 'buy', qty: 3_000, as: 'margin', contractAs: 'mloan',
+      financing: { mode: 'loan', rate: 0.072 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [
+            { kind: 'loan', action: 'borrow_cash', purpose: 'financing', qty: 50_000, cash: 50_000, ccy: 'USD', dailyCost: 10, // 50,000 x 0.072 / 360
+              financing: { amount: 50_000, rateType: 'fixed', rate: 0.072, maturity: null, interestFrom: '2026-03-02' } },
+            { kind: 'trade', action: 'buy', instrument: 'kstr', qty: 3_000, estimate: 50.02, model: 'quoted-bid-ask', settleDate: '2026-03-03', cash: -150_060, fees: 15, dependsOn: [1] },
+          ],
+          cash: { USD: { purchases: 150_060, fees: 15, financingIn: 50_000, required: 150_075, available: 100_075, shortfall: 0, netCash: -100_075 } },
+        },
+        result: { status: 'open', orders: [
+          { kind: 'loan', action: 'borrow_cash', instrument: 'mloan', status: 'filled', qty: 50_000, filledQty: 50_000 },
+          { kind: 'trade', action: 'buy', instrument: 'kstr', status: 'filled', qty: 3_000, filledQty: 3_000, avgPrice: 50.02 },
+        ] },
+        events: [
+          { type: 'strategy.submitted', owner: 'account' },
+          { type: 'loan.drawdown', summary: 'Borrowed 50,000.00 USD (margin, 7.200% fixed, open-ended)', cash: { USD: 50_000 }, owner: 'account', date: '2026-03-02' },
+          { type: 'trade.fill', summary: 'Bought 3,000 KSTR @ 50.02 USD', owner: 'account', date: '2026-03-02' },
+        ],
+        // 100,075 + 50,000 borrowed, all of it owed on the purchase tomorrow.
+        cash: { account: { USD: { settled: 150_075, unsettled: -150_075, payable: 150_075, availableToTrade: 0, availableToWithdraw: 0, borrowed: 50_000 } } },
+        positions: [
+          { instrument: 'kstr', lot: 'margin', owner: 'account', direction: 'long', qty: 3_000, avgCost: 50.02, cost: 150_060, price: 50.01, value: 150_030, unrealized: -30, pledged: 0 },
+          { instrument: 'mloan', lot: 'margin', owner: 'account', direction: 'borrowed', qty: -50_000, value: 50_000, carrying: -50_000, accrued: 0, provisional: false },
+        ],
+        holdings: { kstr: { long: 3_000, short: 0, net: 3_000 } },
+        pending: [{ instrument: 'kstr', lot: 'margin', owner: 'account', dueDate: '2026-03-03', amount: -150_075, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'loan.interest', instrument: 'mloan', dueDate: '2026-04-01', status: 'pending', owner: 'account' }],
+        borrowings: [{ owner: 'account', origin: 'account', family: 'loan', type: 'Margin loan', lot: 'margin', principal: 50_000, principalRc: 50_000, ccy: 'USD', rate: 0.072, rateType: 'fixed', rateText: '7.200% fixed', dayCount: 'ACT/360',
+          accrued: 0, costToDate: 0, feesToDate: 0, startDate: '2026-03-02', maturity: null, term: 'open-ended', lender: 'Simulated lender', collateral: 'Secured on the Account\'s holdings (margin loan); no specific pledge recorded', schedule: 'Interest paid monthly', nextPayment: '2026-04-01', nextPaymentType: 'loan.interest', blocked: null }],
+        pnl: { account: { realized: 0, commissions: -15, unrealized: -30, borrowFunding: 0, total: -45 }, book: { total: -45 } },
+        nav: { account: 100_030, treasury: 899_925, book: 999_955 },
+        balance: {
+          account: { cash: 150_075, positions: 150_030, payable: 150_075, borrowed: 50_000, assets: 300_105, liabilities: 200_075, netAssets: 100_030 },
+          book: { cash: 1_050_000, positions: 150_030, payable: 150_075, borrowed: 50_000, assets: 1_200_030, liabilities: 200_075, netAssets: 999_955 },
+        },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'margin', principal: 50_000, ccy: 'USD', accrued: 0 }], treasuryOwn: [], accounts: { account: { cashBorrowed: 50_000, fundingReceived: 100_075 } } },
+      },
+    },
+    {
+      id: 'purchase-settles', covers: 'settlement', action: 'clock', to: AT_1000('2026-03-03'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: /^Settlement: paid 150,075\.00 USD/, cash: { USD: -150_075 }, date: '2026-03-03' }],
+        cash: { account: { USD: { settled: 0, unsettled: 0, payable: 0, availableToTrade: 0, availableToWithdraw: 0 } } },
+        pending: [],
+        balance: { account: { cash: null, payable: null, assets: 150_030, liabilities: 50_000 }, book: { cash: 899_925, payable: null, assets: 1_049_955, liabilities: 50_000 } },
+      },
+    },
+    {
+      id: 'two-weeks-on', covers: 'interest accrual', action: 'clock', to: AT_1000('2026-03-16'), // the run of 13 March: 11 days, 110.00
+      expect: {
+        events: [{ type: 'accrual.interest', summary: 'Interest accrued on Margin loan USD (Long KSTR): 110.00 USD', owner: 'account', date: '2026-03-16' }],
+        positions: [{ instrument: 'kstr', lot: 'margin', qty: 3_000, value: 150_030 }, { instrument: 'mloan', lot: 'margin', qty: -50_000, accrued: -110 }],
+        borrowings: [{ lot: 'margin', principal: 50_000, accrued: 110, costToDate: 110 }],
+        pnl: { account: { borrowFunding: -110, total: -155 }, book: { total: -155 } },
+        nav: { account: 99_920, book: 999_845 },
+        balance: { account: { accruedExpense: 110, liabilities: 50_110, netAssets: 99_920 }, book: { accruedExpense: 110, liabilities: 50_110, netAssets: 999_845 } },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'margin', principal: 50_000, ccy: 'USD', accrued: 110 }] },
+      },
+    },
+    {
+      id: 'price-rises', action: 'quote', instrument: 'kstr', quote: { bid: 54.00, ask: 54.02, last: 54.01, bidSize: 10_000, askSize: 10_000 },
+      expect: {
+        positions: [{ instrument: 'kstr', lot: 'margin', qty: 3_000, price: 54.01, value: 162_030, unrealized: 11_970 }, { instrument: 'mloan', lot: 'margin', qty: -50_000, accrued: -110 }], // 3,000 x 54.01, less 150,060
+        pnl: { account: { unrealized: 11_970, total: 11_845 }, book: { total: 11_845 } },
+        nav: { account: 111_920, book: 1_011_845 },
+        balance: { account: { positions: 162_030, assets: 162_030, netAssets: 111_920 }, book: { positions: 162_030, assets: 1_061_955, netAssets: 1_011_845 } },
+      },
+    },
+    {
+      // The shares are not pledged: a margin loan is secured on the Account as a whole. 1,000 sold at the bid.
+      id: 'sell-part', covers: 'reduce', action: 'ticket', ticketOf: 'equity', instrument: 'kstr', side: 'sell', qty: 1_000, from: 'margin',
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'sell', instrument: 'kstr', qty: 1_000, estimate: 54.00, settleDate: '2026-03-17', cash: 54_000, fees: 5 }] },
+        result: { orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 1_000, avgPrice: 54.00 }] },
+        // Cost out: 150,060 / 3 = 50,020. Realized 54,000 - 50,020 = 3,980.
+        events: [{ type: 'strategy.legs_added', owner: 'account' }, { type: 'trade.fill', summary: 'Sold 1,000 KSTR @ 54.00 USD (realized 3,980.00 USD)', owner: 'account', date: '2026-03-16' }],
+        cash: { account: { USD: { settled: 0, unsettled: 53_995, receivable: 53_995, availableToTrade: 53_995, availableToWithdraw: 0 } } },
+        positions: [{ instrument: 'kstr', lot: 'margin', owner: 'account', direction: 'long', qty: 2_000, avgCost: 50.02, cost: 100_040, price: 54.01, value: 108_020, unrealized: 7_980, pledged: 0 }, { instrument: 'mloan', lot: 'margin', qty: -50_000, accrued: -110 }],
+        holdings: { kstr: { long: 2_000, short: 0, net: 2_000 } },
+        pending: [{ instrument: 'kstr', lot: 'margin', owner: 'account', dueDate: '2026-03-17', amount: 53_995, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: 3_980, commissions: -20, unrealized: 7_980, borrowFunding: -110, total: 11_830 }, book: { total: 11_830 } },
+        nav: { account: 111_905, book: 1_011_830 },
+        balance: { account: { cash: null, receivable: 53_995, positions: 108_020, assets: 162_015, liabilities: 50_110, netAssets: 111_905 }, book: { receivable: 53_995, positions: 108_020, assets: 1_061_940, netAssets: 1_011_830 } },
+      },
+    },
+    {
+      id: 'repay-before-the-sale-settles', covers: 'repayment', action: 'repay', lot: 'margin', instrument: 'mloan', amount: 20_000,
+      status: 'blocked', reason: 'The sale proceeds arrive tomorrow; a repayment is paid from settled cash only.',
+      expect: { refused: 'Alpha has 0.00 USD of settled USD available; 20,000.00 USD is needed (principal).' },
+    },
+    {
+      id: 'sale-settles', covers: 'settlement', action: 'clock', to: AT_1000('2026-03-17'), // the run of 16 March: 14 days, 140.00 (+30.00)
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: /^Settlement: received 53,995\.00 USD/, cash: { USD: 53_995 }, date: '2026-03-17' },
+          { type: 'accrual.interest', summary: 'Interest accrued on Margin loan USD (Long KSTR): 30.00 USD', owner: 'account', date: '2026-03-17' },
+        ],
+        cash: { account: { USD: { settled: 53_995, unsettled: 0, receivable: 0, availableToTrade: 53_995, availableToWithdraw: 53_995 } } },
+        positions: [{ instrument: 'kstr', lot: 'margin', qty: 2_000, value: 108_020 }, { instrument: 'mloan', lot: 'margin', qty: -50_000, accrued: -140 }],
+        pending: [],
+        borrowings: [{ lot: 'margin', principal: 50_000, accrued: 140, costToDate: 140 }],
+        pnl: { account: { borrowFunding: -140, total: 11_800 }, book: { total: 11_800 } },
+        nav: { account: 111_875, book: 1_011_800 },
+        balance: { account: { cash: 53_995, receivable: null, accruedExpense: 140, assets: 162_015, liabilities: 50_140, netAssets: 111_875 }, book: { cash: 953_920, receivable: null, accruedExpense: 140, liabilities: 50_140, netAssets: 1_011_800 } }, // 899,925 + 53,995
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'margin', principal: 50_000, ccy: 'USD', accrued: 140 }] },
+      },
+    },
+    {
+      // 20,000 repaid; interest first to today on the 50,000: 15 days, 150.00 (+10.00), left on its monthly schedule.
+      id: 'repay-part', covers: ['reduce', 'repayment'], action: 'repay', lot: 'margin', instrument: 'mloan', amount: 20_000,
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'repay', action: 'repay_cash', purpose: 'financing', instrument: 'mloan', qty: 20_000, cash: -20_000, ccy: 'USD', financing: { amount: -20_000, principal: 20_000, interest: 0, full: false, rate: 0.072, maturity: null } }],
+          cash: { USD: { financingOut: 20_000, required: 20_000, available: 53_995, shortfall: 0, netCash: -20_000 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'repay', action: 'repay_cash', status: 'filled', qty: 20_000, filledQty: 20_000 }] },
+        events: [
+          { type: 'strategy.legs_added', owner: 'account' },
+          { type: 'accrual.interest', summary: 'Interest accrued on Margin loan USD (Long KSTR): 10.00 USD', date: '2026-03-17' },
+          { type: 'loan.repayment', summary: /^Repaid 20,000\.00 USD of principal on Margin loan USD/, cash: { USD: -20_000 }, owner: 'account', date: '2026-03-17' },
+        ],
+        cash: { account: { USD: { settled: 33_995, availableToTrade: 33_995, availableToWithdraw: 33_995, borrowed: 30_000 } } },
+        positions: [{ instrument: 'kstr', lot: 'margin', qty: 2_000, value: 108_020 }, { instrument: 'mloan', lot: 'margin', owner: 'account', direction: 'borrowed', qty: -30_000, value: 30_000, carrying: -30_000, accrued: -150 }],
+        borrowings: [{ lot: 'margin', principal: 30_000, principalRc: 30_000, accrued: 150, costToDate: 150 }],
+        pnl: { account: { borrowFunding: -150, total: 11_790 }, book: { total: 11_790 } },
+        nav: { account: 111_865, book: 1_011_790 },
+        balance: { account: { cash: 33_995, borrowed: 30_000, accruedExpense: 150, assets: 142_015, liabilities: 30_150, netAssets: 111_865 }, book: { cash: 933_920, borrowed: 30_000, accruedExpense: 150, assets: 1_041_940, liabilities: 30_150, netAssets: 1_011_790 } },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'margin', principal: 30_000, ccy: 'USD', accrued: 150 }], accounts: { account: { cashBorrowed: 30_000, fundingReceived: 100_075 } } },
+      },
+    },
+    { id: 'next-morning', action: 'clock', to: AT_1000('2026-03-18'), expect: {} }, // the run of 17 March: interest was brought to 17 March by the repayment
+    {
+      // The lender raises the rate to 7.80% from 18 March. Interest to today first: 1 day at 7.20% on 30,000, 6.00.
+      id: 'lender-raises-the-rate', covers: 'rate change', action: 'instrument_lifecycle', instrument: 'mloan', lot: 'margin', body: { action: 'set_rate', rate: 0.078 },
+      expect: {
+        events: [
+          { type: 'accrual.interest', summary: 'Interest accrued on Margin loan USD (Long KSTR): 6.00 USD', owner: 'account' },
+          { type: 'rate.reset', summary: /^Rate on Margin loan USD .* reset to 7\.800%$/, owner: 'account', date: '2026-03-18' },
+        ],
+        positions: [{ instrument: 'kstr', lot: 'margin', qty: 2_000, value: 108_020 }, { instrument: 'mloan', lot: 'margin', qty: -30_000, accrued: -156 }],
+        borrowings: [{ lot: 'margin', principal: 30_000, rate: 0.078, rateText: '7.800% fixed', accrued: 156, costToDate: 156 }],
+        pnl: { account: { borrowFunding: -156, total: 11_784 }, book: { total: 11_784 } },
+        nav: { account: 111_859, book: 1_011_784 },
+        balance: { account: { accruedExpense: 156, liabilities: 30_156, netAssets: 111_859 }, book: { accruedExpense: 156, liabilities: 30_156, netAssets: 1_011_784 } },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'margin', principal: 30_000, ccy: 'USD', accrued: 156 }] },
+      },
+    },
+    {
+      // 1 April: 14 days at 6.50 (91.00) bring the interest to 247.00, which is paid; the next payment is 1 May.
+      id: 'monthly-interest', covers: 'interest payment', action: 'clock', to: AT_1000('2026-04-01'),
+      expect: {
+        events: [
+          { type: 'accrual.interest', summary: 'Interest accrued on Margin loan USD (Long KSTR): 91.00 USD', owner: 'account', date: '2026-04-01' },
+          { type: 'interest.payment', summary: /^Interest paid on Margin loan USD .*: 247\.00 USD$/, cash: { USD: -247 }, owner: 'account', date: '2026-04-01' },
+        ],
+        cash: { account: { USD: { settled: 33_748, availableToTrade: 33_748, availableToWithdraw: 33_748 } } },
+        positions: [{ instrument: 'kstr', lot: 'margin', qty: 2_000, value: 108_020 }, { instrument: 'mloan', lot: 'margin', qty: -30_000, accrued: 0 }],
+        lifecycle: [{ type: 'loan.interest', instrument: 'mloan', dueDate: '2026-05-01', status: 'pending', owner: 'account' }],
+        borrowings: [{ lot: 'margin', principal: 30_000, accrued: 0, costToDate: 247, nextPayment: '2026-05-01' }],
+        pnl: { account: { borrowFunding: -247, total: 11_693 }, book: { total: 11_693 } },
+        nav: { account: 111_768, book: 1_011_693 },
+        balance: { account: { cash: 33_748, accruedExpense: null, assets: 141_768, liabilities: 30_000, netAssets: 111_768 }, book: { cash: 933_673, accruedExpense: null, assets: 1_041_693, liabilities: 30_000, netAssets: 1_011_693 } },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'margin', principal: 30_000, ccy: 'USD', accrued: 0 }] },
+      },
+    },
+    { id: 'thursday-morning', action: 'clock', to: AT_1000('2026-04-02'), expect: {} },
+    {
+      id: 'repay-in-full', covers: ['close', 'repayment'], action: 'repay', lot: 'margin', instrument: 'mloan', // 30,000 + one day at 6.50
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'repay', action: 'repay_cash', purpose: 'financing', instrument: 'mloan', qty: 30_000, cash: -30_006.50, ccy: 'USD', financing: { amount: -30_006.50, principal: 30_000, interest: 6.50, full: true, interestThrough: '2026-04-02', rate: 0.078, maturity: null } }],
+          cash: { USD: { financingOut: 30_006.50, required: 30_006.50, available: 33_748, shortfall: 0, netCash: -30_006.50 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'repay', action: 'repay_cash', status: 'filled', qty: 30_000, filledQty: 30_000 }] }, // the shares stay in the strategy
+        events: [
+          { type: 'strategy.legs_added', owner: 'account' },
+          { type: 'accrual.interest', summary: 'Interest accrued on Margin loan USD (Long KSTR): 6.50 USD', date: '2026-04-02' },
+          { type: 'loan.repayment', summary: /^Repaid 30,000\.00 USD of principal on Margin loan USD .*\(in full\)$/, cash: { USD: -30_000 }, owner: 'account', date: '2026-04-02' },
+          { type: 'interest.payment', summary: /^Interest paid on Margin loan USD .*: 6\.50 USD$/, cash: { USD: -6.50 }, owner: 'account', date: '2026-04-02' },
+        ],
+        cash: { account: { USD: { settled: 3_741.50, availableToTrade: 3_741.50, availableToWithdraw: 3_741.50, borrowed: 0 } } },
+        positions: [{ instrument: 'kstr', lot: 'margin', owner: 'account', direction: 'long', qty: 2_000, avgCost: 50.02, cost: 100_040, price: 54.01, value: 108_020, unrealized: 7_980, pledged: 0 }],
+        lifecycle: [], borrowings: [],
+        // 3,980 realized - 20 commission + 7,980 unrealized - 253.50 interest (150 + 6 + 91 + 6.50)
+        pnl: { account: { realized: 3_980, commissions: -20, unrealized: 7_980, borrowFunding: -253.50, total: 11_686.50 }, book: { total: 11_686.50 } },
+        nav: { account: 111_761.50, book: 1_011_686.50 },
+        balance: { account: { cash: 3_741.50, positions: 108_020, borrowed: null, accruedExpense: null, assets: 111_761.50, liabilities: 0, netAssets: 111_761.50 }, book: { cash: 903_666.50, borrowed: null, accruedExpense: null, assets: 1_011_686.50, liabilities: 0, netAssets: 1_011_686.50 } },
+        oversight: { accountBorrowings: [], accounts: { account: { cashBorrowed: 0, fundingReceived: 100_075 } } },
+      },
+    },
+  ],
+};
+
+export default [unsecuredLoan, termDeposit, certificateOfDeposit, bankDeposit, cashLoan, securedLoan, securitiesBackedLoan, marginLoan];

@@ -250,6 +250,10 @@ export const actions = {
     await dlg.waitFor({ state: 'hidden' });
     return {};
   },
+  /** A floating coupon's fixing entered by hand (Data connection, Manual entries): the swap driver's form path (added by b2). */
+  async manual_rate(ui, t, ctx, step) {
+    return (await import('./swap.mjs')).actions.manual_rate(ui, t, ctx, step);
+  },
   async owner_screens(ui, t, ctx, step) {
     if (step.owner !== 'treasury') throw new Error('owner_screens reads the screens of Treasury: state `owner: \'treasury\'`.');
     const { readScreens, screenProblems } = await import('../browser.mjs');

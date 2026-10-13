@@ -12591,18 +12591,6 @@
     "restart"
    ]
   },
-  "B:common_stock:setup": {
-   "status": "failed",
-   "message": "Setup did not complete: page.waitForResponse: Timeout 15000ms exceeded while waiting for event \"response\"\n    at Object.respondsTo (/home/claude/-shafferdeskterminal/test/matrix/drivers/browser.mjs:107:25)\n    at registerInBrowser (/home/claude/-shafferdeskterminal/test/matrix/drivers/browser.mjs:685:24)\n    at async setupInBrowser (/home/claude/-shafferdeskterminal/test/matrix/drivers/browser.mjs:646:15)\n    at async Object.setup (/home/claude/-shafferdeskterminal/test/matrix/drivers/browser.mjs:885:19)\n    at async runScenario (/home/claude/-shafferdeskterminal/test/matrix/lib/runner.mjs:89:13)\n    at async file:///home/claude/-shafferdeskterminal/test/matrix/run-browser.mjs:29:31\n    at async file:///home/claude/-shafferdeskterminal/test/matrix/lib/cli.mjs:32:16\n    at async pool (/home/claude/-shafferdeskterminal/test/matrix/lib/cli.mjs:28:3)\n    at async file:///home/claude/-shafferdeskterminal/test/matrix/run-browser.mjs:25:3",
-   "ms": 18572,
-   "commit": "f54758f+changes",
-   "at": "2026-10-13T16:34:38.788Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "setup",
-   "covers": []
-  },
   "B:equity_index_future:setup": {
    "status": "passed",
    "message": "",
@@ -13247,18 +13235,6 @@
     "restart"
    ]
   },
-  "B:equity_option:setup": {
-   "status": "failed",
-   "message": "Setup did not complete: locator.fill: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('dialog', { name: 'New instrument' }).locator('.field').filter({ has: locator('label').filter({ hasText: /^\\s*Underlying\\s*\\(required\\)/ }) }).first().getByPlaceholder('Type a ticker or name')\u001b[22m\n\n    at pickInstrument (/home/claude/-shafferdeskterminal/test/matrix/drivers/browser/option.mjs:37:57)\n    at async Module.contractTerms (/home/claude/-shafferdeskterminal/test/matrix/drivers/browser/option.mjs:46:25)\n    at async registerInBrowser (/home/claude/-shafferdeskterminal/test/matrix/drivers/browser.mjs:684:3)\n    at async setupInBrowser (/home/claude/-shafferdeskterminal/test/matrix/drivers/browser.mjs:646:15)\n    at async Object.setup (/home/claude/-shafferdeskterminal/test/matrix/drivers/browser.mjs:885:19)\n    at async runScenario (/home/claude/-shafferdeskterminal/test/matrix/lib/runner.mjs:89:13)\n    at async file:///home/claude/-shafferdeskterminal/test/matrix/run-browser.mjs:29:31\n    at async file:///home/claude/-shafferdeskterminal/test/matrix/lib/cli.mjs:32:16\n    at async pool (/home/claude/-shafferdeskterminal/test/matrix/lib/cli.mjs:28:3)\n    at async file:///home/claude/-shafferdeskterminal/test/matrix/run-browser.mjs:25:3",
-   "ms": 17723,
-   "commit": "01813a3+changes",
-   "at": "2026-10-13T16:36:34.604Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "setup",
-   "covers": []
-  },
   "B:interest_rate_swap:setup": {
    "status": "passed",
    "message": "",
@@ -13299,19 +13275,275 @@
     "open",
     "collateral"
    ]
+  },
+  "B:common_stock:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 3151,
+   "commit": "e738520+changes",
+   "at": "2026-10-13T16:40:00.581Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "setup",
+   "covers": []
+  },
+  "B:common_stock:open": {
+   "status": "passed",
+   "message": "",
+   "ms": 1767,
+   "commit": "e738520+changes",
+   "at": "2026-10-13T16:40:00.581Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "open",
+   "covers": [
+    "open"
+   ]
+  },
+  "B:common_stock:settle-open": {
+   "status": "passed",
+   "message": "",
+   "ms": 680,
+   "commit": "e738520+changes",
+   "at": "2026-10-13T16:40:00.581Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "settle-open",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:common_stock:quote-up": {
+   "status": "passed",
+   "message": "",
+   "ms": 598,
+   "commit": "e738520+changes",
+   "at": "2026-10-13T16:40:00.581Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "quote-up",
+   "covers": []
+  },
+  "B:common_stock:increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 1341,
+   "commit": "e738520+changes",
+   "at": "2026-10-13T16:40:00.581Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "increase",
+   "covers": [
+    "increase"
+   ]
+  },
+  "B:common_stock:settle-increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 860,
+   "commit": "e738520+changes",
+   "at": "2026-10-13T16:40:00.581Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "settle-increase",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:common_stock:oversell": {
+   "status": "blocked",
+   "message": "The Account holds 300 and cannot sell 500; going short needs a securities borrow. Terminal: \"Sells from Long NFTW in this Account, which is long 300 at an average 50.357. 500 is more than it holds.\"",
+   "ms": 1516,
+   "commit": "e738520+changes",
+   "at": "2026-10-13T16:40:00.581Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "oversell",
+   "covers": [
+    "reduce"
+   ]
+  },
+  "B:common_stock:dividend-recorded": {
+   "status": "passed",
+   "message": "",
+   "ms": 2060,
+   "commit": "e738520+changes",
+   "at": "2026-10-13T16:40:00.581Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "dividend-recorded",
+   "covers": [
+    "dividend"
+   ]
+  },
+  "B:common_stock:dividend-paid": {
+   "status": "passed",
+   "message": "",
+   "ms": 1173,
+   "commit": "e738520+changes",
+   "at": "2026-10-13T16:40:00.581Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "dividend-paid",
+   "covers": [
+    "dividend"
+   ]
+  },
+  "B:common_stock:quote-up-2": {
+   "status": "passed",
+   "message": "",
+   "ms": 1174,
+   "commit": "e738520+changes",
+   "at": "2026-10-13T16:40:00.581Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "quote-up-2",
+   "covers": []
+  },
+  "B:common_stock:reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 1709,
+   "commit": "e738520+changes",
+   "at": "2026-10-13T16:40:00.581Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "reduce",
+   "covers": [
+    "reduce"
+   ]
+  },
+  "B:common_stock:settle-reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 1100,
+   "commit": "e738520+changes",
+   "at": "2026-10-13T16:40:00.581Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "settle-reduce",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:common_stock:split-recorded": {
+   "status": "passed",
+   "message": "",
+   "ms": 1867,
+   "commit": "e738520+changes",
+   "at": "2026-10-13T16:40:00.581Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "split-recorded",
+   "covers": [
+    "split"
+   ]
+  },
+  "B:common_stock:split-applied": {
+   "status": "passed",
+   "message": "",
+   "ms": 1217,
+   "commit": "e738520+changes",
+   "at": "2026-10-13T16:40:00.581Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "split-applied",
+   "covers": [
+    "split"
+   ]
+  },
+  "B:common_stock:quote-post-split": {
+   "status": "passed",
+   "message": "",
+   "ms": 1024,
+   "commit": "e738520+changes",
+   "at": "2026-10-13T16:40:00.581Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "quote-post-split",
+   "covers": []
+  },
+  "B:common_stock:close": {
+   "status": "passed",
+   "message": "",
+   "ms": 2257,
+   "commit": "e738520+changes",
+   "at": "2026-10-13T16:40:00.581Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "close",
+   "covers": [
+    "close"
+   ]
+  },
+  "B:common_stock:settle-close": {
+   "status": "passed",
+   "message": "",
+   "ms": 1086,
+   "commit": "e738520+changes",
+   "at": "2026-10-13T16:40:00.581Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "settle-close",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:common_stock:restart": {
+   "status": "passed",
+   "message": "",
+   "ms": 3736,
+   "commit": "e738520+changes",
+   "at": "2026-10-13T16:40:00.581Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "restart",
+   "covers": [
+    "restart"
+   ]
+  },
+  "B:equity_option:setup": {
+   "status": "failed",
+   "message": "Setup did not complete: locator.fill: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('dialog', { name: 'New instrument' }).locator('.field').filter({ has: locator('label').filter({ hasText: /^\\s*Underlying\\s*\\(required\\)/ }) }).first().getByPlaceholder('Type a ticker or name')\u001b[22m\n\n    at pickInstrument (/home/claude/-shafferdeskterminal/test/matrix/drivers/browser/option.mjs:37:57)\n    at async Module.contractTerms (/home/claude/-shafferdeskterminal/test/matrix/drivers/browser/option.mjs:46:25)\n    at async registerInBrowser (/home/claude/-shafferdeskterminal/test/matrix/drivers/browser.mjs:684:3)\n    at async setupInBrowser (/home/claude/-shafferdeskterminal/test/matrix/drivers/browser.mjs:646:15)\n    at async Object.setup (/home/claude/-shafferdeskterminal/test/matrix/drivers/browser.mjs:885:19)\n    at async runScenario (/home/claude/-shafferdeskterminal/test/matrix/lib/runner.mjs:89:13)\n    at async file:///home/claude/-shafferdeskterminal/test/matrix/run-browser.mjs:29:31\n    at async file:///home/claude/-shafferdeskterminal/test/matrix/lib/cli.mjs:32:16\n    at async pool (/home/claude/-shafferdeskterminal/test/matrix/lib/cli.mjs:28:3)\n    at async file:///home/claude/-shafferdeskterminal/test/matrix/run-browser.mjs:25:3",
+   "ms": 18111,
+   "commit": "e738520+changes",
+   "at": "2026-10-13T16:40:18.808Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "setup",
+   "covers": []
   }
  },
  "runs": {
   "common_stock": {
-   "at": "2026-10-13T16:34:38.788Z",
-   "commit": "f54758f+changes",
-   "ms": 18572,
+   "at": "2026-10-13T16:40:00.581Z",
+   "commit": "e738520+changes",
+   "ms": 28317,
    "family": "equity",
    "steps": 18,
-   "ran": 1,
-   "passed": 0,
-   "failed": 1,
-   "blocked": 0,
+   "ran": 18,
+   "passed": 17,
+   "failed": 0,
+   "blocked": 1,
    "unsupported": 0,
    "environment": {
     "node": "v22.22.0",
@@ -14082,9 +14314,9 @@
    }
   },
   "equity_option": {
-   "at": "2026-10-13T16:36:34.604Z",
-   "commit": "01813a3+changes",
-   "ms": 17724,
+   "at": "2026-10-13T16:40:18.808Z",
+   "commit": "e738520+changes",
+   "ms": 18112,
    "family": "option",
    "steps": 29,
    "ran": 1,
@@ -14386,5 +14618,5 @@
    }
   }
  },
- "updatedAt": "2026-10-13T16:36:42.337Z"
+ "updatedAt": "2026-10-13T16:40:18.808Z"
 }

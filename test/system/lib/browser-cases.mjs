@@ -1787,3 +1787,114 @@ export async function historyEdits(b, c) {
   }
   await b.clean(c, L.book.id);
 }
+
+// ---------------------------------------------------------------------------------------------
+// Catch-up after downtime, read on the screens
+// ---------------------------------------------------------------------------------------------
+
+/** The Full history's event-type filter: each type as the screen names it, with the count it shows. */
+async function eventTypeCounts(b) {
+  await show(b, '#/accounting/history/book');
+  const select = b.page.locator('main select').filter({ has: b.page.locator('option', { hasText: 'All event types' }) }).first();
+  await select.locator('option').nth(2).waitFor({ state: 'attached' });
+  const labels = await select.locator('option').evaluateAll((os) => os.map((o) => o.textContent.trim()));
+  return Object.fromEntries(labels.map((l) => /^(.*) \((\d+)\)$/.exec(l)).filter(Boolean).map((m) => [m[1], Number(m[2])]));
+}
+/** Every row of the Full history with daily accruals included, without its time and event number. */
+async function historyLines(b) {
+  await show(b, '#/accounting/history/book');
+  await b.page.locator('main').getByText('Include daily accruals').first().click();
+  await settle(b);
+  while (await b.page.getByRole('button', { name: 'Show older events' }).count()) { await b.page.getByRole('button', { name: 'Show older events' }).click(); await settle(b); }
+  return b.page.locator('main table tbody tr[id^="ev-"]').evaluateAll((trs) => trs.map((tr) => [...tr.children].slice(1, 4).map((td) => td.innerText.replace(/\s+/g, ' ').trim()).join(' | ')));
+}
+/** The figures of the Account a user looks for after downtime, as displayed. */
+async function lifeShown(b, L) {
+  await show(b, `#/accounting/positions/${L.book.accountId}`);
+  const cash = flat(await b.ui.section(b.page.locator('main'), 'Cash and financing balances').innerText());
+  await show(b, `#/accounting/pnl/${L.book.accountId}`);
+  const pnl = flat(await b.page.locator('main').innerText());
+  await show(b, `#/accounting/pending/${L.book.accountId}`);
+  const pending = flat(await b.page.locator('main').innerText());
+  const lifecycle = (await b.ui.section(b.page.locator('main'), 'Lifecycle items').locator('tbody tr').allInnerTexts().catch(() => [])).map(flat);
+  await show(b, `#/accounting/failed/${L.book.accountId}`);
+  const failed = flat(await b.page.locator('main').innerText());
+  return { cash, pnl, pending, lifecycle, failed };
+}
+/** Press one of the demo band's buttons that move the clock, and wait until the top bar shows the new date. */
+async function pressClock(b, label, datePattern) {
+  await closeHedgePopup(b); // a recommendation that arrived meanwhile reopens its post-trade popup
+  await b.page.getByRole('button', { name: label }).first().click();
+  await b.page.locator('.topbar .clock', { hasText: datePattern }).waitFor({ timeout: 60_000 });
+  await settle(b);
+}
+
+/** SB:nodup:catch-up. */
+export async function catchUpScreens(b, c) {
+  const { page } = b;
+  const { openLife, liveDayByDay, lifeDigest, checkLife, sameLife } = await import('./life.mjs');
+  // The reference: the same fifteen days lived one day at a time in a Terminal of its own.
+  const r = await b.open({ tag: 'life-reference', engine: 'off' });
+  const RL = await openLife(r, 'Life');
+  await liveDayByDay(r);
+  const ref = await lifeDigest(r, RL);
+  const refTypes = Object.fromEntries(r.sql(`SELECT type, COUNT(*) AS n FROM events WHERE book_id = ? AND type NOT LIKE 'accrual%' GROUP BY type`, RL.book.id).map((x) => [x.type, x.n]));
+
+  // Monday: everything put on; the page open on it.
+  const L = await openLife(b, 'Life');
+  await enter(b, L.book, '#/accounting');
+  await closeHedgePopup(b);
+  // Downtime: the server stops; the page says so.
+  await b.t.kill();
+  await page.locator('.offline-bar').waitFor({ timeout: 30_000 });
+  c.match(flat(await page.locator('.offline-bar').innerText()), /server is not reachable/, 'with the server stopped the page says it cannot reach it');
+  await b.t.start();
+  await page.locator('.offline-bar').waitFor({ state: 'hidden', timeout: 30_000 });
+  b.takePageErrors();
+  // Back, the user moves the demo clock on with the demo band: two weeks and a day, Tuesday 17 March.
+  await pressClock(b, '+1 week', /Mar 09, 2026/);
+  await pressClock(b, '+1 week', /Mar 16, 2026/);
+  await pressClock(b, '+1 day', /Mar 17, 2026/);
+  await closeHedgePopup(b);
+
+  // What the screens show: each kind of event as often as the day-by-day run booked it.
+  const types = await eventTypeCounts(b);
+  c.note(`event types on the Full history filter: ${Object.entries(types).map(([k, n]) => `${k} ${n}`).join(', ')}`);
+  const sentence = (t) => t.replace(/[._]/g, ' ').replace(/^\w/, (x) => x.toUpperCase());
+  const want = Object.fromEntries(Object.entries(refTypes).map(([t, n]) => [sentence(t), n]));
+  const got = Object.fromEntries(Object.keys(want).map((k) => [k, types[k] ?? 0]));
+  c.eq(got, want, 'every kind of event (accruals aside) shows the count the day-by-day run booked');
+  for (const [k, n] of [['Dividend', 1], ['Option expired', 1], ['Loan repayment', 1], ['Collateral variation', 1]]) c.eq(types[k], n, `the Full history lists "${k}" ${n === 1 ? 'once' : `${n} times`}`);
+  c.eq(Object.keys(types).filter((k) => !(k in want) && !/^Accrual/.test(k) && !/^All /.test(k)), [], 'and no kind of event the day-by-day run did not have');
+  // No line of the history, daily accruals included, appears twice.
+  const lines = await historyLines(b);
+  const twice = lines.filter((x, i) => lines.indexOf(x) !== i);
+  c.eq(twice, [], `no row of the Full history (${lines.length} rows with accruals) appears twice`);
+  // The figures a user checks after downtime.
+  const s1 = await lifeShown(b, L);
+  c.match(s1.cash, /944,301\.76/, 'Cash and financing balances: settled cash 944,301.76');
+  c.match(s1.cash, /15,300\.00/, 'restricted 15,300.00 (short collateral)');
+  c.match(s1.cash, /5,000\.00/, 'margin 5,000.00');
+  for (const [fig, what] of [['250.00', 'dividend income 250.00'], ['194.44', 'loan interest 194.44'], ['420.00', 'option premium lost 420.00'], ['5.83', 'borrow fee 5.83']]) c.match(s1.pnl, new RegExp(fig.replace('.', '\\.')), `P&L: ${what}`);
+  c.match(s1.pending, /Executed trades awaiting settlement[^]*?(Nothing|No )/i, 'Pending trades: nothing is left awaiting settlement');
+  c.eq(s1.lifecycle.filter((x, i) => s1.lifecycle.indexOf(x) !== i), [], 'each lifecycle item is listed once');
+  c.match(s1.failed, /No settlement has failed/, 'Failed: no settlement has failed');
+
+  // Downtime again, a reload, and more time: the screens are the same.
+  await b.t.kill();
+  await page.locator('.offline-bar').waitFor({ timeout: 30_000 });
+  await b.t.start();
+  await page.locator('.offline-bar').waitFor({ state: 'hidden', timeout: 30_000 });
+  b.takePageErrors();
+  await b.ui.reloadAt('#/accounting');
+  await settle(b);
+  await pressClock(b, '+1 hour', /Mar 17, 2026, 12:00/);
+  await b.tick();
+  c.eq(await eventTypeCounts(b), types, 'after a second stop, a reload, another hour and a cycle: the same event counts');
+  const s2 = await lifeShown(b, L);
+  c.eq(s2, s1, 'and the same cash, P&L, pending, lifecycle and failed screens');
+
+  // Behind the screens: the hand-worked figures and the day-by-day books.
+  await checkLife(b, c, L, 'catch-up from the screens');
+  sameLife(c, ref, await lifeDigest(b, L), 'catch-up from the screens');
+}

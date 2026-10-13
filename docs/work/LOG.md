@@ -88,3 +88,4 @@
 - 2026-10-13T16:35Z | b2 | +0.2 | corporate_sukuk passes at engine, API and browser
 - 2026-10-13T16:37Z | fix | +0 | BUGS fixes: forward notional currency, exact close, swap mark hint, same-pass maturity, principal in shortfall, index option form
 - 2026-10-13T16:38Z | s8 | +0.3 | s8: browser case SB:history:reference-edits passes; popup helper fixed for chained prompts
+- 2026-10-13T16:41Z | l1 | +0.2 | securities_backed_loan passes at engine, API and browser (missing fixing blocks payment and repayment)

@@ -106,6 +106,8 @@ function Shell() {
   // Who answers hedge requests right now. Stated apart from the Analytics Lab connection, which it must never contradict.
   const [hedgeSvc, setHedgeSvc] = useState(null);
   const [acctOpen, setAcctOpen] = useState(flag('sdt.accts', true));
+  // Below 820 px the sidebar is a drawer behind the Menu button; it closes when a page is chosen or Escape is pressed.
+  const [navOpen, setNavOpen] = useState(false);
   const unitId = useStore((s) => s.unitId);
   const tick = useStore((s) => s.tick);
   const overlayCount = useStore((s) => s.overlay.length);
@@ -114,10 +116,16 @@ function Shell() {
   useEffect(() => { get('/api/hedge/service').then(setHedgeSvc, () => {}); }, [tick]);
 
   useEffect(() => {
-    const on = () => setRoute(parseHash());
+    const on = () => { setRoute(parseHash()); setNavOpen(false); };
     window.addEventListener('hashchange', on);
     return () => window.removeEventListener('hashchange', on);
   }, []);
+  useEffect(() => {
+    if (!navOpen) return undefined;
+    const esc = (e) => { if (e.key === 'Escape') setNavOpen(false); };
+    window.addEventListener('keydown', esc);
+    return () => window.removeEventListener('keydown', esc);
+  }, [navOpen]);
   useEffect(() => {
     let live = true;
     setView(null);
@@ -162,22 +170,27 @@ function Shell() {
   const showAlerts = () => openOverlay((close) => html`<${Modal} title="Items needing attention" size="mid" onClose=${close}>
     <div class="stack">${alerts.length ? alerts.map((a) => html`<div class=${`notice ${a.level === 'error' ? 'err' : 'warn'}`}>${a.message}<div class="sub muted">${fmtTime(a.ts)}</div></div>`) : html`<p class="note">Nothing needs attention.</p>`}</div><//>`);
 
-  return html`<div class="shell">
+  // The connection chips, clock and theme control: in the top bar, and at the top of the drawer on a narrow screen.
+  const tools = (where) => html`<${Conn} label="MarketData" state=${status.data.market} />
+      <${Conn} label="Analytics Lab" state=${status.data.analytics} />
+      ${hedgeSvc?.fixture ? html`<a class="conn st-fixture" href="#/data" data-testid=${where === 'top' ? 'hedge-service-chip' : undefined} title=${`Analytics Lab is not connected. ${hedgeSvc.kind === 'demo-fixture' ? 'The labelled demo fixture' : 'A scripted test fixture'} answers complete hedge requests${hedgeSvc.reachable ? '' : ' (it is switched off for now)'} and supplies a fictional Strategy list. It is not Shaffer Hedge.`}><i></i>Hedge: ${hedgeSvc.kind === 'demo-fixture' ? 'demo fixture' : 'test fixture'}${hedgeSvc.reachable ? '' : ', off'}</a>` : null}
+      <span class="clock" title="Business date and time, New York">${fmtTime(status.now)}</span>
+      <${Button} small onClick=${() => setTheme(dark ? 'light' : 'dark')} title="Switch between light and dark mode">${dark ? 'Light mode' : 'Dark mode'}<//>`;
+  return html`<div class=${`shell ${navOpen ? 'nav-open' : ''}`}>
     <div class="topbar">
+      <button class="btn small menu-btn" aria-expanded=${navOpen} aria-controls="sdt-rail" onClick=${() => setNavOpen(!navOpen)} title="Navigation, connections, clock and theme">${navOpen ? 'Close menu' : 'Menu'}</button>
       <div class="brand">Shaffer Desk Terminal<small>paper trading</small></div>
       ${books.length ? html`<span class="small muted">Book</span><${Select} value=${bookId} onChange=${(v) => (v === '__new' ? openOverlay((close) => html`<${NewBook} onClose=${close} />`) : setBook(v))}
         options=${[...books.map((b) => ({ value: b.id, label: b.name })), { value: '__new', label: '+ New Book…' }]} />
-        <a class="btn small" href="#/books" title="Books are separate workspaces. Open, rename or create one.">Manage Books</a>` : null}
+        <a class="btn small tb-wide" href="#/books" title="Books are separate workspaces. Open, rename or create one.">Manage Books</a>` : null}
       ${alerts.length ? html`<button class=${`conn ${errors ? 'st-error' : 'st-awaiting'}`} onClick=${showAlerts}><i></i>${alerts.length} to review</button>` : null}
       <span class="grow"></span>
-      <${Conn} label="MarketData" state=${status.data.market} />
-      <${Conn} label="Analytics Lab" state=${status.data.analytics} />
-      ${hedgeSvc?.fixture ? html`<a class="conn st-fixture" href="#/data" data-testid="hedge-service-chip" title=${`Analytics Lab is not connected. ${hedgeSvc.kind === 'demo-fixture' ? 'The labelled demo fixture' : 'A scripted test fixture'} answers complete hedge requests${hedgeSvc.reachable ? '' : ' (it is switched off for now)'} and supplies a fictional Strategy list. It is not Shaffer Hedge.`}><i></i>Hedge: ${hedgeSvc.kind === 'demo-fixture' ? 'demo fixture' : 'test fixture'}${hedgeSvc.reachable ? '' : ', off'}</a>` : null}
-      <span class="clock" title="Business date and time, New York">${fmtTime(status.now)}</span>
-      <${Button} small onClick=${() => setTheme(dark ? 'light' : 'dark')} title="Switch between light and dark mode">${dark ? 'Light mode' : 'Dark mode'}<//>
+      <span class="tb-tools">${tools('top')}</span>
     </div>
     ${status.demo ? html`<${DemoBand} status=${status} />` : html`<div class="band-none"></div>`}
-    <nav class="rail">
+    ${navOpen ? html`<div class="drawer-scrim rail-backdrop" onClick=${() => setNavOpen(false)}></div>` : null}
+    <nav class="rail" id="sdt-rail" onClick=${(e) => { if (navOpen && e.target.closest?.('a')) setNavOpen(false); }}>
+      <div class="rail-tools">${books.length ? html`<a class="btn small" href="#/books" title="Books are separate workspaces. Open, rename or create one.">Manage Books</a>` : null}${tools('rail')}</div>
       ${book ? html`
         <div class="group" title="Everything below belongs to this Book only">${book.name}</div>
         ${nav('#/accounting', 'Accounting')}

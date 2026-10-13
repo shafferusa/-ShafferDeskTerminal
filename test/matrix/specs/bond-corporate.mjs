@@ -1156,4 +1156,229 @@ const corporateSukuk = {
   ],
 };
 
-export default [corporateBondIg, highYieldBond, eurobond, foreignMarketBond, corporateSukuk];
+// ---------------------------------------------------------------------------------------------
+// floating_rate_note
+// ---------------------------------------------------------------------------------------------
+// A bank's senior floating-rate notes in US dollars: three-month term SOFR (rate code TSOFR3M) plus 0.95%,
+// set at the start of each quarterly period (20 January, April, July, October), interest on ACT/360 for the
+// actual days of the period, T+1 on the US bond calendar, pieces of 1,000. The coupon of the period running
+// at registration is entered on the form (Current coupon 5.30%: the 20 January fixing 4.35% + 0.95%).
+// Every coupon needs its fixing, and none is made up:
+//   - 20 April: the coupon of 20 Jan to 20 Apr (90 days at 5.30%) is paid. The fixing for the next period, which
+//     should have come from Shaffer MarketData, does not arrive: an alert says interest is not accruing, nothing
+//     accrues, and a trade is refused because its accrued interest cannot be computed.
+//   - 20 July: the coupon of 20 Apr to 20 Jul is blocked, visibly, waiting for the 20 April fixing. MarketData
+//     delivers the 20 July fixing (4.05%); the blocked coupon does not take it.
+//   - The 20 April fixing (4.20%) is then entered by hand on the Data connection screen: the coupon is paid at
+//     5.15% for 91 days, and the next period runs at 5.00% (4.05% + 0.95%).
+// Days: 20 Jan to 13 Apr 83, to 20 Apr 90; 20 Apr to 20 Jul 91. From 20 Jul: to 21 Jul 1, 22 Jul 2, 23 Jul 3, 26 Jul 6.
+// Commission: 0.5 basis point of clean principal.
+const floatingRateNote = {
+  productId: 'floating_rate_note',
+  title: 'Kestrel Bancorp floating-rate senior notes due 20 October 2029 (3M term SOFR + 0.95%): a missing fixing stops accrual and blocks a coupon, the fixing entered by hand pays it',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount (a multiple of 1,000)'],
+    automaticInputs: [...BOND_TICKET.automaticInputs, 'reference-rate fixing of each coupon period (rate fixture standing in for Shaffer MarketData)'],
+    manualInputs: ['Current coupon of the running period on the registration form', 'a missing fixing entered by hand (Data connection, Manual entries, Reference or funding rate, with its fixing date)'],
+    settlement: 'T+1 on the US bond calendar; a trade is refused while the coupon rate of the current period is unknown (its accrued interest cannot be computed)',
+    lifecycle: 'Accrual on ACT/360 at the period rate; quarterly coupon for the actual days at the fixing of the period start plus the spread; reset after each coupon; a missing fixing raises an alert, stops accrual and blocks the coupon until it is supplied or entered; a later fixing is never used for an earlier period',
+    accounting: 'Clean cost at average; accrued interest bought and sold through Accrued income; coupon income separate from realized and unrealized P&L; the coupon of a period accrued without a rate is income when it is paid',
+    collateral: 'None for a long position',
+  },
+  start: EDT('2027-04-12'), // Monday
+  settlementCheck: { lag: 1, holidays: [] },
+  book: {
+    name: 'Matrix floating-rate note', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 3_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 2_500_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.5 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'floating_rate_note', name: 'Kestrel Bancorp Inc Floating Rate Senior Notes 20-Oct-2029', symbol: 'KESTREL-FRN-OCT29', marketView: 'US_CASH', venueType: 'otc', issuer: 'Kestrel Bancorp Inc', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      terms: { couponType: 'float', referenceRate: 'TSOFR3M', spread: 0.0095, currentCoupon: 0.053, frequency: 4, maturity: '2029-10-20', issueDate: '2024-10-20', dayCount: 'ACT/360', redemption: 100, minDenomination: 1_000, seniority: 'Senior unsecured' } },
+  },
+  quotes: { main: { bid: 100.05, ask: 100.15, last: 100.1, bidSize: 10_000_000, askSize: 10_000_000 } },
+  expectAtStart: { ...startState(2_500_000, 500_000), cash: { account: usdCash(2_500_000), treasury: usdCash(500_000) }, alerts: [] },
+  steps: [
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 2_000_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 2_000_000, estimate: 100.15, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2027-04-13', calendar: 'USBOND',
+            gross: 2_003_000, // 2,000,000 x 100.15 / 100
+            accrued: 24_438.89, // settles 13 Apr, 83 days at 5.30% on ACT/360: 2,000,000 x 5.3% x 83/360 = 24,438.889
+            cash: -2_027_438.89, fees: 100.15 }], // 0.5 bp of 2,003,000
+          cash: { USD: { purchases: 2_027_438.89, fees: 100.15, required: 2_027_539.04, available: 2_500_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 2_000_000, avgPrice: 100.15, fills: [{ qty: 2_000_000, price: 100.15, model: 'quoted-bid-ask', settleDate: '2027-04-13', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 2,000,000 KESTREL-FRN-OCT29 @ 100.15 USD', owner: 'account', date: '2027-04-12' }],
+        cash: { account: { USD: { settled: 2_500_000, unsettled: -2_027_539.04, availableToTrade: 472_460.96 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 2_000_000, avgCost: 100.15, cost: 2_003_000, price: 100.1,
+          value: 2_002_000, unrealized: -1_000, accrued: 24_438.89, priceSource: 'Test fixture' }],
+        holdings: { main: { long: 2_000_000, short: 0, net: 2_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2027-04-13', amount: -2_027_539.04, ccy: 'USD', into: 'cash' }],
+        // 20 Apr 2027 is a Tuesday. 20 Oct 2029 is a Saturday: redemption on Monday 22 October 2029.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-04-20', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2029-10-22', status: 'pending' }],
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -100.15, fees: 0, borrowFunding: 0, unrealized: -1_000, total: -1_100.15 } },
+        nav: { account: 2_498_899.85, book: 2_998_899.85 },
+        balance: { account: { cash: 2_500_000, accruedIncome: 24_438.89, positions: 2_002_000, payable: 2_027_539.04, assets: 4_526_438.89, liabilities: 2_027_539.04, netAssets: 2_498_899.85 } },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EDT('2027-04-13'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 2,027,539.04 USD from settled cash', cash: { USD: -2_027_539.04 }, date: '2027-04-13' }],
+        cash: { account: { USD: { settled: 472_460.96, unsettled: 0, availableToTrade: 472_460.96 } } },
+        pending: [],
+        balance: { account: { cash: 472_460.96, payable: null, assets: 2_498_899.85, liabilities: 0 } },
+      },
+    },
+    {
+      // Tuesday 20 April. The coupon of 20 Jan to 20 Apr, 90 days at 5.30%: 2,000,000 x 5.3% x 90/360 = 26,500.00. On the books
+      // 24,438.89: 2,061.11 more (seven days). No TSOFR3M fixing for 20 April has been supplied: the new period has no rate, an
+      // alert says so, and nothing is accrued for it (on its first day nothing has accrued anyway).
+      id: 'coupon', covers: ['coupon', 'reset'], action: 'clock', to: EDT('2027-04-20'),
+      expect: {
+        events: [
+          { type: 'bond.coupon', summary: 'Coupon received on 2,000,000 KESTREL-FRN-OCT29: 26,500.00 USD', cash: { USD: 26_500 }, owner: 'account', date: '2027-04-20' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on KESTREL-FRN-OCT29: 2,061.11 USD' },
+        ],
+        cash: { account: { USD: { settled: 498_960.96, availableToTrade: 498_960.96 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_000_000, accrued: 0 }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-07-20', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2029-10-22', status: 'pending' }],
+        alerts: ['bond.fixing'],
+        pnl: { account: { couponInterest: 2_061.11, total: 960.96 } },
+        nav: { account: 2_500_960.96, book: 3_000_960.96 }, // 498,960.96 + 2,002,000
+        balance: { account: { cash: 498_960.96, accruedIncome: null, assets: 2_500_960.96, netAssets: 2_500_960.96 } },
+      },
+    },
+    // A week later: still no fixing. The end of day books nothing (the rate is unknown, not zero).
+    { id: 'no-fixing', covers: 'missing fixing', action: 'clock', to: EDT('2027-04-28'), expect: { events: [] } },
+    {
+      id: 'sell-without-fixing', covers: ['reduce', 'missing fixing'], action: 'ticket', instrument: 'main', side: 'sell', qty: 500_000, from: 'lot',
+      status: 'blocked', reason: 'The accrued interest of the sale cannot be computed without the period\'s fixing; it is not booked as zero.',
+      expect: { refused: 'has no TSOFR3M fixing for its current coupon period' },
+    },
+    {
+      // Tuesday 20 July. The coupon of 20 Apr to 20 Jul waits, visibly, for the 20 April fixing. Nothing is paid or accrued.
+      id: 'coupon-blocked', covers: ['coupon', 'missing fixing'], action: 'clock', to: EDT('2027-07-20'),
+      expect: {
+        events: [],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-07-20', status: 'blocked' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2029-10-22', status: 'pending' }],
+      },
+    },
+    // MarketData delivers the 20 July fixing. It belongs to the period that starts today: the blocked coupon does not use it.
+    { id: 'july-fixing-arrives', covers: 'reset', action: 'rate', code: 'TSOFR3M', value: 4.05, date: '2027-07-20', expect: { events: [] } },
+    {
+      // The 20 April fixing, 4.20%, entered by hand. The blocked coupon is paid at 4.20% + 0.95% = 5.15% for 91 days:
+      // 2,000,000 x 5.15% x 91/360 = 26,036.11. Nothing had accrued for the period, so all of it is income now. The next period
+      // takes the 20 July fixing: 4.05% + 0.95% = 5.00%. The alert is resolved.
+      id: 'april-fixing-entered', covers: ['coupon', 'fixing by hand'], action: 'manual_rate', code: 'TSOFR3M', value: 4.2, date: '2027-04-20', note: 'April fixing from the calculation agent notice',
+      expect: {
+        events: [
+          { type: 'bond.coupon', summary: 'Coupon received on 2,000,000 KESTREL-FRN-OCT29: 26,036.11 USD', cash: { USD: 26_036.11 }, owner: 'account', date: '2027-07-20' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on KESTREL-FRN-OCT29: 26,036.11 USD' },
+        ],
+        cash: { account: { USD: { settled: 524_997.07, availableToTrade: 524_997.07 } } },
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-10-20', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2029-10-22', status: 'pending' }], // a Wednesday
+        alerts: [],
+        pnl: { account: { couponInterest: 28_097.22, total: 26_997.07 } },
+        nav: { account: 2_526_997.07, book: 3_026_997.07 },
+        balance: { account: { cash: 524_997.07, assets: 2_526_997.07, netAssets: 2_526_997.07 } },
+      },
+    },
+    {
+      // Thursday 22 July. End of day 21 July: one day at 5.00%: 2,000,000 x 5% / 360 = 277.78.
+      id: 'accrue', covers: 'accrual', action: 'clock', to: EDT('2027-07-22'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on KESTREL-FRN-OCT29: 277.78 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_000_000, accrued: 277.78 }],
+        pnl: { account: { couponInterest: 28_375, total: 27_274.85 } },
+        nav: { account: 2_527_274.85, book: 3_027_274.85 },
+        balance: { account: { accruedIncome: 277.78, assets: 2_527_274.85, netAssets: 2_527_274.85 } },
+      },
+    },
+    {
+      id: 'quote-up', action: 'quote', instrument: 'main', quote: { bid: 100.25, ask: 100.35, last: 100.3, bidSize: 10_000_000, askSize: 10_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_000_000, price: 100.3, value: 2_006_000, unrealized: 3_000 }], // 2,000,000 x 100.30% - 2,003,000
+        pnl: { account: { unrealized: 3_000, total: 31_274.85 } },
+        nav: { account: 2_531_274.85, book: 3_031_274.85 },
+        balance: { account: { positions: 2_006_000, assets: 2_531_274.85, netAssets: 2_531_274.85 } },
+      },
+    },
+    {
+      id: 'reduce', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 800_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 800_000, estimate: 100.25, settleDate: '2027-07-23',
+          gross: 802_000, // 800,000 x 100.25 / 100
+          accrued: 333.33, // settles 23 Jul, 3 days at 5.00%: 800,000 x 5% x 3/360 = 333.333
+          cash: 802_333.33, fees: 40.10 }] }, // 0.5 bp of 802,000
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 800_000, avgPrice: 100.25 }] },
+        // Realized 802,000 - 800,000 x 100.15% = 800.
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 800,000 KESTREL-FRN-OCT29 @ 100.25 USD (realized 800.00 USD)' }],
+        cash: { account: { USD: { settled: 524_997.07, unsettled: 802_293.23, availableToTrade: 1_327_290.30 } } }, // 802,333.33 - 40.10
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_200_000, cost: 1_201_800, avgCost: 100.15, price: 100.3, value: 1_203_600, unrealized: 1_800, accrued: -55.55 }], // 277.78 - 333.33
+        holdings: { main: { long: 1_200_000, short: 0, net: 1_200_000 } },
+        pending: [{ instrument: 'main', dueDate: '2027-07-23', amount: 802_293.23, into: 'cash' }],
+        pnl: { account: { realized: 800, commissions: -140.25, unrealized: 1_800, total: 30_834.75 } }, // 100.15 + 40.10
+        nav: { account: 2_530_834.75, book: 3_030_834.75 },
+        balance: { account: { cash: 524_997.07, receivable: 802_293.23, accruedIncome: -55.55, positions: 1_203_600, assets: 2_530_834.75, liabilities: 0, netAssets: 2_530_834.75 } },
+      },
+    },
+    {
+      // End of day 22 July: 2,000,000 settled, 2 days at 5.00%: 555.5556; less the 333.3333 sold: 222.22. On the books -55.55: income 277.77.
+      id: 'settle-reduce', covers: ['settlement', 'accrual'], action: 'clock', to: EDT('2027-07-23'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 802,293.23 USD into settled cash', cash: { USD: 802_293.23 } },
+          { type: 'accrual.coupon', summary: 'Interest accrued on KESTREL-FRN-OCT29: 277.77 USD' },
+        ],
+        cash: { account: { USD: { settled: 1_327_290.30, unsettled: 0, availableToTrade: 1_327_290.30 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_200_000, accrued: 222.22 }],
+        pending: [],
+        pnl: { account: { couponInterest: 28_652.77, total: 31_112.52 } },
+        nav: { account: 2_531_112.52, book: 3_031_112.52 },
+        balance: { account: { cash: 1_327_290.30, receivable: null, accruedIncome: 222.22, assets: 2_531_112.52, netAssets: 2_531_112.52 } },
+      },
+    },
+    {
+      id: 'close', covers: 'close', action: 'close', lot: 'lot', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 1_200_000, estimate: 100.25, settleDate: '2027-07-26',
+          gross: 1_203_000, // 1,200,000 x 100.25 / 100
+          accrued: 1_000, // settles Monday 26 Jul, 6 days at 5.00%: 1,200,000 x 5% x 6/360
+          cash: 1_204_000, fees: 60.15 }] }, // 0.5 bp of 1,203,000
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 1_200_000, avgPrice: 100.25 }] },
+        // Realized 1,203,000 - 1,201,800 = 1,200. Interest sold 1,000 against 222.22 on the books: 777.78 more.
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 1,200,000 KESTREL-FRN-OCT29 @ 100.25 USD (realized 1,200.00 USD)' },
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of KESTREL-FRN-OCT29: 777.78 USD' },
+        ],
+        cash: { account: { USD: { settled: 1_327_290.30, unsettled: 1_203_939.85, availableToTrade: 2_531_230.15 } } }, // 1,204,000 - 60.15
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', dueDate: '2027-07-26', amount: 1_203_939.85, into: 'cash' }],
+        lifecycle: [],
+        // Interest in all: 26,500 + 26,036.11 coupons + 333.33 + 1,000 sold - 24,438.89 bought = 29,430.55.
+        pnl: { account: { realized: 2_000, couponInterest: 29_430.55, commissions: -200.40, unrealized: 0, total: 31_230.15 } },
+        nav: { account: 2_531_230.15, book: 3_031_230.15 },
+        balance: { account: { cash: 1_327_290.30, receivable: 1_203_939.85, positions: null, accruedIncome: null, assets: 2_531_230.15, liabilities: 0, netAssets: 2_531_230.15 } },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: EDT('2027-07-26'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 1,203,939.85 USD into settled cash', cash: { USD: 1_203_939.85 } }],
+        cash: { account: { USD: { settled: 2_531_230.15, unsettled: 0, availableToTrade: 2_531_230.15 } }, treasury: { USD: { settled: 500_000 } } },
+        pending: [],
+        balance: { account: { cash: 2_531_230.15, receivable: null, assets: 2_531_230.15, liabilities: 0, netAssets: 2_531_230.15 } },
+      },
+    },
+  ],
+};
+
+export default [corporateBondIg, highYieldBond, eurobond, foreignMarketBond, corporateSukuk, floatingRateNote];

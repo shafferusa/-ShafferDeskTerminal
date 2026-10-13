@@ -50,3 +50,50 @@ test('bond coupon suspension: accrued interest is reversed (non-accrual), the bo
   assert.deepEqual(app.accounting.pending(book.id, acct.id).lifecycle.filter((x) => x.type === 'bond.coupon').map((x) => x.dueDate), ['2027-12-01']);
   assert.deepEqual(ledgerImbalance(app), []);
 });
+
+//   2. A floating-rate note whose next fixing was missing at a reset: the coupon just paid was not recognised as income
+//      (the accrued balance was left negative because the new period had no rate, although nothing accrues on its first
+//      day); a fixing supplied or entered later was never taken, so the next coupon stayed blocked for ever; and a trade
+//      in the meantime booked its accrued interest as zero. Now: the coupon is income when paid, the fixing of the period
+//      start is taken as soon as it exists (never a later one), and a trade waits for it.
+test('floating-rate note: a missing fixing blocks the coupon until that fixing exists, a later fixing is not used, a trade waits', async () => {
+  const { app, clock } = makeApp({ at: '2027-04-12T14:00:00.000Z' }); // Monday 12 April 2027
+  const { book, acct } = makeBook(app, { cash: 3_000_000, account: 2_500_000 });
+  const api = createApi(app);
+  const call = (method, path, body) => { const m = api.match(method, path); return m.handler({ params: m.params, query: {}, body }); };
+  // 3M term SOFR + 0.95%, quarterly on 20 Jan/Apr/Jul/Oct, ACT/360; the running period's coupon is 5.30%.
+  const b = app.instruments.create({ productId: 'floating_rate_note', name: 'Test FRN 20-Oct-2029', symbol: 'FRN29', marketView: 'US_CASH', venueType: 'otc', tradingCcy: 'USD', terms: { couponType: 'float', referenceRate: 'TSOFR3M', spread: 0.0095, currentCoupon: 0.053, frequency: 4, maturity: '2029-10-20', issueDate: '2024-10-20', dayCount: 'ACT/360' } });
+  pin(app, b.id, 100);
+  await trade(app, { bookId: book.id, unitId: acct.id, template: 'custom', legs: [{ kind: 'trade', action: 'buy', instrumentId: b.id, qty: 2_000_000 }] });
+  assert.equal(accrued(app, acct), 24_438.89); // to 13 Apr, 83 days: 2,000,000 x 5.3% x 83/360
+
+  await goTo(app, clock, '2027-04-20T14:00:00.000Z'); // coupon of 20 Apr: 90 days at 5.30% = 26,500; no 20 Apr fixing
+  assert.equal(events(app, book, acct, 'bond.coupon').length, 1);
+  assert.equal(accrued(app, acct), 0, 'the coupon just paid is income; nothing has accrued yet in the new period');
+  assert.equal(couponIncome(app, book, acct), 2_061.11); // 26,500 - 24,438.89
+
+  await goTo(app, clock, '2027-04-28T14:00:00.000Z');
+  assert.equal(accrued(app, acct), 0, 'no rate, nothing accrued');
+  const pv = await app.packages.preview({ bookId: book.id, unitId: acct.id, template: 'custom', legs: [{ kind: 'trade', action: 'sell', instrumentId: b.id, qty: 500_000 }] });
+  assert.ok(pv.blocking > 0 || (pv.errors || []).length > 0, 'a trade whose accrued interest cannot be computed is blocked');
+
+  await goTo(app, clock, '2027-07-20T14:00:00.000Z');
+  const blocked = () => app.accounting.pending(book.id, acct.id).lifecycle.find((x) => x.type === 'bond.coupon' && x.dueDate === '2027-07-20');
+  assert.equal(blocked().status, 'blocked');
+  // The 20 July fixing arrives: it belongs to the next period and the blocked coupon does not take it.
+  await call('POST', '/api/demo/fixtures/rate', { code: 'TSOFR3M', value: 4.05, date: '2027-07-20' });
+  await app.engine.tick();
+  assert.equal(blocked().status, 'blocked');
+  assert.equal(events(app, book, acct, 'bond.coupon').length, 1);
+  // The 20 April fixing entered by hand: the coupon is paid at 5.15% for 91 days = 26,036.11, and the next period runs at 5.00%.
+  await call('POST', '/api/observations', { kind: 'rate', subject: 'TSOFR3M', value: 4.2, units: 'percent p.a.', forDate: '2027-04-20' });
+  await app.engine.tick();
+  const coupons = events(app, book, acct, 'bond.coupon');
+  assert.equal(coupons.length, 2);
+  assert.ok(coupons.some((e) => /: 26,036\.11 USD$/.test(e.summary)), 'the 20 July coupon is paid at 5.15% for 91 days');
+  assert.equal(couponIncome(app, book, acct), 28_097.22);
+  assert.ok(Math.abs(app.instruments.get(b.id).terms.currentCoupon - 0.05) < 1e-12);
+  await goTo(app, clock, '2027-07-22T14:00:00.000Z'); // end of day 21 Jul: one day at 5.00% = 277.78
+  assert.equal(accrued(app, acct), 277.78);
+  assert.deepEqual(ledgerImbalance(app), []);
+});

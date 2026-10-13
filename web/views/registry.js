@@ -347,6 +347,8 @@ function viewByVenue(d, cls) {
   if (d.venueType !== 'exchange' || !country) return null;
   return pairOf(cls)[country === 'US' ? 0 : 1];
 }
+/** The facts the routing convention reads, as the query of GET /api/instruments/routing. */
+const routeQuery = (d) => ({ productId: d.productId, venueType: d.venueType, venueCountry: d.family === 'fx' ? '' : String(d.venueCountry || '').trim().toUpperCase(), jurisdiction: d.jurisdiction, domicile: d.domicile, underlyingId: d.underlyingId, venue: d.venue });
 const fromInst = (i) => ({
   productId: i.productId, family: i.family, name: i.name, symbol: i.symbol || '', marketView: i.marketView, tags: [...(i.tags || [])], issuer: i.issuer || '', domicile: i.domicile || '',
   underlyingGeo: i.underlyingGeo || '', venue: i.venue || '', venueType: i.venueType, venueCountry: i.venueCountry || '', tradingCcy: i.tradingCcy, settleCcy: i.settleCcy && i.settleCcy !== i.tradingCcy ? i.settleCcy : '',
@@ -509,24 +511,28 @@ function InstrumentForm({ inst: given, view, preset, onDone, onClose }) {
   useEffect(() => {
     if (!draft?.productId) { setRoute(null); return undefined; }
     let live = true;
-    const t = setTimeout(() => get('/api/instruments/routing', { productId: draft.productId, venueType: draft.venueType, venueCountry: draft.family === 'fx' ? '' : draft.venueCountry, jurisdiction: draft.jurisdiction, domicile: draft.domicile, underlyingId: draft.underlyingId, venue: draft.venue })
+    const t = setTimeout(() => get('/api/instruments/routing', routeQuery(draft))
       .then((r) => { if (live) setRoute(r); }, () => { if (live) setRoute(null); }), 150);
     return () => { live = false; clearTimeout(t); };
   }, [routeKey]);
   const autoView = draft && draft.routing !== 'manual' ? route?.view || null : null;
-  const viewMissing = draft && (draft.routing === 'manual' ? !draft.marketView : route && !route.view);
+  const viewMissing = draft && (draft.routing === 'manual' ? !draft.marketView : route && !route.view && !(product && viewByVenue(draft, product.cls)));
   const viewError = tried && viewMissing ? 'Nothing decides the market view: enter the venue country or the jurisdiction, or choose the view by hand.' : null;
   const country = draft?.family === 'fx' ? '' : String(draft?.venueCountry || '').trim().toUpperCase();
   const countryError = country && !/^[A-Z]{2}$/.test(country) && (tried || country.length > 2) ? 'Enter a two-letter country code, such as US, GB or JP.' : null;
   const save = async () => {
     setTried(true); setError(null);
     const jur = String(draft?.jurisdiction || '').trim().toUpperCase();
-    if (!draft || !draft.name.trim() || viewMissing || (country && !/^[A-Z]{2}$/.test(country)) || (jur && !/^[A-Z]{2}$/.test(jur))) { top.current?.scrollIntoView({ block: 'start' }); return; }
+    // The convention's answer for exactly these facts (the one on screen may still be loading after the last keystroke).
+    let now = route;
+    if (draft && product && draft.routing !== 'manual' && !viewByVenue({ ...draft, venueCountry: country }, product.cls)) { try { now = await get('/api/instruments/routing', routeQuery(draft)); setRoute(now); } catch { /* the server says on saving */ } }
+    const missing = draft && (draft.routing === 'manual' ? !draft.marketView : now && !now.view && !viewByVenue({ ...draft, venueCountry: country }, product.cls));
+    if (!draft || !draft.name.trim() || missing || (country && !/^[A-Z]{2}$/.test(country)) || (jur && !/^[A-Z]{2}$/.test(jur))) { top.current?.scrollIntoView({ block: 'start' }); return; }
     const conv = conventionsPayload(draft.conventions);
     setBusy(true);
     const d = { ...draft, name: draft.name.trim(), symbol: draft.symbol.trim(), venueCountry: country, tradingCcy: pairCcy ? draft.terms.quote || draft.tradingCcy : draft.tradingCcy, externalIds: externalIds() };
     // Routing: a view chosen by hand is sent as such; otherwise the server works it out from the facts.
-    const manual = d.routing === 'manual' && !viewByVenue(d, product.cls) && d.marketView !== route?.view;
+    const manual = d.routing === 'manual' && !viewByVenue(d, product.cls) && d.marketView !== now?.view;
     const routing = { jurisdiction: jur || null, ...(manual ? { marketView: d.marketView, routingBasis: 'manual' } : { marketView: undefined, routingBasis: editing ? 'auto' : undefined }) };
     try {
       let out;
