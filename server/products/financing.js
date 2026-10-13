@@ -196,17 +196,17 @@ export const loan = {
     return { principal, interest: a ? money(a.accrued, inst.trading_ccy) : 0, full, accruedThrough: a ? a.accruedThrough : pos.data.accruedThrough || null, rateMissing: a ? a.rateMissing : null };
   },
   /** Repay (borrowed) or withdraw (lent) principal. A full repayment also settles accrued interest. */
-  checkClose(app, { unit, inst, pos, qty }) {
+  checkClose(app, { unit, inst, pos, qty, date = app.clock.today() }) {
     const out = [];
     const ccy = inst.trading_ccy;
     if (qty > Math.abs(pos.qty) + 0.004) out.push(`Outstanding principal is ${fmt(Math.abs(pos.qty), ccy)}; cannot repay ${fmt(qty, ccy)}.`);
     // Without a fixing the interest to today cannot be worked out: a repayment in full would settle too little, and a part
     // repayment would leave the days without a fixing to be charged later on the reduced principal.
-    const missing = inst.terms.rateType === 'floating' ? accruePrincipal(app, { inst, pos, date: app.clock.today() }).rateMissing : null;
+    const missing = inst.terms.rateType === 'floating' ? accruePrincipal(app, { inst, pos, date }).rateMissing : null;
     if (missing) out.push(`Interest on ${inst.name} cannot be worked out: no ${inst.terms.referenceRate} fixing from ${missing}. Enter the fixing by hand or set the rate before repaying.`);
     if (pos.qty < 0) {
       const full = qty >= Math.abs(pos.qty) - 0.004;
-      const interest = full ? accruePrincipal(app, { inst, pos, date: app.clock.today() }).accrued : 0;
+      const interest = full ? accruePrincipal(app, { inst, pos, date }).accrued : 0;
       const have = app.ledger.cash(unit.id, ccy).availableToWithdraw;
       if (have < qty + interest - 0.004) out.push(`${unit.name} has ${fmt(have, ccy)} of settled ${ccy} available; ${fmt(qty + interest, ccy)} is needed (principal${full ? ' plus accrued interest' : ''}).`);
     }
@@ -278,14 +278,14 @@ export const loan = {
       return { done: true, eventId: r.eventId };
     }
     if (task.type === 'loan.maturity') {
-      const p = trueUpInterest(app, { book, unit, inst, pos, date: today });
-      if (p.data.rateMissing) return { blocked: waitingForFixing(inst, p.data.rateMissing, 'Repayment at maturity') };
-      const problems = loan.checkClose(app, { unit, inst, pos, qty: Math.abs(pos.qty) });
-      if (problems.length) return fundingFailure(app, { book, unit, inst, pos, what: 'Repayment at maturity', detail: problems[0] });
       // A maturity reached for the first time after its date (the Terminal was not running that day) is settled as of
       // that date: interest stops at maturity, exactly as if the Terminal had been running. A repayment that was
       // tried and failed for want of cash goes on accruing until it is made.
       const asOf = task.status === 'pending' && task.due_date < today ? task.due_date : today;
+      const p = trueUpInterest(app, { book, unit, inst, pos, date: asOf });
+      if (p.data.rateMissing) return { blocked: waitingForFixing(inst, p.data.rateMissing, 'Repayment at maturity') };
+      const problems = loan.checkClose(app, { unit, inst, pos: p, qty: Math.abs(p.qty), date: asOf });
+      if (problems.length) return fundingFailure(app, { book, unit, inst, pos, what: 'Repayment at maturity', detail: problems[0] });
       const r = loan.close(app, { book, unit, inst, pos, qty: Math.abs(pos.qty), tradeDate: asOf, actor: 'engine' });
       app.alerts.resolve({ refType: 'position', refId: pos.id, code: 'funding.failed' });
       return { done: true, eventId: r.eventId };

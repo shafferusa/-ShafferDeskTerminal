@@ -1571,21 +1571,22 @@ const securedLoan = {
       },
     },
     {
-      // Friday 24 April, maturity. Interest has accrued to 23 April (1 to 23 April, 22 days, 396.00). The repayment needs
-      // 120,000 + 23 days (414.00) = 120,414.00 and the Account has 59,348.00: it fails, visibly, and stays due.
+      // Friday 24 April, maturity. The maturity brings interest to its own date: 1 to 24 April, 23 days, 414.00 (one entry,
+      // the end-of-day catch-up finding nothing more to add). The repayment needs 120,000 + 414.00 = 120,414.00 and the
+      // Account has 59,348.00: it fails, visibly, and stays due.
       id: 'maturity-without-the-cash', covers: ['maturity', 'repayment fails when cash is short'], action: 'clock', to: AT_1000('2026-04-24'),
       expect: {
-        events: [{ type: 'accrual.interest', summary: 'Interest accrued on Calder secured loan: 396.00 USD', owner: 'account', date: '2026-04-24' }], // to 23 April, booked on the morning it catches up
-        positions: [{ instrument: 'hrdg', lot: 'shares', qty: 4_000, value: 160_040, pledged: 4_000 }, { instrument: 'loan', lot: 'loan', qty: -120_000, accrued: -396 }],
+        events: [{ type: 'accrual.interest', summary: 'Interest accrued on Calder secured loan: 414.00 USD', owner: 'account', date: '2026-04-24' }],
+        positions: [{ instrument: 'hrdg', lot: 'shares', qty: 4_000, value: 160_040, pledged: 4_000 }, { instrument: 'loan', lot: 'loan', qty: -120_000, accrued: -414 }],
         lifecycle: [{ type: 'loan.interest', instrument: 'loan', dueDate: '2026-05-01', status: 'pending', owner: 'account' }],
         failed: { orders: 0, settlements: 0, lifecycle: 1 },
         lifecycleFailures: [{ type: 'loan.maturity', instrument: 'loan', dueDate: '2026-04-24', status: 'failed', owner: 'account', reason: 'Alpha has 59,348.00 USD of settled USD available; 120,414.00 USD is needed (principal plus accrued interest).' }],
         alerts: ['funding.failed'],
-        borrowings: [{ lot: 'loan', principal: 120_000, accrued: 396, costToDate: 918 }],
-        pnl: { account: { borrowFunding: -918, total: -1_008 }, book: { borrowFunding: -918, total: -1_008 } },
-        nav: { account: 98_992, book: 998_992 },
-        balance: { account: { accruedExpense: 396, liabilities: 120_396, netAssets: 98_992 }, book: { accruedExpense: 396, liabilities: 120_396, netAssets: 998_992 } },
-        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'loan', principal: 120_000, ccy: 'USD', accrued: 396 }] },
+        borrowings: [{ lot: 'loan', principal: 120_000, accrued: 414, costToDate: 936 }],
+        pnl: { account: { borrowFunding: -936, total: -1_026 }, book: { borrowFunding: -936, total: -1_026 } },
+        nav: { account: 98_974, book: 998_974 },
+        balance: { account: { accruedExpense: 414, liabilities: 120_414, netAssets: 98_974 }, book: { accruedExpense: 414, liabilities: 120_414, netAssets: 998_974 } },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'loan', principal: 120_000, ccy: 'USD', accrued: 414 }] },
       },
     },
     {
@@ -1594,7 +1595,6 @@ const securedLoan = {
       expect: {
         events: [
           { type: 'transfer.funding', summary: 'Treasury funding: 100,000.00 USD from Treasury to Alpha', date: '2026-04-24' },
-          { type: 'accrual.interest', summary: 'Interest accrued on Calder secured loan: 18.00 USD', date: '2026-04-24' },
           { type: 'loan.repayment', summary: 'Repaid 120,000.00 USD of principal on Calder secured loan (in full)', cash: { USD: -120_000 }, owner: 'account', date: '2026-04-24' },
           { type: 'interest.payment', summary: 'Interest paid on Calder secured loan: 414.00 USD', cash: { USD: -414 }, owner: 'account', date: '2026-04-24' },
         ],

@@ -285,4 +285,132 @@ const cryptocurrency = {
   ],
 };
 
-export default [cryptocurrency];
+// ---------------------------------------------------------------------------------------------
+// stablecoin
+// ---------------------------------------------------------------------------------------------
+// A euro stablecoin bought with the Account's euros in a USD-reporting Book: the trade, its fee and settlement are
+// in EUR; every reporting figure is converted at the EUR/USD fixture (1.08, then 1.10). The FX effect is the
+// translation of the euro balances at cost (the Terminal's definition: amounts at the current rate less amounts at
+// the rate of each posting). Sold back on a Sunday after it re-pegs. The Book's crypto fee for this desk is 5 bp.
+const START_EUR = {
+  cash: {
+    account: { USD: { settled: 500_000, unsettled: 0, reserved: 0, availableToTrade: 500_000 }, EUR: { settled: 100_000, unsettled: 0, reserved: 0, availableToTrade: 100_000 } },
+    treasury: { USD: { settled: 500_000 }, EUR: { settled: 100_000 } },
+  },
+  positions: [],
+  pending: [],
+  openOrders: [],
+  borrowings: [],
+  nav: { account: 608_000, treasury: 608_000, book: 1_216_000 }, // 500,000 + 100,000 x 1.08 each
+  provisional: { account: false, book: false },
+  failed: { orders: 0, settlements: 0, lifecycle: 0 },
+};
+const stablecoin = {
+  productId: 'stablecoin',
+  title: 'Eurolink euro token (EURL), a EUR stablecoin on a Belgian crypto platform, in a USD-reporting Book',
+  matrix: {
+    ...CRYPTO_TICKET,
+    requiredFields: ['Account (trading owner)', 'Action', 'Units (fractional to 1e-8)'],
+    automaticInputs: [...CRYPTO_TICKET.automaticInputs, 'EUR/USD conversion for every reporting figure (FX fixture standing in for Shaffer MarketData)'],
+    manualInputs: ['none (the peg is observed in the quote, not assumed)'],
+    settlement: 'Same day on the 24x7 calendar, in EUR from the Account\'s euro balance; the Sunday sale settles on the Sunday',
+    lifecycle: 'None automated',
+    accounting: 'Average cost in EUR; commission in EUR converted at the posting rate; realized P&L in EUR converted at the sale date rate; FX effect = translation of euro balances at cost',
+    collateral: 'None; no short sale',
+  },
+  start: '2026-03-03T15:00:00.000Z', // Tuesday 3 March 2026, 10:00 New York
+  settlementCheck: false, // 24x7 calendar: dates stated by hand
+  book: book('Matrix stablecoin', { capital: [{ ccy: 'USD', amount: 1_000_000 }, { ccy: 'EUR', amount: 200_000 }], funding: [{ ccy: 'USD', amount: 500_000 }, { ccy: 'EUR', amount: 100_000 }], fee: { bps: 5 } }),
+  fx: { 'EUR/USD': 1.08 },
+  instruments: {
+    main: { productId: 'stablecoin', name: 'Eurolink euro token', symbol: 'EURL', marketView: 'FOREIGN_CASH', venue: 'Brugge Digital (crypto trading platform)', venueType: 'otc', venueCountry: 'BE', issuer: 'Eurolink Payments SA', underlyingGeo: 'Euro area', tradingCcy: 'EUR', terms: {} },
+  },
+  quotes: { main: { bid: 0.9996, ask: 0.9998, last: 0.9997, bidSize: 1_000_000, askSize: 1_000_000 } },
+  expectAtStart: START_EUR,
+  steps: [
+    {
+      id: 'buy', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 40_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 40_000, estimate: 0.9998, model: 'quoted-bid-ask', settleDate: '2026-03-03', calendar: 'ALLDAYS',
+            cash: -39_992, // 40,000 x 0.9998 EUR
+            fees: 20 }], // 0.05% x 39,992 = 19.996
+          cash: { EUR: { purchases: 39_992, fees: 20, required: 40_012, available: 100_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 40_000, avgPrice: 0.9998 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Bought 40,000 EURL @ 0.9998 EUR', owner: 'account', date: '2026-03-03' },
+          { type: 'settlement.pay', summary: 'paid 40,012.00 EUR from settled cash', cash: { EUR: -40_012 }, date: '2026-03-03' },
+        ],
+        cash: { account: { EUR: { settled: 59_988, unsettled: 0, availableToTrade: 59_988 }, USD: { settled: 500_000 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 40_000, avgCost: 0.9998, cost: 39_992, price: 0.9997,
+          value: 39_988, // 40,000 x 0.9997 EUR
+          unrealized: -4, priceSource: 'Test fixture' }],
+        holdings: { main: { long: 40_000, short: 0, net: 40_000 } },
+        // Reporting currency at 1.08: commission 20 x 1.08 = 21.60; unrealized -4 x 1.08 = -4.32.
+        pnl: { account: { realized: 0, commissions: -21.60, unrealized: -4.32, fx: 0, total: -25.92 } },
+        nav: { account: 607_974.08, book: 1_215_974.08 },
+        balance: { account: { cash: 564_787.04, positions: 43_187.04, assets: 607_974.08, liabilities: 0, netAssets: 607_974.08, // 500,000 + 59,988 x 1.08; 39,988 x 1.08
+          local: { EUR: { cash: 59_988, positions: 39_988 }, USD: { cash: 500_000 } } } },
+      },
+    },
+    {
+      id: 'euro-strengthens', covers: 'fx effect', action: 'fx_rate', pair: 'EUR/USD', rate: 1.10,
+      expect: {
+        // Euro balances at cost: cash 59,988 + position 39,992 = 99,980 EUR, translated 99,980 x (1.10 - 1.08) = 1,999.60.
+        // Unrealized now at 1.10: -4 x 1.10 = -4.40. Commission stays at its posting rate. Total -21.60 - 4.40 + 1,999.60.
+        pnl: { account: { commissions: -21.60, unrealized: -4.40, fx: 1_999.60, total: 1_973.60 }, treasury: { fx: 2_000 }, book: { fx: 3_999.60 } }, // Treasury: 100,000 EUR x 0.02
+        nav: { account: 609_973.60, treasury: 610_000, book: 1_219_973.60 },
+        balance: { account: { cash: 565_986.80, positions: 43_986.80, assets: 609_973.60, netAssets: 609_973.60 } }, // 500,000 + 59,988 x 1.10; 39,988 x 1.10
+      },
+    },
+    {
+      id: 'sunday', action: 'clock', to: '2026-03-08T14:00:00.000Z', // Sunday 8 March, 10:00 New York
+      expect: {},
+    },
+    {
+      id: 're-pegged', action: 'quote', instrument: 'main', quote: { bid: 0.9999, ask: 1.0001, last: 1.0000, bidSize: 1_000_000, askSize: 1_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 40_000, price: 1, value: 40_000, unrealized: 8 }], // 40,000 x 1.0000 - 39,992
+        pnl: { account: { unrealized: 8.80, total: 1_986.80 } }, // 8 x 1.10; -21.60 + 8.80 + 1,999.60
+        nav: { account: 609_986.80, book: 1_219_986.80 },
+        balance: { account: { positions: 44_000, assets: 609_986.80, netAssets: 609_986.80, local: { EUR: { positions: 40_000 } } } }, // 40,000 x 1.10
+      },
+    },
+    {
+      id: 'short-sale', covers: 'open', action: 'ticket', instrument: 'main', side: 'sell_short', qty: 1000, borrow: { available: true, feeRate: 0.02 },
+      status: 'unsupported', reason: 'A digital asset has no securities borrow in the Terminal, so it cannot be sold short.',
+      expect: { refused: { engine: 'cannot be traded with "sell short"', api: 'cannot be traded with "sell short"', browser: 'does not offer "Sell short"' } },
+    },
+    {
+      id: 'oversell', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 50_000, from: 'lot',
+      status: 'blocked', reason: 'The Account holds 40,000 EURL.',
+      expect: { refused: 'more than it holds' },
+    },
+    {
+      id: 'sell-sunday', covers: 'close', action: 'ticket', instrument: 'main', side: 'sell', qty: 40_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, legs: [{ action: 'sell', qty: 40_000, estimate: 0.9999, settleDate: '2026-03-08', calendar: 'ALLDAYS', cash: 39_996, fees: 20 }], // 40,000 x 0.9999; 0.05% = 19.998
+          cash: { EUR: { proceeds: 39_996, fees: 20 } } },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 40_000, avgPrice: 0.9999 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 40,000 EURL @ 0.9999 EUR (realized 4.00 EUR)', date: '2026-03-08' }, // 39,996 - 39,992
+          { type: 'settlement.receive', summary: 'received 39,976.00 EUR into settled cash', cash: { EUR: 39_976 }, date: '2026-03-08' }, // a Sunday
+        ],
+        cash: { account: { EUR: { settled: 99_964, unsettled: 0, availableToTrade: 99_964 } } }, // 59,988 + 39,976
+        positions: [],
+        holdings: { main: null },
+        // Realized 4 EUR x 1.10 = 4.40; commissions 21.60 + 20 x 1.10 = 43.60. Every euro posting after the rate moved was at
+        // 1.10, so the translation is still 99,980 x 0.02 = 1,999.60. Total 4.40 - 43.60 + 1,999.60.
+        pnl: { account: { realized: 4.40, commissions: -43.60, unrealized: 0, fx: 1_999.60, total: 1_960.40 } },
+        nav: { account: 609_960.40, book: 1_219_960.40 }, // 500,000 + 99,964 x 1.10
+        balance: { account: { cash: 609_960.40, positions: null, assets: 609_960.40, netAssets: 609_960.40, local: { EUR: { cash: 99_964, positions: null }, USD: { cash: 500_000 } } } },
+      },
+    },
+  ],
+};
+
+export default [cryptocurrency, stablecoin];

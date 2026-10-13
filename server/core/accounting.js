@@ -322,7 +322,8 @@ export function createAccounting(app) {
         id: p.id, contractId: inst.id, name: inst.name,
         owner: { id: u.id, name: u.kind === 'treasury' ? 'Treasury' : u.name, kind: u.kind },
         originatedBy: u.kind === 'account' ? 'account' : 'treasury', accountOriginated: u.kind === 'account',
-        type: inst.family === 'loan' ? LOAN_TYPE[t.loanType] || BORROW_TYPE.loan : BORROW_TYPE[inst.family], family: inst.family,
+        // A securities-backed loan is a secured loan against a portfolio of securities: named as its product.
+        type: inst.family === 'loan' ? (inst.product_id === 'securities_backed_loan' ? 'Securities-backed loan' : LOAN_TYPE[t.loanType] || BORROW_TYPE.loan) : BORROW_TYPE[inst.family], family: inst.family,
         lender: t.counterparty || (t.triparty ? t.agent : null) || null,
         ccy, principal, principalRc: principal !== null && fx ? money(principal * fx.rate, rc) : null,
         securities: cash ? null : { instrument: und ? { id: und.id, symbol: und.symbol, name: und.name } : null, qty: p.qty, value: securitiesValue },

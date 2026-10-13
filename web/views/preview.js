@@ -222,7 +222,7 @@ function LegRow({ leg, edit, onEdit, onRemove, canRemove, changes }) {
       <${Was} changes=${changes} field="cash" /><${Was} changes=${changes} field="fees" /><${Was} changes=${changes} field="financing.amount" />
     </td>
     <td class="r amt" data-label="Notional, margin">
-      ${isNum(leg.notional) ? html`<div class="nowrap" title=${leg.notionalBasis || ''}>${fmtMoney(leg.notional, leg.currency)}</div>` : ''}
+      ${isNum(leg.notional) ? html`<div class="nowrap" title=${leg.notionalBasis || ''}>${fmtMoney(leg.notional, leg.notionalCcy || leg.currency)}</div>` : ''}
       ${held > 0 ? html`<div class="sub">margin ${fmtMoney(held, heldCcy)}</div>` : null}
       ${held < 0 ? html`<div class="sub" data-testid="released">${leg.instrument?.family === 'future' ? 'margin released' : 'collateral returned'} ${fmtMoney(-held, heldCcy)}</div>
         <div class="sub">${leg.instrument?.family === 'future' ? 'Initial margin held for the contracts this leg closes comes back to free cash.' : 'The independent amount held for the part of the position this leg closes comes back to free cash.'}</div>` : null}

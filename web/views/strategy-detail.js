@@ -303,6 +303,11 @@ function RollDialog({ s, onClose, onDone }) {
 function Manage({ s, after, onClose }) {
   const [pct, setPct] = useState(100);
   const [factor, setFactor] = useState(null);
+  // An exact amount of one position: a share in percent cannot state a notional such as 10,000,000 of 30,000,000 exactly.
+  const closable = (s.positions || []).filter((p) => isNum(p.qty) && p.qty !== 0 && !['loan', 'repo', 'secloan'].includes(p.family));
+  const [exactPos, setExactPos] = useState(closable[0]?.positionId || '');
+  const [exactQty, setExactQty] = useState(null);
+  const picked = closable.find((p) => p.positionId === exactPos) || null;
   const can = (a) => s.actions.includes(a);
   if (!['close', 'resize', 'roll', 'add_legs'].some(can)) return null;
   const inline = 'display:flex;gap:6px;align-items:center';
@@ -310,6 +315,9 @@ function Manage({ s, after, onClose }) {
     <div class="grid-form" style="grid-template-columns:repeat(auto-fill,minmax(250px,1fr))">
       ${can('close') ? html`<${Field} label="Close, share of every position (%)" hint="100 closes the whole strategy instance">
         <div style=${inline}><div style="width:84px"><${Num} value=${pct} onInput=${setPct} /></div><${Button} disabled=${!(pct > 0 && pct <= 100)} onClick=${() => openPreviewAction(s.id, 'close', { fraction: pct / 100 }, { onDone: after })}>Preview close<//></div><//>` : null}
+      ${can('close') && closable.length ? html`<${Field} label=${`Close an exact ${picked && ['swap', 'cds', 'forward'].includes(picked.family) ? 'notional' : 'amount'}`} hint=${picked ? `Of ${picked.instrument.symbol || picked.instrument.name}, ${fmtQty(Math.abs(picked.qty))} open` : ''}>
+        ${closable.length > 1 ? html`<div style="margin-bottom:4px"><${Select} value=${exactPos} onChange=${(v) => { setExactPos(v); setExactQty(null); }} options=${closable.map((p) => ({ value: p.positionId, label: `${p.instrument.symbol || p.instrument.name}, ${fmtQty(Math.abs(p.qty))}` }))} /></div>` : null}
+        <div style=${inline}><div style="width:120px"><${Num} value=${exactQty} onInput=${setExactQty} placeholder="amount" /></div><${Button} disabled=${!picked || !(exactQty > 0 && exactQty <= Math.abs(picked.qty))} onClick=${() => openPreviewAction(s.id, 'close', { positionIds: [picked.positionId], qty: exactQty }, { onDone: after })}>Preview close<//></div><//>` : null}
       ${can('resize') ? html`<${Field} label="Resize, multiple of the current size" hint="0.5 halves every leg, 2 doubles it">
         <div style=${inline}><div style="width:84px"><${Num} value=${factor} onInput=${setFactor} placeholder="1" /></div><${Button} disabled=${!(factor > 0) || factor === 1} onClick=${() => openPreviewAction(s.id, 'resize', { factor }, { onDone: after })}>Preview resize<//></div><//>` : null}
       ${can('roll') || can('add_legs') ? html`<${Field} label="Change the legs" hint=${can('roll') ? 'Roll moves option or futures positions to a new contract' : 'Add legs to this strategy instance on the Strategy page'}>

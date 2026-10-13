@@ -1450,3 +1450,169 @@ export async function noNetting(b, c) {
     await b.clean(c, X.id, `${X.name} integrity`);
   }
 }
+
+/** The top bar as read by a user: demo band, connection chips, hedge-service chip, clock. */
+async function topBar(page) {
+  const bar = page.locator('.topbar');
+  return {
+    demoBand: await page.locator('.band', { hasText: 'Demo mode' }).count() > 0,
+    clockButtons: await page.getByRole('button', { name: /^\+1 (hour|day|week)$/ }).count(),
+    chips: (await bar.locator('a.conn').allInnerTexts()).map(flat),
+    hedgeChip: await bar.locator('[data-testid=hedge-service-chip]').count() > 0,
+    clock: flat(await bar.locator('.clock').innerText()),
+  };
+}
+/** The clock as the Terminal formats it (web/lib/core.js fmtTime), for instants around now. */
+const nyClock = (ms) => `${new Date(ms).toLocaleString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false, year: 'numeric', month: 'short', day: '2-digit' })} ET`;
+const isRealTime = (shown) => [-2, -1, 0, 1, 2].some((m) => nyClock(Date.now() + m * 60_000) === shown);
+/** The first-Book form shown when a Terminal has no Book. */
+async function createFirstBook(b, ui, page, name) {
+  const panel = ui.section(page.locator('main'), 'Create your first Book');
+  await panel.waitFor();
+  await ui.input(panel, 'Book name').fill(name);
+  await ui.button(panel, 'Create Book').click();
+  await page.locator('.toasts .toast', { hasText: `Book "${name}" created` }).first().waitFor();
+}
+
+/** SB:isolation:normal-mode-refusals. The world is a Terminal in normal mode. */
+export async function normalMode(b, c) {
+  const { page, ui } = b;
+  const demoCalls = watchRequests(page, 'POST', /^\/api\/demo\//);
+  const demoReads = watchRequests(page, 'GET', /^\/api\/demo\//);
+  await ui.goto('#/accounting');
+  await settle(b);
+  let top = await topBar(page);
+  c.eq([top.demoBand, top.clockButtons, top.hedgeChip], [false, 0, false], 'normal mode: no demo band, no buttons to move the clock, no hedge fixture chip');
+  c.eq(top.chips, ['MarketData: awaiting', 'Analytics Lab: awaiting'], 'both Shaffer ports read "awaiting"');
+  c.ok(isRealTime(top.clock), 'the clock in the top bar is the real time in New York', `${top.clock} vs ${nyClock(Date.now())}`);
+  c.eq(await page.locator('.topbar select').count(), 0, 'no Book exists, so there is no Book selector');
+  await createFirstBook(b, ui, page, 'Normal mode');
+  await settle(b);
+  const books = (await b.get('/api/books')).items;
+  c.eq(books.map((x) => x.name), ['Normal mode'], 'the first-Book form created "Normal mode", the only Book');
+  const book = { id: books[0].id, name: 'Normal mode', treasuryId: books[0].units.find((u) => u.kind === 'treasury').id };
+  c.near((await b.cash(book.id, book.treasuryId)).settled, 1_000_000, 'with 1,000,000.00 of starting capital in Treasury');
+  b.entered = book;
+
+  // An instrument with no data source: no price is invented anywhere it is shown.
+  const inst = await b.instrument({ productId: 'common_stock', name: 'Plain Works Inc.', symbol: 'PLN', marketView: 'US_CASH', venue: 'NYSE', venueType: 'exchange', venueCountry: 'US', tradingCcy: 'USD', terms: {} });
+  await show(b, '#/markets/US_CASH');
+  await page.getByPlaceholder(/Filter by symbol/).fill('PLN');
+  const row = page.locator('main table tbody tr').filter({ has: page.locator('.sym', { hasText: exactly('PLN') }) }).first();
+  await row.waitFor();
+  const rowText = flat(await row.innerText());
+  c.ok(!/\d+\.\d\d/.test(rowText.replace(/Plain Works Inc\./, '')), 'the Marketplace row of PLN shows no price', rowText);
+  c.match(flat(await page.locator('main').innerText()), /Awaiting Shaffer data connection/, 'the Marketplace says it is awaiting the Shaffer data connection');
+
+  // The Data connection page offers no demo control.
+  await show(b, '#/data');
+  const dataText = flat(await page.locator('main').innerText());
+  c.eq(await ui.section(page.locator('main'), 'Demo mode').count(), 0, 'the Data connection page has no Demo mode panel');
+  c.ok(!/Demo hedge fixture/.test(dataText), 'and no Demo hedge fixture section', dataText.slice(0, 200));
+  c.match(dataText, /start it with npm run demo\. Demo mode keeps its own database/, 'it says the demo is a separate server with its own database');
+  c.eq(await page.getByText('Answer complete hedge requests').count(), 0, 'there is no switch to answer hedge requests with a fixture');
+
+  // A price entered by hand is shown, labelled manual.
+  await show(b, '#/data/manual');
+  const px = ui.section(page.locator('main'), 'Instrument price');
+  await px.locator('input[type=search]').fill('PLN');
+  await px.locator('.picklist button.pick', { hasText: 'PLN' }).first().click();
+  await ui.input(px, 'Price').fill('12.5');
+  await ui.button(px, 'Save price').click();
+  await ui.toast(/Price saved/);
+  await show(b, '#/markets/US_CASH');
+  await page.getByPlaceholder(/Filter by symbol/).fill('PLN');
+  await row.waitFor();
+  await settle(b);
+  const priced = await row.evaluate((tr) => tr.innerHTML);
+  c.match(flat(await row.innerText()), /12\.50/, 'the Marketplace row now shows the 12.50 entered by hand');
+  c.match(priced, /manual/i, 'labelled as a manual input');
+  const q = await b.get('/api/quotes', { ids: inst.id });
+  c.eq(q.quotes[inst.id].observation?.status, 'manual', 'behind the screen the quote is the manual observation');
+
+  // Nothing in the interface reached for a demo control; the routes themselves refuse.
+  demoCalls.stop(); demoReads.stop();
+  c.eq([...demoCalls.seen, ...demoReads.seen], [], 'the page sent no request to a demo route');
+  const fp = b.fingerprint();
+  c.refused(await b.req('POST', '/api/demo/advance', { ms: 86_400_000 }), { status: 403 }, 'moving the clock (behind the screen)');
+  c.refused(await b.req('POST', `/api/demo/fixtures/quote`, { instrumentId: inst.id, bid: 1, ask: 2, last: 1.5 }), { status: 403 }, 'a quote fixture (behind the screen)');
+  b.sameStored(c, fp, b.fingerprint(), 'the refused demo controls stored nothing');
+  await ui.reloadAt('#/accounting');
+  await settle(b);
+  top = await topBar(page);
+  c.ok(isRealTime(top.clock) && !top.demoBand, 'after all of it the clock is still the real time and there is still no demo band', top.clock);
+  await b.clean(c, book.id);
+}
+
+/** SB:isolation:demo-normal-databases. The world is a Terminal in normal mode with the database chosen by mode. */
+export async function demoNormalScreens(b, c) {
+  const { page: pageN, ui: uiN } = b;
+  const { createUi } = await import('../../matrix/drivers/browser.mjs');
+  const d = await b.open({ demo: true, dbByMode: true, sandbox: b.sandbox, tag: 'demo-side' });
+  const fileN = b.t.server.database, fileD = d.t.server.database;
+  c.match(fileN, /[\\/]terminal\.db$/, 'the normal server reports terminal.db');
+  c.match(fileD, /[\\/]demo\.db$/, 'the demo server reports demo.db, in the same data directory');
+  const pageD = await b.context.newPage();
+  pageD.setDefaultTimeout(15_000);
+  pageD.on('pageerror', (e) => b.pageErrors.push(String(e.message || e)));
+  const uiD = createUi(pageD, d.t.url);
+  const dw = { page: pageD, ui: uiD, get: d.get };
+
+  // Two tabs, one per Terminal.
+  await uiN.goto('#/accounting');
+  await settle(b);
+  await uiD.goto('#/accounting');
+  await settle(dw);
+  const topN = await topBar(pageN), topD = await topBar(pageD);
+  c.eq([topN.demoBand, topD.demoBand], [false, true], 'the normal tab has no demo band; the demo tab has one');
+  c.ok(isRealTime(topN.clock), 'the normal tab\'s clock is the real time', topN.clock);
+  c.eq(await pageN.getByText('Create your first Book').count(), 1, 'the normal Terminal starts with no Book: it asks for the first one');
+  c.eq(await optionLabels(pageD.locator('.topbar select').first()), ['Demo Book'], 'the demo tab\'s Book selector lists its seeded Demo Book only');
+
+  // A Book created in the normal tab is not in the demo, and the reverse.
+  await createFirstBook(b, uiN, pageN, 'Paper');
+  await settle(b);
+  await uiD.reloadAt('#/books');
+  await settle(dw);
+  c.ok(!(await pageD.locator('main table tbody tr').allInnerTexts()).some((r) => r.includes('Paper')), 'the demo tab\'s Books page does not list "Paper"');
+  const fpN = b.fingerprint();
+  // In the demo tab: a new Book from the Book selector, and the demo clock moved a week with its button.
+  await pageD.locator('.topbar select').first().selectOption({ value: '__new' });
+  const nb = uiD.dialog('New Book');
+  await uiD.input(nb, 'Book name').fill('Demo extra');
+  await uiD.button(nb, 'Create Book').click();
+  await pageD.locator('.toasts .toast', { hasText: 'Book "Demo extra" created' }).first().waitFor();
+  await settle(dw);
+  const clockD0 = flat(await pageD.locator('.topbar .clock').innerText());
+  await pageD.getByRole('button', { name: '+1 week' }).click();
+  await pageD.locator('.topbar .clock').filter({ hasNotText: clockD0 }).waitFor();
+  await settle(dw);
+  c.eq((await optionLabels(pageD.locator('.topbar select').first())).sort(), ['Demo Book', 'Demo extra'], 'the demo tab now lists Demo Book and Demo extra');
+  b.sameStored(c, fpN, b.fingerprint(), 'a Book created and a week of demo clock in the demo tab: every row of terminal.db is as before');
+  await uiN.reloadAt('#/books');
+  await settle(b);
+  const rowsN = (await pageN.locator('main table tbody tr').allInnerTexts()).map(flat);
+  c.eq(rowsN.length, 1, 'the normal tab\'s Books page lists one Book');
+  c.match(rowsN[0], /^Paper/, 'and it is Paper');
+  c.ok(isRealTime((await topBar(pageN)).clock), 'the normal tab\'s clock is still the real time', (await topBar(pageN)).clock);
+
+  // Activity in the normal tab leaves demo.db as it was.
+  const fpD = d.fingerprint();
+  const dep = await openCapital(b, { type: 'deposit', amount: 5_000 });
+  await uiN.button(dep, 'Record deposit').click();
+  await dep.waitFor({ state: 'hidden' });
+  await uiN.toast(/Deposit recorded/);
+  d.sameStored(c, fpD, d.fingerprint(), 'a deposit recorded in the normal tab: every row of demo.db is as before');
+
+  // Both stopped and started again: each tab, reloaded, shows its own Books.
+  await b.restart(); await d.restart();
+  await uiN.reloadAt('#/books');
+  await settle(b);
+  await uiD.reloadAt('#/books');
+  await settle(dw);
+  c.eq((await pageN.locator('main table tbody tr').allInnerTexts()).map((r) => flat(r).split(' ')[0]), ['Paper'], 'after a restart the normal tab lists Paper only');
+  c.eq((await optionLabels(pageD.locator('.topbar select').first())).sort(), ['Demo Book', 'Demo extra'], 'and the demo tab Demo Book and Demo extra');
+  c.eq([b.t.server.database, d.t.server.database], [fileN, fileD], 'each server reopened its own file');
+  await pageD.close();
+  await b.clean(c, (await b.get('/api/books')).items[0].id);
+}

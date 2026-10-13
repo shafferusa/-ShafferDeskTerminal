@@ -63,7 +63,7 @@ export function legFigures(r) {
     quote: obs ? { status: obs.status || null, freshness: obs.freshness || null, asOf: obs.asOf || null, source: obs.source || null } : null,
     cash: n0(r.cash), otherCash: (r.otherCash || []).map((o) => ({ ccy: o.ccy, amount: o.amount })),
     fees: r.kind === 'trade' ? n0(r.feeTotal) : null, accrued: n0(r.accrued),
-    notional: n0(r.notional), exposure: n0(r.exposure),
+    notional: n0(r.notional), notionalCcy: r.notionalCcy || null, exposure: n0(r.exposure),
     margin: n0(r.initialMargin) || null,
     collateral: r.shortCollateral ? { topUp: n0(r.shortCollateral.topUp), marginHold: n0(r.shortCollateral.marginHold) } : null,
     // OTC collateral terms that apply to the leg (core/agreements.js): the basis, and the independent amount this trade calls for.
@@ -93,7 +93,7 @@ export function snapshotOf(pv, book) {
   for (const l of legs) {
     if (l.cash !== null && l.ccy) at(l.ccy).grossCash += Math.abs(l.cash);
     for (const o of l.otherCash) at(o.ccy).grossCash += Math.abs(o.amount || 0);
-    if (l.notional !== null && l.ccy) at(l.ccy).grossNotional += Math.abs(l.notional);
+    if (l.notional !== null && (l.notionalCcy || l.ccy)) at(l.notionalCcy || l.ccy).grossNotional += Math.abs(l.notional);
   }
   for (const row of Object.values(totals)) { row.grossCash = money(row.grossCash, row.ccy); row.grossNotional = money(row.grossNotional, row.ccy); }
   return { version: 1, token: pv.token, snapshotAt: pv.generatedAt, tolerances: tolerancesOf(book), legs, totals, blocking: pv.blocking || 0 };

@@ -239,7 +239,7 @@ function ManualPrice({ inst, onSaved }) {
     setBusy(false);
   };
   return html`<div class="grid-form">
-    <${Field} label=${`Price (${inst.priceUnits})`}><${Num} value=${v.value} onInput=${(x) => setV({ ...v, value: x })} /><//>
+    <${Field} label=${`Price (${inst.priceUnits})`} span=${inst.family === 'swap' ? 'all' : undefined} hint=${inst.family === 'swap' ? 'A swap is marked at its net present value per 100 notional, negative when it is against you. Include the interest accrued since the last payment: nothing accrues in the ledger between payment dates. On a cross-currency swap, leave out the principal already exchanged: it is on the balance sheet as lent and owed, and would be counted twice.' : undefined}><${Num} value=${v.value} onInput=${(x) => setV({ ...v, value: x })} /><//>
     <${Field} label="Bid" hint="Optional"><${Num} value=${v.bid} onInput=${(x) => setV({ ...v, bid: x })} /><//>
     <${Field} label="Ask" hint="Optional"><${Num} value=${v.ask} onInput=${(x) => setV({ ...v, ask: x })} /><//>
     <${Field} label="Closing price or fixing for date" hint="Leave empty for a current price"><${Text} type="date" value=${v.forDate} onInput=${(x) => setV({ ...v, forDate: x })} /><//>

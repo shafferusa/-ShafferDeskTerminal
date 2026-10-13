@@ -12,6 +12,7 @@
 //   instrument_lifecycle (set_rate)               Set rate on the row of the open arrangement
 //   transfer                                      Fund from Treasury, Return to Treasury, Transfer to another Account (Account page)
 //   create_account, deposit                       New Account; Deposit or withdraw capital
+//   manual_rate                                   Data connection, Manual entries: a reference-rate fixing by hand (the swap driver's path)
 //
 // After every step `screens` reads the Treasury page (its own borrowings, the Account-originated borrowings it
 // oversees, the Book totals, the lending table), the borrowing Account's page and the Book balance sheet, and
@@ -24,6 +25,7 @@ import { learnContracts } from '../../lib/actions.mjs';
 import { numbersAgree } from '../../lib/compare.mjs';
 import { normalizeResult } from '../../lib/normalize.mjs';
 import { shown } from '../browser.mjs';
+import { actions as swapActions } from './swap.mjs';
 
 export const family = 'loan';
 
@@ -395,6 +397,9 @@ export const actions = {
     return {};
   },
 
+  /** A reference-rate fixing entered by hand: the same form the swap scenarios use. */
+  manual_rate: (ui, t, ctx, step, tools) => swapActions.manual_rate(ui, t, ctx, step, tools),
+
   async create_account(ui, t, ctx, step) {
     const { page } = ui;
     await ui.closeOverlays();
@@ -525,6 +530,10 @@ export async function screens(ui, ctx, t, { expected, state }) {
     if ((b.maturity || null) !== r.maturity) api(`${at}: maturity shows ${r.maturity || `"${r.term}"`}, the API has ${b.maturity || 'none'}`);
     if (!b.maturity && r.term !== b.term) api(`${at}: term shows "${r.term}", the API has "${b.term}"`);
     if ((b.schedule.next?.date || null) !== r.nextDate) api(`${at}: next payment shows ${r.nextDate || 'none'}, the API has ${b.schedule.next?.date || 'none'}`);
+    // A floating borrowing without a fixing is flagged on its row, with the first day it has none.
+    const arr = tre.arrangements.find((a) => a.positionId === b.id);
+    const noFix = (arr?.rawTerms?.rateType === 'floating' && arr?.data?.rateMissing) || null;
+    if ((r.noFixing || null) !== noFix) api(`${at}: ${r.noFixing ? `shows "no fixing since ${r.noFixing}"` : 'shows no missing-fixing flag'}; the API has ${noFix ? `no fixing since ${noFix}` : 'every fixing'}`);
     if (Boolean(b.schedule.next?.blocked) !== r.blocked) api(`${at}: the next payment is ${r.blocked ? '' : 'not '}shown as blocked; the API says ${b.schedule.next?.blocked ? 'blocked' : 'not blocked'}`);
     if (r.schedule !== b.schedule.interest) api(`${at}: payment schedule shows "${r.schedule}", the API has "${b.schedule.interest}"`);
     if (b.family === 'loan' && !/Set rate\s+Repay/.test(r.buttons)) api(`${at}: the row does not offer Set rate and Repay`);

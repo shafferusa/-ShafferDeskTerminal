@@ -330,7 +330,11 @@ export function createPackages(app) {
           // Notional of a swap, CDS or forward does not depend on a price, so it can still be shown.
           if (['swap', 'cds', 'forward'].includes(inst.family)) {
             const e0 = plugin.economics(app, { inst, action: l.action, qty: l.qty, price: 0, unit, strategyId: attach?.id || '', tradeDate, settleDate, book });
-            row.notional = inst.family === 'forward' && inst.terms.forwardType !== 'fra' ? l.qty : e0.notional;
+            // Before a forward rate is stated, an FX forward's notional is its base-currency amount, labelled in that currency
+            // (it is not a trading-currency figure); an asset forward's notional needs a forward price, so it stays missing.
+            if (inst.family === 'forward' && ['fx', 'ndf'].includes(inst.terms.forwardType)) { row.notional = l.qty; row.notionalCcy = inst.terms.base; row.notionalBasis = `${inst.terms.base} amount of the forward; its ${inst.trading_ccy} value needs a forward rate`; }
+            else if (inst.family === 'forward' && inst.terms.forwardType === 'asset') { row.notional = null; row.notionalBasis = 'Needs a forward price'; }
+            else row.notional = e0.notional;
             row.econNotes = e0.notes || [];
             // Collateral is a share of notional, so it is known without a price.
             if (e0.initialMargin > 0) { row.initialMargin = e0.initialMargin; bump(inst.trading_ccy, 'margin', e0.initialMargin); }

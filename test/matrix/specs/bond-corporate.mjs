@@ -706,4 +706,249 @@ const eurobond = {
   ],
 };
 
-export default [corporateBondIg, highYieldBond, eurobond];
+// ---------------------------------------------------------------------------------------------
+// foreign_market_bond
+// ---------------------------------------------------------------------------------------------
+// A Bulldog: a sterling bond of a FRENCH issuer, listed on the London Stock Exchange and following the UK
+// market's conventions: 5.25% paid semi-annually on 1 March and 1 September, ACT/ACT, T+1 on the London
+// calendar, pieces of 1,000. In a Book that reports in US dollars. The issuer's home country plays no part:
+// the listing, the currency, the calendar and the conventions are the UK market's.
+//   - Bought on Wednesday 25 August 2027; 600,000 more on Friday 27 August settles on Tuesday 31 August, over
+//     the Summer bank holiday (Monday 30 August): London is closed, New York is open, so the Terminal's end
+//     of day runs on the 30th while the sterling market is shut.
+//   - The 1 September coupon is paid on the 2,100,000 settled before it.
+//   - The rest is sold on Friday 3 September for settlement on Monday 6 September, which is Labor Day in New
+//     York and a business day in London: the sterling settlement is not moved by the US holiday.
+// Not modelled: an ex-dividend period. Older Bulldogs, like gilts, go ex-dividend seven business days before a
+// coupon; the Terminal has no ex-dividend period for debt securities (a coupon belongs to the face settled
+// before the coupon date), so this bond is registered as one without it (record date the day before).
+//
+// Coupon periods (ACT/ACT): 1 Mar to 1 Sep 2027 is 184 days, 1 Sep 2027 to 1 Mar 2028 is 182. A coupon is
+// 2.625 per 100. Days from 1 Mar: to 26 Aug 178, to 30 Aug 182, to 31 Aug 183. From 1 Sep: to 2 Sep 1, to
+// 3 Sep 2, to 6 Sep 5. Reporting currency as in eurobond: GBP/USD 1.27, then 1.25. Commission 0.8 bp.
+const foreignMarketBond = {
+  productId: 'foreign_market_bond',
+  title: 'Compagnie Valmont 5.25% sterling bonds due 2035 (Bulldog: French issuer, London listing, UK conventions): ACT/ACT, T+1 over a UK bank holiday and Labor Day, reported in US dollars',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount (a multiple of 1,000)'],
+    manualInputs: ['none: the UK market conventions follow from the London listing (venue country GB) and the registered terms'],
+    settlement: 'T+1 on the London calendar (venue country GB); the Summer bank holiday is skipped; Labor Day in New York does not move a sterling settlement; no ex-dividend period (not modelled by the Terminal)',
+    lifecycle: 'Daily accrual on ACT/ACT, on a London holiday too; semi-annual coupon to the face settled before the coupon date',
+    accounting: 'Sterling position, cash, accrued interest and settlement; US dollar figures at the current rate for balances and unrealized P&L, at the booking rate for income, commission and realized P&L; FX effects reported separately',
+    collateral: 'None for a long position',
+  },
+  start: EDT('2027-08-25'), // Wednesday
+  settlementCheck: { lag: 1, holidays: ['2027-08-30'] }, // Summer bank holiday in England
+  book: {
+    name: 'Matrix Bulldog bond', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 1_000_000 }, { ccy: 'GBP', amount: 3_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'GBP', amount: 2_500_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.8 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  fx: { 'GBP/USD': 1.27 },
+  instruments: {
+    main: { productId: 'foreign_market_bond', name: 'Compagnie Valmont SA 5.25% Sterling Bonds 1-Sep-2035', symbol: 'VALMONT-5.25-35', marketView: 'FOREIGN_CASH', venueType: 'exchange', venue: 'London Stock Exchange', venueCountry: 'GB', issuer: 'Compagnie Valmont SA', domicile: 'FR', underlyingGeo: 'FR', tradingCcy: 'GBP', multiplier: 0.01,
+      terms: { couponType: 'fixed', couponRate: 0.0525, frequency: 2, maturity: '2035-09-01', issueDate: '2015-09-01', dayCount: 'ACT/ACT', redemption: 100, minDenomination: 1_000, seniority: 'Senior unsecured' } },
+  },
+  quotes: { main: { bid: 97.6, ask: 97.75, last: 97.675, bidSize: 10_000_000, askSize: 10_000_000 } },
+  expectAtStart: {
+    ...startState(3_175_000, 1_635_000), // 2,500,000 GBP x 1.27; 1,000,000 USD + 500,000 GBP x 1.27
+    cash: { account: { GBP: idle(2_500_000) }, treasury: { USD: idle(1_000_000), GBP: idle(500_000) } },
+  },
+  steps: [
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 1_500_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 1_500_000, estimate: 97.75, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2027-08-26', calendar: 'UK',
+            gross: 1_466_250, // 1,500,000 x 97.75 / 100
+            accrued: 38_091.03, // settles 26 Aug, 178 of 184 days: 39,375 x 178/184 = 38,091.033
+            cash: -1_504_341.03, fees: 117.3 }], // 0.8 bp of 1,466,250
+          cash: { GBP: { purchases: 1_504_341.03, fees: 117.3, required: 1_504_458.33, available: 2_500_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 1_500_000, avgPrice: 97.75, fills: [{ qty: 1_500_000, price: 97.75, model: 'quoted-bid-ask', settleDate: '2027-08-26', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1,500,000 VALMONT-5.25-35 @ 97.75 GBP', owner: 'account', date: '2027-08-25' }],
+        cash: { account: { GBP: { settled: 2_500_000, unsettled: -1_504_458.33, availableToTrade: 995_541.67 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 1_500_000, avgCost: 97.75, cost: 1_466_250, price: 97.675,
+          value: 1_465_125, unrealized: -1_125, accrued: 38_091.03, priceSource: 'Test fixture' }], // sterling
+        holdings: { main: { long: 1_500_000, short: 0, net: 1_500_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2027-08-26', amount: -1_504_458.33, ccy: 'GBP', into: 'cash' }],
+        // 1 Sep 2027 is a Wednesday. 1 Sep 2035 is a Saturday: redemption on Monday 3 September 2035.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-09-01', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2035-09-03', status: 'pending' }],
+        // In dollars at 1.27: commission 117.30 x 1.27 = 148.97; unrealized -1,125 x 1.27 = -1,428.75.
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -148.97, fees: 0, borrowFunding: 0, unrealized: -1_428.75, fx: 0, total: -1_577.72 } },
+        nav: { account: 3_173_422.28, book: 4_808_422.28 }, // (2,500,000 - 1,504,458.33 + 1,465,125 + 38,091.03) x 1.27 = 2,498,757.70 x 1.27
+        balance: { account: { cash: 3_175_000, accruedIncome: 48_375.61, positions: 1_860_708.75, payable: 1_910_662.08, assets: 5_084_084.36, liabilities: 1_910_662.08, netAssets: 3_173_422.28, // 38,091.03 x 1.27; 1,465,125 x 1.27; 1,504,458.33 x 1.27 = 1,910,662.079
+          local: { GBP: { cash: 2_500_000, accruedIncome: 38_091.03, positions: 1_465_125, payable: 1_504_458.33 } } } },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EDT('2027-08-26'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 1,504,458.33 GBP from settled cash', cash: { GBP: -1_504_458.33 }, date: '2027-08-26' }],
+        cash: { account: { GBP: { settled: 995_541.67, unsettled: 0, availableToTrade: 995_541.67 } } },
+        pending: [],
+        balance: { account: { cash: 1_264_337.92, payable: null, assets: 3_173_422.28, liabilities: 0, local: { GBP: { cash: 995_541.67, payable: null } } } }, // 995,541.67 x 1.27 = 1,264,337.921
+      },
+    },
+    // End of day 26 Aug: 1,500,000 settled, 178 days, 38,091.03: on the books already.
+    { id: 'friday', action: 'clock', to: EDT('2027-08-27'), expect: { events: [] } },
+    {
+      // Friday 27 Aug: T+1 would be Monday 30 Aug, the Summer bank holiday: the purchase settles Tuesday 31 Aug.
+      id: 'increase', covers: ['increase', 'market holiday'], action: 'resize', lot: 'lot', factor: 1.4, // 1,500,000 -> 2,100,000
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', qty: 600_000, estimate: 97.75, settleDate: '2027-08-31', calendar: 'UK',
+          gross: 586_500, // 600,000 x 97.75 / 100
+          accrued: 15_664.40, // settles 31 Aug, 183 of 184 days: 15,750 x 183/184 = 15,664.402
+          cash: -602_164.40, fees: 46.92 }], // 0.8 bp of 586,500
+          cash: { GBP: { purchases: 602_164.40, fees: 46.92, required: 602_211.32, available: 995_541.67, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 600_000, avgPrice: 97.75, fills: [{ qty: 600_000, price: 97.75, settleDate: '2027-08-31' }] }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Bought 600,000 VALMONT-5.25-35 @ 97.75 GBP' }],
+        cash: { account: { GBP: { settled: 995_541.67, unsettled: -602_211.32, availableToTrade: 393_330.35 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_100_000, cost: 2_052_750, avgCost: 97.75, price: 97.675, value: 2_051_175, unrealized: -1_575, accrued: 53_755.43 }], // 38,091.03 + 15,664.40
+        holdings: { main: { long: 2_100_000, short: 0, net: 2_100_000 } },
+        pending: [{ instrument: 'main', dueDate: '2027-08-31', amount: -602_211.32, ccy: 'GBP', into: 'cash' }],
+        pnl: { account: { commissions: -208.56, unrealized: -2_000.25, total: -2_208.81 } }, // 148.97 + 46.92 x 1.27 (59.59); -1,575 x 1.27
+        nav: { account: 3_172_791.19, book: 4_807_791.19 },
+        balance: { account: { cash: 1_264_337.92, accruedIncome: 68_269.40, positions: 2_604_992.25, payable: 764_808.38, assets: 3_937_599.57, liabilities: 764_808.38, netAssets: 3_172_791.19,
+          local: { GBP: { accruedIncome: 53_755.43, positions: 2_051_175, payable: 602_211.32 } } } },
+      },
+    },
+    {
+      // Tuesday 31 Aug. The end of day of Monday 30 Aug runs (New York was open): 1,500,000 settled, to 30 Aug, 182 days,
+      // 38,947.0109; 600,000 unsettled, to 31 Aug, 15,664.4022; together 54,611.41. On the books 53,755.43: income 855.98 sterling,
+      // 1,087.09 dollars. Then the purchase settles.
+      id: 'uk-holiday', covers: ['market holiday', 'accrual', 'settlement'], action: 'clock', to: EDT('2027-08-31'),
+      expect: {
+        events: [
+          { type: 'settlement.pay', summary: 'paid 602,211.32 GBP from settled cash', cash: { GBP: -602_211.32 } },
+          { type: 'accrual.coupon', summary: 'Interest accrued on VALMONT-5.25-35: 855.98 GBP' },
+        ],
+        cash: { account: { GBP: { settled: 393_330.35, unsettled: 0, availableToTrade: 393_330.35 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_100_000, accrued: 54_611.41 }],
+        pending: [],
+        // FX effects 0.01: the posting-by-posting translation of cash (1,264,337.92 - 764,808.38 = 499,529.54 booked) against
+        // 393,330.35 x 1.27 = 499,529.5445.
+        pnl: { account: { couponInterest: 1_087.09, fx: 0.01, total: -1_121.71 } },
+        nav: { account: 3_173_878.29, book: 4_808_878.29 },
+        balance: { account: { cash: 499_529.54, payable: null, accruedIncome: 69_356.49, assets: 3_173_878.29, liabilities: 0, netAssets: 3_173_878.29, local: { GBP: { cash: 393_330.35, payable: null, accruedIncome: 54_611.41 } } } },
+      },
+    },
+    {
+      // Wednesday 1 Sep: the coupon on 2,100,000: 2,100,000 x 2.625% = 55,125.00. On the books 54,611.41: 513.59 more income
+      // (two days on 1,500,000, 427.99, and one on 600,000, 85.60), 652.26 dollars.
+      id: 'coupon', covers: 'coupon', action: 'clock', to: EDT('2027-09-01'),
+      expect: {
+        events: [
+          { type: 'bond.coupon', summary: 'Coupon received on 2,100,000 VALMONT-5.25-35: 55,125.00 GBP', cash: { GBP: 55_125 }, owner: 'account', date: '2027-09-01' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on VALMONT-5.25-35: 513.59 GBP' },
+        ],
+        cash: { account: { GBP: { settled: 448_455.35, availableToTrade: 448_455.35 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_100_000, accrued: 0 }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2028-03-01', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2035-09-03', status: 'pending' }],
+        pnl: { account: { couponInterest: 1_739.35, fx: 0, total: -469.46 } },
+        nav: { account: 3_174_530.54, book: 4_809_530.54 }, // (448,455.35 + 2,051,175) x 1.27
+        balance: { account: { cash: 569_538.29, accruedIncome: null, assets: 3_174_530.54, netAssets: 3_174_530.54, local: { GBP: { cash: 448_455.35, accruedIncome: null } } } },
+      },
+    },
+    {
+      id: 'sterling-weakens', covers: 'fx', action: 'fx_rate', pair: 'GBP/USD', rate: 1.25,
+      expect: {
+        // FX effects: cash 569,538.29 and the position at cost 2,606,992.50 as booked; at 1.25: 560,569.1875 + 2,565,937.50:
+        // -50,024.10. Treasury's 500,000 sterling: 625,000 - 635,000 = -10,000.
+        pnl: { account: { unrealized: -1_968.75, fx: -50_024.10, total: -50_462.06 }, book: { fx: -60_024.10 } },
+        nav: { account: 3_124_537.94, treasury: 1_625_000, book: 4_749_537.94 }, // 2,499,630.35 x 1.25
+        balance: { account: { cash: 560_569.19, positions: 2_563_968.75, assets: 3_124_537.94, netAssets: 3_124_537.94 } },
+      },
+    },
+    // End of day 1 Sep: interest to 1 Sep is zero days of the new period (the balance stands at the coupon date): nothing is booked.
+    { id: 'accrue', covers: 'accrual', action: 'clock', to: EDT('2027-09-02'), expect: { events: [] } },
+    {
+      id: 'quote-up', action: 'quote', instrument: 'main', quote: { bid: 98.1, ask: 98.25, last: 98.175, bidSize: 10_000_000, askSize: 10_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_100_000, price: 98.175, value: 2_061_675, unrealized: 8_925 }], // 2,100,000 x 98.175% - 2,052,750
+        pnl: { account: { unrealized: 11_156.25, total: -37_337.06 } },
+        nav: { account: 3_137_662.94, book: 4_762_662.94 },
+        balance: { account: { positions: 2_577_093.75, assets: 3_137_662.94, netAssets: 3_137_662.94, local: { GBP: { positions: 2_061_675 } } } },
+      },
+    },
+    {
+      id: 'reduce', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 700_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 700_000, estimate: 98.1, settleDate: '2027-09-03', calendar: 'UK',
+          gross: 686_700, // 700,000 x 98.10 / 100
+          accrued: 201.92, // settles 3 Sep, 2 of 182 days: 18,375 x 2/182 = 201.923
+          cash: 686_901.92, fees: 54.94 }] }, // 0.8 bp of 686,700 = 54.936
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 700_000, avgPrice: 98.1 }] },
+        // Realized 686,700 - 700,000 x 97.75% = 2,450 sterling, 3,062.50 dollars.
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 700,000 VALMONT-5.25-35 @ 98.10 GBP (realized 2,450.00 GBP)' }],
+        cash: { account: { GBP: { settled: 448_455.35, unsettled: 686_846.98, availableToTrade: 1_135_302.33 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_400_000, cost: 1_368_500, avgCost: 97.75, price: 98.175, value: 1_374_450, unrealized: 5_950, accrued: -201.92 }], // the interest sold, booked ahead of the two days it covers
+        holdings: { main: { long: 1_400_000, short: 0, net: 1_400_000 } },
+        pending: [{ instrument: 'main', dueDate: '2027-09-03', amount: 686_846.98, ccy: 'GBP', into: 'cash' }],
+        // Posting by posting: commission 54.94 x 1.25 = 68.68; FX effects -50,024.11 (each balance's translation rounded once at the end).
+        pnl: { account: { realized: 3_062.50, commissions: -277.24, unrealized: 7_437.50, fx: -50_024.11, total: -38_062 }, book: { fx: -60_024.11 } },
+        nav: { account: 3_136_938.01, book: 4_761_938.01 }, // (448,455.35 + 686,846.98 + 1,374,450 - 201.92) x 1.25 = 2,509,550.41 x 1.25
+        balance: { account: { cash: 560_569.19, receivable: 858_558.73, accruedIncome: -252.40, positions: 1_718_062.50, assets: 3_136_938.01, liabilities: 0, netAssets: 3_136_938.01,
+          local: { GBP: { cash: 448_455.35, receivable: 686_846.98, accruedIncome: -201.92, positions: 1_374_450 } } } },
+      },
+    },
+    {
+      // End of day 2 Sep: 2,100,000 settled, 1 day: 302.8846; less 201.9231 sold: 100.96. On the books -201.92: income 302.88 (378.60 dollars).
+      id: 'settle-reduce', covers: ['settlement', 'accrual'], action: 'clock', to: EDT('2027-09-03'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 686,846.98 GBP into settled cash', cash: { GBP: 686_846.98 } },
+          { type: 'accrual.coupon', summary: 'Interest accrued on VALMONT-5.25-35: 302.88 GBP' },
+        ],
+        cash: { account: { GBP: { settled: 1_135_302.33, unsettled: 0, availableToTrade: 1_135_302.33 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_400_000, accrued: 100.96 }],
+        pending: [],
+        pnl: { account: { couponInterest: 2_117.95, total: -37_683.40 } },
+        nav: { account: 3_137_316.61, book: 4_762_316.61 }, // (1,135,302.33 + 1,374,450 + 100.96) x 1.25
+        balance: { account: { cash: 1_419_127.91, receivable: null, accruedIncome: 126.20, assets: 3_137_316.61, netAssets: 3_137_316.61, local: { GBP: { cash: 1_135_302.33, receivable: null, accruedIncome: 100.96 } } } },
+      },
+    },
+    {
+      // Friday 3 Sep: T+1 is Monday 6 Sep, Labor Day in New York and a business day in London.
+      id: 'close', covers: 'close', action: 'close', lot: 'lot', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 1_400_000, estimate: 98.1, settleDate: '2027-09-06', calendar: 'UK',
+          gross: 1_373_400, // 1,400,000 x 98.10 / 100
+          accrued: 1_009.62, // settles 6 Sep, 5 of 182 days: 36,750 x 5/182 = 1,009.615
+          cash: 1_374_409.62, fees: 109.87 }] }, // 0.8 bp of 1,373,400 = 109.872
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 1_400_000, avgPrice: 98.1 }] },
+        // Realized 1,373,400 - 1,368,500 = 4,900 sterling, 6,125 dollars. Interest: 1,009.62 sold against 100.96 on the books: 908.66 more
+        // (four days from 2 to 6 Sep on 1,400,000, 807.69, and the day to 3 Sep on the 700,000 sold, 100.96). 1,135.83 dollars.
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 1,400,000 VALMONT-5.25-35 @ 98.10 GBP (realized 4,900.00 GBP)' },
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of VALMONT-5.25-35: 908.66 GBP' },
+        ],
+        cash: { account: { GBP: { settled: 1_135_302.33, unsettled: 1_374_299.75, availableToTrade: 2_509_602.08 } } }, // 1,374,409.62 - 109.87
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', dueDate: '2027-09-06', amount: 1_374_299.75, ccy: 'GBP', into: 'cash' }],
+        lifecycle: [],
+        pnl: { account: { realized: 9_187.50, couponInterest: 3_253.78, commissions: -414.58, unrealized: 0, fx: -50_024.11, total: -37_997.41 } }, // sterling interest in all 55,125 + 201.92 + 1,009.62 - 38,091.03 - 15,664.40 = 2,581.11
+        nav: { account: 3_137_002.60, book: 4_762_002.60 }, // 2,509,602.08 x 1.25
+        balance: { account: { cash: 1_419_127.91, receivable: 1_717_874.69, positions: null, accruedIncome: null, assets: 3_137_002.60, liabilities: 0, netAssets: 3_137_002.60,
+          local: { GBP: { cash: 1_135_302.33, receivable: 1_374_299.75, positions: null, accruedIncome: null } } } },
+      },
+    },
+    {
+      // Tuesday 7 Sep (New York closed on Monday): the sale settled on the London date, Monday 6 Sep, and is booked now.
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: EDT('2027-09-07'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 1,374,299.75 GBP into settled cash', cash: { GBP: 1_374_299.75 } }],
+        cash: { account: { GBP: { settled: 2_509_602.08, unsettled: 0, availableToTrade: 2_509_602.08 } }, treasury: { USD: { settled: 1_000_000 }, GBP: { settled: 500_000 } } },
+        pending: [],
+        balance: { account: { cash: 3_137_002.60, receivable: null, assets: 3_137_002.60, liabilities: 0, netAssets: 3_137_002.60, local: { GBP: { cash: 2_509_602.08, receivable: null } } } },
+      },
+    },
+  ],
+};
+
+export default [corporateBondIg, highYieldBond, eurobond, foreignMarketBond];

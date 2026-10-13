@@ -195,6 +195,9 @@ function RefreshTab({ d, reload }) {
 const STATUS = { 'real-time': 'Real-time', delayed: 'Delayed', indicative: 'Indicative', 'end-of-day': 'End-of-day', 'model-derived': 'Model-derived', reconstructed: 'Reconstructed', simulated: 'Simulated (demo feed)' };
 
 // ---- manual entries ---------------------------------------------------------------------------------------------------
+// What a swap's mark must contain (server/products/swap.js): the ledger accrues nothing between payment dates, and principal
+// exchanged on a cross-currency swap is already on the balance sheet. Shown on every form where a swap's mark is entered.
+export const SWAP_MARK_HINT = 'A swap is marked at its net present value per 100 notional, negative when it is against you. Include the interest accrued since the last payment: nothing accrues in the ledger between payment dates. On a cross-currency swap, leave out the principal already exchanged: it is on the balance sheet as lent and owed, and would be counted twice.';
 const CCY = /^[A-Z]{3}$/;
 function ManualForms({ rateCodes, onSaved }) {
   const [fx, setFx] = useState({ base: '', quote: '', rate: null, note: '' });
@@ -242,7 +245,7 @@ function ManualForms({ rateCodes, onSaved }) {
       <div class="stack"><${ErrorNote} error=${error.px} />
         <div class="grid-form" style=${two}>
           <${Field} label="Instrument" span="all"><${InstrumentPicker} key=${round} value=${px.inst?.id || ''} onChange=${(id, i) => setPx({ ...px, inst: i })} /><//>
-          <${Field} label=${px.inst ? `Price (${px.inst.priceUnits}, ${px.inst.tradingCcy})` : 'Price'} span="all"><${Num} value=${px.value} onInput=${(x) => setPx({ ...px, value: x })} /><//>
+          <${Field} label=${px.inst ? `Price (${px.inst.priceUnits}, ${px.inst.tradingCcy})` : 'Price'} span="all" hint=${px.inst?.family === 'swap' ? SWAP_MARK_HINT : undefined}><${Num} value=${px.value} onInput=${(x) => setPx({ ...px, value: x })} /><//>
           <${Field} label="Bid" hint="Optional"><${Num} value=${px.bid} onInput=${(x) => setPx({ ...px, bid: x })} /><//>
           <${Field} label="Ask" hint="Optional"><${Num} value=${px.ask} onInput=${(x) => setPx({ ...px, ask: x })} /><//>
           <${Field} label="Close or fixing for date" span="all" hint="Leave empty for a current price"><${Text} type="date" value=${px.forDate} onInput=${(x) => setPx({ ...px, forDate: x })} /><//>
