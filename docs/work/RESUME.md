@@ -32,6 +32,21 @@ Stop all background work when the owner's weekly **Fable** usage reaches 98%.
 Last known figures: 5:30 PM ET on 2026-10-06, Fable 14% against 10% for all models (r = 1.4), before this pass
 started. The all-models figure was reported as 35% at about 9:57 PM ET.
 
+## Light confirmation run on 2026-10-13 (owner: "do not use a lot of usage, just confirm everything works")
+
+Run by the coordinator alone on commit `2ab1aad`, on throwaway databases, no workers:
+- `npm test`: 350 of 350 pass.
+- `npm run test:api`: 57 product scenarios, no failures. System suite at API level: 47 cases, no failures.
+- `npm run test:browser`: 57 product scenarios, no failures (981 steps passed, 49 refusals asserted, 9 unsupported
+  asserted, at each of the three levels). `docs/TEST-MATRIX.md` regenerated from these results.
+- System suite at browser level: 24 cases pass; 8 have no browser driver written yet and stop with "is not a
+  function" (hedge reconnection, history edits, Book isolation x2, normal-mode refusals, demo/normal databases,
+  catch-up, service stops answering). They pass at engine and API level. Not Terminal faults.
+- Screen sweep (every route, tab and dialog): demo light, demo dark, normal mode: 0 console errors, 0 server errors.
+
+The owner will recheck once the Shaffer data services are connected. The fuller pass below stays paused where it
+was; nothing in it was restarted.
+
 ## PAUSED at 2026-10-07 12:15 UTC (08:15 AM ET) on the owner's instruction: weekly Fable usage at 99%
 
 Nothing is running and nothing is scheduled. Do nothing until the owner says "resume" (the owner reported the
