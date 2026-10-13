@@ -267,7 +267,7 @@ async function previewFor(t, ctx, step) {
     const s = await t.strategy(lot.strategyId);
     // s3: an index CDS position rolls into a new series (`into`), like a futures position into a contract month.
     const rollable = s.positions.filter((p) => ['option', 'future'].includes(p.family) || (p.family === 'cds' && p.product === 'cds_index') || (p.family === 'cds' && p.instrument?.productId === 'cds_index'));
-    const kind = rollable.some((p) => p.family === 'option') ? 'option' : 'future';
+    const kind = rollable.some((p) => p.family === 'option') ? 'option' : rollable.some((p) => p.family === 'future') ? 'future' : 'cds';
     const want = step.positions ? step.positions.map((k) => ctx.inst(k).id) : null;
     const picked = rollable.filter((p) => (want ? want.includes(p.instrument.id) : p.family === kind));
     if (!picked.length) throw new Error(`"${step.lot}" holds no option or futures position to roll.`);

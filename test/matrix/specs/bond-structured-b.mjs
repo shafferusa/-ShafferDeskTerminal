@@ -1200,4 +1200,253 @@ const cloSpec = {
   ],
 };
 
-export default [specifiedPool, absSpec, cmoSpec, cloSpec];
+// ---------------------------------------------------------------------------------------------
+// cdo
+// ---------------------------------------------------------------------------------------------
+// A structured-finance CDO senior mezzanine class held by Treasury: Pemberton Structured Credit CDO 2024-1 Class B Floating
+// Rate Notes, 3-month term SOFR (TSOFR3M) + 2.10%, quarterly on 20 February, May, August and November, ACT/360 on current face,
+// T+2, factor 0.6425 (the class has amortised). Class B is not deferrable. The coupon of the period running at registration is
+// entered on the form (6.15%: the February fixing 4.05% + 2.10%).
+//   - Treasury buys 8,000,000 original face on Tuesday 1 May 2029 (settling Thursday 3 May).
+//   - 20 May is a Sunday: on Monday 21 May the coupon is paid on current face; the May fixing does not come: an alert, no
+//     accrual, a sale refused. The quarterly paydown is recorded by hand (0.6425 to 0.6012 from 20 May, paid at once). Paying
+//     in kind is refused: Class B is not deferrable.
+//   - Memorial Day, Juneteenth and Independence Day pass with nothing accruing. On Monday 20 August the coupon is blocked,
+//     visibly, waiting for the May fixing. The August fixing comes from the fixture (4.00%), then the May fixing (4.20%) is
+//     entered by hand: the coupon is paid at 6.30%, and the next period runs at 6.10%.
+//   - A realized loss is allocated by hand (0.6012 to 0.58 from 20 August); the price falls; 3,000,000 sold, then the rest.
+// Commission: 0.5 basis point of clean principal. Days (ACT/360): 20 Feb to 3 May 72, to 20 May 89; 20 May to 20 Aug 92;
+// from 20 Aug: to 22 Aug 2, 23 Aug 3, 27 Aug 7. Current face: 8,000,000 x 0.6425 = 5,140,000; x 0.6012 = 4,809,600; x 0.58 =
+// 4,640,000; 3,000,000 x 0.58 = 1,740,000; 5,000,000 x 0.58 = 2,900,000.
+const cdoSpec = {
+  productId: 'cdo',
+  title: 'Pemberton Structured Credit CDO 2024-1 Class B (3M term SOFR + 2.10%) held by Treasury: coupon on current face, missing fixing stops accrual and refuses a sale, paydown by hand, PIK refused (not deferrable), coupon blocked until the fixing is entered by hand, realized loss allocated, partial sale, close',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account (Treasury)', 'Action', 'Face amount (original face)'],
+    automaticInputs: [...BOND_TICKET.automaticInputs, 'TSOFR3M fixing of each coupon period (rate fixture standing in for Shaffer MarketData)'],
+    manualInputs: ['Registration: Coupon Floating, Reference rate TSOFR3M, Spread, Current coupon, Pool factor', 'Quarterly paydown recorded by hand (New pool factor, Factor effective from)', 'The missing May fixing entered by hand (Data connection, Manual entries)', 'Realized loss allocated by hand'],
+    settlement: 'T+2 on the US bond calendar; a trade is refused while the period has no fixing',
+    lifecycle: 'Automatic: daily accrual on current face at the period rate, quarterly coupon on current face, reset after each coupon; a missing fixing raises an alert, stops accrual and blocks the coupon until supplied or entered. Manual: paydown, loss allocation, the fixing entered by hand. Refused: a coupon paid in kind (not deferrable)',
+    accounting: 'Treasury\'s position: cost per 100 of current face; paydown at par against a discount cost is a realized gain; loss realized; coupon and interest income (the blocked coupon is income when paid); commission expensed',
+    collateral: 'None for a long position',
+  },
+  start: EDT('2029-05-01'), // Tuesday
+  settlementCheck: { lag: 2, holidays: ['2029-05-28', '2029-06-19', '2029-07-04'] },
+  book: {
+    name: 'Matrix CDO', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 7_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 1_000_000 }] }, // the Account stays idle: Treasury trades
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.5 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'cdo', name: 'Pemberton Structured Credit CDO 2024-1 Class B Floating Rate Notes due 2034', symbol: 'PEMB-24-1-B', marketView: 'US_CASH', venueType: 'otc', issuer: 'Pemberton Structured Credit CDO 2024-1 Ltd', domicile: 'KY', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { settleLag: 2 },
+      terms: { couponType: 'float', referenceRate: 'TSOFR3M', spread: 0.021, currentCoupon: 0.0615, frequency: 4, maturity: '2034-05-20', issueDate: '2024-05-20', dayCount: 'ACT/360', redemption: 100, factor: 0.6425, seniority: 'Class B (senior mezzanine, not deferrable)' } },
+  },
+  quotes: { main: { bid: 95.5, ask: 96, last: 95.75, bidSize: 20_000_000, askSize: 20_000_000 } },
+  expectAtStart: { ...startState(1_000_000, 6_000_000), cash: { account: usdCash(1_000_000), treasury: usdCash(6_000_000) }, alerts: [] },
+  steps: [
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 8_000_000, as: 'lot', owner: 'treasury',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 8_000_000, estimate: 96, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2029-05-03', calendar: 'USBOND',
+            notional: 5_140_000, gross: 4_934_400, // 5,140,000 x 96 / 100
+            accrued: 63_222, // 72 days at 6.15%: 5,140,000 x 6.15% x 72/360 = 63,222.00
+            cash: -4_997_622, fees: 246.72 }], // 0.5 bp of 4,934,400
+          cash: { USD: { purchases: 4_997_622, fees: 246.72, required: 4_997_868.72, available: 6_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 8_000_000, avgPrice: 96, fills: [{ qty: 8_000_000, price: 96, model: 'quoted-bid-ask', settleDate: '2029-05-03', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted', owner: 'treasury' }, { type: 'trade.fill', summary: 'Bought 8,000,000 PEMB-24-1-B @ 96.00 USD', owner: 'treasury', date: '2029-05-01' }],
+        cash: { treasury: { USD: { settled: 6_000_000, unsettled: -4_997_868.72, availableToTrade: 1_002_131.28 } }, account: { USD: { settled: 1_000_000, availableToTrade: 1_000_000 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'treasury', direction: 'long', qty: 8_000_000, avgCost: 96, cost: 4_934_400, price: 95.75,
+          value: 4_921_550, unrealized: -12_850, accrued: 63_222, priceSource: 'Test fixture' }], // 5,140,000 x 95.75 / 100
+        holdings: { main: { long: 8_000_000, short: 0, net: 8_000_000 } },
+        pending: [{ instrument: 'main', owner: 'treasury', dueDate: '2029-05-03', amount: -4_997_868.72, ccy: 'USD', into: 'cash' }],
+        // 20 May 2029 is a Sunday: the coupon is paid Monday 21 May. 20 May 2034 is a Saturday: redemption Monday 22 May 2034.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2029-05-21', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2034-05-22', status: 'pending' }],
+        pnl: {
+          account: { realized: 0, couponInterest: 0, commissions: 0, unrealized: 0, total: 0 },
+          book: { realized: 0, couponInterest: 0, commissions: -246.72, fees: 0, borrowFunding: 0, unrealized: -12_850, total: -13_096.72 },
+        },
+        nav: { account: 1_000_000, treasury: 5_986_903.28, book: 6_986_903.28 },
+        balance: {
+          account: { cash: 1_000_000, assets: 1_000_000, liabilities: 0, netAssets: 1_000_000 },
+          book: { cash: 7_000_000, accruedIncome: 63_222, positions: 4_921_550, payable: 4_997_868.72, assets: 11_984_772, liabilities: 4_997_868.72, netAssets: 6_986_903.28 },
+        },
+      },
+    },
+    { id: 'treasury-screens', covers: 'open', action: 'owner_screens', owner: 'treasury', expect: {} },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EDT('2029-05-03'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 4,997,868.72 USD from settled cash', cash: { USD: -4_997_868.72 }, owner: 'treasury', date: '2029-05-03' }],
+        cash: { treasury: { USD: { settled: 1_002_131.28, unsettled: 0, availableToTrade: 1_002_131.28 } } },
+        pending: [],
+        balance: { book: { cash: 2_002_131.28, payable: null, assets: 6_986_903.28, liabilities: 0 } },
+      },
+    },
+    {
+      // Monday 21 May. The coupon of 20 Feb to 20 May, 89 days at 6.15% on 5,140,000: 78,149.417, paid 78,149.42. The balance stands
+      // at 20 May: 0, so 78,149.42 - 63,222.00 = 14,927.42 more income. No TSOFR3M fixing for 20 May: an alert, and no rate.
+      id: 'coupon-may', covers: ['coupon', 'missing fixing'], action: 'clock', to: EDT('2029-05-21'),
+      expect: {
+        events: [
+          { type: 'bond.coupon', summary: 'Coupon received on 8,000,000 PEMB-24-1-B (factor 0.6425: current face 5,140,000): 78,149.42 USD', cash: { USD: 78_149.42 }, owner: 'treasury', date: '2029-05-21' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on PEMB-24-1-B: 14,927.42 USD', owner: 'treasury' },
+        ],
+        cash: { treasury: { USD: { settled: 1_080_280.7, availableToTrade: 1_080_280.7 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 8_000_000, accrued: 0 }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2029-08-20', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2034-05-22', status: 'pending' }],
+        alerts: ['bond.fixing'],
+        pnl: { book: { couponInterest: 14_927.42, total: 1_830.7 } },
+        nav: { treasury: 6_001_830.7, book: 7_001_830.7 },
+        balance: { book: { cash: 2_080_280.7, accruedIncome: null, assets: 7_001_830.7, netAssets: 7_001_830.7 } },
+      },
+    },
+    {
+      // The quarterly paydown from the trustee report: 0.6425 to 0.6012 from 20 May, paid today. Principal 8,000,000 x 0.0413 =
+      // 330,400.00. Cost out 4,934,400 x 0.0413 / 0.6425 = 317,184.00: realized 13,216.00 (par against a cost of 96).
+      id: 'paydown', covers: 'paydown (by hand)', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'paydown', newFactor: 0.6012, effective: '2029-05-20' },
+      expect: {
+        events: [{ type: 'bond.paydown', summary: 'Principal paydown on PEMB-24-1-B: factor 0.6425 to 0.6012 from 2029-05-20, 330,400.00 USD received', cash: { USD: 330_400 }, owner: 'treasury', date: '2029-05-21' }],
+        cash: { treasury: { USD: { settled: 1_410_680.7, availableToTrade: 1_410_680.7 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 8_000_000, cost: 4_617_216, avgCost: 96, price: 95.75, value: 4_605_192, unrealized: -12_024, accrued: 0 }], // 4,809,600 x 95.75 / 100
+        pnl: { book: { realized: 13_216, unrealized: -12_024, total: 15_872.7 } },
+        nav: { treasury: 6_015_872.7, book: 7_015_872.7 },
+        balance: { book: { cash: 2_410_680.7, positions: 4_605_192, assets: 7_015_872.7, netAssets: 7_015_872.7 } },
+      },
+    },
+    {
+      id: 'pik-refused', covers: 'coupon paid in kind (by hand)', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'pik' },
+      status: 'blocked', reason: 'Class B is not deferrable: its coupon cannot be paid in kind.',
+      expect: { refused: { engine: 'is not deferrable', api: 'is not deferrable', browser: 'offers no "Review coupon paid in kind"' } },
+    },
+    // Tuesday 12 June: still no May fixing. Nothing accrues (the rate is unknown, not zero), and a sale is refused.
+    { id: 'no-fixing', covers: 'missing fixing', action: 'clock', to: EDT('2029-06-12'), expect: { events: [] } },
+    {
+      id: 'sell-without-fixing', covers: ['reduce', 'missing fixing'], action: 'ticket', instrument: 'main', side: 'sell', qty: 3_000_000, from: 'lot', owner: 'treasury',
+      status: 'blocked', reason: 'The accrued interest of the sale cannot be computed without the period\'s fixing.',
+      expect: { refused: 'has no TSOFR3M fixing for its current coupon period' },
+    },
+    {
+      // Monday 20 August, after Juneteenth and Independence Day. The coupon of 20 May to 20 Aug waits, visibly, for the May fixing.
+      id: 'coupon-blocked', covers: ['coupon', 'missing fixing', 'market holiday'], action: 'clock', to: EDT('2029-08-20'),
+      expect: {
+        events: [],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2029-08-20', status: 'blocked' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2034-05-22', status: 'pending' }],
+      },
+    },
+    // The August fixing (4.00%) arrives from the fixture: it belongs to the period starting today; the blocked coupon does not use it.
+    { id: 'august-fixing-arrives', covers: 'reset', action: 'rate', code: 'TSOFR3M', value: 4, date: '2029-08-16', expect: { events: [] } },
+    {
+      // The May fixing, 4.20%, entered by hand. The coupon is paid at 4.20% + 2.10% = 6.30% for 92 days on 4,809,600:
+      // 77,434.56. Nothing had accrued for the period, so all of it is income now. The next period runs at 4.00% + 2.10% = 6.10%.
+      id: 'may-fixing-entered', covers: ['coupon', 'fixing by hand'], action: 'manual_rate', code: 'TSOFR3M', value: 4.2, date: '2029-05-17', note: 'May fixing from the trustee notice',
+      expect: {
+        events: [
+          { type: 'bond.coupon', summary: 'Coupon received on 8,000,000 PEMB-24-1-B (factor 0.6012: current face 4,809,600): 77,434.56 USD', cash: { USD: 77_434.56 }, owner: 'treasury', date: '2029-08-20' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on PEMB-24-1-B: 77,434.56 USD', owner: 'treasury' },
+        ],
+        cash: { treasury: { USD: { settled: 1_488_115.26, availableToTrade: 1_488_115.26 } } },
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2029-11-20', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2034-05-22', status: 'pending' }],
+        alerts: [],
+        pnl: { book: { couponInterest: 92_361.98, total: 93_307.26 } },
+        nav: { treasury: 6_093_307.26, book: 7_093_307.26 },
+        balance: { book: { cash: 2_488_115.26, assets: 7_093_307.26, netAssets: 7_093_307.26 } },
+      },
+    },
+    // Tuesday 21 August. End of day 20 Aug: the first day of the period, nothing accrued yet.
+    { id: 'next-day', covers: 'accrual', action: 'clock', to: EDT('2029-08-21'), expect: { events: [] } },
+    {
+      // A realized loss allocated to Class B by hand: 0.6012 to 0.58 from 20 August. 8,000,000 x 0.0212 = 169,600 written off.
+      // Cost out 4,617,216 x 0.0212 / 0.6012 = 162,816.00: realized loss. Nothing has accrued in the period yet: nothing to cancel.
+      id: 'loss-allocated', covers: 'loss allocation (by hand)', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'writedown', newFactor: 0.58, kind: 'loss', effective: '2029-08-20' },
+      expect: {
+        events: [{ type: 'bond.loss', summary: 'Realized loss allocated by hand to PEMB-24-1-B: factor 0.6012 to 0.58 from 2029-08-20, 169,600 of principal written off with no payment (8,000,000 original face); cost 162,816.00 USD written off as realized loss', owner: 'treasury', date: '2029-08-21' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 8_000_000, cost: 4_454_400, avgCost: 96, price: 95.75, value: 4_442_800, unrealized: -11_600, accrued: 0 }], // 4,640,000 x 95.75 / 100
+        pnl: { book: { realized: -149_600, unrealized: -11_600, total: -69_084.74 } },
+        nav: { treasury: 5_930_915.26, book: 6_930_915.26 },
+        balance: { book: { positions: 4_442_800, assets: 6_930_915.26, netAssets: 6_930_915.26 } },
+      },
+    },
+    {
+      id: 'price-falls', action: 'quote', instrument: 'main', quote: { bid: 90, ask: 90.5, last: 90.25, bidSize: 20_000_000, askSize: 20_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 8_000_000, price: 90.25, value: 4_187_600, unrealized: -266_800 }], // 4,640,000 x 90.25 / 100
+        pnl: { book: { unrealized: -266_800, total: -324_284.74 } },
+        nav: { treasury: 5_675_715.26, book: 6_675_715.26 },
+        balance: { book: { positions: 4_187_600, assets: 6_675_715.26, netAssets: 6_675_715.26 } },
+      },
+    },
+    {
+      // 3,000,000 sold at 90.00 for Thursday 23 August: current face 1,740,000 x 90 / 100 = 1,566,000; 3 days at 6.10% 884.50; 0.5 bp =
+      // 78.30. Cost out 4,454,400 x 3 / 8 = 1,670,400: realized -104,400.
+      id: 'reduce', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 3_000_000, from: 'lot', owner: 'treasury',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 3_000_000, estimate: 90, settleDate: '2029-08-23', notional: 1_740_000, gross: 1_566_000, accrued: 884.5, cash: 1_566_884.5, fees: 78.3 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 3_000_000, avgPrice: 90 }] },
+        events: [{ type: 'strategy.legs_added', owner: 'treasury' }, { type: 'trade.fill', summary: /^Sold 3,000,000 PEMB-24-1-B @ 90\.00 USD \(realized [-−]104,400\.00 USD\)$/, owner: 'treasury' }],
+        cash: { treasury: { USD: { settled: 1_488_115.26, unsettled: 1_566_806.2, availableToTrade: 3_054_921.46 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 5_000_000, cost: 2_784_000, avgCost: 96, price: 90.25, value: 2_617_250, unrealized: -166_750, accrued: -884.5 }], // 2,900,000 x 90.25 / 100
+        holdings: { main: { long: 5_000_000, short: 0, net: 5_000_000 } },
+        pending: [{ instrument: 'main', owner: 'treasury', dueDate: '2029-08-23', amount: 1_566_806.2, ccy: 'USD', into: 'cash' }],
+        pnl: { book: { realized: -254_000, commissions: -325.02, unrealized: -166_750, total: -328_713.04 } },
+        nav: { treasury: 5_671_286.96, book: 6_671_286.96 },
+        balance: { book: { receivable: 1_566_806.2, accruedIncome: -884.5, positions: 2_617_250, assets: 6_671_286.96, netAssets: 6_671_286.96 } },
+      },
+    },
+    {
+      // Thursday 23 August. End of day 22 Aug: 4,640,000 x 6.10% x 2/360 = 1,572.4444, less the 3 days sold 884.50: 687.94. 1,572.44 more.
+      id: 'settle-reduce', covers: ['settlement', 'accrual'], action: 'clock', to: EDT('2029-08-23'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 1,566,806.20 USD into settled cash', cash: { USD: 1_566_806.2 }, owner: 'treasury' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on PEMB-24-1-B: 1,572.44 USD', owner: 'treasury' },
+        ],
+        cash: { treasury: { USD: { settled: 3_054_921.46, unsettled: 0, availableToTrade: 3_054_921.46 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 5_000_000, accrued: 687.94 }],
+        pending: [],
+        pnl: { book: { couponInterest: 93_934.42, total: -327_140.6 } },
+        nav: { treasury: 5_672_859.4, book: 6_672_859.4 },
+        balance: { book: { cash: 4_054_921.46, receivable: null, accruedIncome: 687.94, assets: 6_672_859.4, netAssets: 6_672_859.4 } },
+      },
+    },
+    {
+      // The rest sold at 90.00 for Monday 27 August: 2,900,000 x 90 / 100 = 2,610,000; 7 days at 6.10% 3,439.72 (2,751.78 more than on
+      // the books); 0.5 bp = 130.50. Realized 2,610,000 - 2,784,000 = -174,000.
+      id: 'close', covers: 'close', action: 'close', lot: 'lot', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 5_000_000, estimate: 90, settleDate: '2029-08-27', notional: 2_900_000, gross: 2_610_000, accrued: 3_439.72, cash: 2_613_439.72, fees: 130.5 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 5_000_000, avgPrice: 90 }] },
+        events: [
+          { type: 'strategy.legs_added', owner: 'treasury' },
+          { type: 'trade.fill', summary: /^Sold 5,000,000 PEMB-24-1-B @ 90\.00 USD \(realized [-−]174,000\.00 USD\)$/, owner: 'treasury' },
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of PEMB-24-1-B: 2,751.78 USD', owner: 'treasury' },
+        ],
+        cash: { treasury: { USD: { settled: 3_054_921.46, unsettled: 2_613_309.22, availableToTrade: 5_668_230.68 } } },
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', owner: 'treasury', dueDate: '2029-08-27', amount: 2_613_309.22, ccy: 'USD', into: 'cash' }],
+        lifecycle: [],
+        pnl: { book: { realized: -428_000, couponInterest: 96_686.2, commissions: -455.52, unrealized: 0, total: -331_769.32 } },
+        nav: { treasury: 5_668_230.68, book: 6_668_230.68 },
+        balance: { book: { cash: 4_054_921.46, receivable: 2_613_309.22, positions: null, accruedIncome: null, assets: 6_668_230.68, liabilities: 0, netAssets: 6_668_230.68 } },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: EDT('2029-08-27'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 2,613,309.22 USD into settled cash', cash: { USD: 2_613_309.22 }, owner: 'treasury' }],
+        cash: { treasury: { USD: { settled: 5_668_230.68, unsettled: 0, availableToTrade: 5_668_230.68 } }, account: usdCash(1_000_000) },
+        pending: [],
+        balance: { book: { cash: 6_668_230.68, receivable: null, assets: 6_668_230.68, liabilities: 0 } },
+      },
+    },
+    { id: 'treasury-screens-at-end', covers: 'close', action: 'owner_screens', owner: 'treasury', expect: {} },
+  ],
+};
+
+export default [specifiedPool, absSpec, cmoSpec, cloSpec, cdoSpec];
