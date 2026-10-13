@@ -181,7 +181,9 @@ function usedFor(id, byCcy) {
   if (id === 'USD') return 'US dollar payments. Every spot FX value date must also be a US dollar banking day.';
   if (id === 'WEEKEND') return 'Any venue country or currency with no calendar here. Holidays entered for it apply to all of those markets together.';
   if (id === 'ALLDAYS') return 'Digital assets. No day is a holiday.';
-  return [countries.length ? `Venues in ${countries.join(', ')}` : '', ccys.length ? `${ccys.join(', ')} payments` : ''].filter(Boolean).join('; ') + '.';
+  if (id === 'FX') return 'Trading days of FX pairs. Their value dates follow the payment calendars of both currencies.';
+  const said = [countries.length ? `Venues in ${countries.join(', ')}` : '', ccys.length ? `${ccys.join(', ')} payments` : ''].filter(Boolean).join('; ');
+  return said ? `${said}.` : '';
 }
 
 function Calendars({ today }) {

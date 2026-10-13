@@ -299,3 +299,4 @@
 - 2026-10-13T21:32Z | t1b | +0.5 | templates spec loads again: cash_secured_put metadata completed; npm test loads every suite (785/793, failures listed in t1b PROGRESS)
 - 2026-10-13T21:32Z | fx | +1 | historical-FX regression test (test/core/historical-fx.test.js) passes in npm test; fails 170 checks on the reverted fix
 - 2026-10-13T21:48Z | t1b | +0.2 | T:cash_secured_put passes at engine, API and browser (fixes: put secured by its reservation; reservation released as puts close)
+- 2026-10-13T21:54Z | t1b | +0.2 | T:long_call passes at engine, API and browser

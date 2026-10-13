@@ -16,9 +16,11 @@ Results/tmp: SDT_MATRIX_RESULTS=$SP/t1b/results SDT_MATRIX_TMP=$SP/t1b/tmp. Prob
   packages.js trimExerciseReserve (called from recomputeHolds, cancel_working, expireDayOrders) cuts the reservation to what written
   puts need; needsCash includes reserve legs. Tests: test/core/templates-t1b.test.js (3). test/core 283+3 pass.
 
+- T:long_call passes engine, API, browser (31 passed, 1 blocked).
+
 ## In progress
-- long_call next.
+- long_put next.
 
 ## Next
-1. long_call, long_put, bull_call_spread, bear_put_spread, bull_put_spread: each engine -> API -> browser -> save 0.2
+1. long_put, bull_call_spread, bear_put_spread, bull_put_spread: each engine -> API -> browser -> save 0.2
 3. Fix audit failures (add leg actions; futures_hedge settlementCheck), full family run at 3 levels, npm test green, save 0.5
