@@ -363,9 +363,53 @@
    "title": "Double click on the Treasury confirming buttons: withdrawal, borrowing, repo, securities loan",
    "commit": "0e3d779+changes",
    "at": "2026-10-13T17:55:47.834Z"
+  },
+  "SB:stress:double-click-reference": {
+   "status": "passed",
+   "message": "",
+   "ms": 6076,
+   "checks": 16,
+   "area": "stress",
+   "case": "double-click-reference",
+   "title": "Double click on Register instrument, Save price, Save assumptions and Save request",
+   "commit": "7bfcda7",
+   "at": "2026-10-13T17:55:53.929Z"
+  },
+  "SB:stress:double-click-agreements": {
+   "status": "passed",
+   "message": "",
+   "ms": 3741,
+   "checks": 16,
+   "area": "stress",
+   "case": "double-click-agreements",
+   "title": "Double click on Record agreement, Close agreement and Retry failed calls",
+   "commit": "7bfcda7",
+   "at": "2026-10-13T17:55:57.683Z"
+  },
+  "SB:stress:confirm-changed": {
+   "status": "passed",
+   "message": "Confirm the new figures double-clicked: 1 request left the page",
+   "ms": 2725,
+   "checks": 13,
+   "area": "stress",
+   "case": "confirm-changed",
+   "title": "A confirmation refused because the price moved, then confirmed on the new figures",
+   "commit": "7bfcda7+changes",
+   "at": "2026-10-13T17:56:00.432Z"
+  },
+  "SB:stress:connection-loss": {
+   "status": "passed",
+   "message": "with the server gone the Transfer dialog cannot be opened (its data cannot be loaded)",
+   "ms": 11150,
+   "checks": 17,
+   "area": "stress",
+   "case": "connection-loss",
+   "title": "The browser loses the server mid-session and recovers",
+   "commit": "7bfcda7+changes",
+   "at": "2026-10-13T17:56:11.596Z"
   }
  },
- "updatedAt": "2026-10-13T17:55:47.834Z",
+ "updatedAt": "2026-10-13T17:56:11.596Z",
  "environment": {
   "node": "v22.22.0",
   "platform": "linux",

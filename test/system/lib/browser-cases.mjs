@@ -501,6 +501,7 @@ const flat = (s) => String(s || '').replace(/\s+/g, ' ').trim();
 /** The top bar's "N to review" button opened: the texts under "Items needing attention". Empty when there is no button. */
 async function itemsToReview(b) {
   const { page, ui } = b;
+  await closeHedgePopup(b); // a post-trade prompt may open over the top bar at any moment
   const chip = page.locator('.topbar').getByRole('button', { name: /to review$/ });
   if (!(await chip.count())) return [];
   await chip.click();

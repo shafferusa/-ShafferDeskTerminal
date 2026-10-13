@@ -300,7 +300,7 @@ const rowsOf = (t) => (t?.rows || []).filter((r) => !r.group);
 const cellOf = (t, row, header) => { const i = t.head.findIndex((h) => startsWith(header).test(h)); return i < 0 ? undefined : row.cells[i]; };
 
 /** Everything the Accounting page displays for the scenario's Account (and the Book's net asset value). */
-export async function readScreens(ui, ctx, t) {
+export async function readScreens(ui, ctx, t, info = null) {
   const { page } = ui;
   const acct = ctx.accountId;
   const screen = { cash: {}, nav: {}, provisional: {}, positions: [], holdings: {}, pending: [], pnl: {}, balance: {}, borrowings: [], history: [] };
@@ -399,6 +399,13 @@ export async function readScreens(ui, ctx, t) {
 
   // ---- history ----
   tables = await readAccountingTab(ui, ctx, 'history', acct, /^Audit trail/);
+  // r1: the audit trail's rows arrive after its heading. Wait (a condition, not a delay) for the newest event of the step
+  // that it should show, then read again, so a slow load is not reported as a missing event.
+  const newest = (info?.events || []).filter((e) => !ACCRUAL_TYPES.has(e.type) && (e.owner === 'account' || e.entries.some((x) => x.owner === ctx.spec.book.account.name))).map((e) => e.id).sort((x, y) => y - x)[0];
+  if (newest) {
+    await ui.page.locator('main table tbody tr', { hasText: `#${newest}` }).first().waitFor({ timeout: 10_000 }).catch(() => {});
+    tables = await ui.tables(ui.page.locator('main'));
+  }
   const audit = tableOf(tables, 'Audit trail');
   screen.history = rowsOf(audit).map((r) => ({ id: Number(/#(\d+)/.exec(r.cells[0])?.[1]), event: (cellOf(audit, r, 'Event') || '').replace(/\s*\n\s*/g, ' | '), cash: firstLine(cellOf(audit, r, 'Cash effect')) }));
 
@@ -917,7 +924,7 @@ export function browserDriver(browser, { shotsDir } = {}) {
     async screens(ctx, info) {
       try {
         await ui.closeOverlays();
-        const screen = await readScreens(ui, ctx, t);
+        const screen = await readScreens(ui, ctx, t, info);
         const problems = screenProblems(ctx, screen, info);
         // A family may read further screens of its own (for loans: the Treasury page, the Account page) and
         // compare them: `export async function screens(ui, ctx, t, info)` returns a list of mismatches.

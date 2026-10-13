@@ -635,7 +635,15 @@ const hedgeFund = {
         balance: { account: { cash: 2_820_000, receivable: null } },
       },
     },
-    { id: 'august-statement-date', action: 'clock', to: '2026-09-14T14:00:00.000Z', expect: {} }, // Monday 14 September 2026
+    {
+      // Monday 14 September 2026: the 30 June NAV is 76 days old.
+      id: 'august-statement-date', covers: 'valuation', action: 'clock', to: '2026-09-14T14:00:00.000Z',
+      expect: {
+        positions: [{ ...HF_POS, qty: 1000, cost: 1_250_000, value: 1_320_000, freshness: 'stale',
+          manual: hfM({ redemptions: [{ noticeDate: '2026-04-13', dealingDate: '2026-09-30', shares: 1000 }], noticed: 1000, valuation: { date: '2026-06-30', source: 'NAV per share struck for the dealing date 2026-06-30 (redemption)', stale: true } }) }],
+        provisional: { account: true, book: true },
+      },
+    },
     {
       id: 'valuation-aug', covers: 'valuation', action: 'lifecycle', lot: 'shares', body: { action: 'valuation', value: 1342, asOf: '2026-08-31', source: 'Harbourside Fund Services, August 2026 NAV statement' },
       expect: {
@@ -652,7 +660,15 @@ const hedgeFund = {
       id: 'second-dealing-date-waits', covers: 'redeem', action: 'clock', to: '2026-10-01T14:00:00.000Z',
       expect: { lifecycle: [{ type: 'manual.redemption', instrument: 'main', dueDate: '2026-09-30', status: 'blocked', owner: 'account', reason: 'Waiting for the NAV per share of the dealing date 2026-09-30, entered by hand (Lifecycle, Redemption at NAV).' }] },
     },
-    { id: 'september-nav-date', action: 'clock', to: '2026-10-13T14:00:00.000Z', expect: {} }, // Tuesday 13 October 2026
+    {
+      // Tuesday 13 October 2026: the 31 August NAV is 43 days old.
+      id: 'september-nav-date', covers: 'valuation', action: 'clock', to: '2026-10-13T14:00:00.000Z',
+      expect: {
+        positions: [{ ...HF_POS, qty: 1000, cost: 1_250_000, value: 1_342_000, freshness: 'stale',
+          manual: hfM({ redemptions: [{ noticeDate: '2026-04-13', dealingDate: '2026-09-30', shares: 1000 }], noticed: 1000, valuation: { date: '2026-08-31', source: 'Harbourside Fund Services, August 2026 NAV statement', stale: true } }) }],
+        provisional: { account: true, book: true },
+      },
+    },
     {
       // NAV for 30 September: 1,355.00. Gate 50% of the 2,000 held at the first dealing date = 1,000: the last 1,000 shares go.
       // Paid 30 September + 10 business days on the USD calendar, skipping Columbus Day (12 October) = 15 October.
@@ -666,6 +682,7 @@ const hedgeFund = {
         lifecycle: [],
         pnl: { account: { realized: 175_000, unrealized: 0, total: 175_000 } }, // 70,000 + (1,355,000 - 1,250,000)
         nav: { account: 4_175_000, book: 6_175_000 },
+        provisional: { account: false, book: false },
         balance: { account: { cash: 2_820_000, receivable: 1_355_000, positions: null, assets: 4_175_000, netAssets: 4_175_000 } },
       },
     },
