@@ -2135,7 +2135,10 @@ const sellBuyBack = {
     {
       id: 'buy-back-a-part', covers: ['reduce', 'partial repurchase'], action: 'repay', lot: 'sbb', amount: 1_000_000,
       status: 'blocked', reason: 'A sell/buy-back is bought back in full at its forward price; a part is not simulated.',
-      expect: { refused: 'A repo is repurchased or terminated in full: 3,000,000.00 USD is outstanding and 1,000,000.00 USD was asked for. A partial repurchase is not simulated; repurchase in full and open a new repo for the amount that stays.' },
+      expect: { refused: {
+        engine: 'A repo is repurchased or terminated in full: 3,000,000.00 USD is outstanding and 1,000,000.00 USD was asked for. A partial repurchase is not simulated; repurchase in full and open a new repo for the amount that stays.',
+        api: 'A repo is repurchased or terminated in full: 3,000,000.00 USD is outstanding and 1,000,000.00 USD was asked for. A partial repurchase is not simulated; repurchase in full and open a new repo for the amount that stays.',
+        browser: /^The Repurchase preview fixes the quantity at 3,000,000(\.00)?: a part cannot be entered\.$/ } }, // the interface does not let a part be typed
     },
     {
       // Wednesday 1 April. The issuer pays the coupon to the Account (82,500.00; 6,416.67 of it earned since the purchase), then

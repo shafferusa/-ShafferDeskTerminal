@@ -11,6 +11,7 @@ import { html, useEffect, useState } from '../vendor/preact-htm.js';
 import { bump, currentBook, fmtMoney, fmtNum, fmtPrice, fmtQty, fmtTime, get, isNum, openOverlay, post, toast, toastError, useLive } from '../lib/core.js';
 import { Button, Check, Drawer, Empty, ErrorNote, Field, KV, Missing, Modal, Money, Notice, Num, OrderStatus, Panel, Pill, Price, Prov, PURPOSE_LABEL, Select, StrategyStatus, Table, Text } from '../lib/ui.js';
 import { openInstrument, openPreviewAction } from './instrument.js';
+import { InstrumentPicker } from '../lib/contracts.js';
 import { openHedgeFor, openHedgeRequest, ProtectionDetail, SourceFacts, StatePill, StrategyRef } from './hedge.js';
 import { ManualEventDialog, manualEventLabel, manualEvents, manualLines } from '../lib/manual.js';
 
@@ -32,6 +33,7 @@ const LIFECYCLE = {
   convert: { title: 'Conversion into shares', button: 'Record conversion', done: 'Conversion recorded.', note: 'The holder converts (or exchanges) bonds into shares at the registered conversion ratio, recorded by hand. The bonds converted close; the shares open at the bonds\' carrying cost; accrued interest is forfeited; a fraction of a share is paid in cash at the share price stated. If the issuer settles in cash instead, the bonds are redeemed for the shares\' value at that price.' },
   recall: { title: 'Lender recall', button: 'Record lender recall', done: 'Lender recall recorded.', note: 'The lender asks for the borrowed securities back. Cover the short or arrange a new borrow by the deadline; otherwise a buy-in is forced on that date.' },
   deliver: { title: 'Delivery notice', button: 'Give delivery notice', done: 'Simulated delivery recorded.', note: 'For a physically delivered future during its delivery window: the short gives notice, the contracts close at today\'s settlement price and the deliverable changes hands at the invoice amount, on paper only (no goods move). The Terminal refuses a notice the contract\'s terms do not allow and says why.' },
+  allocate: { title: 'Pool allocation', button: 'Record allocation', done: 'Pool allocation recorded.', note: 'The agency pool the seller allocated to this TBA contract (notified before settlement). It must be a registered agency pass-through with the contract\'s coupon; on the settlement date it is delivered (simulated) at the dealt price. It can be changed until then.' },
   terminate: { title: 'Early termination', button: 'Record termination', done: 'Early termination recorded.', note: 'Ends all or part of this forward at the amount agreed with the counterparty: positive if received, negative if paid. The amount is realized and settles on the date stated (two business days if left empty); nothing is exchanged for the terminated part on the value date, and its collateral is returned.' },
   cashflow: { title: 'Manual cash flow', button: 'Record cash flow', done: 'Cash flow recorded.', note: 'A cash amount received or paid on this position that the engine does not generate. Positive is cash received, negative is cash paid.' },
 };
@@ -159,6 +161,7 @@ function lifecycleFor(p, terms) {
   if (p.family === 'otcoption' && terms?.optionType === 'lookback') a.push('extreme');
   if (p.family === 'bond') a.push('redeem');
   if (p.family === 'future' && terms && !terms.perpetual) a.push('deliver');
+  if (p.family === 'forward' && terms?.tba) a.push('allocate');
   if (p.family === 'forward') a.push('terminate');
   if (p.family === 'bond' && terms?.putSchedule?.length && p.qty > 0) a.push('put');
   if (p.family === 'bond' && terms?.conversionRatio && p.qty > 0) a.push('convert');
@@ -172,15 +175,15 @@ function lifecycleFor(p, terms) {
 function LifecycleDialog({ p, action, terms, onClose, onDone }) {
   const L = LIFECYCLE[action];
   const size = Math.abs(p.qty);
-  const [f, setF] = useState({ contracts: size, qty: size, face: size, price: null, days: null, label: '', category: 'dividend', amount: null, note: '', settleDate: '' });
+  const [f, setF] = useState({ contracts: size, qty: size, face: size, price: null, days: null, label: '', category: 'dividend', amount: null, note: '', settleDate: '', poolId: '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const set = (patch) => setF({ ...f, ...patch });
   // A swaption is exercised into its swap (or credit default swap) at an entry price per 100 that the desk states.
   const intoContract = action === 'exercise' && terms?.settlement === 'physical' && ['swap', 'cds'].includes(terms?.underlyingFamily);
   const extremeWord = terms?.lookbackType === 'floating' ? (terms?.right === 'C' ? 'minimum' : 'maximum') : (terms?.right === 'C' ? 'maximum' : 'minimum');
-  const body = { exercise: { contracts: f.contracts, ...(intoContract ? { price: f.price ?? 0 } : {}) }, knockout: { note: f.note }, extreme: { value: f.value, date: f.date || undefined, note: f.note }, assign: { contracts: f.contracts }, deliver: { contracts: f.contracts }, terminate: { amount: f.amount, qty: f.qty, settleDate: f.settleDate || undefined }, barrier: { note: f.note }, redeem: { price: f.price, face: f.face, label: f.label || undefined }, recall: { qty: f.qty, days: f.days ?? undefined }, cashflow: { category: f.category, amount: f.amount, note: f.note }, put: { face: f.face, label: f.label || undefined }, convert: { face: f.face, sharePrice: f.sharePrice ?? undefined, settlement: f.settlement || 'shares' } }[action];
-  const ready = { knockout: true, extreme: isNum(f.value) && f.value > 0, exercise: f.contracts > 0, assign: f.contracts > 0, deliver: f.contracts > 0, terminate: isNum(f.amount) && f.qty > 0, barrier: true, redeem: isNum(f.price) && f.price >= 0 && f.face > 0, recall: f.qty > 0, cashflow: isNum(f.amount) && f.amount !== 0, put: f.face > 0, convert: f.face > 0 }[action];
+  const body = { exercise: { contracts: f.contracts, ...(intoContract ? { price: f.price ?? 0 } : {}) }, knockout: { note: f.note }, extreme: { value: f.value, date: f.date || undefined, note: f.note }, assign: { contracts: f.contracts }, deliver: { contracts: f.contracts }, terminate: { amount: f.amount, qty: f.qty, settleDate: f.settleDate || undefined }, allocate: { instrumentId: f.poolId }, barrier: { note: f.note }, redeem: { price: f.price, face: f.face, label: f.label || undefined }, recall: { qty: f.qty, days: f.days ?? undefined }, cashflow: { category: f.category, amount: f.amount, note: f.note }, put: { face: f.face, label: f.label || undefined }, convert: { face: f.face, sharePrice: f.sharePrice ?? undefined, settlement: f.settlement || 'shares' } }[action];
+  const ready = { knockout: true, extreme: isNum(f.value) && f.value > 0, exercise: f.contracts > 0, assign: f.contracts > 0, deliver: f.contracts > 0, terminate: isNum(f.amount) && f.qty > 0, allocate: Boolean(f.poolId), barrier: true, redeem: isNum(f.price) && f.price >= 0 && f.face > 0, recall: f.qty > 0, cashflow: isNum(f.amount) && f.amount !== 0, put: f.face > 0, convert: f.face > 0 }[action];
   const go = async () => {
     setBusy(true); setError(null);
     try {
@@ -197,6 +200,7 @@ function LifecycleDialog({ p, action, terms, onClose, onDone }) {
       ${action === 'deliver' && terms ? html`<${Notice}>Settlement terms: ${terms.settlement === 'physical' ? 'physical delivery' : 'cash'}${terms.delivery?.units ? `; ${fmtQty(terms.delivery.units)} units of the deliverable per contract` : ''}${terms.delivery?.grade ? `; ${terms.delivery.grade}` : ''}${terms.delivery?.location ? `; ${terms.delivery.location}` : ''}; delivery window ${terms.delivery?.firstNotice || terms.expiration} to ${terms.expiration} (last trading day).<//>` : null}
       ${action === 'barrier' && terms?.barrier ? html`<${Notice}>Barrier: ${words(terms.barrier.type)} at ${fmtPrice(terms.barrier.level)}.<//>` : null}
       <div class="grid-form">
+        ${action === 'allocate' ? html`<${Field} label="Allocated pool" span="all" hint=${`${terms?.coupon ? `A ${(terms.coupon * 100).toFixed(3).replace(/0+$/, '').replace(/\.$/, '')}% agency pass-through. ` : ''}Register the pool under Instruments first.`}><${InstrumentPicker} value=${f.poolId} onChange=${(id) => set({ poolId: id })} families=${['bond']} showHeld=${false} /><//>` : null}
         ${action === 'terminate' ? html`<${Field} label="Termination amount" hint=${`In ${terms?.forwardType === 'ndf' ? terms.settleCcy : p.ccy}, the contract's settlement currency. Positive if received, negative if paid`}><${Num} value=${f.amount} onInput=${(v) => set({ amount: v })} /><//>
           <${Field} label="Notional terminated" hint=${`Up to ${fmtQty(size)}`}><${Num} value=${f.qty} onInput=${(v) => set({ qty: v })} /><//>
           <${Field} label="Settlement date" hint="Leave empty for two business days"><${Text} type="date" value=${f.settleDate} onInput=${(v) => set({ settleDate: v })} /><//>` : null}

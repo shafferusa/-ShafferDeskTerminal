@@ -1996,4 +1996,138 @@ const dispersionSwap = {
   ],
 };
 
-export default [privateEquity, ventureCapital, hedgeFund, infrastructure, directRealEstate, insuranceLinked, varianceSwap, volatilitySwap, correlationSwap, dispersionSwap];
+// ---------------------------------------------------------------------------------------------
+// recovery_swap
+// ---------------------------------------------------------------------------------------------
+// A recovery lock sold on a retailer's senior unsecured debt: fixed recovery 40%, 10,000,000 notional. Position-level
+// collateral terms: a fixed independent amount of 300,000, no variation margin. A settlement before any credit event is
+// refused; the credit event (failure to pay) is recorded by hand, the mark moves, the auction's final price sets the
+// recovery rate entered by hand, and the recovery seller receives notional x (40% - recovery).
+const REC_POS = { instrument: 'main', lot: 'lock', owner: 'account', direction: 'recovery seller' };
+const REC_NAME = 'Recovery lock, Thornfield Retail Group senior unsecured, 40%, June 2027 (Dunmore Credit Partners)';
+const REC_EVENT = { date: '2026-04-14', note: 'Failure to pay; Determinations Committee resolution' };
+const recoverySwap = {
+  productId: 'recovery_swap',
+  title: 'Recovery lock on Thornfield Retail Group at 40%, 10,000,000 notional, sold: credit event and auction recovery entered by hand, independent amount',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: ['Trading owner', 'Action (Enter the contract)', 'Contracts', 'State a fill price', 'Reference entity, fixed recovery, notional, side, maturity (registration)', 'Collateral basis (registration, required)'],
+    manualInputs: ['marks (value to us, date, source)', 'credit event (date, note)', 'recovery rate from the auction final price'],
+    settlement: 'Entry T+2 on the US calendar; settlement T+2 after the recovery rate is entered (14 May 2026, paid 18 May)',
+    lifecycle: 'Settles only after a credit event recorded by hand (refused before); with no credit event by maturity it ends with nothing paid (the maturity waits as a lifecycle item)',
+    accounting: 'Zero cost; valued at the mark by hand; settlement = notional x (recovery - fixed recovery) / 100, sign reversed for the seller; realized',
+    collateral: 'Position-level terms: fixed independent amount 300,000 posted at entry and returned at settlement',
+  },
+  start: '2026-03-02T15:00:00.000Z',
+  settlementCheck: { lag: 2, holidays: [] },
+  book: { name: 'Matrix recovery swap', reportingCcy: 'USD', capital: [{ ccy: 'USD', amount: 3_000_000 }], account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 2_000_000 }] }, settings: SETTINGS },
+  instruments: {
+    main: { productId: 'recovery_swap', name: REC_NAME, symbol: 'RL-THORN-2027', marketView: 'US_DERIV', venueType: 'otc', jurisdiction: 'US', underlyingGeo: 'US', tradingCcy: 'USD',
+      terms: { referenceEntity: 'Thornfield Retail Group Inc. (senior unsecured)', recoveryStrikePct: 40, notional: 10_000_000, side: 'sell', maturity: '2027-06-20', valuationMaxAgeDays: 10, counterparty: 'Dunmore Credit Partners',
+        collateralBasis: { type: 'position', independentAmount: { type: 'fixed', amount: 300_000 }, variationMargin: false, threshold: 0, minimumTransfer: 0 } } },
+  },
+  expectAtStart: SIMPLE_START(2_000_000, 1_000_000),
+  steps: [
+    {
+      id: 'enter', covers: ['open', 'collateral'], action: 'ticket', instrument: 'main', side: 'buy', qty: 1, as: 'lock', order: { statedPrice: 0 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 1, estimate: 0, model: 'stated-price', settleDate: '2026-03-04', calendar: 'US', cash: 0, fees: 0, notional: 10_000_000 }],
+          cash: { USD: { margin: 300_000, required: 300_000, available: 2_000_000, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 1, avgPrice: 0 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Bought 1 RL-THORN-2027 @ 0.00 USD', owner: 'account', date: '2026-03-02' },
+          { type: 'manual.collateral', summary: `Collateral posted on ${REC_NAME} under its position-level terms: 300,000.00 USD (independent amount, fixed amount for the position)`, cash: { USD: -300_000 }, owner: 'account' },
+        ],
+        cash: { account: { USD: { settled: 1_700_000, margin: 300_000, availableToTrade: 1_700_000 } } },
+        positions: [{ ...REC_POS, qty: 1, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, margin: 300_000, manual: { kind: 'recovery', creditEvent: null, endDate: '2027-06-20', valuation: null } }],
+        holdings: { main: { long: 1, short: 0, net: 1 } },
+        pending: [],
+        lifecycle: [{ type: 'manual.settlement', instrument: 'main', dueDate: '2027-06-20', status: 'pending', owner: 'account' }],
+        otc: [{ instrument: 'main', lot: 'lock', owner: 'account', qty: 1, basis: 'position', mark: null, iaRequired: 300_000, iaPosted: 300_000 }],
+        pnl: { account: { realized: 0, fees: 0 } },
+        nav: { account: 2_000_000, book: 3_000_000 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 1_700_000, margin: 300_000, assets: 2_000_000, liabilities: 0, netAssets: 2_000_000 } },
+      },
+    },
+    { id: 'next-monday', action: 'clock', to: ny('2026-03-09'), expect: {} },
+    {
+      id: 'mark', covers: 'valuation', action: 'lifecycle', lot: 'lock', body: { action: 'valuation', value: 45_000, asOf: '2026-03-09', source: 'Dealer mark, Dunmore Credit Partners' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of RL-THORN-2027 entered by hand: 45,000.00 USD for the 1 held, as of 2026-03-09, source: Dealer mark, Dunmore Credit Partners. A manual input, not a market quote' }],
+        positions: [{ ...REC_POS, qty: 1, price: 45_000, value: 45_000, unrealized: 45_000, provisional: false, freshness: 'manual', margin: 300_000 }],
+        otc: [{ instrument: 'main', mark: 45_000, markValue: 45_000 }],
+        pnl: { account: { unrealized: 45_000, total: 45_000 } },
+        nav: { account: 2_045_000, book: 3_045_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 45_000, assets: 2_045_000, netAssets: 2_045_000 } },
+      },
+    },
+    {
+      id: 'settle-without-credit-event', covers: 'settlement', action: 'lifecycle', lot: 'lock', body: { action: 'settle', realised: 30 },
+      status: 'blocked', reason: 'A recovery lock settles only after a credit event of its reference entity.',
+      expect: { refused: 'Record the credit event first' },
+    },
+    {
+      // Thursday 16 April 2026: the 9 March mark is 38 days old.
+      id: 'credit-event-date', covers: 'valuation', action: 'clock', to: ny('2026-04-16'),
+      expect: { positions: [{ ...REC_POS, qty: 1, value: 45_000, freshness: 'stale', margin: 300_000 }], provisional: { account: true, book: true } },
+    },
+    {
+      id: 'credit-event', covers: 'credit event', action: 'lifecycle', lot: 'lock', body: { action: 'credit_event', eventDate: '2026-04-14', note: 'Failure to pay; Determinations Committee resolution' },
+      expect: {
+        events: [{ type: 'manual.credit_event', summary: 'Credit event of Thornfield Retail Group Inc. (senior unsecured) on 2026-04-14 recorded by hand for RL-THORN-2027; settled when the recovery rate is known. Failure to pay; Determinations Committee resolution', owner: 'account' }],
+        positions: [{ ...REC_POS, qty: 1, value: 45_000, margin: 300_000, manual: { kind: 'recovery', creditEvent: REC_EVENT } }],
+      },
+    },
+    {
+      id: 'mark-after-credit-event', covers: 'valuation', action: 'lifecycle', lot: 'lock', body: { action: 'valuation', value: 1_200_000, asOf: '2026-04-16', source: 'Dealer mark after the credit event' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of RL-THORN-2027 entered by hand: 1,200,000.00 USD for the 1 held, as of 2026-04-16, source: Dealer mark after the credit event. A manual input, not a market quote' }],
+        positions: [{ ...REC_POS, qty: 1, price: 1_200_000, value: 1_200_000, unrealized: 1_200_000, freshness: 'manual', margin: 300_000 }],
+        otc: [{ instrument: 'main', mark: 1_200_000, markValue: 1_200_000 }],
+        pnl: { account: { unrealized: 1_200_000, total: 1_200_000 } },
+        nav: { account: 3_200_000, book: 4_200_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 1_200_000, assets: 3_200_000, netAssets: 3_200_000 } },
+      },
+    },
+    {
+      id: 'auction-date', covers: 'valuation', action: 'clock', to: ny('2026-05-14'),
+      expect: { positions: [{ ...REC_POS, qty: 1, value: 1_200_000, freshness: 'stale', margin: 300_000 }], provisional: { account: true, book: true } },
+    },
+    {
+      // Auction final price 27.875: the seller receives 10,000,000 x (40 - 27.875) / 100 = 1,212,500, T+2 (Monday 18 May).
+      // The independent amount comes back as the contract ends.
+      id: 'settlement-at-auction-recovery', covers: ['close', 'collateral'], action: 'lifecycle', lot: 'lock', body: { action: 'settle', realised: 27.875 },
+      expect: {
+        events: [
+          { type: 'manual.settlement', summary: 'Final settlement of RL-THORN-2027 entered by hand: recovery 27.875% against the fixed 40.00%: 10,000,000.00 USD x (27.875 - 40.00) / 100, sign reversed (recovery seller) = 1,212,500.00 USD received 2026-05-18', owner: 'account', date: '2026-05-14' },
+          { type: 'manual.collateral', summary: `Collateral returned on ${REC_NAME} under its position-level terms: 300,000.00 USD (independent amount, the position ended)`, cash: { USD: 300_000 } },
+        ],
+        cash: { account: { USD: { settled: 2_000_000, unsettled: 1_212_500, margin: 0, availableToTrade: 3_212_500 } } },
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', lot: 'lock', owner: 'account', dueDate: '2026-05-18', amount: 1_212_500, ccy: 'USD', into: 'cash' }],
+        lifecycle: [],
+        otc: [],
+        pnl: { account: { realized: 1_212_500, unrealized: 0, total: 1_212_500 } },
+        nav: { account: 3_212_500, book: 4_212_500 },
+        provisional: { account: false, book: false },
+        balance: { account: { cash: 2_000_000, margin: null, receivable: 1_212_500, positions: null, assets: 3_212_500, netAssets: 3_212_500 } },
+      },
+    },
+    {
+      id: 'settlement-paid', covers: 'settlement', action: 'clock', to: ny('2026-05-18'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 1,212,500.00 USD into settled cash', cash: { USD: 1_212_500 }, date: '2026-05-18' }],
+        cash: { account: { USD: { settled: 3_212_500, unsettled: 0, availableToTrade: 3_212_500 } } },
+        pending: [],
+        balance: { account: { cash: 3_212_500, receivable: null, assets: 3_212_500, liabilities: 0, netAssets: 3_212_500 } },
+      },
+    },
+  ],
+};
+
+export default [privateEquity, ventureCapital, hedgeFund, infrastructure, directRealEstate, insuranceLinked, varianceSwap, volatilitySwap, correlationSwap, dispersionSwap, recoverySwap];

@@ -183,6 +183,25 @@ export const actions = {
     const inspect = async (modal, pv) => [...await loan.financingOnScreen(ui, modal, pv), ...await reconciliationOnScreen(modal, pv)];
     return loan.openTicket(ui, t, ctx, step, { ...tools, inspect }, () => repoDialog(ui, ctx, step));
   },
+  /**
+   * A part repurchase: the Repurchase (or Terminate) preview shows the whole outstanding principal and does not let a
+   * quantity be typed, which is how the interface refuses it. In full, the loan family's path.
+   */
+  async repay(ui, t, ctx, step, tools) {
+    const p = step.amount === undefined ? null : await loan.arrangementOf(t, ctx, step);
+    if (!p || p.family !== 'repo') return loan.actions.repay(ui, t, ctx, step, tools);
+    const label = p.qty < 0 ? 'Repurchase' : 'Terminate';
+    const row = await loan.arrangementRow(ui, ctx, p);
+    await ui.button(row, label).click();
+    const modal = ui.dialog(/^Preview: /);
+    await modal.waitFor();
+    const cell = modal.locator('table.pv-legs tbody tr:not(.group) td[data-label="Quantity"]').first();
+    await cell.waitFor();
+    if (await cell.locator('input').count()) return loan.actions.repay(ui, t, ctx, step, tools);
+    const fixed = (await cell.innerText()).split('\n')[0].trim();
+    await ui.closeOverlays();
+    return { refusal: { message: `The ${label} preview fixes the quantity at ${fixed}: a part cannot be entered.`, where: `${label} preview, Quantity` } };
+  },
   async lifecycle(ui, t, ctx, step) {
     if (step.body?.action !== 'collateral') return undefined;
     return collateral(ui, t, ctx, step);

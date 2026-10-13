@@ -152,6 +152,7 @@ const F = {
     { path: 'terms.settleCcy', label: 'Settlement currency', type: 'text', show: (d) => d.terms.forwardType === 'ndf' },
     { path: 'underlyingId', label: (d) => (d.terms.forwardType === 'ndf' ? 'Fixing source (currency pair)' : 'Underlying'), type: 'instrument', span: 2, show: (d) => ['ndf', 'asset'].includes(d.terms.forwardType) },
     { path: 'terms.settlement', label: 'Settlement', type: 'select', options: opt([['cash', 'Cash against a fixing'], ['physical', 'Physical delivery']]), show: (d) => d.terms.forwardType === 'asset' },
+    { path: 'terms.coupon', label: 'Pool coupon (decimal)', type: 'number', show: (d) => d.productId === 'tba_mortgage', required: true, hint: 'TBA: the pass-through coupon of the pools it settles with (0.055 = 5.5%). The pool itself is allocated by hand before settlement, on the position.' },
     { path: 'multiplier', label: 'Multiplier', type: 'number', show: (d) => d.terms.forwardType === 'asset' },
     { path: 'terms.periodStart', label: 'Interest period start', type: 'date', show: (d) => d.terms.forwardType === 'fra' },
     { path: 'terms.periodEnd', label: 'Interest period end', type: 'date', show: (d) => d.terms.forwardType === 'fra' },
