@@ -1659,4 +1659,242 @@ const perpetualBond = {
   ],
 };
 
-export default [corporateBondIg, highYieldBond, eurobond, foreignMarketBond, corporateSukuk, floatingRateNote, zeroCouponBond, perpetualBond];
+// ---------------------------------------------------------------------------------------------
+// subordinated_debt
+// ---------------------------------------------------------------------------------------------
+// A bank's Tier 2 subordinated notes (ranking behind senior creditors, ahead of shareholders): 5.875%,
+// coupons 15 June and 15 December, 30/360, T+1 on the US bond calendar, pieces of 1,000. A credit desk SELLS
+// THEM SHORT against a securities borrow (fee 0.75% a year: subordinated paper is dearer to borrow than
+// senior), carries the short over the 15 December coupon, which it pays to the lender, and covers in two parts.
+// The short-sale rules are those of bond-government.mjs (treasury_bond), restated:
+//   - The seller receives principal plus accrued interest; the accrued coupon is owed (a negative accrued
+//     balance) and its growth is an interest cost. On the coupon date the short pays the full coupon.
+//   - Sale proceeds settle into restricted cash; at each end of day the collateral is marked to 102% of the
+//     clean value at the last price plus the accrued coupon owed. 30% of the clean value at the last price is
+//     reserved from free cash. Neither is buying power or withdrawable.
+//   - The borrow fee accrues per calendar day on the clean value at that day's last price, ACT/360, and is paid
+//     when the borrow is fully returned. A cover is paid from restricted cash first.
+// Days of 30/360 from 15 June 2027: to 8 Dec 173. A full coupon is 2.9375 per 100: 29,375 on 1,000,000.
+// One fee day at 97.60 on 1,000,000: 976,000 x 0.75% / 360 = 20.3333. Commission: 1 basis point of clean principal.
+const subordinatedDebt = {
+  productId: 'subordinated_debt',
+  title: 'Brightwater Bank 5.875% Tier 2 subordinated notes due 15 June 2034: sold short against a borrow, coupon paid to the lender, covered in two parts',
+  matrix: {
+    ticket: 'Instrument drawer, Trade tab: Sell short (adds the securities borrow leg), then Buy to cover; the Close button of the short position',
+    requiredFields: ['Account', 'Action (Sell short / Buy to cover)', 'Face amount (a multiple of 1,000)'],
+    automaticInputs: ['bid, ask, last in % of par (quote fixture)', 'borrow availability and fee (borrow fixture standing in for Shaffer MarketData)', 'accrued interest received on the short sale and paid on the covers', 'collateral and margin from the Book short assumptions', 'settlement date', 'commission'],
+    manualInputs: ['none'],
+    settlement: 'T+1 on the US bond calendar; sale proceeds (principal plus accrued) settle into restricted cash; covers are paid from restricted cash first',
+    lifecycle: 'Coupon paid to the lender on the face sold short; daily borrow fee; collateral marked each end of day to 102% of clean value plus accrued owed; fee paid when the borrow is returned',
+    accounting: 'Short position at negative clean cost; accrued coupon owed as a negative accrued balance; coupon paid and accrued received and paid net to an interest cost; borrow fee under borrowing and funding; realized P&L on the covers',
+    collateral: 'Restricted cash = 102% of market value including accrued owed, marked daily; 30% margin reserve; neither is buying power or withdrawable',
+  },
+  start: EST('2027-12-07'), // Tuesday
+  settlementCheck: { lag: 1, holidays: [] },
+  book: {
+    name: 'Matrix subordinated debt', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 3_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 2_000_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 1 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'subordinated_debt', name: 'Brightwater Bank Corp 5.875% Subordinated Notes 15-Jun-2034', symbol: 'BRIGHT-5.875-34', marketView: 'US_CASH', venueType: 'otc', issuer: 'Brightwater Bank Corp', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      terms: { couponType: 'fixed', couponRate: 0.05875, frequency: 2, maturity: '2034-06-15', issueDate: '2024-06-15', dayCount: '30/360', redemption: 100, minDenomination: 1_000, seniority: 'Subordinated (Tier 2)' } },
+  },
+  quotes: { main: { bid: 97.5, ask: 97.7, last: 97.6, bidSize: 5_000_000, askSize: 5_000_000 } },
+  borrow: { main: { available: true, quantity: 5_000_000, feeRate: 0.0075 } },
+  expectAtStart: { ...startState(2_000_000, 1_000_000), cash: { account: usdCash(2_000_000), treasury: usdCash(1_000_000) } },
+  steps: [
+    {
+      id: 'short', covers: ['borrow', 'short'], action: 'ticket', instrument: 'main', side: 'sell_short', qty: 1_000_000, as: 'short',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [
+            { kind: 'borrow_sec', action: 'borrow_sec', instrument: 'main', qty: 1_000_000, borrow: { available: true, feeRate: 0.0075, dailyCost: 20.33, source: 'Test fixture' } }, // 1,000,000 x 97.60% x 0.75% / 360
+            { kind: 'trade', action: 'sell_short', instrument: 'main', qty: 1_000_000, estimate: 97.5, model: 'quoted-bid-ask', settleDate: '2027-12-08', calendar: 'USBOND', dependsOn: [1],
+              gross: 975_000, // 1,000,000 x 97.50 / 100
+              accrued: 28_232.64, // settles 8 Dec, 173 days of 30/360: 1,000,000 x 5.875% x 173/360 = 28,232.639
+              cash: 1_003_232.64, fees: 97.5, // 1 bp of 975,000
+              shortCollateral: { topUp: 20_064.65, marginHold: 300_969.79 } }, // 2% and 30% of the 1,003,232.64 proceeds
+          ],
+          cash: { USD: { purchases: 0, proceeds: 0, restrictedProceeds: 1_003_232.64, fees: 97.5, collateral: 20_064.65, margin: 300_969.79, required: 321_131.94, available: 2_000_000, shortfall: 0 } }, // 97.50 + 20,064.65 + 300,969.79
+        },
+        result: { status: 'open', orders: [
+          { kind: 'borrow_sec', status: 'filled', filledQty: 1_000_000 },
+          { kind: 'trade', action: 'sell_short', status: 'filled', filledQty: 1_000_000, avgPrice: 97.5, fills: [{ qty: 1_000_000, price: 97.5, model: 'quoted-bid-ask', settleDate: '2027-12-08', source: 'Test fixture' }] },
+        ] },
+        events: [{ type: 'strategy.submitted' }, { type: 'secloan.borrow', summary: 'Borrowed 1,000,000 BRIGHT-5.875-34 at a fee of 0.750% p.a.' }, { type: 'trade.fill', summary: 'Sold short 1,000,000 BRIGHT-5.875-34 @ 97.50 USD', owner: 'account', date: '2027-12-07' }],
+        // Proceeds 1,003,232.64 less 97.50 commission arrive tomorrow as restricted cash. Reserve: 30% x 1,000,000 x 97.60% = 292,800.
+        cash: { account: { USD: { settled: 2_000_000, unsettled: 1_003_135.14, restricted: 0, reserved: 292_800, availableToTrade: 1_707_200, availableToWithdraw: 1_707_200 } } },
+        positions: [
+          { instrument: 'borrow:main', lot: 'short', owner: 'account', direction: 'securities borrowed', qty: 1_000_000, value: 976_000, accrued: 0 },
+          { instrument: 'main', lot: 'short', owner: 'account', direction: 'short', qty: -1_000_000, avgCost: 97.5, cost: -975_000, price: 97.6, value: -976_000, unrealized: -1_000, restrictedCash: 0,
+            accrued: -28_232.64 }, // the accrued coupon received from the buyer is owed
+        ],
+        holdings: { main: { long: 0, short: 1_000_000, net: -1_000_000 } },
+        pending: [{ instrument: 'main', dueDate: '2027-12-08', amount: 1_003_135.14, into: 'cash.restricted' }],
+        // Coupon Wednesday 15 Dec; borrow fee on the first business day of January (1 Jan 2028 is a Saturday: Monday 3 Jan); maturity Thursday 15 Jun 2034.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-12-15', status: 'pending' }, { type: 'secloan.fee', instrument: 'borrow:main', dueDate: '2028-01-03', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2034-06-15', status: 'pending' }],
+        borrowings: [{ owner: 'account', family: 'secloan', instrument: 'main', lot: 'short', qty: 1_000_000, value: 976_000, rate: 0.0075, accrued: 0, collateralCash: null, nextPayment: '2028-01-03' }],
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -97.5, fees: 0, borrowFunding: 0, unrealized: -1_000, total: -1_097.50 } },
+        nav: { account: 1_998_902.50, book: 2_998_902.50 },
+        balance: { account: { cash: 2_000_000, receivable: 1_003_135.14, accruedIncome: -28_232.64, positions: -976_000, netAssets: 1_998_902.50 } },
+      },
+    },
+    {
+      // Wednesday 8 Dec: the proceeds settle into restricted cash. End of day 7 Dec: collateral required 102% x (976,000 clean +
+      // 28,232.64 accrued owed) = 102% x 1,004,232.64 = 1,024,317.29; held 1,003,135.14; 21,182.15 posted from settled cash.
+      id: 'settle-short', covers: ['settlement', 'collateral mark'], action: 'clock', to: EST('2027-12-08'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 1,003,135.14 USD into restricted cash' },
+          { type: 'collateral.mark', summary: 'Short collateral on BRIGHT-5.875-34 marked to market: posted 21,182.15 USD', cash: { USD: -21_182.15 } },
+        ],
+        cash: { account: { USD: { settled: 1_978_817.85, unsettled: 0, restricted: 1_024_317.29, reserved: 292_800, availableToTrade: 1_686_017.85, availableToWithdraw: 1_686_017.85 } } },
+        positions: [{ instrument: 'borrow:main', qty: 1_000_000, value: 976_000 }, { instrument: 'main', qty: -1_000_000, value: -976_000, unrealized: -1_000, restrictedCash: 1_024_317.29, accrued: -28_232.64 }],
+        pending: [],
+        borrowings: [{ instrument: 'main', qty: 1_000_000, value: 976_000, accrued: 0, collateralCash: 1_024_317.29 }],
+        balance: { account: { cash: 1_978_817.85, restricted: 1_024_317.29, receivable: null, accruedIncome: -28_232.64, positions: -976_000, netAssets: 1_998_902.50 } },
+      },
+    },
+    {
+      // Wednesday 15 Dec. In order: the coupon of 15 Dec is paid to the lender on the 1,000,000 sold short: 29,375.00. The accrued owed,
+      // 28,232.64, falls 1,142.36 short of it (the interest cost from 8 to 15 Dec). Then the end of day of 14 Dec: borrow fee for
+      // seven days at 97.60, 7 x 20.3333 = 142.33; collateral with nothing owed: 102% x 976,000 = 995,520.00; 28,797.29 released.
+      id: 'coupon-paid-to-lender', covers: ['coupon', 'borrow fee', 'collateral mark'], action: 'clock', to: EST('2027-12-15'),
+      expect: {
+        events: [
+          { type: 'bond.coupon', summary: 'Coupon paid on 1,000,000 BRIGHT-5.875-34 sold short: 29,375.00 USD', cash: { USD: -29_375 }, owner: 'account', date: '2027-12-15' },
+          { type: 'accrual.coupon', summary: 'Interest cost accrued on BRIGHT-5.875-34: 1,142.36 USD' },
+          { type: 'accrual.fee', summary: 'Borrow fee accrued on 1,000,000 BRIGHT-5.875-34: 142.33 USD' },
+          { type: 'collateral.mark', summary: 'Short collateral on BRIGHT-5.875-34 marked to market: released 28,797.29 USD', cash: { USD: 28_797.29 } },
+        ],
+        cash: { account: { USD: { settled: 1_978_240.14, restricted: 995_520, reserved: 292_800, availableToTrade: 1_685_440.14, availableToWithdraw: 1_685_440.14 } } }, // 1,978,817.85 - 29,375 + 28,797.29
+        positions: [{ instrument: 'borrow:main', qty: 1_000_000, accrued: -142.33 }, { instrument: 'main', qty: -1_000_000, restrictedCash: 995_520, accrued: 0 }],
+        lifecycle: [{ type: 'secloan.fee', instrument: 'borrow:main', dueDate: '2028-01-03', status: 'pending' }, { type: 'bond.coupon', instrument: 'main', dueDate: '2028-06-15', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2034-06-15', status: 'pending' }],
+        borrowings: [{ instrument: 'main', qty: 1_000_000, accrued: 142.33, costToDate: 142.33, collateralCash: 995_520 }],
+        // Interest cost so far: 29,375 paid less 28,232.64 received with the sale = 1,142.36.
+        pnl: { account: { couponInterest: -1_142.36, borrowFunding: -142.33, total: -2_382.19 } },
+        nav: { account: 1_997_617.81, book: 2_997_617.81 },
+        balance: { account: { cash: 1_978_240.14, restricted: 995_520, accruedIncome: null, accruedExpense: 142.33, netAssets: 1_997_617.81 } },
+      },
+    },
+    {
+      // Settled 1,978,240.14, of which 292,800 is reserved; the 995,520 of restricted collateral is not the Account's to move.
+      id: 'withdraw-restricted-cash', covers: 'restricted proceeds', action: 'transfer', from: 'account', to: 'treasury', ccy: 'USD', amount: 1_900_000,
+      status: 'blocked', reason: 'Restricted collateral and the margin reserve cannot leave the Account.',
+      expect: { refused: 'Alpha has 1,685,440.14 USD of settled USD available; 1,900,000.00 USD requested' },
+    },
+    {
+      id: 'quote-down', action: 'quote', instrument: 'main', quote: { bid: 96.8, ask: 97, last: 96.9, bidSize: 5_000_000, askSize: 5_000_000 },
+      expect: {
+        positions: [{ instrument: 'borrow:main', qty: 1_000_000, value: 969_000 }, { instrument: 'main', qty: -1_000_000, price: 96.9, value: -969_000, unrealized: 6_000 }], // 975,000 - 969,000
+        borrowings: [{ instrument: 'main', qty: 1_000_000, value: 969_000, accrued: 142.33 }],
+        pnl: { account: { unrealized: 6_000, total: 4_617.81 } }, // -97.50 - 1,142.36 - 142.33 + 6,000
+        nav: { account: 2_004_617.81, book: 3_004_617.81 },
+        balance: { account: { positions: -969_000, netAssets: 2_004_617.81 } },
+      },
+    },
+    {
+      id: 'cover-part', covers: ['cover', 'return', 'borrow fee'], action: 'ticket', instrument: 'main', side: 'buy_to_cover', qty: 400_000, from: 'short',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [
+          { kind: 'trade', action: 'buy_to_cover', qty: 400_000, estimate: 97, settleDate: '2027-12-16',
+            gross: 388_000, // 400,000 x 97.00 / 100
+            accrued: 65.28, // settles 16 Dec, 1 day of 30/360: 400,000 x 5.875% / 360 = 65.278
+            cash: -388_065.28, fees: 38.8 }, // 1 bp of 388,000
+          { kind: 'return_sec', action: 'return_sec', qty: 400_000, dependsOn: [1] },
+        ] },
+        result: { status: 'open', orders: [{ action: 'buy_to_cover', status: 'filled', filledQty: 400_000, avgPrice: 97 }, { kind: 'return_sec', status: 'filled', filledQty: 400_000 }] },
+        // Realized: 400,000 x (97.50 - 97.00)% = 2,000. Fee for today at the current price: 1,000,000 x 96.90% x 0.75% / 360 = 20.1875;
+        // in all 142.3333 + 20.1875 = 162.5208 -> 162.52, so 20.19 is added.
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Bought to cover 400,000 BRIGHT-5.875-34 @ 97.00 USD (realized 2,000.00 USD)' },
+          { type: 'accrual.fee', summary: 'Borrow fee accrued on 1,000,000 BRIGHT-5.875-34: 20.19 USD' },
+          { type: 'secloan.return', summary: 'Returned 400,000 borrowed BRIGHT-5.875-34' },
+        ],
+        // Owed for the cover: 388,065.28 + 38.80 = 388,104.08. Reserve: 30% x 600,000 x 96.90% = 174,420.
+        cash: { account: { USD: { settled: 1_978_240.14, unsettled: -388_104.08, restricted: 995_520, reserved: 174_420, availableToTrade: 1_415_716.06, availableToWithdraw: 1_415_716.06 } } },
+        positions: [
+          { instrument: 'borrow:main', qty: 600_000, value: 581_400, accrued: -162.52 }, // 600,000 x 96.90%
+          { instrument: 'main', qty: -600_000, cost: -585_000, avgCost: 97.5, price: 96.9, value: -581_400, unrealized: 3_600, restrictedCash: 995_520,
+            accrued: 65.28 }, // the interest bought with the cover
+        ],
+        holdings: { main: { long: 0, short: 600_000, net: -600_000 } },
+        pending: [{ instrument: 'main', dueDate: '2027-12-16', amount: -388_104.08, into: 'cash.restricted' }],
+        borrowings: [{ instrument: 'main', qty: 600_000, value: 581_400, accrued: 162.52, costToDate: 162.52, collateralCash: 995_520 }],
+        pnl: { account: { realized: 2_000, couponInterest: -1_142.36, borrowFunding: -162.52, commissions: -136.30, unrealized: 3_600, total: 4_158.82 } }, // 97.50 + 38.80
+        nav: { account: 2_004_158.82, book: 3_004_158.82 },
+        balance: { account: { cash: 1_978_240.14, restricted: 995_520, accruedIncome: 65.28, positions: -581_400, payable: 388_104.08, accruedExpense: 162.52, netAssets: 2_004_158.82 } },
+      },
+    },
+    {
+      // Thursday 16 Dec: the cover is paid from restricted cash, 995,520 - 388,104.08 = 607,415.92 left. End of day 15 Dec: the interest
+      // owed to 15 Dec is nil (first day of the period) and the 65.28 bought runs to 16 Dec: nothing to book; no fee day (the fee
+      // already stands at 15 Dec). Collateral for the 600,000 still short, nothing owed: 102% x 581,400 = 593,028.00; 14,387.92 released.
+      id: 'settle-cover-part', covers: ['settlement', 'collateral mark'], action: 'clock', to: EST('2027-12-16'),
+      expect: {
+        events: [
+          { type: 'settlement.pay', summary: 'paid 388,104.08 USD from restricted cash' },
+          { type: 'collateral.mark', summary: 'Short collateral on BRIGHT-5.875-34 marked to market: released 14,387.92 USD', cash: { USD: 14_387.92 } },
+        ],
+        cash: { account: { USD: { settled: 1_992_628.06, unsettled: 0, restricted: 593_028, reserved: 174_420, availableToTrade: 1_818_208.06, availableToWithdraw: 1_818_208.06 } } },
+        positions: [{ instrument: 'borrow:main', qty: 600_000 }, { instrument: 'main', qty: -600_000, restrictedCash: 593_028, accrued: 65.28 }],
+        borrowings: [{ instrument: 'main', qty: 600_000, accrued: 162.52, collateralCash: 593_028 }],
+        pending: [],
+        balance: { account: { cash: 1_992_628.06, restricted: 593_028, accruedIncome: 65.28, payable: null, netAssets: 2_004_158.82 } },
+      },
+    },
+    {
+      id: 'cover-rest', covers: ['cover', 'return', 'close', 'borrow fee'], action: 'close', lot: 'short', scope: 'position', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [
+          { kind: 'trade', action: 'buy_to_cover', qty: 600_000, estimate: 97, settleDate: '2027-12-17',
+            gross: 582_000, // 600,000 x 97.00 / 100
+            accrued: 195.83, // settles 17 Dec, 2 days: 600,000 x 5.875% x 2/360 = 195.833
+            cash: -582_195.83, fees: 58.2 }, // 1 bp of 582,000
+          { kind: 'return_sec', action: 'return_sec', qty: 600_000, dependsOn: [1] },
+        ] },
+        result: { status: 'closed', orders: [{ action: 'buy_to_cover', status: 'filled', filledQty: 600_000, avgPrice: 97 }, { kind: 'return_sec', status: 'filled', filledQty: 600_000 }] },
+        // Realized: 585,000 - 582,000 = 3,000. Interest: 65.28 + 195.83 bought on the covers against nothing owed: 261.11 of cost (the day
+        // to 16 Dec on 1,000,000, 163.19, and the day to 17 Dec on 600,000, 97.92). Fee for one more day on 600,000 at 96.90: 12.1125;
+        // in all 174.6333 -> 174.63, so 12.11 is added, and the whole 174.63 is paid now.
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Bought to cover 600,000 BRIGHT-5.875-34 @ 97.00 USD (realized 3,000.00 USD)' },
+          { type: 'accrual.coupon', summary: 'Interest cost to disposal of BRIGHT-5.875-34: 261.11 USD' },
+          { type: 'accrual.fee', summary: 'Borrow fee accrued on 600,000 BRIGHT-5.875-34: 12.11 USD' },
+          { type: 'secloan.return', summary: 'Returned 600,000 borrowed BRIGHT-5.875-34' },
+          { type: 'interest.payment', summary: /Borrow fee paid on Borrow of BRIGHT-5\.875-34.*: 174\.63 USD/, cash: { USD: -174.63 } },
+        ],
+        cash: { account: { USD: { settled: 1_992_453.43, unsettled: -582_254.03, restricted: 593_028, reserved: 0, availableToTrade: 1_410_199.40, availableToWithdraw: 1_410_199.40 } } }, // 1,992,628.06 - 174.63; 582,195.83 + 58.20 owed
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', dueDate: '2027-12-17', amount: -582_254.03, into: 'cash.restricted' }],
+        lifecycle: [],
+        borrowings: [],
+        // Interest cost in all: 29,375 coupon + 65.28 + 195.83 paid on the covers - 28,232.64 received on the sale = 1,403.47.
+        pnl: { account: { realized: 5_000, couponInterest: -1_403.47, borrowFunding: -174.63, commissions: -194.50, unrealized: 0, total: 3_227.40 } }, // 2,000 + 3,000; 136.30 + 58.20
+        nav: { account: 2_003_227.40, book: 3_003_227.40 },
+        balance: { account: { cash: 1_992_453.43, restricted: 593_028, positions: null, accruedIncome: null, payable: 582_254.03, accruedExpense: null, netAssets: 2_003_227.40 } },
+      },
+    },
+    {
+      // 593,028 - 582,254.03 = 10,773.97 of collateral is left with no short to secure: released.
+      id: 'settle-cover-rest', covers: ['settlement', 'collateral release'], action: 'clock', to: EST('2027-12-17'),
+      expect: {
+        events: [
+          { type: 'settlement.pay', summary: 'paid 582,254.03 USD from restricted cash' },
+          { type: 'collateral.mark', summary: 'Short collateral on BRIGHT-5.875-34 marked to market: released 10,773.97 USD', cash: { USD: 10_773.97 } },
+        ],
+        cash: { account: { USD: { settled: 2_003_227.40, unsettled: 0, restricted: 0, reserved: 0, availableToTrade: 2_003_227.40, availableToWithdraw: 2_003_227.40 } }, treasury: { USD: { settled: 1_000_000 } } },
+        pending: [],
+        balance: { account: { cash: 2_003_227.40, restricted: null, payable: null, assets: 2_003_227.40, liabilities: 0, netAssets: 2_003_227.40 } },
+      },
+    },
+  ],
+};
+
+export default [corporateBondIg, highYieldBond, eurobond, foreignMarketBond, corporateSukuk, floatingRateNote, zeroCouponBond, perpetualBond, subordinatedDebt];

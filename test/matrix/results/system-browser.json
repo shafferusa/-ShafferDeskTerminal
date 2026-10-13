@@ -301,13 +301,13 @@
   "SB:stress:double-click-confirm": {
    "status": "passed",
    "message": "Confirm double-clicked: 1 request left the page",
-   "ms": 1472,
+   "ms": 3652,
    "checks": 6,
    "area": "stress",
    "case": "double-click-confirm",
    "title": "Double click on \"Confirm paper trade\"",
-   "commit": "2ab1aad",
-   "at": "2026-10-13T15:37:00.273Z"
+   "commit": "c5b8c4d+changes",
+   "at": "2026-10-13T16:52:24.657Z"
   },
   "SB:stress:double-click-transfer": {
    "status": "passed",
@@ -354,7 +354,7 @@
    "at": "2026-10-13T15:37:16.303Z"
   }
  },
- "updatedAt": "2026-10-13T15:37:16.303Z",
+ "updatedAt": "2026-10-13T16:52:24.657Z",
  "environment": {
   "node": "v22.22.0",
   "platform": "linux",
