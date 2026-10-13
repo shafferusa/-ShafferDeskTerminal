@@ -142,3 +142,4 @@
 - 2026-10-13T17:42Z | fw | +0 | fw: delivery refusals for cash-settled and bond futures; equity_future now delivers shares on paper; five futures pass E/A/B
 - 2026-10-13T17:43Z | o2 | +0.2 | fx_option passes at engine, API and browser
 - 2026-10-13T17:44Z | r1 | +0.2 | overnight_repo passes at engine, API and browser
+- 2026-10-13T17:44Z | b3 | +0.2 | callable_bond passes at engine, API and browser
