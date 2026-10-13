@@ -249,4 +249,210 @@ const barrierOption = {
   ],
 };
 
-export default [barrierOption];
+// ---------------------------------------------------------------------------------------------
+// asian_option
+// ---------------------------------------------------------------------------------------------
+// Two average-price options on gold held in a New York vault (Hudson Bullion, USD per troy ounce; quantity in troy
+// ounces), cash-settled, dealt with Dealer L. The average is the arithmetic mean of the gold closes on the last five
+// business days of May 2026: Friday 22, Tuesday 26 (Monday 25 is Memorial Day), Wednesday 27, Thursday 28 and Friday 29
+// May (expiration). Payoff: call max(A - K, 0), put max(K - A, 0), per ounce.
+//   - an average-price call struck at 2,400, bought on 1,000 oz; position-level terms: variation margin over 25,000.
+//   - an average-price put struck at 2,350, written on 1,000 oz; position-level terms: independent amount 5% of strike
+//     notional.
+// Three closes are supplied by the close fixture (22 May 2,410; 26 May 2,425; 28 May 2,430). The other two are not: the
+// expiry items wait, naming the missing dates, until each is entered by hand (27 May 2,440; 29 May 2,445).
+// A = (2,410 + 2,425 + 2,440 + 2,430 + 2,445) / 5 = 12,150 / 5 = 2,430.00. Call: 30.00 an ounce, 30,000. Put: lapses.
+const GOLD = 'Gold, 400-oz Good Delivery bars, New York vault (Hudson Bullion)';
+const ACALL = 'Gold average-price call 2,400, May 2026 (Dealer L)';
+const APUT = 'Gold average-price put 2,350, May 2026 (Dealer L)';
+const AVERAGING = ['2026-05-22', '2026-05-26', '2026-05-27', '2026-05-28', '2026-05-29'];
+const asianOption = {
+  productId: 'asian_option',
+  title: 'Gold average-price options on five May closes: call 2,400 bought (pays), put 2,350 written (lapses); two fixings entered by hand',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'Payoff: Asian (average of fixings)', 'Averaging dates'],
+    automaticInputs: ['gold price (quote fixture standing in for Shaffer MarketData) for the notional', 'gold closes for the averaging dates where supplied (close fixture)', 'the average and the payoff, worked out from the five closes', 'premium settlement date, T+2 on the US calendar', 'commission per ounce from the Book fee schedule', 'variation margin and independent amount from the position-level terms'],
+    manualInputs: ['premium per ounce agreed with the dealer (stated fill price)', 'marks entered by hand (Manual entry)', 'each averaging fixing the data service has not supplied, entered by hand as the closing price for its date (instrument drawer, Overview)'],
+    settlement: 'Premium and commission T+2 on the US calendar; the cash settlement T+1 after expiry',
+    lifecycle: 'Expiry item on 29 May waits for every averaging fixing, naming the missing dates; once all five exist the call pays (A - K) x ounces and the put lapses; held across Memorial Day; nothing scheduled afterwards',
+    accounting: 'Premium per ounce x ounces; payoff max(A - K, 0) from the arithmetic mean of the fixings; premium realized at expiry; commission expensed; marks by hand drive unrealized P&L',
+    collateral: 'Call (bought): position-level terms, variation margin over 25,000, received from the dealer and returned at settlement. Put (written): independent amount 5% x 1,000 x 2,350 = 117,500, returned at expiry',
+  },
+  start: at('2026-03-02'),
+  settlementCheck: { lag: 2, holidays: [] },
+  book: {
+    name: 'Matrix Asian option', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 4_000_000 }],
+    account: { name: 'Metals', funding: [{ ccy: 'USD', amount: 1_000_000 }] },
+    settings: { fees: { otcoption: { perUnit: 0.50, minimum: 0, bps: 0 }, spot: NO_FEE }, fill: FILL, settlement: { otcoption: 2, spot: 2 } }, // 0.50 an ounce
+  },
+  instruments: {
+    gold: { productId: 'precious_metal', name: GOLD, symbol: 'XAU-HB', marketView: 'US_CASH', venue: 'Hudson Bullion (OTC dealer)', venueType: 'otc', venueCountry: 'US', issuer: 'Hudson Bullion LLC', domicile: 'US', underlyingGeo: 'Global', tradingCcy: 'USD', terms: { quantityUnit: 'troy ounces', priceUnits: 'USD per troy ounce' } },
+    call: {
+      productId: 'asian_option', name: ACALL, symbol: 'XAU-AC2400-MAY26', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', underlying: 'gold', multiplier: 1,
+      terms: { right: 'C', strike: 2_400, expiration: '2026-05-29', optionType: 'asian', averagingDates: AVERAGING, exercise: 'european', settlement: 'cash', counterparty: 'Dealer L',
+        collateralBasis: { type: 'position', independentAmount: { type: 'none' }, variationMargin: true, threshold: 25_000, minimumTransfer: 5_000 } },
+    },
+    put: {
+      productId: 'asian_option', name: APUT, symbol: 'XAU-AP2350-MAY26', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', underlying: 'gold', multiplier: 1,
+      terms: { right: 'P', strike: 2_350, expiration: '2026-05-29', optionType: 'asian', averagingDates: AVERAGING, exercise: 'european', settlement: 'cash', counterparty: 'Dealer L',
+        collateralBasis: { type: 'position', independentAmount: { type: 'pct', pct: 0.05 }, variationMargin: false, threshold: 0, minimumTransfer: 0 } },
+    },
+  },
+  quotes: { gold: { bid: 2_349, ask: 2_351, last: 2_350, bidSize: 100_000, askSize: 100_000 } },
+  closes: { gold: { '2026-05-22': 2_410, '2026-05-26': 2_425, '2026-05-28': 2_430 } }, // supplied; 27 and 29 May are not
+  expectAtStart: usdStart(1_000_000, 3_000_000),
+  steps: [
+    otcTicket({
+      id: 'buy-average-call', covers: 'open', instrument: 'call', side: 'buy', qty: 1_000, premium: 45, as: 'calls',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'call', qty: 1_000, estimate: 45, model: 'stated-price', settleDate: '2026-03-04', calendar: 'US', cash: -45_000, fees: 500, notional: 2_350_000 }], // 1,000 x 45; 1,000 x 0.50; 1,000 x 2,350
+          cash: { USD: { purchases: 45_000, fees: 500, margin: 0, required: 45_500, available: 1_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 1_000, avgPrice: 45 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1,000 XAU-AC2400-MAY26 @ 45.00 USD', owner: 'account', date: '2026-03-02' }],
+        cash: { account: { USD: { settled: 1_000_000, unsettled: -45_500, availableToTrade: 954_500, availableToWithdraw: 954_500 } } },
+        positions: [{ instrument: 'call', lot: 'calls', owner: 'account', direction: 'long', qty: 1_000, avgCost: 45, cost: 45_000, price: null, value: null, unrealized: null, provisional: true, notional: 2_350_000, margin: 0 }],
+        holdings: { call: { long: 1_000, short: 0, net: 1_000 } },
+        pending: [{ instrument: 'call', owner: 'account', dueDate: '2026-03-04', amount: -45_500, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'option.expiry', instrument: 'call', dueDate: '2026-05-29', status: 'pending' }],
+        otc: [{ instrument: 'call', lot: 'calls', qty: 1_000, basis: 'position', mark: null, iaRequired: 0, iaPosted: 0, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: -500, unrealized: 0, total: -500 } },
+        nav: { account: 999_500, book: 3_999_500 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 1_000_000, payable: 45_500, positions: 45_000, assets: 1_045_000, liabilities: 45_500, netAssets: 999_500 } },
+      },
+    }),
+    { id: 'half-an-hour-later', action: 'clock', to: at('2026-03-02', '15:30'), expect: {} },
+    otcTicket({
+      // Written: independent amount 5% x 1,000 x 2,350 = 117,500.
+      id: 'write-average-put', covers: ['write', 'collateral'], instrument: 'put', side: 'sell', qty: 1_000, premium: 25, as: 'puts',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'put', qty: 1_000, estimate: 25, model: 'stated-price', settleDate: '2026-03-04', calendar: 'US', cash: 25_000, fees: 500, notional: 2_350_000 }],
+          cash: { USD: { proceeds: 25_000, fees: 500, margin: 117_500, required: 118_000, available: 954_500, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 1_000, avgPrice: 25 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Sold 1,000 XAU-AP2350-MAY26 @ 25.00 USD', owner: 'account' },
+          { type: 'otcoption.collateral', summary: `Collateral posted on ${APUT} under its position-level terms: 117,500.00 USD (independent amount, 5.00% of 2,350,000.00 USD notional)`, cash: { USD: -117_500 } },
+        ],
+        cash: { account: { USD: { settled: 882_500, unsettled: -21_000, margin: 117_500, availableToTrade: 861_500, availableToWithdraw: 837_000 } } }, // -45,500 + 24,500; 882,500 - 45,500
+        positions: [
+          { instrument: 'call', lot: 'calls', qty: 1_000 },
+          { instrument: 'put', lot: 'puts', owner: 'account', direction: 'short', qty: -1_000, avgCost: 25, cost: -25_000, price: null, value: null, unrealized: null, provisional: true, notional: 2_350_000, margin: 117_500 },
+        ],
+        holdings: { put: { long: 0, short: 1_000, net: -1_000 } },
+        pending: [
+          { instrument: 'call', owner: 'account', dueDate: '2026-03-04', amount: -45_500, ccy: 'USD', into: 'cash' },
+          { instrument: 'put', owner: 'account', dueDate: '2026-03-04', amount: 24_500, ccy: 'USD', into: 'cash' },
+        ],
+        lifecycle: [{ type: 'option.expiry', instrument: 'call', dueDate: '2026-05-29', status: 'pending' }, { type: 'option.expiry', instrument: 'put', dueDate: '2026-05-29', status: 'pending' }],
+        otc: [{ instrument: 'call' }, { instrument: 'put', lot: 'puts', qty: -1_000, basis: 'position', iaRequired: 117_500, iaPosted: 117_500, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { commissions: -1_000, total: -1_000 } },
+        nav: { account: 999_000, book: 3_999_000 }, // 882,500 + 117,500 + 24,500 - 45,500 + 45,000 - 25,000
+        balance: { account: { cash: 882_500, margin: 117_500, receivable: 24_500, payable: 45_500, positions: 20_000, assets: 1_044_500, liabilities: 45_500, netAssets: 999_000 } },
+      },
+    }),
+    {
+      id: 'mark-call', covers: 'manual mark', action: 'manual_price', instrument: 'call', value: 52, note: 'Dealer L mark per ounce, by hand',
+      expect: {
+        positions: [{ instrument: 'call', lot: 'calls', price: 52, value: 52_000, unrealized: 7_000, provisional: false }, { instrument: 'put', lot: 'puts' }],
+        otc: [{ instrument: 'call', mark: 52, markValue: 52_000 }, { instrument: 'put' }],
+        pnl: { account: { unrealized: 7_000, total: 6_000 } },
+        nav: { account: 1_006_000, book: 4_006_000 },
+        balance: { account: { positions: 27_000, assets: 1_051_500, netAssets: 1_006_000 } }, // 52,000 - 25,000
+      },
+    },
+    {
+      id: 'mark-put', covers: 'manual mark', action: 'manual_price', instrument: 'put', value: 20, note: 'Dealer L mark per ounce, by hand',
+      expect: {
+        positions: [{ instrument: 'call', lot: 'calls' }, { instrument: 'put', lot: 'puts', price: 20, value: -20_000, unrealized: 5_000, provisional: false }],
+        otc: [{ instrument: 'call' }, { instrument: 'put', mark: 20, markValue: -20_000 }],
+        pnl: { account: { unrealized: 12_000, total: 11_000 } },
+        nav: { account: 1_011_000, book: 4_011_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 32_000, assets: 1_056_500, netAssets: 1_011_000 } },
+      },
+    },
+    {
+      // Call marked at 52,000: 27,000 beyond its 25,000 threshold, posted by Dealer L.
+      id: 'variation-margin-received', covers: 'variation margin', action: 'clock', to: eod('2026-03-02'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under position-level terms: 27,000.00 USD received. Netting set of 1 position marked at 52,000.00 USD; threshold 25,000.00 USD.', owner: 'account' }],
+        cash: { account: { USD: { restricted: 27_000 } } },
+        otc: [{ instrument: 'call', vmHeld: 27_000, vmExposure: 52_000, vmStatus: 'ok' }, { instrument: 'put' }],
+        balance: { account: { restricted: 27_000, collateralReceived: 27_000, assets: 1_083_500, liabilities: 72_500, netAssets: 1_011_000 } },
+      },
+    },
+    {
+      id: 'settle-premiums', covers: 'settlement', action: 'clock', to: at('2026-03-04'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 24,500.00 USD into settled cash', cash: { USD: 24_500 } },
+          { type: 'settlement.pay', summary: 'paid 45,500.00 USD from settled cash', cash: { USD: -45_500 } },
+        ],
+        cash: { account: { USD: { settled: 861_500, unsettled: 0, availableToTrade: 861_500, availableToWithdraw: 861_500 } } },
+        pending: [],
+        balance: { account: { cash: 861_500, receivable: null, payable: null, assets: 1_038_000, liabilities: 27_000 } }, // 861,500 + 27,000 + 117,500 + 32,000
+      },
+    },
+    {
+      // Expiration, after the close: three of the five averaging closes are supplied; 27 and 29 May are missing.
+      id: 'expiry-awaits-fixings', covers: ['expiry', 'averaging fixings', 'holiday'], action: 'clock', to: eod('2026-05-29'),
+      expect: {
+        events: [],
+        lifecycle: [
+          { type: 'option.expiry', instrument: 'call', dueDate: '2026-05-29', status: 'blocked', reason: /^Awaiting the averaging fixings of XAU-HB for 2026-05-27, 2026-05-29\./ },
+          { type: 'option.expiry', instrument: 'put', dueDate: '2026-05-29', status: 'blocked', reason: /^Awaiting the averaging fixings of XAU-HB for 2026-05-27, 2026-05-29\./ },
+        ],
+      },
+    },
+    {
+      id: 'fixing-27-may-by-hand', covers: 'averaging fixings', action: 'manual_price', instrument: 'gold', value: 2_440, forDate: '2026-05-27', note: 'Gold close for 27 May, entered by hand',
+      expect: {
+        events: [],
+        lifecycle: [
+          { type: 'option.expiry', instrument: 'call', dueDate: '2026-05-29', status: 'blocked', reason: /^Awaiting the averaging fixings of XAU-HB for 2026-05-29\./ },
+          { type: 'option.expiry', instrument: 'put', dueDate: '2026-05-29', status: 'blocked', reason: /^Awaiting the averaging fixings of XAU-HB for 2026-05-29\./ },
+        ],
+      },
+    },
+    {
+      // The last fixing, entered by hand. A = 12,150 / 5 = 2,430.00. Call: 2,430 - 2,400 = 30.00 an ounce: 30,000, T+1
+      // (Monday 1 June); realized 30,000 - 45,000; the 27,000 Dealer L posted goes back. Put: 2,430 is above 2,350: it lapses,
+      // 25,000 realized; the 117,500 comes back.
+      id: 'fixing-29-may-by-hand', covers: ['averaging fixings', 'expiry', 'cash settlement', 'lapse', 'collateral'], action: 'manual_price', instrument: 'gold', value: 2_445, forDate: '2026-05-29', note: 'Gold close for 29 May, entered by hand',
+      expect: {
+        events: [
+          { type: 'option.cash_settled', summary: 'Exercised (cash settlement): 1,000 XAU-AC2400-MAY26 at 30.00 USD per unit (average of 5 fixings 2,430.00)', owner: 'account', date: '2026-05-29' },
+          { type: 'collateral.variation', summary: 'Variation margin under position-level terms: 27,000.00 USD returned to the counterparty. The last position of the netting set ended.', owner: 'account' },
+          { type: 'option.expired', summary: 'Expired worthless: 1,000 XAU-AP2350-MAY26 (average of 5 fixings 2,430.00)', owner: 'account', date: '2026-05-29' },
+          { type: 'otcoption.collateral', summary: `Collateral returned on ${APUT} under its position-level terms: 117,500.00 USD (independent amount, the position ended)`, cash: { USD: 117_500 } },
+        ],
+        cash: { account: { USD: { settled: 979_000, restricted: 0, margin: 0, unsettled: 30_000, availableToTrade: 1_009_000, availableToWithdraw: 979_000 } } }, // 861,500 + 117,500
+        positions: [], holdings: { call: null, put: null }, otc: [], lifecycle: [],
+        pending: [{ instrument: 'call', owner: 'account', dueDate: '2026-06-01', amount: 30_000, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: 10_000, unrealized: 0, total: 9_000 } }, // -15,000 + 25,000; - 1,000
+        nav: { account: 1_009_000, book: 4_009_000 },
+        balance: { account: { cash: 979_000, receivable: 30_000, restricted: null, collateralReceived: null, margin: null, positions: null, assets: 1_009_000, liabilities: 0, netAssets: 1_009_000 } },
+      },
+    },
+    {
+      id: 'settle-cash-settlement', covers: 'settlement', action: 'clock', to: at('2026-06-01'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 30,000.00 USD into settled cash', cash: { USD: 30_000 } }],
+        cash: { account: { USD: { settled: 1_009_000, unsettled: 0, availableToTrade: 1_009_000, availableToWithdraw: 1_009_000 } } },
+        pending: [],
+        balance: { account: { cash: 1_009_000, receivable: null } },
+      },
+    },
+  ],
+};
+
+export default [barrierOption, asianOption];

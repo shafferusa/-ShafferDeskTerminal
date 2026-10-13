@@ -189,3 +189,4 @@
 - 2026-10-13T18:21Z | r1 | +0.2 | sell_buy_back passes at engine, API and browser
 - 2026-10-13T18:21Z | o2 | +0.2 | barrier_option passes at engine, API and browser
 - 2026-10-13T18:23Z | fw | +0.2 | fw: tba_mortgage passes at engine, API and browser (pool allocation by hand, simulated delivery); all 8 forwards pass
+- 2026-10-13T18:23Z | m1 | +0.2 | weather_derivative passes at engine, API and browser
