@@ -1075,4 +1075,141 @@ const commodityForward = {
   ],
 };
 
-export default [equityForward, bondForward, fxForward, ndf, commodityForward, fra];
+// ---------------------------------------------------------------------------------------------
+// fx_swap
+// ---------------------------------------------------------------------------------------------
+// A EUR/USD FX swap booked as its two legs in one package (Strategies page, template Custom): the Account buys
+// 1,000,000 EUR for value Wednesday 3 June 2026 (near leg, at 1.0850) and sells them back for value Monday 6 July
+// 2026 (far leg, at 1.0872: 22 forward points). The far value date is the first day after the near month that
+// both TARGET and the Federal Reserve calendar are open: Friday 3 July is the US Independence Day holiday.
+// Each leg is registered as an FX swap leg (a deliverable FX forward of its own value date). Both legs are
+// explicitly uncollateralized.
+// Near leg: 1,000,000 EUR received against 1,085,000.00 USD on 3 June. Far leg: 1,000,000 EUR delivered against
+// 1,087,200.00 USD on 6 July. The swap costs nothing on the exchange rate: the euros held in between are worth
+// what the far leg loses or gains. By hand, the result: 1,087,200 - 1,085,000 = 2,200.00 USD.
+// Held across Juneteenth (19 June) and Independence Day (3 July). No commission.
+const swapLeg = (key, valueDate, day) => ({
+  productId: 'fx_swap', name: `EUR/USD FX swap ${key} leg, value ${day}`, symbol: `EURUSD-SW-${valueDate.slice(5).replace('-', '')}`, marketView: 'US_DERIV', venueType: 'otc', jurisdiction: 'US', tradingCcy: 'USD',
+  terms: { forwardType: 'fx', base: 'EUR', quote: 'USD', valueDate, counterparty: 'Harbourline Bank N.A., New York', collateralBasis: { type: 'uncollateralized' } },
+});
+const fxSwap = {
+  productId: 'fx_swap',
+  title: 'EUR/USD FX swap: buy 1,000,000 EUR for 3 June and sell them back for 6 July 2026, near and far legs in one package, uncollateralized',
+  matrix: {
+    ...OTC_TICKET,
+    ticket: 'Registry form for each leg (Kind of forward: Deliverable FX forward, its own value date, required Collateral terms); then the Strategies page, template Custom, Add a leg (registered instrument) twice, Preview package: both legs confirmed together',
+    requiredFields: ['each leg: Kind of forward, Base currency, Quote currency, Value date, Counterparty, Collateral basis', 'Trading owner', 'Execution template (Custom)', 'each leg: Instrument, Side, Amount in EUR, State a fill price'],
+    automaticInputs: ['marks of each leg (quote fixtures standing in for dealer indications)', 'EUR/USD rate for the reporting currency (FX fixture)'],
+    manualInputs: ['near and far rates (stated fill prices)'],
+    settlement: 'No cash at entry; the near leg exchanges 1,000,000 EUR against 1,085,000 USD on 3 June, the far leg 1,000,000 EUR against 1,087,200 USD on 6 July, each only when the paying currency is held',
+    lifecycle: 'Two value dates, each settled automatically; nothing remains after the far leg',
+    accounting: 'Nil cost; after the near leg the euros are a cash balance valued at the EUR/USD fixture and the far leg a forward worth -1,000,000 x (mark - 1.0872): together they do not move with the exchange rate; the forward points are the result',
+    collateral: 'Both legs explicitly uncollateralized',
+  },
+  start: AM('2026-06-01'),
+  settlementCheck: { lag: 0, holidays: ['2026-06-19', '2026-07-03'] },
+  book: {
+    name: 'Matrix FX swap', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 3_000_000 }],
+    account: { name: 'Funding desk', funding: [{ ccy: 'USD', amount: 1_500_000 }] },
+    settings: { fees: { forward: { perUnit: 0, minimum: 0, bps: 0 } }, fill: FILL, settlement: {} },
+  },
+  instruments: { near: swapLeg('near', '2026-06-03', '3 June 2026'), far: swapLeg('far', '2026-07-06', '6 July 2026') },
+  quotes: {
+    near: { bid: 1.0848, ask: 1.0852, last: 1.0850, bidSize: 10_000_000, askSize: 10_000_000 },
+    far: { bid: 1.0870, ask: 1.0874, last: 1.0872, bidSize: 10_000_000, askSize: 10_000_000 },
+  },
+  fx: { 'EUR/USD': 1.0850 },
+  expectAtStart: {
+    ...NO_STATE,
+    cash: { account: { USD: cashOf(1_500_000) }, treasury: { USD: cashOf(1_500_000) } },
+    positions: [], otc: [],
+    nav: { account: 1_500_000, treasury: 1_500_000, book: 3_000_000 },
+  },
+  steps: [
+    {
+      id: 'enter-swap', covers: ['open', 'open short', 'package'], action: 'package', as: 'swap', instrument: 'near', settlementCheck: false,
+      input: { template: 'custom', origin: 'strategy_page', legs: [
+        { kind: 'trade', action: 'buy', purpose: 'primary', role: 'leg', instrumentId: '$inst:near', qty: 1_000_000, orderType: 'market', statedPrice: 1.0850 },
+        { kind: 'trade', action: 'sell', purpose: 'primary', role: 'leg', instrumentId: '$inst:far', qty: 1_000_000, orderType: 'market', statedPrice: 1.0872 },
+      ] },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [
+          { kind: 'trade', action: 'buy', instrument: 'near', qty: 1_000_000, estimate: 1.0850, model: 'stated-price', settleDate: '2026-06-03', fees: 0 },
+          { kind: 'trade', action: 'sell', instrument: 'far', qty: 1_000_000, estimate: 1.0872, model: 'stated-price', settleDate: '2026-07-06', fees: 0 },
+        ] },
+        result: { status: 'open', orders: [{ action: 'buy', instrument: 'near', status: 'filled', filledQty: 1_000_000, avgPrice: 1.0850 }, { action: 'sell', instrument: 'far', status: 'filled', filledQty: 1_000_000, avgPrice: 1.0872 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Bought forward 1,000,000 EURUSD-SW-0603 @ 1.085 for 2026-06-03', owner: 'account', date: '2026-06-01' },
+          { type: 'trade.fill', summary: 'Sold forward 1,000,000 EURUSD-SW-0706 @ 1.0872 for 2026-07-06', owner: 'account', date: '2026-06-01' },
+        ],
+        positions: [
+          { instrument: 'far', lot: 'swap', owner: 'account', direction: 'short', qty: -1_000_000, avgCost: 1.0872, cost: 0, price: 1.0872, value: 0, unrealized: 0, notional: 1_087_200, margin: 0 },
+          { instrument: 'near', lot: 'swap', owner: 'account', direction: 'long', qty: 1_000_000, avgCost: 1.0850, cost: 0, price: 1.0850, value: 0, unrealized: 0, notional: 1_085_000, margin: 0 },
+        ],
+        holdings: { near: { long: 1_000_000, short: 0, net: 1_000_000 }, far: { long: 0, short: 1_000_000, net: -1_000_000 } },
+        lifecycle: [{ type: 'forward.maturity', instrument: 'near', dueDate: '2026-06-03', status: 'pending' }, { type: 'forward.maturity', instrument: 'far', dueDate: '2026-07-06', status: 'pending' }],
+        pnl: { account: { realized: 0, commissions: 0, unrealized: 0, fx: 0, total: 0 } },
+        balance: { account: { cash: 1_500_000, assets: 1_500_000, liabilities: 0, netAssets: 1_500_000 } },
+        otc: [
+          { instrument: 'far', lot: 'swap', owner: 'account', qty: -1_000_000, basis: 'uncollateralized', agreement: null, flagged: false, mark: 1.0872, markValue: 0, iaPosted: 0, vmPosted: 0, vmHeld: 0 },
+          { instrument: 'near', lot: 'swap', owner: 'account', qty: 1_000_000, basis: 'uncollateralized', agreement: null, flagged: false, mark: 1.0850, markValue: 0, iaPosted: 0, vmPosted: 0, vmHeld: 0 },
+        ],
+      },
+    },
+    {
+      // Near value date: 1,000,000.00 EUR received, 1,085,000.00 USD paid. The euros are worth 1,085,000.00 at 1.0850.
+      id: 'near-leg-settles', covers: 'settlement', action: 'clock', to: AM('2026-06-03'),
+      expect: {
+        events: [{ type: 'forward.settlement', summary: 'FX forward settled: received 1,000,000.00 EUR against 1,085,000.00 USD at 1.085', owner: 'account', date: '2026-06-03' }],
+        cash: { account: { USD: cashOf(415_000), EUR: cashOf(1_000_000) } },
+        positions: [{ instrument: 'far', lot: 'swap', owner: 'account', direction: 'short', qty: -1_000_000, avgCost: 1.0872, cost: 0, price: 1.0872, value: 0, unrealized: 0, notional: 1_087_200, margin: 0 }],
+        holdings: { near: null, far: { long: 0, short: 1_000_000, net: -1_000_000 } },
+        lifecycle: [{ type: 'forward.maturity', instrument: 'far', dueDate: '2026-07-06', status: 'pending' }],
+        balance: { account: { cash: 1_500_000, local: { EUR: { cash: 1_000_000 }, USD: { cash: 415_000 } } } },
+        otc: [{ instrument: 'far', lot: 'swap', owner: 'account', qty: -1_000_000, basis: 'uncollateralized', agreement: null, flagged: false, mark: 1.0872, markValue: 0, iaPosted: 0, vmPosted: 0, vmHeld: 0 }],
+      },
+    },
+    {
+      // The euro rises: EUR/USD 1.0900. The euros held are worth 1,090,000.00 (+5,000.00 on the exchange rate).
+      id: 'euro-up', covers: 'reporting currency', action: 'fx_rate', pair: 'EUR/USD', rate: 1.0900,
+      expect: {
+        pnl: { account: { fx: 5_000, total: 5_000 } },
+        nav: { account: 1_505_000, book: 3_005_000 },
+        balance: { account: { cash: 1_505_000, assets: 1_505_000, netAssets: 1_505_000 } },
+      },
+    },
+    {
+      // The far leg's indication follows: 1.0922 (still 22 points). -1,000,000 x (1.0922 - 1.0872) = -5,000.00: the
+      // swap as a whole is back where it started.
+      id: 'far-mark', covers: 'mark', action: 'quote', instrument: 'far', quote: { bid: 1.0920, ask: 1.0924, last: 1.0922, bidSize: 10_000_000, askSize: 10_000_000 },
+      expect: {
+        positions: [{ instrument: 'far', lot: 'swap', owner: 'account', direction: 'short', qty: -1_000_000, avgCost: 1.0872, cost: 0, price: 1.0922, value: -5_000, unrealized: -5_000, notional: 1_087_200, margin: 0 }],
+        pnl: { account: { unrealized: -5_000, fx: 5_000, total: 0 } },
+        nav: { account: 1_500_000, book: 3_000_000 },
+        balance: { account: { positions: -5_000, assets: 1_500_000, netAssets: 1_500_000 } },
+        otc: [{ instrument: 'far', lot: 'swap', owner: 'account', qty: -1_000_000, basis: 'uncollateralized', agreement: null, flagged: false, mark: 1.0922, markValue: -5_000, iaPosted: 0, vmPosted: 0, vmHeld: 0 }],
+      },
+    },
+    {
+      // Far value date, Monday 6 July (over Juneteenth and Independence Day): 1,000,000.00 EUR delivered, 1,087,200.00
+      // USD received. 415,000 + 1,087,200 = 1,502,200.00. Result 2,200.00, all of it on the euros bought at 1.0850 and
+      // delivered at 1.0872.
+      id: 'far-leg-settles', covers: ['settlement', 'close', 'holiday'], action: 'clock', to: AM('2026-07-06'),
+      expect: {
+        events: [{ type: 'forward.settlement', summary: 'FX forward settled: delivered 1,000,000.00 EUR against 1,087,200.00 USD at 1.0872', owner: 'account', date: '2026-07-06' }],
+        cash: { account: { USD: cashOf(1_502_200), EUR: cashOf(0) } },
+        positions: [],
+        holdings: { far: null },
+        lifecycle: [],
+        pnl: { account: { realized: 0, unrealized: 0, fx: 2_200, total: 2_200 } },
+        nav: { account: 1_502_200, book: 3_002_200 },
+        balance: { account: { cash: 1_502_200, positions: null, assets: 1_502_200, liabilities: 0, netAssets: 1_502_200 } },
+        otc: [],
+      },
+    },
+  ],
+};
+
+export default [equityForward, bondForward, fxForward, ndf, commodityForward, fra, fxSwap];
