@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 79.2% of the pass** (last milestone 2026-10-13T18:32Z, m1: collateral_swap passes at engine, API and browser (all 16 manual products done))
+**Completeness: about 79.2% of the pass** (last milestone 2026-10-13T18:33Z, b3: structured bonds A: core tests for call, put, conversion, paydown, delay, loss; all 12 rerun E/A/B)
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 

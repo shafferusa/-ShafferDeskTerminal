@@ -879,4 +879,214 @@ const basketOption = {
   ],
 };
 
-export default [barrierOption, asianOption, lookbackOption, basketOption];
+// ---------------------------------------------------------------------------------------------
+// spread_option
+// ---------------------------------------------------------------------------------------------
+// Two options on the RBOB gasoline / WTI crude crack spread (USD per barrel; quantity in barrels), dealt with Dealer P
+// under one CSA whose netting set is the Account (independent amount 5% of strike notional on a written option;
+// variation margin over a 100,000 threshold, minimum transfer 25,000). The spread is a composite the Terminal does not
+// compute: its value at expiry (the May RBOB settlement x 42 less the May WTI settlement, agreed with the dealer) is
+// entered by hand on each expiry item. Expiry Tuesday 28 April 2026, cash, paid T+1.
+//   - a spread call struck at 20.00, bought on 100,000 bbl;
+//   - a spread put struck at 25.00, written on 100,000 bbl.
+// The spread settles at 23.10: the call pays 3.10 a barrel, 310,000; the put is in the money too and costs 1.90 a barrel,
+// 190,000.
+const CRACK = 'RBOB gasoline / WTI crude crack spread, May 2026 settlements (RBOB x 42 less WTI), USD per barrel';
+const SCALL = 'RBOB-WTI crack spread call 20.00, 28 Apr 2026 (Dealer P)';
+const SPUT = 'RBOB-WTI crack spread put 25.00, 28 Apr 2026 (Dealer P)';
+const spreadOption = {
+  productId: 'spread_option',
+  title: 'RBOB-WTI crack spread options netted under one CSA: call 20.00 bought, put 25.00 written; the spread at expiry entered by hand',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields.filter((f) => !f.startsWith('Underlying instrument')), 'Payoff: Spread', 'Underlying reference: the two legs of the spread'],
+    automaticInputs: ['premium settlement date, T+2 on the US calendar', 'commission per barrel from the Book fee schedule', 'independent amount on the written put and variation margin on the Account netting set, from the CSA terms', 'the payoff, worked out from the spread value entered against the strike'],
+    manualInputs: ['premium per barrel agreed with the dealer (stated fill price)', 'marks per barrel entered by hand (Manual entry)', 'the spread value at expiry, entered by hand on each expiry item (Accounting, Pending, Settlement value)'],
+    settlement: 'Premium and commission T+2 on the US calendar; the cash settlements T+1 after expiry',
+    lifecycle: 'At expiry each item waits for the spread value; once entered, the call pays (spread - 20) and the put costs (25 - spread) per barrel; nothing scheduled afterwards',
+    accounting: 'Premium per barrel x barrels; payoff from the spread value entered; premium realized at expiry; commission expensed; marks by hand drive unrealized P&L. The notional is shown at the strike: no spread price is available',
+    collateral: 'Agreement "CSA Dealer P", netting scope the Account: one netting set for both options; independent amount on the written put, 5% x 100,000 x 25 = 125,000, returned at expiry; the set marked at +30,000 stays inside its 100,000 threshold, so no variation margin moves',
+  },
+  start: at('2026-03-02'),
+  settlementCheck: { lag: 2, holidays: [] },
+  book: {
+    name: 'Matrix spread option', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 2_000_000 }],
+    account: { name: 'Refining', funding: [{ ccy: 'USD', amount: 800_000 }] },
+    settings: { fees: { otcoption: { perUnit: 0.005, minimum: 0, bps: 0 } }, fill: FILL, settlement: { otcoption: 2 } }, // 0.005 a barrel
+  },
+  instruments: {},
+  tradedOn: 'Both spread options name the CSA recorded by the first step, so each is registered by a register_instrument step (Instruments, New instrument).',
+  expectAtStart: usdStart(800_000, 1_200_000),
+  steps: [
+    {
+      id: 'agreement', covers: 'collateral', action: 'agreement', as: 'csa',
+      agreement: { name: 'CSA Dealer P', counterparty: 'Dealer P', kind: 'bilateral', independentAmount: { type: 'pct', pct: 0.05 }, variationMargin: true, threshold: 100_000, minimumTransfer: 25_000, nettingScope: 'account' },
+      expect: { events: [{ type: 'collateral.agreement', summary: 'Collateral agreement recorded: CSA Dealer P with Dealer P (Bilateral (CSA-style))', owner: 'treasury' }] },
+    },
+    {
+      id: 'register-call', action: 'register_instrument', as: 'call',
+      draft: { productId: 'spread_option', name: SCALL, symbol: 'CRACK-SC20-APR26', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 1,
+        terms: { right: 'C', strike: 20, expiration: '2026-04-28', optionType: 'spread', underlyingDescription: CRACK, exercise: 'european', settlement: 'cash', counterparty: 'Dealer P', collateralBasis: { type: 'agreement', agreementId: '$agreement:csa' } } },
+      expect: {},
+    },
+    {
+      id: 'register-put', action: 'register_instrument', as: 'put',
+      draft: { productId: 'spread_option', name: SPUT, symbol: 'CRACK-SP25-APR26', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 1,
+        terms: { right: 'P', strike: 25, expiration: '2026-04-28', optionType: 'spread', underlyingDescription: CRACK, exercise: 'european', settlement: 'cash', counterparty: 'Dealer P', collateralBasis: { type: 'agreement', agreementId: '$agreement:csa' } } },
+      expect: {},
+    },
+    otcTicket({
+      id: 'buy-spread-call', covers: 'open', instrument: 'call', side: 'buy', qty: 100_000, premium: 1.40, as: 'calls',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'call', qty: 100_000, estimate: 1.4, model: 'stated-price', settleDate: '2026-03-04', calendar: 'US', cash: -140_000, fees: 500, notional: 2_000_000 }], // 100,000 x 1.40; 100,000 x 0.005; 100,000 x 20 (at the strike)
+          cash: { USD: { purchases: 140_000, fees: 500, margin: 0, required: 140_500, available: 800_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 100_000, avgPrice: 1.4 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 100,000 CRACK-SC20-APR26 @ 1.40 USD', owner: 'account', date: '2026-03-02' }],
+        cash: { account: { USD: { settled: 800_000, unsettled: -140_500, availableToTrade: 659_500, availableToWithdraw: 659_500 } } },
+        positions: [{ instrument: 'call', lot: 'calls', owner: 'account', direction: 'long', qty: 100_000, avgCost: 1.4, cost: 140_000, price: null, value: null, unrealized: null, provisional: true, notional: null, margin: 0 }],
+        holdings: { call: { long: 100_000, short: 0, net: 100_000 } },
+        pending: [{ instrument: 'call', owner: 'account', dueDate: '2026-03-04', amount: -140_500, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'option.expiry', instrument: 'call', dueDate: '2026-04-28', status: 'pending' }],
+        otc: [{ instrument: 'call', lot: 'calls', qty: 100_000, basis: 'agreement', agreement: 'CSA Dealer P', mark: null, iaRequired: 0, iaPosted: 0, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: -500, unrealized: 0, total: -500 } },
+        nav: { account: 799_500, book: 1_999_500 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 800_000, payable: 140_500, positions: 140_000, assets: 940_000, liabilities: 140_500, netAssets: 799_500 } },
+      },
+    }),
+    { id: 'half-an-hour-later', action: 'clock', to: at('2026-03-02', '15:30'), expect: {} },
+    otcTicket({
+      // Written: independent amount 5% x 100,000 x 25 = 125,000.
+      id: 'write-spread-put', covers: ['write', 'collateral'], instrument: 'put', side: 'sell', qty: 100_000, premium: 2.30, as: 'puts',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'put', qty: 100_000, estimate: 2.3, model: 'stated-price', settleDate: '2026-03-04', calendar: 'US', cash: 230_000, fees: 500, notional: 2_500_000 }],
+          cash: { USD: { proceeds: 230_000, fees: 500, margin: 125_000, required: 125_500, available: 659_500, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 100_000, avgPrice: 2.3 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Sold 100,000 CRACK-SP25-APR26 @ 2.30 USD', owner: 'account' },
+          { type: 'otcoption.collateral', summary: `Collateral posted on ${SPUT} under "CSA Dealer P" (Dealer P): 125,000.00 USD (independent amount, 5.00% of 2,500,000.00 USD notional)`, cash: { USD: -125_000 } },
+        ],
+        cash: { account: { USD: { settled: 675_000, unsettled: 89_000, margin: 125_000, availableToTrade: 764_000, availableToWithdraw: 534_500 } } }, // -140,500 + 229,500; 675,000 - 140,500
+        positions: [
+          { instrument: 'call', lot: 'calls', qty: 100_000 },
+          { instrument: 'put', lot: 'puts', owner: 'account', direction: 'short', qty: -100_000, avgCost: 2.3, cost: -230_000, price: null, value: null, unrealized: null, provisional: true, notional: null, margin: 125_000 },
+        ],
+        holdings: { put: { long: 0, short: 100_000, net: -100_000 } },
+        pending: [
+          { instrument: 'call', owner: 'account', dueDate: '2026-03-04', amount: -140_500, ccy: 'USD', into: 'cash' },
+          { instrument: 'put', owner: 'account', dueDate: '2026-03-04', amount: 229_500, ccy: 'USD', into: 'cash' },
+        ],
+        lifecycle: [{ type: 'option.expiry', instrument: 'call', dueDate: '2026-04-28', status: 'pending' }, { type: 'option.expiry', instrument: 'put', dueDate: '2026-04-28', status: 'pending' }],
+        otc: [{ instrument: 'call' }, { instrument: 'put', lot: 'puts', qty: -100_000, basis: 'agreement', agreement: 'CSA Dealer P', iaRequired: 125_000, iaPosted: 125_000, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { commissions: -1_000, total: -1_000 } },
+        nav: { account: 799_000, book: 1_999_000 }, // 675,000 + 125,000 + 229,500 - 140,500 + 140,000 - 230,000
+        balance: { account: { cash: 675_000, margin: 125_000, receivable: 229_500, payable: 140_500, positions: -90_000, assets: 939_500, liabilities: 140_500, netAssets: 799_000 } },
+      },
+    }),
+    {
+      id: 'mark-call', covers: 'manual mark', action: 'manual_price', instrument: 'call', value: 2.10, note: 'Dealer P mark per barrel, by hand',
+      expect: {
+        positions: [{ instrument: 'call', lot: 'calls', price: 2.1, value: 210_000, unrealized: 70_000, provisional: false }, { instrument: 'put', lot: 'puts' }],
+        otc: [{ instrument: 'call', mark: 2.1, markValue: 210_000 }, { instrument: 'put' }],
+        pnl: { account: { unrealized: 70_000, total: 69_000 } },
+        nav: { account: 869_000, book: 2_069_000 },
+        balance: { account: { positions: -20_000, assets: 1_009_500, netAssets: 869_000 } }, // 210,000 - 230,000 (put at cost)
+      },
+    },
+    {
+      id: 'mark-put', covers: 'manual mark', action: 'manual_price', instrument: 'put', value: 1.80, note: 'Dealer P mark per barrel, by hand',
+      expect: {
+        positions: [{ instrument: 'call', lot: 'calls' }, { instrument: 'put', lot: 'puts', price: 1.8, value: -180_000, unrealized: 50_000, provisional: false }],
+        otc: [{ instrument: 'call' }, { instrument: 'put', mark: 1.8, markValue: -180_000 }],
+        pnl: { account: { unrealized: 120_000, total: 119_000 } },
+        nav: { account: 919_000, book: 2_119_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 30_000, assets: 1_059_500, netAssets: 919_000 } },
+      },
+    },
+    {
+      // One netting set: 210,000 - 180,000 = +30,000, inside the 100,000 threshold: nothing moves.
+      id: 'netting-set-inside-threshold', covers: 'variation margin', action: 'clock', to: eod('2026-03-02'),
+      expect: { events: [], otc: [{ instrument: 'call', vmExposure: 30_000, vmStatus: 'ok' }, { instrument: 'put', vmExposure: 30_000, vmStatus: 'ok' }] },
+    },
+    {
+      id: 'settle-premiums', covers: 'settlement', action: 'clock', to: at('2026-03-04'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 229,500.00 USD into settled cash', cash: { USD: 229_500 } },
+          { type: 'settlement.pay', summary: 'paid 140,500.00 USD from settled cash', cash: { USD: -140_500 } },
+        ],
+        cash: { account: { USD: { settled: 764_000, unsettled: 0, availableToTrade: 764_000, availableToWithdraw: 764_000 } } },
+        pending: [],
+        balance: { account: { cash: 764_000, receivable: null, payable: null, assets: 919_000, liabilities: 0 } }, // 764,000 + 125,000 + 30,000
+      },
+    },
+    {
+      id: 'expiry-awaits-spread-value', covers: 'expiry', action: 'clock', to: eod('2026-04-28'),
+      expect: {
+        events: [],
+        lifecycle: [
+          { type: 'option.expiry', instrument: 'call', dueDate: '2026-04-28', status: 'blocked', reason: /^Enter the spread value at expiry \(RBOB gasoline \/ WTI crude crack spread/ },
+          { type: 'option.expiry', instrument: 'put', dueDate: '2026-04-28', status: 'blocked', reason: /^Enter the spread value at expiry/ },
+        ],
+      },
+    },
+    {
+      // 23.10 agreed with Dealer P. Call: 23.10 - 20.00 = 3.10 a barrel: 310,000, T+1; realized 310,000 - 140,000.
+      id: 'call-spread-value', covers: ['settlement value', 'expiry', 'cash settlement'], action: 'settlement_value', lot: 'calls', value: 23.10,
+      expect: {
+        events: [{ type: 'option.cash_settled', summary: 'Exercised (cash settlement): 100,000 CRACK-SC20-APR26 at 3.10 USD per unit (spread value 23.10, entered by hand)', owner: 'account', date: '2026-04-28' }],
+        cash: { account: { USD: { unsettled: 310_000, availableToTrade: 1_074_000, availableToWithdraw: 764_000 } } },
+        positions: [{ instrument: 'put', lot: 'puts', qty: -100_000 }],
+        holdings: { call: null },
+        pending: [{ instrument: 'call', owner: 'account', dueDate: '2026-04-29', amount: 310_000, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'option.expiry', instrument: 'put', dueDate: '2026-04-28', status: 'blocked' }],
+        otc: [{ instrument: 'put', lot: 'puts' }],
+        pnl: { account: { realized: 170_000, unrealized: 50_000, total: 219_000 } },
+        nav: { account: 1_019_000, book: 2_219_000 }, // 764,000 + 125,000 + 310,000 - 180,000
+        balance: { account: { receivable: 310_000, positions: -180_000, assets: 1_019_000, netAssets: 1_019_000 } },
+      },
+    },
+    {
+      // Put: 25.00 - 23.10 = 1.90 a barrel: 190,000 paid by the Account, T+1; realized 230,000 - 190,000. The 125,000 comes back.
+      id: 'put-spread-value', covers: ['settlement value', 'expiry', 'cash settlement', 'collateral'], action: 'settlement_value', lot: 'puts', value: 23.10,
+      expect: {
+        events: [
+          { type: 'option.cash_settled', summary: 'Assigned (cash settlement): 100,000 CRACK-SP25-APR26 at 1.90 USD per unit (spread value 23.10, entered by hand)', owner: 'account', date: '2026-04-28' },
+          { type: 'otcoption.collateral', summary: `Collateral returned on ${SPUT} under "CSA Dealer P" (Dealer P): 125,000.00 USD (independent amount, the position ended)`, cash: { USD: 125_000 } },
+        ],
+        cash: { account: { USD: { settled: 889_000, margin: 0, unsettled: 120_000, availableToTrade: 1_009_000, availableToWithdraw: 699_000 } } }, // 310,000 - 190,000; 889,000 - 190,000
+        positions: [], holdings: { put: null }, otc: [], lifecycle: [],
+        pending: [
+          { instrument: 'put', owner: 'account', dueDate: '2026-04-29', amount: -190_000, ccy: 'USD', into: 'cash' },
+          { instrument: 'call', owner: 'account', dueDate: '2026-04-29', amount: 310_000, ccy: 'USD', into: 'cash' },
+        ],
+        pnl: { account: { realized: 210_000, unrealized: 0, total: 209_000 } },
+        nav: { account: 1_009_000, book: 2_209_000 },
+        balance: { account: { cash: 889_000, margin: null, payable: 190_000, positions: null, assets: 1_199_000, liabilities: 190_000, netAssets: 1_009_000 } },
+      },
+    },
+    {
+      id: 'settle-cash-settlements', covers: 'settlement', action: 'clock', to: at('2026-04-29'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 310,000.00 USD into settled cash', cash: { USD: 310_000 } },
+          { type: 'settlement.pay', summary: 'paid 190,000.00 USD from settled cash', cash: { USD: -190_000 } },
+        ],
+        cash: { account: { USD: { settled: 1_009_000, unsettled: 0, availableToTrade: 1_009_000, availableToWithdraw: 1_009_000 } } },
+        pending: [],
+        balance: { account: { cash: 1_009_000, receivable: null, payable: null, assets: 1_009_000, liabilities: 0 } },
+      },
+    },
+  ],
+};
+
+export default [barrierOption, asianOption, lookbackOption, basketOption, spreadOption];

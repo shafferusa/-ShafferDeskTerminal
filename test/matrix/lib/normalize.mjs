@@ -44,7 +44,8 @@ export async function observeState(t, ctx) {
     // Financing arrangements: the securities a reverse repo holds (not owned: never a position of the holder), the cash
     // collateral held against securities lent, and a lender's recall of borrowed securities.
     collateralHeld: p.data?.collateralHeld ? { instrument: ctx.instrumentKey(p.data.collateralHeld.instrumentId), qty: p.data.collateralHeld.qty } : null,
-    collateralCash: p.family === 'secloan' ? p.collateral ?? null : null, recall: p.recall ? { qty: p.recall.qty, dueDate: p.recall.dueDate } : null,
+    // (The positions API now gives `collateral` as an object for every position: a lender's cash collateral is its `received`.)
+    collateralCash: p.family === 'secloan' ? (p.collateral && typeof p.collateral === 'object' ? p.collateral.received ?? null : p.collateral ?? null) : null, recall: p.recall ? { qty: p.recall.qty, dueDate: p.recall.dueDate } : null,
     // r1: the catalog product a contract was registered as (a borrow leg registers a stock loan, a bond loan or a securities borrowing).
     product: p.instrument.productId ?? null,
     // A holding or contract valued by hand (manual family): its manual workflow figures (committed, called, uncalled, distributions,

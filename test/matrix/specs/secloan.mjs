@@ -289,4 +289,287 @@ const securitiesBorrowing = {
   ],
 };
 
-export default [securitiesBorrowing];
+// ---------------------------------------------------------------------------------------------
+// securities_lending
+// ---------------------------------------------------------------------------------------------
+// Treasury lends 15,000 of the 20,000 units it holds of an exchange-traded fund to Pellham Securities against cash collateral
+// of 102% of market value, for a fee of 0.30% a year. The collateral is restricted cash and a liability (owed back); the units
+// lent stay Treasury's holding but cannot be sold. The price rises and the collateral is marked up; the fund pays a
+// distribution, which Treasury receives on all 20,000 (on the units lent, as the borrower's manufactured payment); the fee is
+// received on the first business day of March. Treasury then recalls the units: 5,000 first, the rest the next day, each with
+// its share of the collateral returned, and the fee to date received with the last.
+//
+// Inputs: HGDV, NYSE Arca, quoted 49.98 / 50.02, last 50.00, then 51.98 / 52.02 / 52.00 (fixtures); no commission; T+1;
+// distribution 0.35 a unit, ex-date 25 February, recorded by hand.
+//   Collateral: 1.02 x 15,000 x 50.00 = 765,000.00; at 52.00: 795,600.00; on 10,000: 530,400.00.
+//   Fee (on the day's price, ACT/360): 15,000 x 50.00 x 0.003 / 360 = 6.25 a day; at 52.00: 6.50; on 10,000 at 52.00: 4.333333.
+const HGDV = { productId: 'etf', name: 'Halden Global Dividend ETF', symbol: 'HGDV', marketView: 'US_CASH', venue: 'NYSE Arca', venueType: 'exchange', venueCountry: 'US', issuer: 'Halden Fund Management', domicile: 'US', underlyingGeo: 'Global', tradingCcy: 'USD', terms: {} };
+/** The contract the Lend a security ticket sends (web/views/treasury.js, draftToContract). */
+const lendContract = (productId, name, ccy, underlying, terms) => ({ productId, name, marketView: ccy === 'USD' ? 'US_CASH' : 'FOREIGN_CASH', venueType: 'otc', tradingCcy: ccy, underlyingId: `$inst:${underlying}`, tags: [], externalIds: {}, terms });
+/** A step that lends a position from the Lend a security ticket. o: { owner, productId, productLabel, ccy, qty, name, position: { instrument, lot }, terms, as } */
+const lendTicket = (id, o, rest) => ({
+  id, action: 'ticket', owner: o.owner, as: o.as, contractAs: o.as,
+  ticket: { kind: 'lend', productId: o.productId, productLabel: o.productLabel, position: o.position, qty: o.qty, name: o.name, terms: o.terms },
+  input: { template: 'custom', name: o.name, legs: [{ kind: 'lend_sec', action: 'lend_sec', purpose: 'financing', qty: o.qty, contract: lendContract(o.productId, o.name, o.ccy, o.position.instrument, o.terms), sourcePositionId: `$pos:${o.position.lot}:${o.position.instrument}` }] },
+  ...rest,
+});
+const LEND_TICKET = {
+  ticket: 'Treasury page, Borrowings and lending, "Lend a security": the Lend a security ticket (lender, product, position to lend, quantity, fee, cash collateral share, recallable, counterparty), then the trade preview; Take back on the row of the loan in the lending table',
+  requiredFields: ['Lender (Treasury or an Account)', 'Product', 'Position to lend (a long position held)', 'Quantity to lend', 'Fee (decimal a year)', 'Cash collateral (share of value)', 'Recallable', 'Counterparty'],
+};
+const LEND = { owner: 'treasury', productId: 'securities_lending', productLabel: 'Securities lending', ccy: 'USD', qty: 15_000, name: 'Pellham lending of HGDV', position: { instrument: 'etf', lot: 'units' }, as: 'lend',
+  terms: { feeRate: 0.003, collateralPct: 1.02, recallable: true, counterparty: 'Pellham Securities' } };
+const UNITS = { instrument: 'etf', lot: 'units', owner: 'treasury', direction: 'long', qty: 20_000, avgCost: 50.02, cost: 1_000_400 };
+const LENT = { instrument: 'lend', lot: 'lend', owner: 'treasury', direction: 'securities lent', product: 'securities_lending' };
+
+const securitiesLending = {
+  productId: 'securities_lending',
+  title: 'Securities lending by Treasury of 15,000 ETF units to Pellham Securities: 102% cash collateral restricted and owed back, fee income, distribution as a manufactured payment, recalled in two parts',
+  matrix: {
+    ...LEND_TICKET,
+    automaticInputs: ['the cash collateral at 102% of market value (price fixture)', 'the daily lending fee accrual on market value', 'the daily re-mark of the collateral', 'the monthly fee received on the first business day', 'the collateral returned pro rata on a recall, and the fee to date received on the last'],
+    manualInputs: ['every term, entered on the ticket', 'the distribution (ex-date, amount), recorded by hand', 'each recall (Take back), with its quantity'],
+    settlement: 'None for the loan: the collateral is received and returned in restricted cash when the loan is opened, marked and taken back; the units bought settle T+1',
+    lifecycle: 'Fee accrues daily and is received monthly and on the full return; collateral marked daily; distributions on the units lent are received as manufactured payments; recall in part or in full by hand',
+    accounting: 'The units lent stay Treasury\'s holding at market value (on loan, not sellable); the cash collateral is restricted cash with a matching liability (Cash collateral received); the fee is lending income; the distribution is dividend income',
+    collateral: 'Cash 102% of market value, held as restricted cash and owed back; marked daily; returned pro rata on a partial recall and in full on the last',
+  },
+  tradedOn: 'Securities lending is not a registry instrument: it is entered on the Lend a security ticket of the Treasury page from a position held, and registers itself when the ticket is confirmed. The units lent are a registered ETF.',
+  start: AT_1000('2026-02-18'), // Wednesday 18 February 2026, 10:00 New York (Presidents' Day was Monday 16 February)
+  settlementCheck: { lag: 1, holidays: [] },
+  book: {
+    name: 'Matrix securities lending', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 1_500_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 100_000 }] },
+    settings: { fees: { equity: { perUnit: 0, minimum: 0, bps: 0 } }, fill: FILL, settlement: { equity: 1 }, dividends: { withholdingPct: 0 } },
+  },
+  instruments: { etf: HGDV },
+  quotes: { etf: { bid: 49.98, ask: 50.02, last: 50.00, bidSize: 100_000, askSize: 100_000 } },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 100_000, availableToTrade: 100_000 } },
+      treasury: { USD: { settled: 1_400_000, unsettled: 0, payable: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 1_400_000, availableToWithdraw: 1_400_000, borrowed: 0, lent: 0 } },
+    },
+    positions: [], holdings: {}, pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 100_000, treasury: 1_400_000, book: 1_500_000 },
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+    pnl: { account: { total: 0 }, treasury: { dividends: 0, lendingIncome: 0, unrealized: 0, total: 0 }, book: { total: 0 } },
+    balance: {
+      account: { cash: 100_000, assets: 100_000, netAssets: 100_000 },
+      treasury: { cash: 1_400_000, assets: 1_400_000, liabilities: 0, netAssets: 1_400_000 },
+      book: { cash: 1_500_000, assets: 1_500_000, liabilities: 0, netAssets: 1_500_000 },
+    },
+    oversight: { accountBorrowings: [], treasuryOwn: [] },
+  },
+  steps: [
+    {
+      id: 'buy-the-units', covers: 'collateral', action: 'ticket', ticketOf: 'equity', instrument: 'etf', owner: 'treasury', side: 'buy', qty: 20_000, as: 'units',
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'buy', instrument: 'etf', qty: 20_000, estimate: 50.02, settleDate: '2026-02-19', cash: -1_000_400, fees: 0 }] }, // 20,000 x 50.02
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 20_000, avgPrice: 50.02 }] },
+        events: [{ type: 'strategy.submitted', owner: 'treasury' }, { type: 'trade.fill', summary: 'Bought 20,000 HGDV @ 50.02 USD', owner: 'treasury', date: '2026-02-18' }],
+        cash: { treasury: { USD: { settled: 1_400_000, unsettled: -1_000_400, payable: 1_000_400, availableToTrade: 399_600, availableToWithdraw: 399_600 } } },
+        positions: [{ ...UNITS, price: 50.00, value: 1_000_000, unrealized: -400, onLoan: 0 }],
+        holdings: { etf: { long: 20_000, short: 0, net: 20_000 } },
+        pending: [{ instrument: 'etf', lot: 'units', owner: 'treasury', dueDate: '2026-02-19', amount: -1_000_400, ccy: 'USD', into: 'cash' }],
+        pnl: { treasury: { unrealized: -400, total: -400 }, book: { total: -400 } },
+        nav: { treasury: 1_399_600, book: 1_499_600 },
+        balance: {
+          treasury: { cash: 1_400_000, positions: 1_000_000, payable: 1_000_400, assets: 2_400_000, liabilities: 1_000_400, netAssets: 1_399_600 },
+          book: { cash: 1_500_000, positions: 1_000_000, payable: 1_000_400, assets: 2_500_000, liabilities: 1_000_400, netAssets: 1_499_600 },
+        },
+      },
+    },
+    {
+      id: 'units-settle', covers: 'settlement', action: 'clock', to: AT_1000('2026-02-19'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: /^Settlement: paid 1,000,400\.00 USD/, cash: { USD: -1_000_400 }, owner: 'treasury', date: '2026-02-19' }],
+        cash: { treasury: { USD: { settled: 399_600, unsettled: 0, payable: 0, availableToTrade: 399_600, availableToWithdraw: 399_600 } } },
+        pending: [],
+        balance: { treasury: { cash: 399_600, payable: null, assets: 1_399_600, liabilities: 0 }, book: { cash: 499_600, payable: null, assets: 1_499_600, liabilities: 0 } },
+      },
+    },
+    lendTicket('lend-the-units', LEND, {
+      covers: ['open', 'lend', 'cash collateral'],
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'lend_sec', action: 'lend_sec', purpose: 'financing', qty: 15_000, ccy: 'USD', lending: { collateralCash: 765_000, value: 750_000 } }] }, // 1.02 x 15,000 x 50.00
+        result: { status: 'open', orders: [{ kind: 'lend_sec', action: 'lend_sec', instrument: 'lend', status: 'filled', qty: 15_000, filledQty: 15_000 }] },
+        events: [
+          { type: 'strategy.submitted', owner: 'treasury' },
+          { type: 'secloan.lend', summary: 'Lent 15,000 HGDV at a fee of 0.300% p.a.; received 765,000.00 USD cash collateral', owner: 'treasury', date: '2026-02-19' },
+        ],
+        // The collateral is restricted cash: not buying power, not withdrawable.
+        cash: { treasury: { USD: { settled: 399_600, restricted: 765_000, availableToTrade: 399_600, availableToWithdraw: 399_600 } } },
+        positions: [
+          { ...UNITS, price: 50.00, value: 1_000_000, unrealized: -400, onLoan: 15_000 },
+          { ...LENT, qty: -15_000, value: 750_000, accrued: 0, collateralCash: 765_000 },
+        ],
+        lifecycle: [{ type: 'secloan.fee', instrument: 'lend', dueDate: '2026-03-02', status: 'pending', owner: 'treasury' }], // 1 March is a Sunday
+        borrowings: [], // lending is not in the borrowing register
+        balance: {
+          treasury: { cash: 399_600, restricted: 765_000, positions: 1_000_000, collateralReceived: 765_000, assets: 2_164_600, liabilities: 765_000, netAssets: 1_399_600 },
+          book: { cash: 499_600, restricted: 765_000, positions: 1_000_000, collateralReceived: 765_000, assets: 2_264_600, liabilities: 765_000, netAssets: 1_499_600 },
+        },
+      },
+    }),
+    {
+      id: 'sell-units-on-loan', covers: ['reduce', 'securities on loan not sellable'], action: 'ticket', ticketOf: 'equity', instrument: 'etf', owner: 'treasury', side: 'sell', qty: 10_000, from: 'units',
+      status: 'blocked', reason: 'Only the 5,000 units not on loan can be sold.',
+      expect: { refused: 'only 5,000 of the 20,000 HGDV held is unencumbered; the rest is pledged or out on loan and cannot be sold until it is released' },
+    },
+    {
+      // The run of Friday 20 February: one day's fee, 6.25 (19 to 20 February at 50.00). The collateral is already at 102%.
+      id: 'fee-day-one', covers: 'lending fee', action: 'clock', to: AT_1730('2026-02-20'),
+      expect: {
+        events: [{ type: 'accrual.fee', summary: 'Lending fee accrued on 15,000 HGDV: 6.25 USD', owner: 'treasury', date: '2026-02-20' }],
+        positions: [
+          { ...UNITS, price: 50.00, value: 1_000_000, unrealized: -400, onLoan: 15_000 },
+          { ...LENT, qty: -15_000, value: 750_000, accrued: 6.25, collateralCash: 765_000 },
+        ],
+        pnl: { treasury: { lendingIncome: 6.25, total: -393.75 }, book: { total: -393.75 } },
+        nav: { treasury: 1_399_606.25, book: 1_499_606.25 },
+        balance: { treasury: { accruedIncome: 6.25, assets: 2_164_606.25, netAssets: 1_399_606.25 }, book: { accruedIncome: 6.25, assets: 2_264_606.25, netAssets: 1_499_606.25 } },
+      },
+    },
+    {
+      id: 'units-rise', covers: 'market value changes', action: 'quote', instrument: 'etf', quote: { bid: 51.98, ask: 52.02, last: 52.00, bidSize: 100_000, askSize: 100_000 },
+      expect: {
+        events: [],
+        positions: [
+          { ...UNITS, price: 52.00, value: 1_040_000, unrealized: 39_600, onLoan: 15_000 }, // 20,000 x (52.00 - 50.02)
+          { ...LENT, qty: -15_000, value: 780_000, accrued: 6.25, collateralCash: 765_000 },
+        ],
+        pnl: { treasury: { unrealized: 39_600, total: 39_606.25 }, book: { total: 39_606.25 } },
+        nav: { treasury: 1_439_606.25, book: 1_539_606.25 },
+        balance: { treasury: { positions: 1_040_000, assets: 2_204_606.25, netAssets: 1_439_606.25 }, book: { positions: 1_040_000, assets: 2_304_606.25, netAssets: 1_539_606.25 } },
+      },
+    },
+    {
+      // The run of Monday 23 February: three days' fee at 52.00, 19.50 (6.25 + 19.50 = 25.75); the collateral re-marked to
+      // 1.02 x 15,000 x 52.00 = 795,600: 30,600 more received, restricted.
+      id: 'collateral-marked-up', covers: ['lending fee', 'collateral mark'], action: 'clock', to: AT_1730('2026-02-23'),
+      expect: {
+        events: [
+          { type: 'accrual.fee', summary: 'Lending fee accrued on 15,000 HGDV: 19.50 USD', owner: 'treasury', date: '2026-02-23' },
+          { type: 'collateral.mark', summary: 'Collateral on securities lent marked to market: received 30,600.00 USD', owner: 'treasury', date: '2026-02-23' },
+        ],
+        cash: { treasury: { USD: { settled: 399_600, restricted: 795_600, availableToTrade: 399_600, availableToWithdraw: 399_600 } } },
+        positions: [
+          { ...UNITS, price: 52.00, value: 1_040_000, unrealized: 39_600, onLoan: 15_000 },
+          { ...LENT, qty: -15_000, value: 780_000, accrued: 25.75, collateralCash: 795_600 },
+        ],
+        pnl: { treasury: { lendingIncome: 25.75, total: 39_625.75 }, book: { total: 39_625.75 } },
+        nav: { treasury: 1_439_625.75, book: 1_539_625.75 },
+        balance: {
+          treasury: { restricted: 795_600, accruedIncome: 25.75, collateralReceived: 795_600, assets: 2_235_225.75, liabilities: 795_600, netAssets: 1_439_625.75 },
+          book: { restricted: 795_600, accruedIncome: 25.75, collateralReceived: 795_600, assets: 2_335_225.75, liabilities: 795_600, netAssets: 1_539_625.75 },
+        },
+      },
+    },
+    { id: 'distribution-recorded', covers: 'manufactured payment', action: 'corporate_action', instrument: 'etf', type: 'cash_dividend', exDate: '2026-02-25', amount: 0.35, expect: {} },
+    {
+      // Wednesday 25 February: the distribution on all 20,000 units, 7,000.00 (5,000 x 0.35 from the fund, 15,000 x 0.35 from the
+      // borrower as a manufactured payment). The run of 24 February adds a day's fee, 6.50 (32.25).
+      id: 'distribution-paid', covers: ['manufactured payment', 'lending fee'], action: 'clock', to: AT_1000('2026-02-25'),
+      expect: {
+        events: [
+          { type: 'dividend', summary: 'Dividend on 20,000 HGDV: 7,000.00 USD (0.35 per unit, ex-date 2026-02-25); shares out on loan receive a manufactured payment', cash: { USD: 7_000 }, owner: 'treasury', date: '2026-02-25' },
+          { type: 'accrual.fee', summary: 'Lending fee accrued on 15,000 HGDV: 6.50 USD', owner: 'treasury', date: '2026-02-25' },
+        ],
+        cash: { treasury: { USD: { settled: 406_600, availableToTrade: 406_600, availableToWithdraw: 406_600 } } },
+        positions: [
+          { ...UNITS, price: 52.00, value: 1_040_000, unrealized: 39_600, onLoan: 15_000 },
+          { ...LENT, qty: -15_000, value: 780_000, accrued: 32.25, collateralCash: 795_600 },
+        ],
+        pnl: { treasury: { dividends: 7_000, lendingIncome: 32.25, total: 46_632.25 }, book: { total: 46_632.25 } },
+        nav: { treasury: 1_446_632.25, book: 1_546_632.25 },
+        balance: {
+          treasury: { cash: 406_600, accruedIncome: 32.25, assets: 2_242_232.25, netAssets: 1_446_632.25 },
+          book: { cash: 506_600, accruedIncome: 32.25, assets: 2_342_232.25, netAssets: 1_546_632.25 },
+        },
+      },
+    },
+    {
+      // Monday 2 March, the first business day of March: the fee is brought to today (24 February to 2 March, 6 days at 52.00:
+      // 39.00; 71.25 in all) and received.
+      id: 'monthly-fee-received', covers: ['lending fee', 'fee payment'], action: 'clock', to: AT_1000('2026-03-02'),
+      expect: {
+        events: [
+          { type: 'accrual.fee', summary: 'Lending fee accrued on 15,000 HGDV: 39.00 USD', owner: 'treasury', date: '2026-03-02' },
+          { type: 'interest.payment', summary: 'Lending fee received on Pellham lending of HGDV: 71.25 USD', cash: { USD: 71.25 }, owner: 'treasury', date: '2026-03-02' },
+        ],
+        cash: { treasury: { USD: { settled: 406_671.25, availableToTrade: 406_671.25, availableToWithdraw: 406_671.25 } } },
+        positions: [
+          { ...UNITS, price: 52.00, value: 1_040_000, unrealized: 39_600, onLoan: 15_000 },
+          { ...LENT, qty: -15_000, value: 780_000, accrued: 0, collateralCash: 795_600 },
+        ],
+        lifecycle: [{ type: 'secloan.fee', instrument: 'lend', dueDate: '2026-04-01', status: 'pending', owner: 'treasury' }],
+        pnl: { treasury: { lendingIncome: 71.25, total: 46_671.25 }, book: { total: 46_671.25 } },
+        nav: { treasury: 1_446_671.25, book: 1_546_671.25 },
+        balance: {
+          treasury: { cash: 406_671.25, accruedIncome: null, assets: 2_242_271.25, netAssets: 1_446_671.25 },
+          book: { cash: 506_671.25, accruedIncome: null, assets: 2_342_271.25, netAssets: 1_546_671.25 },
+        },
+      },
+    },
+    {
+      // Treasury recalls 5,000: a third of the collateral, 795,600 / 3 = 265,200, goes back to the borrower.
+      id: 'recall-part', covers: ['recall', 'part return'], action: 'repay', lot: 'lend', amount: 5_000,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'recall_sec', action: 'recall_sec', purpose: 'financing', instrument: 'lend', qty: 5_000, ccy: 'USD' }] },
+        result: { status: 'open', orders: [{ kind: 'recall_sec', action: 'recall_sec', status: 'filled', qty: 5_000, filledQty: 5_000 }] },
+        events: [
+          { type: 'strategy.legs_added', owner: 'treasury' },
+          { type: 'secloan.recall', summary: 'Took back 5,000 HGDV from loan; returned 265,200.00 USD cash collateral', owner: 'treasury', date: '2026-03-02' },
+        ],
+        cash: { treasury: { USD: { settled: 406_671.25, restricted: 530_400 } } },
+        positions: [
+          { ...UNITS, price: 52.00, value: 1_040_000, unrealized: 39_600, onLoan: 10_000 },
+          { ...LENT, qty: -10_000, value: 520_000, accrued: 0, collateralCash: 530_400 },
+        ],
+        balance: {
+          treasury: { restricted: 530_400, collateralReceived: 530_400, assets: 1_977_071.25, liabilities: 530_400, netAssets: 1_446_671.25 },
+          book: { restricted: 530_400, collateralReceived: 530_400, assets: 2_077_071.25, liabilities: 530_400, netAssets: 1_546_671.25 },
+        },
+      },
+    },
+    {
+      // The run of 3 March: a day's fee on 10,000 at 52.00, 4.33 (4.333333). The collateral stands at 102%.
+      id: 'fee-on-the-rest', covers: 'lending fee', action: 'clock', to: AT_1730('2026-03-03'),
+      expect: {
+        events: [{ type: 'accrual.fee', summary: 'Lending fee accrued on 10,000 HGDV: 4.33 USD', owner: 'treasury', date: '2026-03-03' }],
+        positions: [
+          { ...UNITS, price: 52.00, value: 1_040_000, unrealized: 39_600, onLoan: 10_000 },
+          { ...LENT, qty: -10_000, value: 520_000, accrued: 4.33, collateralCash: 530_400 },
+        ],
+        pnl: { treasury: { lendingIncome: 75.58, total: 46_675.58 }, book: { total: 46_675.58 } },
+        nav: { treasury: 1_446_675.58, book: 1_546_675.58 },
+        balance: { treasury: { accruedIncome: 4.33, assets: 1_977_075.58, netAssets: 1_446_675.58 }, book: { accruedIncome: 4.33, assets: 2_077_075.58, netAssets: 1_546_675.58 } },
+      },
+    },
+    {
+      // The rest is recalled: all the collateral, 530,400, goes back, and the fee to date, 4.33, is received.
+      id: 'recall-the-rest', covers: ['recall', 'close', 'full return'], action: 'repay', lot: 'lend',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'recall_sec', action: 'recall_sec', purpose: 'financing', instrument: 'lend', qty: 10_000, ccy: 'USD' }] },
+        result: { status: 'closed', orders: [{ kind: 'recall_sec', action: 'recall_sec', status: 'filled', qty: 10_000, filledQty: 10_000 }] },
+        events: [
+          { type: 'strategy.legs_added', owner: 'treasury' },
+          { type: 'secloan.recall', summary: 'Took back 10,000 HGDV from loan; returned 530,400.00 USD cash collateral', owner: 'treasury', date: '2026-03-03' },
+          { type: 'interest.payment', summary: 'Lending fee received on Pellham lending of HGDV: 4.33 USD', cash: { USD: 4.33 }, owner: 'treasury', date: '2026-03-03' },
+        ],
+        cash: { treasury: { USD: { settled: 406_675.58, restricted: 0, availableToTrade: 406_675.58, availableToWithdraw: 406_675.58 } } }, // 406,671.25 + 4.33
+        positions: [{ ...UNITS, price: 52.00, value: 1_040_000, unrealized: 39_600, onLoan: 0 }],
+        lifecycle: [],
+        balance: {
+          treasury: { cash: 406_675.58, restricted: null, accruedIncome: null, collateralReceived: null, assets: 1_446_675.58, liabilities: 0, netAssets: 1_446_675.58 },
+          book: { cash: 506_675.58, restricted: null, accruedIncome: null, collateralReceived: null, assets: 1_546_675.58, liabilities: 0, netAssets: 1_546_675.58 },
+        },
+      },
+    },
+  ],
+};
+
+export default [securitiesBorrowing, securitiesLending];
