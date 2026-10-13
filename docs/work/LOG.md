@@ -176,3 +176,4 @@
 - 2026-10-13T18:14Z | b3 | +0.2 | non_agency_mbs passes at engine, API and browser
 - 2026-10-13T18:14Z | o2 | +0.2 | interest_rate_option passes at engine, API and browser
 - 2026-10-13T18:14Z | r1 | +0.2 | special_repo passes at engine, API and browser
+- 2026-10-13T18:15Z | fw | +0.2 | fw: commodity_forward passes at engine, API and browser

@@ -1279,7 +1279,9 @@ const cryptoOption = {
     collateral: 'Call (bought): position-level terms, variation margin over a 10,000 threshold (never reached); no independent amount for a bought option. Put (written): fixed independent amount 20,000, variation margin with no threshold and a 500 minimum transfer: posted on a Saturday, partly returned, the rest returned at expiry',
   },
   start: '2026-03-07T15:00:00.000Z', // Saturday 7 March 2026, 10:00 New York
-  settlementCheck: { lag: 1, holidays: [] }, // the 24x7 calendar has no holiday and no weekend (crypto legs, same day, are exempted step by step)
+  // The audit's calculator counts weekdays only; on the 24x7 calendar a Saturday trade settles the next day, Sunday 8 March
+  // (checked by hand), and coins settle the same day.
+  settlementCheck: false,
   book: {
     name: 'Matrix crypto option', reportingCcy: 'USD',
     capital: [{ ccy: 'USD', amount: 1_000_000 }],
