@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 98.8% of the pass** (last milestone 2026-10-13T21:22Z, t2: trading path 2 (Marketplace trade, Hedge popup, Execute now) passes at engine, API and browser)
+**Completeness: about 98.8% of the pass** (last milestone 2026-10-13T21:23Z, coord: PAUSED on the owner's instruction; state written to RESUME.md)
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 
@@ -31,6 +31,29 @@ Stop all background work when the owner's weekly **Fable** usage reaches 98%.
 
 Last known figures: 5:30 PM ET on 2026-10-06, Fable 14% against 10% for all models (r = 1.4), before this pass
 started. The all-models figure was reported as 35% at about 9:57 PM ET.
+
+## PAUSED at 2026-10-13 21:25 UTC (05:25 PM ET) on the owner's instruction
+
+Nothing is running and nothing is scheduled. Do nothing until the owner says "resume".
+
+**Where it stopped (worker-reported results; the coordinator has not yet re-run them):**
+- All 205 products have a specification that their worker reports passing at engine, API and browser level
+  (`LOG.md`, one line per product). The last groups finished this afternoon: structured credit and loans (b4),
+  the other swaps (s2), partial swaps and credit derivatives (s3).
+- Execution templates (t1: templates-a.mjs, t2: templates-b.mjs): in progress when paused; both workers were
+  stopped. See `LOG.md` lines "t1" and "t2" for the templates saved as passing; templates-a.mjs may hold specs
+  without `matrix.ticket`, which stops `test/matrix/engine.test.js` and `specs.test.js` from loading inside
+  `npm test` (reported by three workers). Trading path 1 and path 2 (t2) pass.
+- Independent accounting verification (s7): finished. `docs/ACCOUNTING-VERIFICATION.md`,
+  `test/core/accounting-verification.test.js`, system case `accounting:verification-book`. One Terminal fault
+  fixed (capital and internal funding translated at today's rate instead of the booked rate).
+- `npm test` was last reported red only because of the template specs in progress and one failure-recovery test
+  ("a number of contracts stated for an exercise must be whole") that two workers saw fail.
+- Not started: the whole-interface check after all changes (s9), the coordinator's own final re-run of every
+  suite on one commit, the updated matrix and the evidence report with the four categories.
+
+**On "resume":** `npm test`; repair or finish templates-a.mjs / templates-b.mjs (restart t1 and t2 from
+`progress/t1.md` and `progress/t2.md`); then s9; then the final run and report.
 
 ## RESUMED 2026-10-13 16:10 UTC on the owner's new request (`briefs/OWNER_REQUEST2.txt`)
 

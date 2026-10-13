@@ -4118,8 +4118,8 @@ const shortCollar = {
 // ---------------------------------------------------------------------------------------------
 // cash_secured_put
 // ---------------------------------------------------------------------------------------------
-const csp = (contracts, strike, extra = {}) => pageInput('cash_secured_put', { quantity: null, options: { expiration: '2026-03-20', strikes: { put: strike }, contracts }, ...extra });
-const cspPage = (contracts, strike, extra = {}) => ({ template: 'Cash-Secured Put', underlying: 'main', expiration: '2026-03-20', strikes: { 'Put strike': strike }, contracts, ...extra });
+const csp = (qty, strike, extra = {}) => pageInput('cash_secured_put', { quantity: qty, options: { expiration: '2026-03-20', strikes: { put: strike }, contracts: null }, ...extra });
+const cspPage = (qty, strike, extra = {}) => ({ template: 'Cash-Secured Put', underlying: 'main', quantity: qty, expiration: '2026-03-20', strikes: { 'Put strike': strike }, ...extra });
 
 const cashSecuredPut = {
   template: 'cash_secured_put',
@@ -4137,14 +4137,16 @@ const cashSecuredPut = {
   },
   expectAtStart: startState(),
   steps: [
-    { id: 'hedge-request', covers: ['hedge request'], action: 'hedge_request', input: csp(10, 48, CONTEXT), strategyPage: { ...PAGE_CONTEXT, ...cspPage(10, 48) }, expect: {} },
-    { id: 'open-partial', covers: ['open', 'reserve', 'partial fill'], action: 'package', as: 'core', instrument: 'put48', input: csp(10, 48), strategyPage: cspPage(10, 48), expect: {} },
+    { id: 'hedge-request', covers: ['hedge request'], action: 'hedge_request', input: csp(1000, 48, CONTEXT), strategyPage: { ...PAGE_CONTEXT, ...cspPage(1000, 48) }, expect: {} },
+    { id: 'open-partial', covers: ['open', 'reserve', 'partial fill'], action: 'package', as: 'core', instrument: 'put48', input: csp(1000, 48), strategyPage: cspPage(1000, 48), expect: {} },
     { id: 'cancel-remainder', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'core', expect: {} },
     { id: 'retry', covers: ['retry'], action: 'recover', how: 'retry', lot: 'core', expect: {} },
-    { id: 'limit-never-reached', covers: ['failed dependent leg'], action: 'package', as: 'limited', instrument: 'put50', input: csp(2, 50), strategyPage: cspPage(2, 50), editLegs: { 2: { orderType: 'limit', limitPrice: 2.5 } }, expect: {} },
+    { id: 'limit-never-reached', covers: ['failed dependent leg'], action: 'package', as: 'never', instrument: 'put50', input: csp(200, 50), strategyPage: cspPage(200, 50), editLegs: { 2: { orderType: 'limit', limitPrice: 2.5 } }, expect: {} },
+    { id: 'cancel-never', covers: ['cancel working legs', 'reserve released'], action: 'strategy_action', how: 'cancel_working', lot: 'never', expect: {} },
+    { id: 'limited-partial', covers: ['partial fill'], action: 'package', as: 'limited', instrument: 'put50', input: csp(300, 50), strategyPage: cspPage(300, 50), expect: {} },
     { id: 'cancel-limited', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'limited', expect: {} },
     { id: 'unwind', covers: ['unwind', 'reserve released'], action: 'recover', how: 'unwind', lot: 'limited', expect: {} },
-    { id: 'kept-partial', covers: ['partial fill'], action: 'package', as: 'kept', instrument: 'put50', input: csp(3, 50), strategyPage: cspPage(3, 50), expect: {} },
+    { id: 'kept-partial', covers: ['partial fill'], action: 'package', as: 'kept', instrument: 'put50', input: csp(300, 50), strategyPage: cspPage(300, 50), expect: {} },
     { id: 'cancel-kept', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'kept', expect: {} },
     { id: 'accept-kept', covers: ['accept as it stands'], action: 'strategy_action', how: 'accept', lot: 'kept', expect: {} },
     { id: 'deep-book', action: 'quote', instrument: 'put48', quote: { bid: 0.90, ask: 1.00, last: 0.95, bidSize: 100, askSize: 100 }, expect: {} },
@@ -4152,9 +4154,9 @@ const cashSecuredPut = {
     { id: 'roll', covers: ['roll'], action: 'roll', lot: 'core', newExpiration: '2026-04-17', expect: {} },
     { id: 'next-day', covers: ['settlement'], action: 'clock', to: MAR(3), expect: {} },
     { id: 'sweep-to-treasury', covers: ['transfer'], action: 'transfer', from: 'account', to: 'treasury', ccy: 'USD', amount: 120_000, expect: {} },
-    { id: 'cash-short-not-financed', covers: ['financing: not financed'], action: 'package', instrument: 'put48', input: csp(4, 48), strategyPage: cspPage(4, 48), status: 'blocked', reason: 'x', expect: { refused: 'short' } },
-    { id: 'funded-from-treasury', covers: ['financing: Treasury funding'], action: 'package', as: 'funded', instrument: 'put48', input: csp(4, 48, { financing: { mode: 'treasury' } }), strategyPage: cspPage(4, 48, { financing: { mode: 'treasury' } }), expect: {} },
-    { id: 'funded-by-loan', covers: ['financing: borrow'], action: 'package', as: 'levered', instrument: 'put48', contractAs: 'loan', input: csp(2, 48, { financing: { mode: 'loan', rateType: 'fixed', rate: 0.06 } }), strategyPage: cspPage(2, 48, { financing: { mode: 'loan', rate: 0.06 } }), expect: {} },
+    { id: 'cash-short-not-financed', covers: ['financing: not financed'], action: 'package', instrument: 'put48', input: csp(400, 48), strategyPage: cspPage(400, 48), status: 'blocked', reason: 'x', expect: { refused: 'short' } },
+    { id: 'funded-from-treasury', covers: ['financing: Treasury funding'], action: 'package', as: 'funded', instrument: 'put48', input: csp(400, 48, { financing: { mode: 'treasury' } }), strategyPage: cspPage(400, 48, { financing: { mode: 'treasury' } }), expect: {} },
+    { id: 'funded-by-loan', covers: ['financing: borrow'], action: 'package', as: 'levered', instrument: 'put48', contractAs: 'loan', input: csp(200, 48, { financing: { mode: 'loan', rateType: 'fixed', rate: 0.06 } }), strategyPage: cspPage(200, 48, { financing: { mode: 'loan', rate: 0.06 } }), expect: {} },
     { id: 'settle-financed', covers: ['settlement'], action: 'clock', to: MAR(4), expect: {} },
     { id: 'treasury-top-up', covers: ['transfer'], action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 50_000, expect: {} },
     { id: 'close-levered', covers: ['close', 'repay', 'reserve released'], action: 'close', lot: 'levered', scope: 'strategy', expect: {} },

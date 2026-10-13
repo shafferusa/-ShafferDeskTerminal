@@ -294,3 +294,4 @@
 - 2026-10-13T21:18Z | t2 | +0.2 | trading path 1 (strategy package with protection) passes at engine, API and browser
 - 2026-10-13T21:19Z | t1 | +0.2 | T:short_collar template passes at engine, API and browser
 - 2026-10-13T21:22Z | t2 | +0.2 | trading path 2 (Marketplace trade, Hedge popup, Execute now) passes at engine, API and browser
+- 2026-10-13T21:23Z | coord | +0 | PAUSED on the owner's instruction; state written to RESUME.md
