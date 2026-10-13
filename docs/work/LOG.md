@@ -178,3 +178,4 @@
 - 2026-10-13T18:14Z | r1 | +0.2 | special_repo passes at engine, API and browser
 - 2026-10-13T18:15Z | fw | +0.2 | fw: commodity_forward passes at engine, API and browser
 - 2026-10-13T18:15Z | m1 | +0.2 | volatility_swap passes at engine, API and browser (no-basis refusal, CSA)
+- 2026-10-13T18:17Z | r1 | +0.2 | buy_sell_back passes at engine, API and browser

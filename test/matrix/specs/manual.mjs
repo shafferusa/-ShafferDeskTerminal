@@ -1719,4 +1719,150 @@ const volatilitySwap = {
   ],
 };
 
-export default [privateEquity, ventureCapital, hedgeFund, infrastructure, directRealEstate, insuranceLinked, varianceSwap, volatilitySwap];
+// ---------------------------------------------------------------------------------------------
+// correlation_swap
+// ---------------------------------------------------------------------------------------------
+// Selling correlation on an equally weighted basket of five US bank stocks at a strike of 40, 25,000 per correlation
+// point. Position-level collateral terms: an independent amount of 10% of the collateral notional (25,000 x 100 points =
+// 2,500,000, so 250,000), no variation margin. A mark by hand; a valuation with no source is refused (the dialog will not
+// record it); half the contract terminated at an agreed amount (half the independent amount comes back); the rest settled
+// from the realised correlation entered by hand: the seller receives as realised correlation came in under the strike.
+const CORR_POS = { instrument: 'main', lot: 'swap', owner: 'account', direction: 'correlation seller' };
+const CORR_NAME = 'US bank basket correlation swap, strike 40, December 2026 (Ardmore Securities)';
+const correlationSwap = {
+  productId: 'correlation_swap',
+  title: 'Correlation swap on five US banks, strike 40, 25,000 a point, sold: independent amount, a mark, a partial termination and settlement from realised correlation, by hand',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: ['Trading owner', 'Action (Enter the contract, Terminate)', 'Contracts', 'State a fill price', 'Basket, strike, notional per point, side, expiry (registration)', 'Collateral basis (registration, required)'],
+    manualInputs: ['marks (value to us, date and a source, required)', 'agreed termination amount', 'realised correlation at expiry'],
+    settlement: 'Entry and termination T+2 on the US calendar; final settlement T+2 after the realised correlation is entered (21 December 2026, paid 23 December)',
+    lifecycle: 'Expiry waits, visibly, for the realised correlation entered by hand; a valuation with no source is refused',
+    accounting: 'Zero cost; valued at the mark by hand; settlement = notional per point x (realised - strike), sign reversed for the seller; realized',
+    collateral: 'Position-level terms: independent amount 10% of 2,500,000 posted at entry, trued up on the partial termination, returned at the end; no variation margin',
+  },
+  start: '2026-03-02T15:00:00.000Z',
+  settlementCheck: { lag: 2, holidays: [] },
+  book: { name: 'Matrix correlation swap', reportingCcy: 'USD', capital: [{ ccy: 'USD', amount: 3_000_000 }], account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 2_000_000 }] }, settings: SETTINGS },
+  instruments: {
+    main: { productId: 'correlation_swap', name: CORR_NAME, symbol: 'CORR-BANKS-DEC26', marketView: 'US_DERIV', venueType: 'otc', jurisdiction: 'US', underlyingGeo: 'US', tradingCcy: 'USD',
+      terms: { basket: 'Ardmore Bancorp, Belcourt Financial, Calder Trust, Dunmore Bank, Eastgate Bancshares (equal weights)', strikeCorr: 40, notionalPerPoint: 25_000, side: 'short', expiry: '2026-12-18', valuationMaxAgeDays: 10, counterparty: 'Ardmore Securities',
+        collateralBasis: { type: 'position', independentAmount: { type: 'pct', pct: 0.10 }, variationMargin: false, threshold: 0, minimumTransfer: 0 } } },
+  },
+  expectAtStart: SIMPLE_START(2_000_000, 1_000_000),
+  steps: [
+    {
+      id: 'enter', covers: ['open', 'collateral'], action: 'ticket', instrument: 'main', side: 'buy', qty: 1, as: 'swap', order: { statedPrice: 0 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 1, estimate: 0, model: 'stated-price', settleDate: '2026-03-04', calendar: 'US', cash: 0, fees: 0, notional: 2_500_000 }],
+          cash: { USD: { margin: 250_000, required: 250_000, available: 2_000_000, shortfall: 0 } } }, // 10% x 25,000 x 100
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 1, avgPrice: 0 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Bought 1 CORR-BANKS-DEC26 @ 0.00 USD', owner: 'account', date: '2026-03-02' },
+          { type: 'manual.collateral', summary: `Collateral posted on ${CORR_NAME} under its position-level terms: 250,000.00 USD (independent amount, 10.00% of 2,500,000.00 USD notional)`, cash: { USD: -250_000 }, owner: 'account' },
+        ],
+        cash: { account: { USD: { settled: 1_750_000, margin: 250_000, availableToTrade: 1_750_000 } } },
+        positions: [{ ...CORR_POS, qty: 1, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, margin: 250_000, manual: { kind: 'correlation', endDate: '2026-12-18', valuation: null } }],
+        holdings: { main: { long: 1, short: 0, net: 1 } },
+        pending: [],
+        lifecycle: [{ type: 'manual.settlement', instrument: 'main', dueDate: '2026-12-18', status: 'pending', owner: 'account' }],
+        otc: [{ instrument: 'main', lot: 'swap', owner: 'account', qty: 1, basis: 'position', mark: null, iaRequired: 250_000, iaPosted: 250_000 }],
+        pnl: { account: { realized: 0, fees: 0 } },
+        nav: { account: 2_000_000, book: 3_000_000 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 1_750_000, margin: 250_000, assets: 2_000_000, liabilities: 0, netAssets: 2_000_000 } },
+      },
+    },
+    { id: 'next-monday', action: 'clock', to: ny('2026-03-09'), expect: {} },
+    {
+      id: 'valuation-without-source', covers: 'valuation', action: 'lifecycle', lot: 'swap', body: { action: 'valuation', value: 75_000, asOf: '2026-03-09', source: '' },
+      status: 'blocked', reason: 'A valuation entered by hand must name its source.',
+      expect: { refused: { engine: 'Name the source of the valuation', api: 'Name the source of the valuation', browser: 'Record button stays disabled' } },
+    },
+    {
+      id: 'mark', covers: 'valuation', action: 'lifecycle', lot: 'swap', body: { action: 'valuation', value: 75_000, asOf: '2026-03-09', source: 'Dealer mark, Ardmore Securities' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of CORR-BANKS-DEC26 entered by hand: 75,000.00 USD for the 1 held, as of 2026-03-09, source: Dealer mark, Ardmore Securities. A manual input, not a market quote' }],
+        positions: [{ ...CORR_POS, qty: 1, price: 75_000, value: 75_000, unrealized: 75_000, provisional: false, freshness: 'manual', margin: 250_000 }],
+        otc: [{ instrument: 'main', mark: 75_000, markValue: 75_000 }],
+        pnl: { account: { unrealized: 75_000, total: 75_000 } },
+        nav: { account: 2_075_000, book: 3_075_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 75_000, assets: 2_075_000, netAssets: 2_075_000 } },
+      },
+    },
+    { id: 'termination-date', action: 'clock', to: ny('2026-03-16'), expect: {} },
+    {
+      // Half terminated at an agreed 120,000 a contract: 60,000 received T+2 (18 March), realized 60,000. The independent amount
+      // falls to 10% x 1,250,000 = 125,000: 125,000 comes back now. The half left is valued at 0.5 x 75,000 = 37,500.
+      id: 'partial-termination', covers: ['reduce', 'collateral'], action: 'ticket', instrument: 'main', side: 'sell', qty: 0.5, from: 'swap', order: { statedPrice: 120_000 },
+      expect: {
+        preview: { blocking: 0, legs: [{ action: 'sell', qty: 0.5, estimate: 120_000, model: 'stated-price', settleDate: '2026-03-18', cash: 60_000, fees: 0 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 0.5, avgPrice: 120_000 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 0.5 CORR-BANKS-DEC26 @ 120,000.00 USD (realized 60,000.00 USD)' },
+          { type: 'manual.collateral', summary: `Collateral returned on ${CORR_NAME} under its position-level terms: 125,000.00 USD (independent amount, 10.00% of 1,250,000.00 USD notional)`, cash: { USD: 125_000 } },
+        ],
+        cash: { account: { USD: { settled: 1_875_000, unsettled: 60_000, margin: 125_000, availableToTrade: 1_935_000 } } },
+        positions: [{ ...CORR_POS, qty: 0.5, cost: 0, price: 75_000, value: 37_500, unrealized: 37_500, margin: 125_000 }],
+        holdings: { main: { long: 0.5, short: 0, net: 0.5 } },
+        pending: [{ instrument: 'main', lot: 'swap', owner: 'account', dueDate: '2026-03-18', amount: 60_000, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: 0.5, iaRequired: 125_000, iaPosted: 125_000, markValue: 37_500 }],
+        pnl: { account: { realized: 60_000, unrealized: 37_500, total: 97_500 } },
+        nav: { account: 2_097_500, book: 3_097_500 },
+        balance: { account: { cash: 1_875_000, margin: 125_000, receivable: 60_000, positions: 37_500, assets: 2_097_500, netAssets: 2_097_500 } },
+      },
+    },
+    {
+      id: 'termination-paid', covers: 'settlement', action: 'clock', to: ny('2026-03-18'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 60,000.00 USD into settled cash', cash: { USD: 60_000 } }],
+        cash: { account: { USD: { settled: 1_935_000, unsettled: 0, availableToTrade: 1_935_000 } } },
+        pending: [],
+        balance: { account: { cash: 1_935_000, receivable: null } },
+      },
+    },
+    {
+      // Monday 21 December 2026: the expiry (18 December) waits for the realised correlation; the March mark is stale.
+      id: 'expiry-waits', covers: 'settlement', action: 'clock', to: ny('2026-12-21'),
+      expect: {
+        lifecycle: [{ type: 'manual.settlement', instrument: 'main', dueDate: '2026-12-18', status: 'blocked', owner: 'account', reason: /^Waiting for the realised value, entered by hand \(Lifecycle, Final settlement\)\./ }],
+        positions: [{ ...CORR_POS, qty: 0.5, value: 37_500, freshness: 'stale', margin: 125_000 }],
+        provisional: { account: true, book: true },
+      },
+    },
+    {
+      // Realised 31.50: seller receives 25,000 x (40 - 31.50) = 212,500 a contract; x 0.5 = 106,250, T+2 (23 December).
+      id: 'final-settlement', covers: ['close', 'collateral'], action: 'lifecycle', lot: 'swap', body: { action: 'settle', realised: 31.5 },
+      expect: {
+        events: [
+          { type: 'manual.settlement', summary: 'Final settlement of CORR-BANKS-DEC26 entered by hand: realised correlation 31.50, strike 40.00: 25,000.00 USD x (31.50 - 40.00), sign reversed (correlation seller), x 0.5 held = 106,250.00 USD received 2026-12-23', owner: 'account', date: '2026-12-21' },
+          { type: 'manual.collateral', summary: `Collateral returned on ${CORR_NAME} under its position-level terms: 125,000.00 USD (independent amount, the position ended)`, cash: { USD: 125_000 } },
+        ],
+        cash: { account: { USD: { settled: 2_060_000, unsettled: 106_250, margin: 0, availableToTrade: 2_166_250 } } },
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', lot: 'swap', owner: 'account', dueDate: '2026-12-23', amount: 106_250, ccy: 'USD', into: 'cash' }],
+        lifecycle: [],
+        otc: [],
+        pnl: { account: { realized: 166_250, unrealized: 0, total: 166_250 } },
+        nav: { account: 2_166_250, book: 3_166_250 },
+        provisional: { account: false, book: false },
+        balance: { account: { cash: 2_060_000, margin: null, receivable: 106_250, positions: null, assets: 2_166_250, netAssets: 2_166_250 } },
+      },
+    },
+    {
+      id: 'settlement-paid', covers: 'settlement', action: 'clock', to: ny('2026-12-23'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 106,250.00 USD into settled cash', cash: { USD: 106_250 }, date: '2026-12-23' }],
+        cash: { account: { USD: { settled: 2_166_250, unsettled: 0, availableToTrade: 2_166_250 } } },
+        pending: [],
+        balance: { account: { cash: 2_166_250, receivable: null, assets: 2_166_250, liabilities: 0, netAssets: 2_166_250 } },
+      },
+    },
+  ],
+};
+
+export default [privateEquity, ventureCapital, hedgeFund, infrastructure, directRealEstate, insuranceLinked, varianceSwap, volatilitySwap, correlationSwap];

@@ -2275,4 +2275,251 @@ const nonAgencyMbs = {
   ],
 };
 
-export default [tips, foreignInflationLinked, callableBond, puttableBond, convertibleBond, exchangeableBond, cocoBond, agencyMbs, nonAgencyMbs];
+// ---------------------------------------------------------------------------------------------
+// mbs
+// ---------------------------------------------------------------------------------------------
+// A Ginnie Mae I 15-year 4.00% pass-through pool, guaranteed by Ginnie Mae (the full faith and credit of the United States):
+// monthly 30/360, 14-day payment delay (paid on the 15th), T+2 (its own convention), original face in whole dollars, factor
+// 0.4518276 for December 2028, trading at a discount. Two monthly cycles are recorded by hand.
+//   - Bought on Monday 11 December for a settlement date agreed on the ticket, Thursday 14 December (as pools settle on an
+//     agreed date), increased T+2. Bought after the November record date: the first coupon is December's interest, paid on
+//     15 January, which is Martin Luther King Jr. Day: on Tuesday 16 January.
+//   - January factor 0.4471105 (from 1 January, principal paid 16 January); February factor 0.4405931 (from 1 February, paid
+//     15 February).
+//   - The whole pool is sold on 5 February for settlement on 7 February, after the January record date: January's coupon and
+//     the February principal still belong to the Account and are paid on 15 February with nothing held.
+// Commission: 0.25 basis point of clean principal. Days of 30/360: 1 to 14 Dec 13, to 15 Dec 14, to 18 Dec 17; 1 Jan to 4 Jan
+// 3, to 12 Jan 11; 1 Feb to 2 Feb 1, to 7 Feb 6. A month's coupon is 4% / 12 of current face.
+const mbs = {
+  productId: 'mbs',
+  title: 'Ginnie Mae I 4.00% pool: agreed settlement date, increase, two monthly factors and paydowns recorded by hand, coupons after the 14-day delay (one over MLK Day), sold after the record date with the coupon and principal still paid to the seller',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount (original face)', 'Settlement (agreed date) where the trade states one'],
+    manualInputs: ['Registration: Pool factor, Payment delay 14, Guarantor, Settlement convention 2', 'Settlement date agreed on the ticket for the purchase', 'Paydowns recorded by hand each month (New pool factor, Factor effective from, Principal paid on)'],
+    settlement: 'An agreed settlement date stated on the ticket, else T+2 on the US bond calendar; current face = original face x factor',
+    lifecycle: 'Monthly coupon on the factor of the month, paid 14 days after the period ends (next business day); paydown principal receivable until the payment date; a holder at the record date is paid the coupon and the principal after selling',
+    accounting: 'Cost per 100 of current face; paydown at par against a discount cost is realized gain; interest and coupon income; after the sale, the coupon owed stays an accrued receivable until paid',
+    collateral: 'None for a long position',
+  },
+  start: EST('2028-12-11'), // Monday
+  settlementCheck: { lag: 2, holidays: ['2028-12-25', '2029-01-01', '2029-01-15'] },
+  book: {
+    name: 'Matrix GNMA pass-through', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 6_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 5_000_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.25 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'mbs', name: 'Ginnie Mae I 15-Year 4.00% Pool 784512', symbol: 'GN-4.0-784512', marketView: 'US_CASH', venueType: 'otc', issuer: 'Government National Mortgage Association', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { settleLag: 2 },
+      terms: { couponType: 'fixed', couponRate: 0.04, frequency: 12, maturity: '2037-12-01', issueDate: '2022-12-01', dayCount: '30/360', redemption: 100, factor: 0.4518276, paymentDelayDays: 14, guarantor: 'Ginnie Mae (full faith and credit of the United States)' } },
+  },
+  quotes: { main: { bid: 97.125, ask: 97.25, last: 97.1875, bidSize: 50_000_000, askSize: 50_000_000 } },
+  expectAtStart: { ...startState(5_000_000, 1_000_000), cash: { account: usdCash(5_000_000), treasury: usdCash(1_000_000) } },
+  steps: [
+    {
+      id: 'open', covers: ['open', 'stated settlement'], action: 'ticket', instrument: 'main', side: 'buy', qty: 8_000_000, as: 'lot', order: { settle: { date: '2028-12-14' } }, settlementCheck: false,
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 8_000_000, estimate: 97.25, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2028-12-14', calendar: 'USBOND',
+            notional: 3_614_620.80, // current face: 8,000,000 x 0.4518276
+            gross: 3_515_218.73, // 3,614,620.80 x 97.25 / 100 = 3,515,218.728
+            accrued: 5_221.12, // 13 days: 3,614,620.80 x 4% x 13/360 = 5,221.1189
+            cash: -3_520_439.85, fees: 87.88 }], // 0.25 bp of 3,515,218.73 = 87.880
+          cash: { USD: { purchases: 3_520_439.85, fees: 87.88, required: 3_520_527.73, available: 5_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 8_000_000, avgPrice: 97.25, fills: [{ qty: 8_000_000, price: 97.25, model: 'quoted-bid-ask', settleDate: '2028-12-14', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 8,000,000 GN-4.0-784512 @ 97.25 USD', owner: 'account', date: '2028-12-11' }],
+        cash: { account: { USD: { settled: 5_000_000, unsettled: -3_520_527.73, availableToTrade: 1_479_472.27 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 8_000_000, avgCost: 97.25, cost: 3_515_218.73, price: 97.1875,
+          value: 3_512_959.59, unrealized: -2_259.14, accrued: 5_221.12, priceSource: 'Test fixture' }], // 3,614,620.80 x 97.1875 / 100 = 3,512,959.590
+        holdings: { main: { long: 8_000_000, short: 0, net: 8_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2028-12-14', amount: -3_520_527.73, ccy: 'USD', into: 'cash' }],
+        // 1 Jan 2029 + 14 days = Monday 15 January, MLK Day: paid Tuesday 16 January. Maturity 1 Dec 2037 + 14 = Tuesday 15 Dec 2037.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2029-01-16', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2037-12-15', status: 'pending' }],
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -87.88, fees: 0, borrowFunding: 0, unrealized: -2_259.14, total: -2_347.02 } },
+        nav: { account: 4_997_652.98, book: 5_997_652.98 },
+        balance: { account: { cash: 5_000_000, accruedIncome: 5_221.12, positions: 3_512_959.59, payable: 3_520_527.73, assets: 8_518_180.71, liabilities: 3_520_527.73, netAssets: 4_997_652.98 } },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EST('2028-12-14'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 3,520,527.73 USD from settled cash', cash: { USD: -3_520_527.73 }, date: '2028-12-14' }],
+        cash: { account: { USD: { settled: 1_479_472.27, unsettled: 0, availableToTrade: 1_479_472.27 } } },
+        pending: [],
+        balance: { account: { cash: 1_479_472.27, payable: null, assets: 4_997_652.98, liabilities: 0 } },
+      },
+    },
+    {
+      // T+2 from Thursday: Monday 18 December.
+      id: 'increase', covers: 'increase', action: 'resize', lot: 'lot', factor: 1.25, // 8,000,000 -> 10,000,000
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', qty: 2_000_000, estimate: 97.25, settleDate: '2028-12-18', notional: 903_655.20,
+          gross: 878_804.68, accrued: 1_706.90, cash: -880_511.58, fees: 21.97 }], // 903,655.20 x 97.25 / 100 = 878,804.682; 17 days 1,706.9043; 0.25 bp = 21.970
+          cash: { USD: { purchases: 880_511.58, fees: 21.97, required: 880_533.55, available: 1_479_472.27, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 2_000_000, avgPrice: 97.25 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Bought 2,000,000 GN-4.0-784512 @ 97.25 USD' }],
+        cash: { account: { USD: { settled: 1_479_472.27, unsettled: -880_533.55, availableToTrade: 598_938.72 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 10_000_000, cost: 4_394_023.41, avgCost: 97.25, price: 97.1875, value: 4_391_199.49, unrealized: -2_823.92, accrued: 6_928.02 }], // 4,518,276 x 97.1875 / 100
+        holdings: { main: { long: 10_000_000, short: 0, net: 10_000_000 } },
+        pending: [{ instrument: 'main', dueDate: '2028-12-18', amount: -880_533.55, into: 'cash' }],
+        pnl: { account: { commissions: -109.85, unrealized: -2_823.92, total: -2_933.77 } },
+        nav: { account: 4_997_066.23, book: 5_997_066.23 },
+        balance: { account: { cash: 1_479_472.27, accruedIncome: 6_928.02, positions: 4_391_199.49, payable: 880_533.55, assets: 5_877_599.78, liabilities: 880_533.55, netAssets: 4_997_066.23 } },
+      },
+    },
+    {
+      // Monday 18 Dec. End of day Friday 15 Dec: 3,614,620.80 settled, 14 days, 5,622.7435, plus 903,655.20 to 18 Dec, 1,706.9043:
+      // 7,329.65. On the books 6,928.02: 401.63 more.
+      id: 'settle-increase', covers: ['settlement', 'accrual'], action: 'clock', to: EST('2028-12-18'),
+      expect: {
+        events: [
+          { type: 'settlement.pay', summary: 'paid 880,533.55 USD from settled cash', cash: { USD: -880_533.55 } },
+          { type: 'accrual.coupon', summary: 'Interest accrued on GN-4.0-784512: 401.63 USD' },
+        ],
+        cash: { account: { USD: { settled: 598_938.72, unsettled: 0, availableToTrade: 598_938.72 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 10_000_000, accrued: 7_329.65 }],
+        pending: [],
+        pnl: { account: { couponInterest: 401.63, total: -2_532.14 } },
+        nav: { account: 4_997_467.86, book: 5_997_467.86 },
+        balance: { account: { cash: 598_938.72, payable: null, accruedIncome: 7_329.65, assets: 4_997_467.86, liabilities: 0, netAssets: 4_997_467.86 } },
+      },
+    },
+    {
+      // Friday 5 January 2029. End of day 4 Jan: December's coupon (due 16 Jan) 4,518,276 x 4% / 12 = 15,060.92, plus 3 days of
+      // January 1,506.0920: 16,567.01. 9,237.36 more.
+      id: 'january-5', covers: 'accrual', action: 'clock', to: EST('2029-01-05'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on GN-4.0-784512: 9,237.36 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 10_000_000, accrued: 16_567.01 }],
+        pnl: { account: { couponInterest: 9_638.99, total: 6_705.22 } },
+        nav: { account: 5_006_705.22, book: 6_006_705.22 },
+        balance: { account: { accruedIncome: 16_567.01, assets: 5_006_705.22, netAssets: 5_006_705.22 } },
+      },
+    },
+    {
+      // January factor recorded by hand: 0.4518276 to 0.4471105 from 1 January, principal 10,000,000 x 0.0047171 = 47,171.00
+      // paid 16 January. Cost out 4,394,023.41 x 0.0047171 / 0.4518276 = 45,873.80: realized +1,297.20 (par for a 97.25 cost).
+      // January's 3 days on 4,471,105: 1,490.3683; with the coupon the balance is 16,551.29, 15.72 down.
+      id: 'january-paydown', covers: 'paydown (by hand)', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'paydown', newFactor: 0.4471105, effective: '2029-01-01', payDate: '2029-01-16' },
+      expect: {
+        events: [
+          { type: 'bond.paydown', summary: 'Principal paydown on GN-4.0-784512: factor 0.4518276 to 0.4471105 from 2029-01-01, 47,171.00 USD receivable on 2029-01-16', owner: 'account', date: '2029-01-05' },
+          { type: 'accrual.coupon', summary: 'Accrued interest restated on the new factor of GN-4.0-784512, down: 15.72 USD' },
+        ],
+        cash: { account: { USD: { settled: 598_938.72, unsettled: 47_171, availableToTrade: 646_109.72 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 10_000_000, cost: 4_348_149.61, avgCost: 97.25, price: 97.1875, value: 4_345_355.17, unrealized: -2_794.44, accrued: 16_551.29 }], // 4,471,105 x 97.1875 / 100 = 4,345,355.172
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2029-01-16', amount: 47_171, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: 1_297.20, couponInterest: 9_623.27, unrealized: -2_794.44, total: 8_016.18 } },
+        nav: { account: 5_008_016.18, book: 6_008_016.18 },
+        balance: { account: { receivable: 47_171, accruedIncome: 16_551.29, positions: 4_345_355.17, assets: 5_008_016.18, netAssets: 5_008_016.18 } },
+      },
+    },
+    {
+      // Tuesday 16 January (MLK Day was the 15th). The January principal 47,171.00 and December's coupon on the December factor,
+      // 15,060.92. End of day Friday 12 Jan: 4,471,105 x 4% x 11/360 = 5,464.68; 3,974.31 more.
+      id: 'january-payment-after-mlk', covers: ['coupon', 'paydown (by hand)', 'settlement', 'market holiday'], action: 'clock', to: EST('2029-01-16'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 47,171.00 USD into settled cash', cash: { USD: 47_171 }, date: '2029-01-16' },
+          { type: 'bond.coupon', summary: 'Coupon received on 10,000,000 GN-4.0-784512 (factor 0.4518276: current face 4,518,276): 15,060.92 USD', cash: { USD: 15_060.92 }, owner: 'account', date: '2029-01-16' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on GN-4.0-784512: 3,974.31 USD' },
+        ],
+        cash: { account: { USD: { settled: 661_170.64, unsettled: 0, availableToTrade: 661_170.64 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 10_000_000, accrued: 5_464.68 }],
+        pending: [],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2029-02-15', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2037-12-15', status: 'pending' }],
+        pnl: { account: { couponInterest: 13_597.58, total: 11_990.49 } },
+        nav: { account: 5_011_990.49, book: 6_011_990.49 },
+        balance: { account: { cash: 661_170.64, receivable: null, accruedIncome: 5_464.68, assets: 5_011_990.49, netAssets: 5_011_990.49 } },
+      },
+    },
+    {
+      // Monday 5 February. End of day Friday 2 Feb: January's coupon 4,471,105 x 4% / 12 = 14,903.6833, plus 1 day of February
+      // 496.7894: 15,400.47. 9,935.79 more.
+      id: 'february-5', covers: 'accrual', action: 'clock', to: EST('2029-02-05'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on GN-4.0-784512: 9,935.79 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 10_000_000, accrued: 15_400.47 }],
+        pnl: { account: { couponInterest: 23_533.37, total: 21_926.28 } },
+        nav: { account: 5_021_926.28, book: 6_021_926.28 },
+        balance: { account: { accruedIncome: 15_400.47, assets: 5_021_926.28, netAssets: 5_021_926.28 } },
+      },
+    },
+    {
+      // February factor: 0.4471105 to 0.4405931 from 1 February (a prepayment wave), principal 10,000,000 x 0.0065174 = 65,174.00
+      // paid 15 February. Cost out 4,348,149.61 x 0.0065174 / 0.4471105 = 63,381.71: realized +1,792.29. February's day on
+      // 4,405,931: 489.5479; with the coupon 15,393.23, 7.24 down.
+      id: 'february-paydown', covers: ['paydown (by hand)', 'prepayment (by hand)'], action: 'instrument_lifecycle', instrument: 'main', body: { action: 'paydown', newFactor: 0.4405931, effective: '2029-02-01', payDate: '2029-02-15' },
+      expect: {
+        events: [
+          { type: 'bond.paydown', summary: 'Principal paydown on GN-4.0-784512: factor 0.4471105 to 0.4405931 from 2029-02-01, 65,174.00 USD receivable on 2029-02-15', owner: 'account', date: '2029-02-05' },
+          { type: 'accrual.coupon', summary: 'Accrued interest restated on the new factor of GN-4.0-784512, down: 7.24 USD' },
+        ],
+        cash: { account: { USD: { settled: 661_170.64, unsettled: 65_174, availableToTrade: 726_344.64 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 10_000_000, cost: 4_284_767.90, avgCost: 97.25, price: 97.1875, value: 4_282_014.19, unrealized: -2_753.71, accrued: 15_393.23 }], // 4,405,931 x 97.1875 / 100 = 4,282,014.190
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2029-02-15', amount: 65_174, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: 3_089.49, couponInterest: 23_526.13, unrealized: -2_753.71, total: 23_752.06 } },
+        nav: { account: 5_023_752.06, book: 6_023_752.06 },
+        balance: { account: { receivable: 65_174, accruedIncome: 15_393.23, positions: 4_282_014.19, assets: 5_023_752.06, netAssets: 5_023_752.06 } },
+      },
+    },
+    {
+      // The whole pool sold for settlement on Wednesday 7 February: 4,405,931 x 97.125 / 100 = 4,279,260.48; accrued 6 days
+      // 2,937.29. Realized 4,279,260.48 - 4,284,767.90 = -5,507.42. January's coupon (14,903.68, due 15 February) still belongs to
+      // the Account: it stays scheduled and the accrued balance is left at exactly it: 15,393.23 - 2,937.29 = 12,455.94, trued up
+      // by 2,447.74 (the February interest earned to the settlement date, 2,937.29, less the day already on the books, 489.55).
+      id: 'close-after-record-date', covers: 'close', action: 'close', lot: 'lot', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 10_000_000, estimate: 97.125, settleDate: '2029-02-07', notional: 4_405_931,
+          gross: 4_279_260.48, accrued: 2_937.29, cash: 4_282_197.77, fees: 106.98 }] }, // 4,405,931 x 4% x 6/360 = 2,937.287; 0.25 bp = 106.982
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 10_000_000, avgPrice: 97.125 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: /^Sold 10,000,000 GN-4\.0-784512 @ 97\.125 USD \(realized [-−]5,507\.42 USD\)$/ },
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of GN-4.0-784512: 2,447.74 USD' },
+        ],
+        cash: { account: { USD: { settled: 661_170.64, unsettled: 4_347_264.79, availableToTrade: 5_008_435.43 } } }, // 65,174 + 4,282,090.79
+        positions: [],
+        holdings: { main: null },
+        pending: [
+          { instrument: 'main', owner: 'account', dueDate: '2029-02-07', amount: 4_282_090.79, ccy: 'USD', into: 'cash' },
+          { instrument: 'main', owner: 'account', dueDate: '2029-02-15', amount: 65_174, ccy: 'USD', into: 'cash' },
+        ],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2029-02-15', status: 'pending' }],
+        pnl: { account: { realized: -2_417.93, couponInterest: 25_973.87, commissions: -216.83, unrealized: 0, total: 23_339.11 } },
+        nav: { account: 5_023_339.11, book: 6_023_339.11 },
+        balance: { account: { cash: 661_170.64, receivable: 4_347_264.79, accruedIncome: 14_903.68, positions: null, assets: 5_023_339.11, liabilities: 0, netAssets: 5_023_339.11 } },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: EST('2029-02-07'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 4,282,090.79 USD into settled cash', cash: { USD: 4_282_090.79 } }],
+        cash: { account: { USD: { settled: 4_943_261.43, unsettled: 65_174, availableToTrade: 5_008_435.43 } } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2029-02-15', amount: 65_174, ccy: 'USD', into: 'cash' }],
+        balance: { account: { cash: 4_943_261.43, receivable: 65_174, assets: 5_023_339.11 } },
+      },
+    },
+    {
+      // Thursday 15 February: with nothing held, the February principal 65,174.00 and January's coupon on the January factor,
+      // 4,471,105 x 4% / 12 = 14,903.68, are paid to the Account, the holder at the January record date. Nothing is left.
+      id: 'paid-after-sale', covers: ['coupon', 'paydown (by hand)', 'settlement'], action: 'clock', to: EST('2029-02-15'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 65,174.00 USD into settled cash', cash: { USD: 65_174 }, date: '2029-02-15' },
+          { type: 'bond.coupon', summary: 'Coupon received on 10,000,000 GN-4.0-784512 (factor 0.4471105: current face 4,471,105): 14,903.68 USD', cash: { USD: 14_903.68 }, owner: 'account', date: '2029-02-15' },
+        ],
+        cash: { account: { USD: { settled: 5_023_339.11, unsettled: 0, availableToTrade: 5_023_339.11 } }, treasury: usdCash(1_000_000) },
+        pending: [],
+        lifecycle: [],
+        balance: { account: { cash: 5_023_339.11, receivable: null, accruedIncome: null, assets: 5_023_339.11, liabilities: 0, netAssets: 5_023_339.11 } },
+      },
+    },
+  ],
+};
+
+export default [tips, foreignInflationLinked, callableBond, puttableBond, convertibleBond, exchangeableBond, cocoBond, mbs, agencyMbs, nonAgencyMbs];

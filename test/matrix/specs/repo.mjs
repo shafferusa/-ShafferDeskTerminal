@@ -1849,4 +1849,154 @@ const specialRepo = {
   ],
 };
 
-export default [repo, reverseRepo, overnightRepo, termRepo, openRepo, bilateralRepo, tripartyRepo, gcRepo, specialRepo];
+// ---------------------------------------------------------------------------------------------
+// buy_sell_back
+// ---------------------------------------------------------------------------------------------
+// A buy/sell-back is two outright trades: Treasury buys 2,000,000 face of Marlow Energy notes spot from Larch Securities for
+// 2,000,000 USD and, in the same trade, sells them back for 30 March at a forward price fixed now. The forward amount is the
+// spot amount with interest at the repo rate, less the coupon the notes pay during the term (the buyer receives it) with
+// interest from its payment date. Economically it is a loan of cash against the notes: the Terminal accounts for it as cash
+// lent (an asset earning repo interest), the notes held, not owned. The coupon received during the term reduces what is
+// lent; on the forward date Treasury receives exactly the forward amount fixed at inception. Its rate cannot be reset and
+// its securities cannot be topped up, returned or substituted (it has no margin): both refused.
+//
+// Inputs: MARLOW-6-SEP32, 6.00% 30/360, coupons 15 Mar / 15 Sep, quoted 100.95 / 101.05, last 101.00 (fixture). Buy/sell-back
+// 2,000,000 USD at 4.20% ACT/360, 2 to 30 March 2026 (28 days), haircut 2%.
+//   Notes on 2 March: 2,020,000.00 plus 167 days (30/360 from 15 September) of 6%: 55,666.67 = 2,075,666.67; less 2%:
+//   2,034,153.34 supported.
+//   Coupon 15 March (a Sunday, paid Monday 16 March): 2,000,000 x 6% / 2 = 60,000.00, 14 days before the forward date.
+//   Forward: 2,000,000 x (1 + 0.042 x 28 / 360) - 60,000 x (1 + 0.042 x 14 / 360) = 2,006,533.33 - 60,098.00 = 1,946,435.33.
+//   Forward price: 1,946,435.33 / 2,000,000 x 100 = 97.321767 dirty; less 0.25 accrued on 30 March (15 days) = 97.071767 clean.
+//   Interest: 2,000,000 x 0.042 x 14 / 360 = 3,266.67 to 16 March; then 1,940,000 x 0.042 x 14 / 360 = 3,168.67; total 6,435.33.
+//   Check: 1,940,000 + 6,435.33 = 1,946,435.33, the forward amount.
+const MARLOW = { productId: 'corporate_bond', name: 'Marlow Energy 6.00% Notes 15-Sep-2032', symbol: 'MARLOW-6-SEP32', marketView: 'US_CASH', venueType: 'otc', issuer: 'Marlow Energy', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+  terms: { couponType: 'fixed', couponRate: 0.06, frequency: 2, maturity: '2032-09-15', issueDate: '2022-09-15', dayCount: '30/360', redemption: 100, minDenomination: 1_000, seniority: 'Senior unsecured' } };
+const BSB = { owner: 'treasury', side: 'reverse_repo', productId: 'buy_sell_back', productLabel: 'Buy/sell-back', ccy: 'USD', principal: 2_000_000, name: 'Larch buy/sell-back', as: 'bsb',
+  terms: { collateralInstrumentId: '$inst:marlow', collateralQty: 2_000_000, haircut: 0.02, rateType: 'fixed', rate: 0.042, dayCount: 'ACT/360', term: 'term', endDate: '2026-03-30', style: 'buy_sell_back', collateralType: 'gc', triparty: false, counterparty: 'Larch Securities' } };
+const BSB_POS = { instrument: 'bsb', lot: 'bsb', owner: 'treasury', direction: 'reverse repo (cash lent)', provisional: false, collateralHeld: { instrument: 'marlow', qty: 2_000_000 } };
+
+const buySellBack = {
+  productId: 'buy_sell_back',
+  title: 'Buy/sell-back by Treasury of 2,000,000 Marlow Energy 6% notes: forward price fixed at inception, coupon in the term received by the buyer and taken off the forward, rate reset and collateral change refused',
+  matrix: {
+    ...REPO_TICKET,
+    requiredFields: [...REPO_TICKET.requiredFields.filter((x) => !/^Term/.test(x)), 'Term (Term, with the forward date)', 'Structure (Buy/sell-back)', 'Repo rate (fixed only)'],
+    automaticInputs: ['the notes\' dirty value and the cash they support after the haircut', 'the forward amount and forward price (clean and dirty), fixed at inception from the rate and the coupon falling in the term', 'repo interest accrued daily', 'the coupon received during the term (reduces the cash lent)', 'the resale on the forward date at the forward amount'],
+    manualInputs: ['every term, entered on the ticket (product Buy/sell-back on the Reverse repo side, fixed rate, forward date)'],
+    settlement: 'None simulated as securities delivery: the spot leg pays the cash when confirmed; the forward leg returns the forward amount on the forward date',
+    lifecycle: 'Interest accrues daily; the coupon paid during the term is received by the buyer and reduces what is lent; on the forward date the forward amount fixed at inception is received; a rate reset and any collateral change are refused',
+    accounting: 'Accounted as cash lent against the notes (an asset; the difference between forward and spot, with the coupon, is repo interest income); the notes are held, not owned, and are not on Treasury\'s balance sheet',
+    collateral: 'The notes bought are held for the term (listed as collateral received); no margin, return or substitution: the trade is two outright trades at prices fixed at inception',
+  },
+  tradedOn: 'A buy/sell-back is not a registry instrument: it is entered on the Repo or reverse repo ticket of the Treasury page (Reverse repo side, product Buy/sell-back) and registers itself when the ticket is confirmed. The security is a registered corporate bond.',
+  start: AT_1000('2026-03-02'), // Monday 2 March 2026, 10:00 New York
+  book: {
+    name: 'Matrix buy/sell-back', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 3_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 100_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0 } }, fill: FILL, settlement: { bond: 1 } },
+  },
+  instruments: { marlow: MARLOW },
+  quotes: { marlow: { bid: 100.95, ask: 101.05, last: 101.00, bidSize: 10_000_000, askSize: 10_000_000 } },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 100_000, availableToTrade: 100_000, borrowed: 0 } },
+      treasury: { USD: { settled: 2_900_000, unsettled: 0, payable: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 2_900_000, availableToWithdraw: 2_900_000, borrowed: 0, lent: 0 } },
+    },
+    positions: [], holdings: {}, pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 100_000, treasury: 2_900_000, book: 3_000_000 },
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+    pnl: { account: { total: 0 }, treasury: { couponInterest: 0, total: 0 }, book: { total: 0 } },
+    balance: {
+      account: { cash: 100_000, assets: 100_000, netAssets: 100_000 },
+      treasury: { cash: 2_900_000, assets: 2_900_000, liabilities: 0, netAssets: 2_900_000 },
+      book: { cash: 3_000_000, assets: 3_000_000, liabilities: 0, netAssets: 3_000_000 },
+    },
+    oversight: { accountBorrowings: [], treasuryOwn: [] },
+  },
+  steps: [
+    repoTicket('buy-spot-and-sell-forward', BSB, {
+      covers: ['open', 'lend', 'forward price fixed at inception', 'collateral received'],
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'repo_open', action: 'reverse_repo', purpose: 'financing', qty: 2_000_000, cash: -2_000_000, fees: 0, ccy: 'USD', dailyCost: 233.33, // 2,000,000 x 0.042 / 360
+            financing: { amount: -2_000_000, rateType: 'fixed', rate: 0.042, maturity: '2026-03-30', interestFrom: '2026-03-02',
+              collateral: { qty: 2_000_000, clean: 2_020_000, accrued: 55_666.67, worth: 2_075_666.67, haircutAmount: 41_513.33, buffer: 0, supports: 2_034_153.34 },
+              forward: { amount: 1_946_435.33, endDate: '2026-03-30', cleanPer100: 97.071767, dirtyPer100: 97.321767, coupons: [{ payDate: '2026-03-16', amount: 60_000 }] } } }],
+          cash: { USD: { financingIn: 0, financingOut: 2_000_000, required: 2_000_000, available: 2_900_000, shortfall: 0, netCash: -2_000_000 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'repo_open', action: 'reverse_repo', instrument: 'bsb', status: 'filled', qty: 2_000_000, filledQty: 2_000_000 }] },
+        events: [
+          { type: 'strategy.submitted', owner: 'treasury' },
+          { type: 'repo.reverse_open', summary: 'Buy/sell-back: bought 2,000,000 MARLOW-6-SEP32 spot for 2,000,000.00 USD and sold it back forward for 2026-03-30 at 1,946,435.33 USD (forward price 97.071767 clean, 97.321767 dirty; 4.200% fixed)', cash: { USD: -2_000_000 }, owner: 'treasury', date: '2026-03-02' },
+        ],
+        cash: { treasury: { USD: { settled: 900_000, availableToTrade: 900_000, availableToWithdraw: 900_000, lent: 2_000_000 } } },
+        positions: [{ ...BSB_POS, qty: 2_000_000, value: 2_000_000, carrying: 2_000_000, accrued: 0 }],
+        holdings: {},
+        lifecycle: [{ type: 'repo.coupon', instrument: 'bsb', dueDate: '2026-03-16', status: 'pending', owner: 'treasury' }, { type: 'repo.end', instrument: 'bsb', dueDate: '2026-03-30', status: 'pending', owner: 'treasury' }],
+        balance: {
+          treasury: { cash: 900_000, lent: 2_000_000, positions: null, assets: 2_900_000, liabilities: 0, netAssets: 2_900_000 },
+          book: { cash: 1_000_000, lent: 2_000_000, positions: null, assets: 3_000_000, liabilities: 0, netAssets: 3_000_000 },
+        },
+      },
+    }),
+    {
+      id: 'reset-the-rate', covers: ['rate change'], action: 'instrument_lifecycle', instrument: 'bsb', body: { action: 'set_rate', rate: 0.045 },
+      status: 'unsupported', reason: 'The forward price was fixed at inception; a new rate would be a new trade.',
+      expect: { refused: 'A buy/sell-back fixed its forward price at inception (1,946,435.33 USD): the rate cannot be reset. Close it and enter a new one at the new rate.' },
+    },
+    {
+      id: 'call-for-more-collateral', covers: ['margin call'], action: 'lifecycle', lot: 'bsb', instrument: 'bsb', body: { action: 'collateral', change: 'pledge', qty: 100_000 },
+      status: 'unsupported', reason: 'A buy/sell-back is two outright trades at fixed prices: it carries no margin, no return of excess and no substitution.',
+      expect: { refused: {
+        engine: 'A buy/sell-back is two outright trades in one security with the forward price fixed at inception: there is no collateral to top up, return or substitute. Close it and enter a new one to change the securities.',
+        api: 'A buy/sell-back is two outright trades in one security with the forward price fixed at inception: there is no collateral to top up, return or substitute. Close it and enter a new one to change the securities.',
+        browser: 'The row of Larch buy/sell-back offers only: Set rate, Terminate. "Collateral" is not offered.' } },
+    },
+    {
+      // Monday 16 March: interest to the coupon's payment date, 14 days, 3,266.67; then the coupon, 60,000.00, is received by
+      // Treasury as the notes' buyer and reduces the cash lent to 1,940,000.
+      id: 'coupon-received-by-the-buyer', covers: ['coupon during the term', 'interest accrual'], action: 'clock', to: AT_1000('2026-03-16'),
+      expect: {
+        events: [
+          { type: 'accrual.interest', summary: 'Repo interest accrued on Larch buy/sell-back: 3,266.67 USD', owner: 'treasury', date: '2026-03-16' },
+          { type: 'repo.coupon', summary: 'Coupon of 2026-03-15 on the 2,000,000 MARLOW-6-SEP32 bought under Larch buy/sell-back received: 60,000.00 USD; it reduces the amount received back at the forward date', cash: { USD: 60_000 }, owner: 'treasury', date: '2026-03-16' },
+        ],
+        cash: { treasury: { USD: { settled: 960_000, availableToTrade: 960_000, availableToWithdraw: 960_000, lent: 1_940_000 } } },
+        positions: [{ ...BSB_POS, qty: 1_940_000, value: 1_940_000, carrying: 1_940_000, accrued: 3_266.67 }],
+        lifecycle: [{ type: 'repo.end', instrument: 'bsb', dueDate: '2026-03-30', status: 'pending', owner: 'treasury' }],
+        pnl: { treasury: { couponInterest: 3_266.67, total: 3_266.67 }, book: { total: 3_266.67 } },
+        nav: { treasury: 2_903_266.67, book: 3_003_266.67 },
+        balance: {
+          treasury: { cash: 960_000, lent: 1_940_000, accruedIncome: 3_266.67, assets: 2_903_266.67, netAssets: 2_903_266.67 },
+          book: { cash: 1_060_000, lent: 1_940_000, accruedIncome: 3_266.67, assets: 3_003_266.67, netAssets: 3_003_266.67 },
+        },
+      },
+    },
+    {
+      // Monday 30 March, the forward date: 14 more days on 1,940,000 (3,168.67; total 6,435.33, +3,168.66) and the notes are sold
+      // back: Treasury receives 1,940,000 + 6,435.33 = 1,946,435.33, the forward amount fixed on 2 March.
+      id: 'sold-back-on-the-forward-date', covers: ['maturity', 'close', 'forward leg'], action: 'clock', to: AT_1000('2026-03-30'),
+      expect: {
+        events: [
+          { type: 'accrual.interest', summary: 'Repo interest accrued on Larch buy/sell-back: 3,168.66 USD', owner: 'treasury', date: '2026-03-30' },
+          { type: 'interest.payment', summary: 'Repo interest received on Larch buy/sell-back: 6,435.33 USD', cash: { USD: 6_435.33 }, owner: 'treasury', date: '2026-03-30' },
+          { type: 'repo.reverse_close', summary: 'Buy/sell-back completed: sold back 2,000,000 MARLOW-6-SEP32 for 1,946,435.33 USD (principal 1,940,000.00 USD, repo interest 6,435.33 USD)', cash: { USD: 1_940_000 }, owner: 'treasury', date: '2026-03-30' },
+        ],
+        cash: { treasury: { USD: { settled: 2_906_435.33, availableToTrade: 2_906_435.33, availableToWithdraw: 2_906_435.33, lent: 0 } } }, // 960,000 + 1,946,435.33
+        positions: [], lifecycle: [],
+        pnl: { treasury: { couponInterest: 6_435.33, total: 6_435.33 }, book: { total: 6_435.33 } },
+        nav: { treasury: 2_906_435.33, book: 3_006_435.33 },
+        balance: {
+          treasury: { cash: 2_906_435.33, lent: null, accruedIncome: null, assets: 2_906_435.33, liabilities: 0, netAssets: 2_906_435.33 },
+          book: { cash: 3_006_435.33, lent: null, accruedIncome: null, assets: 3_006_435.33, liabilities: 0, netAssets: 3_006_435.33 },
+        },
+      },
+    },
+  ],
+};
+
+export default [repo, reverseRepo, overnightRepo, termRepo, openRepo, bilateralRepo, tripartyRepo, gcRepo, specialRepo, buySellBack];

@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 75.0% of the pass** (last milestone 2026-10-13T18:15Z, m1: volatility_swap passes at engine, API and browser (no-basis refusal, CSA))
+**Completeness: about 75.2% of the pass** (last milestone 2026-10-13T18:17Z, r1: buy_sell_back passes at engine, API and browser)
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 
