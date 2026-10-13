@@ -193,9 +193,118 @@ const fxForward = {
       // The short is worth -1,200.00: posting 1,200.00 would be below the minimum transfer, so nothing moves.
       id: 'variation-margin', covers: ['variation margin', 'collateral'], action: 'clock', to: EOD('2026-06-01'),
       expect: {
-        events: [{ type: 'forward.collateral', cash: { USD: 5_000 }, owner: 'account', date: '2026-06-01' }],
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under position-level terms: 5,000.00 USD received. Netting set of 1 position marked at 5,000.00 USD; threshold 0.00 USD.', owner: 'account', date: '2026-06-01' }],
         cash: { account: { USD: cashOf(169_604, { unsettled: -28, margin: 30_396, restricted: 5_000 }) } },
+        balance: { account: { assets: 208_800, liabilities: 5_028, netAssets: 203_772 } }, // + 5,000 restricted cash and the 5,000 owed back to the dealer
         otc: [OTC_BUY({ mark: 1.0900, markValue: 5_000, vmHeld: 5_000, vmExposure: 5_000, vmStatus: 'ok' }), OTC_SELL({ mark: 1.0900, markValue: -1_200, vmExposure: -1_200, vmStatus: 'ok' })],
+      },
+    },
+    { id: 'tuesday', action: 'clock', to: AM('2026-06-02'), expect: {} },
+    {
+      // The short is terminated early at an amount agreed with the dealer: 1,250.00 USD paid, settled two business days
+      // later (Thursday 4 June). Realized -1,250.00; its independent amount 8,696.00 comes back at once. Its commission of
+      // 8.00, owed from the trade, is still paid on the value date.
+      id: 'terminate-short', covers: ['early termination', 'close', 'collateral'], action: 'lifecycle', lot: 'sell', body: { action: 'terminate', amount: -1_250 },
+      expect: {
+        events: [
+          { type: 'forward.termination', summary: 'Terminated early: 400,000 of EURUSD-F0622 (dealt 1.087) at a stated amount, paid 1,250.00 USD on 2026-06-04', owner: 'account', date: '2026-06-02' },
+          { type: 'forward.collateral', summary: '8,696.00 USD', cash: { USD: 8_696 }, owner: 'account' },
+        ],
+        cash: { account: { USD: cashOf(178_300, { unsettled: -1_278, margin: 21_700, restricted: 5_000 }) } }, // 169,604 + 8,696; -28 - 1,250
+        positions: [{ instrument: 'main', lot: 'buy', owner: 'account', direction: 'long', qty: 1_000_000, avgCost: 1.0850, cost: 0, price: 1.0900, value: 5_000, unrealized: 5_000, notional: 1_085_000, margin: 21_700 }],
+        holdings: { main: { long: 1_000_000, short: 0, net: 1_000_000 } },
+        pending: [
+          { instrument: 'main', lot: 'sell', owner: 'account', dueDate: '2026-06-04', amount: -1_250, ccy: 'USD', into: 'cash' },
+          { instrument: 'main', lot: 'buy', owner: 'account', dueDate: '2026-06-22', amount: -20, ccy: 'USD', into: 'cash' },
+          { instrument: 'main', lot: 'sell', owner: 'account', dueDate: '2026-06-22', amount: -8, ccy: 'USD', into: 'cash' },
+        ],
+        lifecycle: [{ type: 'forward.maturity', instrument: 'main', dueDate: '2026-06-22', status: 'pending' }],
+        pnl: { account: { realized: -1_250, commissions: -28, unrealized: 5_000, total: 3_722 } },
+        nav: { account: 203_722, book: 3_003_722 },
+        balance: { account: { cash: 178_300, margin: 21_700, positions: 5_000, payable: 1_278, assets: 210_000, liabilities: 6_278, netAssets: 203_722 } }, // 178,300 + 21,700 + 5,000 + 5,000; 1,278 + 5,000
+        otc: [OTC_BUY({ mark: 1.0900, markValue: 5_000, vmHeld: 5_000, vmExposure: 5_000, vmStatus: 'ok' })],
+      },
+    },
+    {
+      id: 'termination-settles', covers: 'settlement', action: 'clock', to: AM('2026-06-04'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 1,250.00 USD from settled cash', cash: { USD: -1_250 }, owner: 'account', date: '2026-06-04' }],
+        cash: { account: { USD: cashOf(177_050, { unsettled: -28, margin: 21_700, restricted: 5_000 }) } },
+        pending: [
+          { instrument: 'main', lot: 'buy', owner: 'account', dueDate: '2026-06-22', amount: -20, ccy: 'USD', into: 'cash' },
+          { instrument: 'main', lot: 'sell', owner: 'account', dueDate: '2026-06-22', amount: -8, ccy: 'USD', into: 'cash' },
+        ],
+        balance: { account: { cash: 177_050, payable: 28, assets: 208_750, liabilities: 5_028 } },
+      },
+    },
+    { id: 'thursday-18-june', action: 'clock', to: AM('2026-06-18'), expect: {} },
+    {
+      // 1,000,000 x (1.0950 - 1.0850) = 10,000.00.
+      id: 'mark-up-again', covers: 'mark', action: 'quote', instrument: 'main', quote: { bid: 1.0948, ask: 1.0952, last: 1.0950, bidSize: 10_000_000, askSize: 10_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'buy', owner: 'account', direction: 'long', qty: 1_000_000, avgCost: 1.0850, cost: 0, price: 1.0950, value: 10_000, unrealized: 10_000, notional: 1_085_000, margin: 21_700 }],
+        pnl: { account: { unrealized: 10_000, total: 8_722 } }, // -1,250 - 28 + 10,000
+        nav: { account: 208_722, book: 3_008_722 },
+        balance: { account: { positions: 10_000, assets: 213_750, netAssets: 208_722 } },
+        otc: [OTC_BUY({ mark: 1.0950, markValue: 10_000, vmHeld: 5_000, vmExposure: 5_000, vmStatus: 'ok' })],
+      },
+    },
+    {
+      // Exposure 10,000.00 against 5,000.00 held: the dealer posts 5,000.00 more (not below the minimum transfer of 2,000).
+      id: 'variation-margin-call', covers: ['variation margin', 'collateral'], action: 'clock', to: EOD('2026-06-18'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under position-level terms: 5,000.00 USD received. Netting set of 1 position marked at 10,000.00 USD; threshold 0.00 USD.', owner: 'account', date: '2026-06-18' }],
+        cash: { account: { USD: cashOf(177_050, { unsettled: -28, margin: 21_700, restricted: 10_000 }) } },
+        balance: { account: { assets: 218_750, liabilities: 10_028, netAssets: 208_722 } },
+        otc: [OTC_BUY({ mark: 1.0950, markValue: 10_000, vmHeld: 10_000, vmExposure: 10_000, vmStatus: 'ok' })],
+      },
+    },
+    { id: 'spot-on-value-date', action: 'fx_rate', pair: 'EUR/USD', rate: 1.0960, expect: {} },
+    {
+      // Monday 22 June, over Juneteenth (Friday 19 June: no end-of-day pass for the US). The commissions (28.00) are paid.
+      // The forward is due: 1,000,000 x 1.0850 = 1,085,000.00 USD must be paid and only 177,022.00 of settled USD is held
+      // (177,050 - 28). The exchange is not made: the lifecycle item fails, visibly, and an alert is raised.
+      id: 'value-date-unfunded', covers: ['settlement', 'failed settlement', 'holiday'], action: 'clock', to: AM('2026-06-22'),
+      expect: {
+        events: [
+          { type: 'settlement.pay', summary: 'paid 20.00 USD from settled cash', cash: { USD: -20 }, owner: 'account', date: '2026-06-22' },
+          { type: 'settlement.pay', summary: 'paid 8.00 USD from settled cash', cash: { USD: -8 }, owner: 'account', date: '2026-06-22' },
+        ],
+        cash: { account: { USD: cashOf(177_022, { margin: 21_700, restricted: 10_000 }) } },
+        pending: [],
+        lifecycle: [], // a failed item is listed with the failures, not with the scheduled items
+        failed: { orders: 0, settlements: 0, lifecycle: 1 },
+        lifecycleFailures: [{ type: 'forward.maturity', instrument: 'main', dueDate: '2026-06-22', status: 'failed', owner: 'account', reason: 'Delivery failed: 1,085,000.00 USD due, 177,022.00 USD of settled USD available.' }],
+        alerts: ['forward.unfunded'],
+        balance: { account: { cash: 177_022, payable: null, assets: 218_722, liabilities: 10_000 } },
+      },
+    },
+    {
+      // Treasury funds the Account with 1,000,000.00 USD; the next cycle retries the exchange and it goes through:
+      // 1,000,000.00 EUR received, 1,085,000.00 USD paid; the independent amount 21,700.00 comes back, and the
+      // variation margin of 10,000.00 is returned to the dealer. Nothing is left posted or scheduled.
+      // USD: 177,022 + 1,000,000 - 1,085,000 + 21,700 = 113,722.00. EUR 1,000,000 at 1.0960 = 1,096,000.00 USD.
+      // P&L by hand: realized -1,250 (termination), commission -28, and the EUR bought at 1.0850 now worth 1.0960:
+      // 1,000,000 x 0.0110 = 11,000.00 in the reporting currency. Total 9,722.00.
+      id: 'fund-and-settle', covers: ['settlement', 'funding', 'collateral', 'reporting currency'], action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 1_000_000,
+      expect: {
+        events: [
+          { type: 'transfer.funding', summary: 'Treasury funding: 1,000,000.00 USD from Treasury to FX desk' },
+          { type: 'forward.settlement', summary: 'FX forward settled: received 1,000,000.00 EUR against 1,085,000.00 USD at 1.085', owner: 'account', date: '2026-06-22' },
+          { type: 'forward.collateral', summary: '21,700.00 USD (independent amount, the position ended)', cash: { USD: 21_700 }, owner: 'account' },
+          { type: 'collateral.variation', summary: 'Variation margin under position-level terms: 10,000.00 USD returned to the counterparty. The last position of the netting set ended.', owner: 'account' },
+        ],
+        cash: { account: { USD: cashOf(113_722), EUR: cashOf(1_000_000) }, treasury: { USD: cashOf(1_800_000) } },
+        positions: [],
+        holdings: { main: null },
+        lifecycle: [],
+        failed: { orders: 0, settlements: 0, lifecycle: 0 },
+        lifecycleFailures: [],
+        alerts: [],
+        pnl: { account: { realized: -1_250, commissions: -28, unrealized: 0, fx: 11_000, total: 9_722 } },
+        nav: { account: 1_209_722, treasury: 1_800_000, book: 3_009_722 }, // 113,722 + 1,096,000
+        balance: { account: { cash: 1_209_722, margin: null, positions: null, assets: 1_209_722, liabilities: 0, netAssets: 1_209_722, local: { EUR: { cash: 1_000_000 }, USD: { cash: 113_722 } } } },
+        otc: [],
       },
     },
   ],

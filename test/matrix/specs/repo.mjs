@@ -592,4 +592,259 @@ const overnightRepo = {
   ],
 };
 
-export default [repo, reverseRepo, overnightRepo];
+// ---------------------------------------------------------------------------------------------
+// term_repo
+// ---------------------------------------------------------------------------------------------
+// A sterling term repo of gilts by an Account in a dollar Book, run to its end date. The Account buys 2,100,000 face of a
+// 4.25% gilt and repos 2,000,000 of it to 3 April 2026 for 1,975,000 GBP at 4.10% ACT/365 (the sterling money-market
+// basis). The terms state a haircut of 3% and an additional buffer of 25,000 GBP, so the most the gilts support is their
+// dirty value less 3% less 25,000 (asking for more is refused). The gilt pays its coupon during the term: in a classic
+// repo the coupon stays with the borrower (the lender passes it back as a manufactured payment), so the Account receives
+// it on the pledged holding. The coupon takes the accrued interest out of the gilts' dirty value and the daily check
+// flags the cover short; the Account pledges its other 100,000 face (the flag clears). Sterling falls from 1.27 to 1.255
+// dollars. 3 April is Good Friday and 6 April Easter Monday, both English bank holidays: the repurchase is on Tuesday
+// 7 April, with interest to that day. The borrowing is the Account's, shown once in the Book and in Treasury's oversight.
+//
+// Inputs: UKT-4.25-MAR34, 4.25% ACT/ACT, coupons 22 March / 22 September; a full coupon is 2.125 per 100; the period
+// 22 Sep 2025 to 22 Mar 2026 is 181 days, 22 Mar to 22 Sep 2026 is 184 days. Quoted 101.10 / 101.20, last 101.15
+// (fixture); no commission; T+1. GBP/USD 1.27, then 1.255 (fixture).
+//   Bought 16 March, settles 17 March: 2,100,000 x 101.20 / 100 = 2,125,200.00; accrued 176 days: 44,625 x 176 / 181 =
+//   43,392.27; cash 2,168,592.27 GBP.
+//   Collateral 17 March: 2,000,000 x 101.15 / 100 = 2,023,000.00 plus 42,500 x 176 / 181 = 41,325.97: 2,064,325.97; less 3%:
+//   2,002,396.19; less the 25,000 buffer: 1,977,396.19.
+//   Repo interest: 1,975,000 x 0.041 / 365 = 221.849315 a day; to 20 March (3 days) 665.55; to 2 April (16) 3,549.59;
+//   to 7 April (21) 4,658.84.
+//   Coupon 22 March (a Sunday, paid Monday 23): 2,100,000 x 2.125 / 100 = 44,625.00, of which 43,392.27 was bought: 1,232.73
+//   earned. Then 44,625 x 11 / 184 = 2,667.80 accrued to 2 April and 44,625 x 15 / 184 = 3,637.91 to 6 April.
+//   Reporting currency: each entry at the rate in force when posted; balances at the current rate.
+const GILT = { productId: 'foreign_gov_bond', name: 'UK Treasury 4.25% Gilt 22-Mar-2034', symbol: 'UKT-4.25-MAR34', marketView: 'FOREIGN_CASH', venueType: 'otc', venueCountry: 'GB', issuer: 'HM Treasury', domicile: 'GB', underlyingGeo: 'GB', tradingCcy: 'GBP', multiplier: 0.01,
+  terms: { couponType: 'fixed', couponRate: 0.0425, frequency: 2, maturity: '2034-03-22', issueDate: '2023-09-22', dayCount: 'ACT/ACT', redemption: 100, minDenomination: 0.01 } };
+const TREPO_TERMS = { collateralInstrumentId: '$inst:gilt', collateralQty: 2_000_000, haircut: 0.03, buffer: 25_000, rateType: 'fixed', rate: 0.041, dayCount: 'ACT/365', term: 'term', endDate: '2026-04-03', style: 'classic', collateralType: 'gc', triparty: false, counterparty: 'Ashcombe Gilt Dealers' };
+const TREPO = { owner: 'account', side: 'repo', productId: 'term_repo', productLabel: 'Term repo', ccy: 'GBP', principal: 1_975_000, name: 'Ashcombe gilt term repo', collateral: { instrument: 'gilt', lot: 'gilts' }, as: 'trepo', terms: TREPO_TERMS };
+const GILTS = { instrument: 'gilt', lot: 'gilts', owner: 'account', direction: 'long', qty: 2_100_000, avgCost: 101.20, cost: 2_125_200, price: 101.15, value: 2_124_150, unrealized: -1_050 };
+const TR_POS = { instrument: 'trepo', lot: 'trepo', owner: 'account', direction: 'repo (cash borrowed)', qty: -1_975_000, value: 1_975_000, carrying: -1_975_000, collateralHeld: null };
+const GILT_MAT = { type: 'bond.maturity', instrument: 'gilt', dueDate: '2034-03-22', status: 'pending', owner: 'account' };
+const TR_END = { type: 'repo.end', instrument: 'trepo', dueDate: '2026-04-07', status: 'pending', owner: 'account' };
+
+const termRepo = {
+  productId: 'term_repo',
+  title: 'Sterling term repo of 2,000,000 UK gilts by an Account in a dollar Book: haircut and buffer, ACT/365, coupon in the term kept by the borrower, margin call met, repurchase after Easter with reporting-currency figures',
+  matrix: {
+    ...REPO_TICKET,
+    requiredFields: [...REPO_TICKET.requiredFields, 'Additional buffer (amount), when the terms state one'],
+    automaticInputs: ['the gilts\' dirty value (price fixture plus ACT/ACT accrued interest from the registered coupon terms)', 'the most cash it supports: value less the haircut less the buffer', 'repo interest accrued daily on ACT/365', 'the coupon of the pledged gilts paid to the Account (the borrower keeps it in a classic repo)', 'the daily check of the cover', 'the repurchase date: the stated end date moved to the next sterling business day', 'conversion of every entry to dollars at the rate in force (GBP/USD fixture)'],
+    manualInputs: ['every term, entered on the ticket (counterparty, haircut, buffer, rate, end date)', 'the cash principal', 'the margin call met: more gilts pledged with Collateral on the repo\'s row'],
+    settlement: 'None for the repo: cash received when confirmed and paid back on the repurchase date. The gilts bought settle T+1',
+    lifecycle: 'Interest accrues daily; the coupon is paid to the borrower during the term; the cover is checked daily; repurchased automatically on the first sterling business day on or after the end date, with interest to that day',
+    accounting: 'Cash borrowed is a liability of the Account, in sterling, shown in dollars at the current rate; repo interest is a funding expense booked in dollars at each day\'s rate; the pledged gilts stay on the Account\'s balance sheet with their accrued coupon; the change in the dollar value of the sterling balances is the FX effect',
+    collateral: 'The gilts are pledged: not sellable or lendable; cover = dirty value less 3% less 25,000 GBP against principal plus interest; the coupon lowers the dirty value and the shortfall is flagged; more gilts pledged by hand; all released on repurchase',
+  },
+  tradedOn: 'A term repo is not a registry instrument: it is entered on the Repo or reverse repo ticket of the Treasury page (for the Account) and registers itself when the ticket is confirmed. The collateral is a registered UK government bond (gilt).',
+  start: AT_1000('2026-03-16'), // Monday 16 March 2026, 10:00 New York
+  settlementCheck: { lag: 1, holidays: [] },
+  book: {
+    name: 'Matrix term repo', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 1_000_000 }, { ccy: 'GBP', amount: 3_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'GBP', amount: 2_500_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0 } }, fill: FILL, settlement: { bond: 1 } },
+  },
+  instruments: { gilt: GILT },
+  quotes: { gilt: { bid: 101.10, ask: 101.20, last: 101.15, bidSize: 50_000_000, askSize: 50_000_000 } },
+  fx: { 'GBP/USD': 1.27 },
+  expectAtStart: {
+    cash: {
+      account: { GBP: { settled: 2_500_000, unsettled: 0, payable: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 2_500_000, availableToWithdraw: 2_500_000, borrowed: 0, lent: 0 } },
+      treasury: { USD: { settled: 1_000_000, availableToTrade: 1_000_000, borrowed: 0 }, GBP: { settled: 500_000, availableToTrade: 500_000, borrowed: 0 } },
+    },
+    positions: [], holdings: {}, pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 3_175_000, treasury: 1_635_000, book: 4_810_000 }, // 2,500,000 x 1.27; 1,000,000 + 500,000 x 1.27
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+    pnl: { account: { couponInterest: 0, borrowFunding: 0, unrealized: 0, fx: 0, total: 0 }, book: { fx: 0, total: 0 } },
+    balance: {
+      account: { cash: 3_175_000, assets: 3_175_000, liabilities: 0, netAssets: 3_175_000, local: { GBP: { cash: 2_500_000 } } },
+      book: { cash: 4_810_000, assets: 4_810_000, liabilities: 0, netAssets: 4_810_000 },
+    },
+    oversight: { accountBorrowings: [], treasuryOwn: [] },
+  },
+  steps: [
+    {
+      id: 'buy-the-gilts', covers: 'collateral', action: 'ticket', ticketOf: 'bond', instrument: 'gilt', side: 'buy', qty: 2_100_000, as: 'gilts',
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'buy', instrument: 'gilt', qty: 2_100_000, estimate: 101.20, model: 'quoted-bid-ask', settleDate: '2026-03-17', gross: 2_125_200, accrued: 43_392.27, cash: -2_168_592.27, fees: 0 }] },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 2_100_000, avgPrice: 101.20 }] },
+        events: [{ type: 'strategy.submitted', owner: 'account' }, { type: 'trade.fill', summary: 'Bought 2,100,000 UKT-4.25-MAR34 @ 101.20 GBP', owner: 'account', date: '2026-03-16' }],
+        cash: { account: { GBP: { settled: 2_500_000, unsettled: -2_168_592.27, payable: 2_168_592.27, availableToTrade: 331_407.73, availableToWithdraw: 331_407.73 } } },
+        positions: [{ ...GILTS, accrued: 43_392.27, pledged: 0 }],
+        holdings: { gilt: { long: 2_100_000, short: 0, net: 2_100_000 } },
+        pending: [{ instrument: 'gilt', lot: 'gilts', owner: 'account', dueDate: '2026-03-17', amount: -2_168_592.27, ccy: 'GBP', into: 'cash' }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'gilt', dueDate: '2026-03-23', status: 'pending', owner: 'account' }, GILT_MAT], // 22 March is a Sunday
+        pnl: { account: { unrealized: -1_333.50, total: -1_333.50 }, book: { total: -1_333.50 } }, // -1,050 x 1.27
+        nav: { account: 3_173_666.50, book: 4_808_666.50 }, // 2,498,950 x 1.27
+        balance: {
+          // 2,124,150 x 1.27 = 2,697,670.50; 43,392.27 x 1.27 = 55,108.18; 2,168,592.27 x 1.27 = 2,754,112.18
+          account: { cash: 3_175_000, positions: 2_697_670.50, accruedIncome: 55_108.18, payable: 2_754_112.18, assets: 5_927_778.68, liabilities: 2_754_112.18, netAssets: 3_173_666.50,
+            local: { GBP: { cash: 2_500_000, positions: 2_124_150, accruedIncome: 43_392.27, payable: 2_168_592.27 } } },
+          book: { cash: 4_810_000, positions: 2_697_670.50, accruedIncome: 55_108.18, payable: 2_754_112.18, assets: 7_562_778.68, liabilities: 2_754_112.18, netAssets: 4_808_666.50 },
+        },
+      },
+    },
+    {
+      id: 'gilts-settle', covers: 'settlement', action: 'clock', to: AT_1000('2026-03-17'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: /^Settlement: paid 2,168,592\.27 GBP/, cash: { GBP: -2_168_592.27 }, owner: 'account', date: '2026-03-17' }],
+        cash: { account: { GBP: { settled: 331_407.73, unsettled: 0, payable: 0, availableToTrade: 331_407.73, availableToWithdraw: 331_407.73 } } },
+        pending: [],
+        balance: {
+          account: { cash: 420_887.82, payable: null, assets: 3_173_666.50, liabilities: 0, local: { GBP: { cash: 331_407.73, payable: null } } }, // 331,407.73 x 1.27
+          book: { cash: 2_055_887.82, payable: null, assets: 4_808_666.50, liabilities: 0 },
+        },
+      },
+    },
+    repoTicket('ask-more-than-the-buffer-allows', { ...TREPO, as: undefined, principal: 1_990_000 }, {
+      covers: ['open', 'haircut', 'buffer'], status: 'blocked', reason: 'After the 3% haircut and the 25,000 GBP buffer the gilts support 1,977,396.19 GBP.',
+      expect: { refused: 'The collateral supports at most 1,977,396.19 GBP: 2,000,000 UKT-4.25-MAR34 is worth 2,064,325.97 GBP (2,023,000.00 GBP clean plus 41,325.97 GBP accrued interest) and the haircut is 3.00%, less the additional buffer of 25,000.00 GBP; 1,990,000.00 GBP requested.' },
+    }),
+    repoTicket('repo-to-the-end-date', TREPO, {
+      covers: ['open', 'borrow', 'haircut', 'buffer', 'collateral'],
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'repo_open', action: 'repo', purpose: 'financing', qty: 1_975_000, cash: 1_975_000, fees: 0, ccy: 'GBP', dailyCost: 221.85, // 1,975,000 x 0.041 / 365
+            financing: { amount: 1_975_000, rateType: 'fixed', rate: 0.041, maturity: '2026-04-03', interestFrom: '2026-03-17',
+              collateral: { qty: 2_000_000, clean: 2_023_000, accrued: 41_325.97, worth: 2_064_325.97, haircutAmount: 61_929.78, buffer: 25_000, supports: 1_977_396.19 }, forward: null } }],
+          cash: { GBP: { financingIn: 1_975_000, financingOut: 0, required: 0, available: 331_407.73, shortfall: 0, netCash: 1_975_000 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'repo_open', action: 'repo', instrument: 'trepo', status: 'filled', qty: 1_975_000, filledQty: 1_975_000 }] },
+        events: [
+          { type: 'strategy.submitted', owner: 'account' },
+          { type: 'repo.open', summary: 'Repo: received 1,975,000.00 GBP against 2,000,000 UKT-4.25-MAR34 at 4.100% fixed to 2026-04-03', cash: { GBP: 1_975_000 }, owner: 'account', date: '2026-03-17' },
+        ],
+        cash: { account: { GBP: { settled: 2_306_407.73, availableToTrade: 2_306_407.73, availableToWithdraw: 2_306_407.73, borrowed: 1_975_000 } } },
+        positions: [{ ...GILTS, accrued: 43_392.27, pledged: 2_000_000 }, { ...TR_POS, accrued: 0 }],
+        // The end date, Good Friday, is moved past Easter Monday to Tuesday 7 April (sterling payment calendar).
+        lifecycle: [{ type: 'bond.coupon', instrument: 'gilt', dueDate: '2026-03-23', status: 'pending', owner: 'account' }, TR_END, GILT_MAT],
+        borrowings: [{ owner: 'account', origin: 'account', family: 'repo', type: 'Repo (cash borrowed against securities)', lot: 'trepo', principal: 1_975_000, principalRc: 2_508_250, ccy: 'GBP', rate: 0.041, rateType: 'fixed', rateText: '4.100% fixed', dayCount: 'ACT/365',
+          accrued: 0, costToDate: 0, feesToDate: 0, startDate: '2026-03-17', maturity: '2026-04-03', term: 'term', lender: 'Ashcombe Gilt Dealers', collateral: 'UKT-4.25-MAR34: 2,000,000 pledged, haircut 3.00%', schedule: 'Interest paid at repurchase', nextPayment: '2026-04-07', nextPaymentType: 'repo.end', blocked: null }],
+        balance: {
+          // 2,306,407.73 x 1.27 = 2,929,137.82; 1,975,000 x 1.27 = 2,508,250.00
+          account: { cash: 2_929_137.82, borrowed: 2_508_250, assets: 5_681_916.50, liabilities: 2_508_250, netAssets: 3_173_666.50, local: { GBP: { cash: 2_306_407.73, borrowed: 1_975_000 } } },
+          book: { cash: 4_564_137.82, borrowed: 2_508_250, assets: 7_316_916.50, liabilities: 2_508_250, netAssets: 4_808_666.50 },
+        },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'trepo', principal: 1_975_000, ccy: 'GBP', accrued: 0 }], treasuryOwn: [], accounts: { account: { cashBorrowed: 2_508_250 } } },
+      },
+    }),
+    {
+      // Monday 23 March: the coupon is paid to the Account on its 2,100,000 face, pledged or not (44,625.00; 1,232.73 of it
+      // earned since the purchase), and the run of Friday 20 March accrues 3 days of repo interest, 665.55. Both at 1.27.
+      id: 'coupon-paid-to-the-borrower', covers: ['coupon during the term', 'interest accrual'], action: 'clock', to: AT_1000('2026-03-23'),
+      expect: {
+        events: [
+          { type: 'bond.coupon', summary: 'Coupon received on 2,100,000 UKT-4.25-MAR34: 44,625.00 GBP', cash: { GBP: 44_625 }, owner: 'account', date: '2026-03-23' },
+          { type: 'accrual.coupon', summary: /^Interest accrued on UKT-4\.25-MAR34: 1,232\.73 GBP$/, owner: 'account', date: '2026-03-23' },
+          { type: 'accrual.interest', summary: 'Repo interest accrued on Ashcombe gilt term repo: 665.55 GBP', owner: 'account', date: '2026-03-23' },
+        ],
+        cash: { account: { GBP: { settled: 2_351_032.73, availableToTrade: 2_351_032.73, availableToWithdraw: 2_351_032.73 } } },
+        positions: [{ ...GILTS, accrued: 0, pledged: 2_000_000 }, { ...TR_POS, accrued: -665.55 }],
+        lifecycle: [TR_END, { type: 'bond.coupon', instrument: 'gilt', dueDate: '2026-09-22', status: 'pending', owner: 'account' }, GILT_MAT],
+        borrowings: [{ lot: 'trepo', accrued: 665.55, costToDate: 665.55, costToDateRc: 845.25, nextPayment: '2026-04-07' }], // 665.55 x 1.27 = 845.2485
+        // 1,232.73 x 1.27 = 1,565.5671; NAV 2,499,517.18 GBP x 1.27 = 3,174,386.8186
+        pnl: { account: { couponInterest: 1_565.57, borrowFunding: -845.25, unrealized: -1_333.50, fx: 0, total: -613.18 }, book: { total: -613.18 } },
+        nav: { account: 3_174_386.82, book: 4_809_386.82 },
+        balance: {
+          account: { cash: 2_985_811.57, accruedIncome: null, accruedExpense: 845.25, assets: 5_683_482.07, liabilities: 2_509_095.25, netAssets: 3_174_386.82, local: { GBP: { cash: 2_351_032.73, accruedIncome: null, accruedExpense: 665.55 } } },
+          book: { cash: 4_620_811.57, accruedIncome: null, accruedExpense: 845.25, assets: 7_318_482.07, liabilities: 2_509_095.25, netAssets: 4_809_386.82 },
+        },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'trepo', principal: 1_975_000, ccy: 'GBP', accrued: 665.55 }] },
+      },
+    },
+    {
+      // Sterling falls to 1.255. Nothing is posted. Balances: cash 2,351,032.73 x 1.255 = 2,950,546.08; gilts 2,124,150 x 1.255 =
+      // 2,665,808.25; repo 1,975,000 x 1.255 = 2,478,625.00; accrued 665.55 x 1.255 = 835.27. NAV 2,499,517.18 x 1.255 =
+      // 3,136,894.06. Unrealized -1,050 x 1.255 = -1,317.75. FX effect: total -38,105.94 (3,136,894.06 - 3,175,000 funded) less
+      // income 1,565.57, expense -845.25 and unrealized -1,317.75: -37,508.51. Treasury's 500,000 GBP lose 7,500.00.
+      id: 'sterling-falls', covers: 'FX effect', action: 'fx_rate', pair: 'GBP/USD', rate: 1.255,
+      expect: {
+        events: [],
+        pnl: { account: { couponInterest: 1_565.57, borrowFunding: -845.25, unrealized: -1_317.75, fx: -37_508.51, total: -38_105.94 }, book: { fx: -45_008.51, total: -45_605.94 } },
+        nav: { account: 3_136_894.06, treasury: 1_627_500, book: 4_764_394.06 },
+        borrowings: [{ lot: 'trepo', principalRc: 2_478_625, costToDateRc: 845.25 }],
+        balance: {
+          account: { cash: 2_950_546.08, positions: 2_665_808.25, accruedExpense: 835.27, borrowed: 2_478_625, assets: 5_616_354.33, liabilities: 2_479_460.27, netAssets: 3_136_894.06 },
+          book: { cash: 4_578_046.08, positions: 2_665_808.25, accruedExpense: 835.27, borrowed: 2_478_625, assets: 7_243_854.33, liabilities: 2_479_460.27, netAssets: 4_764_394.06 }, // 1,000,000 + 627,500 + 2,950,546.08
+        },
+        oversight: { accounts: { account: { cashBorrowed: 2_478_625 } } },
+      },
+    },
+    {
+      // Good Friday, 3 April: nothing is repurchased (English banks are closed). The run of Thursday 2 April accrues the gilts'
+      // coupon (2,667.80, at 1.255 = 3,348.09) and repo interest to 2 April (3,549.59, +2,884.04, at 1.255 = 3,619.47). The cover:
+      // 2,000,000 x 101.15 / 100 = 2,023,000.00 plus 42,500 x 11 / 184 = 2,540.76 is 2,025,540.76; less 3% = 1,964,774.54; less the
+      // buffer = 1,939,774.54 against 1,978,549.59 owed: 38,775.05 short, flagged.
+      id: 'good-friday-cover-short', covers: ['holiday', 'interest accrual', 'daily cover check'], action: 'clock', to: AT_1000('2026-04-03'),
+      expect: {
+        events: [
+          { type: 'accrual.coupon', summary: /^Interest accrued on UKT-4\.25-MAR34: 2,667\.80 GBP$/, owner: 'account', date: '2026-04-03' },
+          { type: 'accrual.interest', summary: 'Repo interest accrued on Ashcombe gilt term repo: 2,884.04 GBP', owner: 'account', date: '2026-04-03' },
+        ],
+        positions: [{ ...GILTS, accrued: 2_667.80, pledged: 2_000_000 }, { ...TR_POS, accrued: -3_549.59 }],
+        alerts: ['repo.margin'],
+        borrowings: [{ lot: 'trepo', accrued: 3_549.59, costToDate: 3_549.59, costToDateRc: 4_464.72 }], // 845.25 + 3,619.47
+        // NAV 2,499,300.94 GBP x 1.255 = 3,136,622.68; income 1,565.57 + 3,348.09; expense 845.25 + 3,619.47
+        pnl: { account: { couponInterest: 4_913.66, borrowFunding: -4_464.72, unrealized: -1_317.75, fx: -37_508.51, total: -38_377.32 }, book: { total: -45_877.32 } },
+        nav: { account: 3_136_622.68, book: 4_764_122.68 },
+        balance: {
+          // accrued income 2,667.80 x 1.255 = 3,348.09; accrued expense 3,549.59 x 1.255 = 4,454.74
+          account: { accruedIncome: 3_348.09, accruedExpense: 4_454.74, assets: 5_619_702.42, liabilities: 2_483_079.74, netAssets: 3_136_622.68, local: { GBP: { accruedIncome: 2_667.80, accruedExpense: 3_549.59 } } },
+          book: { accruedIncome: 3_348.09, accruedExpense: 4_454.74, assets: 7_247_202.42, liabilities: 2_483_079.74, netAssets: 4_764_122.68 },
+        },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'trepo', principal: 1_975_000, ccy: 'GBP', accrued: 3_549.59 }] },
+      },
+    },
+    {
+      // The Account meets the call with its other 100,000 face: 2,100,000 x 101.15 / 100 = 2,124,150.00 plus 44,625 x 12 / 184 =
+      // 2,910.33 (3 April) = 2,127,060.33; less 3% = 2,063,248.52; less the buffer = 2,038,248.52 against 1,978,549.59 owed.
+      id: 'margin-call-met', covers: ['margin call', 'collateral'], action: 'lifecycle', lot: 'trepo', instrument: 'trepo', body: { action: 'collateral', change: 'pledge', qty: 100_000 },
+      expect: {
+        events: [{ type: 'repo.collateral', summary: 'Margin call met on Ashcombe gilt term repo: pledged 100,000 more UKT-4.25-MAR34 (now 2,100,000 UKT-4.25-MAR34 pledged, worth 2,127,060.33 GBP: cover 2,038,248.52 GBP against 1,978,549.59 GBP owed)', owner: 'account', date: '2026-04-03', cash: {} }],
+        positions: [{ ...GILTS, accrued: 2_667.80, pledged: 2_100_000 }, { ...TR_POS, accrued: -3_549.59 }],
+        alerts: [],
+        borrowings: [{ lot: 'trepo', collateral: 'UKT-4.25-MAR34: 2,100,000 pledged, haircut 3.00%' }],
+      },
+    },
+    {
+      // Easter Monday: an English bank holiday (the New York markets are open, but their run of Friday 3 April was a holiday too).
+      id: 'easter-monday-nothing-happens', covers: 'holiday', action: 'clock', to: AT_1000('2026-04-06'),
+      expect: { events: [], lifecycle: [TR_END, { type: 'bond.coupon', instrument: 'gilt', dueDate: '2026-09-22', status: 'pending', owner: 'account' }, GILT_MAT], nav: { account: 3_136_622.68, book: 4_764_122.68 } },
+    },
+    {
+      // Tuesday 7 April: repurchased with 21 days' interest, 4,658.84 (+1,109.25, at 1.255 = 1,392.11); the gilts are released. The
+      // run of Monday 6 April then accrues the coupon to 6 April: 3,637.91 (+970.11, at 1.255 = 1,217.49).
+      id: 'repurchased-after-easter', covers: ['maturity', 'close', 'repurchase', 'holiday', 'collateral released'], action: 'clock', to: AT_1000('2026-04-07'),
+      expect: {
+        events: [
+          { type: 'accrual.interest', summary: 'Repo interest accrued on Ashcombe gilt term repo: 1,109.25 GBP', owner: 'account', date: '2026-04-07' },
+          { type: 'interest.payment', summary: 'Repo interest paid on Ashcombe gilt term repo: 4,658.84 GBP', cash: { GBP: -4_658.84 }, owner: 'account', date: '2026-04-07' },
+          { type: 'repo.close', summary: 'Repo repurchase: paid 1,975,000.00 GBP principal (interest 4,658.84 GBP); collateral released', cash: { GBP: -1_975_000 }, owner: 'account', date: '2026-04-07' },
+          { type: 'accrual.coupon', summary: /^Interest accrued on UKT-4\.25-MAR34: 970\.11 GBP$/, owner: 'account', date: '2026-04-07' },
+        ],
+        cash: { account: { GBP: { settled: 371_373.89, availableToTrade: 371_373.89, availableToWithdraw: 371_373.89, borrowed: 0 } } }, // 2,351,032.73 - 1,975,000 - 4,658.84
+        positions: [{ ...GILTS, accrued: 3_637.91, pledged: 0 }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'gilt', dueDate: '2026-09-22', status: 'pending', owner: 'account' }, GILT_MAT],
+        borrowings: [],
+        // NAV 2,499,161.80 GBP x 1.255 = 3,136,448.06; income 4,913.66 + 1,217.49; expense 4,464.72 + 1,392.11
+        pnl: { account: { couponInterest: 6_131.15, borrowFunding: -5_856.83, unrealized: -1_317.75, fx: -37_508.51, total: -38_551.94 }, book: { total: -46_051.94 } },
+        nav: { account: 3_136_448.06, book: 4_763_948.06 },
+        balance: {
+          // cash 371,373.89 x 1.255 = 466,074.23; accrued income 3,637.91 x 1.255 = 4,565.58
+          account: { cash: 466_074.23, accruedIncome: 4_565.58, accruedExpense: null, borrowed: null, assets: 3_136_448.06, liabilities: 0, netAssets: 3_136_448.06, local: { GBP: { cash: 371_373.89, accruedIncome: 3_637.91, accruedExpense: null, borrowed: null } } },
+          book: { cash: 2_093_574.23, accruedIncome: 4_565.58, accruedExpense: null, borrowed: null, assets: 4_763_948.06, liabilities: 0, netAssets: 4_763_948.06 },
+        },
+        oversight: { accountBorrowings: [], accounts: { account: { cashBorrowed: 0 } } },
+      },
+    },
+  ],
+};
+
+export default [repo, reverseRepo, overnightRepo, termRepo];

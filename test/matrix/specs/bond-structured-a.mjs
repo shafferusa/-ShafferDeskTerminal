@@ -852,4 +852,252 @@ const callableBond = {
   ],
 };
 
-export default [tips, foreignInflationLinked, callableBond];
+// ---------------------------------------------------------------------------------------------
+// puttable_bond
+// ---------------------------------------------------------------------------------------------
+// A US energy company's puttable senior notes: 4.25%, coupons 1 March and 1 September, 30/360, T+1 on the US bond
+// calendar, pieces of 1,000, maturing 1 March 2035, with a holder put at par on 1 March 2028 and on 1 March 2031 (as
+// registered in its put schedule). The issuer's credit weakens after purchase (the price falls to 92), so the holder puts
+// part of the holding back at par on the put date: recorded by hand from the position's Lifecycle menu (Holder put). The
+// Terminal accepts a put only on a put date, at its price.
+//   - The increase on Friday 18 February 2028 settles on Tuesday 22 February, over Presidents' Day.
+//   - A put before the put date and one the day after it are refused and name the put dates.
+//   - The rest is closed after the put date at the market price.
+// Not modelled: the put notice window (notice is given weeks before the put date).
+//
+// Days of 30/360 from 1 Sep 2027: to 16 Feb 2028 165, 17 Feb 166, 18 Feb 167, 22 Feb 171, 23 Feb 172, 25 Feb 174. From
+// 1 Mar 2028: to 3 Mar 2. A full coupon is 2.125 per 100. Commission: 0.5 basis point of clean principal.
+const puttableBond = {
+  productId: 'puttable_bond',
+  title: 'Corran Energy 4.25% puttable notes 2035: bought at a discount, increased over Presidents\' Day, partial sale, coupon, holder put at par on the put date recorded by hand, puts on other days refused, rest sold',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount (a multiple of 1,000)'],
+    manualInputs: ['Registration: Put dates and prices', 'Holder put recorded by hand from the position\'s Lifecycle menu (Holder put: Face amount put, Label)'],
+    settlement: 'T+1 on the US bond calendar (Presidents\' Day skipped); a put is paid on the put date, principal at the put price plus accrued interest to that day',
+    lifecycle: 'Daily accrual on 30/360; semi-annual coupon; holder put accepted only on a put date of the schedule, at its price; puts on any other day refused with the put dates named',
+    accounting: 'Clean cost at average; realized P&L on the sale, on the put (par against average cost) and on the close; commission expensed',
+    collateral: 'None for a long position',
+  },
+  start: EST('2028-02-15'), // Tuesday
+  settlementCheck: { lag: 1, holidays: ['2028-02-21'] }, // Presidents' Day
+  book: {
+    name: 'Matrix puttable bond', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 3_500_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 2_500_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.5 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'puttable_bond', name: 'Corran Energy Inc 4.25% Puttable Senior Notes 1-Mar-2035', symbol: 'CORRAN-4.25-35P', marketView: 'US_CASH', venueType: 'otc', issuer: 'Corran Energy Inc', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      terms: { couponType: 'fixed', couponRate: 0.0425, frequency: 2, maturity: '2035-03-01', issueDate: '2021-03-01', dayCount: '30/360', redemption: 100, minDenomination: 1_000, seniority: 'Senior unsecured',
+        putSchedule: [{ date: '2028-03-01', price: 100 }, { date: '2031-03-01', price: 100 }] } },
+  },
+  quotes: { main: { bid: 96.3, ask: 96.5, last: 96.4, bidSize: 10_000_000, askSize: 10_000_000 } },
+  expectAtStart: { ...startState(2_500_000, 1_000_000), cash: { account: usdCash(2_500_000), treasury: usdCash(1_000_000) } },
+  steps: [
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 1_600_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 1_600_000, estimate: 96.5, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2028-02-16', calendar: 'USBOND',
+            gross: 1_544_000, // 1,600,000 x 96.50 / 100
+            accrued: 31_166.67, // 165 days: 1,600,000 x 4.25% x 165/360 = 31,166.667
+            cash: -1_575_166.67, fees: 77.2 }], // 0.5 bp of 1,544,000
+          cash: { USD: { purchases: 1_575_166.67, fees: 77.2, required: 1_575_243.87, available: 2_500_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 1_600_000, avgPrice: 96.5, fills: [{ qty: 1_600_000, price: 96.5, model: 'quoted-bid-ask', settleDate: '2028-02-16', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1,600,000 CORRAN-4.25-35P @ 96.50 USD', owner: 'account', date: '2028-02-15' }],
+        cash: { account: { USD: { settled: 2_500_000, unsettled: -1_575_243.87, availableToTrade: 924_756.13 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 1_600_000, avgCost: 96.5, cost: 1_544_000, price: 96.4,
+          value: 1_542_400, unrealized: -1_600, accrued: 31_166.67, priceSource: 'Test fixture' }],
+        holdings: { main: { long: 1_600_000, short: 0, net: 1_600_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2028-02-16', amount: -1_575_243.87, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2028-03-01', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2035-03-01', status: 'pending' }],
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -77.2, fees: 0, borrowFunding: 0, unrealized: -1_600, total: -1_677.20 } },
+        nav: { account: 2_498_322.80, book: 3_498_322.80 },
+        balance: { account: { cash: 2_500_000, accruedIncome: 31_166.67, positions: 1_542_400, payable: 1_575_243.87, assets: 4_073_566.67, liabilities: 1_575_243.87, netAssets: 2_498_322.80 } },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EST('2028-02-16'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 1,575,243.87 USD from settled cash', cash: { USD: -1_575_243.87 }, date: '2028-02-16' }],
+        cash: { account: { USD: { settled: 924_756.13, unsettled: 0, availableToTrade: 924_756.13 } } },
+        pending: [],
+        balance: { account: { cash: 924_756.13, payable: null, assets: 2_498_322.80, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'put-before-put-date', covers: 'put (by hand)', action: 'lifecycle', lot: 'lot', body: { action: 'put', face: 1_000_000 },
+      status: 'blocked', reason: 'The holder may put only on a put date of the schedule; the next is 1 March 2028.',
+      expect: { refused: '2028-02-16 is not a put date of CORRAN-4.25-35P. The holder may put only on 2028-03-01 at 100.00; 2031-03-01 at 100.00; the next is 2028-03-01.' },
+    },
+    {
+      // Friday 18 Feb. End of day 17 Feb: 1,600,000 x 4.25% x 166/360 = 31,355.556; 188.89 more.
+      id: 'friday', covers: 'accrual', action: 'clock', to: EST('2028-02-18'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on CORRAN-4.25-35P: 188.89 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_600_000, accrued: 31_355.56 }],
+        pnl: { account: { couponInterest: 188.89, total: -1_488.31 } },
+        nav: { account: 2_498_511.69, book: 3_498_511.69 },
+        balance: { account: { accruedIncome: 31_355.56, assets: 2_498_511.69, netAssets: 2_498_511.69 } },
+      },
+    },
+    {
+      // T+1 from Friday is Monday 21 February, Presidents' Day: settles Tuesday 22 February.
+      id: 'increase', covers: ['increase', 'market holiday'], action: 'resize', lot: 'lot', factor: 1.25, // 1,600,000 -> 2,000,000
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', qty: 400_000, estimate: 96.5, settleDate: '2028-02-22', calendar: 'USBOND',
+          gross: 386_000, // 400,000 x 96.50 / 100
+          accrued: 8_075, // 171 days: 400,000 x 4.25% x 171/360
+          cash: -394_075, fees: 19.3 }], // 0.5 bp of 386,000
+          cash: { USD: { purchases: 394_075, fees: 19.3, required: 394_094.30, available: 924_756.13, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 400_000, avgPrice: 96.5 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Bought 400,000 CORRAN-4.25-35P @ 96.50 USD' }],
+        cash: { account: { USD: { settled: 924_756.13, unsettled: -394_094.30, availableToTrade: 530_661.83 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_000_000, cost: 1_930_000, avgCost: 96.5, price: 96.4, value: 1_928_000, unrealized: -2_000, accrued: 39_430.56 }], // 31,355.56 + 8,075
+        holdings: { main: { long: 2_000_000, short: 0, net: 2_000_000 } },
+        pending: [{ instrument: 'main', dueDate: '2028-02-22', amount: -394_094.30, into: 'cash' }],
+        pnl: { account: { commissions: -96.5, unrealized: -2_000, total: -1_907.61 } },
+        nav: { account: 2_498_092.39, book: 3_498_092.39 },
+        balance: { account: { cash: 924_756.13, accruedIncome: 39_430.56, positions: 1_928_000, payable: 394_094.30, assets: 2_892_186.69, liabilities: 394_094.30, netAssets: 2_498_092.39 } },
+      },
+    },
+    {
+      // Tuesday 22 February. End of day Friday 18 Feb (Monday was a holiday in New York too): 1,600,000 settled to 18 Feb,
+      // 31,544.444, plus 400,000 to 22 Feb, 8,075: 39,619.444. On the books 39,430.56: 188.88 more.
+      id: 'settle-after-presidents-day', covers: ['settlement', 'market holiday'], action: 'clock', to: EST('2028-02-22'),
+      expect: {
+        events: [
+          { type: 'settlement.pay', summary: 'paid 394,094.30 USD from settled cash', cash: { USD: -394_094.30 }, date: '2028-02-22' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on CORRAN-4.25-35P: 188.88 USD' },
+        ],
+        cash: { account: { USD: { settled: 530_661.83, unsettled: 0, availableToTrade: 530_661.83 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_000_000, accrued: 39_619.44 }],
+        pending: [],
+        pnl: { account: { couponInterest: 377.77, total: -1_718.73 } },
+        nav: { account: 2_498_281.27, book: 3_498_281.27 },
+        balance: { account: { cash: 530_661.83, payable: null, accruedIncome: 39_619.44, assets: 2_498_281.27, liabilities: 0, netAssets: 2_498_281.27 } },
+      },
+    },
+    {
+      // Thursday 24 Feb. End of day 23 Feb: 2,000,000 x 4.25% x 172/360 = 40,611.111; 991.67 more (five 30/360 days since the
+      // 18th on 1,600,000, 944.44, and the day after the 22nd on the 400,000 bought, 47.22).
+      id: 'feb-24', covers: 'accrual', action: 'clock', to: EST('2028-02-24'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on CORRAN-4.25-35P: 991.67 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_000_000, accrued: 40_611.11 }],
+        pnl: { account: { couponInterest: 1_369.44, total: -727.06 } },
+        nav: { account: 2_499_272.94, book: 3_499_272.94 },
+        balance: { account: { accruedIncome: 40_611.11, assets: 2_499_272.94, netAssets: 2_499_272.94 } },
+      },
+    },
+    {
+      // Cost out at the average 400,000 x 96.50% = 386,000; realized 385,200 - 386,000 = -800.
+      id: 'reduce', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 400_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 400_000, estimate: 96.3, settleDate: '2028-02-25',
+          gross: 385_200, // 400,000 x 96.30 / 100
+          accrued: 8_216.67, // 174 days: 400,000 x 4.25% x 174/360 = 8,216.667
+          cash: 393_416.67, fees: 19.26 }] }, // 0.5 bp of 385,200
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 400_000, avgPrice: 96.3 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: /^Sold 400,000 CORRAN-4\.25-35P @ 96\.30 USD \(realized [-−]800\.00 USD\)$/ }],
+        cash: { account: { USD: { settled: 530_661.83, unsettled: 393_397.41, availableToTrade: 924_059.24 } } }, // 393,416.67 - 19.26
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_600_000, cost: 1_544_000, avgCost: 96.5, price: 96.4, value: 1_542_400, unrealized: -1_600, accrued: 32_394.44 }], // 40,611.11 - 8,216.67
+        holdings: { main: { long: 1_600_000, short: 0, net: 1_600_000 } },
+        pending: [{ instrument: 'main', dueDate: '2028-02-25', amount: 393_397.41, into: 'cash' }],
+        pnl: { account: { realized: -800, commissions: -115.76, unrealized: -1_600, total: -1_146.32 } },
+        nav: { account: 2_498_853.68, book: 3_498_853.68 },
+        balance: { account: { cash: 530_661.83, receivable: 393_397.41, accruedIncome: 32_394.44, positions: 1_542_400, assets: 2_498_853.68, liabilities: 0, netAssets: 2_498_853.68 } },
+      },
+    },
+    {
+      // The issuer's credit weakens: the notes fall to 92. The put at par is now worth exercising.
+      id: 'credit-weakens', action: 'quote', instrument: 'main', quote: { bid: 92, ask: 92.5, last: 92.25, bidSize: 10_000_000, askSize: 10_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_600_000, price: 92.25, value: 1_476_000, unrealized: -68_000 }], // 1,600,000 x 92.25 / 100
+        pnl: { account: { unrealized: -68_000, total: -67_546.32 } },
+        nav: { account: 2_432_453.68, book: 3_432_453.68 },
+        balance: { account: { positions: 1_476_000, assets: 2_432_453.68, netAssets: 2_432_453.68 } },
+      },
+    },
+    {
+      // Wednesday 1 March, the put date and a coupon date. The sale settled on 25 Feb. Coupon on 1,600,000: 1,600,000 x 2.125%
+      // = 34,000; on the books 32,394.44: 1,605.56 more.
+      id: 'coupon', covers: ['coupon', 'settlement'], action: 'clock', to: EST('2028-03-01'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 393,397.41 USD into settled cash', cash: { USD: 393_397.41 } },
+          { type: 'bond.coupon', summary: 'Coupon received on 1,600,000 CORRAN-4.25-35P: 34,000.00 USD', cash: { USD: 34_000 }, owner: 'account', date: '2028-03-01' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on CORRAN-4.25-35P: 1,605.56 USD' },
+        ],
+        cash: { account: { USD: { settled: 958_059.24, unsettled: 0, availableToTrade: 958_059.24 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_600_000, accrued: 0 }],
+        pending: [],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2028-09-01', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2035-03-01', status: 'pending' }],
+        pnl: { account: { couponInterest: 2_975, total: -65_940.76 } },
+        nav: { account: 2_434_059.24, book: 3_434_059.24 },
+        balance: { account: { cash: 958_059.24, receivable: null, accruedIncome: null, assets: 2_434_059.24, netAssets: 2_434_059.24 } },
+      },
+    },
+    {
+      // The holder puts 1,000,000 back at par. No accrued interest (the first day of the period). Paid today 1,000,000.
+      // Cost out at the average 965,000: realized 35,000.
+      id: 'holder-put', covers: ['put (by hand)', 'reduce'], action: 'lifecycle', lot: 'lot', body: { action: 'put', face: 1_000_000 },
+      expect: {
+        events: [
+          { type: 'bond.put', summary: 'Holder put recorded by hand (put date 2028-03-01): 1,000,000 CORRAN-4.25-35P at 100.00% of par', owner: 'account', date: '2028-03-01' },
+          { type: 'settlement.receive', summary: 'received 1,000,000.00 USD into settled cash', cash: { USD: 1_000_000 } },
+        ],
+        cash: { account: { USD: { settled: 1_958_059.24, availableToTrade: 1_958_059.24 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 600_000, cost: 579_000, avgCost: 96.5, price: 92.25, value: 553_500, unrealized: -25_500, accrued: 0 }],
+        holdings: { main: { long: 600_000, short: 0, net: 600_000 } },
+        pnl: { account: { realized: 34_200, unrealized: -25_500, total: 11_559.24 } }, // -800 + 35,000
+        nav: { account: 2_511_559.24, book: 3_511_559.24 },
+        balance: { account: { cash: 1_958_059.24, positions: 553_500, assets: 2_511_559.24, netAssets: 2_511_559.24 } },
+      },
+    },
+    // Thursday 2 March. End of day 1 Mar: 600,000 at the first day of the period, nothing accrued.
+    { id: 'day-after-put', action: 'clock', to: EST('2028-03-02'), expect: { events: [] } },
+    {
+      id: 'put-after-put-date', covers: 'put (by hand)', action: 'lifecycle', lot: 'lot', body: { action: 'put', face: 600_000 },
+      status: 'blocked', reason: 'The put date has passed; the next is 1 March 2031.',
+      expect: { refused: '2028-03-02 is not a put date of CORRAN-4.25-35P. The holder may put only on 2028-03-01 at 100.00; 2031-03-01 at 100.00; the next is 2031-03-01.' },
+    },
+    {
+      // The rest is sold at 92 for settlement on 3 March: realized 552,000 - 579,000 = -27,000. Interest sold, 2 days of 30/360:
+      // 600,000 x 4.25% x 2/360 = 141.67, all of it income earned to the settlement date.
+      id: 'close', covers: 'close', action: 'close', lot: 'lot', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 600_000, estimate: 92, settleDate: '2028-03-03',
+          gross: 552_000, accrued: 141.67, cash: 552_141.67, fees: 27.6 }] }, // 600,000 x 92 / 100; 0.5 bp of 552,000
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 600_000, avgPrice: 92 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: /^Sold 600,000 CORRAN-4\.25-35P @ 92\.00 USD \(realized [-−]27,000\.00 USD\)$/ },
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of CORRAN-4.25-35P: 141.67 USD' },
+        ],
+        cash: { account: { USD: { settled: 1_958_059.24, unsettled: 552_114.07, availableToTrade: 2_510_173.31 } } }, // 552,141.67 - 27.60
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', dueDate: '2028-03-03', amount: 552_114.07, into: 'cash' }],
+        lifecycle: [],
+        pnl: { account: { realized: 7_200, couponInterest: 3_116.67, commissions: -143.36, unrealized: 0, total: 10_173.31 } }, // 34,200 - 27,000
+        nav: { account: 2_510_173.31, book: 3_510_173.31 },
+        balance: { account: { cash: 1_958_059.24, receivable: 552_114.07, positions: null, accruedIncome: null, assets: 2_510_173.31, liabilities: 0, netAssets: 2_510_173.31 } },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: EST('2028-03-03'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 552,114.07 USD into settled cash', cash: { USD: 552_114.07 } }],
+        cash: { account: { USD: { settled: 2_510_173.31, unsettled: 0, availableToTrade: 2_510_173.31 } }, treasury: usdCash(1_000_000) },
+        pending: [],
+        balance: { account: { cash: 2_510_173.31, receivable: null, assets: 2_510_173.31, liabilities: 0 } },
+      },
+    },
+  ],
+};
+
+export default [tips, foreignInflationLinked, callableBond, puttableBond];
