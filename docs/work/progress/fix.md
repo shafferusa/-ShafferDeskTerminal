@@ -33,8 +33,13 @@ Tools: $SP/fix/shot2.mjs (out hash port theme w h step full), steps/env.mjs (STE
 - Browser: common_stock, interest_rate_swap, unsecured_loan, interest_rate_cap, constant_maturity_swap, cross_currency_swap pass.
 - npm test 434/435: the one failure is commodity_future (someone's new deliver action), logged in BUGS.md.
 
+- D docs: docs/ARCHITECTURE.md (stale marks, collateral display, basis fix kinds, calendars routes/conventions, once.js,
+  integrity, demo fixture routes, added routes table, confirmation tolerances, conventions list, matrix + system suites);
+  README.md (commands, layout, notes); package.json scripts test:system:api / test:system:browser (system refusals area passes via it).
+- npm test 460/461 (commodity_future: someone else's deliver action, in BUGS.md).
+
 ## In progress
-- Nothing half-edited.
+- Nothing. All four milestones saved.
 
 ## Next
-- D docs: ARCHITECTURE.md + README (integrity, demo fixtures, once.js/client tokens, agreements/collateral routes, confirmation tolerances, calendars/conventions, test/matrix + test/system commands, conventions from BUGS); then final report.
+- Open: browser drive of "Add legs" path not done (engine-tested + shared preview component); securities-inventory table on the Collateral tab scrolls sideways at 1024/390; Accounting scope selector 8 px wide at 390.

@@ -11464,280 +11464,6 @@
     "restart"
    ]
   },
-  "B:equity_option:setup": {
-   "status": "failed",
-   "message": "Setup did not complete: locator.fill: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('dialog', { name: 'New instrument' }).locator('.field').filter({ has: locator('label').filter({ hasText: /^\\s*Underlying\\s*\\(required\\)/ }) }).first().getByPlaceholder('Type a ticker or name')\u001b[22m\n\n    at pickInstrument (/home/claude/-shafferdeskterminal/test/matrix/drivers/browser/option.mjs:37:57)\n    at async Module.contractTerms (/home/claude/-shafferdeskterminal/test/matrix/drivers/browser/option.mjs:46:25)\n    at async registerInBrowser (/home/claude/-shafferdeskterminal/test/matrix/drivers/browser.mjs:684:3)\n    at async setupInBrowser (/home/claude/-shafferdeskterminal/test/matrix/drivers/browser.mjs:646:15)\n    at async Object.setup (/home/claude/-shafferdeskterminal/test/matrix/drivers/browser.mjs:885:19)\n    at async runScenario (/home/claude/-shafferdeskterminal/test/matrix/lib/runner.mjs:89:13)\n    at async file:///home/claude/-shafferdeskterminal/test/matrix/run-browser.mjs:29:31\n    at async file:///home/claude/-shafferdeskterminal/test/matrix/lib/cli.mjs:32:16\n    at async pool (/home/claude/-shafferdeskterminal/test/matrix/lib/cli.mjs:28:3)\n    at async file:///home/claude/-shafferdeskterminal/test/matrix/run-browser.mjs:25:3",
-   "ms": 18111,
-   "commit": "e738520+changes",
-   "at": "2026-10-13T16:40:18.808Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "setup",
-   "covers": []
-  },
-  "B:unsecured_loan:setup": {
-   "status": "passed",
-   "message": "",
-   "ms": 5355,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:55:11.897Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "setup",
-   "covers": []
-  },
-  "B:unsecured_loan:borrow-without-a-rate": {
-   "status": "blocked",
-   "message": "No rate was entered. The Terminal does not assume one. Terminal: \"Enter the interest rate as a decimal (0.05 = 5%). The Terminal does not assume a rate.\"",
-   "ms": 3305,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:55:11.897Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "borrow-without-a-rate",
-   "covers": [
-    "open"
-   ]
-  },
-  "B:unsecured_loan:borrow": {
-   "status": "passed",
-   "message": "",
-   "ms": 3539,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:55:11.897Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "borrow",
-   "covers": [
-    "open",
-    "borrow"
-   ]
-  },
-  "B:unsecured_loan:accrue-first-day": {
-   "status": "passed",
-   "message": "",
-   "ms": 3254,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:55:11.897Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "accrue-first-day",
-   "covers": [
-    "interest accrual"
-   ]
-  },
-  "B:unsecured_loan:accrue-over-a-weekend": {
-   "status": "passed",
-   "message": "",
-   "ms": 2453,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:55:11.897Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "accrue-over-a-weekend",
-   "covers": [
-    "interest accrual"
-   ]
-  },
-  "B:unsecured_loan:next-morning": {
-   "status": "passed",
-   "message": "",
-   "ms": 2009,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:55:11.897Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "next-morning",
-   "covers": []
-  },
-  "B:unsecured_loan:set-rate": {
-   "status": "passed",
-   "message": "",
-   "ms": 2465,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:55:11.897Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "set-rate",
-   "covers": [
-    "rate change"
-   ]
-  },
-  "B:unsecured_loan:accrue-at-the-new-rate": {
-   "status": "passed",
-   "message": "",
-   "ms": 1732,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:55:11.897Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "accrue-at-the-new-rate",
-   "covers": [
-    "interest accrual"
-   ]
-  },
-  "B:unsecured_loan:morning-of-the-part-repayment": {
-   "status": "passed",
-   "message": "",
-   "ms": 1720,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:55:11.897Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "morning-of-the-part-repayment",
-   "covers": []
-  },
-  "B:unsecured_loan:repay-more-than-is-owed": {
-   "status": "blocked",
-   "message": "Only 250,000 is outstanding. Terminal: \"Leg 1: Outstanding principal is 250,000.00 USD; cannot repay 300,000.00 USD.\"",
-   "ms": 2381,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:55:11.897Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "repay-more-than-is-owed",
-   "covers": [
-    "reduce"
-   ]
-  },
-  "B:unsecured_loan:repay-part": {
-   "status": "passed",
-   "message": "",
-   "ms": 2899,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:55:11.897Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "repay-part",
-   "covers": [
-    "reduce",
-    "repayment"
-   ]
-  },
-  "B:unsecured_loan:accrue-on-the-reduced-principal": {
-   "status": "passed",
-   "message": "",
-   "ms": 1540,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:55:11.897Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "accrue-on-the-reduced-principal",
-   "covers": [
-    "interest accrual"
-   ]
-  },
-  "B:unsecured_loan:monday-16-march": {
-   "status": "passed",
-   "message": "",
-   "ms": 1594,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:55:11.897Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "monday-16-march",
-   "covers": []
-  },
-  "B:unsecured_loan:return-cash-to-treasury": {
-   "status": "passed",
-   "message": "",
-   "ms": 2048,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:55:11.897Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "return-cash-to-treasury",
-   "covers": [
-    "return to Treasury"
-   ]
-  },
-  "B:unsecured_loan:repay-without-the-cash": {
-   "status": "blocked",
-   "message": "The Account holds 50,000.00 USD; a repayment never overdraws. Terminal: \"Leg 1: Alpha has 50,000.00 USD of settled USD available; 150,531.94 USD is needed (principal plus accrued interest). | Blocks submission. Alpha is short 100,531.94 USD: the package needs 150,531.94 USD (purchases 0.00 USD, fees 0.00 USD, margin and collateral 0.00 USD, reserved 0.00 USD) and 50,000.00 USD is available. Add Treasury funding or a borrowing leg, convert currency, or reduce the size.\"",
-   "ms": 1772,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:55:11.897Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "repay-without-the-cash",
-   "covers": [
-    "repayment"
-   ]
-  },
-  "B:unsecured_loan:fund-from-treasury": {
-   "status": "passed",
-   "message": "",
-   "ms": 2098,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:55:11.897Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "fund-from-treasury",
-   "covers": [
-    "funding from Treasury"
-   ]
-  },
-  "B:unsecured_loan:repay-early-in-full": {
-   "status": "passed",
-   "message": "",
-   "ms": 1780,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:55:11.897Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "repay-early-in-full",
-   "covers": [
-    "close",
-    "repayment",
-    "early repayment"
-   ]
-  },
-  "B:unsecured_loan:original-maturity-passes": {
-   "status": "passed",
-   "message": "",
-   "ms": 1308,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:55:11.897Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "original-maturity-passes",
-   "covers": [
-    "maturity"
-   ]
-  },
-  "B:unsecured_loan:restart": {
-   "status": "passed",
-   "message": "",
-   "ms": 4679,
-   "commit": "62ecddf+changes",
-   "at": "2026-10-13T16:55:11.897Z",
-   "product": "unsecured_loan",
-   "template": null,
-   "family": "loan",
-   "step": "restart",
-   "covers": [
-    "restart"
-   ]
-  },
   "B:interest_rate_swap:setup": {
    "status": "passed",
    "message": "",
@@ -13959,6 +13685,280 @@
    "covers": [
     "restart"
    ]
+  },
+  "B:unsecured_loan:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 4290,
+   "commit": "c0d6cb3",
+   "at": "2026-10-13T17:04:41.907Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "setup",
+   "covers": []
+  },
+  "B:unsecured_loan:borrow-without-a-rate": {
+   "status": "blocked",
+   "message": "No rate was entered. The Terminal does not assume one. Terminal: \"Enter the interest rate as a decimal (0.05 = 5%). The Terminal does not assume a rate.\"",
+   "ms": 3458,
+   "commit": "c0d6cb3",
+   "at": "2026-10-13T17:04:41.907Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "borrow-without-a-rate",
+   "covers": [
+    "open"
+   ]
+  },
+  "B:unsecured_loan:borrow": {
+   "status": "passed",
+   "message": "",
+   "ms": 3611,
+   "commit": "c0d6cb3",
+   "at": "2026-10-13T17:04:41.907Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "borrow",
+   "covers": [
+    "open",
+    "borrow"
+   ]
+  },
+  "B:unsecured_loan:accrue-first-day": {
+   "status": "passed",
+   "message": "",
+   "ms": 1852,
+   "commit": "c0d6cb3",
+   "at": "2026-10-13T17:04:41.907Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "accrue-first-day",
+   "covers": [
+    "interest accrual"
+   ]
+  },
+  "B:unsecured_loan:accrue-over-a-weekend": {
+   "status": "passed",
+   "message": "",
+   "ms": 2166,
+   "commit": "c0d6cb3",
+   "at": "2026-10-13T17:04:41.907Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "accrue-over-a-weekend",
+   "covers": [
+    "interest accrual"
+   ]
+  },
+  "B:unsecured_loan:next-morning": {
+   "status": "passed",
+   "message": "",
+   "ms": 2025,
+   "commit": "c0d6cb3",
+   "at": "2026-10-13T17:04:41.907Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "next-morning",
+   "covers": []
+  },
+  "B:unsecured_loan:set-rate": {
+   "status": "passed",
+   "message": "",
+   "ms": 2943,
+   "commit": "c0d6cb3",
+   "at": "2026-10-13T17:04:41.907Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "set-rate",
+   "covers": [
+    "rate change"
+   ]
+  },
+  "B:unsecured_loan:accrue-at-the-new-rate": {
+   "status": "passed",
+   "message": "",
+   "ms": 2268,
+   "commit": "c0d6cb3",
+   "at": "2026-10-13T17:04:41.907Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "accrue-at-the-new-rate",
+   "covers": [
+    "interest accrual"
+   ]
+  },
+  "B:unsecured_loan:morning-of-the-part-repayment": {
+   "status": "passed",
+   "message": "",
+   "ms": 2324,
+   "commit": "c0d6cb3",
+   "at": "2026-10-13T17:04:41.907Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "morning-of-the-part-repayment",
+   "covers": []
+  },
+  "B:unsecured_loan:repay-more-than-is-owed": {
+   "status": "blocked",
+   "message": "Only 250,000 is outstanding. Terminal: \"Leg 1: Outstanding principal is 250,000.00 USD; cannot repay 300,000.00 USD.\"",
+   "ms": 2557,
+   "commit": "c0d6cb3",
+   "at": "2026-10-13T17:04:41.907Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "repay-more-than-is-owed",
+   "covers": [
+    "reduce"
+   ]
+  },
+  "B:unsecured_loan:repay-part": {
+   "status": "passed",
+   "message": "",
+   "ms": 2321,
+   "commit": "c0d6cb3",
+   "at": "2026-10-13T17:04:41.907Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "repay-part",
+   "covers": [
+    "reduce",
+    "repayment"
+   ]
+  },
+  "B:unsecured_loan:accrue-on-the-reduced-principal": {
+   "status": "passed",
+   "message": "",
+   "ms": 1979,
+   "commit": "c0d6cb3",
+   "at": "2026-10-13T17:04:41.907Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "accrue-on-the-reduced-principal",
+   "covers": [
+    "interest accrual"
+   ]
+  },
+  "B:unsecured_loan:monday-16-march": {
+   "status": "passed",
+   "message": "",
+   "ms": 1916,
+   "commit": "c0d6cb3",
+   "at": "2026-10-13T17:04:41.907Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "monday-16-march",
+   "covers": []
+  },
+  "B:unsecured_loan:return-cash-to-treasury": {
+   "status": "passed",
+   "message": "",
+   "ms": 1834,
+   "commit": "c0d6cb3",
+   "at": "2026-10-13T17:04:41.907Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "return-cash-to-treasury",
+   "covers": [
+    "return to Treasury"
+   ]
+  },
+  "B:unsecured_loan:repay-without-the-cash": {
+   "status": "blocked",
+   "message": "The Account holds 50,000.00 USD; a repayment never overdraws. Terminal: \"Leg 1: Alpha has 50,000.00 USD of settled USD available; 150,531.94 USD is needed (principal plus accrued interest). | Blocks submission. Alpha is short 100,531.94 USD: the package needs 150,531.94 USD (purchases 0.00 USD, fees 0.00 USD, margin and collateral 0.00 USD, reserved 0.00 USD) and 50,000.00 USD is available. Add Treasury funding or a borrowing leg, convert currency, or reduce the size.\"",
+   "ms": 1799,
+   "commit": "c0d6cb3",
+   "at": "2026-10-13T17:04:41.907Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "repay-without-the-cash",
+   "covers": [
+    "repayment"
+   ]
+  },
+  "B:unsecured_loan:fund-from-treasury": {
+   "status": "passed",
+   "message": "",
+   "ms": 2637,
+   "commit": "c0d6cb3",
+   "at": "2026-10-13T17:04:41.907Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "fund-from-treasury",
+   "covers": [
+    "funding from Treasury"
+   ]
+  },
+  "B:unsecured_loan:repay-early-in-full": {
+   "status": "passed",
+   "message": "",
+   "ms": 2047,
+   "commit": "c0d6cb3",
+   "at": "2026-10-13T17:04:41.907Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "repay-early-in-full",
+   "covers": [
+    "close",
+    "repayment",
+    "early repayment"
+   ]
+  },
+  "B:unsecured_loan:original-maturity-passes": {
+   "status": "passed",
+   "message": "",
+   "ms": 1500,
+   "commit": "c0d6cb3",
+   "at": "2026-10-13T17:04:41.907Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "original-maturity-passes",
+   "covers": [
+    "maturity"
+   ]
+  },
+  "B:unsecured_loan:restart": {
+   "status": "passed",
+   "message": "",
+   "ms": 5003,
+   "commit": "c0d6cb3",
+   "at": "2026-10-13T17:04:41.907Z",
+   "product": "unsecured_loan",
+   "template": null,
+   "family": "loan",
+   "step": "restart",
+   "covers": [
+    "restart"
+   ]
+  },
+  "B:equity_option:setup": {
+   "status": "failed",
+   "message": "Setup did not complete: locator.fill: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('dialog', { name: 'New instrument' }).locator('.field').filter({ has: locator('label').filter({ hasText: /^\\s*Underlying\\s*\\(required\\)/ }) }).first().getByPlaceholder('Type a ticker or name')\u001b[22m\n\n    at pickInstrument (/home/claude/-shafferdeskterminal/test/matrix/drivers/browser/option.mjs:37:57)\n    at async Module.contractTerms (/home/claude/-shafferdeskterminal/test/matrix/drivers/browser/option.mjs:46:25)\n    at async registerInBrowser (/home/claude/-shafferdeskterminal/test/matrix/drivers/browser.mjs:686:3)\n    at async setupInBrowser (/home/claude/-shafferdeskterminal/test/matrix/drivers/browser.mjs:648:15)\n    at async Object.setup (/home/claude/-shafferdeskterminal/test/matrix/drivers/browser.mjs:889:19)\n    at async runScenario (/home/claude/-shafferdeskterminal/test/matrix/lib/runner.mjs:89:13)\n    at async file:///home/claude/-shafferdeskterminal/test/matrix/run-browser.mjs:29:31\n    at async file:///home/claude/-shafferdeskterminal/test/matrix/lib/cli.mjs:32:16\n    at async pool (/home/claude/-shafferdeskterminal/test/matrix/lib/cli.mjs:28:3)\n    at async file:///home/claude/-shafferdeskterminal/test/matrix/run-browser.mjs:25:3",
+   "ms": 18088,
+   "commit": "c0d6cb3",
+   "at": "2026-10-13T17:05:00.080Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "setup",
+   "covers": []
   }
  },
  "runs": {
@@ -14647,9 +14647,9 @@
    }
   },
   "unsecured_loan": {
-   "at": "2026-10-13T16:55:11.897Z",
-   "commit": "62ecddf+changes",
-   "ms": 47933,
+   "at": "2026-10-13T17:04:41.907Z",
+   "commit": "c0d6cb3",
+   "ms": 48530,
    "family": "loan",
    "steps": 19,
    "ran": 19,
@@ -14742,9 +14742,9 @@
    }
   },
   "equity_option": {
-   "at": "2026-10-13T16:40:18.808Z",
-   "commit": "e738520+changes",
-   "ms": 18112,
+   "at": "2026-10-13T17:05:00.080Z",
+   "commit": "c0d6cb3",
+   "ms": 18089,
    "family": "option",
    "steps": 29,
    "ran": 1,
@@ -15046,5 +15046,5 @@
    }
   }
  },
- "updatedAt": "2026-10-13T17:03:53.260Z"
+ "updatedAt": "2026-10-13T17:05:00.080Z"
 }
