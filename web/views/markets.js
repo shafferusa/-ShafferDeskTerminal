@@ -222,37 +222,34 @@ const market = (ctx) => [C.price(ctx), C.fair(ctx), C.gap(ctx)];
 /** Columns per tab: what fits the products in it, with Current market price, Fair price and Gap % together. */
 function columnsFor(tab, ctx) {
   switch (tab) {
-    case 'equities': return [C.inst(), C.product(), C.held(), C.price(ctx), C.bidAsk(ctx), C.change(ctx), C.fair(ctx), C.gap(ctx), C.life()];
-    case 'funds': return [C.inst(), C.product(), C.held(), C.price(ctx, 'Current market price', 'Exchange price for an exchange-traded fund or note; net asset value per share for a mutual fund, with its date.'),
+    case 'equities': return [C.inst(), C.product(), C.held(), C.price(ctx), C.fair(ctx), C.gap(ctx), C.bidAsk(ctx), C.change(ctx), C.life()];
+    case 'funds': return [C.inst(), C.product(), C.held(), C.price(ctx, 'Current market price', 'Exchange price for an exchange-traded fund or note; net asset value per share for a mutual fund, with its date.'), C.fair(ctx), C.gap(ctx),
       { label: 'Price basis', render: (i) => { const o = obsOf(ctx, i); return i.family === 'fund' ? html`NAV<div class="sub">${o?.forDate || (o?.asOf ? o.asOf.slice(0, 10) : 'no NAV yet')}</div>` : 'Exchange price'; } },
-      C.change(ctx), C.fair(ctx), C.gap(ctx), C.life()];
+      C.change(ctx), C.life()];
     case 'bonds': return [C.inst(), C.product(),
       { label: 'Coupon', align: 'r', render: (i) => { const t = i.terms || {}; return t.couponType === 'float' || t.couponType === 'floating' ? html`${t.referenceRate || 'Floating'}${isNum(t.spread) ? ` + ${fmtNum(t.spread * 1e4, 0)} bp` : ''}` : isNum(t.couponRate) ? html`${pct(t.couponRate)}<div class="sub">${t.frequency ? `${t.frequency}× a year` : ''}</div>` : t.couponType === 'zero' || t.couponType === 'discount' ? 'Zero' : html`<${Missing} reason="Not in the contract terms" />`; } },
       { label: 'Maturity', render: (i) => (i.terms?.maturity ? i.terms.maturity : i.terms?.perpetual ? 'Perpetual' : html`<${Missing} reason="Not in the contract terms" />`) },
-      C.held('Face held'), C.price(ctx, 'Current market price', 'Clean price in % of par, shown with every decimal it carries, with its provenance.'),
+      C.held('Face held'), C.price(ctx, 'Current market price', 'Clean price in % of par, shown with every decimal it carries, with its provenance.'), C.fair(ctx), C.gap(ctx),
       { label: 'Accrued', align: 'r', title: 'Accrued interest per 100 face to today, from the coupon schedule (contract arithmetic).', render: (i) => (isNum(i.market?.accruedPer100) ? html`${fmtNum(i.market.accruedPer100, 4)}<div class="sub">per 100</div>` : html`<${Missing} reason="No accrued interest worked out for this contract today" />`) },
-      { label: 'Yield', align: 'r', title: 'Only when Shaffer MarketData supplies it with the price. The Terminal does not compute yields.', render: (i) => { const y = obsOf(ctx, i)?.yield; return isNum(y) ? fmtPct(y * (Math.abs(y) < 1 ? 100 : 1), 3) : html`<${Missing} reason="Supplied with the price by Shaffer MarketData; not computed here" />`; } },
-      C.fair(ctx), C.gap(ctx), C.life()];
+      { label: 'Yield', align: 'r', title: 'Only when Shaffer MarketData supplies it with the price. The Terminal does not compute yields.', render: (i) => { const y = obsOf(ctx, i)?.yield; return isNum(y) ? fmtPct(y * (Math.abs(y) < 1 ? 100 : 1), 3) : html`<${Missing} reason="Supplied with the price by Shaffer MarketData; not computed here" />`; } }, C.life()];
     case 'money': return [C.inst(), C.product(),
       { label: 'Rate or terms', render: (i) => { const t = i.terms || {}; return isNum(t.rate) ? pct(t.rate) : isNum(t.couponRate) ? pct(t.couponRate) : i.family === 'bond' ? 'Discount, redeems at par' : i.family === 'fund' ? 'NAV-priced fund' : html`<${Missing} reason="Not in the contract terms" />`; } },
       { label: 'Maturity or term', render: (i) => i.terms?.maturity || (i.family === 'fund' ? 'Open-ended' : html`<${Missing} reason="Not in the contract terms" />`) },
       C.held(), ...market(ctx), C.life()];
-    case 'fx': return [C.inst('Pair'), C.held('Held (base currency)'), C.price(ctx, 'Current market price', 'Rate in quote currency per unit of base currency, with its provenance.'), C.bidAsk(ctx), C.change(ctx),
-      { label: 'Value date convention', render: (i) => html`${i.settlement?.label || 'Book default'}<div class="sub">${i.terms?.base && i.terms?.quote ? `${i.terms.base} and ${i.terms.quote} calendars` : ''}</div>` },
-      C.fair(ctx), C.gap(ctx), C.life()];
-    case 'commodities': return [C.inst(), C.product(), { label: 'Price units', render: (i) => html`${i.priceUnits || ''}<div class="sub">${i.tradingCcy}</div>` }, C.held(), C.price(ctx), C.bidAsk(ctx), C.change(ctx), C.fair(ctx), C.gap(ctx), C.life()];
-    case 'crypto': return [C.inst(), C.product(), C.held('Units held'), C.price(ctx), C.bidAsk(ctx), C.change(ctx), { label: 'Trading days', render: () => 'Every calendar day' }, C.fair(ctx), C.gap(ctx), C.life()];
+    case 'fx': return [C.inst('Pair'), C.held('Held (base currency)'), C.price(ctx, 'Current market price', 'Rate in quote currency per unit of base currency, with its provenance.'), C.fair(ctx), C.gap(ctx), C.bidAsk(ctx), C.change(ctx),
+      { label: 'Value date convention', render: (i) => html`${i.settlement?.label || 'Book default'}<div class="sub">${i.terms?.base && i.terms?.quote ? `${i.terms.base} and ${i.terms.quote} calendars` : ''}</div>` }, C.life()];
+    case 'commodities': return [C.inst(), C.product(), { label: 'Price units', render: (i) => html`${i.priceUnits || ''}<div class="sub">${i.tradingCcy}</div>` }, C.held(), C.price(ctx), C.fair(ctx), C.gap(ctx), C.bidAsk(ctx), C.change(ctx), C.life()];
+    case 'crypto': return [C.inst(), C.product(), C.held('Units held'), C.price(ctx), C.fair(ctx), C.gap(ctx), C.bidAsk(ctx), C.change(ctx), { label: 'Trading days', render: () => 'Every calendar day' }, C.life()];
     case 'alternatives': return [C.inst(), C.product(), C.held(), C.price(ctx, 'Current market price', 'A valuation entered by hand, labelled manual.'), C.fair(ctx), C.gap(ctx), C.life()];
     case 'options': return [C.inst('Contract'), C.und(),
       { label: 'Right', render: (i) => (i.terms?.right === 'C' ? 'Call' : i.terms?.right === 'P' ? 'Put' : i.terms?.right || html`<${Missing} />`) },
       { label: 'Strike', align: 'r', render: (i) => (isNum(i.terms?.strike) ? fmtPrice(i.terms.strike) : isNum(i.terms?.capRate ?? i.terms?.strikeRate) ? pct(i.terms.capRate ?? i.terms.strikeRate) : html`<${Missing} reason="See the contract legs" />`) },
       C.expiry(),
       { label: 'Deliverable', align: 'r', render: (i) => (i.terms?.deliverable ? html`${fmtQty(i.terms.deliverable.units)}<div class="sub">${i.terms.settlement === 'cash' ? 'cash-settled' : 'units per contract'}</div>` : i.terms?.settlement ? i.terms.settlement : html`<${Missing} />`) },
-      C.held('Contracts held'), C.price(ctx, 'Current market price', 'Premium per underlying unit, with its provenance.'), C.bidAsk(ctx), C.fair(ctx), C.gap(ctx), C.life()];
-    case 'futures': return [C.inst('Contract'), C.und(), C.expiry(), C.held('Contracts held'), C.price(ctx), C.change(ctx),
+      C.held('Contracts held'), C.price(ctx, 'Current market price', 'Premium per underlying unit, with its provenance.'), C.fair(ctx), C.gap(ctx), C.bidAsk(ctx), C.life()];
+    case 'futures': return [C.inst('Contract'), C.und(), C.expiry(), C.held('Contracts held'), C.price(ctx), C.fair(ctx), C.gap(ctx), C.change(ctx),
       { label: 'Contract value', align: 'r', title: 'Current market price times the multiplier, in the trading currency.', render: (i) => { const v = obsOf(ctx, i)?.value; return isNum(v) && isNum(i.multiplier) ? html`${fmtMoney(v * i.multiplier, i.tradingCcy)}<div class="sub">× ${fmtNum(i.multiplier, 0)}</div>` : html`<${Missing} reason="Needs a current market price" />`; } },
-      { label: 'Initial margin', align: 'r', title: 'Per contract, from the contract terms.', render: (i) => (isNum(i.terms?.initialMargin) ? html`${fmtMoney(i.terms.initialMargin, i.tradingCcy)}<div class="sub">per contract</div>` : html`<${Missing} reason="Not in the contract terms" />`) },
-      C.fair(ctx), C.gap(ctx), C.life()];
+      { label: 'Initial margin', align: 'r', title: 'Per contract, from the contract terms.', render: (i) => (isNum(i.terms?.initialMargin) ? html`${fmtMoney(i.terms.initialMargin, i.tradingCcy)}<div class="sub">per contract</div>` : html`<${Missing} reason="Not in the contract terms" />`) }, C.life()];
     case 'forwards': return [C.inst('Contract'), C.und(),
       { label: 'Value date', render: (i) => date(i.terms?.valueDate || i.terms?.periodStart || i.terms?.settlementDate) },
       { label: 'Agreed terms', align: 'r', render: (i) => { const t = i.terms || {}; return isNum(t.forwardRate) ? fmtPrice(t.forwardRate) : isNum(t.forwardPrice) ? fmtPrice(t.forwardPrice) : isNum(t.fixedRate) ? pct(t.fixedRate) : html`<${Missing} reason="Stated on the trade" />`; } },

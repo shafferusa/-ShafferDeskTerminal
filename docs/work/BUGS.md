@@ -167,3 +167,10 @@ start fixing never asked of the data service; a return or price fixing asked for
   that this line makes unreachable for derivatives. Reproduce: `GET /api/instruments/routing?productId=equity_option&venueType=exchange`.
   Found by SB:refusals:incomplete-terms (its first step, "nothing decides the market view", now uses a Treasury note
   marked exchange-traded, for which nothing decides the view; the option's own incomplete terms are still refused).
+
+- (fw, 2026-10-13) `matrix E: convertible_preferred` (test/matrix/specs/equity.mjs, step automatic-conversion) is red:
+  a `put` / `convert` position lifecycle action was added to server/api.js (bond structured work) and now answers
+  "This event applies to debt securities." where the equity spec asserts `Unknown lifecycle action "convert"`. Same
+  pattern as the commodity-future `deliver` case: the spec owner should decide what a conversion request on a
+  convertible preferred must do (refuse with a specific reason, or convert) and change the step with hand-worked
+  figures rather than loosen it. Reproduce: `SDT_MATRIX_PRODUCT=convertible_preferred node --test test/matrix/engine.test.js`.

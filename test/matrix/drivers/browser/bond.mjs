@@ -204,6 +204,7 @@ export async function ticket(ui, t, ctx, step) {
  */
 const MANUAL_FORMS = {
   index_ratio: { fields: (b) => [['New index ratio', b.ratio], ['Index ratio as of', b.asOf]], review: 'Review index ratio', confirm: 'Record index ratio', done: /Index ratio recorded/ },
+  call: { fields: (b) => [['Call price', b.price], ['Share of the issue called', b.share]], review: 'Review issuer call', confirm: 'Record issuer call', done: /Issuer call recorded/ },
 };
 
 export const actions = {

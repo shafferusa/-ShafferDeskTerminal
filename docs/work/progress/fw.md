@@ -16,9 +16,14 @@
 - commodity_future passes engine, API, browser. All 11 futures pass engine.
 - NOTE: commit f3c20ac (ui1 save) captured a half-edited future.mjs; restored from c81ccae and re-edited.
 
+- Refusal steps added: equity_index_future request-delivery-cash-settled; gov_bond_future and treasury_future
+  request-delivery-bond-future. All 11 futures pass engine and API; equity_future, equity_index_future, gov_bond_future,
+  treasury_future, commodity_future pass browser (fw/results).
+- npm test 281/283 at 17:50: failures are others' WIP (private_equity spec audit; convertible_preferred 'convert' action,
+  logged in BUGS.md). The 1-point save waits for a green npm test.
+
 ## In progress
-- Add refusal steps: cash-settled (equity_index_future), bond futures (treasury_future, gov_bond_future). Then API/browser
-  for equity_future, treasury_future, gov_bond_future, equity_index_future; npm test; save 1 point.
+- Part 1 done apart from the 1-point save (retry npm test).
 
 ## Next
 1. Part 2: forwards family, 8 products, one at a time, save 0.2 each.
