@@ -267,7 +267,8 @@ export const forward = {
    */
   terminate(app, { book, unit, inst, pos, amount, qty, settleDate }) {
     const sym = inst.symbol || inst.name;
-    const ccy = inst.trading_ccy;
+    // In the currency the contract settles in: a non-deliverable forward's settlement currency, otherwise its own.
+    const ccy = inst.terms.forwardType === 'ndf' ? inst.terms.settleCcy : inst.trading_ccy;
     if (!pos || isZero(pos.qty)) throw new AppError(`This ${sym} position is closed: there is nothing to terminate.`, { code: 'termination_position_closed' });
     const a = num(amount);
     if (a === null) throw new AppError('Enter the termination amount agreed with the counterparty (positive if received, negative if paid, 0 for none).', { code: 'termination_amount' });

@@ -190,7 +190,7 @@ function LifecycleDialog({ p, action, terms, onClose, onDone }) {
       ${action === 'deliver' && terms ? html`<${Notice}>Settlement terms: ${terms.settlement === 'physical' ? 'physical delivery' : 'cash'}${terms.delivery?.units ? `; ${fmtQty(terms.delivery.units)} units of the deliverable per contract` : ''}${terms.delivery?.grade ? `; ${terms.delivery.grade}` : ''}${terms.delivery?.location ? `; ${terms.delivery.location}` : ''}; delivery window ${terms.delivery?.firstNotice || terms.expiration} to ${terms.expiration} (last trading day).<//>` : null}
       ${action === 'barrier' && terms?.barrier ? html`<${Notice}>Barrier: ${words(terms.barrier.type)} at ${fmtPrice(terms.barrier.level)}.<//>` : null}
       <div class="grid-form">
-        ${action === 'terminate' ? html`<${Field} label=${`Termination amount (${p.ccy})`} hint="Positive if received, negative if paid"><${Num} value=${f.amount} onInput=${(v) => set({ amount: v })} /><//>
+        ${action === 'terminate' ? html`<${Field} label="Termination amount" hint=${`In ${terms?.forwardType === 'ndf' ? terms.settleCcy : p.ccy}, the contract's settlement currency. Positive if received, negative if paid`}><${Num} value=${f.amount} onInput=${(v) => set({ amount: v })} /><//>
           <${Field} label="Notional terminated" hint=${`Up to ${fmtQty(size)}`}><${Num} value=${f.qty} onInput=${(v) => set({ qty: v })} /><//>
           <${Field} label="Settlement date" hint="Leave empty for two business days"><${Text} type="date" value=${f.settleDate} onInput=${(v) => set({ settleDate: v })} /><//>` : null}
         ${action === 'deliver' ? html`<${Field} label="Contracts to deliver" hint=${`Up to ${fmtQty(size)}`}><${Num} value=${f.contracts} onInput=${(v) => set({ contracts: v })} /><//>` : null}
@@ -217,7 +217,7 @@ function valueCell(p) {
   return html`<${Money} value=${p.mv} ccy=${p.ccy} reason=${p.missingReason} />${['option', 'otcoption'].includes(p.family) && isNum(p.notional) ? html`<div class="sub">notional ${fmtMoney(p.notional, p.ccy)}</div>` : null}`;
 }
 function Positions({ s, rc, after }) {
-  const optionIds = s.positions.filter((p) => ['option', 'otcoption', 'future', 'bond'].includes(p.family)).map((p) => p.instrument.id);
+  const optionIds = s.positions.filter((p) => ['option', 'otcoption', 'future', 'bond', 'forward'].includes(p.family)).map((p) => p.instrument.id);
   const terms = useLive(async () => Object.fromEntries(await Promise.all(optionIds.map(async (id) => [id, (await get(`/api/instruments/${id}`)).terms]))), [optionIds.join(',')], { interval: false });
   const [pick, setPick] = useState(0); // remounts the action menus so they return to their placeholder
   const act = (p, action) => { setPick((n) => n + 1); openOverlay((close) => (p.family === 'manual' && !LIFECYCLE[action] ? html`<${ManualEventDialog} p=${p} action=${action} onClose=${close} onDone=${after} />` : html`<${LifecycleDialog} p=${p} action=${action} terms=${terms.data?.[p.instrument.id]} onClose=${close} onDone=${after} />`)); };

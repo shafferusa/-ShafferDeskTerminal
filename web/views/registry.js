@@ -388,7 +388,8 @@ function CalendarField({ label, hint, value, onChange, cals, inherit }) {
   const ids = (cals?.calendars || []).map((c) => c.id);
   const [joint, setJoint] = useState(Boolean(value) && !ids.includes(value));
   const bad = badParts(value, cals);
-  const options = [{ value: '', label: `Not set: ${inherit}` }, ...(cals?.calendars || []).filter((c) => c.id !== 'ALLDAYS').map((c) => ({ value: c.id, label: `${c.id}: ${c.label}` })), { value: '+', label: 'A joint calendar…' }];
+  // ALLDAYS (every calendar day) is offered too: a contract on a digital asset (a crypto option) trades and settles 24/7 like its underlying.
+  const options = [{ value: '', label: `Not set: ${inherit}` }, ...(cals?.calendars || []).map((c) => ({ value: c.id, label: `${c.id}: ${c.label}` })), { value: '+', label: 'A joint calendar…' }];
   return html`<${Field} label=${label} span=${2} hint=${hint} error=${bad.length ? `"${bad.join('", "')}" is not a calendar here. Use ${ids.filter((x) => x !== 'ALLDAYS').join(', ')}, joined with +.` : null}>
     <${Select} value=${joint ? '+' : value} onChange=${(v) => { if (v === '+') setJoint(true); else { setJoint(false); onChange(v); } }} options=${options} />
     ${joint ? html`<div style="margin-top:4px"><${Text} value=${value} onInput=${(v) => onChange(v.toUpperCase().replace(/\s+/g, ''))} placeholder="For example US+JP: open only when both are" /></div>` : null}<//>`;

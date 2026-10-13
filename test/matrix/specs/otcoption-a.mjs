@@ -1389,16 +1389,6 @@ const cryptoOption = {
       },
     },
     {
-      // Saturday's end-of-day valuation. Put marked at -7,500, no threshold: 7,500 posted. Call at +4,350: inside its 10,000 threshold.
-      id: 'variation-margin-on-saturday', covers: ['variation margin', 'weekend'], action: 'clock', to: '2026-03-07T22:30:00.000Z',
-      expect: {
-        events: [{ type: 'collateral.variation', summary: 'Variation margin under position-level terms: 7,500.00 USD posted. Netting set of 1 position marked at -7,500.00 USD; threshold 0.00 USD.', cash: { USD: -7_500 }, owner: 'account', date: '2026-03-07' }],
-        cash: { account: { USD: { settled: 372_500, margin: 27_500, availableToTrade: 376_730, availableToWithdraw: 368_742.5 } } },
-        otc: [{ instrument: 'call', vmPosted: 0, vmExposure: 4_350, vmStatus: 'ok' }, { instrument: 'put', vmPosted: 7_500, vmExposure: -7_500, vmStatus: 'ok' }],
-        balance: { account: { cash: 372_500, margin: 27_500 } },
-      },
-    },
-    {
       // Sunday, 10:00 New York (daylight time from today): the premiums settle on the 24x7 calendar.
       id: 'settle-premiums-on-sunday', covers: ['settlement', 'weekend'], action: 'clock', to: '2026-03-08T14:00:00.000Z',
       expect: {
@@ -1406,9 +1396,22 @@ const cryptoOption = {
           { type: 'settlement.receive', summary: 'received 7,987.50 USD into settled cash', cash: { USD: 7_987.5 }, date: '2026-03-08' },
           { type: 'settlement.pay', summary: 'paid 3,757.50 USD from settled cash', cash: { USD: -3_757.5 }, date: '2026-03-08' },
         ],
-        cash: { account: { USD: { settled: 376_730, unsettled: 0, availableToTrade: 376_730, availableToWithdraw: 376_730 } } },
+        cash: { account: { USD: { settled: 384_230, unsettled: 0, availableToTrade: 384_230, availableToWithdraw: 384_230 } } }, // 380,000 + 7,987.50 - 3,757.50
         pending: [],
-        balance: { account: { cash: 376_730, receivable: null, payable: null, assets: 401_080, liabilities: 0 } },
+        // Saturday's end of day made no collateral call: still nothing but the 20,000 independent amount is posted.
+        otc: [{ instrument: 'call', vmPosted: 0, vmStatus: 'not_valued_yet' }, { instrument: 'put', vmPosted: 0, vmStatus: 'not_valued_yet' }],
+        balance: { account: { cash: 384_230, receivable: null, payable: null, assets: 401_080, liabilities: 0 } },
+      },
+    },
+    {
+      // Collateral is valued in the end-of-day pass of New York business days, not at the weekend: the first valuation is
+      // Monday's. Put marked at -7,500, no threshold: 7,500 posted. Call at +4,350: inside its 10,000 threshold.
+      id: 'variation-margin-on-monday', covers: 'variation margin', action: 'clock', to: '2026-03-09T21:30:00.000Z',
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under position-level terms: 7,500.00 USD posted. Netting set of 1 position marked at -7,500.00 USD; threshold 0.00 USD.', cash: { USD: -7_500 }, owner: 'account', date: '2026-03-09' }],
+        cash: { account: { USD: { settled: 376_730, margin: 27_500, availableToTrade: 376_730, availableToWithdraw: 376_730 } } }, // 384,230 - 7,500
+        otc: [{ instrument: 'call', vmPosted: 0, vmExposure: 4_350, vmStatus: 'ok' }, { instrument: 'put', vmPosted: 7_500, vmExposure: -7_500, vmStatus: 'ok' }],
+        balance: { account: { cash: 376_730, margin: 27_500 } },
       },
     },
     { id: 'wednesday-8-april', action: 'clock', to: '2026-04-08T14:00:00.000Z', expect: {} },

@@ -149,3 +149,4 @@
 - 2026-10-13T17:49Z | b3 | +0.2 | puttable_bond passes at engine, API and browser
 - 2026-10-13T17:50Z | r1 | +0.2 | term_repo passes at engine, API and browser
 - 2026-10-13T17:50Z | fw | +0.2 | fw: fx_forward passes at engine, API and browser
+- 2026-10-13T17:52Z | m1 | +0.2 | venture_capital passes at engine, API and browser (EUR fund in a USD Book)

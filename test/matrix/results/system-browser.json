@@ -1,0 +1,79 @@
+{
+ "level": "browser",
+ "results": {
+  "SB:hedge:reconnection": {
+   "status": "passed",
+   "message": "Execute now double-clicked: 1 request left the page",
+   "ms": 18268,
+   "checks": 47,
+   "area": "hedge",
+   "case": "reconnection",
+   "title": "Hedge requests that waited while positions changed are refreshed against current exposure on reconnection",
+   "commit": "854073b",
+   "at": "2026-10-13T17:50:56.743Z"
+  },
+  "SB:history:reference-edits": {
+   "status": "passed",
+   "message": "the Full history shows 26 event rows before the edits",
+   "ms": 11766,
+   "checks": 77,
+   "area": "history",
+   "case": "reference-edits",
+   "title": "History survives instrument edits, calendar edits and settings changes",
+   "commit": "854073b+changes",
+   "at": "2026-10-13T17:51:08.521Z"
+  },
+  "SB:isolation:book-routes": {
+   "status": "passed",
+   "message": "28 screens of Iso B scanned for 28 ids and names of Iso A; screens showing none of Iso B's own ids or names either: #/markets/US_DERIV\nAccounting scoped to Aardvark: \"Accounting Iso B, consolidated: Treasury and 1 Account together. Funding between them is internal and is eliminated; external borrowing, interest and fees count\"\nAccounting scoped to Aardvark and Bison: \"Accounting The Account Bison in Iso B, alone. Reporting currency USD. Scope Whole Book Treasury Bison Net asset value, USD 499,999.00 provisional Provisional: I\"\nthe Account page of Aardvark: \"Account Iso B Not an Account of this Book \"AC-CC9423690D\" is not an Account of Iso B. Choose an Account in the sidebar, or go to Treasury, which lists every Acc\"\nthe Strategy page attaching to Iso A's strategy instance: \"Add legs to a strategy New legs join the existing strategy instance and are linked to its positions. Nothing is submitted until you confirm the preview. Legs to\"",
+   "ms": 29650,
+   "checks": 66,
+   "area": "isolation",
+   "case": "book-routes",
+   "title": "Book isolation through every API route",
+   "commit": "854073b+changes",
+   "at": "2026-10-13T17:51:38.182Z"
+  },
+  "SB:isolation:no-netting": {
+   "status": "passed",
+   "message": "",
+   "ms": 13154,
+   "checks": 37,
+   "area": "isolation",
+   "case": "no-netting",
+   "title": "Nothing nets or consolidates across Books",
+   "commit": "854073b+changes",
+   "at": "2026-10-13T17:51:51.366Z"
+  },
+  "SB:isolation:normal-mode-refusals": {
+   "status": "passed",
+   "message": "moving the clock (behind the screen): \"The clock can only be moved in demo mode.\"\na quote fixture (behind the screen): \"Test fixtures exist only in demo mode.\"",
+   "ms": 6121,
+   "checks": 23,
+   "area": "isolation",
+   "case": "normal-mode-refusals",
+   "title": "Fixtures and the clock are refused in normal mode",
+   "commit": "854073b+changes",
+   "at": "2026-10-13T17:51:57.526Z"
+  },
+  "SB:isolation:demo-normal-databases": {
+   "status": "passed",
+   "message": "",
+   "ms": 23058,
+   "checks": 19,
+   "area": "isolation",
+   "case": "demo-normal-databases",
+   "title": "Demo and normal paper databases are separate files",
+   "commit": "854073b+changes",
+   "at": "2026-10-13T17:52:20.660Z"
+  }
+ },
+ "updatedAt": "2026-10-13T17:52:20.660Z",
+ "environment": {
+  "node": "v22.22.0",
+  "platform": "linux",
+  "browser": "Chromium 141.0.7390.37",
+  "viewport": "1440x900",
+  "server": "server/index.js --demo unless the case states normal mode"
+ }
+}

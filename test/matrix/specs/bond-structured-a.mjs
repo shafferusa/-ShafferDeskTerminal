@@ -1100,4 +1100,217 @@ const puttableBond = {
   ],
 };
 
-export default [tips, foreignInflationLinked, callableBond, puttableBond];
+// ---------------------------------------------------------------------------------------------
+// convertible_bond
+// ---------------------------------------------------------------------------------------------
+// A US technology company's convertible senior notes: 1.50%, coupons 15 March and 15 September, 30/360, T+1 on the US bond
+// calendar, pieces of 1,000, maturing 15 March 2031, convertible into the issuer's own common stock (Veridian Systems Inc.,
+// NASDAQ, registered in the same scenario) at 22.8571 shares per 1,000 face (a conversion price of 43.75). The stock is at
+// 51.80, so the notes trade close to parity (22.8571 x 51.80 / 10 = 118.40 per 100).
+// The conversion is recorded by hand from the position's Lifecycle menu (Conversion into shares). The rule the Terminal
+// applies (server/products/bond.js, convert): the notes converted leave the position at their average cost with no
+// realized P&L; the whole shares open in the same strategy instance at that carrying cost (a simulated delivery); the
+// fraction of a share is paid in cash at the share price entered by hand, and its share of the cost against that cash is
+// realized; the accrued interest on the notes converted is forfeited (reversed out of coupon and interest income), as US
+// convertibles pay no accrued interest on conversion.
+//   - Opened, increased, partly sold; then 1,000,000 of the 1,200,000 held is converted into 22,857 shares plus 0.1 of a
+//     share in cash; a conversion without the share price for that fraction, and one larger than the holding, are refused.
+//   - The strategy is then closed: the remaining notes and the shares are sold together, each on its own convention.
+//
+// Days of 30/360 from 15 Mar 2028: to 3 May 48, 4 May 49, 5 May 50, 9 May 54. Commission: bonds 0.5 basis point of clean
+// principal; shares 0.005 a share, at least 1.00 an order.
+const convertibleBond = {
+  productId: 'convertible_bond',
+  title: 'Veridian Systems 1.50% convertible notes 2031: opened, increased, partly sold, converted by hand into the issuer\'s shares at 22.8571 per 1,000 (fraction in cash, accrued forfeited), then notes and shares closed together',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount (a multiple of 1,000)'],
+    manualInputs: ['Registration: Shares delivered on conversion (the issuer\'s stock, a registered instrument) and Conversion ratio (shares per 1,000 face)', 'Conversion recorded by hand from the position\'s Lifecycle menu (Conversion into shares: Face amount converted, Settlement, Share price for the fraction)'],
+    settlement: 'Notes T+1 on the US bond calendar; shares T+1 on the US stock calendar; the conversion moves no cash except the fraction of a share, paid at once',
+    lifecycle: 'Daily accrual on 30/360; conversion closes the notes converted and opens the shares in the same strategy instance (simulated delivery); accrued interest on the notes converted forfeited',
+    accounting: 'Shares carried at the notes\' carrying cost (no realized P&L on conversion except the cash fraction); forfeited accrued interest reverses coupon and interest income; realized P&L on the sales; commissions expensed',
+    collateral: 'None for long positions',
+  },
+  start: EDT('2028-05-02'), // Tuesday
+  settlementCheck: { lag: 1, holidays: [] },
+  book: {
+    name: 'Matrix convertible bond', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 3_500_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 2_500_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.5 }, equity: { perUnit: 0.005, minimum: 1, bps: 0 } }, fill: { ...FILL, halfSpreadBps: { bond: 3, equity: 2 } }, settlement: { bond: 1, equity: 1 }, short: SHORT },
+  },
+  instruments: {
+    stock: { productId: 'common_stock', name: 'Veridian Systems Inc.', symbol: 'VRDN', marketView: 'US_CASH', venue: 'NASDAQ', venueType: 'exchange', venueCountry: 'US', issuer: 'Veridian Systems Inc.', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', terms: {} },
+    main: { productId: 'convertible_bond', name: 'Veridian Systems Inc 1.50% Convertible Senior Notes 15-Mar-2031', symbol: 'VRDN-1.5-31CV', marketView: 'US_CASH', venueType: 'otc', issuer: 'Veridian Systems Inc.', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01, underlying: 'stock',
+      terms: { couponType: 'fixed', couponRate: 0.015, frequency: 2, maturity: '2031-03-15', issueDate: '2025-03-15', dayCount: '30/360', redemption: 100, minDenomination: 1_000, seniority: 'Senior unsecured', conversionRatio: 22.8571 } },
+  },
+  quotes: { main: { bid: 118, ask: 118.5, last: 118.25, bidSize: 10_000_000, askSize: 10_000_000 }, stock: { bid: 51.75, ask: 51.85, last: 51.8, bidSize: 100_000, askSize: 100_000 } },
+  expectAtStart: { ...startState(2_500_000, 1_000_000), cash: { account: usdCash(2_500_000), treasury: usdCash(1_000_000) } },
+  steps: [
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 1_000_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 1_000_000, estimate: 118.5, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2028-05-03', calendar: 'USBOND',
+            gross: 1_185_000, accrued: 2_000, // 1,000,000 x 118.50 / 100; 48 days: 1,000,000 x 1.5% x 48/360
+            cash: -1_187_000, fees: 59.25 }], // 0.5 bp of 1,185,000
+          cash: { USD: { purchases: 1_187_000, fees: 59.25, required: 1_187_059.25, available: 2_500_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 1_000_000, avgPrice: 118.5, fills: [{ qty: 1_000_000, price: 118.5, model: 'quoted-bid-ask', settleDate: '2028-05-03', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1,000,000 VRDN-1.5-31CV @ 118.50 USD', owner: 'account', date: '2028-05-02' }],
+        cash: { account: { USD: { settled: 2_500_000, unsettled: -1_187_059.25, availableToTrade: 1_312_940.75 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 1_000_000, avgCost: 118.5, cost: 1_185_000, price: 118.25, value: 1_182_500, unrealized: -2_500, accrued: 2_000, priceSource: 'Test fixture' }],
+        holdings: { main: { long: 1_000_000, short: 0, net: 1_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2028-05-03', amount: -1_187_059.25, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2028-09-15', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2031-03-17', status: 'pending' }], // 15 Mar 2031 is a Saturday
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -59.25, fees: 0, borrowFunding: 0, unrealized: -2_500, total: -2_559.25 } },
+        nav: { account: 2_497_440.75, book: 3_497_440.75 },
+        balance: { account: { cash: 2_500_000, accruedIncome: 2_000, positions: 1_182_500, payable: 1_187_059.25, assets: 3_684_500, liabilities: 1_187_059.25, netAssets: 2_497_440.75 } },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EDT('2028-05-03'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 1,187,059.25 USD from settled cash', cash: { USD: -1_187_059.25 }, date: '2028-05-03' }],
+        cash: { account: { USD: { settled: 1_312_940.75, unsettled: 0, availableToTrade: 1_312_940.75 } } },
+        pending: [],
+        balance: { account: { cash: 1_312_940.75, payable: null, assets: 2_497_440.75, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'increase', covers: 'increase', action: 'resize', lot: 'lot', factor: 1.5, // 1,000,000 -> 1,500,000
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', qty: 500_000, estimate: 118.5, settleDate: '2028-05-04',
+          gross: 592_500, accrued: 1_020.83, // 49 days: 500,000 x 1.5% x 49/360 = 1,020.833
+          cash: -593_520.83, fees: 29.63 }], // 0.5 bp of 592,500 = 29.625
+          cash: { USD: { purchases: 593_520.83, fees: 29.63, required: 593_550.46, available: 1_312_940.75, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 500_000, avgPrice: 118.5 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Bought 500,000 VRDN-1.5-31CV @ 118.50 USD' }],
+        cash: { account: { USD: { settled: 1_312_940.75, unsettled: -593_550.46, availableToTrade: 719_390.29 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_500_000, cost: 1_777_500, avgCost: 118.5, price: 118.25, value: 1_773_750, unrealized: -3_750, accrued: 3_020.83 }],
+        holdings: { main: { long: 1_500_000, short: 0, net: 1_500_000 } },
+        pending: [{ instrument: 'main', dueDate: '2028-05-04', amount: -593_550.46, into: 'cash' }],
+        pnl: { account: { commissions: -88.88, unrealized: -3_750, total: -3_838.88 } },
+        nav: { account: 2_496_161.12, book: 3_496_161.12 },
+        balance: { account: { cash: 1_312_940.75, accruedIncome: 3_020.83, positions: 1_773_750, payable: 593_550.46, assets: 3_089_711.58, liabilities: 593_550.46, netAssets: 2_496_161.12 } },
+      },
+    },
+    {
+      id: 'settle-increase', covers: 'settlement', action: 'clock', to: EDT('2028-05-04'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 593,550.46 USD from settled cash', cash: { USD: -593_550.46 } }],
+        cash: { account: { USD: { settled: 719_390.29, unsettled: 0, availableToTrade: 719_390.29 } } },
+        pending: [],
+        balance: { account: { cash: 719_390.29, payable: null, assets: 2_496_161.12, liabilities: 0 } },
+      },
+    },
+    {
+      // Cost out at the average 300,000 x 118.50% = 355,500; realized 354,000 - 355,500 = -1,500.
+      id: 'reduce', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 300_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 300_000, estimate: 118, settleDate: '2028-05-05',
+          gross: 354_000, accrued: 625, // 50 days: 300,000 x 1.5% x 50/360
+          cash: 354_625, fees: 17.7 }] }, // 0.5 bp of 354,000
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 300_000, avgPrice: 118 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: /^Sold 300,000 VRDN-1\.5-31CV @ 118\.00 USD \(realized [-−]1,500\.00 USD\)$/ }],
+        cash: { account: { USD: { settled: 719_390.29, unsettled: 354_607.30, availableToTrade: 1_073_997.59 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_200_000, cost: 1_422_000, avgCost: 118.5, price: 118.25, value: 1_419_000, unrealized: -3_000, accrued: 2_395.83 }], // 3,020.83 - 625
+        holdings: { main: { long: 1_200_000, short: 0, net: 1_200_000 } },
+        pending: [{ instrument: 'main', dueDate: '2028-05-05', amount: 354_607.30, into: 'cash' }],
+        pnl: { account: { realized: -1_500, commissions: -106.58, unrealized: -3_000, total: -4_606.58 } },
+        nav: { account: 2_495_393.42, book: 3_495_393.42 },
+        balance: { account: { cash: 719_390.29, receivable: 354_607.30, accruedIncome: 2_395.83, positions: 1_419_000, assets: 2_495_393.42, liabilities: 0, netAssets: 2_495_393.42 } },
+      },
+    },
+    {
+      // Monday 8 May. The sale settled on Friday. End of day 5 May: 1,200,000 x 1.5% x 50/360 = 2,500; on the books 2,395.83: 104.17 more.
+      id: 'monday', covers: ['settlement', 'accrual'], action: 'clock', to: EDT('2028-05-08'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 354,607.30 USD into settled cash', cash: { USD: 354_607.30 }, date: '2028-05-08' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on VRDN-1.5-31CV: 104.17 USD' },
+        ],
+        cash: { account: { USD: { settled: 1_073_997.59, unsettled: 0, availableToTrade: 1_073_997.59 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_200_000, accrued: 2_500 }],
+        pending: [],
+        pnl: { account: { couponInterest: 104.17, total: -4_502.41 } },
+        nav: { account: 2_495_497.59, book: 3_495_497.59 },
+        balance: { account: { cash: 1_073_997.59, receivable: null, accruedIncome: 2_500, assets: 2_495_497.59, netAssets: 2_495_497.59 } },
+      },
+    },
+    {
+      id: 'convert-without-share-price', covers: 'conversion (by hand)', action: 'lifecycle', lot: 'lot', body: { action: 'convert', face: 1_000_000, settlement: 'shares' },
+      status: 'blocked', reason: '1,000,000 face converts into 22,857.1 shares: the cash for the 0.1 of a share needs a share price, which is not assumed.',
+      expect: { refused: '1,000,000 face converts into 22,857.1 shares: enter the share price for the fraction of a share paid in cash.' },
+    },
+    {
+      id: 'convert-more-than-held', covers: 'conversion (by hand)', action: 'lifecycle', lot: 'lot', body: { action: 'convert', face: 1_500_000, sharePrice: 51.8, settlement: 'shares' },
+      status: 'blocked', reason: 'The position holds 1,200,000 face.',
+      expect: { refused: 'The position is 1,200,000 face; cannot convert 1,500,000.' },
+    },
+    {
+      // 1,000,000 face converts into 1,000 x 22.8571 = 22,857.1 shares: 22,857 delivered, 0.1 paid in cash at 51.80 = 5.18.
+      // Notes out at their carrying cost: 1,422,000 x 1,000,000 / 1,200,000 = 1,185,000. Shares in at that cost less the part of
+      // the fraction: 1,185,000 x 22,857 / 22,857.1 = 1,184,994.8156 -> 1,184,994.82 (average cost 51.843847). The fraction's cost
+      // 5.18 against its cash 5.18: realized 0.00. Accrued interest forfeited: 2,500 x 1,000,000 / 1,200,000 = 2,083.33,
+      // reversed out of coupon and interest income. The shares are valued at 51.80: 1,183,992.60.
+      id: 'convert', covers: ['conversion (by hand)', 'reduce'], action: 'lifecycle', lot: 'lot', body: { action: 'convert', face: 1_000_000, sharePrice: 51.8, settlement: 'shares' },
+      expect: {
+        events: [
+          { type: 'bond.conversion', summary: 'Conversion recorded by hand: 1,000,000 VRDN-1.5-31CV into 22,857 VRDN (simulated delivery, 22.8571 shares per 1,000 face) at the bonds\' carrying cost 1,184,994.82 USD; 0.1 of a share paid in cash at 51.80: 5.18 USD; accrued interest 2,083.33 USD forfeited', owner: 'account', date: '2028-05-08', cash: { USD: 5.18 } },
+        ],
+        cash: { account: { USD: { settled: 1_074_002.77, availableToTrade: 1_074_002.77 } } },
+        positions: [
+          { instrument: 'main', lot: 'lot', qty: 200_000, cost: 237_000, avgCost: 118.5, price: 118.25, value: 236_500, unrealized: -500, accrued: 416.67 }, // 2,500 - 2,083.33
+          { instrument: 'stock', lot: 'lot', owner: 'account', direction: 'long', qty: 22_857, cost: 1_184_994.82, avgCost: 51.843847, price: 51.8, value: 1_183_992.60, unrealized: -1_002.22, accrued: 0, priceSource: 'Test fixture' },
+        ],
+        holdings: { main: { long: 200_000, short: 0, net: 200_000 }, stock: { long: 22_857, short: 0, net: 22_857 } },
+        pnl: { account: { realized: -1_500, couponInterest: -1_979.16, unrealized: -1_502.22, total: -5_087.96 } }, // 104.17 - 2,083.33; -500 - 1,002.22
+        nav: { account: 2_494_912.04, book: 3_494_912.04 }, // 1,074,002.77 + 416.67 + 236,500 + 1,183,992.60
+        balance: { account: { cash: 1_074_002.77, accruedIncome: 416.67, positions: 1_420_492.60, assets: 2_494_912.04, netAssets: 2_494_912.04 } },
+      },
+    },
+    {
+      // Notes and shares sold together at their bids. Notes: 200,000 x 118.00 = 236,000, accrued 54 days 450.00 (33.33 more than the
+      // 416.67 on the books), commission 11.80; realized 236,000 - 237,000 = -1,000. Shares: 22,857 x 51.75 = 1,182,849.75,
+      // commission 22,857 x 0.005 = 114.285 -> 114.29; realized 1,182,849.75 - 1,184,994.82 = -2,145.07. Both settle T+1, 9 May.
+      id: 'close', covers: 'close', action: 'close', lot: 'lot', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [
+          { kind: 'trade', action: 'sell', instrument: 'main', qty: 200_000, estimate: 118, settleDate: '2028-05-09', gross: 236_000, accrued: 450, cash: 236_450, fees: 11.8 },
+          { kind: 'trade', action: 'sell', instrument: 'stock', qty: 22_857, estimate: 51.75, settleDate: '2028-05-09', calendar: 'US', cash: 1_182_849.75, fees: 114.29 },
+        ] },
+        result: { status: 'closed' },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: /^Sold 200,000 VRDN-1\.5-31CV @ 118\.00 USD \(realized [-−]1,000\.00 USD\)$/ },
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of VRDN-1.5-31CV: 33.33 USD' },
+          { type: 'trade.fill', summary: /^Sold 22,857 VRDN @ 51\.75 USD \(realized [-−]2,145\.07 USD\)$/ },
+        ],
+        cash: { account: { USD: { settled: 1_074_002.77, unsettled: 1_419_173.66, availableToTrade: 2_493_176.43 } } }, // 236,438.20 + 1,182,735.46
+        positions: [],
+        holdings: { main: null, stock: null },
+        pending: [{ instrument: 'main', dueDate: '2028-05-09', amount: 236_438.20, into: 'cash' }, { instrument: 'stock', dueDate: '2028-05-09', amount: 1_182_735.46, into: 'cash' }],
+        lifecycle: [],
+        pnl: { account: { realized: -4_645.07, couponInterest: -1_945.83, commissions: -232.67, unrealized: 0, total: -6_823.57 } }, // -1,500 - 1,000 - 2,145.07; -1,979.16 + 33.33; 106.58 + 11.80 + 114.29
+        nav: { account: 2_493_176.43, book: 3_493_176.43 },
+        balance: { account: { cash: 1_074_002.77, receivable: 1_419_173.66, positions: null, accruedIncome: null, assets: 2_493_176.43, liabilities: 0, netAssets: 2_493_176.43 } },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: EDT('2028-05-09'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 236,438.20 USD into settled cash', cash: { USD: 236_438.20 } },
+          { type: 'settlement.receive', summary: 'received 1,182,735.46 USD into settled cash', cash: { USD: 1_182_735.46 } },
+        ],
+        cash: { account: { USD: { settled: 2_493_176.43, unsettled: 0, availableToTrade: 2_493_176.43 } }, treasury: usdCash(1_000_000) },
+        pending: [],
+        balance: { account: { cash: 2_493_176.43, receivable: null, assets: 2_493_176.43, liabilities: 0 } },
+      },
+    },
+  ],
+};
+
+export default [tips, foreignInflationLinked, callableBond, puttableBond, convertibleBond];

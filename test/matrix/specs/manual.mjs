@@ -335,7 +335,7 @@ const ventureCapital = {
         positions: [{ ...VC_POS, qty: 1, cost: 885_000, value: null, provisional: true, manual: vcM({ committed: 3_000_000, called: 900_000, uncalled: 2_100_000, feesCalled: 15_000, expenses: 6_000, valuation: null }) }],
         pnl: { account: { fees: -23_100 } }, // -16,500 - 6,000 x 1.10
         nav: { account: 4_376_900, book: 11_576_900 }, // (3,094,000 + 885,000) x 1.10
-        balance: { account: { cash: 3_403_400, assets: 4_376_900, netAssets: 4_376_900 } },
+        balance: { account: { cash: 3_403_400, assets: 4_376_900, netAssets: 4_376_900, local: { EUR: { cash: 3_094_000 } } } },
       },
     },
     {
@@ -352,8 +352,9 @@ const ventureCapital = {
         balance: { account: { cash: 3_465_280, positions: 991_200, assets: 4_456_480, netAssets: 4_456_480 } }, // 3,094,000 x 1.12; 885,000 x 1.12
       },
     },
+    { id: 'statement-q2-date', action: 'clock', to: '2026-08-17T14:00:00.000Z', expect: {} }, // Monday 17 August 2026
     {
-      // Monday 17 August 2026: the Q2 report values the interest at 840,000 at 30 June (a portfolio company written down).
+      // The Q2 report values the interest at 840,000 at 30 June (a portfolio company written down).
       id: 'valuation-q2', covers: 'valuation', action: 'lifecycle', lot: 'fund', body: { action: 'valuation', value: 840_000, asOf: '2026-06-30', source: 'Nordlicht Q2 2026 quarterly report' },
       expect: {
         events: [{ type: 'manual.valuation', summary: 'Valuation of NLVF3 entered by hand: 840,000.00 EUR for the 1 held, as of 2026-06-30, source: Nordlicht Q2 2026 quarterly report. A manual input, not a market quote' }],
@@ -376,7 +377,7 @@ const ventureCapital = {
           manual: vcM({ committed: 3_000_000, called: 1_500_000, uncalled: 1_500_000, feesCalled: 30_000, expenses: 6_000, valuation: { ...VC_Q2, rolledForward: 585_000 } }) }],
         pnl: { account: { fees: -39_900, unrealized: -50_400, total: -10_720 } }, // -23,100 - 15,000 x 1.12; -39,900 - 50,400 + 79,580
         nav: { account: 4_389_280, book: 11_629_280 }, // (2,494,000 + 1,425,000) x 1.12
-        balance: { account: { cash: 2_793_280, positions: 1_596_000, assets: 4_389_280, netAssets: 4_389_280 } }, // 2,494,000 x 1.12; 1,425,000 x 1.12
+        balance: { account: { cash: 2_793_280, positions: 1_596_000, assets: 4_389_280, netAssets: 4_389_280, local: { EUR: { cash: 2_494_000, positions: 1_425_000 } } } }, // 2,494,000 x 1.12; 1,425,000 x 1.12
       },
     },
     {
@@ -399,7 +400,7 @@ const ventureCapital = {
           manual: vcM({ committed: 3_000_000, called: 1_500_000, uncalled: 1_500_000, feesCalled: 30_000, expenses: 6_000, returnOfCapital: 300_000, realizedGain: 200_000, valuation: { ...VC_Q2, stale: true, rolledForward: 85_000 } }) }], // 585,000 - 500,000
         pnl: { account: { realized: 224_000, unrealized: -274_400, total: -10_720 } }, // 200,000 x 1.12; -245,000 x 1.12; 224,000 - 39,900 - 274,400 + 79,580
         nav: { account: 4_389_280, book: 11_629_280 }, // (2,994,000 + 925,000) x 1.12
-        balance: { account: { cash: 3_353_280, positions: 1_036_000, assets: 4_389_280, netAssets: 4_389_280 } }, // 2,994,000 x 1.12; 925,000 x 1.12
+        balance: { account: { cash: 3_353_280, positions: 1_036_000, assets: 4_389_280, netAssets: 4_389_280, local: { EUR: { cash: 2_994_000, positions: 925_000 } } } }, // 2,994,000 x 1.12; 925,000 x 1.12
       },
     },
     {
@@ -423,7 +424,7 @@ const ventureCapital = {
         pnl: { account: { unrealized: -345_600, total: -248_480 } }, // -320,000 x 1.08; 224,000 - 39,900 - 345,600 - 86,980
         nav: { account: 4_151_520, book: 11_311_520 }, // (2,994,000 + 850,000) x 1.08
         provisional: { account: false, book: false },
-        balance: { account: { positions: 918_000, assets: 4_151_520, netAssets: 4_151_520 } },
+        balance: { account: { positions: 918_000, assets: 4_151_520, netAssets: 4_151_520, local: { EUR: { positions: 850_000 } } } },
       },
     },
     { id: 'final-date', action: 'clock', to: '2026-12-15T15:00:00.000Z', expect: {} }, // Tuesday 15 December 2026
@@ -436,7 +437,7 @@ const ventureCapital = {
           manual: vcM({ committed: 3_000_000, called: 1_500_000, uncalled: 1_500_000, feesCalled: 30_000, expenses: 6_000, returnOfCapital: 1_150_000, realizedGain: 200_000, valuation: { ...VC_Q3, rolledForward: -1_350_000 } }) }],
         pnl: { account: { total: -248_480 } },
         nav: { account: 4_151_520, book: 11_311_520 }, // 3,844,000 x 1.08
-        balance: { account: { cash: 4_151_520, positions: null, assets: 4_151_520, netAssets: 4_151_520 } },
+        balance: { account: { cash: 4_151_520, positions: null, assets: 4_151_520, netAssets: 4_151_520, local: { EUR: { cash: 3_844_000, positions: null } } } },
       },
     },
     {
