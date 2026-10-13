@@ -245,3 +245,4 @@
 - 2026-10-13T19:58Z | s3 | +0.2 | credit_basket_swap passes at engine, API and browser
 - 2026-10-13T19:58Z | s2 | +0.2 | commodity_swap passes at engine, API and browser (daily averaging on a pricing calendar, net settlement)
 - 2026-10-13T20:00Z | b4 | +0.2 | structured_note passes at engine, API and browser
+- 2026-10-13T20:00Z | t2 | +0.2 | iron_condor passes at engine, API and browser

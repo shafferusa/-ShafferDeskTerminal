@@ -274,7 +274,8 @@ function cashAccount(amount, later) { return later ? (amount >= 0 ? 'recv.settle
  * `when`), `protection` the amount the protection buyer receives (signed for the holder inside), `endShare` the share of the
  * position's cost that goes (realized), `close` whether the position ends.
  */
-function settleHolder(app, deps, { inst, p, when, affected, protection, lines, endShare, close, settleDate, type, summary, data }) {
+function settleHolder(app, deps, { inst, p, when, affected, protection, lines, endShare, close, settleDate: stated, type, summary, data }) {
+  let settleDate = stated;
   const ccy = inst.trading_ccy;
   const book = app.books.getBook(p.book_id), unit = app.books.getUnit(p.unit_id);
   const from = p.data.premiumPaidThrough || p.data.premiumFrom || inst.terms.effective;
@@ -283,10 +284,13 @@ function settleHolder(app, deps, { inst, p, when, affected, protection, lines, e
   if (days < 0 && !p.data.premiumPaidThrough) days = 0;
   const accrued = money(Math.abs(affected) * inst.terms.coupon * days / 360, ccy);
   const s = sign(p.qty); // + protection bought
-  const later = settleDate && settleDate > app.clock.today();
+  let later = settleDate && settleDate > app.clock.today();
   const cashLines = (lines || [{ amount: protection }]).map((l) => ({ ...l, amount: money(s * l.amount, ccy) }));
   if (accrued !== 0) cashLines.push({ amount: money(-s * accrued, ccy), what: 'accrued premium' });
   const net = money(cashLines.reduce((a, l) => a + l.amount, 0), ccy);
+  // An amount to pay today that the owner's settled cash does not cover is not taken from cash (which never goes below
+  // zero): it becomes a payable due today, whose settlement fails visibly and is retried until the cash is there.
+  if (!later && net < 0 && app.ledger.balance(unit.id, 'cash', ccy) < -net - 0.004) { later = true; settleDate = app.clock.today(); }
   const share = close ? 1 : endShare;
   const costOut = money(p.cost * share, ccy);
   const acc = clearAccrued(app, p, ccy, share);
