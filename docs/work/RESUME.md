@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 98.8% of the pass** (last milestone 2026-10-13T21:23Z, coord: PAUSED on the owner's instruction; state written to RESUME.md)
+**Completeness: about 98.8% of the pass** (last milestone 2026-10-13T21:25Z, coord: resumed: templates repair, FX regression test, whole-interface check)
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 
@@ -32,7 +32,12 @@ Stop all background work when the owner's weekly **Fable** usage reaches 98%.
 Last known figures: 5:30 PM ET on 2026-10-06, Fable 14% against 10% for all models (r = 1.4), before this pass
 started. The all-models figure was reported as 35% at about 9:57 PM ET.
 
-## PAUSED at 2026-10-13 21:25 UTC (05:25 PM ET) on the owner's instruction
+## RESUMED 2026-10-13 21:30 UTC: finish the pass without further confirmation (owner's instruction)
+Order: repair templates-a.mjs (cash_secured_put is half-written; long_call, long_put, bull_call_spread,
+bear_put_spread, bull_put_spread are missing); historical-FX regression test; whole-interface check (s9);
+coordinator's own re-run of every suite on one frozen commit; matrix and evidence report.
+
+## PAUSED at 2026-10-13 21:25 UTC (05:25 PM ET) on the owner's instruction (superseded)
 
 Nothing is running and nothing is scheduled. Do nothing until the owner says "resume".
 
