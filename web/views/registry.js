@@ -650,7 +650,9 @@ function InstrumentForm({ inst: given, view, preset, onDone, onClose }) {
 
 // ---- lifecycle events recorded by hand on the instrument itself -----------------------------------------------------
 /** Debt securities whose principal can be written down by hand: contingent convertibles and securitised paper. */
-const WRITEDOWN_IDS = ['coco_bond', 'mbs', 'rmbs', 'cmbs', 'agency_mbs', 'non_agency_mbs', 'specified_pool', 'abs', 'cmo', 'clo', 'cdo'];
+const WRITEDOWN_IDS = ['coco_bond', 'mbs', 'rmbs', 'cmbs', 'agency_mbs', 'non_agency_mbs', 'specified_pool', 'abs', 'cmo', 'clo', 'cdo', 'catastrophe_bond'];
+/** b4: the default kind of write-down by product (a catastrophe bond's covered event is a trigger). */
+const wdDefault = (inst) => (inst.productId === 'coco_bond' ? 'writedown' : inst.productId === 'catastrophe_bond' ? 'trigger' : 'loss');
 function LifecycleAdmin({ inst, onChanged }) {
   const t = inst.terms || {};
   const name = inst.symbol || inst.name;
@@ -695,10 +697,10 @@ function LifecycleAdmin({ inst, onChanged }) {
         : `A partial call of ${name}, recorded by hand: ${fmtNum(sh * 100, 4)}% of every holding, in every Book (in whole minimum denominations), is redeemed today at ${fmtNum(p, 2)}% of par with the accrued interest on it. The rest stays outstanding. The Terminal checks the price against the call schedule.` };
   };
   const writeDown = () => {
-    const nf = v.wdFactor, kind = v.wdKind || (inst.productId === 'coco_bond' ? 'writedown' : 'loss');
+    const nf = v.wdFactor, kind = v.wdKind || wdDefault(inst);
     if (!(nf > 0 && nf < factor)) return { invalid: `The factor after the write-down must be above 0 and below the current factor ${factor}. A full write-down is recorded on each position as an early redemption at 0.` };
     return { action: 'writedown', body: { newFactor: nf, kind, effective: v.wdFrom || undefined }, confirm: 'Record write-down', done: 'Write-down recorded.',
-      text: `${kind === 'loss' ? 'A realized loss is allocated to' : 'A trigger event writes down'} ${name}, recorded by hand: the factor falls from ${factor} to ${nf}${v.wdFrom ? ` from ${v.wdFrom}` : ''} for every holder, in every Book. ${fmtNum((factor - nf) * 100, 4)}% of original face is written off with no payment: each position's cost falls in proportion and the cost written off is a realized loss. Interest accrued on the principal written off is cancelled. Later coupons and trades use the reduced principal.` };
+      text: `${kind === 'trigger' ? `A covered event (${t.trigger || 'the trigger'}) causes a principal loss on` : kind === 'loss' ? 'A realized loss is allocated to' : 'A trigger event writes down'} ${name}, recorded by hand: the factor falls from ${factor} to ${nf}${v.wdFrom ? ` from ${v.wdFrom}` : ''} for every holder, in every Book. ${fmtNum((factor - nf) * 100, 4)}% of original face is written off with no payment: each position's cost falls in proportion and the cost written off is a realized loss. Interest accrued on the principal written off is cancelled. Later coupons and trades use the reduced principal.` };
   };
   // b4: the senior tranche of a sequential CMO class, paid down by hand from each remittance report.
   const seniorBalance = () => {
@@ -756,7 +758,7 @@ function LifecycleAdmin({ inst, onChanged }) {
       ${button('Review issuer call', issuerCall)}</div>` : null}
     ${inst.family === 'bond' && WRITEDOWN_IDS.includes(inst.productId) ? html`<div class="grid-form" style=${GRID}>
       <${Field} label="Principal written down to (factor)" hint=${`Current factor ${factor}. No payment is made for the part written off.`}><${Num} value=${v.wdFactor} onInput=${(x) => { setV({ ...v, wdFactor: x }); setStep(null); }} /><//>
-      <${Field} label="Kind of write-down"><${Select} value=${v.wdKind || (inst.productId === 'coco_bond' ? 'writedown' : 'loss')} onChange=${(x) => { setV({ ...v, wdKind: x }); setStep(null); }} options=${[{ value: 'writedown', label: 'Trigger event: write-down' }, { value: 'loss', label: 'Realized loss allocated' }]} /><//>
+      <${Field} label="Kind of write-down"><${Select} value=${v.wdKind || wdDefault(inst)} onChange=${(x) => { setV({ ...v, wdKind: x }); setStep(null); }} options=${[{ value: 'writedown', label: 'Trigger event: write-down' }, { value: 'loss', label: 'Realized loss allocated' }, ...(inst.productId === 'catastrophe_bond' ? [{ value: 'trigger', label: 'Covered event: principal loss, collateral released' }] : [])]} /><//>
       <${Field} label="Write-down effective from" hint="Today if empty; for a monthly pool, the first day of the period"><${Text} type="date" value=${v.wdFrom || ''} onInput=${(x) => { setV({ ...v, wdFrom: x }); setStep(null); }} /><//>
       ${button('Review write-down', writeDown)}</div>` : null}
     ${inst.family === 'bond' && isNum(t.couponBarrier) ? html`<div class="grid-form" style=${GRID}>

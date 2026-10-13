@@ -463,11 +463,11 @@ export function paygo(app, inst, body, deps) {
       inst: fresh, p, when, affected: q * cut, protection: q * pay, endShare: factor > 0 ? Math.max(cut, 0) / factor : 0, close: ends, settleDate: null,
       type: 'cds.paygo',
       data: { paygo: kind, amount, oldFactor: factor, newFactor, endReason: newTerms.ended?.reason || null },
-      summary: ({ accrued, net }) => [
+      summary: ({ accrued, net, later }) => [
         `${PAYGO_KINDS[kind]} on ${t.referenceObligation} recorded by hand for ${name} (${when})`,
         kind === 'amortization' ? `factor ${factor} to ${newFactor}, nothing paid for it` : `${fmt(Math.abs(q * pay), ccy)} (${amount} per 100 of ${fmt(q, ccy)}) ${pay > 0 ? 'paid by the protection seller' : 'paid by the protection buyer'}${cut ? `; factor ${factor} to ${newFactor}` : ''}${kind === 'writedown_reimbursement' ? `; factor ${factor} to ${newFactor}` : ''}`,
         accrued !== 0 ? `accrued premium on the ${cut ? 'reduced' : 'affected'} notional ${fmt(Math.abs(accrued), ccy)}` : null,
-        net === 0 ? 'nothing to settle' : `${net > 0 ? 'received' : 'paid'} ${fmt(Math.abs(net), ccy)}`,
+        net === 0 ? 'nothing to settle' : `${net > 0 ? 'received' : later ? 'payable (not enough settled cash today: it settles when the cash is there)' : 'paid'} ${fmt(Math.abs(net), ccy)}`,
       ].filter(Boolean).join('; '),
     }));
   }
@@ -492,7 +492,7 @@ export function cancelOnRefinancing(app, inst, body, deps) {
     eventIds.push(settleHolder(app, deps, {
       inst: fresh, p, when, affected: q, protection: 0, endShare: 1, close: true, settleDate: null, type: 'cds.cancelled',
       data: { endReason: reason },
-      summary: ({ accrued, net }) => `${name} cancelled on ${when}, recorded by hand: ${reason}. No protection is paid; accrued premium ${fmt(Math.abs(accrued), ccy)} to the cancellation date; ${net === 0 ? 'nothing to settle' : `${net > 0 ? 'received' : 'paid'} ${fmt(Math.abs(net), ccy)}`}`,
+      summary: ({ accrued, net, later }) => `${name} cancelled on ${when}, recorded by hand: ${reason}. No protection is paid; accrued premium ${fmt(Math.abs(accrued), ccy)} to the cancellation date; ${net === 0 ? 'nothing to settle' : `${net > 0 ? 'received' : later ? 'payable (not enough settled cash today: it settles when the cash is there)' : 'paid'} ${fmt(Math.abs(net), ccy)}`}`,
     }));
   }
   return { eventIds, outcome: { ended: true } };

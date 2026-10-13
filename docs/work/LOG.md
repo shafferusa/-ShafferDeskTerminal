@@ -247,3 +247,4 @@
 - 2026-10-13T20:00Z | b4 | +0.2 | structured_note passes at engine, API and browser
 - 2026-10-13T20:00Z | t2 | +0.2 | iron_condor passes at engine, API and browser
 - 2026-10-13T20:00Z | s2 | +0.2 | commodity_basis_swap passes at engine, API and browser (two averaged references and a differential, net)
+- 2026-10-13T20:01Z | s3 | +0.2 | cds_index_tranche passes at engine, API and browser

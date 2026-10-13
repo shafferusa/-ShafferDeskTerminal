@@ -284,6 +284,12 @@ export const bond = {
       }
       if (t.observations && typeof t.observations !== 'object') delete t.observations;
     } else { delete t.couponBarrier; delete t.initialLevel; delete t.principalProtected; delete t.principalBarrier; delete t.observations; if (!t.linkedTo) delete t.linkedTo; }
+    // b4: a catastrophe bond: the issue's principal sits in a collateral trust account (its assets and custodian are a term), the
+    // sponsor (the ceding insurer) is paid out of it when a covered event triggers a principal loss, and the trigger is stated.
+    for (const k of ['collateralAccount', 'sponsor', 'trigger']) { if (typeof t[k] === 'string') t[k] = t[k].trim(); if (!t[k]) delete t[k]; }
+    if (draft.productId === 'catastrophe_bond' && !t.collateralAccount) errors.push('A catastrophe bond needs its collateral account: where the principal is held in trust and in what assets (for example: trust account at the custodian, invested in US Treasury money-market funds).');
+    if (t.issueSize === undefined || t.issueSize === null || t.issueSize === '') delete t.issueSize;
+    else { t.issueSize = num(t.issueSize); if (!(t.issueSize > 0)) errors.push('Issue size must be a face amount above 0.'); }
     // b4: a credit-linked note pays its coupon and principal unless its reference entity has a credit event: the entity is part of
     // what the note is.
     if (typeof t.referenceEntity === 'string') t.referenceEntity = t.referenceEntity.trim();
@@ -332,6 +338,9 @@ export const bond = {
     if (t.paymentDelayDays) rows.push(['Payment delay', `${t.paymentDelayDays} days after each accrual period ends`]);
     if (t.guarantor) rows.push(['Guarantor', `${t.guarantor} (principal and interest guaranteed; no loss allocation)`]);
     if (t.poolCharacteristics) rows.push(['Pool characteristics', `${t.poolCharacteristics} (stated at registration)`]);
+    if (t.collateralAccount) rows.push(['Collateral account', `${t.collateralAccount}${t.issueSize ? `; holds the outstanding principal, ${fmtQty(money(t.issueSize * (t.factor ?? 1), inst.trading_ccy))} of the ${fmtQty(t.issueSize)} issued` : ''}${t.collateralReleased ? `; released to the sponsor so far ${fmtQty(t.collateralReleased)}` : ''}`]);
+    if (t.sponsor) rows.push(['Sponsor (ceding insurer)', t.sponsor]);
+    if (t.trigger) rows.push(['Trigger', `${t.trigger} (a covered event and its principal loss are recorded by hand)`]);
     if (typeof t.couponBarrier === 'number') {
       rows.push(['Contingent coupon', `${(t.couponRate * 100).toFixed(3)}% a year, paid on a coupon date only if ${t.linkedTo} is at or above ${fmtLevel(t.couponBarrier * t.initialLevel)} (${pctText(t.couponBarrier, 0)} of the initial ${fmtLevel(t.initialLevel)}) on that date; observations recorded by hand; trades flat`]);
       rows.push(['Principal at maturity', t.principalProtected ? 'Protected: par' : `Par if ${t.linkedTo} finishes at or above ${fmtLevel(t.principalBarrier * t.initialLevel)} (${pctText(t.principalBarrier, 0)} of initial), else par x final / initial (not protected)`]);
@@ -827,7 +836,9 @@ export const bond = {
    */
   writeDown(app, { inst, newFactor, effective, kind, note }) {
     const name = inst.symbol || inst.name;
-    const loss = kind === 'loss';
+    // b4: 'trigger' is a catastrophe bond's covered event: a principal loss like an allocated loss, with the collateral released.
+    const cat = kind === 'trigger';
+    const loss = kind === 'loss' || cat;
     need(!(loss && inst.terms.guarantor), `${name} is guaranteed by ${inst.terms.guarantor}: losses on the underlying loans are not passed to holders. A defaulted loan's principal reaches the pool as a paydown (principal paid at par), recorded as a paydown.`);
     const nf = num(newFactor);
     const old = factorOf(inst);
@@ -838,7 +849,8 @@ export const bond = {
     need(ISO_DATE_RE.test(from) && from <= today, 'The effective date must be YYYY-MM-DD and not later than today.');
     const ccy = inst.trading_ccy;
     const history = [...(inst.terms.factorHistory || []), { from, factor: nf, prior: old }];
-    app.instruments.update(inst.id, { terms: { ...inst.terms, factor: nf, factorHistory: history, writtenDown: { kind: loss ? 'loss' : 'writedown', date: today, from } } }, { system: true });
+    const released = cat && inst.terms.issueSize ? money(inst.terms.issueSize * (old - nf), ccy) : null;
+    app.instruments.update(inst.id, { terms: { ...inst.terms, factor: nf, factorHistory: history, writtenDown: { kind: cat ? 'trigger' : loss ? 'loss' : 'writedown', date: today, from }, ...(released ? { collateralReleased: money((inst.terms.collateralReleased || 0) + released, ccy) } : {}) } }, { system: true });
     const fresh = app.instruments.get(inst.id);
     const eventIds = [];
     for (const p of app.positions.heldAround(inst.id)) {
@@ -847,9 +859,9 @@ export const bond = {
       const costOut = money((p.cost * (old - nf)) / old, ccy);
       const faceOff = money(Math.abs(p.qty) * (old - nf), ccy);
       eventIds.push(app.ledger.post({
-        bookId: book.id, unitId: unit.id, type: loss ? 'bond.loss' : 'bond.writedown', instrumentId: inst.id, strategyId: p.strategy_id, positionId: p.id, actor: 'user',
-        summary: `${loss ? 'Realized loss allocated by hand to' : 'Principal written down by hand on'} ${name}${note ? ` (${note})` : ''}: factor ${old} to ${nf}${from !== today ? ` from ${from}` : ''}, ${fmtQty(faceOff)} of principal written off with no payment (${fmtQty(Math.abs(p.qty))} original face); cost ${fmt(Math.abs(costOut), ccy)} written off as realized ${p.qty > 0 ? 'loss' : 'gain'}`,
-        data: { kind: loss ? 'loss' : 'writedown', oldFactor: old, newFactor: nf, effective: from, costOut, manual: true },
+        bookId: book.id, unitId: unit.id, type: cat ? 'bond.trigger' : loss ? 'bond.loss' : 'bond.writedown', instrumentId: inst.id, strategyId: p.strategy_id, positionId: p.id, actor: 'user',
+        summary: `${cat ? 'Covered event recorded by hand on' : loss ? 'Realized loss allocated by hand to' : 'Principal written down by hand on'} ${name}${note ? ` (${note})` : ''}: factor ${old} to ${nf}${from !== today ? ` from ${from}` : ''}, ${fmtQty(faceOff)} of principal written off with no payment (${fmtQty(Math.abs(p.qty))} original face); cost ${fmt(Math.abs(costOut), ccy)} written off as realized ${p.qty > 0 ? 'loss' : 'gain'}${cat ? `${released ? `; ${fmt(released, ccy)} of collateral released from the collateral account to ${inst.terms.sponsor || 'the sponsor'}` : `; the collateral is released to ${inst.terms.sponsor || 'the sponsor'}`}` : ''}`,
+        data: { kind: cat ? 'trigger' : loss ? 'loss' : 'writedown', oldFactor: old, newFactor: nf, effective: from, costOut, manual: true, ...(released ? { collateralReleased: released } : {}) },
         entries: [{ account: 'pos', ccy, amount: -costOut, positionId: p.id }, { account: 'pnl.realized', ccy, amount: costOut, positionId: p.id }],
       }));
       const after = app.positions.change(p, { dCost: -costOut });
