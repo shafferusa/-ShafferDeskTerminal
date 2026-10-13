@@ -224,3 +224,4 @@
 - 2026-10-13T19:37Z | s2 | +0.2 | equity_index_swap passes at engine, API and browser (Treasury-owned, opposite side, agreement collateral)
 - 2026-10-13T19:37Z | b4 | +0.2 | cmo passes at engine, API and browser
 - 2026-10-13T19:38Z | t1 | +0.2 | T:long template passes at engine, API and browser
+- 2026-10-13T19:38Z | t2 | +0.2 | long_straddle passes at engine, API and browser

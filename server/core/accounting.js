@@ -425,10 +425,19 @@ export function createAccounting(app) {
     const netAssets = { cells: netCells, total: addCells(Object.values(netCells)) };
 
     // Equity side. Internal funding: positive = funding this unit has received, negative = funding it has advanced.
-    const equity = (account) => Object.fromEntries(units.map((u) => { const m = new Map(); for (const [ccy, amt] of per.get(u.id).bal.get(account) || []) m.set(ccy, -amt); return [u.id, cell(m)]; }));
+    // s7: capital and internal funding are stated in the reporting currency at the rates in force when each flow was booked
+    // (the amount stored on its ledger entries), not retranslated at today's rate. Retranslating them moved the FX gain or
+    // loss on foreign-currency capital and funding out of "Results to date", so results no longer equalled the P&L
+    // statement (which counts that FX in "FX effects") and contributed capital changed with the exchange rate.
+    const equity = (account) => Object.fromEntries(units.map((u) => {
+      const m = new Map(); for (const [ccy, amt] of per.get(u.id).bal.get(account) || []) m.set(ccy, -amt);
+      const b = per.get(u.id).booked.get(account) || { rc: 0, missing: false };
+      return [u.id, { ...cell(m), rc: money(-b.rc, rc), complete: !b.missing }];
+    }));
+    const addBooked = (cells) => ({ ...addCells(cells), rc: money(cells.reduce((a, c) => a + c.rc, 0), rc), complete: cells.every((c) => c.complete) });
     const capitalCells = equity('capital'), internalCells = equity('internal');
-    const capital = { key: 'capital', label: 'External capital contributed', cells: capitalCells, elimination: null, total: addCells(Object.values(capitalCells)) };
-    const internalSum = addCells(Object.values(internalCells));
+    const capital = { key: 'capital', label: 'External capital contributed', note: 'At the exchange rates in force when each contribution was booked.', cells: capitalCells, elimination: null, total: addBooked(Object.values(capitalCells)) };
+    const internalSum = addBooked(Object.values(internalCells));
     const internal = {
       key: 'internal', label: 'Funding between Treasury and Accounts', cells: internalCells,
       note: whole ? 'Internal to the Book: what Treasury advanced equals what the Accounts received, so it is eliminated from the Book total.' : 'Net funding these units have received from the rest of the Book (negative: advanced to it).',
@@ -440,7 +449,7 @@ export function createAccounting(app) {
     };
     const resultCells = Object.fromEntries(units.map((u) => [u.id, { rc: money(netCells[u.id].rc - capitalCells[u.id].rc - internalCells[u.id].rc, rc), complete: netCells[u.id].complete && capitalCells[u.id].complete && internalCells[u.id].complete, byCurrency: [] }]));
     const results = { key: 'results', label: 'Results to date', note: 'Realized and unrealized profit and loss, income, expenses and FX effects, in the reporting currency.', cells: resultCells, elimination: null,
-      total: { rc: money(netAssets.total.rc - capital.total.rc - internal.total.rc, rc), complete: netAssets.total.complete, byCurrency: [] } };
+      total: { rc: money(netAssets.total.rc - capital.total.rc - internal.total.rc, rc), complete: netAssets.total.complete && capital.total.complete && internal.total.complete, byCurrency: [] } };
 
     // The Accounts of the scope as one column, for a worksheet with many Accounts. It is computed the
     // way an Accounts-only scope computes its total (the same cells added per currency, converted at
@@ -450,7 +459,7 @@ export function createAccounting(app) {
     let accountsCombined = null;
     if (members.length > 1) {
       const sum = (cells) => addCells(members.map((u) => cells[u.id]));
-      const net = sum(netCells), cap = sum(capitalCells), fund = sum(internalCells);
+      const net = sum(netCells), cap = addBooked(members.map((u) => capitalCells[u.id])), fund = addBooked(members.map((u) => internalCells[u.id]));
       accountsCombined = {
         members: members.map((u) => u.id),
         lines: Object.fromEntries(lines.map((l) => [l.key, sum(l.cells)])),
@@ -484,9 +493,13 @@ export function createAccounting(app) {
         accountBorrowings: acctBorrow,
         accounts: accounts.map((u) => {
           const am = metrics(bookId, [u.id]);
-          const funded = new Map(); for (const [ccy, amt] of ledger.balances([u.id]).filter((b) => b.account === 'internal').map((b) => [b.ccy, -b.amount])) funded.set(ccy, amt);
-          const borrowed = new Map(); for (const b of ledger.balances([u.id]).filter((x) => x.account === 'loan.liab')) borrowed.set(b.ccy, -b.amount);
-          return { id: u.id, name: u.name, nav: navStatus(bookId, am), fundingReceived: cell(funded), cashBorrowed: cell(borrowed) };
+          const own = ledger.balances([u.id]);
+          const funded = new Map(); for (const [ccy, amt] of own.filter((b) => b.account === 'internal').map((b) => [b.ccy, -b.amount])) funded.set(ccy, amt);
+          const borrowed = new Map(); for (const b of own.filter((x) => x.account === 'loan.liab')) borrowed.set(b.ccy, -b.amount);
+          // s7: funding at the rates it was booked at, the same figure as the funding line of the balance sheets.
+          const fundRows = own.filter((b) => b.account === 'internal');
+          const fundingReceived = { ...cell(funded), rc: money(-fundRows.reduce((a, b) => a + (b.amount_rc || 0), 0), rc), complete: !fundRows.some((b) => b.rc_missing > 0) };
+          return { id: u.id, name: u.name, nav: navStatus(bookId, am), fundingReceived, cashBorrowed: cell(borrowed) };
         }),
       };
     }
