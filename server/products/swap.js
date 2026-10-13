@@ -345,6 +345,8 @@ export const swap = {
     const t = inst.terms;
     const rows = [['Effective', t.effective], ['Maturity', t.maturity]];
     for (const l of t.legs) rows.push([`Leg ${l.id}`, describeLeg(l, app)]);
+    // Convention (docs/ARCHITECTURE.md): fixing dates are business days of the contract's joint payment calendar, not of each index's own market.
+    if (t.legs.some((l) => ['float', 'ois', 'cap', 'floor'].includes(l.type))) rows.push(['Fixing dates', `On business days of the contract's payment calendar (${paymentCalendarFor(inst) || 'the joint calendar of its currencies'}), not of each index's own market: a fixing that falls on a holiday there is taken on the business day before.`]);
     const ccys = [...new Set(t.legs.map((l) => l.ccy))];
     rows.push(['Currencies', ccys.join(', ')]);
     if (t.legs.some((l) => l.exchangeNotional)) rows.push(['Notional exchange', 'At start and maturity']);
@@ -361,6 +363,10 @@ export const swap = {
     const buy = action === 'buy';
     const notes = ['Notional is not paid. Only the upfront amount (if any) settles at trade; each leg then pays on its schedule.'];
     for (const l of inst.terms.legs) notes.push(`Leg ${l.id}: ${buy ? describeLeg(l, app) : describeLeg({ ...l, side: l.side === 'pay' ? 'receive' : 'pay' }, app)}`);
+    // Convention for a notional that changes inside a period (stated where the trade is previewed; docs/ARCHITECTURE.md):
+    // an increase takes the whole current period on the added notional, a position first opened inside a period pays from its trade date.
+    const held = unit && !inst.draft ? app.positions.find(unit.id, inst.id, strategyId || '') : null;
+    if (held && !isZero(held.qty) && Math.sign(held.qty) === (buy ? 1 : -1) && app.clock.today() > inst.terms.effective) notes.push('Convention: an increase earns and pays the whole current period on the added notional (the price you state is all-in). A position first opened inside a period pays from its trade date instead.');
     // Principal exchanged (cross-currency legs). A trade that settles while the swap is running exchanges its principal with
     // that settlement, so the cash to be paid is part of what the trade needs; before the effective date it is only announced.
     let otherCash;

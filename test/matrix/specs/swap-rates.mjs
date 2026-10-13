@@ -2611,7 +2611,8 @@ const crossCurrencySwap = {
       // Doubling the swap now would exchange another 5,500,000 USD when the trade settles. Treasury has 100,000 USD: refused, 5,400,000 short.
       id: 'increase-without-the-dollars', covers: ['notional exchange', 'insufficient cash'], action: 'resize', owner: 'treasury', lot: 'xccy', factor: 2, order: { statedPrice: 0 },
       status: 'blocked', reason: 'The principal a trade exchanges at its settlement is part of the cash the trade needs.',
-      expect: { refused: /Treasury is short 5,400,000\.00 USD: the package needs 5,500,000\.00 USD \(purchases 5,500,000\.00 USD, fees 0\.00 USD, margin and collateral 0\.00 USD, reserved 0\.00 USD\) and 100,000\.00 USD is available/ },
+      // The principal is named as such in the message, not counted as a purchase (BUGS.md, s1 item 11).
+      expect: { refused: /Treasury is short 5,400,000\.00 USD: the package needs 5,500,000\.00 USD \(purchases 0\.00 USD, principal exchanged when the trade settles 5,500,000\.00 USD, fees 0\.00 USD, margin and collateral 0\.00 USD, reserved 0\.00 USD\) and 100,000\.00 USD is available/ },
     },
     {
       // The euro rises to 1.12. Treasury's euro net assets: cash 5,499,750 - owed 5,000,000 + 200 carried = 499,950 EUR.

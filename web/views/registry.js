@@ -597,7 +597,7 @@ function InstrumentForm({ inst: given, view, preset, onDone, onClose }) {
       <${ConventionFields} draft=${{ ...draft, venueCountry: country, tradingCcy: pairCcy ? draft.terms.quote || '' : draft.tradingCcy }} set=${set} cals=${cals} product=${product} saved=${editing ? inst : null} />
       <div><h4 style="margin-bottom:6px">Market view</h4>
         <div class="grid-form" style=${GRID}>
-          <${Field} label="Primary view" span=${3} error=${viewError} hint=${decided ? 'The listing venue decides the view.' : 'By convention unless you choose a view by hand.'}><div><${Seg} value=${decided || (draft.routing === 'manual' ? draft.marketView : 'auto')}
+          <${Field} label="Primary view" span="all" error=${viewError} hint=${decided ? 'The listing venue decides the view.' : 'By convention unless you choose a view by hand.'}><div><${Seg} value=${decided || (draft.routing === 'manual' ? draft.marketView : 'auto')}
             onChange=${(v) => (v === 'auto' ? set({ routing: 'auto', marketView: '' }) : set({ routing: 'manual', marketView: v, tags: draft.tags.filter((t) => t !== v) }))}
             options=${[...(decided ? [] : [{ value: 'auto', label: autoView ? `By convention: ${VIEW_LABEL[autoView]}` : 'By convention', disabled: Boolean(route && !route.view), title: route?.text || route?.reason }]),
               ...pair.map((v) => ({ value: v, label: VIEW_LABEL[v], disabled: Boolean(decided && decided !== v), title: decided && decided !== v ? 'The listing venue decides the view' : 'Set by hand' }))]} /></div><//>

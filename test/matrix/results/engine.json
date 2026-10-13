@@ -15393,659 +15393,6 @@
     "restart"
    ]
   },
-  "E:cross_currency_swap:setup": {
-   "status": "passed",
-   "message": "",
-   "ms": 27,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_swap",
-   "template": null,
-   "family": "swap",
-   "step": "setup",
-   "covers": []
-  },
-  "E:cross_currency_swap:open": {
-   "status": "passed",
-   "message": "",
-   "ms": 33,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_swap",
-   "template": null,
-   "family": "swap",
-   "step": "open",
-   "covers": [
-    "open",
-    "before the effective date"
-   ]
-  },
-  "E:cross_currency_swap:settle-commission": {
-   "status": "passed",
-   "message": "",
-   "ms": 22,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_swap",
-   "template": null,
-   "family": "swap",
-   "step": "settle-commission",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "E:cross_currency_swap:increase": {
-   "status": "passed",
-   "message": "",
-   "ms": 32,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_swap",
-   "template": null,
-   "family": "swap",
-   "step": "increase",
-   "covers": [
-    "increase",
-    "notional exchange"
-   ]
-  },
-  "E:cross_currency_swap:initial-exchange-unfunded": {
-   "status": "passed",
-   "message": "",
-   "ms": 26,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_swap",
-   "template": null,
-   "family": "swap",
-   "step": "initial-exchange-unfunded",
-   "covers": [
-    "notional exchange",
-    "insufficient cash"
-   ]
-  },
-  "E:cross_currency_swap:funded-and-exchanged": {
-   "status": "passed",
-   "message": "",
-   "ms": 23,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_swap",
-   "template": null,
-   "family": "swap",
-   "step": "funded-and-exchanged",
-   "covers": [
-    "notional exchange",
-    "insufficient cash"
-   ]
-  },
-  "E:cross_currency_swap:treasury-screens-after-exchange": {
-   "status": "passed",
-   "message": "",
-   "ms": 22,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_swap",
-   "template": null,
-   "family": "swap",
-   "step": "treasury-screens-after-exchange",
-   "covers": [
-    "notional exchange"
-   ]
-  },
-  "E:cross_currency_swap:mid-june": {
-   "status": "passed",
-   "message": "",
-   "ms": 24,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_swap",
-   "template": null,
-   "family": "swap",
-   "step": "mid-june",
-   "covers": []
-  },
-  "E:cross_currency_swap:increase-without-the-dollars": {
-   "status": "blocked",
-   "message": "The principal a trade exchanges at its settlement is part of the cash the trade needs. Terminal: \"Treasury is short 5,400,000.00 USD: the package needs 5,500,000.00 USD (purchases 5,500,000.00 USD, fees 0.00 USD, margin and collateral 0.00 USD, reserved 0.00 USD) and 100,000.00 USD is available. Add Treasury funding or a borrowing leg, convert currency, or reduce the size.\"",
-   "ms": 20,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_swap",
-   "template": null,
-   "family": "swap",
-   "step": "increase-without-the-dollars",
-   "covers": [
-    "notional exchange",
-    "insufficient cash"
-   ]
-  },
-  "E:cross_currency_swap:euro-rises": {
-   "status": "passed",
-   "message": "",
-   "ms": 22,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_swap",
-   "template": null,
-   "family": "swap",
-   "step": "euro-rises",
-   "covers": [
-    "reporting currency"
-   ]
-  },
-  "E:cross_currency_swap:mark": {
-   "status": "passed",
-   "message": "",
-   "ms": 21,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_swap",
-   "template": null,
-   "family": "swap",
-   "step": "mark",
-   "covers": [
-    "manual mark"
-   ]
-  },
-  "E:cross_currency_swap:veterans-day": {
-   "status": "passed",
-   "message": "",
-   "ms": 25,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_swap",
-   "template": null,
-   "family": "swap",
-   "step": "veterans-day",
-   "covers": [
-    "payment across a holiday"
-   ]
-  },
-  "E:cross_currency_swap:dollar-interest": {
-   "status": "passed",
-   "message": "",
-   "ms": 16,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_swap",
-   "template": null,
-   "family": "swap",
-   "step": "dollar-interest",
-   "covers": [
-    "fixed payment",
-    "payment across a holiday"
-   ]
-  },
-  "E:cross_currency_swap:first-of-december": {
-   "status": "passed",
-   "message": "",
-   "ms": 16,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_swap",
-   "template": null,
-   "family": "swap",
-   "step": "first-of-december",
-   "covers": []
-  },
-  "E:cross_currency_swap:partial-termination": {
-   "status": "passed",
-   "message": "",
-   "ms": 35,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_swap",
-   "template": null,
-   "family": "swap",
-   "step": "partial-termination",
-   "covers": [
-    "reduce",
-    "partial termination",
-    "notional exchange"
-   ]
-  },
-  "E:cross_currency_swap:termination-settles-with-its-principal": {
-   "status": "passed",
-   "message": "",
-   "ms": 30,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_swap",
-   "template": null,
-   "family": "swap",
-   "step": "termination-settles-with-its-principal",
-   "covers": [
-    "settlement",
-    "notional exchange"
-   ]
-  },
-  "E:cross_currency_swap:treasury-screens-after-termination": {
-   "status": "passed",
-   "message": "",
-   "ms": 21,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_swap",
-   "template": null,
-   "family": "swap",
-   "step": "treasury-screens-after-termination",
-   "covers": [
-    "partial termination"
-   ]
-  },
-  "E:cross_currency_swap:mid-january": {
-   "status": "passed",
-   "message": "",
-   "ms": 22,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_swap",
-   "template": null,
-   "family": "swap",
-   "step": "mid-january",
-   "covers": []
-  },
-  "E:cross_currency_swap:euro-falls": {
-   "status": "passed",
-   "message": "",
-   "ms": 18,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_swap",
-   "template": null,
-   "family": "swap",
-   "step": "euro-falls",
-   "covers": [
-    "reporting currency"
-   ]
-  },
-  "E:cross_currency_swap:final-interest-maturity-and-exchange": {
-   "status": "passed",
-   "message": "",
-   "ms": 20,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_swap",
-   "template": null,
-   "family": "swap",
-   "step": "final-interest-maturity-and-exchange",
-   "covers": [
-    "fixed payment",
-    "maturity",
-    "close",
-    "notional exchange"
-   ]
-  },
-  "E:cross_currency_swap:treasury-screens-after-maturity": {
-   "status": "passed",
-   "message": "",
-   "ms": 17,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_swap",
-   "template": null,
-   "family": "swap",
-   "step": "treasury-screens-after-maturity",
-   "covers": [
-    "maturity"
-   ]
-  },
-  "E:cross_currency_swap:restart": {
-   "status": "passed",
-   "message": "",
-   "ms": 40,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_swap",
-   "template": null,
-   "family": "swap",
-   "step": "restart",
-   "covers": [
-    "restart"
-   ]
-  },
-  "E:cross_currency_basis_swap:setup": {
-   "status": "passed",
-   "message": "",
-   "ms": 34,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_basis_swap",
-   "template": null,
-   "family": "swap",
-   "step": "setup",
-   "covers": []
-  },
-  "E:cross_currency_basis_swap:record-agreement": {
-   "status": "passed",
-   "message": "",
-   "ms": 17,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_basis_swap",
-   "template": null,
-   "family": "swap",
-   "step": "record-agreement",
-   "covers": [
-    "collateral"
-   ]
-  },
-  "E:cross_currency_basis_swap:register-under-agreement": {
-   "status": "passed",
-   "message": "",
-   "ms": 17,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_basis_swap",
-   "template": null,
-   "family": "swap",
-   "step": "register-under-agreement",
-   "covers": [
-    "registration"
-   ]
-  },
-  "E:cross_currency_basis_swap:open": {
-   "status": "passed",
-   "message": "",
-   "ms": 35,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_basis_swap",
-   "template": null,
-   "family": "swap",
-   "step": "open",
-   "covers": [
-    "open",
-    "before the effective date"
-   ]
-  },
-  "E:cross_currency_basis_swap:no-mark-no-call": {
-   "status": "passed",
-   "message": "",
-   "ms": 18,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_basis_swap",
-   "template": null,
-   "family": "swap",
-   "step": "no-mark-no-call",
-   "covers": [
-    "variation margin"
-   ]
-  },
-  "E:cross_currency_basis_swap:increase": {
-   "status": "passed",
-   "message": "",
-   "ms": 22,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_basis_swap",
-   "template": null,
-   "family": "swap",
-   "step": "increase",
-   "covers": [
-    "increase",
-    "notional exchange"
-   ]
-  },
-  "E:cross_currency_basis_swap:initial-exchange": {
-   "status": "passed",
-   "message": "",
-   "ms": 18,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_basis_swap",
-   "template": null,
-   "family": "swap",
-   "step": "initial-exchange",
-   "covers": [
-    "notional exchange"
-   ]
-  },
-  "E:cross_currency_basis_swap:mark": {
-   "status": "passed",
-   "message": "",
-   "ms": 16,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_basis_swap",
-   "template": null,
-   "family": "swap",
-   "step": "mark",
-   "covers": [
-    "manual mark"
-   ]
-  },
-  "E:cross_currency_basis_swap:variation-margin-posted-by-treasury": {
-   "status": "passed",
-   "message": "",
-   "ms": 21,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_basis_swap",
-   "template": null,
-   "family": "swap",
-   "step": "variation-margin-posted-by-treasury",
-   "covers": [
-    "variation margin",
-    "collateral"
-   ]
-  },
-  "E:cross_currency_basis_swap:first-quarter": {
-   "status": "passed",
-   "message": "",
-   "ms": 21,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_basis_swap",
-   "template": null,
-   "family": "swap",
-   "step": "first-quarter",
-   "covers": [
-    "floating payment"
-   ]
-  },
-  "E:cross_currency_basis_swap:mid-july": {
-   "status": "passed",
-   "message": "",
-   "ms": 19,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_basis_swap",
-   "template": null,
-   "family": "swap",
-   "step": "mid-july",
-   "covers": []
-  },
-  "E:cross_currency_basis_swap:yen-weakens": {
-   "status": "passed",
-   "message": "",
-   "ms": 17,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_basis_swap",
-   "template": null,
-   "family": "swap",
-   "step": "yen-weakens",
-   "covers": [
-    "reporting currency"
-   ]
-  },
-  "E:cross_currency_basis_swap:holiday-in-tokyo": {
-   "status": "passed",
-   "message": "",
-   "ms": 25,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_basis_swap",
-   "template": null,
-   "family": "swap",
-   "step": "holiday-in-tokyo",
-   "covers": [
-    "payment across a holiday"
-   ]
-  },
-  "E:cross_currency_basis_swap:second-quarter": {
-   "status": "passed",
-   "message": "",
-   "ms": 31,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_basis_swap",
-   "template": null,
-   "family": "swap",
-   "step": "second-quarter",
-   "covers": [
-    "floating payment",
-    "payment across a holiday"
-   ]
-  },
-  "E:cross_currency_basis_swap:early-october": {
-   "status": "passed",
-   "message": "",
-   "ms": 31,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_basis_swap",
-   "template": null,
-   "family": "swap",
-   "step": "early-october",
-   "covers": []
-  },
-  "E:cross_currency_basis_swap:partial-termination": {
-   "status": "passed",
-   "message": "",
-   "ms": 39,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_basis_swap",
-   "template": null,
-   "family": "swap",
-   "step": "partial-termination",
-   "covers": [
-    "reduce",
-    "partial termination",
-    "notional exchange"
-   ]
-  },
-  "E:cross_currency_basis_swap:variation-margin-trimmed": {
-   "status": "passed",
-   "message": "",
-   "ms": 37,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_basis_swap",
-   "template": null,
-   "family": "swap",
-   "step": "variation-margin-trimmed",
-   "covers": [
-    "variation margin"
-   ]
-  },
-  "E:cross_currency_basis_swap:termination-settles-with-its-principal": {
-   "status": "passed",
-   "message": "",
-   "ms": 48,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_basis_swap",
-   "template": null,
-   "family": "swap",
-   "step": "termination-settles-with-its-principal",
-   "covers": [
-    "settlement",
-    "notional exchange"
-   ]
-  },
-  "E:cross_currency_basis_swap:third-quarter": {
-   "status": "passed",
-   "message": "",
-   "ms": 35,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_basis_swap",
-   "template": null,
-   "family": "swap",
-   "step": "third-quarter",
-   "covers": [
-    "floating payment"
-   ]
-  },
-  "E:cross_currency_basis_swap:mid-february": {
-   "status": "passed",
-   "message": "",
-   "ms": 24,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_basis_swap",
-   "template": null,
-   "family": "swap",
-   "step": "mid-february",
-   "covers": []
-  },
-  "E:cross_currency_basis_swap:yen-strengthens": {
-   "status": "passed",
-   "message": "",
-   "ms": 21,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_basis_swap",
-   "template": null,
-   "family": "swap",
-   "step": "yen-strengthens",
-   "covers": [
-    "reporting currency"
-   ]
-  },
-  "E:cross_currency_basis_swap:final-exchange-unfunded": {
-   "status": "passed",
-   "message": "",
-   "ms": 31,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_basis_swap",
-   "template": null,
-   "family": "swap",
-   "step": "final-exchange-unfunded",
-   "covers": [
-    "floating payment",
-    "notional exchange",
-    "insufficient cash"
-   ]
-  },
-  "E:cross_currency_basis_swap:funded-matured-and-exchanged": {
-   "status": "passed",
-   "message": "",
-   "ms": 17,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_basis_swap",
-   "template": null,
-   "family": "swap",
-   "step": "funded-matured-and-exchanged",
-   "covers": [
-    "maturity",
-    "close",
-    "notional exchange",
-    "collateral",
-    "insufficient cash"
-   ]
-  },
-  "E:cross_currency_basis_swap:restart": {
-   "status": "passed",
-   "message": "",
-   "ms": 41,
-   "commit": "008a80d+changes",
-   "at": "2026-10-13T16:28:49.398Z",
-   "product": "cross_currency_basis_swap",
-   "template": null,
-   "family": "swap",
-   "step": "restart",
-   "covers": [
-    "restart"
-   ]
-  },
   "E:zc_inflation_swap:setup": {
    "status": "passed",
    "message": "",
@@ -16492,6 +15839,659 @@
    "commit": "008a80d+changes",
    "at": "2026-10-13T16:28:49.398Z",
    "product": "yoy_inflation_swap",
+   "template": null,
+   "family": "swap",
+   "step": "restart",
+   "covers": [
+    "restart"
+   ]
+  },
+  "E:cross_currency_swap:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 128,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_swap",
+   "template": null,
+   "family": "swap",
+   "step": "setup",
+   "covers": []
+  },
+  "E:cross_currency_swap:open": {
+   "status": "passed",
+   "message": "",
+   "ms": 78,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_swap",
+   "template": null,
+   "family": "swap",
+   "step": "open",
+   "covers": [
+    "open",
+    "before the effective date"
+   ]
+  },
+  "E:cross_currency_swap:settle-commission": {
+   "status": "passed",
+   "message": "",
+   "ms": 53,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_swap",
+   "template": null,
+   "family": "swap",
+   "step": "settle-commission",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "E:cross_currency_swap:increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 53,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_swap",
+   "template": null,
+   "family": "swap",
+   "step": "increase",
+   "covers": [
+    "increase",
+    "notional exchange"
+   ]
+  },
+  "E:cross_currency_swap:initial-exchange-unfunded": {
+   "status": "passed",
+   "message": "",
+   "ms": 50,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_swap",
+   "template": null,
+   "family": "swap",
+   "step": "initial-exchange-unfunded",
+   "covers": [
+    "notional exchange",
+    "insufficient cash"
+   ]
+  },
+  "E:cross_currency_swap:funded-and-exchanged": {
+   "status": "passed",
+   "message": "",
+   "ms": 53,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_swap",
+   "template": null,
+   "family": "swap",
+   "step": "funded-and-exchanged",
+   "covers": [
+    "notional exchange",
+    "insufficient cash"
+   ]
+  },
+  "E:cross_currency_swap:treasury-screens-after-exchange": {
+   "status": "passed",
+   "message": "",
+   "ms": 30,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_swap",
+   "template": null,
+   "family": "swap",
+   "step": "treasury-screens-after-exchange",
+   "covers": [
+    "notional exchange"
+   ]
+  },
+  "E:cross_currency_swap:mid-june": {
+   "status": "passed",
+   "message": "",
+   "ms": 58,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_swap",
+   "template": null,
+   "family": "swap",
+   "step": "mid-june",
+   "covers": []
+  },
+  "E:cross_currency_swap:increase-without-the-dollars": {
+   "status": "blocked",
+   "message": "The principal a trade exchanges at its settlement is part of the cash the trade needs. Terminal: \"Treasury is short 5,400,000.00 USD: the package needs 5,500,000.00 USD (purchases 0.00 USD, principal exchanged when the trade settles 5,500,000.00 USD, fees 0.00 USD, margin and collateral 0.00 USD, reserved 0.00 USD) and 100,000.00 USD is available. Add Treasury funding or a borrowing leg, convert currency, or reduce the size.\"",
+   "ms": 90,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_swap",
+   "template": null,
+   "family": "swap",
+   "step": "increase-without-the-dollars",
+   "covers": [
+    "notional exchange",
+    "insufficient cash"
+   ]
+  },
+  "E:cross_currency_swap:euro-rises": {
+   "status": "passed",
+   "message": "",
+   "ms": 37,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_swap",
+   "template": null,
+   "family": "swap",
+   "step": "euro-rises",
+   "covers": [
+    "reporting currency"
+   ]
+  },
+  "E:cross_currency_swap:mark": {
+   "status": "passed",
+   "message": "",
+   "ms": 47,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_swap",
+   "template": null,
+   "family": "swap",
+   "step": "mark",
+   "covers": [
+    "manual mark"
+   ]
+  },
+  "E:cross_currency_swap:veterans-day": {
+   "status": "passed",
+   "message": "",
+   "ms": 30,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_swap",
+   "template": null,
+   "family": "swap",
+   "step": "veterans-day",
+   "covers": [
+    "payment across a holiday"
+   ]
+  },
+  "E:cross_currency_swap:dollar-interest": {
+   "status": "passed",
+   "message": "",
+   "ms": 42,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_swap",
+   "template": null,
+   "family": "swap",
+   "step": "dollar-interest",
+   "covers": [
+    "fixed payment",
+    "payment across a holiday"
+   ]
+  },
+  "E:cross_currency_swap:first-of-december": {
+   "status": "passed",
+   "message": "",
+   "ms": 45,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_swap",
+   "template": null,
+   "family": "swap",
+   "step": "first-of-december",
+   "covers": []
+  },
+  "E:cross_currency_swap:partial-termination": {
+   "status": "passed",
+   "message": "",
+   "ms": 46,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_swap",
+   "template": null,
+   "family": "swap",
+   "step": "partial-termination",
+   "covers": [
+    "reduce",
+    "partial termination",
+    "notional exchange"
+   ]
+  },
+  "E:cross_currency_swap:termination-settles-with-its-principal": {
+   "status": "passed",
+   "message": "",
+   "ms": 23,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_swap",
+   "template": null,
+   "family": "swap",
+   "step": "termination-settles-with-its-principal",
+   "covers": [
+    "settlement",
+    "notional exchange"
+   ]
+  },
+  "E:cross_currency_swap:treasury-screens-after-termination": {
+   "status": "passed",
+   "message": "",
+   "ms": 21,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_swap",
+   "template": null,
+   "family": "swap",
+   "step": "treasury-screens-after-termination",
+   "covers": [
+    "partial termination"
+   ]
+  },
+  "E:cross_currency_swap:mid-january": {
+   "status": "passed",
+   "message": "",
+   "ms": 20,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_swap",
+   "template": null,
+   "family": "swap",
+   "step": "mid-january",
+   "covers": []
+  },
+  "E:cross_currency_swap:euro-falls": {
+   "status": "passed",
+   "message": "",
+   "ms": 19,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_swap",
+   "template": null,
+   "family": "swap",
+   "step": "euro-falls",
+   "covers": [
+    "reporting currency"
+   ]
+  },
+  "E:cross_currency_swap:final-interest-maturity-and-exchange": {
+   "status": "passed",
+   "message": "",
+   "ms": 17,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_swap",
+   "template": null,
+   "family": "swap",
+   "step": "final-interest-maturity-and-exchange",
+   "covers": [
+    "fixed payment",
+    "maturity",
+    "close",
+    "notional exchange"
+   ]
+  },
+  "E:cross_currency_swap:treasury-screens-after-maturity": {
+   "status": "passed",
+   "message": "",
+   "ms": 11,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_swap",
+   "template": null,
+   "family": "swap",
+   "step": "treasury-screens-after-maturity",
+   "covers": [
+    "maturity"
+   ]
+  },
+  "E:cross_currency_swap:restart": {
+   "status": "passed",
+   "message": "",
+   "ms": 38,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_swap",
+   "template": null,
+   "family": "swap",
+   "step": "restart",
+   "covers": [
+    "restart"
+   ]
+  },
+  "E:cross_currency_basis_swap:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 40,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_basis_swap",
+   "template": null,
+   "family": "swap",
+   "step": "setup",
+   "covers": []
+  },
+  "E:cross_currency_basis_swap:record-agreement": {
+   "status": "passed",
+   "message": "",
+   "ms": 23,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_basis_swap",
+   "template": null,
+   "family": "swap",
+   "step": "record-agreement",
+   "covers": [
+    "collateral"
+   ]
+  },
+  "E:cross_currency_basis_swap:register-under-agreement": {
+   "status": "passed",
+   "message": "",
+   "ms": 19,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_basis_swap",
+   "template": null,
+   "family": "swap",
+   "step": "register-under-agreement",
+   "covers": [
+    "registration"
+   ]
+  },
+  "E:cross_currency_basis_swap:open": {
+   "status": "passed",
+   "message": "",
+   "ms": 35,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_basis_swap",
+   "template": null,
+   "family": "swap",
+   "step": "open",
+   "covers": [
+    "open",
+    "before the effective date"
+   ]
+  },
+  "E:cross_currency_basis_swap:no-mark-no-call": {
+   "status": "passed",
+   "message": "",
+   "ms": 26,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_basis_swap",
+   "template": null,
+   "family": "swap",
+   "step": "no-mark-no-call",
+   "covers": [
+    "variation margin"
+   ]
+  },
+  "E:cross_currency_basis_swap:increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 30,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_basis_swap",
+   "template": null,
+   "family": "swap",
+   "step": "increase",
+   "covers": [
+    "increase",
+    "notional exchange"
+   ]
+  },
+  "E:cross_currency_basis_swap:initial-exchange": {
+   "status": "passed",
+   "message": "",
+   "ms": 24,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_basis_swap",
+   "template": null,
+   "family": "swap",
+   "step": "initial-exchange",
+   "covers": [
+    "notional exchange"
+   ]
+  },
+  "E:cross_currency_basis_swap:mark": {
+   "status": "passed",
+   "message": "",
+   "ms": 22,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_basis_swap",
+   "template": null,
+   "family": "swap",
+   "step": "mark",
+   "covers": [
+    "manual mark"
+   ]
+  },
+  "E:cross_currency_basis_swap:variation-margin-posted-by-treasury": {
+   "status": "passed",
+   "message": "",
+   "ms": 49,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_basis_swap",
+   "template": null,
+   "family": "swap",
+   "step": "variation-margin-posted-by-treasury",
+   "covers": [
+    "variation margin",
+    "collateral"
+   ]
+  },
+  "E:cross_currency_basis_swap:first-quarter": {
+   "status": "passed",
+   "message": "",
+   "ms": 54,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_basis_swap",
+   "template": null,
+   "family": "swap",
+   "step": "first-quarter",
+   "covers": [
+    "floating payment"
+   ]
+  },
+  "E:cross_currency_basis_swap:mid-july": {
+   "status": "passed",
+   "message": "",
+   "ms": 29,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_basis_swap",
+   "template": null,
+   "family": "swap",
+   "step": "mid-july",
+   "covers": []
+  },
+  "E:cross_currency_basis_swap:yen-weakens": {
+   "status": "passed",
+   "message": "",
+   "ms": 35,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_basis_swap",
+   "template": null,
+   "family": "swap",
+   "step": "yen-weakens",
+   "covers": [
+    "reporting currency"
+   ]
+  },
+  "E:cross_currency_basis_swap:holiday-in-tokyo": {
+   "status": "passed",
+   "message": "",
+   "ms": 27,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_basis_swap",
+   "template": null,
+   "family": "swap",
+   "step": "holiday-in-tokyo",
+   "covers": [
+    "payment across a holiday"
+   ]
+  },
+  "E:cross_currency_basis_swap:second-quarter": {
+   "status": "passed",
+   "message": "",
+   "ms": 34,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_basis_swap",
+   "template": null,
+   "family": "swap",
+   "step": "second-quarter",
+   "covers": [
+    "floating payment",
+    "payment across a holiday"
+   ]
+  },
+  "E:cross_currency_basis_swap:early-october": {
+   "status": "passed",
+   "message": "",
+   "ms": 38,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_basis_swap",
+   "template": null,
+   "family": "swap",
+   "step": "early-october",
+   "covers": []
+  },
+  "E:cross_currency_basis_swap:partial-termination": {
+   "status": "passed",
+   "message": "",
+   "ms": 42,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_basis_swap",
+   "template": null,
+   "family": "swap",
+   "step": "partial-termination",
+   "covers": [
+    "reduce",
+    "partial termination",
+    "notional exchange"
+   ]
+  },
+  "E:cross_currency_basis_swap:variation-margin-trimmed": {
+   "status": "passed",
+   "message": "",
+   "ms": 29,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_basis_swap",
+   "template": null,
+   "family": "swap",
+   "step": "variation-margin-trimmed",
+   "covers": [
+    "variation margin"
+   ]
+  },
+  "E:cross_currency_basis_swap:termination-settles-with-its-principal": {
+   "status": "passed",
+   "message": "",
+   "ms": 30,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_basis_swap",
+   "template": null,
+   "family": "swap",
+   "step": "termination-settles-with-its-principal",
+   "covers": [
+    "settlement",
+    "notional exchange"
+   ]
+  },
+  "E:cross_currency_basis_swap:third-quarter": {
+   "status": "passed",
+   "message": "",
+   "ms": 31,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_basis_swap",
+   "template": null,
+   "family": "swap",
+   "step": "third-quarter",
+   "covers": [
+    "floating payment"
+   ]
+  },
+  "E:cross_currency_basis_swap:mid-february": {
+   "status": "passed",
+   "message": "",
+   "ms": 23,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_basis_swap",
+   "template": null,
+   "family": "swap",
+   "step": "mid-february",
+   "covers": []
+  },
+  "E:cross_currency_basis_swap:yen-strengthens": {
+   "status": "passed",
+   "message": "",
+   "ms": 31,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_basis_swap",
+   "template": null,
+   "family": "swap",
+   "step": "yen-strengthens",
+   "covers": [
+    "reporting currency"
+   ]
+  },
+  "E:cross_currency_basis_swap:final-exchange-unfunded": {
+   "status": "passed",
+   "message": "",
+   "ms": 40,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_basis_swap",
+   "template": null,
+   "family": "swap",
+   "step": "final-exchange-unfunded",
+   "covers": [
+    "floating payment",
+    "notional exchange",
+    "insufficient cash"
+   ]
+  },
+  "E:cross_currency_basis_swap:funded-matured-and-exchanged": {
+   "status": "passed",
+   "message": "",
+   "ms": 21,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_basis_swap",
+   "template": null,
+   "family": "swap",
+   "step": "funded-matured-and-exchanged",
+   "covers": [
+    "maturity",
+    "close",
+    "notional exchange",
+    "collateral",
+    "insufficient cash"
+   ]
+  },
+  "E:cross_currency_basis_swap:restart": {
+   "status": "passed",
+   "message": "",
+   "ms": 73,
+   "commit": "d955ccf+changes",
+   "at": "2026-10-13T16:32:56.547Z",
+   "product": "cross_currency_basis_swap",
    "template": null,
    "family": "swap",
    "step": "restart",
@@ -17350,9 +17350,9 @@
    }
   },
   "cross_currency_swap": {
-   "at": "2026-10-13T16:28:49.398Z",
-   "commit": "008a80d+changes",
-   "ms": 532,
+   "at": "2026-10-13T16:32:56.547Z",
+   "commit": "d955ccf+changes",
+   "ms": 994,
    "family": "swap",
    "steps": 22,
    "ran": 22,
@@ -17366,9 +17366,9 @@
    }
   },
   "cross_currency_basis_swap": {
-   "at": "2026-10-13T16:28:49.398Z",
-   "commit": "008a80d+changes",
-   "ms": 636,
+   "at": "2026-10-13T16:32:56.547Z",
+   "commit": "d955ccf+changes",
+   "ms": 806,
    "family": "swap",
    "steps": 24,
    "ran": 24,
@@ -17574,5 +17574,5 @@
    }
   }
  },
- "updatedAt": "2026-10-13T16:28:49.398Z"
+ "updatedAt": "2026-10-13T16:32:56.547Z"
 }

@@ -1194,6 +1194,19 @@ async function settle(b, quietMs = 400) {
   }
   throw new Error(`The page kept requesting for 20 seconds (${b.net.busy.size} in flight).`);
 }
+/**
+ * Click and return the API answer it causes, as ui.respondsTo does, except that a click that fails cannot leave the
+ * wait for the answer behind as an unhandled rejection (which would end the whole run, not just the case).
+ */
+async function answerTo(b, method, pathPattern, click) {
+  const wait = b.page.waitForResponse((r) => r.request().method() === method && pathPattern.test(new URL(r.url()).pathname));
+  wait.catch(() => {});
+  await click();
+  const res = await wait;
+  let body = null;
+  try { body = await res.json(); } catch { /* no body */ }
+  return { ok: res.ok(), status: res.status(), body };
+}
 /** Go to a screen of the selected Book and wait until its data has loaded. */
 async function show(b, hash) {
   await b.ui.closeOverlays().catch(() => {});
@@ -1676,7 +1689,7 @@ export async function historyEdits(b, c) {
     const settleCal = ui.select(dlg, 'Settlement calendar');
     await settleCal.selectOption({ label: (await settleCal.locator('option').allInnerTexts()).find((x) => x.startsWith('USBOND:')) });
     await ui.input(dlg, 'Settlement convention').fill('2');
-    let saved = await ui.respondsTo('PUT', /^\/api\/instruments\//, () => ui.button(dlg, 'Save changes').click());
+    let saved = await answerTo(b, 'PUT', /^\/api\/instruments\//, () => ui.button(dlg, 'Save changes').click());
     c.ok(saved.ok, '(a) the instrument edit is saved', saved.body?.error);
     await dlg.waitFor({ state: 'hidden' });
     // The traded call: its contract terms cannot be changed in the form.
@@ -1700,10 +1713,12 @@ export async function historyEdits(b, c) {
     await show(b, '#/settings');
     const cal = page.locator('main').locator('.panel', { hasText: 'Add an extra holiday' });
     const calSelect = cal.locator('select').first();
+    await calSelect.locator('option', { hasText: /^US: / }).first().waitFor({ state: 'attached' });
     await calSelect.selectOption({ label: (await calSelect.locator('option').allInnerTexts()).find((x) => x.startsWith('US:')) });
     for (const day of ['2026-03-03', '2026-03-09']) {
       await cal.getByPlaceholder('YYYY-MM-DD').fill(day);
-      const r = await ui.respondsTo('PUT', /\/holidays$/, () => ui.button(cal, 'Add holiday').click());
+      await ui.button(cal, 'Add holiday').and(page.locator(':enabled')).waitFor();
+      const r = await answerTo(b, 'PUT', /\/holidays$/, () => ui.button(cal, 'Add holiday').click());
       c.ok(r.ok, `(b) ${day} is entered as a US holiday`, r.body?.error);
       await ui.toast(/Holiday added to US/);
     }
@@ -1721,12 +1736,12 @@ export async function historyEdits(b, c) {
     await assumption(b, 'Short selling', 'Cash collateral on borrowed securities').nth(0).fill('1.5');
     await assumption(b, 'Confirmation tolerances', 'Leg price').nth(0).fill('2');
     await assumption(b, 'Confirmation tolerances', 'Package totals').nth(0).fill('2');
-    const put = await ui.respondsTo('PUT', /^\/api\/books\//, () => ui.button(page.locator('main'), 'Save assumptions').click());
+    const put = await answerTo(b, 'PUT', /^\/api\/books\//, () => ui.button(page.locator('main'), 'Save assumptions').click());
     c.ok(put.ok, '(c) the Book\'s assumptions are saved', put.body?.error);
     await show(b, '#/data/refresh');
     await ui.input(page.locator('main'), 'Prices and quotes').fill('2');
     await ui.input(page.locator('main'), 'Screen polling').fill('6');
-    const rf = await ui.respondsTo('PUT', /^\/api\/data\/refresh$/, () => ui.button(page.locator('main'), 'Save refresh settings').click());
+    const rf = await answerTo(b, 'PUT', /^\/api\/data\/refresh$/, () => ui.button(page.locator('main'), 'Save refresh settings').click());
     c.ok(rf.ok, '(c) the refresh timings are saved', rf.body?.error);
     await b.tick();
     b.historyIntact(c, stored, '(c) after the settings change', { newEvents: ['book.settings'] });
@@ -1744,7 +1759,7 @@ export async function historyEdits(b, c) {
     await dlg.waitFor();
     await ui.select(dlg, 'Settlement calendar').selectOption({ index: 0 });
     await ui.input(dlg, 'Settlement convention').fill('');
-    saved = await ui.respondsTo('PUT', /^\/api\/instruments\//, () => ui.button(dlg, 'Save changes').click());
+    saved = await answerTo(b, 'PUT', /^\/api\/instruments\//, () => ui.button(dlg, 'Save changes').click());
     c.ok(saved.ok, 'the instrument\'s own settlement calendar and lag are taken off', saved.body?.error);
     await dlg.waitFor({ state: 'hidden' });
     await show(b, '#/markets/US_CASH');
