@@ -4124,7 +4124,16 @@ const cspPage = (qty, strike, extra = {}) => ({ template: 'Cash-Secured Put', un
 const cashSecuredPut = {
   template: 'cash_secured_put',
   title: 'Cash-secured put on Kestrel Logistics: exercise cash reserved and put written as one package, partial fills, assignment, roll',
-  matrix: { ...TEMPLATE_MATRIX },
+  matrix: {
+    ...TEMPLATE_MATRIX,
+    ticket: 'Strategies page (Cash-Secured Put): Trading owner and intent, Instrument and template, Option contracts (expiration, put strike), Order and funding, Hedge panel; then the package preview (legs editable). The strategy instance drawer for Cancel working legs, Retry, Unwind, Accept, Resize, Roll and Close',
+    manualInputs: ['option expiration and put strike (no option chain is supplied for the fictional stock)', 'limit price of the put leg, changed in the preview', 'investment Strategy, holding period and objective for the hedge request', 'loan rate when the shortfall is borrowed'],
+    automaticInputs: [...TEMPLATE_MATRIX.automaticInputs, 'contracts from the share quantity and the contract deliverable (100 shares)', 'exercise cash reserved: contracts x deliverable x strike', 'underlying close for the expiration date (close fixture)'],
+    settlement: 'Premium T+1 on the US calendar; the reservation is set aside at once and released when the put is bought back, lapses or is assigned; shares received on assignment are paid for T+1 at the strike',
+    lifecycle: 'The written put waits for its cash reservation and is scaled to it; partial fills; cancelled remainder needs attention; retry, unwind and accept; resize; roll to April; assignment at expiry in the money (simulated delivery of the shares, paid at the strike); lapse out of the money; close by share, exact amount and in full',
+    accounting: 'Written puts as negative option positions; premium realized at lapse, assignment or buy-back; commissions expensed; shares received on assignment at the strike',
+    collateral: 'Exercise cash (contracts x deliverable x strike) reserved from free cash while the put is open; nothing else',
+  },
   start: MAR(2),
   settlementCheck: { lag: 1, holidays: [] },
   book: book('Matrix template cash-secured put'),

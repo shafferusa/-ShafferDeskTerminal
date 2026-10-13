@@ -296,3 +296,4 @@
 - 2026-10-13T21:22Z | t2 | +0.2 | trading path 2 (Marketplace trade, Hedge popup, Execute now) passes at engine, API and browser
 - 2026-10-13T21:23Z | coord | +0 | PAUSED on the owner's instruction; state written to RESUME.md
 - 2026-10-13T21:25Z | coord | +0 | resumed: templates repair, FX regression test, whole-interface check
+- 2026-10-13T21:32Z | t1b | +0.5 | templates spec loads again: cash_secured_put metadata completed; npm test loads every suite (785/793, failures listed in t1b PROGRESS)
