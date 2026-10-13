@@ -2751,4 +2751,149 @@ const freightContract = {
   ],
 };
 
-export default [privateEquity, ventureCapital, hedgeFund, infrastructure, directRealEstate, insuranceLinked, varianceSwap, volatilitySwap, correlationSwap, dispersionSwap, recoverySwap, weatherDerivative, creditSpreadForward, creditSpreadOption, freightContract];
+// ---------------------------------------------------------------------------------------------
+// collateral_swap
+// ---------------------------------------------------------------------------------------------
+// A three-month collateral upgrade: we deliver a basket of investment-grade corporate bonds (52,000,000) and receive US
+// Treasury notes (50,000,000), paying 25 bp a year on 50,000,000, ACT/360, monthly. Held as a manual arrangement (the
+// catalog's alternative to booking the two securities loans): the baskets are recorded on the contract, not moved into or
+// out of holdings. Position-level collateral terms: a fixed independent amount of 500,000 posted by us. Fees are worked out
+// from the terms for each period whose end date is entered by hand; at termination the last period's fee is paid, the
+// baskets go back (recorded) and the independent amount is returned. A fee period ending before what is already paid is refused.
+const CS_POS = { instrument: 'main', lot: 'swap', owner: 'account', direction: 'fee payer' };
+const CS_NAME = 'Collateral upgrade: IG corporates against US Treasuries, April to July 2026 (Ardmore Securities)';
+const csM = (o) => ({ kind: 'collateral_swap', feePaidThrough: '2026-04-01', fees: 0, endDate: '2026-07-01', ...o });
+const collateralSwap = {
+  productId: 'collateral_swap',
+  title: 'Collateral swap (upgrade) IG corporates for US Treasuries, 25 bp on 50,000,000: fees by period, marks, termination, independent amount, as a manual arrangement',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: ['Trading owner', 'Action (Enter the contract)', 'Contracts', 'State a fill price', 'Both baskets and their values, fee notional, fee, payer, day count, start and end (registration)', 'Collateral basis (registration, required)'],
+    manualInputs: ['the baskets and their values (recorded on the contract)', 'marks (value to us, date, source)', 'the end of each fee period'],
+    automaticInputs: [...OTC_TICKET.automaticInputs, 'fee for each period = fee notional x bp / 10,000 x days / 360'],
+    settlement: 'Fees in cash when each period is recorded; nothing else settles: the baskets are not moved by the Terminal',
+    lifecycle: 'The end date waits, visibly, for the termination entered by hand; the last fee is paid with it',
+    accounting: 'Zero cost; fees in Borrowing and funding expenses (we pay for the upgrade); valued at the mark by hand; the securities exchanged are recorded only (to move them, book the two securities loans instead)',
+    collateral: 'Position-level terms: fixed independent amount 500,000 posted at entry, returned at termination',
+  },
+  start: ny('2026-04-01'),
+  settlementCheck: { lag: 2, holidays: ['2026-04-03'] }, // Good Friday: the US (NYSE) calendar is closed
+  book: { name: 'Matrix collateral swap', reportingCcy: 'USD', capital: [{ ccy: 'USD', amount: 3_000_000 }], account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 2_000_000 }] }, settings: SETTINGS },
+  instruments: {
+    main: { productId: 'collateral_swap', name: CS_NAME, symbol: 'CSWAP-IGUST-JUL26', marketView: 'US_CASH', venueType: 'otc', jurisdiction: 'US', underlyingGeo: 'US', tradingCcy: 'USD',
+      terms: { givenBasket: 'Investment-grade US corporate bonds (12 issues, list on file)', givenValue: 52_000_000, receivedBasket: 'US Treasury notes maturing 2028 to 2031', receivedValue: 50_000_000, feeNotional: 50_000_000, feeBp: 25,
+        feePayer: 'us', dayCount: 'ACT/360', startDate: '2026-04-01', endDate: '2026-07-01', valuationMaxAgeDays: 7, counterparty: 'Ardmore Securities',
+        collateralBasis: { type: 'position', independentAmount: { type: 'fixed', amount: 500_000 }, variationMargin: false, threshold: 0, minimumTransfer: 0 } } },
+  },
+  expectAtStart: SIMPLE_START(2_000_000, 1_000_000),
+  steps: [
+    {
+      id: 'enter', covers: ['open', 'collateral'], action: 'ticket', instrument: 'main', side: 'buy', qty: 1, as: 'swap', order: { statedPrice: 0 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 1, estimate: 0, model: 'stated-price', settleDate: '2026-04-06', calendar: 'US', cash: 0, fees: 0, notional: 50_000_000 }],
+          cash: { USD: { margin: 500_000, required: 500_000, available: 2_000_000, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 1, avgPrice: 0 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Bought 1 CSWAP-IGUST-JUL26 @ 0.00 USD', owner: 'account', date: '2026-04-01' },
+          { type: 'manual.collateral', summary: `Collateral posted on ${CS_NAME} under its position-level terms: 500,000.00 USD (independent amount, fixed amount for the position)`, cash: { USD: -500_000 }, owner: 'account' },
+        ],
+        cash: { account: { USD: { settled: 1_500_000, margin: 500_000, availableToTrade: 1_500_000 } } },
+        positions: [{ ...CS_POS, qty: 1, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, margin: 500_000, manual: csM({ valuation: null }) }],
+        holdings: { main: { long: 1, short: 0, net: 1 } },
+        pending: [],
+        lifecycle: [{ type: 'manual.settlement', instrument: 'main', dueDate: '2026-07-01', status: 'pending', owner: 'account' }],
+        otc: [{ instrument: 'main', lot: 'swap', owner: 'account', qty: 1, basis: 'position', mark: null, iaRequired: 500_000, iaPosted: 500_000 }],
+        pnl: { account: { realized: 0, borrowFunding: 0, fees: 0 } },
+        nav: { account: 2_000_000, book: 3_000_000 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 1_500_000, margin: 500_000, assets: 2_000_000, liabilities: 0, netAssets: 2_000_000 } },
+      },
+    },
+    { id: 'a-week-later', action: 'clock', to: ny('2026-04-08'), expect: {} },
+    {
+      id: 'mark-april', covers: 'valuation', action: 'lifecycle', lot: 'swap', body: { action: 'valuation', value: -2_500, asOf: '2026-04-08', source: 'Dealer mark, Ardmore Securities' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of CSWAP-IGUST-JUL26 entered by hand: -2,500.00 USD for the 1 held, as of 2026-04-08, source: Dealer mark, Ardmore Securities. A manual input, not a market quote' }],
+        positions: [{ ...CS_POS, qty: 1, price: -2_500, value: -2_500, unrealized: -2_500, provisional: false, freshness: 'manual', margin: 500_000, manual: csM({ valuation: { date: '2026-04-08', source: 'Dealer mark, Ardmore Securities', stale: false } }) }],
+        otc: [{ instrument: 'main', mark: -2_500, markValue: -2_500 }],
+        pnl: { account: { unrealized: -2_500, total: -2_500 } },
+        nav: { account: 1_997_500, book: 2_997_500 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: -2_500, assets: 1_997_500, netAssets: 1_997_500 } },
+      },
+    },
+    { id: 'first-fee-date', covers: 'valuation', action: 'clock', to: ny('2026-05-01'), expect: { positions: [{ ...CS_POS, qty: 1, value: -2_500, freshness: 'stale', margin: 500_000 }], provisional: { account: true, book: true } } },
+    {
+      // 1 April to 1 May, 30 days: 50,000,000 x 25 bp x 30 / 360 = 10,416.67, paid by us.
+      id: 'fee-april', covers: 'fee', action: 'lifecycle', lot: 'swap', body: { action: 'fee_payment', periodEnd: '2026-05-01' },
+      expect: {
+        events: [{ type: 'manual.fee', summary: 'Collateral swap fee on CSWAP-IGUST-JUL26, 2026-04-01 to 2026-05-01 (30 days), entered by hand: 50,000,000.00 USD x 25 bp x 30 / 360 = 10,416.67 USD paid', cash: { USD: -10_416.67 }, owner: 'account' }],
+        cash: { account: { USD: { settled: 1_489_583.33, availableToTrade: 1_489_583.33 } } },
+        positions: [{ ...CS_POS, qty: 1, value: -2_500, margin: 500_000, manual: csM({ feePaidThrough: '2026-05-01', fees: -10_416.67, valuation: { date: '2026-04-08', source: 'Dealer mark, Ardmore Securities', stale: true } }) }],
+        pnl: { account: { borrowFunding: -10_416.67, total: -12_916.67 } },
+        nav: { account: 1_987_083.33, book: 2_987_083.33 },
+        balance: { account: { cash: 1_489_583.33, assets: 1_987_083.33, netAssets: 1_987_083.33 } },
+      },
+    },
+    {
+      id: 'fee-period-already-paid', covers: 'fee', action: 'lifecycle', lot: 'swap', body: { action: 'fee_payment', periodEnd: '2026-04-15' },
+      status: 'blocked', reason: 'Fees are already paid through 1 May; a period ending earlier cannot be paid again.',
+      expect: { refused: 'Fees are paid through 2026-05-01; the period must end after that' },
+    },
+    {
+      id: 'mark-may', covers: 'valuation', action: 'lifecycle', lot: 'swap', body: { action: 'valuation', value: -3_000, asOf: '2026-05-01', source: 'Dealer mark, Ardmore Securities' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of CSWAP-IGUST-JUL26 entered by hand: -3,000.00 USD for the 1 held, as of 2026-05-01, source: Dealer mark, Ardmore Securities. A manual input, not a market quote' }],
+        positions: [{ ...CS_POS, qty: 1, price: -3_000, value: -3_000, unrealized: -3_000, freshness: 'manual', margin: 500_000, manual: csM({ feePaidThrough: '2026-05-01', fees: -10_416.67, valuation: { date: '2026-05-01', source: 'Dealer mark, Ardmore Securities', stale: false } }) }],
+        otc: [{ instrument: 'main', mark: -3_000, markValue: -3_000 }],
+        pnl: { account: { unrealized: -3_000, total: -13_416.67 } },
+        nav: { account: 1_986_583.33, book: 2_986_583.33 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: -3_000, assets: 1_986_583.33, netAssets: 1_986_583.33 } },
+      },
+    },
+    { id: 'second-fee-date', covers: 'valuation', action: 'clock', to: ny('2026-06-01'), expect: { positions: [{ ...CS_POS, qty: 1, value: -3_000, freshness: 'stale', margin: 500_000 }], provisional: { account: true, book: true } } },
+    {
+      // 1 May to 1 June, 31 days: 50,000,000 x 25 bp x 31 / 360 = 10,763.89.
+      id: 'fee-may', covers: 'fee', action: 'lifecycle', lot: 'swap', body: { action: 'fee_payment', periodEnd: '2026-06-01' },
+      expect: {
+        events: [{ type: 'manual.fee', summary: 'Collateral swap fee on CSWAP-IGUST-JUL26, 2026-05-01 to 2026-06-01 (31 days), entered by hand: 50,000,000.00 USD x 25 bp x 31 / 360 = 10,763.89 USD paid', cash: { USD: -10_763.89 } }],
+        cash: { account: { USD: { settled: 1_478_819.44, availableToTrade: 1_478_819.44 } } },
+        positions: [{ ...CS_POS, qty: 1, value: -3_000, margin: 500_000, manual: csM({ feePaidThrough: '2026-06-01', fees: -21_180.56, valuation: { date: '2026-05-01', source: 'Dealer mark, Ardmore Securities', stale: true } }) }],
+        pnl: { account: { borrowFunding: -21_180.56, total: -24_180.56 } },
+        nav: { account: 1_975_819.44, book: 2_975_819.44 },
+        balance: { account: { cash: 1_478_819.44, assets: 1_975_819.44, netAssets: 1_975_819.44 } },
+      },
+    },
+    {
+      // Wednesday 1 July 2026: the end date. The item waits for the termination entered by hand.
+      id: 'end-date', covers: 'settlement', action: 'clock', to: ny('2026-07-01'),
+      expect: { lifecycle: [{ type: 'manual.settlement', instrument: 'main', dueDate: '2026-07-01', status: 'blocked', owner: 'account', reason: /^Waiting for the termination, entered by hand \(Lifecycle, Termination\): the fee since the last payment is paid and the baskets go back\./ }] },
+    },
+    {
+      // Last fee, 1 June to 1 July, 30 days: 10,416.67. The baskets go back (recorded only); the 500,000 comes back.
+      // Fees over the life: 10,416.67 + 10,763.89 + 10,416.67 = 31,597.23.
+      id: 'termination', covers: ['close', 'collateral'], action: 'lifecycle', lot: 'swap', body: { action: 'settle', note: 'Both baskets returned through the tri-party agent' },
+      expect: {
+        events: [
+          { type: 'manual.fee', summary: 'Collateral swap fee on CSWAP-IGUST-JUL26, 2026-06-01 to 2026-07-01 (30 days), at termination: 50,000,000.00 USD x 25 bp x 30 / 360 = 10,416.67 USD paid', cash: { USD: -10_416.67 }, owner: 'account', date: '2026-07-01' },
+          { type: 'manual.settlement', summary: 'Termination of CSWAP-IGUST-JUL26 entered by hand: US Treasury notes maturing 2028 to 2031 returned to the counterparty and Investment-grade US corporate bonds (12 issues, list on file) returned to us (recorded only: the Terminal moves no securities). Both baskets returned through the tri-party agent', owner: 'account' },
+          { type: 'manual.collateral', summary: `Collateral returned on ${CS_NAME} under its position-level terms: 500,000.00 USD (independent amount, the position ended)`, cash: { USD: 500_000 } },
+        ],
+        cash: { account: { USD: { settled: 1_968_402.77, margin: 0, availableToTrade: 1_968_402.77 } } },
+        positions: [],
+        holdings: { main: null },
+        pending: [],
+        lifecycle: [],
+        otc: [],
+        pnl: { account: { realized: 0, borrowFunding: -31_597.23, unrealized: 0, total: -31_597.23 } },
+        nav: { account: 1_968_402.77, book: 2_968_402.77 },
+        provisional: { account: false, book: false },
+        balance: { account: { cash: 1_968_402.77, margin: null, positions: null, assets: 1_968_402.77, liabilities: 0, netAssets: 1_968_402.77 } },
+      },
+    },
+  ],
+};
+
+export default [privateEquity, ventureCapital, hedgeFund, infrastructure, directRealEstate, insuranceLinked, varianceSwap, volatilitySwap, correlationSwap, dispersionSwap, recoverySwap, weatherDerivative, creditSpreadForward, creditSpreadOption, freightContract, collateralSwap];

@@ -808,6 +808,7 @@ export function manualPlugin(base, { standardSettleDate, paymentCalendarFor }) {
     runTask(app, task, { inst }) {
       if (task.type === 'manual.redemption') return { blocked: `Waiting for the NAV per share of the dealing date ${task.due_date}, entered by hand (Lifecycle, Redemption at NAV).` };
       if (task.type === 'manual.maturity') return { blocked: `Waiting for the redemption of ${label(inst)}, entered by hand (Lifecycle, Redemption at maturity).` };
+      if (task.type === 'manual.settlement' && kindOf(inst) === 'collateral_swap') return { blocked: `Waiting for the termination, entered by hand (Lifecycle, Termination): the fee since the last payment is paid and the baskets go back. ${formulaText(inst)}` };
       if (task.type === 'manual.settlement') return { blocked: `Waiting for the realised value, entered by hand (Lifecycle, ${eventLabel(inst, 'settle')}). ${formulaText(inst)}` };
       return { failed: `No lifecycle handler for ${task.type}.` };
     },

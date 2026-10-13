@@ -232,9 +232,11 @@ async function previewFor(t, ctx, step) {
     const lot = ctx.lot(step.lot);
     const s = await t.strategy(lot.strategyId);
     const want = step.instrument || lot.instrument;
-    const p = s.positions.find((x) => (want && ctx.instruments[want] ? x.instrument.id === ctx.instruments[want].id : ['loan', 'repo'].includes(x.family)));
+    const p = s.positions.find((x) => (want && ctx.instruments[want] ? x.instrument.id === ctx.instruments[want].id : ['loan', 'repo', 'secloan'].includes(x.family)));
     if (!p) throw new Error(`"${step.lot}" holds no open loan, deposit or repo to repay.`);
-    const input = { bookId: ctx.bookId, unitId: p.unitId, template: 'custom', attachTo: lot.strategyId, legs: [{ kind: p.family === 'repo' ? 'repo_close' : 'repay', action: p.family === 'repo' ? 'close_repo' : 'repay_cash', purpose: 'financing', targetPositionId: p.positionId, qty: step.amount ?? Math.abs(p.qty) }] };
+    // r1: a securities loan's buttons (Treasury page): Take back (securities lent, recall_sec) or Return (securities borrowed, return_sec).
+    const KIND = { repo: ['repo_close', 'close_repo'], secloan: p.qty < 0 ? ['recall_sec', 'recall_sec'] : ['return_sec', 'return_sec'] }[p.family] || ['repay', 'repay_cash'];
+    const input = { bookId: ctx.bookId, unitId: p.unitId, template: 'custom', attachTo: lot.strategyId, legs: [{ kind: KIND[0], action: KIND[1], purpose: 'financing', targetPositionId: p.positionId, qty: step.amount ?? Math.abs(p.qty) }] };
     return { lot: lot.name, pv: await t.preview(input) };
   }
   if (step.action === 'roll') {

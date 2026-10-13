@@ -670,4 +670,213 @@ const lookbackOption = {
   ],
 };
 
-export default [barrierOption, asianOption, lookbackOption];
+// ---------------------------------------------------------------------------------------------
+// basket_option
+// ---------------------------------------------------------------------------------------------
+// Two options on an equal-weight basket of three fictional US rail stocks, owned by Treasury and dealt with Dealer N.
+// The basket is a composite the Terminal does not compute: its level (100.00 on 2 March 2026, the average of the three
+// price ratios x 100) is agreed with the dealer at expiry and entered by hand on each expiry item; the payoff is worked
+// out from it against the strike, per unit of the level. Expiry Wednesday 16 September 2026, cash, paid T+1.
+//   - a basket call struck at 100, bought on 10,000 units; position-level terms: variation margin over 20,000.
+//   - a basket put struck at 95, written on 10,000 units; position-level terms: independent amount 10% of strike notional.
+// The level at expiry is 108.40: the call pays 8.40 a unit, 84,000; the put lapses.
+const BASKET = 'Equal-weight basket of Halden Rail (HRSI), Northway Rail (NRWY) and Coastal Transit (CSTX): 100.00 on 2 Mar 2026, average of the three price ratios x 100';
+const BCALL = 'US rail basket call 100, 16 Sep 2026 (Dealer N)';
+const BPUT = 'US rail basket put 95, 16 Sep 2026 (Dealer N)';
+const basketOption = {
+  productId: 'basket_option',
+  title: 'Rail stock basket options owned by Treasury: call 100 bought, put 95 written; the basket level at expiry entered by hand',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields.filter((f) => !f.startsWith('Underlying instrument')), 'Payoff: Basket', 'Underlying reference: the basket, its components and weights'],
+    automaticInputs: ['premium settlement date, T+2 on the US calendar', 'commission per unit from the Book fee schedule', 'variation margin and independent amount from the position-level terms', 'the payoff, worked out from the basket level entered against the strike'],
+    manualInputs: ['premium agreed with the dealer (stated fill price)', 'marks entered by hand (Manual entry)', 'the basket level at expiry, entered by hand on each expiry item (Accounting, Pending, Settlement value)'],
+    settlement: 'Premium and commission T+2 on the US calendar; the cash settlement T+1 after expiry',
+    lifecycle: 'At expiry each item waits for the basket level; once entered, the call pays (level - strike) x units and the put lapses; held across Independence Day and Labor Day; nothing scheduled afterwards',
+    accounting: 'Premium per unit of level x units; payoff from the level entered; premium realized at expiry; commission expensed; marks by hand drive unrealized P&L. The notional is shown at the strike: no basket price is available',
+    collateral: 'Call (bought): position-level terms, variation margin over 20,000, received from the dealer and returned at settlement. Put (written): independent amount 10% x 10,000 x 95 = 95,000, returned at expiry',
+  },
+  start: at('2026-03-02'),
+  settlementCheck: { lag: 2, holidays: [] },
+  book: {
+    name: 'Matrix basket option', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 3_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 500_000 }] },
+    settings: { fees: { otcoption: { perUnit: 0.05, minimum: 0, bps: 0 } }, fill: FILL, settlement: { otcoption: 2 } },
+  },
+  instruments: {
+    call: {
+      productId: 'basket_option', name: BCALL, symbol: 'RAIL-BC100-SEP26', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 1,
+      terms: { right: 'C', strike: 100, expiration: '2026-09-16', optionType: 'basket', underlyingDescription: BASKET, exercise: 'european', settlement: 'cash', counterparty: 'Dealer N',
+        collateralBasis: { type: 'position', independentAmount: { type: 'none' }, variationMargin: true, threshold: 20_000, minimumTransfer: 5_000 } },
+    },
+    put: {
+      productId: 'basket_option', name: BPUT, symbol: 'RAIL-BP95-SEP26', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 1,
+      terms: { right: 'P', strike: 95, expiration: '2026-09-16', optionType: 'basket', underlyingDescription: BASKET, exercise: 'european', settlement: 'cash', counterparty: 'Dealer N',
+        collateralBasis: { type: 'position', independentAmount: { type: 'pct', pct: 0.10 }, variationMargin: false, threshold: 0, minimumTransfer: 0 } },
+    },
+  },
+  expectAtStart: usdStart(500_000, 2_500_000),
+  steps: [
+    otcTicket({
+      id: 'buy-basket-call', covers: 'open', owner: 'treasury', instrument: 'call', side: 'buy', qty: 10_000, premium: 4.20, as: 'calls',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'call', qty: 10_000, estimate: 4.2, model: 'stated-price', settleDate: '2026-03-04', calendar: 'US', cash: -42_000, fees: 500, notional: 1_000_000 }], // 10,000 x 4.20; 10,000 x 0.05; 10,000 x 100 (at the strike)
+          cash: { USD: { purchases: 42_000, fees: 500, margin: 0, required: 42_500, available: 2_500_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 10_000, avgPrice: 4.2 }] },
+        events: [{ type: 'strategy.submitted', owner: 'treasury' }, { type: 'trade.fill', summary: 'Bought 10,000 RAIL-BC100-SEP26 @ 4.20 USD', owner: 'treasury', date: '2026-03-02' }],
+        cash: { treasury: { USD: { settled: 2_500_000, unsettled: -42_500, availableToTrade: 2_457_500, availableToWithdraw: 2_457_500 } } },
+        positions: [{ instrument: 'call', lot: 'calls', owner: 'treasury', direction: 'long', qty: 10_000, avgCost: 4.2, cost: 42_000, price: null, value: null, unrealized: null, provisional: true, notional: null, margin: 0 }], // no basket price: no notional on the position
+        holdings: { call: { long: 10_000, short: 0, net: 10_000 } },
+        pending: [{ instrument: 'call', owner: 'treasury', dueDate: '2026-03-04', amount: -42_500, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'option.expiry', instrument: 'call', dueDate: '2026-09-16', status: 'pending', owner: 'treasury' }],
+        otc: [{ instrument: 'call', lot: 'calls', owner: 'treasury', qty: 10_000, basis: 'position', mark: null, iaRequired: 0, iaPosted: 0, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: 0, unrealized: 0, total: 0 }, treasury: { realized: 0, commissions: -500, unrealized: 0, total: -500 }, book: { commissions: -500, total: -500 } },
+        nav: { account: 500_000, treasury: 2_499_500, book: 2_999_500 },
+        provisional: { account: false, book: true },
+        balance: {
+          account: { cash: 500_000, assets: 500_000, liabilities: 0, netAssets: 500_000 },
+          treasury: { cash: 2_500_000, payable: 42_500, positions: 42_000, assets: 2_542_000, liabilities: 42_500, netAssets: 2_499_500 },
+        },
+      },
+    }),
+    { id: 'half-an-hour-later', action: 'clock', to: at('2026-03-02', '15:30'), expect: {} },
+    otcTicket({
+      // Written: independent amount 10% x 10,000 x 95 = 95,000.
+      id: 'write-basket-put', covers: ['write', 'collateral'], owner: 'treasury', instrument: 'put', side: 'sell', qty: 10_000, premium: 2.10, as: 'puts',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'put', qty: 10_000, estimate: 2.1, model: 'stated-price', settleDate: '2026-03-04', calendar: 'US', cash: 21_000, fees: 500, notional: 950_000 }], // 10,000 x 95
+          cash: { USD: { proceeds: 21_000, fees: 500, margin: 95_000, required: 95_500, available: 2_457_500, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 10_000, avgPrice: 2.1 }] },
+        events: [
+          { type: 'strategy.submitted', owner: 'treasury' },
+          { type: 'trade.fill', summary: 'Sold 10,000 RAIL-BP95-SEP26 @ 2.10 USD', owner: 'treasury' },
+          { type: 'otcoption.collateral', summary: `Collateral posted on ${BPUT} under its position-level terms: 95,000.00 USD (independent amount, 10.00% of 950,000.00 USD notional)`, cash: { USD: -95_000 }, owner: 'treasury' },
+        ],
+        cash: { treasury: { USD: { settled: 2_405_000, unsettled: -22_000, margin: 95_000, availableToTrade: 2_383_000, availableToWithdraw: 2_362_500 } } }, // -42,500 + 20,500; 2,405,000 - 42,500
+        positions: [
+          { instrument: 'call', lot: 'calls', qty: 10_000 },
+          { instrument: 'put', lot: 'puts', owner: 'treasury', direction: 'short', qty: -10_000, avgCost: 2.1, cost: -21_000, price: null, value: null, unrealized: null, provisional: true, notional: null, margin: 95_000 },
+        ],
+        holdings: { put: { long: 0, short: 10_000, net: -10_000 } },
+        pending: [
+          { instrument: 'call', owner: 'treasury', dueDate: '2026-03-04', amount: -42_500, ccy: 'USD', into: 'cash' },
+          { instrument: 'put', owner: 'treasury', dueDate: '2026-03-04', amount: 20_500, ccy: 'USD', into: 'cash' },
+        ],
+        lifecycle: [{ type: 'option.expiry', instrument: 'call', dueDate: '2026-09-16', status: 'pending' }, { type: 'option.expiry', instrument: 'put', dueDate: '2026-09-16', status: 'pending' }],
+        otc: [{ instrument: 'call' }, { instrument: 'put', lot: 'puts', owner: 'treasury', qty: -10_000, basis: 'position', iaRequired: 95_000, iaPosted: 95_000, vmPosted: 0, vmHeld: 0 }],
+        pnl: { treasury: { commissions: -1_000, total: -1_000 }, book: { commissions: -1_000, total: -1_000 } },
+        nav: { treasury: 2_499_000, book: 2_999_000 }, // 2,405,000 + 95,000 + 20,500 - 42,500 + 42,000 - 21,000
+        balance: { treasury: { cash: 2_405_000, margin: 95_000, receivable: 20_500, payable: 42_500, positions: 21_000, assets: 2_541_500, liabilities: 42_500, netAssets: 2_499_000 } },
+      },
+    }),
+    {
+      id: 'mark-call', covers: 'manual mark', action: 'manual_price', instrument: 'call', value: 6.80, note: 'Dealer N mark, by hand',
+      expect: {
+        positions: [{ instrument: 'call', lot: 'calls', price: 6.8, value: 68_000, unrealized: 26_000, provisional: false }, { instrument: 'put', lot: 'puts' }],
+        otc: [{ instrument: 'call', mark: 6.8, markValue: 68_000 }, { instrument: 'put' }],
+        pnl: { treasury: { unrealized: 26_000, total: 25_000 }, book: { unrealized: 26_000, total: 25_000 } },
+        nav: { treasury: 2_525_000, book: 3_025_000 },
+        balance: { treasury: { positions: 47_000, assets: 2_567_500, netAssets: 2_525_000 } }, // 68,000 - 21,000
+      },
+    },
+    {
+      id: 'mark-put', covers: 'manual mark', action: 'manual_price', instrument: 'put', value: 1.10, note: 'Dealer N mark, by hand',
+      expect: {
+        positions: [{ instrument: 'call', lot: 'calls' }, { instrument: 'put', lot: 'puts', price: 1.1, value: -11_000, unrealized: 10_000, provisional: false }],
+        otc: [{ instrument: 'call' }, { instrument: 'put', mark: 1.1, markValue: -11_000 }],
+        pnl: { treasury: { unrealized: 36_000, total: 35_000 }, book: { unrealized: 36_000, total: 35_000 } },
+        nav: { treasury: 2_535_000, book: 3_035_000 },
+        provisional: { book: false },
+        balance: { treasury: { positions: 57_000, assets: 2_577_500, netAssets: 2_535_000 } },
+      },
+    },
+    {
+      // Call marked at 68,000: 48,000 beyond its 20,000 threshold, posted to Treasury by Dealer N.
+      id: 'variation-margin-received', covers: 'variation margin', action: 'clock', to: eod('2026-03-02'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under position-level terms: 48,000.00 USD received. Netting set of 1 position marked at 68,000.00 USD; threshold 20,000.00 USD.', owner: 'treasury' }],
+        cash: { treasury: { USD: { restricted: 48_000 } } },
+        otc: [{ instrument: 'call', vmHeld: 48_000, vmExposure: 68_000, vmStatus: 'ok' }, { instrument: 'put' }],
+        balance: { treasury: { restricted: 48_000, collateralReceived: 48_000, assets: 2_625_500, liabilities: 90_500, netAssets: 2_535_000 } },
+      },
+    },
+    { id: 'treasury-screens', covers: 'owner screens', action: 'owner_screens', owner: 'treasury', expect: {} },
+    {
+      id: 'settle-premiums', covers: 'settlement', action: 'clock', to: at('2026-03-04'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 20,500.00 USD into settled cash', cash: { USD: 20_500 }, owner: 'treasury' },
+          { type: 'settlement.pay', summary: 'paid 42,500.00 USD from settled cash', cash: { USD: -42_500 }, owner: 'treasury' },
+        ],
+        cash: { treasury: { USD: { settled: 2_383_000, unsettled: 0, availableToTrade: 2_383_000, availableToWithdraw: 2_383_000 } } },
+        pending: [],
+        balance: { treasury: { cash: 2_383_000, receivable: null, payable: null, assets: 2_583_000, liabilities: 48_000 } }, // 2,383,000 + 48,000 + 95,000 + 57,000
+      },
+    },
+    {
+      // Expiry, after the close (held across Independence Day and Labor Day): both items wait for the basket level.
+      id: 'expiry-awaits-basket-level', covers: ['expiry', 'holiday'], action: 'clock', to: eod('2026-09-16'),
+      expect: {
+        events: [],
+        lifecycle: [
+          { type: 'option.expiry', instrument: 'call', dueDate: '2026-09-16', status: 'blocked', reason: /^Enter the basket value at expiry \(Equal-weight basket of Halden Rail/ },
+          { type: 'option.expiry', instrument: 'put', dueDate: '2026-09-16', status: 'blocked', reason: /^Enter the basket value at expiry/ },
+        ],
+      },
+    },
+    {
+      // The level agreed with Dealer N, 108.40, entered on the call's item: (108.40 - 100) = 8.40 a unit: 84,000, T+1;
+      // realized 84,000 - 42,000. The 48,000 Dealer N posted goes back.
+      id: 'call-basket-level', covers: ['settlement value', 'expiry', 'cash settlement', 'collateral'], action: 'settlement_value', lot: 'calls', value: 108.40,
+      expect: {
+        events: [
+          { type: 'option.cash_settled', summary: 'Exercised (cash settlement): 10,000 RAIL-BC100-SEP26 at 8.40 USD per unit (basket value 108.40, entered by hand)', owner: 'treasury', date: '2026-09-16' },
+          { type: 'collateral.variation', summary: 'Variation margin under position-level terms: 48,000.00 USD returned to the counterparty. The last position of the netting set ended.', owner: 'treasury' },
+        ],
+        cash: { treasury: { USD: { restricted: 0, unsettled: 84_000, availableToTrade: 2_467_000, availableToWithdraw: 2_383_000 } } },
+        positions: [{ instrument: 'put', lot: 'puts', qty: -10_000 }],
+        holdings: { call: null },
+        pending: [{ instrument: 'call', owner: 'treasury', dueDate: '2026-09-17', amount: 84_000, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'option.expiry', instrument: 'put', dueDate: '2026-09-16', status: 'blocked' }],
+        otc: [{ instrument: 'put', lot: 'puts' }],
+        pnl: { treasury: { realized: 42_000, unrealized: 10_000, total: 51_000 }, book: { realized: 42_000, unrealized: 10_000, total: 51_000 } },
+        nav: { treasury: 2_551_000, book: 3_051_000 }, // 2,383,000 + 95,000 + 84,000 - 11,000
+        balance: { treasury: { restricted: null, collateralReceived: null, receivable: 84_000, positions: -11_000, assets: 2_551_000, liabilities: 0, netAssets: 2_551_000 } },
+      },
+    },
+    {
+      // The same level on the put's item: 108.40 is above 95: it lapses, 21,000 realized; the 95,000 comes back.
+      id: 'put-basket-level', covers: ['settlement value', 'expiry', 'lapse', 'collateral'], action: 'settlement_value', lot: 'puts', value: 108.40,
+      expect: {
+        events: [
+          { type: 'option.expired', summary: 'Expired worthless: 10,000 RAIL-BP95-SEP26 (basket value 108.40, entered by hand)', owner: 'treasury', date: '2026-09-16' },
+          { type: 'otcoption.collateral', summary: `Collateral returned on ${BPUT} under its position-level terms: 95,000.00 USD (independent amount, the position ended)`, cash: { USD: 95_000 }, owner: 'treasury' },
+        ],
+        cash: { treasury: { USD: { settled: 2_478_000, margin: 0, availableToTrade: 2_562_000, availableToWithdraw: 2_478_000 } } },
+        positions: [], holdings: { put: null }, otc: [], lifecycle: [],
+        pnl: { treasury: { realized: 63_000, unrealized: 0, total: 62_000 }, book: { realized: 63_000, unrealized: 0, total: 62_000 } },
+        nav: { treasury: 2_562_000, book: 3_062_000 },
+        balance: { treasury: { cash: 2_478_000, margin: null, positions: null, assets: 2_562_000, netAssets: 2_562_000 } },
+      },
+    },
+    {
+      id: 'settle-cash-settlement', covers: 'settlement', action: 'clock', to: at('2026-09-17'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 84,000.00 USD into settled cash', cash: { USD: 84_000 }, owner: 'treasury' }],
+        cash: { treasury: { USD: { settled: 2_562_000, unsettled: 0, availableToTrade: 2_562_000, availableToWithdraw: 2_562_000 } } },
+        pending: [],
+        balance: { treasury: { cash: 2_562_000, receivable: null } },
+      },
+    },
+    { id: 'treasury-screens-closed', covers: 'owner screens', action: 'owner_screens', owner: 'treasury', expect: {} },
+  ],
+};
+
+export default [barrierOption, asianOption, lookbackOption, basketOption];
