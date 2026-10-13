@@ -639,4 +639,491 @@ const bearCall = {
   ],
 };
 
-export default [bearCall];
+// =====================================================================================================================
+// long_straddle
+// =====================================================================================================================
+// Brightwater Biotech (NYSE) 17 April 2026 40 call and 40 put, physical delivery: buy 5 of each. Both legs are bought,
+// so nothing is reserved: the premium paid is the most the package can lose. The legs do not depend on each other;
+// with Treasury funding both wait on the funding leg. Four strategy instances:
+//   straddle  opened short of cash (refused), then with Treasury funding; the put fills 4 of 5 on its first cycle.
+//             Held over Good Friday (3 April, NYSE closed) to expiry: the stock closes at 46, the call is exercised
+//             (500 shares delivered at 40, settled T+1) and the put lapses, on the same day. The shares are then sold.
+//   retry     1 call and 1 put when the put has no fresh quote: the put expires unfilled; Retry buys it; then Close.
+//   accept    the same failure, Accepted as it stands (the call alone), held to expiry: 100 shares delivered, sold.
+//   unwind    the same failure, Unwound: the call is sold back.
+const STRADDLE_PAGE = (contracts, financing) => ({ template: 'Long Straddle', underlying: 'stock', expiration: '2026-04-17', strikes: { Strike: 40 }, contracts, ...(financing ? { financing } : {}) });
+const straddleInput = (contracts, financing) => templateInput('long_straddle', { underlyingId: '$inst:stock', options: { expiration: '2026-04-17', strikes: { middle: 40 }, contracts }, financing });
+const straddleOne = (as) => ({
+  // 1 call at 2.10 (210) and 1 put estimated at its last 1.85 (185, its quote is ten minutes old), 1.30 commission.
+  action: 'package', as, instrument: 'stock', input: straddleInput(1, { mode: 'treasury' }), strategyPage: STRADDLE_PAGE(1, { mode: 'treasury' }),
+});
+const longStraddle = {
+  template: 'long_straddle',
+  title: 'Long straddle on Brightwater Biotech (NYSE): buy the 17 April 2026 40 call and 40 put',
+  matrix: {
+    ...OPTION_TEMPLATE_MATRIX,
+    settlement: 'Premium of each leg T+1 on the US calendar; shares delivered on exercise T+1 at the strike (settlement.equity = 1); Treasury funding moves at once',
+    lifecycle: 'Expiry items for the call and the put on the same day, from the underlying close on 17 April 2026 (46: the call is exercised with a simulated delivery of the shares, the put lapses); held across Good Friday (3 April); a failed leg leaves the instance needing attention: Retry, Unwind or Accept',
+    accounting: 'Net debit paid; average premium per leg; commission expensed; premium realized on sale, exercise (closed at zero) and lapse; delivered shares carried at the strike and sold',
+    collateral: 'None reserved: both legs are bought (no written option); the cash requirement is the premium and the commission',
+  },
+  start: MAR(2),
+  settlementCheck: { lag: 1, holidays: ['2026-04-03'] }, // US: Good Friday 3 April 2026; no other holiday in March or April
+  book: book('Templates long straddle'),
+  instruments: {
+    stock: stockDraft('Brightwater Biotech Inc.', 'BWB'),
+    c40: equityOption('BWB', 'BWB260417C40', 'C', 40, '2026-04-17'),
+    p40: equityOption('BWB', 'BWB260417P40', 'P', 40, '2026-04-17'),
+  },
+  quotes: {
+    stock: { bid: 39.98, ask: 40.02, last: 40.00, bidSize: 10000, askSize: 10000 },
+    c40: { bid: 2.00, ask: 2.10, last: 2.05, bidSize: 20, askSize: 20 },
+    p40: { bid: 1.80, ask: 1.90, last: 1.85, bidSize: 20, askSize: 4 }, // only 4 contracts displayed at the ask
+  },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 1_000, unsettled: 0, reserved: 0, availableToTrade: 1_000, availableToWithdraw: 1_000 } },
+      treasury: { USD: { settled: 999_000, unsettled: 0, reserved: 0, availableToTrade: 999_000, availableToWithdraw: 999_000 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 1_000, treasury: 999_000, book: 1_000_000 },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+  },
+  steps: [
+    {
+      // 5 calls at 2.10 (1,050) and 5 puts at 1.90 (950), 10 x 0.65 = 6.50: 2,006.50 against 1,000 in the Account.
+      id: 'open-short-of-cash', covers: 'financing', action: 'package', as: 'refused', instrument: 'stock',
+      input: straddleInput(5, null), strategyPage: STRADDLE_PAGE(5, null),
+      status: 'blocked', reason: 'The Account cannot pay for the package: the preview is blocked until financing is chosen.',
+      expect: {
+        refused: 'Alpha is short 1,006.50 USD',
+        preview: {
+          blocking: 1, errors: ['cash'],
+          legs: [
+            { kind: 'trade', action: 'buy', purpose: 'primary', instrument: 'c40', qty: 5, estimate: 2.10, settleDate: '2026-03-03', cash: -1_050, fees: 3.25, dependsOn: [] },
+            { kind: 'trade', action: 'buy', purpose: 'primary', instrument: 'p40', qty: 5, estimate: 1.90, settleDate: '2026-03-03', cash: -950, fees: 3.25, dependsOn: [] },
+          ],
+          cash: { USD: { purchases: 2_000, proceeds: 0, fees: 6.50, reserved: 0, required: 2_006.50, available: 1_000, shortfall: 1_006.50 } },
+        },
+      },
+    },
+    {
+      // Treasury funding of 1,006.50 runs first; both legs wait on it. The call fills 5 at 2.10; the put 4 at 1.90 (the
+      // displayed size), then 1 on the next cycle. Commission on the put: 4 x 0.65 = 2.60, then 0.65.
+      id: 'open', covers: ['open', 'financing', 'partial fill', 'dependency'], action: 'package', as: 'straddle', instrument: 'stock',
+      input: straddleInput(5, { mode: 'treasury' }), strategyPage: STRADDLE_PAGE(5, { mode: 'treasury' }),
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [
+            { kind: 'funding', action: 'treasury_funding', purpose: 'financing', qty: 1_006.50, cash: 1_006.50, dependsOn: [] },
+            { kind: 'trade', action: 'buy', purpose: 'primary', instrument: 'c40', qty: 5, estimate: 2.10, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2026-03-03', calendar: 'US', cash: -1_050, fees: 3.25, dependsOn: [1] },
+            { kind: 'trade', action: 'buy', purpose: 'primary', instrument: 'p40', qty: 5, estimate: 1.90, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2026-03-03', calendar: 'US', cash: -950, fees: 3.25, dependsOn: [1] },
+          ],
+          cash: { USD: { purchases: 2_000, fees: 6.50, reserved: 0, financingIn: 1_006.50, required: 2_006.50, available: 1_000, shortfall: 0, netCash: -1_000 } }, // 1,006.50 - 2,000 - 6.50
+          netPremium: { amount: 2_000, ccy: 'USD', type: 'debit', complete: true },
+          optionRequirement: [], // nothing written, nothing reserved
+        },
+        result: {
+          status: 'partial',
+          orders: [
+            { kind: 'funding', status: 'filled', filledQty: 1_006.50 },
+            { kind: 'trade', action: 'buy', instrument: 'c40', status: 'filled', filledQty: 5, avgPrice: 2.10 },
+            { kind: 'trade', action: 'buy', instrument: 'p40', status: 'partial', qty: 5, filledQty: 4, avgPrice: 1.90, fills: [{ qty: 4, price: 1.90, model: 'quoted-bid-ask', settleDate: '2026-03-03', source: 'Test fixture' }] },
+          ],
+        },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'transfer.funding', summary: 'Treasury funding: 1,006.50 USD from Treasury to Alpha' },
+          { type: 'trade.fill', summary: 'Bought 5 BWB260417C40 @ 2.10 USD', owner: 'account', date: '2026-03-02' },
+          { type: 'trade.fill', summary: 'Bought 4 BWB260417P40 @ 1.90 USD', owner: 'account', date: '2026-03-02' },
+          { type: 'trade.fill', summary: 'Bought 1 BWB260417P40 @ 1.90 USD', owner: 'account', date: '2026-03-02' },
+        ],
+        cash: {
+          // settled 1,000 + 1,006.50; owed 1,053.25 + 762.60 + 190.65 = 2,006.50
+          account: { USD: { settled: 2_006.50, unsettled: -2_006.50, reserved: 0, availableToTrade: 0, availableToWithdraw: 0 } },
+          treasury: { USD: { settled: 997_993.50, unsettled: 0, reserved: 0, availableToTrade: 997_993.50, availableToWithdraw: 997_993.50 } }, // 999,000 - 1,006.50
+        },
+        positions: [
+          { instrument: 'c40', lot: 'straddle', owner: 'account', direction: 'long', qty: 5, avgCost: 2.10, cost: 1_050, price: 2.05, value: 1_025, unrealized: -25 },
+          { instrument: 'p40', lot: 'straddle', owner: 'account', direction: 'long', qty: 5, avgCost: 1.90, cost: 950, price: 1.85, value: 925, unrealized: -25 },
+        ],
+        holdings: { c40: { long: 5, short: 0, net: 5 }, p40: { long: 5, short: 0, net: 5 } },
+        pending: [
+          { instrument: 'c40', lot: 'straddle', dueDate: '2026-03-03', amount: -1_053.25, into: 'cash' },
+          { instrument: 'p40', lot: 'straddle', dueDate: '2026-03-03', amount: -762.60, into: 'cash' },
+          { instrument: 'p40', lot: 'straddle', dueDate: '2026-03-03', amount: -190.65, into: 'cash' },
+        ],
+        lifecycle: [
+          { type: 'option.expiry', instrument: 'c40', dueDate: '2026-04-17', status: 'pending' },
+          { type: 'option.expiry', instrument: 'p40', dueDate: '2026-04-17', status: 'pending' },
+        ],
+        pnl: {
+          account: { realized: 0, commissions: -6.50, fees: 0, unrealized: -50, total: -56.50 },
+          book: { realized: 0, commissions: -6.50, unrealized: -50, total: -56.50 },
+          treasury: { realized: 0, commissions: 0, unrealized: 0, total: 0 },
+        },
+        nav: { account: 1_950, treasury: 997_993.50, book: 999_943.50 }, // 2,006.50 - 2,006.50 + 1,025 + 925
+        balance: {
+          account: { cash: 2_006.50, payable: 2_006.50, positions: 1_950, assets: 3_956.50, liabilities: 2_006.50, netAssets: 1_950 },
+          treasury: { cash: 997_993.50, assets: 997_993.50, liabilities: 0, netAssets: 997_993.50 },
+          book: { cash: 1_000_000, payable: 2_006.50, positions: 1_950, assets: 1_001_950, liabilities: 2_006.50, netAssets: 999_943.50 },
+        },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: MAR(3),
+      expect: {
+        events: [
+          { type: 'settlement.pay', summary: 'paid 1,053.25 USD from settled cash', date: '2026-03-03' },
+          { type: 'settlement.pay', summary: 'paid 762.60 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 190.65 USD from settled cash' },
+        ],
+        // Every USD balance of the Account is now zero: it has no cash line at all (shown as no cash, not as a figure).
+        cash: { account: null },
+        pending: [],
+        balance: {
+          account: { cash: null, payable: null, assets: 1_950, liabilities: 0 },
+          book: { cash: 997_993.50, payable: null, assets: 999_943.50, liabilities: 0 },
+        },
+      },
+    },
+    // The put's quote stops updating at 09:50: it still marks, but from 09:52 it cannot be traded on.
+    { id: 'p40-quote-stops', action: 'quote', instrument: 'p40', quote: { bid: 1.80, ask: 1.90, last: 1.85, bidSize: 20, askSize: 20, asOf: MAR(3, '09:50') }, expect: {} },
+    {
+      ...straddleOne('retry'), id: 'open-retry', covers: ['open', 'financing', 'failed leg'],
+      expect: {
+        preview: {
+          blocking: 0, warnings: ['not-executable'],
+          legs: [
+            { kind: 'funding', qty: 396.30, cash: 396.30 }, // 210 + 185 + 1.30 against 0 free
+            { kind: 'trade', action: 'buy', instrument: 'c40', qty: 1, estimate: 2.10, settleDate: '2026-03-04', cash: -210, fees: 0.65, dependsOn: [1] },
+            { kind: 'trade', action: 'buy', instrument: 'p40', qty: 1, estimate: null, reference: 1.85, executable: false, settleDate: '2026-03-04', cash: -185, fees: 0.65, dependsOn: [1] },
+          ],
+          cash: { USD: { purchases: 395, fees: 1.30, financingIn: 396.30, required: 396.30, available: 0, shortfall: 0 } },
+        },
+        result: { status: 'partial', orders: [{ kind: 'funding', status: 'filled' }, { instrument: 'c40', status: 'filled', filledQty: 1, avgPrice: 2.10 }, { instrument: 'p40', status: 'working', filledQty: 0, reason: /^The last quote is 6\d\d seconds old\. Waiting for a fresh quote\.$/ }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'transfer.funding', summary: 'Treasury funding: 396.30 USD from Treasury to Alpha' }, { type: 'trade.fill', summary: 'Bought 1 BWB260417C40 @ 2.10 USD', date: '2026-03-03' }],
+        cash: {
+          account: { USD: { settled: 396.30, unsettled: -210.65, reserved: 0, availableToTrade: 185.65, availableToWithdraw: 185.65 } },
+          treasury: { USD: { settled: 997_597.20, availableToTrade: 997_597.20, availableToWithdraw: 997_597.20 } },
+        },
+        positions: [
+          { instrument: 'c40', lot: 'retry', owner: 'account', direction: 'long', qty: 1, avgCost: 2.10, cost: 210, price: 2.05, value: 205, unrealized: -5 },
+          { instrument: 'c40', lot: 'straddle', qty: 5, value: 1_025, unrealized: -25 },
+          { instrument: 'p40', lot: 'straddle', qty: 5, value: 925, unrealized: -25 },
+        ],
+        holdings: { c40: { long: 6, short: 0, net: 6 } },
+        pending: [{ instrument: 'c40', lot: 'retry', dueDate: '2026-03-04', amount: -210.65, into: 'cash' }],
+        openOrders: [{ instrument: 'p40', kind: 'trade', action: 'buy', status: 'working', qty: 1, filledQty: 0 }],
+        lifecycle: [{ type: 'option.expiry', instrument: 'c40' }, { type: 'option.expiry', instrument: 'c40' }, { type: 'option.expiry', instrument: 'p40' }],
+        pnl: { account: { commissions: -7.15, unrealized: -55, total: -62.15 }, book: { commissions: -7.15, unrealized: -55, total: -62.15 } },
+        nav: { account: 2_340.65, treasury: 997_597.20, book: 999_937.85 }, // 396.30 - 210.65 + 1,025 + 205 + 925
+        balance: {
+          account: { cash: 396.30, payable: 210.65, positions: 2_155, assets: 2_551.30, liabilities: 210.65, netAssets: 2_340.65 },
+          treasury: { cash: 997_597.20, assets: 997_597.20, netAssets: 997_597.20 },
+          book: { cash: 997_993.50, payable: 210.65, positions: 2_155, assets: 1_000_148.50, liabilities: 210.65, netAssets: 999_937.85 },
+        },
+      },
+    },
+    {
+      // 185.65 is free now: funding 396.30 - 185.65 = 210.65.
+      ...straddleOne('accept'), id: 'open-accept', covers: ['open', 'financing', 'failed leg'],
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'funding', qty: 210.65 }, { instrument: 'c40', qty: 1, cash: -210 }, { instrument: 'p40', qty: 1, estimate: null, cash: -185 }], cash: { USD: { required: 396.30, available: 185.65, financingIn: 210.65, shortfall: 0 } } },
+        result: { status: 'partial', orders: [{ kind: 'funding', status: 'filled' }, { instrument: 'c40', status: 'filled', filledQty: 1 }, { instrument: 'p40', status: 'working', filledQty: 0 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'transfer.funding', summary: 'Treasury funding: 210.65 USD from Treasury to Alpha' }, { type: 'trade.fill', summary: 'Bought 1 BWB260417C40 @ 2.10 USD' }],
+        cash: {
+          account: { USD: { settled: 606.95, unsettled: -421.30, availableToTrade: 185.65, availableToWithdraw: 185.65 } },
+          treasury: { USD: { settled: 997_386.55, availableToTrade: 997_386.55, availableToWithdraw: 997_386.55 } },
+        },
+        positions: [
+          { instrument: 'c40', lot: 'accept', qty: 1, avgCost: 2.10, cost: 210, value: 205, unrealized: -5 },
+          { instrument: 'c40', lot: 'retry', qty: 1, value: 205 },
+          { instrument: 'c40', lot: 'straddle', qty: 5, value: 1_025 },
+          { instrument: 'p40', lot: 'straddle', qty: 5, value: 925 },
+        ],
+        holdings: { c40: { long: 7, short: 0, net: 7 } },
+        pending: [{ instrument: 'c40', lot: 'accept', dueDate: '2026-03-04', amount: -210.65 }, { instrument: 'c40', lot: 'retry', dueDate: '2026-03-04', amount: -210.65 }],
+        openOrders: [{ instrument: 'p40', status: 'working' }, { instrument: 'p40', status: 'working' }],
+        lifecycle: [{ instrument: 'c40' }, { instrument: 'c40' }, { instrument: 'c40' }, { instrument: 'p40' }],
+        pnl: { account: { commissions: -7.80, unrealized: -60, total: -67.80 }, book: { commissions: -7.80, unrealized: -60, total: -67.80 } },
+        nav: { account: 2_545.65, treasury: 997_386.55, book: 999_932.20 },
+        balance: {
+          account: { cash: 606.95, payable: 421.30, positions: 2_360, assets: 2_966.95, liabilities: 421.30, netAssets: 2_545.65 },
+          treasury: { cash: 997_386.55, assets: 997_386.55, netAssets: 997_386.55 },
+          book: { cash: 997_993.50, payable: 421.30, positions: 2_360, assets: 1_000_353.50, liabilities: 421.30, netAssets: 999_932.20 },
+        },
+      },
+    },
+    {
+      ...straddleOne('unwind'), id: 'open-unwind', covers: ['open', 'financing', 'failed leg'],
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'funding', qty: 210.65 }, { instrument: 'c40', qty: 1, cash: -210 }, { instrument: 'p40', qty: 1, estimate: null, cash: -185 }], cash: { USD: { required: 396.30, available: 185.65, financingIn: 210.65, shortfall: 0 } } },
+        result: { status: 'partial', orders: [{ kind: 'funding', status: 'filled' }, { instrument: 'c40', status: 'filled', filledQty: 1 }, { instrument: 'p40', status: 'working', filledQty: 0 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'transfer.funding', summary: 'Treasury funding: 210.65 USD from Treasury to Alpha' }, { type: 'trade.fill', summary: 'Bought 1 BWB260417C40 @ 2.10 USD' }],
+        cash: {
+          account: { USD: { settled: 817.60, unsettled: -631.95, availableToTrade: 185.65, availableToWithdraw: 185.65 } },
+          treasury: { USD: { settled: 997_175.90, availableToTrade: 997_175.90, availableToWithdraw: 997_175.90 } },
+        },
+        positions: [
+          { instrument: 'c40', lot: 'accept', qty: 1, value: 205 },
+          { instrument: 'c40', lot: 'retry', qty: 1, value: 205 },
+          { instrument: 'c40', lot: 'straddle', qty: 5, value: 1_025 },
+          { instrument: 'c40', lot: 'unwind', qty: 1, avgCost: 2.10, cost: 210, value: 205, unrealized: -5 },
+          { instrument: 'p40', lot: 'straddle', qty: 5, value: 925 },
+        ],
+        holdings: { c40: { long: 8, short: 0, net: 8 } },
+        pending: [{ lot: 'accept', amount: -210.65 }, { lot: 'retry', amount: -210.65 }, { lot: 'unwind', amount: -210.65 }],
+        openOrders: [{ instrument: 'p40', status: 'working' }, { instrument: 'p40', status: 'working' }, { instrument: 'p40', status: 'working' }],
+        lifecycle: [{ instrument: 'c40' }, { instrument: 'c40' }, { instrument: 'c40' }, { instrument: 'c40' }, { instrument: 'p40' }],
+        pnl: { account: { commissions: -8.45, unrealized: -65, total: -73.45 }, book: { commissions: -8.45, unrealized: -65, total: -73.45 } },
+        nav: { account: 2_750.65, treasury: 997_175.90, book: 999_926.55 },
+        balance: {
+          account: { cash: 817.60, payable: 631.95, positions: 2_565, assets: 3_382.60, liabilities: 631.95, netAssets: 2_750.65 },
+          treasury: { cash: 997_175.90, assets: 997_175.90, netAssets: 997_175.90 },
+          book: { cash: 997_993.50, payable: 631.95, positions: 2_565, assets: 1_000_558.50, liabilities: 631.95, netAssets: 999_926.55 },
+        },
+      },
+    },
+    {
+      // End of 3 March: the three put legs expire unfilled; each instance holds a call alone and needs attention.
+      id: 'put-legs-expire', covers: ['failed leg', 'settlement'], action: 'clock', to: MAR(4),
+      expect: {
+        events: [
+          { type: 'settlement.pay', summary: 'paid 210.65 USD from settled cash', date: '2026-03-04' },
+          { type: 'settlement.pay', summary: 'paid 210.65 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 210.65 USD from settled cash' },
+          { type: 'order.expired', summary: 'Leg 3 expired: buy 1 BWB260417P40. Day order did not fill before the end of the business day' },
+          { type: 'order.expired', summary: 'Leg 3 expired: buy 1 BWB260417P40. Day order did not fill before the end of the business day' },
+          { type: 'order.expired', summary: 'Leg 3 expired: buy 1 BWB260417P40. Day order did not fill before the end of the business day' },
+        ],
+        cash: { account: { USD: { settled: 185.65, unsettled: 0, availableToTrade: 185.65, availableToWithdraw: 185.65 } } }, // 817.60 - 3 x 210.65
+        pending: [], openOrders: [],
+        failed: { orders: 3 },
+        alerts: ['strategy.attention', 'strategy.attention', 'strategy.attention'],
+        balance: { account: { cash: 185.65, payable: null, assets: 2_750.65, liabilities: 0 }, book: { cash: 997_361.55, payable: null, assets: 999_926.55, liabilities: 0 } }, // 997,993.50 - 631.95
+      },
+    },
+    {
+      id: 'p40-quote-day3', action: 'quote', instrument: 'p40', quote: { bid: 1.60, ask: 1.70, last: 1.65, bidSize: 20, askSize: 20 },
+      expect: {
+        positions: [
+          { instrument: 'c40', lot: 'accept', value: 205 }, { instrument: 'c40', lot: 'retry', value: 205 }, { instrument: 'c40', lot: 'straddle', value: 1_025 }, { instrument: 'c40', lot: 'unwind', value: 205 },
+          { instrument: 'p40', lot: 'straddle', qty: 5, price: 1.65, value: 825, unrealized: -125 }, // 5 x 1.65 x 100 - 950
+        ],
+        pnl: { account: { unrealized: -165, total: -173.45 }, book: { unrealized: -165, total: -173.45 } },
+        nav: { account: 2_650.65, book: 999_826.55 },
+        balance: { account: { positions: 2_465, assets: 2_650.65, netAssets: 2_650.65 }, book: { positions: 2_465, assets: 999_826.55, netAssets: 999_826.55 } },
+      },
+    },
+    {
+      // Retry buys the put: 1 x 1.70 x 100 = 170 and 0.65 commission, against 185.65 free.
+      id: 'retry', covers: ['retry', 'failed leg'], action: 'recover', how: 'retry', lot: 'retry',
+      expect: {
+        preview: { blocking: 0, errors: [], intent: 'retry', legs: [{ kind: 'trade', action: 'buy', instrument: 'p40', qty: 1, estimate: 1.70, settleDate: '2026-03-05', cash: -170, fees: 0.65 }], cash: { USD: { purchases: 170, fees: 0.65, reserved: 0, required: 170.65, available: 185.65, shortfall: 0 } } },
+        result: { status: 'open', complete: true, orders: [{ kind: 'trade', action: 'buy', instrument: 'p40', status: 'filled', filledQty: 1, avgPrice: 1.70 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Bought 1 BWB260417P40 @ 1.70 USD', date: '2026-03-04' }],
+        cash: { account: { USD: { settled: 185.65, unsettled: -170.65, availableToTrade: 15, availableToWithdraw: 15 } } },
+        positions: [
+          { instrument: 'c40', lot: 'accept', value: 205 }, { instrument: 'c40', lot: 'retry', value: 205 }, { instrument: 'c40', lot: 'straddle', value: 1_025 }, { instrument: 'c40', lot: 'unwind', value: 205 },
+          { instrument: 'p40', lot: 'retry', owner: 'account', direction: 'long', qty: 1, avgCost: 1.70, cost: 170, price: 1.65, value: 165, unrealized: -5 },
+          { instrument: 'p40', lot: 'straddle', qty: 5, value: 825, unrealized: -125 },
+        ],
+        holdings: { p40: { long: 6, short: 0, net: 6 } },
+        pending: [{ instrument: 'p40', lot: 'retry', dueDate: '2026-03-05', amount: -170.65, into: 'cash' }],
+        lifecycle: [{ instrument: 'c40' }, { instrument: 'c40' }, { instrument: 'c40' }, { instrument: 'c40' }, { instrument: 'p40' }, { instrument: 'p40' }],
+        alerts: ['strategy.attention', 'strategy.attention'],
+        pnl: { account: { commissions: -9.10, unrealized: -170, total: -179.10 }, book: { commissions: -9.10, unrealized: -170, total: -179.10 } },
+        nav: { account: 2_645, book: 999_820.90 },
+        balance: {
+          account: { cash: 185.65, payable: 170.65, positions: 2_630, assets: 2_815.65, liabilities: 170.65, netAssets: 2_645 },
+          book: { cash: 997_361.55, payable: 170.65, positions: 2_630, assets: 999_991.55, liabilities: 170.65, netAssets: 999_820.90 },
+        },
+      },
+    },
+    {
+      id: 'accept', covers: ['accept', 'failed leg'], action: 'strategy_action', lot: 'accept', how: 'accept',
+      expect: {
+        events: [{ type: 'strategy.accepted', summary: 'accepted as it stands with 1 leg unexecuted. The position no longer matches its template.' }],
+        alerts: ['strategy.attention'],
+      },
+    },
+    {
+      // Unwind sells the call back at the bid, 2.00: 200 - 0.65. Realized 1 x (2.00 - 2.10) x 100 = -10.
+      id: 'unwind', covers: ['unwind', 'close'], action: 'recover', how: 'unwind', lot: 'unwind',
+      expect: {
+        preview: { blocking: 0, errors: [], intent: 'unwind', legs: [{ kind: 'trade', action: 'sell', instrument: 'c40', qty: 1, estimate: 2.00, settleDate: '2026-03-05', cash: 200, fees: 0.65 }], cash: { USD: { proceeds: 200, fees: 0.65, required: 0.65 } } },
+        result: { status: 'closed', orders: [{ action: 'sell', instrument: 'c40', status: 'filled', filledQty: 1, avgPrice: 2.00 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 1 BWB260417C40 @ 2.00 USD (realized -10.00 USD)' }],
+        cash: { account: { USD: { settled: 185.65, unsettled: 28.70, availableToTrade: 214.35, availableToWithdraw: 15 } } }, // -170.65 + 199.35
+        positions: [
+          { instrument: 'c40', lot: 'accept', value: 205 }, { instrument: 'c40', lot: 'retry', value: 205 }, { instrument: 'c40', lot: 'straddle', value: 1_025 },
+          { instrument: 'p40', lot: 'retry', value: 165 }, { instrument: 'p40', lot: 'straddle', value: 825 },
+        ],
+        holdings: { c40: { long: 7, short: 0, net: 7 } },
+        pending: [{ instrument: 'c40', lot: 'unwind', dueDate: '2026-03-05', amount: 199.35 }, { instrument: 'p40', lot: 'retry', dueDate: '2026-03-05', amount: -170.65 }],
+        lifecycle: [{ instrument: 'c40' }, { instrument: 'c40' }, { instrument: 'c40' }, { instrument: 'p40' }, { instrument: 'p40' }],
+        alerts: [],
+        pnl: { account: { realized: -10, commissions: -9.75, unrealized: -165, total: -184.75 }, book: { realized: -10, commissions: -9.75, unrealized: -165, total: -184.75 } },
+        nav: { account: 2_639.35, book: 999_815.25 }, // 2,645 - 5 (sold 0.05 under the mark) - 0.65
+        balance: {
+          account: { cash: 185.65, receivable: 199.35, payable: 170.65, positions: 2_425, assets: 2_810, liabilities: 170.65, netAssets: 2_639.35 },
+          book: { cash: 997_361.55, receivable: 199.35, payable: 170.65, positions: 2_425, assets: 999_985.90, liabilities: 170.65, netAssets: 999_815.25 }, // 997,361.55 + 199.35 + 2,425
+        },
+      },
+    },
+    {
+      id: 'settle-recovery', covers: 'settlement', action: 'clock', to: MAR(5),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 199.35 USD into settled cash', date: '2026-03-05' }, { type: 'settlement.pay', summary: 'paid 170.65 USD from settled cash' }],
+        cash: { account: { USD: { settled: 214.35, unsettled: 0, availableToTrade: 214.35, availableToWithdraw: 214.35 } } },
+        pending: [],
+        balance: { account: { cash: 214.35, receivable: null, payable: null, assets: 2_639.35, liabilities: 0 }, book: { cash: 997_390.25, receivable: null, payable: null, assets: 999_815.25, liabilities: 0 } },
+      },
+    },
+    {
+      // Close "retry": sell its call at 2.00 and its put at 1.60. Realized -10 on each (2.00 - 2.10; 1.60 - 1.70).
+      id: 'close-retry', covers: ['close'], action: 'close', lot: 'retry', instrument: 'c40', scope: 'strategy', percent: 100,
+      expect: {
+        preview: {
+          blocking: 0, errors: [], intent: 'close',
+          legs: [
+            { kind: 'trade', action: 'sell', instrument: 'c40', qty: 1, estimate: 2.00, settleDate: '2026-03-06', cash: 200, fees: 0.65 },
+            { kind: 'trade', action: 'sell', instrument: 'p40', qty: 1, estimate: 1.60, settleDate: '2026-03-06', cash: 160, fees: 0.65 },
+          ],
+          cash: { USD: { proceeds: 360, fees: 1.30, required: 1.30 } },
+        },
+        result: { status: 'closed', orders: [{ action: 'sell', instrument: 'c40', status: 'filled', avgPrice: 2.00 }, { action: 'sell', instrument: 'p40', status: 'filled', avgPrice: 1.60 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 1 BWB260417C40 @ 2.00 USD (realized -10.00 USD)' },
+          { type: 'trade.fill', summary: 'Sold 1 BWB260417P40 @ 1.60 USD (realized -10.00 USD)' },
+        ],
+        cash: { account: { USD: { settled: 214.35, unsettled: 358.70, availableToTrade: 573.05, availableToWithdraw: 214.35 } } }, // 199.35 + 159.35
+        positions: [{ instrument: 'c40', lot: 'accept', value: 205 }, { instrument: 'c40', lot: 'straddle', value: 1_025 }, { instrument: 'p40', lot: 'straddle', value: 825 }],
+        holdings: { c40: { long: 6, short: 0, net: 6 }, p40: { long: 5, short: 0, net: 5 } },
+        pending: [{ instrument: 'c40', lot: 'retry', dueDate: '2026-03-06', amount: 199.35 }, { instrument: 'p40', lot: 'retry', dueDate: '2026-03-06', amount: 159.35 }],
+        lifecycle: [{ instrument: 'c40' }, { instrument: 'c40' }, { instrument: 'p40' }],
+        pnl: { account: { realized: -30, commissions: -11.05, unrealized: -155, total: -196.05 }, book: { realized: -30, commissions: -11.05, unrealized: -155, total: -196.05 } },
+        nav: { account: 2_628.05, book: 999_803.95 }, // 214.35 + 358.70 + 1,025 + 205 + 825
+        balance: {
+          account: { cash: 214.35, receivable: 358.70, positions: 2_055, assets: 2_628.05, liabilities: 0, netAssets: 2_628.05 },
+          book: { cash: 997_390.25, receivable: 358.70, positions: 2_055, assets: 999_803.95, netAssets: 999_803.95 },
+        },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: MAR(6),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 199.35 USD into settled cash', date: '2026-03-06' }, { type: 'settlement.receive', summary: 'received 159.35 USD into settled cash' }],
+        cash: { account: { USD: { settled: 573.05, unsettled: 0, availableToTrade: 573.05, availableToWithdraw: 573.05 } } },
+        pending: [],
+        balance: { account: { cash: 573.05, receivable: null }, book: { cash: 997_748.95, receivable: null } },
+      },
+    },
+    {
+      // Cash for the shares that exercise will deliver at the strike.
+      id: 'fund-for-delivery', covers: 'internal funding', action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 30_000,
+      expect: {
+        events: [{ type: 'transfer.funding', summary: 'Treasury funding: 30,000.00 USD from Treasury to Alpha' }],
+        cash: { account: { USD: { settled: 30_573.05, availableToTrade: 30_573.05, availableToWithdraw: 30_573.05 } }, treasury: { USD: { settled: 967_175.90, availableToTrade: 967_175.90, availableToWithdraw: 967_175.90 } } },
+        nav: { account: 32_628.05, treasury: 967_175.90 },
+        balance: { account: { cash: 30_573.05, assets: 32_628.05, netAssets: 32_628.05 }, treasury: { cash: 967_175.90, assets: 967_175.90, netAssets: 967_175.90 } },
+      },
+    },
+    { id: 'stock-quote', action: 'quote', instrument: 'stock', quote: { bid: 45.98, ask: 46.02, last: 46.00, bidSize: 10000, askSize: 10000 }, expect: {} }, // no shares held yet
+    { id: 'expiry-close', action: 'close_price', instrument: 'stock', date: '2026-04-17', value: 46.00, expect: {} },
+    {
+      // Held across Good Friday. 17 April, after the close of 46: the calls are in the money and exercised (closed at zero:
+      // premium realized, -1,050 in "straddle" and -210 in "accept"); 500 and 100 shares are delivered at 40 (20,000 and
+      // 4,000, due Monday 20 April). The puts lapse (-950). Realized -30 - 1,050 - 210 - 950 = -2,240. The shares are worth
+      // 600 x 46 = 27,600 against 24,000.
+      id: 'expiry', covers: ['expiry', 'exercise', 'holiday'], action: 'clock', to: APR(17, '17:30'),
+      expect: {
+        events: [
+          // The call and the put of "straddle" settle on the same day, then the call of "accept".
+          { type: 'option.exercised', summary: 'Exercised: 5 BWB260417C40 at strike 40', date: '2026-04-17' },
+          { type: 'option.delivery', summary: /^Simulated delivery: received 500 BWB at strike 40 on exercise of BWB260417C40/ },
+          { type: 'option.expired', summary: 'Expired worthless: 5 BWB260417P40 (fixing 46)', date: '2026-04-17' },
+          { type: 'option.exercised', summary: 'Exercised: 1 BWB260417C40 at strike 40', date: '2026-04-17' },
+          { type: 'option.delivery', summary: /^Simulated delivery: received 100 BWB at strike 40 on exercise of BWB260417C40/ },
+        ],
+        cash: { account: { USD: { settled: 30_573.05, unsettled: -24_000, reserved: 0, availableToTrade: 6_573.05, availableToWithdraw: 6_573.05 } } },
+        positions: [
+          { instrument: 'stock', lot: 'accept', owner: 'account', direction: 'long', qty: 100, avgCost: 40, cost: 4_000, price: 46, value: 4_600, unrealized: 600 },
+          { instrument: 'stock', lot: 'straddle', owner: 'account', direction: 'long', qty: 500, avgCost: 40, cost: 20_000, price: 46, value: 23_000, unrealized: 3_000 },
+        ],
+        holdings: { c40: null, p40: null, stock: { long: 600, short: 0, net: 600 } },
+        pending: [{ instrument: 'stock', lot: 'straddle', dueDate: '2026-04-20', amount: -20_000, into: 'cash' }, { instrument: 'stock', lot: 'accept', dueDate: '2026-04-20', amount: -4_000, into: 'cash' }],
+        lifecycle: [],
+        pnl: { account: { realized: -2_240, commissions: -11.05, unrealized: 3_600, total: 1_348.95 }, book: { realized: -2_240, commissions: -11.05, unrealized: 3_600, total: 1_348.95 } },
+        nav: { account: 34_173.05, book: 1_001_348.95 }, // 32,628.05 - 2,055 of options + 3,600 of share gain
+        balance: {
+          account: { cash: 30_573.05, payable: 24_000, positions: 27_600, assets: 58_173.05, liabilities: 24_000, netAssets: 34_173.05 },
+          book: { cash: 997_748.95, payable: 24_000, positions: 27_600, assets: 1_025_348.95, liabilities: 24_000, netAssets: 1_001_348.95 },
+        },
+      },
+    },
+    {
+      id: 'settle-delivery', covers: 'settlement', action: 'clock', to: APR(20),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 20,000.00 USD from settled cash', date: '2026-04-20' }, { type: 'settlement.pay', summary: 'paid 4,000.00 USD from settled cash' }],
+        cash: { account: { USD: { settled: 6_573.05, unsettled: 0, availableToTrade: 6_573.05, availableToWithdraw: 6_573.05 } } },
+        pending: [],
+        balance: { account: { cash: 6_573.05, payable: null, assets: 34_173.05, liabilities: 0 }, book: { cash: 973_748.95, payable: null, assets: 1_001_348.95, liabilities: 0 } },
+      },
+    },
+    {
+      // Close "straddle": its 500 shares at the bid 45.98 = 22,990; commission 500 x 0.005 = 2.50. Realized 500 x 5.98 = 2,990.
+      id: 'close-straddle', covers: ['close'], action: 'close', lot: 'straddle', instrument: 'stock', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], intent: 'close', legs: [{ kind: 'trade', action: 'sell', instrument: 'stock', qty: 500, estimate: 45.98, settleDate: '2026-04-21', cash: 22_990, fees: 2.50 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', instrument: 'stock', status: 'filled', filledQty: 500, avgPrice: 45.98 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 500 BWB @ 45.98 USD (realized 2,990.00 USD)', date: '2026-04-20' }],
+        cash: { account: { USD: { settled: 6_573.05, unsettled: 22_987.50, availableToTrade: 29_560.55, availableToWithdraw: 6_573.05 } } },
+        positions: [{ instrument: 'stock', lot: 'accept', qty: 100, value: 4_600, unrealized: 600 }],
+        holdings: { stock: { long: 100, short: 0, net: 100 } },
+        pending: [{ instrument: 'stock', lot: 'straddle', dueDate: '2026-04-21', amount: 22_987.50, into: 'cash' }],
+        pnl: { account: { realized: 750, commissions: -13.55, unrealized: 600, total: 1_336.45 }, book: { realized: 750, commissions: -13.55, unrealized: 600, total: 1_336.45 } },
+        nav: { account: 34_160.55, book: 1_001_336.45 }, // 34,173.05 - 10 (sold 0.02 under the mark) - 2.50
+        balance: {
+          account: { cash: 6_573.05, receivable: 22_987.50, positions: 4_600, assets: 34_160.55, liabilities: 0, netAssets: 34_160.55 },
+          book: { cash: 973_748.95, receivable: 22_987.50, positions: 4_600, assets: 1_001_336.45, netAssets: 1_001_336.45 },
+        },
+      },
+    },
+    {
+      // Close "accept": 100 shares at 45.98 = 4,598; commission 0.50, raised to the 1.00 minimum. Realized 598.
+      id: 'close-accept', covers: ['close'], action: 'close', lot: 'accept', instrument: 'stock', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'sell', instrument: 'stock', qty: 100, estimate: 45.98, settleDate: '2026-04-21', cash: 4_598, fees: 1 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 100, avgPrice: 45.98 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 100 BWB @ 45.98 USD (realized 598.00 USD)' }],
+        cash: { account: { USD: { settled: 6_573.05, unsettled: 27_584.50, availableToTrade: 34_157.55, availableToWithdraw: 6_573.05 } } },
+        positions: [],
+        holdings: { stock: null },
+        pending: [{ instrument: 'stock', lot: 'accept', dueDate: '2026-04-21', amount: 4_597 }, { instrument: 'stock', lot: 'straddle', dueDate: '2026-04-21', amount: 22_987.50 }],
+        pnl: { account: { realized: 1_348, commissions: -14.55, unrealized: 0, total: 1_333.45 }, book: { realized: 1_348, commissions: -14.55, unrealized: 0, total: 1_333.45 } },
+        nav: { account: 34_157.55, book: 1_001_333.45 },
+        balance: {
+          account: { cash: 6_573.05, receivable: 27_584.50, positions: null, assets: 34_157.55, netAssets: 34_157.55 },
+          book: { cash: 973_748.95, receivable: 27_584.50, positions: null, assets: 1_001_333.45, netAssets: 1_001_333.45 },
+        },
+      },
+    },
+    {
+      // Nothing left: every leg settled. 1,000 + 1,006.50 + 396.30 + 210.65 + 210.65 + 30,000 funded, plus 1,333.45.
+      id: 'settle-final', covers: 'settlement', action: 'clock', to: APR(21),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 22,987.50 USD into settled cash', date: '2026-04-21' }, { type: 'settlement.receive', summary: 'received 4,597.00 USD into settled cash' }],
+        cash: { account: { USD: { settled: 34_157.55, unsettled: 0, reserved: 0, availableToTrade: 34_157.55, availableToWithdraw: 34_157.55 } } },
+        pending: [],
+        balance: { account: { cash: 34_157.55, receivable: null, assets: 34_157.55 }, book: { cash: 1_001_333.45, receivable: null, assets: 1_001_333.45 } },
+      },
+    },
+  ],
+};
+
+export default [bearCall, longStraddle];

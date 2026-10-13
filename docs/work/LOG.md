@@ -221,3 +221,4 @@
 - 2026-10-13T19:32Z | b4 | +0.2 | abs passes at engine, API and browser
 - 2026-10-13T19:32Z | t2 | +0.2 | bear_call_spread passes at engine, API and browser
 - 2026-10-13T19:33Z | s2 | +0.2 | equity_swap passes at engine, API and browser (financing on the reset notional fixed; payment lag added)
+- 2026-10-13T19:37Z | s2 | +0.2 | equity_index_swap passes at engine, API and browser (Treasury-owned, opposite side, agreement collateral)

@@ -948,4 +948,253 @@ const equitySwap = {
   ],
 };
 
-export default [amortizingSwap, accretingSwap, equitySwap];
+// ---------------------------------------------------------------------------------------------
+// equity_index_swap
+// ---------------------------------------------------------------------------------------------
+// A six-month equity-index swap owned by Treasury. The contract is written "receive the price return of the
+// Meridian 500 index, pay 3-month term SOFR - 0.20% ACT/360", quarterly, on a fixed notional (no reset), both legs
+// paid 2 business days after each reset date (US+USD calendar). Treasury enters the opposite side: it pays the
+// index return (and so receives it when the index falls) and receives the financing. Collateral under a bilateral
+// agreement covering Treasury: a fixed independent amount of 250,000 and variation margin with no threshold and a
+// minimum transfer of 25,000.
+//
+// The catalog has no index product: the index level is carried by a reference instrument registered as an ETF
+// (never traded), whose closes for the reset dates are the index fixings, as in the index option scenario.
+//   period 1  2026-01-20 to 2026-04-20  90 days  index 5,000.00 to 4,800.00 (-4%)  TSFR3M 3.90% for 20 January   paid Wednesday 22 April
+//   period 2  2026-04-20 to 2026-07-20  91 days  index 4,800.00 to 5,040.00 (+5%)  TSFR3M 3.80% for 20 April     paid Wednesday 22 July
+const MER500 = { productId: 'etf', name: 'Meridian 500 Index (reference level)', symbol: 'MER500', marketView: 'US_CASH', venue: 'Meridian Indices', venueType: 'exchange', venueCountry: 'US', issuer: 'Meridian Indices LLC', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', terms: {} };
+const EIS_NAME = 'Equity-index swap MER500 price return v TSFR3M - 0.20% 20 Jul 2026';
+const EIS_DRAFT = {
+  productId: 'equity_index_swap', name: EIS_NAME, symbol: 'EIS-MER500-0726', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 0.01,
+  conventions: { tradingCalendar: 'US', settlementCalendar: 'US+USD', paymentCalendar: 'US+USD' },
+  terms: {
+    effective: '2026-01-20', maturity: '2026-07-20', counterparty: 'Dealer Q',
+    collateralBasis: { type: 'agreement', agreementId: '$agreement:csa' },
+    legs: [
+      { side: 'receive', type: 'return', ccy: 'USD', months: 3, underlyingId: '$inst:index', passDividends: false, resetNotional: false, paymentLag: 2 },
+      { side: 'pay', type: 'float', ccy: 'USD', index: 'TSFR3M', spread: -0.002, months: 3, dayCount: 'ACT/360', paymentLag: 2 },
+    ],
+  },
+};
+const equityIndexSwap = {
+  productId: 'equity_index_swap',
+  title: 'Six-month equity-index swap owned by Treasury: pay the Meridian 500 price return, receive term SOFR - 0.20% (opposite side), under a collateral agreement',
+  matrix: {
+    ...OTC_TICKET,
+    ticket: `${OTC_TICKET.ticket}. Owner chosen on the ticket: Treasury`,
+    requiredFields: [...OTC_TICKET.requiredFields, 'return leg: Reference asset (the index level), Reset and payment, no "Notional resets", no "Total return"', 'financing leg: Index, Spread (negative), Day count', 'both legs: Payment lag (business days) 2'],
+    automaticInputs: ['reset and payment schedule on the US+USD calendar, 2 business days after each reset date', 'index closes for each reset date (close fixture standing in for Shaffer MarketData)', 'TSFR3M fixings (rate fixture)', 'settlement date, T+2', 'commission from the Book fee schedule', 'independent amount and variation margin from the agreement, posted and received by Treasury'],
+    manualInputs: ['collateral agreement (Treasury, Collateral)', 'the index level, registered as a reference instrument because the catalog has no index product', 'upfront amount of the increase (stated fill price)', 'mark of the contract, entered by hand'],
+    settlement: 'Upfront amounts and commission settle T+2 on the US+USD calendar; leg payments are cash on their payment date',
+    lifecycle: 'Return and financing each quarter on a fixed notional: the index return received when the index falls and paid when it rises (opposite side); increase inside the first period (takes the whole period); held to maturity; nothing left afterwards',
+    accounting: 'Treasury\'s position: carried at the mark less the upfront paid; payments realized; the upfront still carried written off at maturity; commission expensed; the figures are Treasury\'s and the Book\'s, compared on Treasury\'s own screens',
+    collateral: 'Bilateral agreement covering Treasury: fixed independent amount 250,000; variation margin on the mark entered by hand, no threshold, minimum transfer 25,000: posted, returned and replaced by collateral received, then posted again; everything returned at maturity',
+  },
+  start: at('2026-01-14'),
+  settlementCheck: { lag: 2, holidays: [] }, // no NASDAQ or Federal Reserve holiday in the windows used (14 to 16 January, 18 to 20 February 2026; Martin Luther King Jr. Day is 19 January)
+  book: bookOf('Matrix equity-index swap', 'Equity desk', 'USD', 20_000_000, 1_000_000, { perUnit: 0.00005, minimum: 0, bps: 0 }, { equity: NO_FEE }), // 50.00 per million of notional; the index stand-in is never traded
+  instruments: { index: MER500 },
+  tradedOn: 'The contract is registered by the step register-under-agreement (registry form), after the collateral agreement it names has been recorded.',
+  rates: { TSFR3M: { byDate: { '2026-01-20': 3.90, '2026-04-20': 3.80 } } },
+  expectAtStart: startOf('USD', 20_000_000, 1_000_000),
+  steps: [
+    {
+      id: 'record-agreement', covers: 'collateral', action: 'agreement', as: 'csa',
+      agreement: { name: 'CSA Dealer Q', counterparty: 'Dealer Q', kind: 'bilateral', covers: ['treasury'], independentAmount: { type: 'fixed', amount: 250_000 }, variationMargin: true, threshold: 0, minimumTransfer: 25_000, baseCcy: 'USD', postingCcy: 'USD', haircut: 0, nettingScope: 'position' },
+      expect: { events: [{ type: 'collateral.agreement', summary: 'Collateral agreement recorded: CSA Dealer Q with Dealer Q (Bilateral (CSA-style))', owner: 'treasury' }] },
+    },
+    { id: 'register-under-agreement', covers: 'registration', action: 'register_instrument', as: 'main', draft: EIS_DRAFT, expect: {} },
+    {
+      // Treasury, opposite side, 10,000,000, no upfront. Commission 10,000,000 x 0.00005 = 500, settling Friday 16 January. Independent amount 250,000 from Treasury.
+      id: 'open', covers: ['open', 'collateral'], action: 'ticket', owner: 'treasury', instrument: 'main', side: 'sell', qty: 10_000_000, as: 'eis', order: { statedPrice: 0 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 10_000_000, estimate: 0, model: 'stated-price', settleDate: '2026-01-16', cash: 0, fees: 500 }],
+          cash: { USD: { fees: 500, margin: 250_000, available: 19_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 10_000_000, avgPrice: 0, fills: [{ qty: 10_000_000, price: 0, model: 'stated-price', settleDate: '2026-01-16' }] }] },
+        events: [
+          { type: 'strategy.submitted', owner: 'treasury' },
+          { type: 'trade.fill', summary: 'Entered on the opposite side: 10,000,000 notional of EIS-MER500-0726 at 0.00 per 100 notional', owner: 'treasury', date: '2026-01-14' },
+          { type: 'swap.collateral', summary: `Collateral posted on ${EIS_NAME} under "CSA Dealer Q" (Dealer Q): 250,000.00 USD (independent amount, fixed amount for the position)`, cash: { USD: -250_000 }, owner: 'treasury' },
+        ],
+        cash: { treasury: { USD: { settled: 18_750_000, unsettled: -500, margin: 250_000, restricted: 0, availableToTrade: 18_749_500, availableToWithdraw: 18_749_500 } } },
+        positions: [{ instrument: 'main', lot: 'eis', owner: 'treasury', direction: 'opposite side', qty: -10_000_000, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, notional: 10_000_000, margin: 250_000 }],
+        holdings: { main: { long: 0, short: 10_000_000, net: -10_000_000 } },
+        pending: [{ instrument: 'main', owner: 'treasury', dueDate: '2026-01-16', amount: -500, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-04-22', status: 'pending', owner: 'treasury' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-04-22', status: 'pending', owner: 'treasury' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2026-07-22', status: 'pending', owner: 'treasury' },
+        ],
+        otc: [{ instrument: 'main', lot: 'eis', owner: 'treasury', qty: -10_000_000, basis: 'agreement', agreement: 'CSA Dealer Q', mark: null, iaRequired: 250_000, iaPosted: 250_000, vmPosted: 0, vmHeld: 0, vmStatus: 'not_valued_yet' }],
+        pnl: { account: { total: 0 }, book: { realized: 0, commissions: -500, unrealized: 0, total: -500 } },
+        nav: { account: 1_000_000, treasury: 18_999_500, book: 19_999_500 },
+        provisional: { account: false, book: true },
+        balance: { treasury: { cash: 18_750_000, margin: 250_000, payable: 500, positions: null, assets: 19_000_000, liabilities: 500, netAssets: 18_999_500 } },
+      },
+    },
+    { id: 'treasury-screens-after-open', covers: 'open', action: 'owner_screens', owner: 'treasury', expect: {} },
+    {
+      id: 'settle-commission', covers: 'settlement', action: 'clock', to: at('2026-01-16'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 500.00 USD from settled cash', cash: { USD: -500 }, owner: 'treasury', date: '2026-01-16' }],
+        cash: { treasury: { USD: { settled: 18_749_500, unsettled: 0, availableToTrade: 18_749_500, availableToWithdraw: 18_749_500 } } },
+        pending: [],
+        otc: [{ instrument: 'main', vmStatus: 'cannot_value', vmReason: /EIS-MER500-0726 has no mark/ }], alerts: ['collateral.unvalued'],
+        balance: { treasury: { cash: 18_749_500, payable: null, assets: 18_999_500, liabilities: 0 } },
+      },
+    },
+    {
+      // The mark is of the contract as written. On the opposite side: -10,000,000 x 0.40 / 100 = -40,000.
+      id: 'mark', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 0.40, note: 'Dealer mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'eis', price: 0.4, value: -40_000, unrealized: -40_000, provisional: false, priceSource: 'Manual entry', priceStatus: 'manual' }],
+        otc: [{ instrument: 'main', mark: 0.4, markValue: -40_000 }],
+        pnl: { book: { unrealized: -40_000, total: -40_500 } },
+        nav: { treasury: 18_959_500, book: 19_959_500 },
+        provisional: { account: false, book: false },
+        balance: { treasury: { positions: -40_000, assets: 18_959_500, netAssets: 18_959_500 } },
+      },
+    },
+    {
+      // -40,000 with no threshold: 40,000 posted by Treasury (above the 25,000 minimum transfer).
+      id: 'variation-margin-posted', covers: 'variation margin', action: 'clock', to: eod('2026-01-16'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under "CSA Dealer Q" (Dealer Q): 40,000.00 USD posted. Netting set of 1 position marked at -40,000.00 USD; threshold 0.00 USD.', cash: { USD: -40_000 }, owner: 'treasury' }],
+        cash: { treasury: { USD: { settled: 18_709_500, margin: 290_000, availableToTrade: 18_709_500, availableToWithdraw: 18_709_500 } } },
+        otc: [{ instrument: 'main', vmPosted: 40_000, vmHeld: 0, vmExposure: -40_000, vmStatus: 'ok' }],
+        alerts: [],
+        balance: { treasury: { cash: 18_709_500, margin: 290_000 } },
+      },
+    },
+    // The index closes at 5,000.00 on the effective date.
+    { id: 'start-level', covers: 'reset fixing', action: 'close_price', instrument: 'index', date: '2026-01-20', value: 5_000, expect: {} },
+    { id: 'mid-february', action: 'clock', to: at('2026-02-18'), expect: {} },
+    {
+      // The index has fallen: the contract as written is marked -0.20 per 100. Opposite side: -10,000,000 x -0.20 / 100 = +20,000.
+      id: 'mark-falls', action: 'manual_price', instrument: 'main', value: -0.20, note: 'Dealer mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'eis', price: -0.2, value: 20_000, unrealized: 20_000 }],
+        otc: [{ instrument: 'main', mark: -0.2, markValue: 20_000 }],
+        pnl: { book: { unrealized: 20_000, total: 19_500 } },
+        nav: { treasury: 19_019_500, book: 20_019_500 },
+        balance: { treasury: { positions: 20_000, assets: 19_019_500, netAssets: 19_019_500 } },
+      },
+    },
+    {
+      // 5,000,000 more on the opposite side at -0.20 per 100: 5,000,000 x 0.20 / 100 = 10,000 paid; commission 250; settles Friday 20 February.
+      // Cost +10,000. Value -15,000,000 x -0.20 / 100 = 30,000; unrealized 20,000. The added notional takes the whole first period. The fixed independent amount does not change.
+      id: 'increase', covers: ['increase'], action: 'resize', owner: 'treasury', lot: 'eis', factor: 1.5, order: { statedPrice: -0.20 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 5_000_000, estimate: -0.2, model: 'stated-price', settleDate: '2026-02-20', cash: -10_000, fees: 250 }], cash: { USD: { fees: 250, margin: 0, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 5_000_000, avgPrice: -0.2 }] },
+        events: [{ type: 'strategy.legs_added', owner: 'treasury' }, { type: 'trade.fill', summary: 'Increased on the opposite side: 5,000,000 notional of EIS-MER500-0726 at -0.20 per 100 notional', owner: 'treasury' }],
+        cash: { treasury: { USD: { settled: 18_709_500, unsettled: -10_250, availableToTrade: 18_699_250, availableToWithdraw: 18_699_250 } } },
+        positions: [{ instrument: 'main', lot: 'eis', qty: -15_000_000, cost: 10_000, avgCost: -0.0666667, price: -0.2, value: 30_000, unrealized: 20_000, notional: 15_000_000, margin: 250_000 }], // 10,000 / (-15,000,000 / 100)
+        holdings: { main: { long: 0, short: 15_000_000, net: -15_000_000 } },
+        pending: [{ instrument: 'main', owner: 'treasury', dueDate: '2026-02-20', amount: -10_250, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: -15_000_000, markValue: 30_000, iaRequired: 250_000, iaPosted: 250_000 }],
+        pnl: { book: { commissions: -750, unrealized: 20_000, total: 19_250 } },
+        nav: { treasury: 19_019_250, book: 20_019_250 },
+        balance: { treasury: { cash: 18_709_500, payable: 10_250, positions: 30_000, assets: 19_029_500, liabilities: 10_250, netAssets: 19_019_250 } },
+      },
+    },
+    {
+      // +30,000 with no threshold: the 40,000 posted comes back and the counterparty posts 30,000 (restricted, a liability).
+      id: 'variation-margin-turns', covers: 'variation margin', action: 'clock', to: eod('2026-02-18'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under "CSA Dealer Q" (Dealer Q): 40,000.00 USD returned to us and 30,000.00 USD received. Netting set of 1 position marked at 30,000.00 USD; threshold 0.00 USD.', owner: 'treasury' }],
+        cash: { treasury: { USD: { settled: 18_749_500, restricted: 30_000, margin: 250_000, availableToTrade: 18_739_250, availableToWithdraw: 18_739_250 } } },
+        otc: [{ instrument: 'main', vmPosted: 0, vmHeld: 30_000, vmExposure: 30_000 }],
+        balance: { treasury: { cash: 18_749_500, restricted: 30_000, margin: 250_000, collateralReceived: 30_000, assets: 19_059_500, liabilities: 40_250, netAssets: 19_019_250 } },
+      },
+    },
+    {
+      id: 'settle-increase', covers: 'settlement', action: 'clock', to: at('2026-02-20'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 10,250.00 USD from settled cash', cash: { USD: -10_250 }, owner: 'treasury' }],
+        cash: { treasury: { USD: { settled: 18_739_250, unsettled: 0, availableToTrade: 18_739_250, availableToWithdraw: 18_739_250 } } },
+        pending: [],
+        balance: { treasury: { cash: 18_739_250, payable: null, assets: 19_049_250, liabilities: 30_000 } },
+      },
+    },
+    // The index closes at 4,800.00 on Monday 20 April: the end of the first period.
+    { id: 'first-reset-level', covers: 'reset fixing', action: 'close_price', instrument: 'index', date: '2026-04-20', value: 4_800, expect: {} },
+    {
+      // First period, notional 15,000,000 (the increase took the whole period):
+      //   index return: 15,000,000 x (4,800 / 5,000 - 1) = -600,000.00 for the side as written; Treasury, opposite, receives 600,000.00
+      //   financing:    15,000,000 x (3.90% - 0.20%) x 90/360 = 138,750.00, received
+      id: 'first-period', covers: ['return payment', 'financing payment'], action: 'clock', to: at('2026-04-22'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap receipt on ${EIS_NAME}, leg A (return), period 2026-01-20 to 2026-04-20: 600,000.00 USD`, cash: { USD: 600_000 }, owner: 'treasury', date: '2026-04-22' },
+          { type: 'swap.payment', summary: `Swap receipt on ${EIS_NAME}, leg B (float), period 2026-01-20 to 2026-04-20: 138,750.00 USD`, cash: { USD: 138_750 }, owner: 'treasury', date: '2026-04-22' },
+        ],
+        cash: { treasury: { USD: { settled: 19_478_000, availableToTrade: 19_478_000, availableToWithdraw: 19_478_000 } } },
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2026-07-22', status: 'pending', owner: 'treasury' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-07-22', status: 'pending', owner: 'treasury' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-07-22', status: 'pending', owner: 'treasury' },
+        ],
+        pnl: { book: { realized: 738_750, total: 758_000 } }, // 600,000 + 138,750; then - 750 + 20,000
+        nav: { treasury: 19_758_000, book: 20_758_000 },
+        balance: { treasury: { cash: 19_478_000, assets: 19_788_000, netAssets: 19_758_000 } },
+      },
+    },
+    { id: 'treasury-screens-after-first-period', covers: 'return payment', action: 'owner_screens', owner: 'treasury', expect: {} },
+    {
+      // The index has rallied: the contract as written is marked 1.50. Opposite side: -15,000,000 x 1.50 / 100 = -225,000; 235,000 below the 10,000 paid.
+      id: 'mark-rallies', action: 'manual_price', instrument: 'main', value: 1.50, note: 'Dealer mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'eis', price: 1.5, value: -225_000, unrealized: -235_000 }],
+        otc: [{ instrument: 'main', mark: 1.5, markValue: -225_000 }],
+        pnl: { book: { unrealized: -235_000, total: 503_000 } },
+        nav: { treasury: 19_503_000, book: 20_503_000 },
+        balance: { treasury: { positions: -225_000, assets: 19_533_000, netAssets: 19_503_000 } },
+      },
+    },
+    {
+      id: 'variation-margin-posted-again', covers: 'variation margin', action: 'clock', to: eod('2026-04-22'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under "CSA Dealer Q" (Dealer Q): 30,000.00 USD returned to the counterparty and 225,000.00 USD posted. Netting set of 1 position marked at -225,000.00 USD; threshold 0.00 USD.', owner: 'treasury' }],
+        cash: { treasury: { USD: { settled: 19_253_000, restricted: 0, margin: 475_000, availableToTrade: 19_253_000, availableToWithdraw: 19_253_000 } } },
+        otc: [{ instrument: 'main', vmPosted: 225_000, vmHeld: 0, vmExposure: -225_000 }],
+        balance: { treasury: { cash: 19_253_000, restricted: null, margin: 475_000, collateralReceived: null, assets: 19_503_000, liabilities: 0, netAssets: 19_503_000 } },
+      },
+    },
+    // The index closes at 5,040.00 on Monday 20 July: the end of the second period.
+    { id: 'second-reset-level', covers: 'reset fixing', action: 'close_price', instrument: 'index', date: '2026-07-20', value: 5_040, expect: {} },
+    {
+      // Second period, 15,000,000:
+      //   index return: 15,000,000 x (5,040 / 4,800 - 1) = 750,000.00 for the side as written; Treasury pays it
+      //   financing:    15,000,000 x (3.80% - 0.20%) x 91/360 = 136,500.00, received
+      // The swap matures: the 10,000 of upfront carried is written off; the 250,000 independent amount and the 225,000 posted come back.
+      // 19,000,000 - 750 - 10,000 + 600,000 + 138,750 - 750,000 + 136,500 = 19,114,500.
+      id: 'second-period-and-maturity', covers: ['return payment', 'financing payment', 'maturity', 'close', 'collateral'], action: 'clock', to: at('2026-07-22'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap payment on ${EIS_NAME}, leg A (return), period 2026-04-20 to 2026-07-20: 750,000.00 USD`, cash: { USD: -750_000 }, owner: 'treasury', date: '2026-07-22' },
+          { type: 'swap.payment', summary: `Swap receipt on ${EIS_NAME}, leg B (float), period 2026-04-20 to 2026-07-20: 136,500.00 USD`, cash: { USD: 136_500 }, owner: 'treasury', date: '2026-07-22' },
+          { type: 'swap.matured', summary: `Swap matured: ${EIS_NAME} (notional 15,000,000)`, owner: 'treasury' },
+          { type: 'swap.collateral', summary: `Collateral returned on ${EIS_NAME} under "CSA Dealer Q" (Dealer Q): 250,000.00 USD (independent amount, the position ended)`, cash: { USD: 250_000 }, owner: 'treasury' },
+          { type: 'collateral.variation', summary: 'Variation margin under "CSA Dealer Q" (Dealer Q): 225,000.00 USD returned to us. The last position of the netting set ended.', cash: { USD: 225_000 }, owner: 'treasury' },
+        ],
+        cash: { treasury: { USD: { settled: 19_114_500, unsettled: 0, margin: 0, restricted: 0, reserved: 0, availableToTrade: 19_114_500, availableToWithdraw: 19_114_500 } }, account: { USD: { settled: 1_000_000 } } },
+        positions: [], holdings: { main: null }, lifecycle: [], otc: [], pending: [], alerts: [],
+        pnl: { book: { realized: 115_250, commissions: -750, unrealized: 0, total: 114_500 } }, // 738,750 - 750,000 + 136,500 - 10,000
+        nav: { account: 1_000_000, treasury: 19_114_500, book: 20_114_500 },
+        provisional: { account: false, book: false },
+        balance: { treasury: { cash: 19_114_500, margin: null, positions: null, assets: 19_114_500, liabilities: 0, netAssets: 19_114_500 } },
+      },
+    },
+    { id: 'treasury-screens-after-maturity', covers: 'maturity', action: 'owner_screens', owner: 'treasury', expect: {} },
+    {
+      id: 'nothing-left', action: 'clock', to: at('2026-07-23'),
+      expect: { events: [], lifecycle: [], positions: [], pending: [], otc: [], alerts: [], cash: { treasury: { USD: { settled: 19_114_500, margin: 0, restricted: 0 } } } },
+    },
+  ],
+};
+
+export default [amortizingSwap, accretingSwap, equitySwap, equityIndexSwap];

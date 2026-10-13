@@ -611,4 +611,310 @@ const absSpec = {
   ],
 };
 
-export default [specifiedPool, absSpec];
+// ---------------------------------------------------------------------------------------------
+// cmo
+// ---------------------------------------------------------------------------------------------
+// A sequential-pay CMO class: Fannie Mae REMIC Trust 2026-41 Class A2, 5.00%, monthly 30/360 from the 1st, 24-day delay,
+// guaranteed by Fannie Mae, T+3 (its own convention). Principal collected on the collateral goes first to Class A1 (stated
+// balance 150,000,000; 4,250,000 left at the start): Class A2 receives interest only, its factor stays 1, until A1 is retired.
+//   - Bought on Tuesday 4 May 2027 (settling Friday 7 May), increased on 12 May (settling Monday 17 May).
+//   - 25 May: the May remittance pays A1 down to 1,180,000, recorded by hand; a paydown of A2 is refused (A1 outstanding).
+//   - 4 June (after Memorial Day): the June factors are out: A1 is retired (recorded by hand: 0), and A2's own factor is
+//     recorded, 1 to 0.9856420 from 1 June, principal paid on 25 June.
+//   - The price rises; 4,000,000 sold on Tuesday 15 June, settling Monday 21 June (T+3 over Juneteenth, observed Friday 18 June);
+//     on Friday 25 June the June principal and May's coupon (on the 10,000,000 held at the record date); the rest sold that day.
+// Commission: 0.5 basis point of clean principal. Days of 30/360 from 1 May: to 7 May 6, 11 May 10, 14 May 13, 17 May 16,
+// 24 May 23; from 1 Jun: to 3 Jun 2, 14 Jun 13, 17 Jun 16, 21 Jun 20, 24 Jun 23, 30 Jun 29. A month's coupon is 5% / 12 of
+// current face. Current face after the June factor: 10,000,000 x 0.985642 = 9,856,420; 4,000,000 x = 3,942,568; 6,000,000 x =
+// 5,913,852.
+const cmoSpec = {
+  productId: 'cmo',
+  title: 'Fannie Mae REMIC 2026-41 Class A2 (sequential behind A1): interest only while the senior class is outstanding, its balance recorded by hand, A2 paydown refused until A1 is retired, then A2\'s own factor by hand; Memorial Day, Juneteenth, partial sale, coupon and principal after the 24-day delay, close',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount (original face)'],
+    manualInputs: ['Registration: Senior tranche, its stated balance and the balance outstanding; Payment delay 24, Guarantor, Settlement convention 3', 'Senior tranche balance recorded by hand from each remittance report (instrument form: Senior tranche now outstanding, Review senior tranche balance)', 'The tranche\'s own factor recorded by hand as a paydown once the senior tranche is retired'],
+    settlement: 'T+3 on the US bond calendar (the deal\'s own convention), Juneteenth skipped; current face = original face x the tranche\'s own factor',
+    lifecycle: 'Automatic: daily accrual, monthly coupon paid 24 days after the period ends, paydown principal receivable settled on its payment date. Manual: the senior tranche\'s balance and retirement, the tranche\'s own factor. Refused: a paydown of the tranche while the senior tranche is outstanding (principal priority)',
+    accounting: 'Cost per 100 of current face; principal returned at par against a premium cost is a realized loss; coupon and interest income; commission expensed',
+    collateral: 'None for a long position',
+  },
+  start: EDT('2027-05-04'), // Tuesday
+  settlementCheck: { lag: 3, holidays: ['2027-05-31', '2027-06-18'] }, // Memorial Day, Juneteenth (observed)
+  book: {
+    name: 'Matrix CMO', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 13_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 12_000_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.5 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'cmo', name: 'Fannie Mae REMIC Trust 2026-41 Class A2 5.00% (sequential)', symbol: 'FNR-26-41-A2', marketView: 'US_CASH', venueType: 'otc', issuer: 'Fannie Mae REMIC Trust 2026-41', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { settleLag: 3 },
+      terms: { couponType: 'fixed', couponRate: 0.05, frequency: 12, maturity: '2057-05-01', issueDate: '2026-11-01', dayCount: '30/360', redemption: 100, factor: 1, paymentDelayDays: 24, guarantor: 'Fannie Mae', seniority: 'Sequential Class A2',
+        seniorTranche: 'Class A1', seniorBalance: 150_000_000, seniorRemaining: 4_250_000 } },
+  },
+  quotes: { main: { bid: 100, ask: 100.25, last: 100.125, bidSize: 50_000_000, askSize: 50_000_000 } },
+  expectAtStart: { ...startState(12_000_000, 1_000_000), cash: { account: usdCash(12_000_000), treasury: usdCash(1_000_000) } },
+  steps: [
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 8_000_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 8_000_000, estimate: 100.25, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2027-05-07', calendar: 'USBOND',
+            gross: 8_020_000, // 8,000,000 x 100.25 / 100 (factor 1)
+            accrued: 6_666.67, // 6 days: 8,000,000 x 5% x 6/360 = 6,666.667
+            cash: -8_026_666.67, fees: 401 }], // 0.5 bp of 8,020,000
+          cash: { USD: { purchases: 8_026_666.67, fees: 401, required: 8_027_067.67, available: 12_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 8_000_000, avgPrice: 100.25, fills: [{ qty: 8_000_000, price: 100.25, model: 'quoted-bid-ask', settleDate: '2027-05-07', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 8,000,000 FNR-26-41-A2 @ 100.25 USD', owner: 'account', date: '2027-05-04' }],
+        cash: { account: { USD: { settled: 12_000_000, unsettled: -8_027_067.67, availableToTrade: 3_972_932.33 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 8_000_000, avgCost: 100.25, cost: 8_020_000, price: 100.125,
+          value: 8_010_000, unrealized: -10_000, accrued: 6_666.67, priceSource: 'Test fixture' }],
+        holdings: { main: { long: 8_000_000, short: 0, net: 8_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2027-05-07', amount: -8_027_067.67, ccy: 'USD', into: 'cash' }],
+        // Bought after the April record date: the first coupon is 1 June's (May's interest), paid Friday 25 June. Maturity
+        // 1 May 2057 + 24 days = Friday 25 May 2057.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-06-25', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2057-05-25', status: 'pending' }],
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -401, fees: 0, borrowFunding: 0, unrealized: -10_000, total: -10_401 } },
+        nav: { account: 11_989_599, book: 12_989_599 },
+        balance: { account: { cash: 12_000_000, accruedIncome: 6_666.67, positions: 8_010_000, payable: 8_027_067.67, assets: 20_016_666.67, liabilities: 8_027_067.67, netAssets: 11_989_599 } },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EDT('2027-05-07'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 8,027,067.67 USD from settled cash', cash: { USD: -8_027_067.67 }, date: '2027-05-07' }],
+        cash: { account: { USD: { settled: 3_972_932.33, unsettled: 0, availableToTrade: 3_972_932.33 } } },
+        pending: [],
+        balance: { account: { cash: 3_972_932.33, payable: null, assets: 11_989_599, liabilities: 0 } },
+      },
+    },
+    {
+      // Wednesday 12 May. End of day 11 May: 8,000,000 x 5% x 10/360 = 11,111.111; 4,444.44 more.
+      id: 'accrue', covers: 'accrual', action: 'clock', to: EDT('2027-05-12'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on FNR-26-41-A2: 4,444.44 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 8_000_000, accrued: 11_111.11 }],
+        pnl: { account: { couponInterest: 4_444.44, total: -5_956.56 } },
+        nav: { account: 11_994_043.44, book: 12_994_043.44 },
+        balance: { account: { accruedIncome: 11_111.11, assets: 11_994_043.44, netAssets: 11_994_043.44 } },
+      },
+    },
+    {
+      // 2,000,000 more at 100.25 = 2,005,000; 16 days to Monday 17 May 4,444.444; 0.5 bp = 100.25.
+      id: 'increase', covers: 'increase', action: 'resize', lot: 'lot', factor: 1.25,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', qty: 2_000_000, estimate: 100.25, settleDate: '2027-05-17', gross: 2_005_000, accrued: 4_444.44, cash: -2_009_444.44, fees: 100.25 }],
+          cash: { USD: { purchases: 2_009_444.44, fees: 100.25, required: 2_009_544.69, available: 3_972_932.33, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 2_000_000, avgPrice: 100.25 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Bought 2,000,000 FNR-26-41-A2 @ 100.25 USD' }],
+        cash: { account: { USD: { settled: 3_972_932.33, unsettled: -2_009_544.69, availableToTrade: 1_963_387.64 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 10_000_000, cost: 10_025_000, avgCost: 100.25, price: 100.125, value: 10_012_500, unrealized: -12_500, accrued: 15_555.55 }],
+        holdings: { main: { long: 10_000_000, short: 0, net: 10_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2027-05-17', amount: -2_009_544.69, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { commissions: -501.25, unrealized: -12_500, total: -8_556.81 } },
+        nav: { account: 11_991_443.19, book: 12_991_443.19 },
+        balance: { account: { cash: 3_972_932.33, accruedIncome: 15_555.55, positions: 10_012_500, payable: 2_009_544.69, assets: 14_000_987.88, liabilities: 2_009_544.69, netAssets: 11_991_443.19 } },
+      },
+    },
+    {
+      // Monday 17 May. End of day Friday 14 May: 8,000,000 x 13 days 14,444.444 + 2,000,000 bought to 17 May (16 days) 4,444.444 =
+      // 18,888.89. 3,333.34 more.
+      id: 'settle-increase', covers: ['settlement', 'accrual'], action: 'clock', to: EDT('2027-05-17'),
+      expect: {
+        events: [
+          { type: 'settlement.pay', summary: 'paid 2,009,544.69 USD from settled cash', cash: { USD: -2_009_544.69 } },
+          { type: 'accrual.coupon', summary: 'Interest accrued on FNR-26-41-A2: 3,333.34 USD' },
+        ],
+        cash: { account: { USD: { settled: 1_963_387.64, unsettled: 0, availableToTrade: 1_963_387.64 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 10_000_000, accrued: 18_888.89 }],
+        pending: [],
+        pnl: { account: { couponInterest: 7_777.78, total: -5_223.47 } },
+        nav: { account: 11_994_776.53, book: 12_994_776.53 },
+        balance: { account: { cash: 1_963_387.64, payable: null, accruedIncome: 18_888.89, assets: 11_994_776.53, liabilities: 0, netAssets: 11_994_776.53 } },
+      },
+    },
+    {
+      // Tuesday 25 May. End of day 24 May: 10,000,000 x 5% x 23/360 = 31,944.444; 13,055.55 more. (No coupon today for this
+      // position: April's interest belongs to the April record date, before it was bought.)
+      id: 'may-distribution', covers: 'accrual', action: 'clock', to: EDT('2027-05-25'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on FNR-26-41-A2: 13,055.55 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 10_000_000, accrued: 31_944.44 }],
+        pnl: { account: { couponInterest: 20_833.33, total: 7_832.08 } },
+        nav: { account: 12_007_832.08, book: 13_007_832.08 },
+        balance: { account: { accruedIncome: 31_944.44, assets: 12_007_832.08, netAssets: 12_007_832.08 } },
+      },
+    },
+    {
+      // The May remittance report: Class A1 paid down from 4,250,000 to 1,180,000, recorded by hand. No cash moves for A2.
+      id: 'senior-paid-down', covers: 'senior tranche balance (by hand)', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'senior_balance', remaining: 1_180_000 },
+      expect: {
+        events: [{ type: 'bond.senior_balance', summary: 'Class A1 (senior to FNR-26-41-A2) balance recorded by hand: 4,250,000 to 1,180,000. FNR-26-41-A2 receives no principal until it is retired', owner: 'account', date: '2027-05-25' }],
+      },
+    },
+    {
+      // A paydown of A2 while A1 is outstanding: refused, principal goes to A1 first.
+      id: 'paydown-before-senior-retired', covers: 'paydown (by hand)', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'paydown', newFactor: 0.99, effective: '2027-05-01', payDate: '2027-05-25' },
+      status: 'blocked', reason: 'A sequential class receives no principal while the class senior to it is outstanding.',
+      expect: { refused: 'receives principal only after Class A1 is retired' },
+    },
+    {
+      // Friday 4 June, after Memorial Day (Monday 31 May). End of day Thursday 3 June: May's coupon (paid 25 June) 10,000,000 x
+      // 5% / 12 = 41,666.6667 plus 2 days of June 2,777.7778: 44,444.44. 12,500.00 more.
+      id: 'factor-day', covers: ['accrual', 'market holiday'], action: 'clock', to: EDT('2027-06-04'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on FNR-26-41-A2: 12,500.00 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 10_000_000, accrued: 44_444.44 }],
+        pnl: { account: { couponInterest: 33_333.33, total: 20_332.08 } },
+        nav: { account: 12_020_332.08, book: 13_020_332.08 },
+        balance: { account: { accruedIncome: 44_444.44, assets: 12_020_332.08, netAssets: 12_020_332.08 } },
+      },
+    },
+    {
+      // The June report: Class A1 is retired.
+      id: 'senior-retired', covers: 'senior tranche balance (by hand)', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'senior_balance', remaining: 0 },
+      expect: {
+        events: [{ type: 'bond.senior_balance', summary: 'Class A1 (senior to FNR-26-41-A2) balance recorded by hand: 1,180,000 to 0: retired. FNR-26-41-A2 now receives principal; its own factor is recorded as a paydown', owner: 'account', date: '2027-06-04' }],
+      },
+    },
+    {
+      // A2's own factor: 1 to 0.985642 from 1 June, principal paid 25 June: 10,000,000 x 0.014358 = 143,580.00 receivable. Cost out
+      // 10,025,000 x 0.014358 = 143,938.95: realized -358.95 (par against a 100.25 cost). June's 2 days restated on 9,856,420:
+      // 2,737.8944; with May's coupon 41,666.6667: 44,404.56, 39.88 down.
+      id: 'own-factor', covers: 'paydown (by hand)', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'paydown', newFactor: 0.985642, effective: '2027-06-01', payDate: '2027-06-25' },
+      expect: {
+        events: [
+          { type: 'bond.paydown', summary: 'Principal paydown on FNR-26-41-A2: factor 1 to 0.985642 from 2027-06-01, 143,580.00 USD receivable on 2027-06-25', owner: 'account', date: '2027-06-04' },
+          { type: 'accrual.coupon', summary: 'Accrued interest restated on the new factor of FNR-26-41-A2, down: 39.88 USD' },
+        ],
+        cash: { account: { USD: { settled: 1_963_387.64, unsettled: 143_580, availableToTrade: 2_106_967.64 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 10_000_000, cost: 9_881_061.05, avgCost: 100.25, price: 100.125, value: 9_868_740.53, unrealized: -12_320.52, accrued: 44_404.56 }], // 9,856,420 x 100.125 / 100 = 9,868,740.525
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2027-06-25', amount: 143_580, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: -358.95, couponInterest: 33_293.45, unrealized: -12_320.52, total: 20_112.73 } },
+        nav: { account: 12_020_112.73, book: 13_020_112.73 },
+        balance: { account: { receivable: 143_580, accruedIncome: 44_404.56, positions: 9_868_740.53, assets: 12_020_112.73, netAssets: 12_020_112.73 } },
+      },
+    },
+    {
+      id: 'quote-up', action: 'quote', instrument: 'main', quote: { bid: 100.5, ask: 100.75, last: 100.625, bidSize: 50_000_000, askSize: 50_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 10_000_000, price: 100.625, value: 9_918_022.63, unrealized: 36_961.58 }], // 9,856,420 x 100.625 / 100 = 9,918,022.625
+        pnl: { account: { unrealized: 36_961.58, total: 69_394.83 } },
+        nav: { account: 12_069_394.83, book: 13_069_394.83 },
+        balance: { account: { positions: 9_918_022.63, assets: 12_069_394.83, netAssets: 12_069_394.83 } },
+      },
+    },
+    {
+      // Tuesday 15 June. End of day 14 Jun: May's coupon 41,666.6667 + 9,856,420 x 5% x 13/360 = 17,796.3139: 59,462.98. 15,058.42 more.
+      id: 'accrue-june', covers: 'accrual', action: 'clock', to: EDT('2027-06-15'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on FNR-26-41-A2: 15,058.42 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 10_000_000, accrued: 59_462.98 }],
+        pnl: { account: { couponInterest: 48_351.87, total: 84_453.25 } },
+        nav: { account: 12_084_453.25, book: 13_084_453.25 },
+        balance: { account: { accruedIncome: 59_462.98, assets: 12_084_453.25, netAssets: 12_084_453.25 } },
+      },
+    },
+    {
+      // 4,000,000 sold at 100.50, settling Monday 21 June (T+3: Wednesday, Thursday, Juneteenth observed Friday, Monday): current
+      // face 3,942,568 x 100.50 / 100 = 3,962,280.84; 20 days 10,951.578; 0.5 bp = 198.114. Cost out 9,881,061.05 x 0.4 =
+      // 3,952,424.42: realized 9,856.42.
+      id: 'reduce', covers: ['reduce', 'market holiday'], action: 'ticket', instrument: 'main', side: 'sell', qty: 4_000_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 4_000_000, estimate: 100.5, settleDate: '2027-06-21', notional: 3_942_568,
+          gross: 3_962_280.84, accrued: 10_951.58, cash: 3_973_232.42, fees: 198.11 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 4_000_000, avgPrice: 100.5 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 4,000,000 FNR-26-41-A2 @ 100.50 USD (realized 9,856.42 USD)' }],
+        cash: { account: { USD: { settled: 1_963_387.64, unsettled: 4_116_614.31, availableToTrade: 6_080_001.95 } } }, // 143,580 + 3,973,034.31
+        positions: [{ instrument: 'main', lot: 'lot', qty: 6_000_000, cost: 5_928_636.63, avgCost: 100.25, price: 100.625, value: 5_950_813.58, unrealized: 22_176.95, accrued: 48_511.4 }], // 5,913,852 x 100.625 / 100 = 5,950,813.575
+        holdings: { main: { long: 6_000_000, short: 0, net: 6_000_000 } },
+        // The coupon after (1 July, June's interest) is scheduled with the position change: 25 July is a Sunday, paid Monday 26 July.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-06-25', status: 'pending' }, { type: 'bond.coupon', instrument: 'main', dueDate: '2027-07-26', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2057-05-25', status: 'pending' }],
+        pending: [
+          { instrument: 'main', owner: 'account', dueDate: '2027-06-21', amount: 3_973_034.31, ccy: 'USD', into: 'cash' },
+          { instrument: 'main', owner: 'account', dueDate: '2027-06-25', amount: 143_580, ccy: 'USD', into: 'cash' },
+        ],
+        pnl: { account: { realized: 9_497.47, commissions: -699.36, unrealized: 22_176.95, total: 79_326.93 } },
+        nav: { account: 12_079_326.93, book: 13_079_326.93 },
+        balance: { account: { receivable: 4_116_614.31, accruedIncome: 48_511.4, positions: 5_950_813.58, assets: 12_079_326.93, netAssets: 12_079_326.93 } },
+      },
+    },
+    {
+      // Monday 21 June. End of day Thursday 17 June (Friday 18th closed): May's coupon 41,666.6667 + 9,856,420 x 16 days 21,903.1556
+      // less the 20 days sold 10,951.5778: 52,618.24. 4,106.84 more.
+      id: 'settle-reduce', covers: ['settlement', 'accrual'], action: 'clock', to: EDT('2027-06-21'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 3,973,034.31 USD into settled cash', cash: { USD: 3_973_034.31 } },
+          { type: 'accrual.coupon', summary: 'Interest accrued on FNR-26-41-A2: 4,106.84 USD' },
+        ],
+        cash: { account: { USD: { settled: 5_936_421.95, unsettled: 143_580, availableToTrade: 6_080_001.95 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 6_000_000, accrued: 52_618.24 }],
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2027-06-25', amount: 143_580, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { couponInterest: 52_458.71, total: 83_433.77 } },
+        nav: { account: 12_083_433.77, book: 13_083_433.77 },
+        balance: { account: { cash: 5_936_421.95, receivable: 143_580, accruedIncome: 52_618.24, assets: 12_083_433.77, netAssets: 12_083_433.77 } },
+      },
+    },
+    {
+      // Friday 25 June: the June principal 143,580.00, and May's coupon on the 10,000,000 held at the record date (factor 1):
+      // 41,666.6667 paid as 41,666.67. The balance left, 52,618.24 - 41,666.67 = 10,951.57, against June's interest to 17 June
+      // worked whole, 21,903.1556 - 10,951.5778 = 10,951.5778 -> 10,951.58: 0.01 more. End of day 24 Jun: 5,913,852 x 5% x
+      // 23/360 = 18,891.4717; 7,939.89 more.
+      id: 'coupon-and-principal', covers: ['coupon', 'paydown (by hand)', 'settlement'], action: 'clock', to: EDT('2027-06-25'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 143,580.00 USD into settled cash', cash: { USD: 143_580 }, date: '2027-06-25' },
+          { type: 'bond.coupon', summary: 'Coupon received on 10,000,000 FNR-26-41-A2: 41,666.67 USD', cash: { USD: 41_666.67 }, owner: 'account', date: '2027-06-25' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on FNR-26-41-A2: 0.01 USD' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on FNR-26-41-A2: 7,939.89 USD' },
+        ],
+        cash: { account: { USD: { settled: 6_121_668.62, unsettled: 0, availableToTrade: 6_121_668.62 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 6_000_000, accrued: 18_891.47 }],
+        pending: [],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-07-26', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2057-05-25', status: 'pending' }],
+        pnl: { account: { couponInterest: 60_398.61, total: 91_373.67 } },
+        nav: { account: 12_091_373.67, book: 13_091_373.67 },
+        balance: { account: { cash: 6_121_668.62, receivable: null, accruedIncome: 18_891.47, assets: 12_091_373.67, netAssets: 12_091_373.67 } },
+      },
+    },
+    {
+      // The rest sold at 100.50 for settlement on Wednesday 30 June, before the June record date: 5,913,852 x 100.50 / 100 =
+      // 5,943,421.26; 29 days 23,819.682 (4,928.21 more than on the books); 0.5 bp = 297.171. Realized 5,943,421.26 -
+      // 5,928,636.63 = 14,784.63.
+      id: 'close', covers: 'close', action: 'close', lot: 'lot', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 6_000_000, estimate: 100.5, settleDate: '2027-06-30', notional: 5_913_852,
+          gross: 5_943_421.26, accrued: 23_819.68, cash: 5_967_240.94, fees: 297.17 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 6_000_000, avgPrice: 100.5 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 6,000,000 FNR-26-41-A2 @ 100.50 USD (realized 14,784.63 USD)' },
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of FNR-26-41-A2: 4,928.21 USD' },
+        ],
+        cash: { account: { USD: { settled: 6_121_668.62, unsettled: 5_966_943.77, availableToTrade: 12_088_612.39 } } },
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2027-06-30', amount: 5_966_943.77, ccy: 'USD', into: 'cash' }],
+        lifecycle: [],
+        pnl: { account: { realized: 24_282.1, couponInterest: 65_326.82, commissions: -996.53, unrealized: 0, total: 88_612.39 } },
+        nav: { account: 12_088_612.39, book: 13_088_612.39 },
+        balance: { account: { cash: 6_121_668.62, receivable: 5_966_943.77, positions: null, accruedIncome: null, assets: 12_088_612.39, liabilities: 0, netAssets: 12_088_612.39 } },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: EDT('2027-06-30'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 5,966,943.77 USD into settled cash', cash: { USD: 5_966_943.77 } }],
+        cash: { account: { USD: { settled: 12_088_612.39, unsettled: 0, availableToTrade: 12_088_612.39 } }, treasury: usdCash(1_000_000) },
+        pending: [],
+        balance: { account: { cash: 12_088_612.39, receivable: null, assets: 12_088_612.39, liabilities: 0 } },
+      },
+    },
+  ],
+};
+
+export default [specifiedPool, absSpec, cmoSpec];

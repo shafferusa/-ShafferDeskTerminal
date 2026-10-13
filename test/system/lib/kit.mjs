@@ -30,6 +30,7 @@ export const AREAS = {
   history: 'History survives',
   isolation: 'Isolation',
   hedge: 'Hedge reconnection',
+  accounting: 'Accounting verified against hand-worked figures',
 };
 export const caseId = (level, area, id) => `${LEVEL_LETTER[level]}:${area}:${id}`;
 const CASES_DIR = resolve(fileURLToPath(new URL('../cases', import.meta.url)));

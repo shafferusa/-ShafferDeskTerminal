@@ -268,6 +268,23 @@ export const actions = {
     if (sentInput) problems.push(...requestProblems(sentInput, want));
     if (out.strategy && step.as && !ctx.lots.has(step.as)) ctx.nameLot(step.as, out.strategy.id, step.instrument);
     if (out.strategy?.id && out.strategy.unit?.id) (ctx.strategyUnits ||= new Map()).set(out.strategy.id, out.strategy.unit.id);
+    // `contractAs`: the contract a leg registered on confirmation (a margin loan, for example) gets the step's key, as the
+    // engine and API levels do (lib/actions.mjs, learnContracts): the new instruments of this submission, in leg order.
+    if (step.contractAs && out.strategy) {
+      const last = out.strategy.orders.at(-1)?.submission;
+      const made = out.strategy.orders.filter((o) => o.submission === last && o.instrument && !ctx.idToKey.has(o.instrument.id) && !Object.values(ctx.instruments).some((i) => i.id === o.instrument.id));
+      const keys = [].concat(step.contractAs);
+      for (let i = 0; i < keys.length; i++) {
+        if (!keys[i]) continue;
+        if (!made[i]) { problems.push(`Step "${step.id}" names contract ${i + 1} "${keys[i]}", but the confirmation registered no instrument for it.`); continue; }
+        ctx.instruments[keys[i]] = await t.getInstrument(made[i].instrument.id);
+        ctx.idToKey.set(made[i].instrument.id, keys[i]);
+      }
+      if (out.strategy) {
+        const { normalizeResult } = await import('../../lib/normalize.mjs');
+        out.result = normalizeResult(out.strategy, last, ctx);
+      }
+    }
     return { ...out, problems };
   },
 
@@ -369,6 +386,12 @@ export const actions = {
     const go = ui.button(dlg, 'Preview roll');
     if (await go.isDisabled()) return { refusal: { message: 'Preview roll is disabled: the Roll dialog is not complete.', where: 'Roll dialog' } };
     return previewAndConfirm(ui, ctx, () => go.click(), { expectsRefusal });
+  },
+
+  /** Repay (or withdraw) a loan or deposit a package's financing leg opened: its Repay button, as the loan family's driver does it. */
+  async repay(ui, t, ctx, step, tools) {
+    const { actions: loan } = await import('./loan.mjs');
+    return loan.repay(ui, t, ctx, step, tools);
   },
 
   /** The scripted hedge service stands in for Shaffer Hedge: set through the API, like any fixture. */

@@ -24,7 +24,8 @@
 //                                                 from Mon 9 March 5,024.75 / 5,025.00
 //   IRS    pay 4.00% fixed / receive VER-3M on 1,000,000, under "CSA Verification Bank" (independent amount 2% of
 //          notional, variation margin, threshold 0, minimum transfer 0, netting per position); mark per 100 notional
-//          0.00 (current), -1.50 as of 27 Feb (stale) from Monday's end of day, -1.00 (current) from Friday 10:05
+//          0.00 (current), +1.50 as of 27 Feb (stale) from Monday's end of day, +1.00 (current) from Friday 10:05
+//          (in North's favour: the counterparty posts variation margin, held as restricted cash and owed back)
 //   Borrow of VRFY: available, fee 1.00% a year on market value (ACT/360).
 //   Book: equity commission 0.01 a share (minimum 1.00), options 0.65 a contract, futures 2.25 a contract, bonds,
 //   FX and swaps none; T+1 US equities, bonds and options, T+2 foreign equities and spot FX; short collateral 102%
@@ -157,31 +158,33 @@ export const EXPECT = {
     },
   },
 
-  // C2: Monday 17:30, end of day. Futures settle at 5,010 (+1,000 received); the swap is marked -1.50 on a stale mark
-  // (value -15,000, 15,000 posted, provisional); the short's collateral is topped up to 102% before its proceeds arrive.
+  // C2: Monday 17:30, end of day. Futures settle at 5,010 (+1,000 received); the swap is marked +1.50 on a stale mark
+  // (value +15,000; the counterparty posts 15,000, held restricted and owed back; provisional); the short's collateral
+  // is topped up to 102% before its proceeds arrive.
   C2: {
     units: {
       T: { lines: { cash: { USD: 600_000, EUR: 40_000, JPY: 30_000_000 }, receivable: { USD: 200_000 }, payable: { JPY: 30_000_000 }, borrowed: { JPY: 30_000_000 } },
         assets: 1_044_000, liabilities: 400_000, netAssets: 644_000, capital: 2_110_000, internal: -1_466_000, results: 0 },
-      // N: cash 1,109,745.50 + 1,000 - 15,000 = 1,095,745.50; margin 55,000; positions 99,950 + 98,450 + 0 - 15,000 = 183,400.
-      N: { lines: { cash: { USD: 1_095_745.50 }, margin: { USD: 55_000 }, accruedIncome: { USD: 2_950 }, positions: { USD: 183_400 }, payable: { USD: 201_460 }, borrowed: { USD: 300_000 } },
-        assets: 1_337_095.50, liabilities: 501_460, netAssets: 835_635.50, capital: 0, internal: 850_000, results: -14_364.50 },
+      // N: cash 1,109,745.50 + 1,000 = 1,110,745.50; restricted 15,000 received, owed back 15,000; positions
+      //    99,950 + 98,450 + 0 + 15,000 = 213,400. Assets 1,110,745.50 + 40,000 + 15,000 + 2,950 + 213,400 = 1,382,095.50.
+      N: { lines: { cash: { USD: 1_110_745.50 }, restricted: { USD: 15_000 }, margin: { USD: 40_000 }, accruedIncome: { USD: 2_950 }, positions: { USD: 213_400 }, payable: { USD: 201_460 }, borrowed: { USD: 300_000 }, collateralReceived: { USD: 15_000 } },
+        assets: 1_382_095.50, liabilities: 516_460, netAssets: 865_635.50, capital: 0, internal: 850_000, results: 15_635.50 },
       // S: 1.02 x 500 x 99.95 = 50,974.50 required, 49,945 pending: 1,029.50 moves from cash to restricted.
       S: { lines: { cash: { USD: 548_970.50, EUR: 60_000 }, restricted: { USD: 1_029.50 }, receivable: { USD: 50_183.70 }, positions: { USD: -50_225, EUR: 49_950 }, payable: { EUR: 50_010 } },
         assets: 670_903.70, liabilities: 55_011, netAssets: 615_892.70, capital: 0, internal: 616_000, results: -107.30 },
     },
-    book: { assets: 3_051_999.20, liabilities: 956_471, netAssets: 2_095_528.20, capital: 2_110_000, results: -14_471.80, advanced: 1_466_000, received: 1_466_000 },
+    book: { assets: 3_096_999.20, liabilities: 971_471, netAssets: 2_125_528.20, capital: 2_110_000, results: 15_528.20, advanced: 1_466_000, received: 1_466_000 },
     pnl: {
-      book: { realized: 1_000, dividends: 0, couponInterest: 0, borrowFunding: 0, lendingIncome: 0, commissions: -31.80, fees: -250, unrealized: -15_190, fx: 0, total: -14_471.80 },
-      T: { total: 0 }, N: { realized: 1_000, unrealized: -15_100, total: -14_364.50 }, S: { total: -107.30 },
+      book: { realized: 1_000, dividends: 0, couponInterest: 0, borrowFunding: 0, lendingIncome: 0, commissions: -31.80, fees: -250, unrealized: 14_810, fx: 0, total: 15_528.20 },
+      T: { total: 0 }, N: { realized: 1_000, unrealized: 14_900, total: 15_635.50 }, S: { total: -107.30 },
     },
     flows: { book: 2_110_000, T: 644_000, N: 850_000, S: 616_000 },
     provisional: true, affected: [['stale-price', 'IRS-VER-1Y', 'North']],
-    swap: { value: -15_000, independentHeld: 20_000, variationPosted: 15_000, provisional: true },
+    swap: { value: 15_000, independentHeld: 20_000, variationPosted: 0, variationReceived: 15_000, provisional: true },
     cash: {
       // S: 548,970.50 + 50,183.70 - 49,945 - 33,992.50 = 515,216.70; withdraw 548,970.50 - 33,992.50 = 514,978.
       S: { USD: { settled: 548_970.50, restricted: 1_029.50, margin: 0, receivable: 50_183.70, payable: 0, reserved: 33_992.50, availableToTrade: 515_216.70, availableToWithdraw: 514_978 } },
-      N: { USD: { settled: 1_095_745.50, margin: 55_000, payable: 201_460, availableToTrade: 894_285.50, availableToWithdraw: 894_285.50 } },
+      N: { USD: { settled: 1_110_745.50, restricted: 15_000, margin: 40_000, payable: 201_460, availableToTrade: 909_285.50, availableToWithdraw: 909_285.50, collateralReceived: 15_000 } },
     },
   },
 
@@ -190,16 +193,16 @@ export const EXPECT = {
     units: {
       T: { lines: { cash: { USD: 600_000, EUR: 40_000, JPY: 30_000_000 }, receivable: { USD: 200_000 }, payable: { JPY: 30_000_000 }, borrowed: { JPY: 30_000_000 } },
         assets: 1_044_000, liabilities: 400_000, netAssets: 644_000, capital: 2_110_000, internal: -1_466_000, results: 0 },
-      // N: 1,095,745.50 - 100,010 - 101,450 + 98,372 = 992,657.50; borrowed 300,000 + 98,372.
-      N: { lines: { cash: { USD: 992_657.50 }, margin: { USD: 55_000 }, accruedIncome: { USD: 2_950 }, positions: { USD: 183_400 }, borrowed: { USD: 398_372 } },
-        assets: 1_234_007.50, liabilities: 398_372, netAssets: 835_635.50, capital: 0, internal: 850_000, results: -14_364.50 },
+      // N: 1,110,745.50 - 100,010 - 101,450 + 98,372 = 1,007,657.50; borrowed 300,000 + 98,372.
+      N: { lines: { cash: { USD: 1_007_657.50 }, restricted: { USD: 15_000 }, margin: { USD: 40_000 }, accruedIncome: { USD: 2_950 }, positions: { USD: 213_400 }, borrowed: { USD: 398_372 }, collateralReceived: { USD: 15_000 } },
+        assets: 1_279_007.50, liabilities: 413_372, netAssets: 865_635.50, capital: 0, internal: 850_000, results: 15_635.50 },
       // S: 49,945 lands in restricted cash (1,029.50 + 49,945 = 50,974.50); 238.70 of put premium in cash.
       S: { lines: { cash: { USD: 549_209.20, EUR: 60_000 }, restricted: { USD: 50_974.50 }, positions: { USD: -50_225, EUR: 49_950 }, payable: { EUR: 50_010 } },
         assets: 670_903.70, liabilities: 55_011, netAssets: 615_892.70, capital: 0, internal: 616_000, results: -107.30 },
     },
-    book: { assets: 2_948_911.20, liabilities: 853_383, netAssets: 2_095_528.20, capital: 2_110_000, results: -14_471.80, advanced: 1_466_000, received: 1_466_000 },
-    pnl: { book: { realized: 1_000, dividends: 0, couponInterest: 0, borrowFunding: 0, lendingIncome: 0, commissions: -31.80, fees: -250, unrealized: -15_190, fx: 0, total: -14_471.80 },
-      T: { total: 0 }, N: { total: -14_364.50 }, S: { total: -107.30 } },
+    book: { assets: 2_993_911.20, liabilities: 868_383, netAssets: 2_125_528.20, capital: 2_110_000, results: 15_528.20, advanced: 1_466_000, received: 1_466_000 },
+    pnl: { book: { realized: 1_000, dividends: 0, couponInterest: 0, borrowFunding: 0, lendingIncome: 0, commissions: -31.80, fees: -250, unrealized: 14_810, fx: 0, total: 15_528.20 },
+      T: { total: 0 }, N: { total: 15_635.50 }, S: { total: -107.30 } },
     flows: { book: 2_110_000, T: 644_000, N: 850_000, S: 616_000 },
     provisional: true, affected: [['stale-price', 'IRS-VER-1Y', 'North']],
     repo: { worth: 101_400, clean: 98_450, accrued: 2_950, haircutAmount: 2_028, afterHaircut: 99_372, buffer: 1_000, supports: 98_372 },
@@ -212,7 +215,7 @@ export const EXPECT = {
     cash: {
       // S: settled 549,209.20, reserved 33,992.50: 515,216.70 to trade and to withdraw. The 50,974.50 restricted is neither.
       S: { USD: { settled: 549_209.20, restricted: 50_974.50, margin: 0, receivable: 0, payable: 0, reserved: 33_992.50, availableToTrade: 515_216.70, availableToWithdraw: 515_216.70 } },
-      N: { USD: { settled: 992_657.50, margin: 55_000, payable: 0, receivable: 0, availableToTrade: 992_657.50, availableToWithdraw: 992_657.50 } },
+      N: { USD: { settled: 1_007_657.50, restricted: 15_000, margin: 40_000, payable: 0, receivable: 0, availableToTrade: 1_007_657.50, availableToWithdraw: 1_007_657.50, collateralReceived: 15_000 } },
     },
   },
 
@@ -224,17 +227,17 @@ export const EXPECT = {
       T: { lines: { cash: { USD: 800_000, EUR: 40_000 }, borrowed: { JPY: 30_000_000 }, accruedExpense: { JPY: 3_600 } },
         assets: 844_000, liabilities: 200_024, netAssets: 643_976, capital: 2_110_000, internal: -1_466_000, results: -24 },
       // N: + 500 dividend + 3,000 coupon; loan interest 3 x 50 = 150; repo 98,372 x 0.045 x 2 / 360 = 24.593 -> 24.59.
-      N: { lines: { cash: { USD: 996_157.50 }, margin: { USD: 55_000 }, positions: { USD: 183_400 }, borrowed: { USD: 398_372 }, accruedExpense: { USD: 174.59 } },
-        assets: 1_234_557.50, liabilities: 398_546.59, netAssets: 836_010.91, capital: 0, internal: 850_000, results: -13_989.09 },
+      N: { lines: { cash: { USD: 1_011_157.50 }, restricted: { USD: 15_000 }, margin: { USD: 40_000 }, positions: { USD: 213_400 }, borrowed: { USD: 398_372 }, accruedExpense: { USD: 174.59 }, collateralReceived: { USD: 15_000 } },
+        assets: 1_279_557.50, liabilities: 413_546.59, netAssets: 866_010.91, capital: 0, internal: 850_000, results: 16_010.91 },
       // S: - 250 dividend compensation; borrow fee 3 x 500 x 99.95 x 0.01 / 360 = 4.1646 -> 4.16; EURF settled (EUR cash 9,990).
       S: { lines: { cash: { USD: 548_959.20, EUR: 9_990 }, restricted: { USD: 50_974.50 }, positions: { USD: -50_225, EUR: 49_950 }, accruedExpense: { USD: 4.16 } },
         assets: 615_642.70, liabilities: 4.16, netAssets: 615_638.54, capital: 0, internal: 616_000, results: -361.46 },
     },
-    book: { assets: 2_694_200.20, liabilities: 598_574.75, netAssets: 2_095_625.45, capital: 2_110_000, results: -14_374.55, advanced: 1_466_000, received: 1_466_000 },
+    book: { assets: 2_739_200.20, liabilities: 613_574.75, netAssets: 2_125_625.45, capital: 2_110_000, results: 15_625.45, advanced: 1_466_000, received: 1_466_000 },
     pnl: {
       // coupon income 3,000 - 2,950 bought = 50; borrowing and funding 174.59 + 4.16 + 250 + 24 = 452.75.
-      book: { realized: 1_000, dividends: 500, couponInterest: 50, borrowFunding: -452.75, lendingIncome: 0, commissions: -31.80, fees: -250, unrealized: -15_190, fx: 0, total: -14_374.55 },
-      T: { borrowFunding: -24, total: -24 }, N: { dividends: 500, couponInterest: 50, borrowFunding: -174.59, total: -13_989.09 }, S: { borrowFunding: -254.16, total: -361.46 },
+      book: { realized: 1_000, dividends: 500, couponInterest: 50, borrowFunding: -452.75, lendingIncome: 0, commissions: -31.80, fees: -250, unrealized: 14_810, fx: 0, total: 15_625.45 },
+      T: { borrowFunding: -24, total: -24 }, N: { dividends: 500, couponInterest: 50, borrowFunding: -174.59, total: 16_010.91 }, S: { borrowFunding: -254.16, total: -361.46 },
     },
     flows: { book: 2_110_000, T: 644_000, N: 850_000, S: 616_000 },
     provisional: true, affected: [['stale-price', 'IRS-VER-1Y', 'North']],
@@ -246,24 +249,24 @@ export const EXPECT = {
     ],
   },
 
-  // C5: Friday 10:05. EUR/USD 1.12 and USD/JPY 160; the swap gets a current mark of -1.00 (value -10,000).
+  // C5: Friday 10:05. EUR/USD 1.12 and USD/JPY 160; the swap gets a current mark of +1.00 (value +10,000).
   C5: {
     units: {
       // T: 40,000 EUR = 44,800; JPY loan 30,000,000 / 160 = 187,500; accrued 3,600 / 160 = 22.50.
       T: { lines: { cash: { USD: 800_000, EUR: 40_000 }, borrowed: { JPY: 30_000_000 }, accruedExpense: { JPY: 3_600 } },
         assets: 844_800, liabilities: 187_522.50, netAssets: 657_277.50, capital: 2_110_000, internal: -1_466_000, results: 13_277.50 },
-      N: { lines: { cash: { USD: 996_157.50 }, margin: { USD: 55_000 }, positions: { USD: 188_400 }, borrowed: { USD: 398_372 }, accruedExpense: { USD: 174.59 } },
-        assets: 1_239_557.50, liabilities: 398_546.59, netAssets: 841_010.91, capital: 0, internal: 850_000, results: -8_989.09 },
+      N: { lines: { cash: { USD: 1_011_157.50 }, restricted: { USD: 15_000 }, margin: { USD: 40_000 }, positions: { USD: 208_400 }, borrowed: { USD: 398_372 }, accruedExpense: { USD: 174.59 }, collateralReceived: { USD: 15_000 } },
+        assets: 1_274_557.50, liabilities: 413_546.59, netAssets: 861_010.91, capital: 0, internal: 850_000, results: 11_010.91 },
       // S: EUR 9,990 x 1.12 = 11,188.80; EURF 49,950 x 1.12 = 55,944.
       S: { lines: { cash: { USD: 548_959.20, EUR: 9_990 }, restricted: { USD: 50_974.50 }, positions: { USD: -50_225, EUR: 49_950 }, accruedExpense: { USD: 4.16 } },
         assets: 616_841.50, liabilities: 4.16, netAssets: 616_837.34, capital: 0, internal: 616_000, results: 837.34 },
     },
-    book: { assets: 2_701_199, liabilities: 586_073.25, netAssets: 2_115_125.75, capital: 2_110_000, results: 5_125.75, advanced: 1_466_000, received: 1_466_000 },
+    book: { assets: 2_736_199, liabilities: 601_073.25, netAssets: 2_135_125.75, capital: 2_110_000, results: 25_125.75, advanced: 1_466_000, received: 1_466_000 },
     pnl: {
       // FX: EUR (40,000 + 59,990) x 0.02 = 1,999.80; JPY 30,000,000 x (1/150 - 1/160) = 12,500 and 3,600 accrued 24.00 -> 22.50 = 1.50.
-      // Unrealized -50 -50 -25 -10 -10,000 and -50 EUR at 1.12 = -56: -10,191.
-      book: { realized: 1_000, dividends: 500, couponInterest: 50, borrowFunding: -452.75, lendingIncome: 0, commissions: -31.80, fees: -250, unrealized: -10_191, fx: 14_501.30, total: 5_125.75 },
-      T: { fx: 13_301.50, total: 13_277.50 }, N: { unrealized: -10_100, total: -8_989.09 }, S: { unrealized: -91, fx: 1_199.80, total: 837.34 },
+      // Unrealized -50 -50 -25 -10 + 10,000 and -50 EUR at 1.12 = -56: 9,809.
+      book: { realized: 1_000, dividends: 500, couponInterest: 50, borrowFunding: -452.75, lendingIncome: 0, commissions: -31.80, fees: -250, unrealized: 9_809, fx: 14_501.30, total: 25_125.75 },
+      T: { fx: 13_301.50, total: 13_277.50 }, N: { unrealized: 9_900, total: 11_010.91 }, S: { unrealized: -91, fx: 1_199.80, total: 837.34 },
     },
     fxByCcy: { EUR: 1_999.80, JPY: 12_501.50 },
     flows: { book: 2_110_000, T: 644_000, N: 850_000, S: 616_000 },
@@ -274,37 +277,38 @@ export const EXPECT = {
   C6: {
     units: {
       T: { netAssets: 657_277.50 },
-      N: { netAssets: 841_010.91 },
+      N: { netAssets: 861_010.91 },
       // S: the put is carried at its cost, -240, not at a price: positions -49,975 - 240 = -50,215 USD.
       S: { lines: { positions: { USD: -50_215, EUR: 49_950 } }, netAssets: 616_847.34 },
     },
-    book: { netAssets: 2_115_135.75 },
-    pnl: { book: { unrealized: -10_181, total: 5_135.75, unrealizedComplete: false } },
+    book: { netAssets: 2_135_135.75 },
+    pnl: { book: { unrealized: 9_819, total: 25_135.75, unrealizedComplete: false } },
     provisional: true, complete: false, affected: [['unpriced', 'VRFY260320P95', 'South'], ['fx-stale', 'EUR']],
   },
 
-  // C7: Friday 17:30, end of day. Futures settle at 5,020 (+1,000); the swap's current mark -1.00 needs 10,000: 5,000 comes back.
+  // C7: Friday 17:30, end of day. Futures settle at 5,020 (+1,000); the swap's current mark +1.00 supports 10,000 of collateral
+  // received: 5,000 goes back to the counterparty.
   C7: {
     units: {
       // T: one more day of yen interest at 160: 1,200 JPY = 7.50; accrued 4,800 JPY = 30.00.
       T: { lines: { cash: { USD: 800_000, EUR: 40_000 }, borrowed: { JPY: 30_000_000 }, accruedExpense: { JPY: 4_800 } },
         assets: 844_800, liabilities: 187_530, netAssets: 657_270, capital: 2_110_000, internal: -1_466_000, results: 13_270 },
-      // N: cash + 1,000 + 5,000; loan 4 x 50 = 200; repo 3 days 36.8895 -> 36.89.
-      N: { lines: { cash: { USD: 1_002_157.50 }, margin: { USD: 50_000 }, positions: { USD: 188_400 }, borrowed: { USD: 398_372 }, accruedExpense: { USD: 236.89 } },
-        assets: 1_240_557.50, liabilities: 398_608.89, netAssets: 841_948.61, capital: 0, internal: 850_000, results: -8_051.39 },
+      // N: cash + 1,000; restricted and owed back 15,000 - 5,000 = 10,000; loan 4 x 50 = 200; repo 3 days 36.8895 -> 36.89.
+      N: { lines: { cash: { USD: 1_012_157.50 }, restricted: { USD: 10_000 }, margin: { USD: 40_000 }, positions: { USD: 208_400 }, borrowed: { USD: 398_372 }, accruedExpense: { USD: 236.89 }, collateralReceived: { USD: 10_000 } },
+        assets: 1_270_557.50, liabilities: 408_608.89, netAssets: 861_948.61, capital: 0, internal: 850_000, results: 11_948.61 },
       // S: borrow fee 4 days 5.5528 -> 5.55.
       S: { lines: { cash: { USD: 548_959.20, EUR: 9_990 }, restricted: { USD: 50_974.50 }, positions: { USD: -50_225, EUR: 49_950 }, accruedExpense: { USD: 5.55 } },
         assets: 616_841.50, liabilities: 5.55, netAssets: 616_835.95, capital: 0, internal: 616_000, results: 835.95 },
     },
-    book: { assets: 2_702_199, liabilities: 586_144.44, netAssets: 2_116_054.56, capital: 2_110_000, results: 6_054.56, advanced: 1_466_000, received: 1_466_000 },
+    book: { assets: 2_732_199, liabilities: 596_144.44, netAssets: 2_136_054.56, capital: 2_110_000, results: 26_054.56, advanced: 1_466_000, received: 1_466_000 },
     pnl: {
       // borrowing and funding 236.89 + 5.55 + 250 + 24 + 7.50 = 523.94.
-      book: { realized: 2_000, dividends: 500, couponInterest: 50, borrowFunding: -523.94, lendingIncome: 0, commissions: -31.80, fees: -250, unrealized: -10_191, fx: 14_501.30, total: 6_054.56 },
-      T: { borrowFunding: -31.50, fx: 13_301.50, total: 13_270 }, N: { realized: 2_000, borrowFunding: -236.89, total: -8_051.39 }, S: { borrowFunding: -255.55, total: 835.95 },
+      book: { realized: 2_000, dividends: 500, couponInterest: 50, borrowFunding: -523.94, lendingIncome: 0, commissions: -31.80, fees: -250, unrealized: 9_809, fx: 14_501.30, total: 26_054.56 },
+      T: { borrowFunding: -31.50, fx: 13_301.50, total: 13_270 }, N: { realized: 2_000, borrowFunding: -236.89, total: 11_948.61 }, S: { borrowFunding: -255.55, total: 835.95 },
     },
     flows: { book: 2_110_000, T: 644_000, N: 850_000, S: 616_000 },
     provisional: false, affected: [],
-    swap: { value: -10_000, independentHeld: 20_000, variationPosted: 10_000, provisional: false },
+    swap: { value: 10_000, independentHeld: 20_000, variationPosted: 0, variationReceived: 10_000, provisional: false },
   },
 
   // C8: Monday 9 March 10:00, every position closed and North's loan repaid; Treasury has bought the yen to repay (value Wed 11).
@@ -313,19 +317,20 @@ export const EXPECT = {
       // T: receivable 30,010,800 JPY (187,567.50), payable 187,567.50 USD.
       T: { lines: { cash: { USD: 800_000, EUR: 40_000 }, receivable: { JPY: 30_010_800 }, payable: { USD: 187_567.50 }, borrowed: { JPY: 30_000_000 }, accruedExpense: { JPY: 4_800 } },
         assets: 1_032_367.50, liabilities: 375_097.50, netAssets: 657_270, capital: 2_110_000, internal: -1_466_000, results: 13_270 },
-      // N: 1,002,157.50 - 98,445.78 (repo and 73.78 interest) + 20,000 + 475 - 4.50 (futures) + 30,000 (swap collateral back)
-      //    - 300,350 (loan and 7 days' interest) = 653,832.22; receivable 98,966.67 (bond) + 101,890 (VRFY); payable 10,000 (swap).
-      N: { lines: { cash: { USD: 653_832.22 }, receivable: { USD: 200_856.67 }, payable: { USD: 10_000 } },
-        assets: 854_688.89, liabilities: 10_000, netAssets: 844_688.89, capital: 0, internal: 850_000, results: -5_311.11 },
+      // N: 1,012,157.50 - 98,445.78 (repo and 73.78 interest) + 20,000 + 475 - 4.50 (futures) + 20,000 (independent amount
+      //    back) - 300,350 (loan and 7 days' interest) = 653,832.22; the 10,000 held from the counterparty goes back to it;
+      //    receivable 98,966.67 (bond) + 101,890 (VRFY) + 10,000 (swap terminated at +1.00, value Wed 11).
+      N: { lines: { cash: { USD: 653_832.22 }, receivable: { USD: 210_856.67 } },
+        assets: 864_688.89, liabilities: 0, netAssets: 864_688.89, capital: 0, internal: 850_000, results: 14_688.89 },
       // S: borrow fee 9.80 paid; payable 51,005 (cover) + 181.30 (puts); EURF sold: receivable 50,390 EUR.
       S: { lines: { cash: { USD: 548_949.40, EUR: 9_990 }, restricted: { USD: 50_974.50 }, receivable: { EUR: 50_390 }, payable: { USD: 51_186.30 } },
         assets: 667_549.50, liabilities: 51_186.30, netAssets: 616_363.20, capital: 0, internal: 616_000, results: 363.20 },
     },
-    book: { assets: 2_554_605.89, liabilities: 436_283.80, netAssets: 2_118_322.09, capital: 2_110_000, results: 8_322.09, advanced: 1_466_000, received: 1_466_000 },
+    book: { assets: 2_564_605.89, liabilities: 426_283.80, netAssets: 2_138_322.09, capital: 2_110_000, results: 28_322.09, advanced: 1_466_000, received: 1_466_000 },
     pnl: {
-      // realized: futures 1,000 + 1,000 + 475; VRFY 1,900; bond 400; swap -10,000; short -1,050; puts 60; EURF 400 EUR = 448.
-      book: { realized: -5_767, dividends: 500, couponInterest: 116.67, borrowFunding: -715.08, lendingIncome: 0, commissions: -63.80, fees: -250, unrealized: 0, fx: 14_501.30, total: 8_322.09 },
-      T: { total: 13_270 }, N: { realized: -5_225, couponInterest: 116.67, borrowFunding: -423.78, commissions: -29, total: -5_311.11 }, S: { realized: -542, borrowFunding: -259.80, commissions: -34.80, total: 363.20 },
+      // realized: futures 1,000 + 1,000 + 475; VRFY 1,900; bond 400; swap 10,000; short -1,050; puts 60; EURF 400 EUR = 448.
+      book: { realized: 14_233, dividends: 500, couponInterest: 116.67, borrowFunding: -715.08, lendingIncome: 0, commissions: -63.80, fees: -250, unrealized: 0, fx: 14_501.30, total: 28_322.09 },
+      T: { total: 13_270 }, N: { realized: 14_775, couponInterest: 116.67, borrowFunding: -423.78, commissions: -29, total: 14_688.89 }, S: { realized: -542, borrowFunding: -259.80, commissions: -34.80, total: 363.20 },
     },
     flows: { book: 2_110_000, T: 644_000, N: 850_000, S: 616_000 },
     provisional: false, affected: [],
@@ -337,14 +342,14 @@ export const EXPECT = {
     units: {
       // T: 800,000 - 187,567.50 = 612,432.50 USD; 40,000 EUR (44,800).
       T: { lines: { cash: { USD: 612_432.50, EUR: 40_000 } }, assets: 657_232.50, liabilities: 0, netAssets: 657_232.50, capital: 2_110_000, internal: -1_466_000, results: 13_232.50 },
-      N: { lines: { cash: { USD: 844_688.89 } }, assets: 844_688.89, liabilities: 0, netAssets: 844_688.89, capital: 0, internal: 850_000, results: -5_311.11 },
+      N: { lines: { cash: { USD: 864_688.89 } }, assets: 864_688.89, liabilities: 0, netAssets: 864_688.89, capital: 0, internal: 850_000, results: 14_688.89 },
       // S: 548,949.40 - 30.50 - 181.30 = 548,737.60 USD (the cover took the 50,974.50 restricted and 30.50 more); 9,990 + 50,390 EUR.
       S: { lines: { cash: { USD: 548_737.60, EUR: 60_380 } }, assets: 616_363.20, liabilities: 0, netAssets: 616_363.20, capital: 0, internal: 616_000, results: 363.20 },
     },
-    book: { assets: 2_118_284.59, liabilities: 0, netAssets: 2_118_284.59, capital: 2_110_000, results: 8_284.59, advanced: 1_466_000, received: 1_466_000 },
+    book: { assets: 2_138_284.59, liabilities: 0, netAssets: 2_138_284.59, capital: 2_110_000, results: 28_284.59, advanced: 1_466_000, received: 1_466_000 },
     pnl: {
-      book: { realized: -5_767, dividends: 500, couponInterest: 116.67, borrowFunding: -752.58, lendingIncome: 0, commissions: -63.80, fees: -250, unrealized: 0, fx: 14_501.30, total: 8_284.59 },
-      T: { borrowFunding: -69, fx: 13_301.50, total: 13_232.50 }, N: { total: -5_311.11 }, S: { total: 363.20 },
+      book: { realized: 14_233, dividends: 500, couponInterest: 116.67, borrowFunding: -752.58, lendingIncome: 0, commissions: -63.80, fees: -250, unrealized: 0, fx: 14_501.30, total: 28_284.59 },
+      T: { borrowFunding: -69, fx: 13_301.50, total: 13_232.50 }, N: { total: 14_688.89 }, S: { total: 363.20 },
     },
     flows: { book: 2_110_000, T: 644_000, N: 850_000, S: 616_000 },
     provisional: false, affected: [],
@@ -354,18 +359,18 @@ export const EXPECT = {
   // C10: the Accounts send everything back to Treasury. Internal only: no P&L, Book unchanged.
   C10: {
     units: {
-      // T: 612,432.50 + 844,688.89 + 548,737.60 = 2,005,858.99 USD; 40,000 + 60,380 = 100,380 EUR (112,425.60).
-      // Funding at booked rates: USD -1,400,000 + 1,393,426.49; EUR -60,000 x 1.10 + 60,380 x 1.12 = 1,625.60: -4,947.91.
-      T: { lines: { cash: { USD: 2_005_858.99, EUR: 100_380 } }, assets: 2_118_284.59, liabilities: 0, netAssets: 2_118_284.59, capital: 2_110_000, internal: -4_947.91, results: 13_232.50 },
-      N: { lines: {}, assets: 0, liabilities: 0, netAssets: 0, capital: 0, internal: 5_311.11, results: -5_311.11 },
+      // T: 612,432.50 + 864,688.89 + 548,737.60 = 2,025,858.99 USD; 40,000 + 60,380 = 100,380 EUR (112,425.60).
+      // Funding at booked rates: USD -1,400,000 + 1,413,426.49 = 13,426.49; EUR -60,000 x 1.10 + 60,380 x 1.12 = 1,625.60: 15,052.09.
+      T: { lines: { cash: { USD: 2_025_858.99, EUR: 100_380 } }, assets: 2_138_284.59, liabilities: 0, netAssets: 2_138_284.59, capital: 2_110_000, internal: 15_052.09, results: 13_232.50 },
+      N: { lines: {}, assets: 0, liabilities: 0, netAssets: 0, capital: 0, internal: -14_688.89, results: 14_688.89 },
       // S: USD 550,000 - 548,737.60 = 1,262.40; EUR 66,000 - 67,625.60 = -1,625.60: -363.20.
       S: { lines: {}, assets: 0, liabilities: 0, netAssets: 0, capital: 0, internal: -363.20, results: 363.20 },
     },
-    book: { assets: 2_118_284.59, liabilities: 0, netAssets: 2_118_284.59, capital: 2_110_000, results: 8_284.59 },
-    pnl: { book: { realized: -5_767, dividends: 500, couponInterest: 116.67, borrowFunding: -752.58, lendingIncome: 0, commissions: -63.80, fees: -250, unrealized: 0, fx: 14_501.30, total: 8_284.59 },
-      T: { total: 13_232.50 }, N: { total: -5_311.11 }, S: { total: 363.20 } },
-    // Net flows per scope at booked rates: N 850,000 - 844,688.89; S 616,000 - 616,363.20; T 644,000 + 1,461,052.09.
-    flows: { book: 2_110_000, T: 2_105_052.09, N: 5_311.11, S: -363.20 },
+    book: { assets: 2_138_284.59, liabilities: 0, netAssets: 2_138_284.59, capital: 2_110_000, results: 28_284.59 },
+    pnl: { book: { realized: 14_233, dividends: 500, couponInterest: 116.67, borrowFunding: -752.58, lendingIncome: 0, commissions: -63.80, fees: -250, unrealized: 0, fx: 14_501.30, total: 28_284.59 },
+      T: { total: 13_232.50 }, N: { total: 14_688.89 }, S: { total: 363.20 } },
+    // Net flows per scope at booked rates: N 850,000 - 864,688.89; S 616,000 - 616,363.20; T 644,000 + 1,481,052.09.
+    flows: { book: 2_110_000, T: 2_125_052.09, N: -14_688.89, S: -363.20 },
     provisional: false, affected: [],
     borrowings: [],
   },
@@ -545,7 +550,8 @@ export function compareCheckpoint(c, name, books, ids) {
     if (c.ok(p, L('the swap is an open position'))) {
       c.near(p.mv, X.swap.value, L('swap value'));
       c.near(p.otcCollateral?.independent?.held, X.swap.independentHeld, L('swap independent amount held'));
-      c.near(p.otcCollateral?.variation?.posted, X.swap.variationPosted, L('swap variation margin posted'));
+      c.near(p.otcCollateral?.variation?.posted ?? 0, X.swap.variationPosted, L('swap variation margin posted'));
+      c.near(p.otcCollateral?.variation?.received ?? 0, X.swap.variationReceived, L('swap variation margin received from the counterparty'));
       c.eq(Boolean(p.otcCollateral?.variation?.provisional), X.swap.provisional, L('variation margin call provisional (stale mark)'));
     }
   }
@@ -617,7 +623,7 @@ export async function runVerification(w, c, { onCheckpoint = null, record = null
     name: 'CSA Verification Bank', counterparty: 'Verification Bank', kind: 'bilateral', unitIds: [ids.N],
     terms: { baseCcy: 'USD', postingCcy: 'USD', nettingScope: 'position', threshold: 0, minimumTransfer: 0, independentAmount: { type: 'pct', pct: 0.02 }, variationMargin: true, eligible: [{ type: 'cash', ccy: 'USD', haircut: 0 }] },
   });
-  inst.irs = await w.instrument(DRAFTS.irs(agr.id)); await quote(inst.irs.id, { bid: 0, ask: 0, last: 0, bidSize: 1e9, askSize: 1e9 });
+  inst.irs = await w.instrument(DRAFTS.irs(agr.id)); await quote(inst.irs.id, { last: 0 });
 
   // ---- C1: the openings --------------------------------------------------------------------------------------------
   // North borrows 300,000 USD from a bank (6.00% ACT/360, 50.00 a day) and pays a 250.00 arrangement fee on it.
@@ -659,7 +665,7 @@ export async function runVerification(w, c, { onCheckpoint = null, record = null
 
   // ---- C2: Monday's end of day ---------------------------------------------------------------------------------------
   await quote(inst.fut.id, Q.fut2);
-  await quote(inst.irs.id, { bid: -1.5, ask: -1.5, last: -1.5, bidSize: 1e9, askSize: 1e9, asOf: '2026-02-27T21:00:00.000Z' });
+  await quote(inst.irs.id, { last: 1.5, asOf: '2026-02-27T21:00:00.000Z' });
   await w.clock(AT.monEod);
   await checkpoint('C2');
 
@@ -679,9 +685,10 @@ export async function runVerification(w, c, { onCheckpoint = null, record = null
   // A trade that would use them is refused: 5,200 VRFY at 100.00 + 52.00 commission = 520,052.00 against 515,216.70 free.
   const big = await w.preview(w.ticketInput({ id: b.id, accountId: ids.S }, inst.vrfy, 'buy', 5200));
   c.ok(big.ok && big.body.blocking > 0 && /short 4,835\.30 USD/.test(big.body.checks.filter((x) => x.level === 'error').map((x) => x.message).join(' ')), 'purchase that would use restricted proceeds is refused (short 4,835.30)', big.ok ? big.body.checks.map((x) => x.message).join(' | ') : big.error);
-  // Posted collateral and margin are North's assets, not spendable: 992,657.50 settled, 55,000 posted.
-  const tm = await w.req('POST', `/api/books/${b.id}/transfers`, { fromUnitId: ids.N, toUnitId: ids.T, ccy: 'USD', amount: 1_000_000, purpose: 'Would use posted margin' });
-  c.refused(tm, { code: 'insufficient_cash', text: 'North has 992,657.50 USD of settled USD available; 1,000,000.00 USD requested.' }, 'transfer that would use posted margin and collateral');
+  // Margin posted (40,000) and cash collateral received from the swap counterparty (15,000, restricted, owed back) are not
+  // spendable: North holds 1,007,657.50 settled; 1,062,657.50 with them. 1,050,000 is refused.
+  const tm = await w.req('POST', `/api/books/${b.id}/transfers`, { fromUnitId: ids.N, toUnitId: ids.T, ccy: 'USD', amount: 1_050_000, purpose: 'Would use margin and collateral received' });
+  c.refused(tm, { code: 'insufficient_cash', text: 'North has 1,007,657.50 USD of settled USD available; 1,050,000.00 USD requested.' }, 'transfer that would use posted margin and cash collateral received');
   // Pledged notes cannot be sold.
   const pledged = await w.post(`/api/strategies/${strat.bond.id}/preview-action`, { action: 'close', positionIds: [bondPos.positionId] });
   c.ok(pledged.blocking > 0, 'the pledged notes cannot be sold while the repo is open', pledged.checks.map((x) => x.message).join(' | '));
@@ -697,7 +704,7 @@ export async function runVerification(w, c, { onCheckpoint = null, record = null
   await fx('EUR/USD', 1.12);
   await fx('USD/JPY', 160);
   await quote(inst.usdjpy.id, Q.jpy160);
-  await quote(inst.irs.id, { bid: -1, ask: -1, last: -1, bidSize: 1e9, askSize: 1e9 });
+  await quote(inst.irs.id, { last: 1 });
   await w.tick();
   await checkpoint('C5');
 
@@ -729,7 +736,7 @@ export async function runVerification(w, c, { onCheckpoint = null, record = null
   await closeAll('North bond', strat.bond.id);
   await closeAll('North VRFY', strat.long.id);
   await closeAll('North future', strat.fut.id);
-  await closeAll('North swap', strat.swap.id, { order: { statedPrice: -1 } });
+  await closeAll('North swap', strat.swap.id, { order: { statedPrice: 1 } });
   await trade('North loan repayment', { bookId: b.id, unitId: ids.N, template: 'custom', attachTo: strat.loan.id, legs: [{ kind: 'repay', action: 'repay_cash', purpose: 'financing', targetPositionId: loanPos.positionId, qty: 300_000 }] });
   await closeAll('South cover', strat.short.id);
   await closeAll('South puts', strat.puts.id);
@@ -745,7 +752,7 @@ export async function runVerification(w, c, { onCheckpoint = null, record = null
   await checkpoint('C9');
 
   // ---- C10: the Accounts return everything to Treasury ---------------------------------------------------------------
-  await w.post(`/api/books/${b.id}/transfers`, { fromUnitId: ids.N, toUnitId: ids.T, ccy: 'USD', amount: 844_688.89, purpose: 'Return to Treasury' });
+  await w.post(`/api/books/${b.id}/transfers`, { fromUnitId: ids.N, toUnitId: ids.T, ccy: 'USD', amount: 864_688.89, purpose: 'Return to Treasury' });
   await w.post(`/api/books/${b.id}/transfers`, { fromUnitId: ids.S, toUnitId: ids.T, ccy: 'USD', amount: 548_737.60, purpose: 'Return to Treasury' });
   await w.post(`/api/books/${b.id}/transfers`, { fromUnitId: ids.S, toUnitId: ids.T, ccy: 'EUR', amount: 60_380, purpose: 'Return to Treasury' });
   await checkpoint('C10');
@@ -862,7 +869,7 @@ export default [
     id: 'verification-book',
     title: 'Accounting verified against hand-worked figures: one Book, Treasury and two Accounts, every situation of section 7',
     proves: 'Assets less liabilities equal net assets at Account, Treasury and Book scope; the Book equals its owners after the internal funding is eliminated; each borrowing, interest, fee and collateral amount appears once; internal transfers make no P&L; long, short, derivative, loan and collateral balances are classified as stated; gross holdings and net exposure reconcile; bond quotation, accrued interest, multipliers, currencies and settlement amounts reconcile; repo proceeds reconcile to collateral value, haircut and buffer; realized and unrealized P&L, income, financing costs and FX effects add up to the change in net assets net of capital flows; a missing mark and a stale rate give a provisional NAV that names them; the integrity read is clean after every step.',
-    expected: 'Eleven checkpoints from capital in (C0) to a clean end state (C10) match the literals of EXPECT in test/system/cases/accounting.mjs, each derived by hand in docs/ACCOUNTING-VERIFICATION.md: e.g. at C5 (EUR/USD 1.12, USD/JPY 160) the Book holds 2,115,125.75 with FX effects 14,501.30 kept apart from performance; at the end the Book holds 2,118,284.59 USD of cash against 2,110,000.00 contributed, results 8,284.59 = realized -5,767.00 + dividends 500.00 + coupon 116.67 - financing 752.58 - commissions 63.80 - fees 250.00 + FX 14,501.30. A transfer and a purchase that would use restricted short proceeds or reserved cash are refused, and so is a transfer of posted margin.',
+    expected: 'Eleven checkpoints from capital in (C0) to a clean end state (C10) match the literals of EXPECT in test/system/cases/accounting.mjs, each derived by hand in docs/ACCOUNTING-VERIFICATION.md: e.g. at C5 (EUR/USD 1.12, USD/JPY 160) the Book holds 2,135,125.75 with FX effects 14,501.30 kept apart from performance; at the end the Book holds 2,138,284.59 in cash against 2,110,000.00 contributed, results 28,284.59 = realized 14,233.00 + dividends 500.00 + coupon 116.67 - financing 752.58 - commissions 63.80 - fees 250.00 + FX 14,501.30. A transfer and a purchase that would use restricted short proceeds or reserved cash are refused, and so is a transfer of posted margin or of cash collateral received.',
     expectedBrowser: 'The same API steps; at C1, C3, C5, C6, C9 and C10 the Accounting screens (Book balance-sheet worksheet with its elimination, Book P&L statement, Book positions with the net asset value and holdings, Treasury\'s own balance sheet with its oversight) show the hand-worked figures to the decimals displayed, and the provisional net asset value at C6 names the unpriced put and the stale EUR rate.',
     levels: {
       engine: 'The engine level of this scenario is test/core/accounting-verification.test.js, which runs runVerification from this file in-process (route handlers, engine and ledger on a disposable database) as part of npm test, so it is not run a second time here.',
