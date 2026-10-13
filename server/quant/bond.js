@@ -55,6 +55,8 @@ export function accruedPer100(terms, settle) {
   if (dated && settle <= dated) return 0;
   const period = couponPeriod(terms, settle);
   if (!period) return 0;
+  // On the first day of a period nothing has accrued yet, whether or not the period's floating rate is known.
+  if (settle <= period.accrualStart) return 0;
   const rate = currentCouponRate(terms);
   if (rate === null) return null;
   const basis = terms.dayCount || 'ACT/ACT';

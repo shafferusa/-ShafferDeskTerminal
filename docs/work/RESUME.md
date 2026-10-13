@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 50.3% of the pass** (last milestone 2026-10-13T16:37Z, fix: BUGS fixes: forward notional currency, exact close, swap mark hint, same-pass maturity, principal in shortfall, index option form)
+**Completeness: about 50.6% of the pass** (last milestone 2026-10-13T16:38Z, s8: s8: browser case SB:history:reference-edits passes; popup helper fixed for chained prompts)
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 

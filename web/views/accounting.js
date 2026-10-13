@@ -368,7 +368,7 @@ function BalanceTab({ book, scope, whole, multi, scopeName, openBalance }) {
   const cash = bs.borrowings.filter((b) => !b.securities).length;
   const over = bs.oversight && (bs.oversight.accounts.length || bs.oversight.accountBorrowings.length) ? bs.oversight : null;
   return html`<div class="stack">
-    <div class="toolbar" style="margin:0"><span class="note">As of ${fmtTime(bs.asOf)}. Amounts in ${rc}${bs.fxRates.map((r) => (isNum(r.rate) ? `; 1 ${r.ccy} = ${fxText(r.rate)} ${rc}` : html`; <span class="loss">no rate for ${r.ccy}</span>`))}.${anyForeign ? ' Hover an underlined amount for its currencies.' : ''}</span>
+    <div class="toolbar" style="margin:0"><span class="note">As of ${fmtTime(bs.asOf)}. Amounts in ${rc}${bs.fxRates.map((r) => (isNum(r.rate) ? `; 1 ${r.ccy} = ${fxText(r.rate)} ${rc}` : html`; <span class="loss">no rate for ${r.ccy}</span>`))}.${anyForeign ? ' Hover an underlined amount for its currencies. Each line is converted and rounded on its own, while net assets convert each currency\'s net total once, so the lines can differ from net assets by a cent.' : ''}</span>
       <span class="grow"></span>${anyForeign ? html`<${Check} checked=${allOpen} onChange=${setAllOpen}>Show local-currency amounts<//>` : null}</div>
     ${unbalanced ? html`<${Notice} tone="err"><b>Internal funding does not cancel.</b> ${internal.residual.map((x) => fmtMoney(x.amount, x.ccy)).join(', ')} is left over between Treasury and the Accounts, which should net to zero inside the Book. Find the transfer recorded on one side only under Full history, filtered to transfer events, and reverse it.<//>` : null}
     <${NavAffected} nav=${bs.nav} />
