@@ -17,6 +17,8 @@ const unitName = (u) => (u?.kind === 'treasury' ? 'Treasury' : u?.name || '');
 const openInst = async (id) => { try { (await import('./instrument.js')).openInstrument(id); } catch (err) { toastError(err); } };
 const none = (text = 'none') => html`<span class="muted">${text}</span>`;
 const amounts = (list, empty) => (list?.length ? list.map((x) => html`<div class="nowrap">${fmtMoney(x.amount, x.ccy)}</div>`) : none(empty));
+// Below 1100 px the desk's tables turn into one block per row (web/app.css, "collateral desk, narrow"): each cell then carries its column's label.
+const labelled = (cols) => cols.map((c) => (c.label ? { ...c, render: (r) => html`<span class="cl">${c.label}</span>${c.render(r)}` } : c));
 const pct = (x) => (isNum(x) ? `${(x * 100).toFixed(2)}%` : '');
 const CALL = { ok: ['ok', 'met'], failed: ['bad', 'call failed'], cannot_value: ['warn', 'cannot be valued'], not_valued_yet: ['', 'first valuation pending'], closed: ['', 'closed'] };
 const CallPill = ({ status, reason }) => { const [tone, label] = CALL[status] || ['', status]; return html`<${Pill} tone=${tone} title=${reason || ''}>${label}<//>`; };
@@ -154,7 +156,7 @@ function Agreements({ book, v, unit, reload }) {
   };
   return html`<${Panel} title="Collateral agreements" note=${unit ? `Paper agreements of ${book.name} that cover ${unit.name}` : `Paper agreements of ${book.name}. Each belongs to this Book alone.`} flush
     actions=${html`<${Button} small kind="primary" onClick=${() => openForm(null)}>New agreement<//>`}>
-    <${Table} rows=${v.agreements} rowKey=${(a) => a.id} cls="fit" columns=${[
+    <${Table} rows=${v.agreements} rowKey=${(a) => a.id} cls="fit" columns=${labelled([
       { label: 'Agreement', render: (a) => html`<div style="min-width:150px"><div class="strong">${a.name}</div><div class="sub">${a.counterparty}</div></div>` },
       { label: 'Kind', render: (a) => html`<${Pill} tone=${a.kind === 'uncollateralized' ? '' : 'pen'} title=${a.kindLabel}>${KIND_SHORT[a.kind] || a.kindLabel}<//>${a.status === 'closed' ? html` <${Pill}>closed<//>` : null}` },
       { label: 'Covers', render: (a) => html`${a.units.map(unitName).join(', ')}${a.postingUnit ? html`<div class="sub">shared: posted and received by ${unitName(a.postingUnit)}</div>` : null}` },
@@ -164,7 +166,7 @@ function Agreements({ book, v, unit, reload }) {
       { label: 'Held', align: 'r', title: 'Collateral received from the counterparty: restricted cash, owed back', render: (a) => amounts(a.received) },
       { label: '', align: 'r', render: (a) => html`<div class="row" style="justify-content:flex-end;flex-wrap:nowrap">
         ${a.status === 'active' ? html`<${Button} small onClick=${() => openForm(a)}>Change<//><${Button} small disabled=${a.inUse} title=${a.inUse ? 'Positions are open, or collateral is held, under this agreement' : 'No new position can be opened under a closed agreement'} onClick=${() => closeIt(a)}>Close agreement<//>` : null}</div>` },
-    ]} empty=${{ title: unit ? `No agreement covers ${unit.name}` : 'No agreements are recorded in this Book', children: 'Record an agreement with New agreement, then choose it as the collateral basis on a swap, credit default swap, forward or OTC option. A contract can also carry its own position-level terms, or be explicitly uncollateralized.' }} />
+    ])} empty=${{ title: unit ? `No agreement covers ${unit.name}` : 'No agreements are recorded in this Book', children: 'Record an agreement with New agreement, then choose it as the collateral basis on a swap, credit default swap, forward or OTC option. A contract can also carry its own position-level terms, or be explicitly uncollateralized.' }} />
   <//>`;
 }
 
@@ -189,7 +191,7 @@ function Positions({ book, v, unit, reload }) {
       render: (p) => (p.lastMovement ? html`<div class="nowrap" title=${p.lastMovement.summary}>${p.lastMovement.businessDate}</div><div class="sub nowrap" title=${p.lastMovement.summary}>${p.lastMovement.kind === 'independent' ? 'independent' : 'variation'} ${fmtMoney(p.lastMovement.amount, p.lastMovement.ccy, { sign: true })}</div>` : none('none')) },
   ];
   return html`<${Panel} title="OTC positions and their collateral" note="Swaps, credit default swaps, forwards and OTC options, each with the basis that applies to it" flush>
-    <${Table} margin cls="fit" rows=${v.positions} rowKey=${(p) => p.positionId} columns=${cols}
+    <${Table} margin cls="fit" rows=${v.positions} rowKey=${(p) => p.positionId} columns=${labelled(cols)}
       empty=${{ title: unit ? `${unit.name} has no open OTC positions` : 'No OTC positions are open in this Book', children: 'A swap, credit default swap, forward or OTC option appears here when it fills, with its collateral basis, what the terms require and what has moved.' }} />
   <//>`;
 }
@@ -198,7 +200,7 @@ function Sets({ v }) {
   const sets = v.sets.filter((s) => s.nettingScope !== 'position');
   if (!sets.length) return null;
   return html`<${Panel} title="Netting sets" note="Where several positions are marked together and one net amount moves" flush>
-    <${Table} rows=${sets} rowKey=${(s) => s.key} columns=${[
+    <${Table} rows=${sets} rowKey=${(s) => s.key} columns=${labelled([
       { label: 'Agreement', render: (s) => html`<div class="strong">${s.agreement?.name || 'Position-level terms'}</div><div class="sub">${s.nettingScope === 'shared' ? 'shared across Accounts' : 'inside one Account'}</div>` },
       { label: 'Positions', cls: 'wrap', render: (s) => s.positions.map((p) => html`<div class="nowrap">${p.name}: ${isNum(p.mvBase) ? fmtMoney(p.mvBase, s.baseCcy, { sign: true }) : 'no mark'}</div>`) },
       { label: 'Net mark', align: 'r', render: (s) => html`<${Money} value=${s.exposure} ccy=${s.baseCcy} signed reason="A position in the set has no mark" /><div class="sub">threshold ${fmtMoney(s.threshold, s.baseCcy)}</div>` },
@@ -207,12 +209,12 @@ function Sets({ v }) {
       { label: 'Moved by', render: (s) => unitName(s.holder) },
       { label: 'Allocated to', cls: 'wrap', title: 'How the balance is attributed to each Account whose positions it collateralises', render: (s) => (s.allocations.length ? s.allocations.map((a) => html`<div class="nowrap">${unitName(a.unit)}: ${fmtMoney(Math.abs(a.amount), s.ccy)}</div>`) : none()) },
       { label: 'Status', render: (s) => html`<${CallPill} status=${s.status} reason=${s.reason} />${s.provisional ? html` <${Pill} tone="warn" title=${s.staleNote}>provisional<//>` : null}${s.asOf ? html`<div class="sub">${s.asOf}</div>` : null}${s.provisional ? html`<div class="sub coll-sentence two" title=${s.staleNote}>${s.staleNote}</div>` : null}` },
-    ]} /><//>`;
+    ])} /><//>`;
 }
 
 function Movements({ v, unit }) {
   return html`<${Panel} title="Collateral movements" note="Every movement is one balanced ledger event that names its agreement and the mark it was called on" flush>
-    <${Table} rows=${v.movements.slice(0, 60)} rowKey=${(m) => m.id} columns=${[
+    <${Table} rows=${v.movements.slice(0, 60)} rowKey=${(m) => m.id} columns=${labelled([
       { label: 'Date', render: (m) => html`<div class="nowrap">${m.businessDate}</div><div class="sub nowrap">${fmtTime(m.ts, { date: false })}</div>` },
       { label: 'Kind', render: (m) => (m.kind === 'independent' ? 'Independent amount' : 'Variation margin') },
       { label: 'Under', render: (m) => m.agreement?.name || html`<span class="muted">Position-level terms</span>` },
@@ -220,7 +222,7 @@ function Movements({ v, unit }) {
       { label: 'Allocated to', render: (m) => unitName(m.allocatedTo) },
       { label: 'Change', align: 'r', title: 'Positive: collateral this Book posted, or collateral it held and gave back. Negative: collateral returned to this Book, or received from the counterparty.', render: (m) => html`<span class="nowrap">${fmtMoney(m.amount, m.ccy, { sign: true })}</span>` },
       { label: 'What happened', cls: 'wrap', render: (m) => html`<div class="coll-sentence" title=${m.summary}>${m.summary}</div><div class="sub">${m.provisional ? html`<${Pill} tone="warn" title=${m.staleNote}>provisional: stale mark<//> ` : null}event #${m.eventId}</div>` },
-    ]} empty=${{ title: 'No collateral has moved', children: 'An independent amount moves when a position opens, changes size or ends. Variation margin moves at the end-of-day pass, when the mark calls for it.' }} />
+    ])} empty=${{ title: 'No collateral has moved', children: 'An independent amount moves when a position opens, changes size or ends. Variation margin moves at the end-of-day pass, when the mark calls for it.' }} />
     ${v.movements.length ? html`<div class="small muted" style="padding:8px 12px">The same events are in ${unit ? html`<a href=${`#/accounting/history/${unit.id}`}>this Account's history</a>` : html`<a href="#/accounting/history">the Book's history</a>`}, with their entries and the observation each mark came from.${v.movements.length > 60 ? ' The 60 most recent are listed here.' : ''}</div>` : null}<//>`;
 }
 
@@ -262,7 +264,7 @@ export function CollateralDesk({ book, unit }) {
   }
   const failed = v.failures.filter((f) => f.status === 'failed'), unvalued = v.failures.filter((f) => f.status === 'cannot_value');
   const flagged = v.positions.filter((p) => p.basis.flagged);
-  return html`<div class="stack">
+  return html`<div class="stack coll-desk">
     ${failed.length ? html`<${Notice} tone="err"><div class="row" style="flex-wrap:nowrap;align-items:flex-start"><div class="grow"><b>${failed.length} collateral call${failed.length > 1 ? 's' : ''} failed.</b> Nothing was funded in its place. Each is retried every engine cycle and delivers only what is still missing.
       <ul class="coll-list">${failed.map((f) => html`<li>${f.reason}</li>`)}</ul></div><${Button} small busy=${busy} onClick=${retry}>Retry failed calls<//></div><//>` : null}
     ${unvalued.length ? html`<${Notice} tone="warn"><b>${unvalued.length} requirement${unvalued.length > 1 ? 's' : ''} cannot be valued.</b> No call is made on a missing mark or rate, and what is already posted or held stays where it is.

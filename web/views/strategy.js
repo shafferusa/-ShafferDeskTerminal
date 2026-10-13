@@ -271,7 +271,7 @@ function HedgePanel({ hedge, ready, waitingFor, sel, setSel, onAgain }) {
   const context = (r?.request?.hedgesHeld || []).filter((h) => h.relation !== 'linked');
   return html`<${Panel} title="Hedge" note="From Shaffer Hedge in Analytics Lab">
     <div class="stack" data-testid="strategy-hedge-panel">
-      ${!ready ? html`<p class="note">A hedge request is built automatically once the ${waitingFor.join(' and ')} ${waitingFor.length > 1 ? 'are' : 'is'} set. It carries the Book, Account, investment Strategy, holding period, objective, the template's own protection, hedges linked to the position, and the Account's positions and hedges as context.</p>` : null}
+      ${!ready ? html`<p class="note">A hedge request is built automatically once the ${waitingFor.join(' and ')} ${waitingFor.length > 1 ? 'are' : 'is'} set. It carries the Book, the trading owner (an Account or Treasury), investment Strategy, holding period, objective, the template's own protection, hedges linked to the position, and the owner's positions and hedges as context.</p>` : null}
       ${ready && hedge.loading && !r ? html`<p class="note">Building the hedge request…</p>` : null}
       <${ErrorNote} error=${hedge.error} />
       ${r ? html`<div class="row" style="flex-wrap:wrap;gap:4px 10px"><${StatePill} r=${r} />${r.source ? html`<span class="small"><${SourceFacts} r=${r} /></span>` : null}</div>` : null}
@@ -473,7 +473,7 @@ export default function Strategy({ args, book, status }) {
   };
 
   const pickerFamilies = uses(STOCK) ? (uses(OPT) || uses(FUT) || uses('pair') ? ['equity', 'fund', 'bond', 'spot', 'crypto'] : SECURITIES) : undefined;
-  const waitingFor = [!haveInstrument ? 'instrument' : null, !haveAmount ? 'amount' : null].filter(Boolean);
+  const waitingFor = [!unitId ? 'trading owner' : null, !haveInstrument ? 'instrument' : null, !haveAmount ? 'amount' : null].filter(Boolean);
   const canPreview = Boolean(unitId) && (custom ? legs.length > 0 : haveInstrument);
 
   return html`<div>

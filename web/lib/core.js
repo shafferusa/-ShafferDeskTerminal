@@ -118,7 +118,9 @@ export function setBook(id) {
   setState({ bookId: id, unitId });
   bump();
 }
-const pickUnit = (book, wanted) => book?.units.find((u) => u.id === wanted)?.id || book?.units.find((u) => u.kind === 'account')?.id || book?.units[0]?.id || '';
+// The owner in use: the one chosen (an Account or Treasury) if it is in this Book, else its first Account. A Book with
+// no Account gets none: Treasury is offered on tickets as an explicit choice, never substituted (ui1).
+const pickUnit = (book, wanted) => book?.units.find((u) => u.id === wanted)?.id || book?.units.find((u) => u.kind === 'account')?.id || '';
 /** The Account (or Treasury) in use: chosen in the sidebar or on a ticket, and carried into every trading screen. */
 export function setUnit(id) { save('sdt.unit', id); if (id !== state.unitId) setState({ unitId: id }); }
 export function currentUnit() { const b = currentBook(); return b?.units.find((u) => u.id === state.unitId) || null; }

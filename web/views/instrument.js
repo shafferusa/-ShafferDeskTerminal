@@ -35,7 +35,7 @@ export function UnitSelect({ value, onChange, book }) {
     ...(accounts.length ? accounts.map((u) => ({ value: u.id, label: u.name, group: 'Accounts' })) : [{ value: '~none', label: 'No Accounts in this Book yet', group: 'Accounts', disabled: true }]),
     ...(treasury ? [{ value: treasury.id, label: 'Treasury', group: TREASURY_OWNER_GROUP }] : []),
   ];
-  return html`<${Select} value=${value || ''} placeholder=${value ? undefined : 'Choose the trading owner'} onChange=${(v) => { if (!v || v === '~none') return; setUnit(v); onChange(v); }} options=${options} />`;
+  return html`<${Select} value=${value || ''} placeholder=${value ? undefined : 'Choose an owner'} onChange=${(v) => { if (!v || v === '~none') return; setUnit(v); onChange(v); }} options=${options} />`;
 }
 /**
  * The owner in use (sidebar, or chosen on the last ticket) if it belongs to this Book; otherwise the Book's first
