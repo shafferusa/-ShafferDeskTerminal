@@ -262,7 +262,7 @@ async function financingOnScreen(ui, modal, pv) {
   const out = [];
   const rows = await modal.locator('table.pv-legs tbody tr:not(.group)').evaluateAll((trs) => trs.map((tr) => Object.fromEntries([...tr.children].filter((td) => td.dataset.label).map((td) => [td.dataset.label, td.innerText.trim()]))));
   const money = (x) => Math.abs(x).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  for (const l of pv.legs.filter((x) => ['loan', 'repay'].includes(x.kind))) {
+  for (const l of pv.legs.filter((x) => ['loan', 'repay', 'repo_open', 'repo_close'].includes(x.kind))) {
     const r = rows.find((x) => x.Leg && x.Leg.split('\n')[0].trim() === String(l.n));
     const at = `preview screen, leg ${l.n} (${l.label})`;
     if (!r) { out.push(`${at}: the leg is not displayed`); continue; }
@@ -270,7 +270,7 @@ async function financingOnScreen(ui, modal, pv) {
     const fill = (r['Estimated fill'] || '').replace(/\s+/g, ' ');
     if (!what.startsWith(l.label)) out.push(`${at}: the row is labelled "${what.slice(0, 60)}"`);
     if (typeof l.cash === 'number' && !numbersAgree(l.cash, shown(r.Cash))) out.push(`${at}: cash shows "${r.Cash}", the preview has ${l.cash}`);
-    if (l.kind === 'loan') {
+    if (l.kind === 'loan' || l.kind === 'repo_open') {
       if (typeof l.dailyCost === 'number' && !fill.includes(`About ${money(l.dailyCost)} ${l.currency} of interest a day`)) out.push(`${at}: daily interest ${l.dailyCost} is not displayed ("${fill}")`);
       if (typeof l.financing?.rate === 'number' && !new RegExp(`Rate ${esc((l.financing.rate * 100).toFixed(3))}% ${l.financing.rateType}`).test(fill)) out.push(`${at}: the rate ${l.financing.rate} is not displayed ("${fill}")`);
       if (l.financing?.maturity && !fill.includes(`to ${l.financing.maturity}`)) out.push(`${at}: the maturity ${l.financing.maturity} is not displayed ("${fill}")`);
@@ -318,22 +318,30 @@ async function arrangementRow(ui, ctx, p) {
 // Step actions
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * Fill a ticket (`open` returns { preview } or { refusal }), preview and confirm it, then name what it opened and the
+ * contracts it registered. Used by the families that share this driver's financing screens (repo, secloan).
+ */
+export async function openTicket(ui, t, ctx, step, tools, open) {
+  const opened = await open();
+  if (opened.refusal) return opened;
+  let raw = null;
+  const out = await tools.previewAndConfirm(ui, ctx, opened.preview, { expectsRefusal: tools.expectsRefusal, inspect: async (modal, pv) => { raw = pv; return financingOnScreen(ui, modal, pv); } });
+  if (out.strategy) {
+    if (step.as && !ctx.lots.has(step.as)) ctx.nameLot(step.as, out.strategy.id, step.instrument);
+    await learnContracts(t, ctx, step, raw, out.strategy);
+    // The result was read before the new contract had its key: read it again so the leg names its instrument.
+    out.result = normalizeResult(out.strategy, raw.token, ctx);
+  }
+  return out;
+}
+
 export const actions = {
   async ticket(ui, t, ctx, step, tools) {
     // The security ticket, borrowing what cash is short (a margin loan): the loan leg registers a contract the step names.
     const security = !step.ticket && step.ticketOf === 'equity' && step.contractAs;
     if (!step.ticket && !security) return undefined; // not one of this family's tickets: the shared path (another family's ticket)
-    const opened = security ? await equity.ticket(ui, t, ctx, step) : await ticket(ui, t, ctx, step);
-    if (opened.refusal) return opened;
-    let raw = null;
-    const out = await tools.previewAndConfirm(ui, ctx, opened.preview, { expectsRefusal: tools.expectsRefusal, inspect: async (modal, pv) => { raw = pv; return financingOnScreen(ui, modal, pv); } });
-    if (out.strategy) {
-      if (step.as && !ctx.lots.has(step.as)) ctx.nameLot(step.as, out.strategy.id, step.instrument);
-      await learnContracts(t, ctx, step, raw, out.strategy);
-      // The result was read before the new contract had its key: read it again so the leg names its instrument.
-      out.result = normalizeResult(out.strategy, raw.token, ctx);
-    }
-    return out;
+    return openTicket(ui, t, ctx, step, tools, () => (security ? equity.ticket(ui, t, ctx, step) : ticket(ui, t, ctx, step)));
   },
 
   /** Repay (borrowed) or Withdraw (lent). The button previews the whole outstanding amount; a part is typed into the preview and re-checked. */

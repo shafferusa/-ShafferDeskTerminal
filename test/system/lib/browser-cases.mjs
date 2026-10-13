@@ -2098,12 +2098,15 @@ export async function hedgeReconnection(b, c) {
     await ui.toast(/Demo hedge fixture turned off/);
   }
   await settle(b);
-  c.match(flat(await page.locator('.topbar').innerText()), /Hedge: demo fixture, off/, 'the top bar says the demo hedge fixture is off');
+  c.match(flat(await page.locator('[data-testid=hedge-service-note]').innerText()), /answered now by: nothing \(awaiting connection\)/, 'the Data connection page says hedge requests are answered by nothing now (awaiting connection)');
+  c.eq(await page.locator('.topbar [data-testid=hedge-service-chip]').count(), 0, 'and the top bar shows no hedge service answering');
   c.eq((await b.get('/api/hedge/service')).reachable, false, 'behind the screen, nothing answers hedge requests');
 
   // 300 HGR bought from its Marketplace ticket with the context a hedge request needs.
   const ticket = await fillTicket(b, inst.HGR, { qty: 300 });
+  await ticket.getByRole('button', { name: 'Show funding and hedge context' }).click();
   const strat = ui.field(ticket, 'Investment Strategy');
+  await strat.locator('select, input:enabled').first().waitFor(); // the Strategy list is asked for first
   if (await strat.locator('select').count()) await strat.locator('select').selectOption({ index: 1 });
   else await strat.locator('input').fill('Core Equity');
   await ui.input(ticket, 'Intended holding period').fill('60');

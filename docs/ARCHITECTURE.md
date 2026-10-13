@@ -111,7 +111,16 @@ underlying's family for generic and exotic options) for the tab's filter. The ta
 (`#/markets/<view>/<tab>`). Each tab has its own columns; Current market price, Fair price and
 Gap % sit together on all of them. Watchlists filter within a tab or across families and never
 replace the tabs. Deposits, loans, repo and securities loans are arrangements of one Book: they are
-arranged on the Treasury and Account pages, and the Money Market and Deposits tab links there.
+arranged on the Treasury and Account pages, and the Money Market and Deposits tab links there. The
+instrument page of a stock, fund or bond has a Financing panel: Repo this holding, Lend, Finance this
+position and Reverse repo against it open the Treasury / Account `ArrangementDialog` with the trading
+owner and the instrument filled in (`preset`); Borrow this security turns the ticket to Sell short,
+because a securities borrow is always a leg of a short sale. No new engine path is involved.
+
+**Trading owner.** Tickets and the Strategies page ask for a Trading owner: the Book's Accounts, and
+apart from them Treasury, labelled "Treasury (the Book's own balance sheet)". The owner in use is the
+one chosen (sidebar or last ticket) or the Book's first Account; a Book with no Account has no default
+and the Strategies page offers Treasury or New Account explicitly. Treasury-owned trading is supported.
 
 **Marketplace routing.** Which of the two views an instrument sits in is decided from explicit
 metadata, never from its price currency (`conventionRoute` in `catalog.js`, applied by
