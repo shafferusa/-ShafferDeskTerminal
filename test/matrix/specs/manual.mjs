@@ -1865,4 +1865,135 @@ const correlationSwap = {
   ],
 };
 
-export default [privateEquity, ventureCapital, hedgeFund, infrastructure, directRealEstate, insuranceLinked, varianceSwap, volatilitySwap, correlationSwap];
+// ---------------------------------------------------------------------------------------------
+// dispersion_swap
+// ---------------------------------------------------------------------------------------------
+// Buying dispersion on the 50 largest S&P 500 members against the index: strike 6 volatility points, 40,000 a point, an
+// upfront of 15,000 paid for the off-market strike, explicitly uncollateralized (a paper assumption stated on the contract).
+// Marks by hand; settlement from the two realised values entered by hand (the weighted constituent volatility and the index
+// volatility): dispersion = constituents - index. A settlement with the index volatility missing is refused.
+const DISP_POS = { instrument: 'main', lot: 'swap', owner: 'account', direction: 'dispersion buyer' };
+const dispersionSwap = {
+  productId: 'dispersion_swap',
+  title: 'S&P 500 top-50 dispersion swap, strike 6 vol points, 40,000 a point: upfront, marks by hand, settlement from constituent and index volatility, uncollateralized',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: ['Trading owner', 'Action (Enter the contract)', 'Contracts', 'State a fill price (the upfront)', 'Index, constituents, strike, notional per point, side, expiry (registration)', 'Collateral basis (registration, required): uncollateralized'],
+    manualInputs: ['upfront', 'marks (value to us, date, source)', 'weighted constituent volatility and index volatility at expiry'],
+    settlement: 'Upfront T+2 on the US calendar; final settlement T+2 after the realised values are entered (21 September 2026, paid 23 September)',
+    lifecycle: 'Expiry waits, visibly, for the realised values entered by hand; a settlement missing the index volatility is refused',
+    accounting: 'Cost = upfront; valued at the mark by hand; settlement = notional per point x ((constituents - index) - strike); realized against the upfront',
+    collateral: 'Uncollateralized, stated on the contract as an explicit paper assumption: nothing posted or received',
+  },
+  start: ny('2026-06-01'),
+  settlementCheck: { lag: 2, holidays: [] },
+  book: { name: 'Matrix dispersion swap', reportingCcy: 'USD', capital: [{ ccy: 'USD', amount: 2_000_000 }], account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 1_500_000 }] }, settings: SETTINGS },
+  instruments: {
+    main: { productId: 'dispersion_swap', name: 'S&P 500 top-50 dispersion swap, strike 6, September 2026 (Belcourt Markets)', symbol: 'DISP-SPX50-SEP26', marketView: 'US_DERIV', venueType: 'otc', jurisdiction: 'US', underlyingGeo: 'US', tradingCcy: 'USD',
+      terms: { index: 'S&P 500', constituents: 'The 50 largest S&P 500 members, index weights fixed at the trade date', strikeVol: 6, notionalPerPoint: 40_000, side: 'long', expiry: '2026-09-18', valuationMaxAgeDays: 7, counterparty: 'Belcourt Markets',
+        collateralBasis: { type: 'uncollateralized' } } },
+  },
+  expectAtStart: SIMPLE_START(1_500_000, 500_000),
+  steps: [
+    {
+      id: 'enter', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 1, as: 'swap', order: { statedPrice: 15_000 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 1, estimate: 15_000, model: 'stated-price', settleDate: '2026-06-03', calendar: 'US', cash: -15_000, fees: 0, notional: 4_000_000 }], // 40,000 x 100 points
+          cash: { USD: { purchases: 15_000, margin: 0, required: 15_000, available: 1_500_000, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 1, avgPrice: 15_000 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1 DISP-SPX50-SEP26 @ 15,000.00 USD', owner: 'account', date: '2026-06-01' }],
+        cash: { account: { USD: { settled: 1_500_000, unsettled: -15_000, availableToTrade: 1_485_000 } } },
+        positions: [{ ...DISP_POS, qty: 1, avgCost: 15_000, cost: 15_000, price: null, value: null, unrealized: null, provisional: true, margin: 0, manual: { kind: 'dispersion', endDate: '2026-09-18', valuation: null } }],
+        holdings: { main: { long: 1, short: 0, net: 1 } },
+        pending: [{ instrument: 'main', lot: 'swap', owner: 'account', dueDate: '2026-06-03', amount: -15_000, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'manual.settlement', instrument: 'main', dueDate: '2026-09-18', status: 'pending', owner: 'account' }],
+        otc: [{ instrument: 'main', lot: 'swap', owner: 'account', qty: 1, basis: 'uncollateralized', iaPosted: 0, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, fees: 0 } },
+        nav: { account: 1_500_000, book: 2_000_000 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 1_500_000, positions: 15_000, payable: 15_000, assets: 1_515_000, liabilities: 15_000, netAssets: 1_500_000 } },
+      },
+    },
+    {
+      id: 'upfront-paid', covers: 'settlement', action: 'clock', to: ny('2026-06-03'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 15,000.00 USD from settled cash', cash: { USD: -15_000 } }],
+        cash: { account: { USD: { settled: 1_485_000, unsettled: 0, availableToTrade: 1_485_000 } } },
+        pending: [],
+        balance: { account: { cash: 1_485_000, payable: null, assets: 1_500_000, liabilities: 0 } },
+      },
+    },
+    { id: 'mid-june', action: 'clock', to: ny('2026-06-15'), expect: {} },
+    {
+      id: 'mark-against-us', covers: 'valuation', action: 'lifecycle', lot: 'swap', body: { action: 'valuation', value: -25_000, asOf: '2026-06-15', source: 'Dealer mark, Belcourt Markets' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of DISP-SPX50-SEP26 entered by hand: -25,000.00 USD for the 1 held, as of 2026-06-15, source: Dealer mark, Belcourt Markets. A manual input, not a market quote' }],
+        positions: [{ ...DISP_POS, qty: 1, cost: 15_000, price: -25_000, value: -25_000, unrealized: -40_000, provisional: false, freshness: 'manual' }],
+        otc: [{ instrument: 'main', mark: -25_000, markValue: -25_000 }],
+        pnl: { account: { unrealized: -40_000, total: -40_000 } }, // -25,000 - 15,000
+        nav: { account: 1_460_000, book: 1_960_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: -25_000, assets: 1_460_000, netAssets: 1_460_000 } },
+      },
+    },
+    {
+      // Monday 17 August 2026: the 15 June mark is 63 days old, past the 7-day limit.
+      id: 'august', covers: 'valuation', action: 'clock', to: ny('2026-08-17'),
+      expect: { positions: [{ ...DISP_POS, qty: 1, value: -25_000, freshness: 'stale' }], provisional: { account: true, book: true } },
+    },
+    {
+      id: 'mark-in-our-favour', covers: 'valuation', action: 'lifecycle', lot: 'swap', body: { action: 'valuation', value: 90_000, asOf: '2026-08-17', source: 'Dealer mark, Belcourt Markets' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of DISP-SPX50-SEP26 entered by hand: 90,000.00 USD for the 1 held, as of 2026-08-17, source: Dealer mark, Belcourt Markets. A manual input, not a market quote' }],
+        positions: [{ ...DISP_POS, qty: 1, price: 90_000, value: 90_000, unrealized: 75_000, freshness: 'manual' }],
+        otc: [{ instrument: 'main', mark: 90_000, markValue: 90_000 }],
+        pnl: { account: { unrealized: 75_000, total: 75_000 } },
+        nav: { account: 1_575_000, book: 2_075_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 90_000, assets: 1_575_000, netAssets: 1_575_000 } },
+      },
+    },
+    {
+      id: 'expiry-waits', covers: 'settlement', action: 'clock', to: ny('2026-09-21'),
+      expect: {
+        lifecycle: [{ type: 'manual.settlement', instrument: 'main', dueDate: '2026-09-18', status: 'blocked', owner: 'account', reason: /^Waiting for the realised value, entered by hand \(Lifecycle, Final settlement\)\. Settlement = notional per point x \(\(weighted constituent volatility - index volatility\) - 6\.00\)/ }],
+        positions: [{ ...DISP_POS, qty: 1, value: 90_000, freshness: 'stale' }],
+        provisional: { account: true, book: true },
+      },
+    },
+    {
+      id: 'settlement-missing-index-volatility', covers: 'settlement', action: 'lifecycle', lot: 'swap', body: { action: 'settle', constituentVol: 27.4 },
+      status: 'blocked', reason: 'Dispersion is the constituents\' volatility less the index volatility: both are needed.',
+      expect: { refused: { engine: 'Enter the realised volatility of the index', api: 'Enter the realised volatility of the index', browser: 'Record button stays disabled' } },
+    },
+    {
+      // Constituents 27.40 less index 18.90 = dispersion 8.50; 40,000 x (8.50 - 6.00) = 100,000 received T+2 (23 September).
+      // Realized 100,000 - 15,000 upfront = 85,000.
+      id: 'final-settlement', covers: 'close', action: 'lifecycle', lot: 'swap', body: { action: 'settle', constituentVol: 27.4, indexVol: 18.9 },
+      expect: {
+        events: [{ type: 'manual.settlement', summary: 'Final settlement of DISP-SPX50-SEP26 entered by hand: constituents 27.40 less index 18.90 = dispersion 8.50, strike 6.00: 40,000.00 USD x (8.50 - 6.00) = 100,000.00 USD received 2026-09-23', owner: 'account', date: '2026-09-21' }],
+        cash: { account: { USD: { settled: 1_485_000, unsettled: 100_000, availableToTrade: 1_585_000 } } },
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', lot: 'swap', owner: 'account', dueDate: '2026-09-23', amount: 100_000, ccy: 'USD', into: 'cash' }],
+        lifecycle: [],
+        otc: [],
+        pnl: { account: { realized: 85_000, unrealized: 0, total: 85_000 } },
+        nav: { account: 1_585_000, book: 2_085_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { cash: 1_485_000, receivable: 100_000, positions: null, assets: 1_585_000, netAssets: 1_585_000 } },
+      },
+    },
+    {
+      id: 'settlement-paid', covers: 'settlement', action: 'clock', to: ny('2026-09-23'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 100,000.00 USD into settled cash', cash: { USD: 100_000 }, date: '2026-09-23' }],
+        cash: { account: { USD: { settled: 1_585_000, unsettled: 0, availableToTrade: 1_585_000 } } },
+        pending: [],
+        balance: { account: { cash: 1_585_000, receivable: null, assets: 1_585_000, liabilities: 0, netAssets: 1_585_000 } },
+      },
+    },
+  ],
+};
+
+export default [privateEquity, ventureCapital, hedgeFund, infrastructure, directRealEstate, insuranceLinked, varianceSwap, volatilitySwap, correlationSwap, dispersionSwap];

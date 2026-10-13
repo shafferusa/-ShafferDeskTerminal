@@ -1976,7 +1976,7 @@ const swaption = {
     collateral: 'Payer (bought): position-level terms, variation margin over a 50,000 threshold, received from the dealer and returned on exercise. Receiver (written): fixed independent amount 50,000, returned at settlement. The swap: its own basis, independent amount 1% of notional, posted on exercise and returned on termination',
   },
   start: at('2026-03-02'),
-  settlementCheck: { lag: 2, holidays: [] },
+  settlementCheck: { lag: 2, holidays: ['2026-06-19'] }, // Juneteenth
   book: {
     name: 'Matrix swaption', reportingCcy: 'USD',
     capital: [{ ccy: 'USD', amount: 3_000_000 }],

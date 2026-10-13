@@ -1999,4 +1999,192 @@ const buySellBack = {
   ],
 };
 
-export default [repo, reverseRepo, overnightRepo, termRepo, openRepo, bilateralRepo, tripartyRepo, gcRepo, specialRepo, buySellBack];
+// ---------------------------------------------------------------------------------------------
+// sell_buy_back
+// ---------------------------------------------------------------------------------------------
+// The other side of a buy/sell-back: an Account sells 3,000,000 face of Corbridge Mills notes it holds spot to Oakhurst Bank
+// for 3,000,000 USD and buys them back for 14 April at a forward price fixed now. It is a financing, so the notes stay on the
+// Account's balance sheet, pledged, and keep earning their coupon for it; but the coupon paid during the term belongs to the
+// buyer: the Account receives it from the issuer (as holder of record in the Terminal) and passes it on at once, which reduces
+// what it owes. On the forward date it pays exactly the forward amount fixed at inception and the notes are released. More
+// cash than the notes support is refused, and so is a part repurchase.
+//
+// Inputs: CORB-5.5-OCT31, 5.50% 30/360, coupons 1 Apr / 1 Oct, quoted 99.70 / 99.80, last 99.75 (fixture); no commission; T+1.
+// Sell/buy-back 3,000,000 USD at 4.40% ACT/360, 17 March to 14 April 2026 (28 days), haircut 2%.
+//   Bought 16 March, settles 17 March: 2,994,000.00 plus 166 days (30/360 from 1 October) of 5.5%: 76,083.33 = 3,070,083.33.
+//   Notes on 17 March: 2,992,500.00 plus 76,083.33 = 3,068,583.33; less 2%: 3,007,211.66 supported.
+//   Coupon 1 April: 3,000,000 x 5.5% / 2 = 82,500.00, 13 days before the forward date.
+//   Forward: 3,000,000 x (1 + 0.044 x 28 / 360) - 82,500 x (1 + 0.044 x 13 / 360) = 3,010,266.67 - 82,631.08 = 2,927,635.58.
+//   Forward price: 2,927,635.58 / 3,000,000 x 100 = 97.587853 dirty; less 13 days accrued (5.5 x 13 / 360 = 0.198611) =
+//   97.389242 clean.
+//   Interest: 3,000,000 x 0.044 x 15 / 360 = 5,500.00 to 1 April; 2,917,500 x 0.044 x 13 / 360 = 4,635.58; total 10,135.58.
+//   Check: 2,917,500 + 10,135.58 = 2,927,635.58.
+const CORB = { productId: 'corporate_bond', name: 'Corbridge Mills 5.50% Notes 1-Oct-2031', symbol: 'CORB-5.5-OCT31', marketView: 'US_CASH', venueType: 'otc', issuer: 'Corbridge Mills', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+  terms: { couponType: 'fixed', couponRate: 0.055, frequency: 2, maturity: '2031-10-01', issueDate: '2021-10-01', dayCount: '30/360', redemption: 100, minDenomination: 1_000, seniority: 'Senior unsecured' } };
+const SBB = { owner: 'account', side: 'repo', productId: 'sell_buy_back', productLabel: 'Sell/buy-back', ccy: 'USD', principal: 3_000_000, name: 'Oakhurst sell/buy-back', collateral: { instrument: 'corb', lot: 'corb' }, as: 'sbb',
+  terms: { collateralInstrumentId: '$inst:corb', collateralQty: 3_000_000, haircut: 0.02, rateType: 'fixed', rate: 0.044, dayCount: 'ACT/360', term: 'term', endDate: '2026-04-14', style: 'buy_sell_back', collateralType: 'gc', triparty: false, counterparty: 'Oakhurst Bank' } };
+const CPOS = { instrument: 'corb', lot: 'corb', owner: 'account', direction: 'long', qty: 3_000_000, avgCost: 99.80, cost: 2_994_000, price: 99.75, value: 2_992_500, unrealized: -1_500 };
+const SBB_POS = { instrument: 'sbb', lot: 'sbb', owner: 'account', direction: 'repo (cash borrowed)', collateralHeld: null };
+const CORB_COUPON = { type: 'bond.coupon', instrument: 'corb', dueDate: '2026-04-01', status: 'pending', owner: 'account' };
+const CORB_NEXT = [{ type: 'bond.coupon', instrument: 'corb', dueDate: '2026-10-01', status: 'pending', owner: 'account' }, { type: 'bond.maturity', instrument: 'corb', dueDate: '2031-10-01', status: 'pending', owner: 'account' }];
+const SBB_RECORD = { owner: 'account', origin: 'account', family: 'repo', type: 'Repo (cash borrowed against securities)', lot: 'sbb', ccy: 'USD', rate: 0.044, rateType: 'fixed', rateText: '4.400% fixed', dayCount: 'ACT/360',
+  feesToDate: 0, startDate: '2026-03-17', maturity: '2026-04-14', term: 'term', lender: 'Oakhurst Bank', collateral: 'CORB-5.5-OCT31: 3,000,000 pledged, haircut 2.00%', schedule: 'Interest paid at repurchase', blocked: null, structure: 'Buy/sell-back, bilateral' };
+
+const sellBuyBack = {
+  productId: 'sell_buy_back',
+  title: 'Sell/buy-back by an Account of 3,000,000 Corbridge Mills 5.5% notes: forward price fixed at inception, the coupon in the term passed to the buyer, part repurchase refused, bought back at the forward amount',
+  matrix: {
+    ...REPO_TICKET,
+    requiredFields: [...REPO_TICKET.requiredFields.filter((x) => !/^Term/.test(x)), 'Term (Term, with the forward date)', 'Structure (Buy/sell-back)', 'Repo rate (fixed only)'],
+    automaticInputs: ['the notes\' dirty value and the cash they support', 'the forward amount and price (clean and dirty) fixed at inception, net of the coupon falling in the term', 'repo interest accrued daily', 'the coupon paid by the issuer to the Account and passed to the buyer the same day (reduces what is owed)', 'the repurchase on the forward date at the forward amount'],
+    manualInputs: ['every term, entered on the ticket (product Sell/buy-back on the Repo side, fixed rate, forward date)'],
+    settlement: 'None simulated as securities delivery: the spot leg brings the cash when confirmed; the forward leg pays the forward amount on the forward date. The notes bought beforehand settle T+1',
+    lifecycle: 'Interest accrues daily; the coupon paid during the term is passed to the buyer; repurchased automatically on the forward date at the forward amount; a part repurchase, a rate reset and any collateral change are refused',
+    accounting: 'Accounted as a financing: cash received is a liability of the Account; the notes stay on its balance sheet with their accrued coupon (coupon income is the Account\'s); the coupon passed on reduces the liability; forward less spot, with the coupon, is repo interest expense',
+    collateral: 'The notes sold are pledged for the term: not sellable; no margin, return or substitution; released on the forward date',
+  },
+  tradedOn: 'A sell/buy-back is not a registry instrument: it is entered on the Repo or reverse repo ticket of the Treasury page (Repo side, product Sell/buy-back, for the Account) and registers itself when the ticket is confirmed. The security is a registered corporate bond.',
+  start: AT_1000('2026-03-16'), // Monday 16 March 2026, 10:00 New York
+  settlementCheck: { lag: 1, holidays: [] },
+  book: {
+    name: 'Matrix sell/buy-back', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 3_500_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 3_100_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0 } }, fill: FILL, settlement: { bond: 1 } },
+  },
+  instruments: { corb: CORB },
+  quotes: { corb: { bid: 99.70, ask: 99.80, last: 99.75, bidSize: 10_000_000, askSize: 10_000_000 } },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 3_100_000, unsettled: 0, payable: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 3_100_000, availableToWithdraw: 3_100_000, borrowed: 0, lent: 0 } },
+      treasury: { USD: { settled: 400_000, availableToTrade: 400_000, borrowed: 0 } },
+    },
+    positions: [], holdings: {}, pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 3_100_000, treasury: 400_000, book: 3_500_000 },
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+    pnl: { account: { couponInterest: 0, borrowFunding: 0, unrealized: 0, total: 0 }, book: { total: 0 } },
+    balance: {
+      account: { cash: 3_100_000, assets: 3_100_000, liabilities: 0, netAssets: 3_100_000 },
+      book: { cash: 3_500_000, assets: 3_500_000, liabilities: 0, netAssets: 3_500_000 },
+    },
+    oversight: { accountBorrowings: [], treasuryOwn: [] },
+  },
+  steps: [
+    {
+      id: 'buy-the-notes', covers: 'collateral', action: 'ticket', ticketOf: 'bond', instrument: 'corb', side: 'buy', qty: 3_000_000, as: 'corb',
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'buy', instrument: 'corb', qty: 3_000_000, estimate: 99.80, settleDate: '2026-03-17', gross: 2_994_000, accrued: 76_083.33, cash: -3_070_083.33, fees: 0 }] },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 3_000_000, avgPrice: 99.80 }] },
+        events: [{ type: 'strategy.submitted', owner: 'account' }, { type: 'trade.fill', summary: 'Bought 3,000,000 CORB-5.5-OCT31 @ 99.80 USD', owner: 'account', date: '2026-03-16' }],
+        cash: { account: { USD: { settled: 3_100_000, unsettled: -3_070_083.33, payable: 3_070_083.33, availableToTrade: 29_916.67, availableToWithdraw: 29_916.67 } } },
+        positions: [{ ...CPOS, accrued: 76_083.33, pledged: 0 }],
+        holdings: { corb: { long: 3_000_000, short: 0, net: 3_000_000 } },
+        pending: [{ instrument: 'corb', lot: 'corb', owner: 'account', dueDate: '2026-03-17', amount: -3_070_083.33, ccy: 'USD', into: 'cash' }],
+        lifecycle: [CORB_COUPON, CORB_NEXT[1]],
+        pnl: { account: { unrealized: -1_500, total: -1_500 }, book: { total: -1_500 } },
+        nav: { account: 3_098_500, book: 3_498_500 },
+        balance: {
+          account: { cash: 3_100_000, positions: 2_992_500, accruedIncome: 76_083.33, payable: 3_070_083.33, assets: 6_168_583.33, liabilities: 3_070_083.33, netAssets: 3_098_500 },
+          book: { cash: 3_500_000, positions: 2_992_500, accruedIncome: 76_083.33, payable: 3_070_083.33, assets: 6_568_583.33, liabilities: 3_070_083.33, netAssets: 3_498_500 },
+        },
+      },
+    },
+    {
+      id: 'notes-settle', covers: 'settlement', action: 'clock', to: AT_1000('2026-03-17'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: /^Settlement: paid 3,070,083\.33 USD/, cash: { USD: -3_070_083.33 }, owner: 'account', date: '2026-03-17' }],
+        cash: { account: { USD: { settled: 29_916.67, unsettled: 0, payable: 0, availableToTrade: 29_916.67, availableToWithdraw: 29_916.67 } } },
+        pending: [],
+        balance: { account: { cash: 29_916.67, payable: null, assets: 3_098_500, liabilities: 0 }, book: { cash: 429_916.67, payable: null, assets: 3_498_500, liabilities: 0 } },
+      },
+    },
+    repoTicket('sell-for-more-than-the-notes-support', { ...SBB, as: undefined, principal: 3_010_000 }, {
+      covers: ['open', 'haircut'], status: 'blocked', reason: 'The notes are worth 3,068,583.33 dirty; after the 2% haircut they support 3,007,211.66.',
+      expect: { refused: 'The collateral supports at most 3,007,211.66 USD: 3,000,000 CORB-5.5-OCT31 is worth 3,068,583.33 USD (2,992,500.00 USD clean plus 76,083.33 USD accrued interest) and the haircut is 2.00%; 3,010,000.00 USD requested.' },
+    }),
+    repoTicket('sell-spot-and-buy-forward', SBB, {
+      covers: ['open', 'borrow', 'forward price fixed at inception', 'collateral'],
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'repo_open', action: 'repo', purpose: 'financing', qty: 3_000_000, cash: 3_000_000, fees: 0, ccy: 'USD', dailyCost: 366.67, // 3,000,000 x 0.044 / 360
+            financing: { amount: 3_000_000, rateType: 'fixed', rate: 0.044, maturity: '2026-04-14', interestFrom: '2026-03-17',
+              collateral: { qty: 3_000_000, clean: 2_992_500, accrued: 76_083.33, worth: 3_068_583.33, haircutAmount: 61_371.67, buffer: 0, supports: 3_007_211.66 },
+              forward: { amount: 2_927_635.58, endDate: '2026-04-14', cleanPer100: 97.389242, dirtyPer100: 97.587853, coupons: [{ payDate: '2026-04-01', amount: 82_500 }] } } }],
+          cash: { USD: { financingIn: 3_000_000, financingOut: 0, required: 0, available: 29_916.67, shortfall: 0, netCash: 3_000_000 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'repo_open', action: 'repo', instrument: 'sbb', status: 'filled', qty: 3_000_000, filledQty: 3_000_000 }] },
+        events: [
+          { type: 'strategy.submitted', owner: 'account' },
+          { type: 'repo.open', summary: 'Sell/buy-back: sold 3,000,000 CORB-5.5-OCT31 spot for 3,000,000.00 USD and bought it back forward for 2026-04-14 at 2,927,635.58 USD (forward price 97.389242 clean, 97.587853 dirty; 4.400% fixed)', cash: { USD: 3_000_000 }, owner: 'account', date: '2026-03-17' },
+        ],
+        cash: { account: { USD: { settled: 3_029_916.67, availableToTrade: 3_029_916.67, availableToWithdraw: 3_029_916.67, borrowed: 3_000_000 } } },
+        positions: [{ ...CPOS, accrued: 76_083.33, pledged: 3_000_000 }, { ...SBB_POS, qty: -3_000_000, value: 3_000_000, carrying: -3_000_000, accrued: 0 }],
+        lifecycle: [CORB_COUPON, { type: 'repo.coupon', instrument: 'sbb', dueDate: '2026-04-01', status: 'pending', owner: 'account' }, { type: 'repo.end', instrument: 'sbb', dueDate: '2026-04-14', status: 'pending', owner: 'account' }, CORB_NEXT[1]],
+        // The next payment on the record is the coupon passed on 1 April.
+        borrowings: [{ ...SBB_RECORD, principal: 3_000_000, principalRc: 3_000_000, accrued: 0, costToDate: 0, nextPayment: '2026-04-01', nextPaymentType: 'repo.coupon' }],
+        balance: {
+          account: { cash: 3_029_916.67, borrowed: 3_000_000, assets: 6_098_500, liabilities: 3_000_000, netAssets: 3_098_500 },
+          book: { cash: 3_429_916.67, borrowed: 3_000_000, assets: 6_498_500, liabilities: 3_000_000, netAssets: 3_498_500 },
+        },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'sbb', principal: 3_000_000, ccy: 'USD', accrued: 0 }], treasuryOwn: [], accounts: { account: { cashBorrowed: 3_000_000 } } },
+      },
+    }),
+    {
+      id: 'buy-back-a-part', covers: ['reduce', 'partial repurchase'], action: 'repay', lot: 'sbb', amount: 1_000_000,
+      status: 'blocked', reason: 'A sell/buy-back is bought back in full at its forward price; a part is not simulated.',
+      expect: { refused: 'A repo is repurchased or terminated in full: 3,000,000.00 USD is outstanding and 1,000,000.00 USD was asked for. A partial repurchase is not simulated; repurchase in full and open a new repo for the amount that stays.' },
+    },
+    {
+      // Wednesday 1 April. The issuer pays the coupon to the Account (82,500.00; 6,416.67 of it earned since the purchase), then
+      // interest is brought to today (15 days, 5,500.00) and the coupon is passed to the buyer: cash unchanged, 2,917,500 owed.
+      id: 'coupon-passed-to-the-buyer', covers: ['coupon during the term', 'interest accrual'], action: 'clock', to: AT_1000('2026-04-01'),
+      expect: {
+        events: [
+          { type: 'bond.coupon', summary: 'Coupon received on 3,000,000 CORB-5.5-OCT31: 82,500.00 USD', cash: { USD: 82_500 }, owner: 'account', date: '2026-04-01' },
+          { type: 'accrual.coupon', summary: /^Interest accrued on CORB-5\.5-OCT31: 6,416\.67 USD$/, owner: 'account', date: '2026-04-01' },
+          { type: 'accrual.interest', summary: 'Repo interest accrued on Oakhurst sell/buy-back: 5,500.00 USD', owner: 'account', date: '2026-04-01' },
+          { type: 'repo.coupon', summary: 'Coupon of 2026-04-01 on the 3,000,000 CORB-5.5-OCT31 sold under Oakhurst sell/buy-back passed to the buyer: 82,500.00 USD; it reduces the amount paid back at the forward date', cash: { USD: -82_500 }, owner: 'account', date: '2026-04-01' },
+        ],
+        cash: { account: { USD: { settled: 3_029_916.67, borrowed: 2_917_500 } } },
+        positions: [{ ...CPOS, accrued: 0, pledged: 3_000_000 }, { ...SBB_POS, qty: -2_917_500, value: 2_917_500, carrying: -2_917_500, accrued: -5_500 }],
+        lifecycle: [{ type: 'repo.end', instrument: 'sbb', dueDate: '2026-04-14', status: 'pending', owner: 'account' }, ...CORB_NEXT],
+        borrowings: [{ ...SBB_RECORD, principal: 2_917_500, principalRc: 2_917_500, accrued: 5_500, costToDate: 5_500, nextPayment: '2026-04-14', nextPaymentType: 'repo.end' }],
+        pnl: { account: { couponInterest: 6_416.67, borrowFunding: -5_500, unrealized: -1_500, total: -583.33 }, book: { total: -583.33 } },
+        nav: { account: 3_099_416.67, book: 3_499_416.67 },
+        balance: {
+          account: { accruedIncome: null, accruedExpense: 5_500, borrowed: 2_917_500, assets: 6_022_416.67, liabilities: 2_923_000, netAssets: 3_099_416.67 },
+          book: { accruedIncome: null, accruedExpense: 5_500, borrowed: 2_917_500, assets: 6_422_416.67, liabilities: 2_923_000, netAssets: 3_499_416.67 },
+        },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'sbb', principal: 2_917_500, ccy: 'USD', accrued: 5_500 }], accounts: { account: { cashBorrowed: 2_917_500 } } },
+      },
+    },
+    {
+      // Tuesday 14 April, the forward date: 13 more days on 2,917,500 (4,635.58; total 10,135.58) and the notes are bought back:
+      // 2,917,500 + 10,135.58 = 2,927,635.58, the forward amount. The run of 13 April then accrues 12 days of coupon: 5,500.00.
+      id: 'bought-back-on-the-forward-date', covers: ['maturity', 'close', 'forward leg', 'collateral released'], action: 'clock', to: AT_1000('2026-04-14'),
+      expect: {
+        events: [
+          { type: 'accrual.interest', summary: 'Repo interest accrued on Oakhurst sell/buy-back: 4,635.58 USD', owner: 'account', date: '2026-04-14' },
+          { type: 'interest.payment', summary: 'Repo interest paid on Oakhurst sell/buy-back: 10,135.58 USD', cash: { USD: -10_135.58 }, owner: 'account', date: '2026-04-14' },
+          { type: 'repo.close', summary: 'Sell/buy-back completed: bought back 3,000,000 CORB-5.5-OCT31 for 2,927,635.58 USD (principal 2,917,500.00 USD, repo interest 10,135.58 USD)', cash: { USD: -2_917_500 }, owner: 'account', date: '2026-04-14' },
+          { type: 'accrual.coupon', summary: /^Interest accrued on CORB-5\.5-OCT31: 5,500\.00 USD$/, owner: 'account', date: '2026-04-14' },
+        ],
+        cash: { account: { USD: { settled: 102_281.09, availableToTrade: 102_281.09, availableToWithdraw: 102_281.09, borrowed: 0 } } }, // 3,029,916.67 - 2,927,635.58
+        positions: [{ ...CPOS, accrued: 5_500, pledged: 0 }],
+        lifecycle: CORB_NEXT, borrowings: [],
+        pnl: { account: { couponInterest: 11_916.67, borrowFunding: -10_135.58, unrealized: -1_500, total: 281.09 }, book: { total: 281.09 } },
+        nav: { account: 3_100_281.09, book: 3_500_281.09 },
+        balance: {
+          account: { cash: 102_281.09, accruedIncome: 5_500, accruedExpense: null, borrowed: null, assets: 3_100_281.09, liabilities: 0, netAssets: 3_100_281.09 },
+          book: { cash: 502_281.09, accruedIncome: 5_500, accruedExpense: null, borrowed: null, assets: 3_500_281.09, liabilities: 0, netAssets: 3_500_281.09 },
+        },
+        oversight: { accountBorrowings: [], accounts: { account: { cashBorrowed: 0 } } },
+      },
+    },
+  ],
+};
+
+export default [repo, reverseRepo, overnightRepo, termRepo, openRepo, bilateralRepo, tripartyRepo, gcRepo, specialRepo, buySellBack, sellBuyBack];
