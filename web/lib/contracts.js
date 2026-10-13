@@ -196,6 +196,7 @@ const F = {
     { path: 'terms.collateralInstrumentId', label: 'Collateral security', type: 'instrument', families: ['bond', 'equity', 'fund'], span: 2, required: true },
     { path: 'terms.collateralQty', label: 'Collateral quantity', type: 'number', required: true },
     { path: 'terms.haircut', label: 'Haircut (decimal)', type: 'number', hint: '0.02 = 2%', default: 0.02 },
+    { path: 'terms.buffer', label: 'Additional buffer (amount)', type: 'number', hint: 'In the repo currency: taken off the cash the collateral supports after the haircut (negative adds to it). Empty for none.' },
     { path: 'terms.rateType', label: 'Repo rate', type: 'select', default: 'fixed', options: opt([['fixed', 'Fixed'], ['floating', 'Floating']]) },
     { path: 'terms.rate', label: 'Rate (decimal a year)', type: 'number', hint: 'Not assumed for you', show: (d) => d.terms.rateType !== 'floating', required: true },
     { path: 'terms.referenceRate', label: 'Reference rate code', type: 'text', show: (d) => d.terms.rateType === 'floating' },

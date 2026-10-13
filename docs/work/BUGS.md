@@ -155,3 +155,15 @@ start fixing never asked of the data service; a return or price fixing asked for
 - **Note for treasury.js (fixer):** `ArrangementDialog` still sends `marketView: viewFor(ccy)`, a view chosen by
   currency. It is harmless now (a financing arrangement is stored with routing basis "financing" and is never a
   Marketplace row), but the currency-based `viewFor` could be dropped.
+
+## s8 (failure, recovery and isolation), 2026-10-13, browser level and level mapping
+
+- **Open, not mine (routing, ui1): an exchange-listed derivative with no venue country is routed by the "OTC"
+  convention.** `server/core/catalog.js` `conventionRoute`, last line: `... || product.cls === 'deriv'` gives an
+  `equity_option` with `venueType: 'exchange'`, no venue country, no underlying and no jurisdiction the view Foreign
+  Derivatives, basis "convention", and `routingText` describes it as "OTC, no US listing: routed by convention to
+  Foreign Derivatives" although it is marked exchange-traded. The route `GET /api/instruments/routing` has a reason
+  for exactly this case ("... is exchange-listed but no listing-venue country is recorded ... choose the view by hand")
+  that this line makes unreachable for derivatives. Reproduce: `GET /api/instruments/routing?productId=equity_option&venueType=exchange`.
+  Found by SB:refusals:incomplete-terms (its first step, "nothing decides the market view", now uses a Treasury note
+  marked exchange-traded, for which nothing decides the view; the option's own incomplete terms are still refused).

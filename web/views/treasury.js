@@ -277,8 +277,8 @@ const MODES = {
     sides: [{ value: 'lend_sec', label: 'Lend' }] },
 };
 // Products that make sense on one side only are left out of the other side's list.
-const LEND_ONLY = ['bank_deposit', 'term_deposit', 'certificate_of_deposit', 'reverse_repo'], BORROW_ONLY = ['margin_loan', 'revolving_credit_facility', 'securities_borrowing', 'repo'];
-const REPO_PRESET = { overnight_repo: { term: 'overnight' }, open_repo: { term: 'open' }, triparty_repo: { triparty: true }, special_repo: { collateralType: 'special' } };
+const LEND_ONLY = ['bank_deposit', 'term_deposit', 'certificate_of_deposit', 'reverse_repo', 'buy_sell_back'], BORROW_ONLY = ['margin_loan', 'revolving_credit_facility', 'securities_borrowing', 'repo', 'sell_buy_back'];
+const REPO_PRESET = { overnight_repo: { term: 'overnight' }, open_repo: { term: 'open' }, triparty_repo: { triparty: true }, special_repo: { collateralType: 'special' }, buy_sell_back: { style: 'buy_sell_back' }, sell_buy_back: { style: 'buy_sell_back' } };
 const DEFAULT_PRODUCT = { borrow_cash: 'cash_loan', lend_cash: 'term_deposit', repo: 'repo', reverse_repo: 'reverse_repo', lend_sec: 'securities_lending' };
 
 /**
