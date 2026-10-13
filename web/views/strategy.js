@@ -8,10 +8,10 @@
 // Shaffer Analytics Lab: a signal may fill in this form, but the package still passes every
 // borrow, funding, collateral and per-leg check before it can be confirmed.
 import { html, useEffect, useMemo, useRef, useState } from '../vendor/preact-htm.js';
-import { bump, fmtMoney, fmtNum, fmtPrice, fmtQty, fmtTime, get, isNum, openOverlay, post, toast, toastError, useLive, useStore } from '../lib/core.js';
+import { bump, fmtMoney, fmtNum, fmtPrice, fmtQty, fmtTime, get, isNum, openOverlay, post, refreshStatus, setUnit, toast, toastError, useLive, useStore } from '../lib/core.js';
 import { Awaiting, Button, Check, Empty, ErrorNote, Field, Missing, Modal, Notice, Num, Panel, Pill, Price, Prov, Seg, Select, Signed, StrategyStatus, Table, Text } from '../lib/ui.js';
 import { ContractFields, draftToContract, InstrumentPicker, newDraft, PositionPicker } from '../lib/contracts.js';
-import { defaultUnit, OrderFields, UnitSelect } from './instrument.js';
+import { defaultUnit, OrderFields, ownerHint, UnitSelect } from './instrument.js';
 import { ConventionFields, conventionsPayload } from './registry.js';
 import { PreviewModal } from './preview.js';
 import { HedgeQueue, OBJECTIVES, PackageDetail, PackageList, RequestState, RequestSummary, SCOPES, SourceFacts, sourceWords, StatePill, strategyInput, StrategyPicker, StrategyRef, usePackagePreview } from './hedge.js';
@@ -371,6 +371,8 @@ export default function Strategy({ args, book, status }) {
   const templates = meta.data?.templates || [];
 
   const [unitId, setUnitId] = useState(defaultUnit(book));
+  // A Book with no Account: the page asks for one, or for Treasury explicitly; nothing is chosen in its place.
+  const newAccount = () => openOverlay((close) => html`<${AccountDialog} book=${book} onClose=${close} onCreated=${(a) => { setUnit(a.id); setUnitId(a.id); }} />`);
   // The Account in use (chosen in the sidebar or on a ticket) carries into this page.
   const inUse = useStore((st) => st.unitId);
   useEffect(() => { if (!attachId && inUse && book.units.some((u) => u.id === inUse)) setUnitId(inUse); }, [inUse]);
@@ -481,9 +483,11 @@ export default function Strategy({ args, book, status }) {
     ${attachId && attach.data ? html`<div style="margin-bottom:10px"><${Notice}>Adding to <b>${attach.data.name}</b> (${attach.data.templateName}) in ${attach.data.unit.kind === 'treasury' ? 'Treasury' : attach.data.unit.name}. <a href="#/strategy">Start a new package instead</a><//></div>` : null}
     <div class="split">
       <div class="stack">
-        ${!attachId ? html`<${Panel} title="Account and intent">
+        ${!attachId ? html`<${Panel} title="Trading owner and intent">
+          ${!book.units.some((u) => u.kind === 'account') ? html`<div style="margin-bottom:8px"><${Notice}><b>${book.name} has no Accounts.</b> A package is owned by an Account or by Treasury (the Book's own balance sheet). Choose Treasury below to trade on the Book's own balance sheet, or create an Account to trade apart from it.
+            <div class="row" style="margin-top:6px"><${Button} small onClick=${newAccount}>New Account<//>${unitId ? null : html`<${Button} small onClick=${() => { const t = book.units.find((u) => u.kind === 'treasury'); if (t) { setUnit(t.id); setUnitId(t.id); } }}>Use Treasury<//>`}</div><//></div>` : null}
           <div class="grid-form">
-            <${Field} label="Account" hint=${`Book: ${book.name}`}><${UnitSelect} value=${unitId} onChange=${setUnitId} book=${book} /><//>
+            <${Field} label="Trading owner" hint=${ownerHint(book, unitId)}><${UnitSelect} value=${unitId} onChange=${setUnitId} book=${book} /><//>
             <${Field} label="Investment Strategy" span=${2}><${StrategyPicker} value=${ctx.strategy} onChange=${(v) => setCtx({ ...ctx, strategy: v })} /><//>
             <${Field} label="Intended holding period (days)"><${Num} value=${ctx.days} onInput=${(v) => setCtx({ ...ctx, days: v })} /><//>
             <${Field} label="Hedge objective"><${Select} value=${ctx.objective} onChange=${(v) => setCtx({ ...ctx, objective: v })} options=${OBJECTIVES} placeholder="Choose an objective" /><//>
@@ -570,4 +574,17 @@ export default function Strategy({ args, book, status }) {
     </div>
     <div class="stack" style="margin-top:16px"><${HedgeQueue} book=${book} compact /><${Instances} book=${book} reloadKey=${submitted} /><${StrategiesInUse} book=${book} reloadKey=${submitted} /></div>
   </div>`;
+}
+
+/** New Account, from the Strategies page of a Book that has none (the same request as the sidebar's New Account). */
+function AccountDialog({ book, onClose, onCreated }) {
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    setBusy(true);
+    try { const a = await post(`/api/books/${book.id}/accounts`, { name: name.trim() }); await refreshStatus(); toast('Account created. Fund it from Treasury to start trading in it.'); onCreated(a); onClose(); } catch (e) { toastError(e); setBusy(false); }
+  };
+  return html`<${Modal} title="New Account" sub=${`In ${book.name}. An Account is funded from this Book's Treasury and holds its own positions and borrowings.`} onClose=${onClose}
+    footer=${html`<span class="grow"></span><${Button} onClick=${onClose}>Cancel<//><${Button} kind="primary" busy=${busy} disabled=${!name.trim()} onClick=${save}>Create Account<//>`}>
+    <${Field} label="Account name"><${Text} value=${name} onInput=${setName} autofocus /><//><//>`;
 }

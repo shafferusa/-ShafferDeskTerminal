@@ -1804,6 +1804,8 @@ async function eventTypeCounts(b) {
 async function historyLines(b) {
   await show(b, '#/accounting/history/book');
   await b.page.locator('main').getByText('Include daily accruals').first().click();
+  // Reloaded with the accruals once the panel no longer says they are hidden; only then can older pages be asked for.
+  await b.ui.section(b.page.locator('main'), 'Audit trail').filter({ hasNotText: 'daily accruals hidden' }).waitFor();
   await settle(b);
   while (await b.page.getByRole('button', { name: 'Show older events' }).count()) { await b.page.getByRole('button', { name: 'Show older events' }).click(); await settle(b); }
   return b.page.locator('main table tbody tr[id^="ev-"]').evaluateAll((trs) => trs.map((tr) => [...tr.children].slice(1, 4).map((td) => td.innerText.replace(/\s+/g, ' ').trim()).join(' | ')));
@@ -1851,7 +1853,7 @@ export async function catchUpScreens(b, c) {
   // Meanwhile the user opens a screen whose code the page has not loaded yet: it says so, rather than "Loading…".
   await page.locator('.rail a', { hasText: 'Data connection' }).click();
   await page.locator('main .notice.err', { hasText: 'This screen could not be loaded' }).waitFor();
-  c.match(flat(await page.locator('main').innerText()), /could not be loaded.*reloads by itself when the server is back/, 'a screen opened while the server is away says it could not be loaded and will reload when the server is back');
+  c.match(flat(await page.locator('main .notice.err', { hasText: 'This screen could not be loaded' }).first().innerText()), /could not be loaded.*reloads by itself when the server is back/, 'a screen opened while the server is away says it could not be loaded and will reload when the server is back');
   await b.t.start();
   await page.locator('.offline-bar').waitFor({ state: 'hidden', timeout: 30_000 });
   await page.locator('main h1', { hasText: 'Data connection' }).waitFor({ timeout: 30_000 });

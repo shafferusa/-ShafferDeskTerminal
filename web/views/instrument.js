@@ -21,19 +21,38 @@ export function openInstrument(id, opts = {}) {
 }
 
 /**
- * Account / Treasury picker used by every ticket. Choosing here also makes that Account the one
- * in use, the same as choosing it in the sidebar, so it carries to the next ticket and the
- * Strategy page.
+ * The Trading owner picker used by every ticket and the Strategies page: the Book's Accounts, and apart from them
+ * Treasury, labelled as the Book's own balance sheet. Choosing here also makes that owner the one in use, the same
+ * as choosing an Account in the sidebar, so it carries to the next ticket and the Strategies page. Nothing is chosen
+ * by substitution: with no owner in use and no Account, the picker asks for a choice (see defaultUnit).
  */
+export const TREASURY_OWNER_GROUP = "Treasury (the Book's own balance sheet)";
 export function UnitSelect({ value, onChange, book }) {
   const b = book || currentBook();
-  return html`<${Select} value=${value} onChange=${(v) => { setUnit(v); onChange(v); }} options=${(b?.units || []).map((u) => ({ value: u.id, label: u.kind === 'treasury' ? 'Treasury' : u.name }))} />`;
+  const accounts = (b?.units || []).filter((u) => u.kind === 'account');
+  const treasury = (b?.units || []).find((u) => u.kind === 'treasury');
+  const options = [
+    ...(accounts.length ? accounts.map((u) => ({ value: u.id, label: u.name, group: 'Accounts' })) : [{ value: '~none', label: 'No Accounts in this Book yet', group: 'Accounts', disabled: true }]),
+    ...(treasury ? [{ value: treasury.id, label: 'Treasury', group: TREASURY_OWNER_GROUP }] : []),
+  ];
+  return html`<${Select} value=${value || ''} placeholder=${value ? undefined : 'Choose the trading owner'} onChange=${(v) => { if (!v || v === '~none') return; setUnit(v); onChange(v); }} options=${options} />`;
 }
-/** The Account in use (sidebar or last ticket), if it belongs to this Book; otherwise its first Account. */
+/**
+ * The owner in use (sidebar, or chosen on the last ticket) if it belongs to this Book; otherwise the Book's first
+ * Account. A Book with no Account gets no default: Treasury is offered as an explicit choice, never substituted.
+ */
 export function defaultUnit(book) {
   const b = book || currentBook();
   const inUse = getState().unitId;
-  return b?.units.find((u) => u.id === inUse)?.id || b?.units.find((u) => u.kind === 'account')?.id || b?.units[0]?.id || '';
+  return b?.units.find((u) => u.id === inUse)?.id || b?.units.find((u) => u.kind === 'account')?.id || '';
+}
+/** What the Trading owner field says under the picker: which kind of owner is chosen, or that one must be. */
+export function ownerHint(book, unitId, extra) {
+  const b = book || currentBook();
+  const u = b?.units.find((x) => x.id === unitId);
+  const accounts = (b?.units || []).filter((x) => x.kind === 'account').length;
+  if (!u) return accounts ? 'Choose an Account, or Treasury (the Book\'s own balance sheet).' : html`This Book has no Accounts. Choose Treasury to trade on the Book's own balance sheet, or <a href="#/treasury">create an Account</a> under Treasury.`;
+  return html`${u.kind === 'treasury' ? 'Treasury: the Book\'s own balance sheet, not an Account.' : `Account in ${b.name}.`}${extra ? html` ${extra}` : null}`;
 }
 
 /** Order instructions shared by tickets. */
@@ -180,7 +199,7 @@ function Ticket({ inst, detail, book, onDone }) {
     ${detail.trading && !detail.trading.open ? html`<${Notice} tone="warn"><b>${detail.trading.reason}</b> An order placed now stays working until then; its trade date and settlement are counted from the day it fills. A Day order placed today is good for ${detail.trading.next}.<//>` : null}
     <div class="row" style="padding:6px 10px;border:1px solid var(--rule);border-radius:4px;background:var(--paper)"><${Holdings} h=${holdingsFromPositions(detail.positions)} detail label=${`${book.name} holds`} /></div>
     <div class="grid-form">
-      <${Field} label="Account" hint=${mine.length ? html`In this Account: <${Holdings} h=${holdingsFromPositions(mine)} />` : 'No position in this Account'}><${UnitSelect} value=${unitId} onChange=${setUnitId} book=${book} /><//>
+      <${Field} label="Trading owner" hint=${ownerHint(book, unitId, unitId ? (mine.length ? html`Held here: <${Holdings} h=${holdingsFromPositions(mine)} />` : 'No position held here.') : null)}><${UnitSelect} value=${unitId} onChange=${setUnitId} book=${book} /><//>
       <${Field} label="Action" span=${2}><${Seg} value=${action} onChange=${setAction} options=${actions.map((a) => ({ value: a, label: labelOf(a), disabled: security && a === 'sell' && !longs.length, title: security && a === 'sell' && !longs.length ? 'This Account holds none to sell. To go short, choose Sell short.' : undefined }))} /><//>
       ${reducing && pool.length > 1 ? html`<${Field} label=${action === 'sell' ? 'Sell from' : 'Cover'} span=${2}><${Select} value=${from?.positionId} onChange=${setFromId} options=${pool.map((p) => ({ value: p.positionId, label: `${p.strategy?.name || 'Position'}: ${fmtQty(Math.abs(p.qty))}` }))} /><//>` : null}
       <${Field} label=${inst.qtyLabel} hint=${inst.multiplier !== 1 && inst.family !== 'bond' && inst.family !== 'swap' && inst.family !== 'cds' ? `Contract multiplier ${inst.multiplier}` : inst.family === 'bond' ? 'Face amount' : ''}><${Num} value=${qty} onInput=${setQty} /><//>
@@ -188,7 +207,7 @@ function Ticket({ inst, detail, book, onDone }) {
       <${Field} label="State a fill price" hint="Optional. Recorded as a manual input, not a market quote."><${Num} value=${stated} onInput=${setStated} placeholder="none" /><//>
       <${SettlementField} inst=${inst} detail=${detail} book=${book} value=${stl} onChange=${setStl} />
     </div>
-    ${reducing && from ? html`<${Notice}>${action === 'sell' ? 'Sells from' : 'Covers'} <b>${from.strategy?.name || 'the position'}</b> in this Account, which is ${from.qty > 0 ? 'long' : 'short'} ${fmtQty(Math.abs(from.qty))}${isNum(from.avgCost) ? ` at an average ${fmtPriceUnits(from.avgCost, inst.priceUnits)}` : ''}.${action === 'buy_to_cover' ? ' The matching borrowed securities are returned once the cover fills.' : ''}${qty > Math.abs(from.qty) ? html` <b>${fmtQty(qty)} is more than it holds.</b>` : ''}<//>` : null}
+    ${reducing && from ? html`<${Notice}>${action === 'sell' ? 'Sells from' : 'Covers'} <b>${from.strategy?.name || 'the position'}</b> in ${book.units.find((u) => u.id === unitId)?.kind === 'treasury' ? 'Treasury' : 'this Account'}, which is ${from.qty > 0 ? 'long' : 'short'} ${fmtQty(Math.abs(from.qty))}${isNum(from.avgCost) ? ` at an average ${fmtPriceUnits(from.avgCost, inst.priceUnits)}` : ''}.${action === 'buy_to_cover' ? ' The matching borrowed securities are returned once the cover fills.' : ''}${qty > Math.abs(from.qty) ? html` <b>${fmtQty(qty)} is more than it holds.</b>` : ''}<//>` : null}
     ${security && !longs.length && !shorts.length && detail.positions.length ? html`<div class="note">Held in other Accounts of this Book, not in this one. Choose that Account to sell it.</div>` : null}
     ${action === 'sell_short' ? html`<${Panel} title="Securities borrow">
       ${hasBorrowData ? html`<div><${Pill} tone=${detail.borrow.available ? 'ok' : 'bad'}>${detail.borrow.available ? 'Available to borrow' : 'Not available to borrow'}<//> fee ${fmtNum(detail.borrow.feeRate * 100, 3)}% a year${isNum(detail.borrow.quantity) ? `, ${fmtQty(detail.borrow.quantity)} available` : ''} <${Prov} obs=${detail.borrow.obs} /></div>`
@@ -326,9 +345,9 @@ function OptionTicket({ und, c, chain, onClose }) {
     if (pv) onClose();
   };
   return html`<${Modal} title=${`${und.symbol} ${c.expiration} ${c.strike} ${c.right === 'C' ? 'call' : 'put'}`} sub=${`One contract delivers ${fmtQty(c.deliverable?.shares ?? c.multiplier)} units; premium multiplier ${c.multiplier}. Quote: ${chain.source}.`} onClose=${onClose}
-    footer=${html`<span class="grow"></span><${Button} onClick=${onClose}>Cancel<//><${Button} kind="primary" busy=${busy} disabled=${!(qty > 0)} onClick=${go}>Preview<//>`}>
+    footer=${html`<span class="grow"></span><${Button} onClick=${onClose}>Cancel<//><${Button} kind="primary" busy=${busy} disabled=${!(qty > 0) || !unitId} onClick=${go}>Preview<//>`}>
     <div class="grid-form">
-      <${Field} label="Account"><${UnitSelect} value=${unitId} onChange=${setUnitId} /><//>
+      <${Field} label="Trading owner" hint=${ownerHint(null, unitId)}><${UnitSelect} value=${unitId} onChange=${setUnitId} /><//>
       <${Field} label="Action"><${Seg} value=${action} onChange=${setAction} options=${[{ value: 'buy', label: 'Buy' }, { value: 'sell', label: 'Sell / write' }]} /><//>
       <${Field} label="Contracts"><${Num} value=${qty} onInput=${setQty} /><//>
       <${OrderFields} o=${o} set=${(p) => setO({ ...o, ...p })} />
