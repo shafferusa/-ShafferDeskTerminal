@@ -90,6 +90,8 @@ function describeLeg(l) {
   if (l.kind === 'link') return `Use existing ${fmtQty(l.qty)} ${l._name}`;
   if (l.kind === 'loan') return `${l.action === 'borrow_cash' ? 'Borrow' : 'Lend'} ${fmtMoney(l.qty, l.contract.tradingCcy)}`;
   if (l.option) return `${l.action === 'buy' ? 'Buy' : 'Sell'} ${fmtQty(l.qty)} ${l._name} ${l.option.expiration} ${fmtPrice(l.option.strike)} ${l.option.right === 'C' ? 'call' : 'put'}`;
+  // A swap is pay / receive with its legs, never buy / sell: the same words as the preview.
+  if (l.contract?.terms?.legs?.length) return `${l._actionLabel}: ${l.contract.terms.legs.map((g) => `${(g.side === 'pay') !== (l.action === 'sell') ? 'pay' : 'receive'} ${g.type === 'fixed' ? `fixed ${isNum(g.rate) ? `${fmtNum(g.rate * 100, 3)}%` : ''}` : g.type === 'return' ? 'the return' : g.index || g.type}`).join(', ')} on ${fmtQty(l.qty)} ${l.contract.name}`;
   if (l.contract) return `${l._actionLabel}: ${l.contract.name} (${fmtQty(l.qty)} notional)`;
   return `${ACTION_LABEL[l.action] || l._actionLabel || l.action} ${fmtQty(l.qty)} ${l._name}`;
 }

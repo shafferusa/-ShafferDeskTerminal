@@ -325,4 +325,165 @@ const mutualFund = {
   ],
 };
 
-export default [mutualFund];
+// ---------------------------------------------------------------------------------------------
+// money_market_fund
+// ---------------------------------------------------------------------------------------------
+// Treasury parks cash in a US government money-market fund: a constant NAV of 1.00, same-day settlement (T+0, the
+// instrument's own settlement lag), dealt at the NAV like any open-ended fund. While the subscription waits for its
+// NAV the reserved cash cannot be transferred out. A redemption after the cut-off deals and settles the next day.
+// The month's dividend (accrued daily by the fund, declared monthly) is recorded by hand as a cash distribution.
+const moneyMarketFund = {
+  productId: 'money_market_fund',
+  title: 'Harborline Treasury Money Market Fund, Institutional Shares: constant NAV 1.00, T+0, held by Treasury',
+  matrix: {
+    ...FUND_TICKET,
+    requiredFields: ['Account (trading owner: Treasury)', 'Action', 'Shares'],
+    manualInputs: ['monthly dividend (ex-date, amount per share), recorded by hand as a cash distribution; the daily accrual is the fund\'s own and is not simulated'],
+    settlement: 'Same day (T+0, the instrument\'s settlement lag) from the dealing date, on the US calendar',
+    lifecycle: 'Subscription and redemptions wait for the NAV of their dealing date; a redemption after the cut-off deals the next dealing day; monthly dividend paid on its ex-date',
+    accounting: 'Average cost at 1.00; reserved subscription cash not transferable; no realized P&L at a constant NAV; dividend income in Treasury',
+    collateral: 'None',
+  },
+  start: '2026-03-02T15:00:00.000Z', // Monday 2 March 2026, 10:00 New York
+  settlementCheck: { lag: 0, holidays: [] },
+  book: book('Matrix money-market fund'),
+  instruments: {
+    main: { productId: 'money_market_fund', name: 'Harborline Treasury Money Market Fund, Institutional Shares', symbol: 'HTMXX', marketView: 'US_CASH', venue: 'Harborline Funds transfer agent', venueType: 'otc', venueCountry: 'US', issuer: 'Harborline Funds Trust', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', terms: { settleDays: 0 } },
+  },
+  quotes: { main: { last: 1.00 } }, // the published constant NAV
+  expectAtStart: START_STATE,
+  steps: [
+    {
+      id: 'subscribe', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 200_000, owner: 'treasury', as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: ['not-executable'],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 200_000, estimate: null, reference: 1, model: 'next-nav', executable: false, settleDate: '2026-03-02', calendar: 'US',
+            cash: -200_000, // 200,000 x 1.00
+            fees: 0 }],
+          cash: { USD: { purchases: 200_000, fees: 0, required: 200_000, available: 500_000, shortfall: 0 } },
+        },
+        result: { orders: [{ kind: 'trade', action: 'buy', status: 'working', filledQty: 0, fills: [] }] },
+        events: [{ type: 'strategy.submitted' }],
+        cash: { treasury: { USD: { settled: 500_000, unsettled: 0, reserved: 200_000, availableToTrade: 300_000, availableToWithdraw: 300_000 } } },
+        openOrders: [{ instrument: 'main', kind: 'trade', action: 'buy', status: 'working', qty: 200_000, filledQty: 0, owner: 'treasury', reason: waitingFor('2026-03-02', '1.00') }],
+        pnl: { treasury: { realized: 0, dividends: 0, commissions: 0, fees: 0, unrealized: 0, total: 0 }, account: { total: 0 } },
+        nav: { treasury: 500_000, book: 1_000_000 },
+        balance: { treasury: { cash: 500_000, assets: 500_000, liabilities: 0, netAssets: 500_000 } },
+      },
+    },
+    {
+      id: 'reserved-not-transferable', covers: 'reserved', action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 400_000,
+      status: 'blocked', reason: '200,000 of Treasury\'s 500,000 is reserved for the waiting subscription; only 300,000 can leave.',
+      expect: { refused: 'Treasury has 300,000.00 USD of settled USD available; 400,000.00 USD requested' },
+    },
+    {
+      id: 'nav-supplied', action: 'close_price', instrument: 'main', date: '2026-03-02', value: 1.00,
+      expect: {},
+    },
+    {
+      id: 'dealt-and-settled', covers: ['open', 'settlement'], action: 'clock', to: '2026-03-02T23:00:00.000Z', // 18:00 New York
+      expect: {
+        events: [
+          // Dealt at 1.00 exactly as estimated, so nothing differs from the confirmation; T+0 settles in the same cycle.
+          { type: 'trade.fill', summary: 'Bought 200,000 HTMXX @ 1.00 USD', owner: 'treasury', date: '2026-03-02' },
+          { type: 'settlement.pay', summary: 'paid 200,000.00 USD from settled cash', cash: { USD: -200_000 }, owner: 'treasury', date: '2026-03-02' },
+        ],
+        cash: { treasury: { USD: { settled: 300_000, unsettled: 0, reserved: 0, availableToTrade: 300_000, availableToWithdraw: 300_000 } } },
+        openOrders: [],
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'treasury', direction: 'long', qty: 200_000, avgCost: 1, cost: 200_000, price: 1, value: 200_000, unrealized: 0, priceSource: 'Test fixture' }],
+        holdings: { main: { long: 200_000, short: 0, net: 200_000 } },
+        balance: { treasury: { cash: 300_000, positions: 200_000, assets: 500_000, liabilities: 0, netAssets: 500_000 } },
+      },
+    },
+    {
+      id: 'wednesday-after-cutoff', action: 'clock', to: '2026-03-04T22:00:00.000Z', // Wednesday 4 March, 17:00 New York
+      expect: {},
+    },
+    {
+      id: 'redeem-after-cutoff', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 50_000, from: 'lot', owner: 'treasury', settlementCheck: false,
+      expect: {
+        preview: {
+          blocking: 0, warnings: ['not-executable'],
+          legs: [{ kind: 'trade', action: 'sell', qty: 50_000, estimate: null, reference: 1, model: 'next-nav', executable: false, settleDate: '2026-03-05', cash: 50_000, fees: 0 }], // dealing Thursday 5 March, T+0
+          cash: { USD: { proceeds: 50_000, fees: 0 } },
+        },
+        result: { orders: [{ action: 'sell', status: 'working', filledQty: 0, fills: [] }] },
+        events: [{ type: 'strategy.legs_added' }],
+        openOrders: [{ instrument: 'main', kind: 'trade', action: 'sell', status: 'working', qty: 50_000, filledQty: 0, owner: 'treasury', reason: waitingFor('2026-03-05', '1.00') }],
+      },
+    },
+    {
+      id: 'thursday-nav', action: 'close_price', instrument: 'main', date: '2026-03-05', value: 1.00,
+      expect: {},
+    },
+    {
+      id: 'redeemed-and-settled', covers: ['reduce', 'settlement'], action: 'clock', to: '2026-03-05T23:00:00.000Z',
+      expect: {
+        events: [
+          { type: 'trade.fill', summary: 'Sold 50,000 HTMXX @ 1.00 USD', owner: 'treasury', date: '2026-03-05' }, // cost out 50,000 at 1.00: nothing realized
+          { type: 'settlement.receive', summary: 'received 50,000.00 USD into settled cash', cash: { USD: 50_000 }, owner: 'treasury', date: '2026-03-05' },
+        ],
+        cash: { treasury: { USD: { settled: 350_000, availableToTrade: 350_000, availableToWithdraw: 350_000 } } },
+        openOrders: [],
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'treasury', direction: 'long', qty: 150_000, avgCost: 1, cost: 150_000, price: 1, value: 150_000, unrealized: 0 }],
+        holdings: { main: { long: 150_000, short: 0, net: 150_000 } },
+        balance: { treasury: { cash: 350_000, positions: 150_000 } },
+      },
+    },
+    {
+      id: 'dividend-recorded', covers: 'distribution', action: 'corporate_action', instrument: 'main', type: 'cash_dividend', exDate: '2026-03-31', amount: 0.00342,
+      expect: {},
+    },
+    {
+      id: 'dividend-paid', covers: 'distribution', action: 'clock', to: '2026-03-31T14:00:00.000Z', // Tuesday 31 March, 10:00 New York
+      expect: {
+        events: [{ type: 'dividend', summary: 'Dividend on 150,000 HTMXX: 513.00 USD (0.00342 per unit, ex-date 2026-03-31)', cash: { USD: 513 }, owner: 'treasury' }], // 150,000 x 0.00342
+        cash: { treasury: { USD: { settled: 350_513, availableToTrade: 350_513, availableToWithdraw: 350_513 } } },
+        pnl: { treasury: { dividends: 513, total: 513 } },
+        nav: { treasury: 500_513, book: 1_000_513 },
+        balance: { treasury: { cash: 350_513, assets: 500_513, netAssets: 500_513 } },
+      },
+    },
+    {
+      id: 'over-redeem', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 200_000, from: 'lot', owner: 'treasury',
+      status: 'blocked', reason: 'Treasury holds 150,000 shares.',
+      expect: { refused: 'more than it holds' },
+    },
+    {
+      id: 'redeem-all', covers: 'close', action: 'ticket', instrument: 'main', side: 'sell', qty: 150_000, from: 'lot', owner: 'treasury',
+      expect: {
+        preview: {
+          blocking: 0, warnings: ['not-executable'],
+          legs: [{ kind: 'trade', action: 'sell', qty: 150_000, estimate: null, reference: 1, model: 'next-nav', executable: false, settleDate: '2026-03-31', cash: 150_000, fees: 0 }],
+          cash: { USD: { proceeds: 150_000, fees: 0 } },
+        },
+        result: { orders: [{ action: 'sell', status: 'working', filledQty: 0, fills: [] }] },
+        events: [{ type: 'strategy.legs_added' }],
+        openOrders: [{ instrument: 'main', kind: 'trade', action: 'sell', status: 'working', qty: 150_000, filledQty: 0, owner: 'treasury', reason: waitingFor('2026-03-31', '1.00') }],
+      },
+    },
+    {
+      id: 'month-end-nav', action: 'close_price', instrument: 'main', date: '2026-03-31', value: 1.00,
+      expect: {},
+    },
+    {
+      id: 'redeemed-in-full', covers: ['close', 'settlement'], action: 'clock', to: '2026-03-31T22:00:00.000Z', // 18:00 New York
+      expect: {
+        events: [
+          { type: 'trade.fill', summary: 'Sold 150,000 HTMXX @ 1.00 USD', owner: 'treasury', date: '2026-03-31' },
+          { type: 'settlement.receive', summary: 'received 150,000.00 USD into settled cash', cash: { USD: 150_000 }, owner: 'treasury', date: '2026-03-31' },
+        ],
+        cash: { treasury: { USD: { settled: 500_513, unsettled: 0, reserved: 0, availableToTrade: 500_513, availableToWithdraw: 500_513 } }, account: { USD: { settled: 500_000 } } },
+        openOrders: [],
+        positions: [],
+        holdings: { main: null },
+        pnl: { treasury: { realized: 0, dividends: 513, unrealized: 0, total: 513 } },
+        nav: { treasury: 500_513, book: 1_000_513 },
+        balance: { treasury: { cash: 500_513, positions: null, assets: 500_513, liabilities: 0, netAssets: 500_513 } },
+      },
+    },
+  ],
+};
+
+export default [mutualFund, moneyMarketFund];

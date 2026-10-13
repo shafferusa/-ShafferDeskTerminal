@@ -169,13 +169,24 @@ async function restated(t, pv, step) {
   return t.preview({ ...pv.input, financing: null, legs: pv.legs.map((l) => (l.kind === 'trade' ? { ...l, statedPrice: price } : l)), clientToken: pv.token });
 }
 
+/**
+ * '$pos:<lot>:<instrument key>' names the open position of that instrument in that lot: the position a ticket picks in a
+ * position list (the shares pledged under a secured loan, the collateral of a repo, the holding lent).
+ */
+async function resolvePositions(t, ctx, x) {
+  if (typeof x === 'string' && x.startsWith('$pos:')) { const [, lot, key] = x.split(':'); return (await positionIn(t, ctx, lot, key)).position.positionId; }
+  if (Array.isArray(x)) return Promise.all(x.map((v) => resolvePositions(t, ctx, v)));
+  if (x && typeof x === 'object') return Object.fromEntries(await Promise.all(Object.entries(x).map(async ([k, v]) => [k, await resolvePositions(t, ctx, v)])));
+  return x;
+}
+
 /** Build the preview request for a trade step, as the screens would. */
 async function previewFor(t, ctx, step) {
   const unitId = ctx.unitId(step.owner || 'account');
   // A ticket that is not the security ticket states the request it sends as `input` (README "Steps"); so does a
   // `package` step. '$inst:key', '$unit:account' and '$lot:name' stand for ids that exist only at run time.
   if (step.action === 'package' || (step.action === 'ticket' && step.input)) {
-    const input = resolveRefs({ bookId: ctx.bookId, unitId, ...step.input }, ctx);
+    const input = resolveRefs({ bookId: ctx.bookId, unitId, ...(await resolvePositions(t, ctx, step.input)) }, ctx);
     return { lot: step.as, opens: !input.attachTo, instrument: step.instrument, pv: await t.preview(input) };
   }
   if (step.action === 'ticket') {

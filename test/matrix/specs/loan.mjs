@@ -1362,4 +1362,283 @@ const cashLoan = {
   ],
 };
 
-export default [unsecuredLoan, termDeposit, certificateOfDeposit, bankDeposit, cashLoan];
+// ---------------------------------------------------------------------------------------------
+// secured_loan
+// ---------------------------------------------------------------------------------------------
+// An Account buys 5,000 shares, then borrows against 4,000 of them: the pledged shares stay its own (on its balance
+// sheet, at market value) but cannot be sold until the loan is repaid; the 1,000 left free can be. Interest is paid
+// monthly. The Account then sends most of its cash back to Treasury, so on the maturity date the repayment cannot
+// be made: it fails visibly (a failed lifecycle item with its reason, and an alert), interest goes on accruing, and
+// the repayment is made as soon as Treasury funds the Account. The released shares are then sold.
+//
+// Inputs: HRDG quoted 40.00 bid / 40.02 ask, last 40.01 (fixture); commission 0.005 a share, at least 1.00; T+1.
+//   Loan: 120,000 USD at 5.40% fixed, ACT/360 = 18.00 a day, from Tuesday 3 March to Friday 24 April 2026.
+//   Interest paid 1 April: 3 March to 1 April, 29 days, 522.00. At maturity: 1 to 24 April, 23 days, 414.00.
+const SECURED_TERMS = { loanType: 'secured', rateType: 'fixed', rate: 0.054, dayCount: 'ACT/360', maturity: '2026-04-24', interestPayment: 'monthly', counterparty: 'Calder Trust Bank' };
+const SECURED = { owner: 'account', page: 'account', side: 'borrow_cash', productId: 'secured_loan', productLabel: 'Secured loan', ccy: 'USD', principal: 120_000, name: 'Calder secured loan', as: 'loan', terms: SECURED_TERMS };
+const securedTicket = (id, o, rest) => {
+  const s = loanTicket(id, o, rest);
+  // The ticket sends the pledge inside the contract terms: the position chosen in Collateral position and the quantity.
+  s.input.legs[0].contract.terms = { ...o.terms, collateral: [{ positionId: '$pos:shares:hrdg', qty: o.pledge.qty }] };
+  return s;
+};
+const EQUITY_FEES = { equity: { perUnit: 0.005, minimum: 1, bps: 0 } };
+
+const securedLoan = {
+  productId: 'secured_loan',
+  title: 'Calder Trust Bank loan to an Account, secured on 4,000 of its 5,000 Harrow Ridge shares: 120,000 USD at 5.40%, interest monthly, repaid late for want of cash',
+  matrix: {
+    ...LOAN_TICKET,
+    requiredFields: [...LOAN_TICKET.requiredFields, 'Collateral position (a long position of the borrower)', 'Quantity to pledge'],
+    automaticInputs: ['interest start date', 'daily interest accrual at the end-of-day run', 'interest paid on the first business day of each month', 'repayment of principal and interest at maturity, retried each cycle while cash is short', 'release of the pledged shares on repayment in full'],
+    manualInputs: ['every term of the loan, entered on the ticket', 'the position pledged and the quantity, entered on the ticket'],
+    settlement: 'None for the loan: borrowed cash is settled at once. The shares bought and sold around it settle T+1',
+    lifecycle: 'Interest accrues daily and is paid monthly; principal is repaid at maturity with the interest since the last payment. A repayment the borrower cannot fund fails visibly, keeps accruing and is retried; it is made once cash arrives',
+    accounting: 'Borrowed cash is a liability of the Account; interest is a funding expense; the pledged shares stay on the Account balance sheet at market value',
+    collateral: 'Named shares pledged: the pledged quantity cannot be sold (or lent, or pledged again) until the loan is repaid in full, when it is released',
+  },
+  tradedOn: 'A secured loan is not a registry instrument: it is entered on the Cash loan or deposit ticket (from the Account page, "Borrow cash"), with the position it pledges, and registers itself when the ticket is confirmed. The shares are a registered common stock.',
+  start: AT_1000('2026-03-02'),
+  book: {
+    name: 'Matrix secured loan', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 1_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 300_000 }] },
+    settings: { fees: EQUITY_FEES, fill: FILL, settlement: { equity: 1 } },
+  },
+  instruments: {
+    hrdg: { productId: 'common_stock', name: 'Harrow Ridge Industries Inc.', symbol: 'HRDG', marketView: 'US_CASH', venue: 'NYSE', venueType: 'exchange', venueCountry: 'US', issuer: 'Harrow Ridge Industries Inc.', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', terms: {} },
+  },
+  quotes: { hrdg: { bid: 40.00, ask: 40.02, last: 40.01, bidSize: 10_000, askSize: 10_000 } },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 300_000, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 300_000, availableToWithdraw: 300_000, borrowed: 0, lent: 0 } },
+      treasury: { USD: { settled: 700_000, availableToTrade: 700_000, availableToWithdraw: 700_000, borrowed: 0, lent: 0 } },
+    },
+    positions: [], holdings: {}, pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 300_000, treasury: 700_000, book: 1_000_000 },
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 }, lifecycleFailures: [],
+    alerts: [],
+    pnl: { account: { realized: 0, commissions: 0, unrealized: 0, borrowFunding: 0, total: 0 }, book: { total: 0 } },
+    balance: { account: { cash: 300_000, assets: 300_000, liabilities: 0, netAssets: 300_000 }, book: { cash: 1_000_000, assets: 1_000_000, netAssets: 1_000_000 } },
+    oversight: { accountBorrowings: [], treasuryOwn: [] },
+  },
+  steps: [
+    {
+      id: 'buy-shares', covers: 'collateral', action: 'ticket', ticketOf: 'equity', instrument: 'hrdg', side: 'buy', qty: 5_000, as: 'shares',
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'buy', instrument: 'hrdg', qty: 5_000, estimate: 40.02, model: 'quoted-bid-ask', settleDate: '2026-03-03', cash: -200_100, fees: 25 }] }, // 5,000 x 40.02; 5,000 x 0.005
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 5_000, avgPrice: 40.02 }] },
+        events: [{ type: 'strategy.submitted', owner: 'account' }, { type: 'trade.fill', summary: 'Bought 5,000 HRDG @ 40.02 USD', owner: 'account', date: '2026-03-02' }],
+        cash: { account: { USD: { settled: 300_000, unsettled: -200_125, payable: 200_125, availableToTrade: 99_875, availableToWithdraw: 99_875 } } },
+        positions: [{ instrument: 'hrdg', lot: 'shares', owner: 'account', direction: 'long', qty: 5_000, avgCost: 40.02, cost: 200_100, price: 40.01, value: 200_050, unrealized: -50, pledged: 0 }], // 5,000 x 40.01
+        holdings: { hrdg: { long: 5_000, short: 0, net: 5_000 } },
+        pending: [{ instrument: 'hrdg', lot: 'shares', owner: 'account', dueDate: '2026-03-03', amount: -200_125, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: 0, commissions: -25, unrealized: -50, borrowFunding: 0, total: -75 }, book: { total: -75 } },
+        nav: { account: 299_925, treasury: 700_000, book: 999_925 },
+        balance: {
+          account: { cash: 300_000, positions: 200_050, payable: 200_125, assets: 500_050, liabilities: 200_125, netAssets: 299_925 },
+          book: { cash: 1_000_000, positions: 200_050, payable: 200_125, assets: 1_200_050, liabilities: 200_125, netAssets: 999_925 },
+        },
+      },
+    },
+    {
+      id: 'shares-settle', covers: 'settlement', action: 'clock', to: AT_1000('2026-03-03'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: /^Settlement: paid 200,125\.00 USD/, cash: { USD: -200_125 }, date: '2026-03-03' }],
+        cash: { account: { USD: { settled: 99_875, unsettled: 0, payable: 0, availableToTrade: 99_875, availableToWithdraw: 99_875 } } },
+        pending: [],
+        balance: { account: { cash: 99_875, payable: null, assets: 299_925, liabilities: 0 }, book: { cash: 799_875, payable: null, assets: 999_925, liabilities: 0 } },
+      },
+    },
+    securedTicket('pledge-more-than-is-held', { ...SECURED, as: undefined, pledge: { instrument: 'hrdg', qty: 6_000 } }, {
+      covers: 'collateral', status: 'blocked', reason: 'Only 5,000 shares are held and free; 6,000 cannot be pledged.',
+      expect: { refused: 'Only 5,000 of the collateral position is unencumbered; 6,000 requested.' },
+    }),
+    securedTicket('borrow-against-shares', { ...SECURED, pledge: { instrument: 'hrdg', qty: 4_000 } }, {
+      covers: ['open', 'borrow', 'collateral'],
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'loan', action: 'borrow_cash', purpose: 'financing', qty: 120_000, cash: 120_000, fees: 0, ccy: 'USD', dailyCost: 18, // 120,000 x 0.054 / 360
+            financing: { amount: 120_000, rateType: 'fixed', rate: 0.054, maturity: '2026-04-24', interestFrom: '2026-03-03' } }],
+          cash: { USD: { financingIn: 120_000, financingOut: 0, required: 0, available: 99_875, shortfall: 0, netCash: 120_000 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'loan', action: 'borrow_cash', instrument: 'loan', status: 'filled', qty: 120_000, filledQty: 120_000 }] },
+        events: [
+          { type: 'strategy.submitted', owner: 'account' },
+          { type: 'loan.drawdown', summary: 'Borrowed 120,000.00 USD (secured, 5.400% fixed, due 2026-04-24)', cash: { USD: 120_000 }, owner: 'account', date: '2026-03-03' },
+        ],
+        cash: { account: { USD: { settled: 219_875, availableToTrade: 219_875, availableToWithdraw: 219_875, borrowed: 120_000 } } },
+        positions: [
+          { instrument: 'hrdg', lot: 'shares', owner: 'account', direction: 'long', qty: 5_000, avgCost: 40.02, cost: 200_100, price: 40.01, value: 200_050, unrealized: -50, pledged: 4_000 },
+          { instrument: 'loan', lot: 'loan', owner: 'account', direction: 'borrowed', qty: -120_000, value: 120_000, carrying: -120_000, accrued: 0, provisional: false },
+        ],
+        // Open to 24 April, interest monthly: the first payment on 1 April, then the maturity.
+        lifecycle: [{ type: 'loan.interest', instrument: 'loan', dueDate: '2026-04-01', status: 'pending', owner: 'account' }, { type: 'loan.maturity', instrument: 'loan', dueDate: '2026-04-24', status: 'pending', owner: 'account' }],
+        borrowings: [{ owner: 'account', origin: 'account', family: 'loan', type: 'Secured loan', lot: 'loan', principal: 120_000, principalRc: 120_000, ccy: 'USD', rate: 0.054, rateType: 'fixed', rateText: '5.400% fixed', dayCount: 'ACT/360',
+          accrued: 0, costToDate: 0, feesToDate: 0, startDate: '2026-03-03', maturity: '2026-04-24', term: 'term', lender: 'Calder Trust Bank', collateral: 'HRDG: 4,000 pledged', schedule: 'Interest paid monthly', nextPayment: '2026-04-01', nextPaymentType: 'loan.interest', blocked: null }],
+        nav: { account: 299_925, book: 999_925 },
+        balance: {
+          account: { cash: 219_875, positions: 200_050, borrowed: 120_000, assets: 419_925, liabilities: 120_000, netAssets: 299_925 }, // the pledged shares stay on the Account's balance sheet
+          book: { cash: 919_875, positions: 200_050, borrowed: 120_000, assets: 1_119_925, liabilities: 120_000, netAssets: 999_925 },
+        },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'loan', principal: 120_000, ccy: 'USD', accrued: 0 }], treasuryOwn: [], accounts: { account: { cashBorrowed: 120_000, fundingReceived: 300_000 } } },
+      },
+    }),
+    {
+      id: 'sell-pledged-shares', covers: ['reduce', 'pledged collateral not sellable'], action: 'ticket', ticketOf: 'equity', instrument: 'hrdg', side: 'sell', qty: 2_000, from: 'shares',
+      status: 'blocked', reason: '4,000 of the 5,000 shares are pledged to the lender; only 1,000 can be sold.',
+      expect: { refused: 'only 1,000 of the 5,000 HRDG held is unencumbered; the rest is pledged or out on loan and cannot be sold until it is released' },
+    },
+    {
+      id: 'sell-the-free-shares', covers: 'reduce', action: 'ticket', ticketOf: 'equity', instrument: 'hrdg', side: 'sell', qty: 1_000, from: 'shares',
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'sell', instrument: 'hrdg', qty: 1_000, estimate: 40.00, model: 'quoted-bid-ask', settleDate: '2026-03-04', cash: 40_000, fees: 5 }] }, // 1,000 x 40.00 (the bid)
+        result: { orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 1_000, avgPrice: 40.00 }] },
+        // Cost removed at the average: 200,100 x 1,000 / 5,000 = 40,020. Realized 40,000 - 40,020 = -20.
+        events: [{ type: 'strategy.legs_added', owner: 'account' }, { type: 'trade.fill', summary: /^Sold 1,000 HRDG @ 40\.00 USD/, owner: 'account', date: '2026-03-03' }],
+        cash: { account: { USD: { settled: 219_875, unsettled: 39_995, receivable: 39_995, availableToTrade: 259_870, availableToWithdraw: 219_875 } } },
+        positions: [
+          { instrument: 'hrdg', lot: 'shares', owner: 'account', direction: 'long', qty: 4_000, avgCost: 40.02, cost: 160_080, price: 40.01, value: 160_040, unrealized: -40, pledged: 4_000 },
+          { instrument: 'loan', lot: 'loan', owner: 'account', direction: 'borrowed', qty: -120_000, value: 120_000, carrying: -120_000, accrued: 0, provisional: false },
+        ],
+        holdings: { hrdg: { long: 4_000, short: 0, net: 4_000 } },
+        pending: [{ instrument: 'hrdg', lot: 'shares', owner: 'account', dueDate: '2026-03-04', amount: 39_995, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: -20, commissions: -30, unrealized: -40, borrowFunding: 0, total: -90 }, book: { total: -90 } },
+        nav: { account: 299_910, book: 999_910 },
+        balance: {
+          account: { cash: 219_875, receivable: 39_995, positions: 160_040, assets: 419_910, liabilities: 120_000, netAssets: 299_910 },
+          book: { cash: 919_875, receivable: 39_995, positions: 160_040, assets: 1_119_910, liabilities: 120_000, netAssets: 999_910 },
+        },
+      },
+    },
+    {
+      id: 'sale-settles', covers: 'settlement', action: 'clock', to: AT_1000('2026-03-04'), // the end-of-day run of 3 March: no whole day of interest yet
+      expect: {
+        events: [{ type: 'settlement.receive', summary: /^Settlement: received 39,995\.00 USD/, cash: { USD: 39_995 }, date: '2026-03-04' }],
+        cash: { account: { USD: { settled: 259_870, unsettled: 0, receivable: 0, availableToTrade: 259_870, availableToWithdraw: 259_870 } } },
+        pending: [],
+        balance: { account: { cash: 259_870, receivable: null, assets: 419_910 }, book: { cash: 959_870, receivable: null, assets: 1_119_910 } },
+      },
+    },
+    {
+      // To 31 March in one move (a catch-up): 3 to 31 March, 28 days x 18.00 = 504.00.
+      id: 'accrue-march', covers: 'interest accrual', action: 'clock', to: AT_1730('2026-03-31'),
+      expect: {
+        events: [{ type: 'accrual.interest', summary: 'Interest accrued on Calder secured loan: 504.00 USD', owner: 'account', date: '2026-03-31' }],
+        positions: [
+          { instrument: 'hrdg', lot: 'shares', qty: 4_000, value: 160_040, pledged: 4_000 },
+          { instrument: 'loan', lot: 'loan', qty: -120_000, accrued: -504 },
+        ],
+        borrowings: [{ lot: 'loan', principal: 120_000, accrued: 504, costToDate: 504, nextPayment: '2026-04-01' }],
+        pnl: { account: { borrowFunding: -504, total: -594 }, book: { borrowFunding: -504, total: -594 } },
+        nav: { account: 299_406, book: 999_406 },
+        balance: { account: { accruedExpense: 504, liabilities: 120_504, netAssets: 299_406 }, book: { accruedExpense: 504, liabilities: 120_504, netAssets: 999_406 } },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'loan', principal: 120_000, ccy: 'USD', accrued: 504 }] },
+      },
+    },
+    {
+      // Wednesday 1 April: 29 days, 522.00, paid. The next payment is the maturity, 24 April.
+      id: 'monthly-interest', covers: 'interest payment', action: 'clock', to: AT_1000('2026-04-01'),
+      expect: {
+        events: [
+          { type: 'accrual.interest', summary: 'Interest accrued on Calder secured loan: 18.00 USD', date: '2026-04-01' },
+          { type: 'interest.payment', summary: 'Interest paid on Calder secured loan: 522.00 USD', cash: { USD: -522 }, owner: 'account', date: '2026-04-01' },
+        ],
+        cash: { account: { USD: { settled: 259_348, availableToTrade: 259_348, availableToWithdraw: 259_348 } } },
+        positions: [{ instrument: 'hrdg', lot: 'shares', qty: 4_000, value: 160_040, pledged: 4_000 }, { instrument: 'loan', lot: 'loan', qty: -120_000, accrued: 0 }],
+        lifecycle: [{ type: 'loan.maturity', instrument: 'loan', dueDate: '2026-04-24', status: 'pending', owner: 'account' }, { type: 'loan.interest', instrument: 'loan', dueDate: '2026-05-01', status: 'pending', owner: 'account' }],
+        borrowings: [{ lot: 'loan', principal: 120_000, accrued: 0, costToDate: 522, nextPayment: '2026-04-24', nextPaymentType: 'loan.maturity' }],
+        pnl: { account: { borrowFunding: -522, total: -612 }, book: { borrowFunding: -522, total: -612 } },
+        nav: { account: 299_388, book: 999_388 },
+        balance: { account: { cash: 259_348, accruedExpense: null, assets: 419_388, liabilities: 120_000, netAssets: 299_388 }, book: { cash: 959_348, accruedExpense: null, assets: 1_119_388, liabilities: 120_000, netAssets: 999_388 } },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'loan', principal: 120_000, ccy: 'USD', accrued: 0 }] },
+      },
+    },
+    {
+      id: 'return-cash-to-treasury', covers: 'return to Treasury', action: 'transfer', from: 'account', to: 'treasury', ccy: 'USD', amount: 200_000,
+      expect: {
+        events: [{ type: 'transfer.return', summary: /200,000\.00 USD from Alpha to Treasury/, date: '2026-04-01' }],
+        cash: { account: { USD: { settled: 59_348, availableToTrade: 59_348, availableToWithdraw: 59_348 } }, treasury: { USD: { settled: 900_000, availableToTrade: 900_000, availableToWithdraw: 900_000 } } },
+        nav: { account: 99_388, treasury: 900_000, book: 999_388 },
+        balance: {
+          account: { cash: 59_348, assets: 219_388, netAssets: 99_388, internal: 100_000 },
+          treasury: { cash: 900_000, netAssets: 900_000, internal: -100_000 },
+          book: { cash: 959_348, assets: 1_119_388, netAssets: 999_388, internal: 0 },
+        },
+        oversight: { accounts: { account: { cashBorrowed: 120_000, fundingReceived: 100_000 } } },
+      },
+    },
+    {
+      // Friday 24 April, maturity. Interest has accrued to 23 April (1 to 23 April, 22 days, 396.00). The repayment needs
+      // 120,000 + 23 days (414.00) = 120,414.00 and the Account has 59,348.00: it fails, visibly, and stays due.
+      id: 'maturity-without-the-cash', covers: ['maturity', 'repayment fails when cash is short'], action: 'clock', to: AT_1000('2026-04-24'),
+      expect: {
+        events: [{ type: 'accrual.interest', summary: 'Interest accrued on Calder secured loan: 396.00 USD', owner: 'account', date: '2026-04-24' }], // to 23 April, booked on the morning it catches up
+        positions: [{ instrument: 'hrdg', lot: 'shares', qty: 4_000, value: 160_040, pledged: 4_000 }, { instrument: 'loan', lot: 'loan', qty: -120_000, accrued: -396 }],
+        lifecycle: [{ type: 'loan.interest', instrument: 'loan', dueDate: '2026-05-01', status: 'pending', owner: 'account' }],
+        failed: { orders: 0, settlements: 0, lifecycle: 1 },
+        lifecycleFailures: [{ type: 'loan.maturity', instrument: 'loan', dueDate: '2026-04-24', status: 'failed', owner: 'account', reason: 'Alpha has 59,348.00 USD of settled USD available; 120,414.00 USD is needed (principal plus accrued interest).' }],
+        alerts: ['funding.failed'],
+        borrowings: [{ lot: 'loan', principal: 120_000, accrued: 396, costToDate: 918 }],
+        pnl: { account: { borrowFunding: -918, total: -1_008 }, book: { borrowFunding: -918, total: -1_008 } },
+        nav: { account: 98_992, book: 998_992 },
+        balance: { account: { accruedExpense: 396, liabilities: 120_396, netAssets: 98_992 }, book: { accruedExpense: 396, liabilities: 120_396, netAssets: 998_992 } },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'loan', principal: 120_000, ccy: 'USD', accrued: 396 }] },
+      },
+    },
+    {
+      // Treasury funds the Account; the next cycle makes the repayment: 120,000 + 414.00 (23 days), and the shares are released.
+      id: 'fund-and-repay', covers: ['funding from Treasury', 'repayment', 'close'], action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 100_000,
+      expect: {
+        events: [
+          { type: 'transfer.funding', summary: 'Treasury funding: 100,000.00 USD from Treasury to Alpha', date: '2026-04-24' },
+          { type: 'accrual.interest', summary: 'Interest accrued on Calder secured loan: 18.00 USD', date: '2026-04-24' },
+          { type: 'loan.repayment', summary: 'Repaid 120,000.00 USD of principal on Calder secured loan (in full)', cash: { USD: -120_000 }, owner: 'account', date: '2026-04-24' },
+          { type: 'interest.payment', summary: 'Interest paid on Calder secured loan: 414.00 USD', cash: { USD: -414 }, owner: 'account', date: '2026-04-24' },
+        ],
+        cash: { account: { USD: { settled: 38_934, availableToTrade: 38_934, availableToWithdraw: 38_934, borrowed: 0 } }, treasury: { USD: { settled: 800_000, availableToTrade: 800_000, availableToWithdraw: 800_000 } } }, // 59,348 + 100,000 - 120,414
+        positions: [{ instrument: 'hrdg', lot: 'shares', owner: 'account', direction: 'long', qty: 4_000, avgCost: 40.02, cost: 160_080, price: 40.01, value: 160_040, unrealized: -40, pledged: 0 }],
+        lifecycle: [], failed: { orders: 0, settlements: 0, lifecycle: 0 }, lifecycleFailures: [], alerts: [], borrowings: [],
+        pnl: { account: { realized: -20, commissions: -30, unrealized: -40, borrowFunding: -936, total: -1_026 }, book: { borrowFunding: -936, total: -1_026 } }, // 522 + 414
+        nav: { account: 198_974, treasury: 800_000, book: 998_974 },
+        balance: {
+          account: { cash: 38_934, positions: 160_040, borrowed: null, accruedExpense: null, assets: 198_974, liabilities: 0, netAssets: 198_974, internal: 200_000 },
+          treasury: { cash: 800_000, netAssets: 800_000, internal: -200_000 },
+          book: { cash: 838_934, positions: 160_040, borrowed: null, accruedExpense: null, assets: 998_974, liabilities: 0, netAssets: 998_974, internal: 0 },
+        },
+        oversight: { accountBorrowings: [], accounts: { account: { cashBorrowed: 0, fundingReceived: 200_000 } } },
+      },
+    },
+    {
+      id: 'sell-the-released-shares', covers: ['close', 'collateral released'], action: 'ticket', ticketOf: 'equity', instrument: 'hrdg', side: 'sell', qty: 4_000, from: 'shares',
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'sell', instrument: 'hrdg', qty: 4_000, estimate: 40.00, settleDate: '2026-04-27', cash: 160_000, fees: 20 }] }, // Friday: T+1 is Monday 27 April
+        result: { orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 4_000, avgPrice: 40.00 }] },
+        // Realized 160,000 - 160,080 = -80.
+        events: [{ type: 'strategy.legs_added', owner: 'account' }, { type: 'trade.fill', summary: /^Sold 4,000 HRDG @ 40\.00 USD/, owner: 'account', date: '2026-04-24' }],
+        cash: { account: { USD: { settled: 38_934, unsettled: 159_980, receivable: 159_980, availableToTrade: 198_914, availableToWithdraw: 38_934 } } },
+        positions: [], holdings: { hrdg: null },
+        pending: [{ instrument: 'hrdg', lot: 'shares', owner: 'account', dueDate: '2026-04-27', amount: 159_980, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: -100, commissions: -50, unrealized: 0, borrowFunding: -936, total: -1_086 }, book: { total: -1_086 } },
+        nav: { account: 198_914, book: 998_914 },
+        balance: {
+          account: { cash: 38_934, receivable: 159_980, positions: null, assets: 198_914, netAssets: 198_914 },
+          book: { cash: 838_934, receivable: 159_980, positions: null, assets: 998_914, netAssets: 998_914 },
+        },
+      },
+    },
+    {
+      id: 'final-settlement', covers: 'settlement', action: 'clock', to: AT_1000('2026-04-27'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: /^Settlement: received 159,980\.00 USD/, cash: { USD: 159_980 }, date: '2026-04-27' }],
+        cash: { account: { USD: { settled: 198_914, unsettled: 0, receivable: 0, availableToTrade: 198_914, availableToWithdraw: 198_914, borrowed: 0, lent: 0 } } },
+        pending: [],
+        balance: { account: { cash: 198_914, receivable: null, assets: 198_914, netAssets: 198_914 }, book: { cash: 998_914, receivable: null, assets: 998_914, netAssets: 998_914 } },
+      },
+    },
+  ],
+};
+
+export default [unsecuredLoan, termDeposit, certificateOfDeposit, bankDeposit, cashLoan, securedLoan];

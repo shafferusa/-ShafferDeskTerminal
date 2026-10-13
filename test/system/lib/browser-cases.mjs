@@ -1337,3 +1337,113 @@ export async function bookIsolation(b, c) {
   await b.clean(c, A.id, 'Iso A integrity');
   await b.clean(c, B.id, 'Iso B integrity');
 }
+
+/** The ISO row of the selected Book's US Based Marketplace: what "Held in this Book" says, and its hover text. */
+async function heldInMarketplace(b, inst) {
+  await show(b, '#/markets/US_CASH');
+  await closeHedgePopup(b);
+  await b.page.getByPlaceholder(/Filter by symbol/).fill(inst.symbol);
+  const row = b.page.locator('main table tbody tr').filter({ has: b.page.locator('.sym', { hasText: exactly(inst.symbol) }) }).first();
+  await row.waitFor();
+  const held = row.locator('.held').first();
+  return { text: flat(await held.innerText()), title: flat(await held.getAttribute('title')) };
+}
+/** The Holdings by instrument row of an instrument, on the selected Book's whole-Book Open positions. */
+async function holdingRow(b, symbol) {
+  await show(b, '#/accounting/positions/book');
+  await closeHedgePopup(b);
+  const panel = b.ui.section(b.page.locator('main'), 'Holdings by instrument');
+  return flat(await panel.locator('tbody tr').filter({ hasText: symbol }).first().innerText());
+}
+/** The rows of the selected Book's Full history (accruals left out) that mention `text`. */
+async function historyRows(b, text) {
+  await show(b, '#/accounting/history/book');
+  const rows = b.page.locator('main table tbody tr').filter({ hasText: text });
+  await rows.first().waitFor({ timeout: 10_000 }).catch(() => {}); // drawn after the history loads; none may match
+  return (await rows.allInnerTexts()).map(flat);
+}
+
+/** SB:isolation:no-netting. */
+export async function noNetting(b, c) {
+  const { page, ui } = b;
+  const { twoBooks } = await import('../cases/isolation.mjs');
+  const { inst, A, B } = await twoBooks(b);
+  await enter(b, A, '#/accounting');
+  await closeHedgePopup(b);
+
+  // Gross holdings, each Book its own, on the Marketplace and on Accounting.
+  let m = await heldInMarketplace(b, inst);
+  c.eq(m.text, 'Long 200', 'Iso A, US Based Marketplace: ISO is held "Long 200"');
+  c.match(m.title, /^Aardvark: Long 200$/, 'its hover names Aardvark alone');
+  let row = await holdingRow(b, 'ISO');
+  c.match(row, /Long 200/, 'Iso A, Holdings by instrument: Long 200');
+  c.ok(!/Short|Net|100/.test(row.replace(/ISO Test Works Inc\./, '')), 'and no short, net or 100 in it', row);
+  const navA0 = (await navShown(b, A)).value;
+  await switchBook(b, B);
+  await closeHedgePopup(b);
+  m = await heldInMarketplace(b, inst);
+  c.eq(m.text, 'Short 100', 'Iso B, US Based Marketplace: ISO is held "Short 100"');
+  c.match(m.title, /^Bison: Short 100$/, 'its hover names Bison alone');
+  row = await holdingRow(b, 'ISO');
+  c.match(row, /Short 100/, 'Iso B, Holdings by instrument: Short 100');
+  c.ok(!/Long|Net|200/.test(row.replace(/ISO Test Works Inc\./, '')), 'and no long, net or 200 in it', row);
+  const navB0 = (await navShown(b, B)).value;
+
+  // A deposit into Iso A through its Deposit dialog moves Iso A's net asset value only.
+  await switchBook(b, A);
+  const dlg = await openCapital(b, { type: 'deposit', amount: 10_000 });
+  await ui.button(dlg, 'Record deposit').click();
+  await dlg.waitFor({ state: 'hidden' });
+  await ui.toast(/Deposit recorded/);
+  const num = (s) => Number(String(s).replace(/[^\d.-]/g, ''));
+  const navA1 = (await navShown(b, A)).value;
+  c.near(num(navA1) - num(navA0), 10_000, `Iso A's net asset value went up by 10,000.00 (${navA0} -> ${navA1})`);
+  await switchBook(b, B);
+  c.eq((await navShown(b, B)).value, navB0, `Iso B's net asset value is unchanged (${navB0})`);
+  // The Books page lists each Book with its own figure and adds nothing up.
+  await show(b, '#/books');
+  const rows = (await page.locator('main table tbody tr').allInnerTexts()).map(flat);
+  c.eq(rows.length, (await b.get('/api/books')).items.length, 'the Books page has one row per Book (the demo\'s own Demo Book, Iso A, Iso B) and no total row');
+  c.ok(rows.some((r) => r.includes('Iso A') && r.includes(navA1)) && rows.some((r) => r.includes('Iso B') && r.includes(navB0)), 'each with its own net asset value', rows.join(' || '));
+  c.ok(!/total/i.test(flat(await page.locator('main table').innerText())), 'the table has no total');
+
+  // A dividend recorded by hand on the instrument (shared reference data), and each swap marked at -5.
+  await switchBook(b, A);
+  const idrawer = await ui.openInstrument(inst);
+  await ui.tab(idrawer, 'History and actions');
+  const panel = ui.section(idrawer, 'Dividends and corporate actions');
+  await ui.field(panel, 'Ex-date').locator('input').fill('2026-03-04');
+  await ui.field(panel, 'Pay date').locator('input').fill('2026-03-06');
+  await ui.input(panel, 'Amount per unit').fill('0.25');
+  await ui.button(panel, 'Record').click();
+  await ui.toast(/Dividend recorded/);
+  await ui.closeOverlays();
+  for (const X of [A, B]) await b.post('/api/observations', { kind: 'price', subject: X.swap.positions[0].instrument.id, value: -5, units: 'per 100 notional' });
+  for (const t of ['2026-03-02T22:30:00.000Z', '2026-03-04T15:00:00.000Z', '2026-03-06T15:00:00.000Z', '2026-03-06T22:30:00.000Z']) await b.clock(t);
+  await b.tick();
+
+  // Each Book's history shows its own event for its own holding; nothing net.
+  for (const [X, other, mine, theirs] of [[A, B, /^Dividend\b(?! compensation)/, /Dividend compensation/], [B, A, /Dividend compensation/, /^Dividend\b(?! compensation)/]]) {
+    if (b.entered !== X) await switchBook(b, X);
+    const evs = await historyRows(b, 'Dividend');
+    const own = evs.filter((r) => mine.test(r.replace(/^.*?ET #\d+ \S+ /, '').replace(/^.*?(Dividend)/, '$1')));
+    c.eq(own.length, 1, `${X.name}'s Full history has one ${X === A ? 'dividend' : 'compensation'} event`);
+    c.match(own[0], X === A ? /\+50\.00 USD/ : /−25\.00 USD/, X === A ? 'Iso A received +50.00 (200 x 0.25)' : 'Iso B paid −25.00 (100 x 0.25)');
+    c.match(own[0], X === A ? /Aardvark/ : /Bison/, `owned by ${X === A ? 'Aardvark' : 'Bison'}`);
+    c.eq(evs.filter((r) => theirs.test(r.replace(/^.*?(Dividend)/, '$1'))), [], `${X.name}'s history has no event of the other Book's kind`);
+    c.ok(!evs.some((r) => /25\.00 USD/.test(r) && X === A) && !evs.some((r) => /50\.00 USD/.test(r) && X === B), `${X.name}: nothing netted (no 25.00 net in Iso A, no 50.00 in Iso B)`, evs.join(' || '));
+    // Collateral: one variation-margin movement of 5,000.00, under this Book's agreement only.
+    await show(b, '#/treasury/collateral');
+    const text = flat(await page.locator('main').innerText());
+    c.match(text, /5,000\.00/, `${X.name}'s collateral screen shows the 5,000.00 variation margin`);
+    c.eq(await foundOnPage(b, needlesOf(other)), [], `${X.name}'s history and collateral screens carry nothing of ${other.name}`);
+  }
+  // Behind the screens, as at API level.
+  const div = (X) => b.sql(`SELECT e.type, e.unit_id, (SELECT SUM(amount) FROM entries x WHERE x.event_id = e.id AND x.account = 'cash') AS cash FROM events e WHERE e.book_id = ? AND e.type LIKE 'dividend%'`, X.id).map((r) => [r.type, r.unit_id, r.cash]);
+  c.eq(div(A), [['dividend', A.accountId, 50]], 'stored: Iso A received 50.00 once');
+  c.eq(div(B), [['dividend.compensation', B.accountId, -25]], 'stored: Iso B paid 25.00 once');
+  for (const X of [A, B]) {
+    c.eq(b.sql('SELECT kind, amount, agreement_id FROM collateral_movements WHERE book_id = ?', X.id).map((r) => [r.kind, r.amount, r.agreement_id]), [['variation', 5_000, X.agr.id]], `stored: ${X.name} posted 5,000.00 once, under its own agreement`);
+    await b.clean(c, X.id, `${X.name} integrity`);
+  }
+}

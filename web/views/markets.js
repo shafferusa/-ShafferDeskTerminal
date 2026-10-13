@@ -54,12 +54,16 @@ export default function Markets({ args, book, status }) {
   const tab = tabs.find((t) => t.id === args[1]) || firstWithRows || tabs[0] || null;
   // The tab is in the URL: a Marketplace opened without one shows its first family with instruments.
   useEffect(() => { if (tab && args[1] !== tab.id && base.data) history.replaceState(null, '', `#/markets/${view}/${tab.id}`); }, [tab?.id, view, Boolean(base.data)]);
-  const goTab = (id) => { setAsset('all'); setAcross(false); location.hash = `#/markets/${view}/${id}`; };
+  const goTab = (id) => { setAsset('all'); setAcross(false); setQ(''); location.hash = `#/markets/${view}/${id}`; };
 
   const inTab = tab ? filtered.filter((i) => i.classification?.tab === tab.id) : [];
   const assetsHere = cls === 'deriv' ? (cat.data?.assetClasses || []).map((a) => ({ ...a, n: inTab.filter((i) => i.classification?.assetClass === a.id).length })).filter((a) => a.n > 0) : [];
   const shownRows = asset === 'all' ? inTab : inTab.filter((i) => i.classification?.assetClass === asset);
-  const sections = wl && across ? tabs.map((t) => ({ tab: t, rows: filtered.filter((i) => i.classification?.tab === t.id) })).filter((s) => s.rows.length) : null;
+  // A search looks through the whole view and a watchlist can be shown across families: either way the matches are
+  // shown family by family, each table with its own family's columns (the current tab first).
+  const searching = Boolean(q.trim());
+  const ordered = tab ? [tab, ...tabs.filter((t) => t.id !== tab.id)] : tabs;
+  const sections = searching || (wl && across) ? ordered.map((t) => ({ tab: t, rows: filtered.filter((i) => i.classification?.tab === t.id) })).filter((s) => s.rows.length) : null;
   const visible = sections ? sections.flatMap((s) => s.rows) : shownRows;
 
   const ids = visible.slice(0, 250).map((i) => i.id).join(',');
@@ -106,8 +110,8 @@ export default function Markets({ args, book, status }) {
       <button type="button" class=${asset === 'all' ? 'on' : ''} onClick=${() => setAsset('all')}>All <span class="muted">${inTab.length}</span></button>
       ${assetsHere.map((a) => html`<button type="button" class=${asset === a.id ? 'on' : ''} onClick=${() => setAsset(a.id)}>${a.label} <span class="muted">${a.n}</span></button>`)}</div></div>` : null}
     ${tab && !sections ? html`<p class="note mk-holds">${tab.holds}${analyticsAwaiting ? ` Fair price and Gap %: ${status.data.awaitingMessage}.` : ''}</p>` : null}
-    ${sections ? html`<p class="note mk-holds">${wl.name} across every family in ${VIEW_LABEL[view]}, one table per family.${analyticsAwaiting ? ` Fair price and Gap %: ${status.data.awaitingMessage}.` : ''}</p>
-        ${sections.length ? sections.map((s) => table(s.tab, s.rows, { title: s.tab.label })) : html`<div class="panel"><div class="body"><${Empty} title=${`Nothing in ${wl.name}${q.trim() ? ' matches the filter' : ''}`}>${q.trim() ? 'Clear the filter.' : 'Open an instrument and choose Add to watchlist.'}<//></div></div>`}`
+    ${sections ? html`<p class="note mk-holds">${searching ? `Matches for "${q.trim()}" in every family of ${VIEW_LABEL[view]}${wl ? ` on ${wl.name}` : ''}` : `${wl.name} across every family in ${VIEW_LABEL[view]}`}, one table per family. Choose a tab to see one family.${analyticsAwaiting ? ` Fair price and Gap %: ${status.data.awaitingMessage}.` : ''}</p>
+        ${sections.length ? sections.map((s) => table(s.tab, s.rows, { title: s.tab.label })) : html`<div class="panel"><div class="body"><${Empty} title=${searching ? `Nothing in ${VIEW_LABEL[view]}${wl ? ` on ${wl.name}` : ''} matches "${q.trim()}"` : `Nothing on ${wl.name}`}>${searching ? 'Check the symbol, or look in another Marketplace: an instrument sits in the view its listing venue, underlying or jurisdiction gives it.' : 'Open an instrument and choose Add to watchlist.'}<//></div></div>`}`
       : tab ? table(tab, shownRows) : html`<${Empty}>Loading product families…<//>`}
     ${tab?.id === 'money' && !sections ? html`<${FinancingPanel} book=${book} products=${(cat.data?.products || []).filter((p) => p.tab === 'money' && FINANCING_FAMILIES.has(p.family))} />` : null}
     <p class="note" style="margin-top:8px">Choose a row to open its instrument page and trade ticket. Fair price and Gap % show the fundamental value above the realistic one; they are analytical values and never fill an order. ${ROUTING_NOTE}</p>

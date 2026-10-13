@@ -21,7 +21,7 @@ const ROUTES = {
   'GET /api/status': 'scanned', 'GET /api/data': 'scanned', 'GET /api/catalog': 'global', 'GET /api/calendars': 'global', 'GET /api/defaults': 'global', 'GET /api/templates': 'global',
   'PUT /api/data/connection': 'global', 'PUT /api/data/refresh': 'global', 'POST /api/data/test': 'global', 'PUT /api/calendars/:id/holidays': 'global',
   'GET /api/instruments': 'scanned', 'POST /api/instruments': 'global', 'GET /api/instruments/:id': 'scanned', 'PUT /api/instruments/:id': 'global', 'GET /api/instruments/:id/detail': 'scanned',
-  'GET /api/instruments/:id/settlement': 'scanned', 'GET /api/instruments/:id/history': 'global', 'GET /api/instruments/:id/chain': 'global', 'GET /api/instruments/:id/contracts': 'global',
+  'GET /api/instruments/:id/settlement': 'scanned', 'GET /api/instruments/:id/history': 'global', 'GET /api/instruments/:id/chain': 'global', 'GET /api/instruments/:id/contracts': 'global', 'GET /api/instruments/routing': 'global',
   'GET /api/quotes': 'global', 'POST /api/observations': 'global', 'GET /api/observations': 'global', 'GET /api/fx': 'global', 'GET /api/rates': 'global', 'GET /api/search': 'scanned',
   'GET /api/watchlists': 'global', 'POST /api/watchlists': 'global', 'PUT /api/watchlists/:id': 'global', 'DELETE /api/watchlists/:id': 'global', 'POST /api/watchlists/:id/items': 'global', 'DELETE /api/watchlists/:id/items/:instrumentId': 'global',
   'GET /api/books': 'global', 'POST /api/books': 'global', 'GET /api/books/:id': 'scanned', 'PUT /api/books/:id': 'cross', 'POST /api/books/:id/accounts': 'cross', 'POST /api/books/:id/capital': 'cross',

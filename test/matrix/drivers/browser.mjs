@@ -27,7 +27,7 @@ import { actThroughClient, createContext, fixtureCalls, rateFixtureCalls, TRADE_
 import { diff, numbersAgree, Shown } from '../lib/compare.mjs';
 import { eventsSince, normalizePreview, normalizeResult, observeState } from '../lib/normalize.mjs';
 import { specKey } from '../lib/runner.mjs';
-import { getProduct } from '../../../server/core/catalog.js';
+import { getProduct, tabOf } from '../../../server/core/catalog.js';
 
 const DEFAULT_PLAYWRIGHT = '/opt/npm-tools/node_modules/playwright/index.mjs';
 const DEFAULT_CHROMIUM = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
@@ -35,6 +35,12 @@ const ACCRUAL_TYPES = new Set(['accrual', 'accrual.coupon', 'accrual.interest', 
 const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const exactly = (s) => new RegExp(`^\\s*${esc(s)}\\s*$`);
 const startsWith = (s) => new RegExp(`^\\s*${esc(s)}`);
+// The owner selector on tickets and the Strategies page is labelled "Trading owner" (it lists the Book's Accounts
+// and, apart, Treasury). Older steps ask for the field "Account" and the panel "Account and intent": both names
+// still find it, so a spec written before the rename keeps working.
+const OWNER_FIELD = /^\s*(Account|Trading owner)(?![a-z])/;
+const OWNER_PANEL = /^\s*(Account and intent|Trading owner and intent)/;
+const labelRe = (label) => (label instanceof RegExp ? label : label === 'Account' ? OWNER_FIELD : startsWith(label));
 
 /** Playwright is not a dependency of the Terminal: it is found through SDT_PLAYWRIGHT, an installed package, or this machine's copy. */
 export async function loadPlaywright() {
@@ -73,7 +79,9 @@ export function createUi(page, baseUrl) {
   const ui = {
     page, baseUrl,
     /** A form field by its label: the block that holds the label, its control and its hint. */
-    field: (scope, label) => scope.locator('.field').filter({ has: page.locator('label', { hasText: label instanceof RegExp ? label : startsWith(label) }) }).first(),
+    field: (scope, label) => scope.locator('.field').filter({ has: page.locator('label', { hasText: labelRe(label) }) }).first(),
+    /** The Trading owner selector (a ticket or the Strategies page): choose Treasury or an Account by its name. */
+    chooseOwner: async (scope, name) => ui.select(scope, 'Account').selectOption({ label: name }),
     input: (scope, label) => ui.field(scope, label).locator('input').first(),
     select: (scope, label) => ui.field(scope, label).locator('select').first(),
     /** One option of a segmented choice (Buy | Sell | Sell short), by its text. */
@@ -81,7 +89,7 @@ export function createUi(page, baseUrl) {
     dialog: (name) => page.getByRole('dialog', { name }),
     button: (scope, name) => scope.getByRole('button', { name: name instanceof RegExp ? name : exactly(name) }),
     /** A panel by its heading. */
-    section: (scope, title) => scope.locator('section.panel, .panel').filter({ has: page.locator('header h3, header h2', { hasText: title instanceof RegExp ? title : startsWith(title) }) }).first(),
+    section: (scope, title) => scope.locator('section.panel, .panel').filter({ has: page.locator('header h3, header h2', { hasText: title instanceof RegExp ? title : title === 'Account and intent' ? OWNER_PANEL : startsWith(title) }) }).first(),
     /** Wait until the browser has drawn what the last response changed. A condition, not a delay. */
     drawn: () => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))),
 
@@ -125,10 +133,14 @@ export function createUi(page, baseUrl) {
         foot: [...t.querySelectorAll('tfoot tr')].map((tr) => [...tr.children].map((td) => td.innerText.trim())),
       };
     })),
-    /** Open an instrument from its Marketplace and return its drawer. */
+    /**
+     * Open an instrument from its Marketplace and return its drawer: the instrument's market view, then its
+     * product-family tab (from the API's classification, else the catalog's table), then the row by its symbol.
+     */
     async openInstrument(inst) {
       await ui.closeOverlays();
-      await ui.goto(`#/markets/${inst.marketView}`);
+      const tab = inst.classification?.tab || tabOf(inst.productId || inst.product_id);
+      await ui.goto(`#/markets/${inst.marketView || inst.market_view}${tab ? `/${tab}` : ''}`);
       const label = inst.symbol || inst.name;
       await page.getByPlaceholder(/Filter by symbol/).fill(label);
       const row = page.locator('main table tbody tr').filter({ has: page.locator('.sym', { hasText: exactly(label) }) }).first();
@@ -191,7 +203,8 @@ async function readPreview(ui, modal) {
 function previewDisplayProblems(pv, screen) {
   const out = [];
   const trade = pv.legs.filter((l) => l.kind === 'trade');
-  const rows = screen.legs.filter((r) => /^(Buy|Sell)/.test(r.label));
+  // Trade legs: "Buy ..." / "Sell ..." for securities, "Enter as written: pay ..., receive ..." / "Enter the opposite side: ..." for a swap.
+  const rows = screen.legs.filter((r) => /^(Buy|Sell|Enter as written|Enter the opposite side)/.test(r.label));
   if (rows.length !== trade.length) out.push(`preview screen: ${rows.length} trade legs are displayed, the preview has ${trade.length}`);
   trade.forEach((l, i) => {
     const r = rows[i];
