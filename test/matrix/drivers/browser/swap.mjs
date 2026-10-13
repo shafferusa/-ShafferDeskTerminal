@@ -31,6 +31,7 @@
 //                                      variationMargin, threshold, minimumTransfer }
 //                                  (left out: nothing is chosen, to test that the Terminal refuses the trade)
 //   terms.collateral               Other collateral terms (free text, recorded only)
+//   terms.netSettlement            Net settlement (check box; s2)
 //   terms.legs[]                   one panel per leg, added or removed to match:
 //       side 'pay' | 'receive', type 'fixed' | 'float' | 'ois' | 'return' | 'price' | 'cap' | 'floor', ccy,
 //       notionalFactor, rate (fixed), index and spread (float, ois), index and strike (cap, floor),
@@ -193,6 +194,7 @@ export async function contractTerms(ui, dialog, draft, ctx) {
   if (t.counterparty) await ui.input(dialog, 'Counterparty').fill(t.counterparty);
   await fillCollateral(ui, dialog, t.collateralBasis, ctx);
   if (t.collateral) await ui.input(dialog, 'Other collateral terms').fill(t.collateral);
+  if (t.netSettlement || await ui.field(dialog, 'Net settlement').count()) await checkbox(ui, dialog, 'Net settlement').setChecked(Boolean(t.netSettlement)); // s2
   await fillLegs(ui, dialog, t.legs || [], ctx);
 }
 

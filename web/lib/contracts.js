@@ -240,6 +240,7 @@ const F = {
     { path: 'terms.counterparty', label: 'Counterparty', type: 'text' },
     { path: 'terms.collateralBasis', type: 'collateral' },
     { path: 'terms.collateral', label: 'Other collateral terms', type: 'text', span: 2, hint: 'Free text. Recorded, not simulated.' },
+    { path: 'terms.netSettlement', label: 'Net settlement', type: 'check', hint: 'Legs of one currency ending a period on the same date are paid as one net amount (commodity swaps). Not with return or overnight legs.' }, // s2
     { path: 'terms.legs', type: 'legs' },
   ],
   cds: [
