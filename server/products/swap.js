@@ -362,7 +362,8 @@ export const swap = {
   qtyStep: () => 1,
   settleDate: (app, inst, tradeDate, book) => standardSettleDate(inst, tradeDate, book),
   /** Notional on which a percentage independent amount is worked out. */
-  collateralNotional: (app, inst, { pos, qtyAfter }) => Math.abs(qtyAfter) * (pos?.data?.notionalScale ?? 1),
+  // An amortizing or accreting contract: on the notional of the current period (the largest any scheduled leg states for today, s2).
+  collateralNotional: (app, inst, { pos, qtyAfter }) => Math.abs(qtyAfter) * (pos?.data?.notionalScale ?? 1) * scheduleNow(inst, app.clock.today()),
   economics(app, { inst, action, qty, price, unit, strategyId, book }) {
     const upfront = (qty * price) / 100;
     const buy = action === 'buy';
@@ -528,7 +529,8 @@ export const swap = {
       }
       const updated = app.positions.change(pos, { data: patch });
       // A notional reset changes the independent amount the terms call for.
-      if (patch.notionalScale !== undefined) app.agreements.onPositionChange({ book, unit, inst, pos: updated });
+      // So does the next period of a notional schedule: trued up when the payment that ends a period is made (s2).
+      if (patch.notionalScale !== undefined || t.legs.some((l) => l.notionalSchedule?.length)) app.agreements.onPositionChange({ book, unit, inst, pos: updated });
       const nextIdx = sched.findIndex((p) => p.end === period.end) + 1;
       if (nextIdx < sched.length) app.tasks.schedule({ ...base, type: 'swap.payment', dueDate: sched[nextIdx].payDate, data: { key: `${leg.id}:${sched[nextIdx].end}`, legId: leg.id, periodEnd: sched[nextIdx].end } });
       void updated;
@@ -618,6 +620,14 @@ function normalizeNotionalSchedule(l, t, at, errors) {
   out.sort((a, b) => (a.from < b.from ? -1 : 1));
   for (let i = 1; i < out.length; i++) if (out[i].from === out[i - 1].from) errors.push(`${at}: the notional schedule states ${out[i].from} twice.`);
   return out;
+}
+
+/** Factor of the notional in force on `date` (the first period's before the start): the largest any scheduled leg states; 1 without a schedule. */
+function scheduleNow(inst, date) {
+  const legs = (inst.terms?.legs || []).filter((l) => l.notionalSchedule?.length);
+  if (!legs.length) return 1;
+  const d = date > inst.terms.effective ? date : inst.terms.effective;
+  return Math.max(...legs.map((l) => scheduleFactor(l, d)));
 }
 
 /** Period start dates of a leg (unadjusted accrual dates; they do not depend on the calendar). */

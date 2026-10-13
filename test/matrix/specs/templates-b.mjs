@@ -1,0 +1,368 @@
+// Execution templates, second half (t2): bear_call_spread ... custom, and the two trading paths.
+//
+// Each scenario drives one execution template from the Strategies page as a linked package: the legs the template
+// assembles (with their quantities and dependencies), one preview priced from one quote snapshot, one confirmation,
+// per-leg fills (one leg forced to fill in part by the displayed size), a dependent leg that fails and each recovery
+// action (Retry, Accept as it stands, Unwind), the financing choice when the Account is short of cash, protection the
+// package already carries, the settlement of every leg, its lifecycle (expiry, exercise, assignment, delivery), and
+// closure with realized P&L and nothing left. The runner checks the Account, Treasury and the Book after every step,
+// and restarts the application at the end.
+//
+// Every expected number is a literal worked out by hand from the inputs stated in the same spec. The arithmetic is in
+// the comment beside it. Nothing here is copied from what the Terminal prints.
+//
+// Conventions these scenarios rely on (the Terminal's documented rules, restated so the arithmetic can be followed):
+//   - An option premium is quoted per unit of the underlying; one contract is premium x 100 (the contract's multiplier).
+//     A market buy fills at the ask, a market sell at the bid, up to the displayed size per matching cycle; the rest of
+//     the order keeps working and fills on the next cycle.
+//   - A quote is executable for 120 seconds (Book setting fill.maxQuoteAgeSec). An older quote still marks positions
+//     but an order waits for a fresh one; a Day order still working at the end of its business day expires.
+//   - Option commission 0.65 a contract (Book fee schedule), expensed. Premium settles T+1 on the US calendar.
+//   - Written options reserve cash in their strategy instance: the worst value at expiration of the instance's options
+//     (intrinsic values at each strike), plus 20% of the underlying's value for calls not covered.
+//   - A package whose cash requirement exceeds what the Account has is refused; the Strategies page's Financing choice
+//     adds a Treasury funding leg (an internal transfer, sized to the shortfall) that runs first.
+//   - A leg that depends on another follows it: it executes at most the share of its quantity that the leg it
+//     depends on has filled.
+//   - Expiration is settled against the underlying close for the expiration date, after 16:00 New York time.
+
+export const family = 'templates';
+
+// ---- instants (New York time; US clocks move to daylight time on Sunday 8 March 2026) -------------------------------
+const at = (month, d, t, offset) => {
+  const [h, m] = t.split(':').map(Number);
+  return `2026-${month}-${String(d).padStart(2, '0')}T${String(h + offset).padStart(2, '0')}:${String(m).padStart(2, '0')}:00.000Z`;
+};
+const MAR = (d, t = '10:00') => at('03', d, t, d < 8 ? 5 : 4);
+const APR = (d, t = '10:00') => at('04', d, t, 4);
+
+/** The Book of every scenario, stated in full so that no figure rests on a default. */
+const book = (name, over = {}) => ({
+  name,
+  reportingCcy: 'USD',
+  capital: over.capital || [{ ccy: 'USD', amount: 1_000_000 }],
+  account: { name: 'Alpha', funding: over.funding || [{ ccy: 'USD', amount: 1_000 }] },
+  settings: {
+    fees: { option: { perUnit: 0.65, minimum: 0, bps: 0 }, equity: { perUnit: 0.005, minimum: 1, bps: 0 }, future: { perUnit: 2.25, minimum: 0, bps: 0 }, ...(over.fees || {}) },
+    fill: { halfSpreadBps: { equity: 2 }, optionHalfSpreadPct: 1, futureHalfSpreadTicks: 0.5, slippageBps: 0, participation: 1, maxQuoteAgeSec: 120, allowEndOfDayFills: false, maxPreviewDriftPct: 0.5 },
+    settlement: { equity: 1, option: 1, future: 0, foreignCash: 2, ...(over.settlement || {}) },
+    short: { collateralPct: 1.02, marginPct: 0.3 },
+    margin: { nakedCallPct: 0.2 },
+    dividends: { withholdingPct: 0 },
+  },
+});
+
+const stockDraft = (name, symbol, issuer = name) => ({ productId: 'common_stock', name, symbol, marketView: 'US_CASH', venue: 'NYSE', venueType: 'exchange', venueCountry: 'US', issuer, domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', terms: {} });
+const equityOption = (und, symbol, right, strike, expiration, settlement = 'physical') => ({
+  productId: 'equity_option', name: `${und} ${expiration} ${strike} ${right === 'C' ? 'call' : 'put'}`, symbol, marketView: 'US_DERIV', venue: 'Cboe Options Exchange', venueType: 'exchange', venueCountry: 'US', underlyingGeo: 'US', tradingCcy: 'USD', underlying: 'stock', multiplier: 100,
+  terms: { right, strike, expiration, exercise: 'american', settlement, deliverable: { units: 100 } },
+});
+
+/** The request the Strategies page sends for a template (web/views/strategy.js, `input`). */
+const templateInput = (template, extra) => ({ template, origin: 'strategy', orderType: 'market', tif: 'day', investmentStrategy: null, holdingPeriod: null, hedgeObjective: null, ...extra });
+
+const OPTION_TEMPLATE_MATRIX = {
+  ticket: 'Strategies page: Trading owner, Execution template, Underlying of the options, Option contracts (expiration, strikes, contracts), Financing; the package preview (legs, dependencies, cash table, payoff) and one confirmation. Retry, Unwind, Accept as it stands, Close and the expiry items are on the strategy instance',
+  requiredFields: ['Trading owner', 'Execution template', 'Underlying of the options', 'Expiration', 'Strikes', 'Contracts'],
+  automaticInputs: ['option bid, ask, last and displayed size of every leg (quote fixture standing in for Shaffer MarketData)', 'fill price, fill model and the displayed size each cycle can take', 'premium settlement date from the US calendar', 'commission per contract from the Book fee schedule', 'cash reserved against the written legs, from the package\'s own long legs and the Book margin assumption', 'Treasury funding sized to the cash shortfall (Financing: Treasury)', 'underlying close for the expiration date (close fixture)'],
+  manualInputs: ['Retry, Unwind or Accept as it stands after a leg fails', 'Close of a share of every position of the instance'],
+};
+
+// =====================================================================================================================
+// bear_call_spread
+// =====================================================================================================================
+// Calder Freight Lines (NYSE) 20 March 2026 calls, physical delivery. Sell the 50 call and buy the 55 call, 5 of each.
+// Three strategy instances:
+//   spread  opened short of cash (refused), then with Treasury funding; the 55 call fills 3 of 5 on its first cycle
+//           (displayed ask size 3) and the dependent 50 call follows it. Later 40% is closed while the 50 call has no
+//           fresh quote: the buy-back fails, the instance needs attention, and Unwind closes it.
+//   second  opened when the 50 call has no fresh quote: the 55 call fills, the dependent 50 call expires unfilled at
+//           the end of the day, and Retry sells it once a quote is back. Held to expiry.
+//   third   the same failure, Accepted as it stands (55 calls only). Held to expiry.
+// The stock closes at 48 on 20 March: every remaining call, the written 50s and the bought 55s, expires worthless.
+const bearCall = {
+  template: 'bear_call_spread',
+  title: 'Bear call spread on Calder Freight Lines (NYSE): sell the 20 March 2026 50 call, buy the 55 call',
+  matrix: {
+    ...OPTION_TEMPLATE_MATRIX,
+    settlement: 'Premium of each leg T+1 on the US calendar (settlement.option = 1); Treasury funding moves at once',
+    lifecycle: 'Expiry items for the written and the bought call, settled from the underlying close on 20 March 2026 (48: both lapse); trades refused after expiration; a failed dependent leg leaves the instance needing attention: Retry, Unwind or Accept',
+    accounting: 'Net credit received; average premium per leg; commission expensed; premium realized on buy-back, sale and lapse; legs held gross',
+    collateral: 'The written 50 calls reserve the spread width (5 x 100 x (55 - 50) = 2,500) because the bought 55 calls cover them; a 55 call sold first leaves 50 calls uncovered and adds 20% of the stock value',
+  },
+  start: MAR(2),
+  settlementCheck: { lag: 1, holidays: [] }, // US: no market holiday between 2 March and 20 March 2026
+  book: book('Templates bear call spread'),
+  instruments: {
+    stock: stockDraft('Calder Freight Lines Inc.', 'CFL'),
+    c50: equityOption('CFL', 'CFL260320C50', 'C', 50, '2026-03-20'),
+    c55: equityOption('CFL', 'CFL260320C55', 'C', 55, '2026-03-20'),
+  },
+  quotes: {
+    stock: { bid: 49.98, ask: 50.02, last: 50.00, bidSize: 10000, askSize: 10000 },
+    c50: { bid: 2.40, ask: 2.50, last: 2.45, bidSize: 20, askSize: 20 },
+    c55: { bid: 0.70, ask: 0.80, last: 0.75, bidSize: 20, askSize: 3 }, // only 3 contracts displayed at the ask
+  },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 1_000, unsettled: 0, reserved: 0, availableToTrade: 1_000, availableToWithdraw: 1_000 } },
+      treasury: { USD: { settled: 999_000, unsettled: 0, reserved: 0, availableToTrade: 999_000, availableToWithdraw: 999_000 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 1_000, treasury: 999_000, book: 1_000_000 },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+  },
+  steps: [
+    {
+      // Without financing: the package needs 400 for the 55 calls (5 x 0.80 x 100), 6.50 of commission (10 x 0.65) and
+      // 2,500 reserved for the written 50s (5 x 100 x (55 - 50)): 2,906.50. It brings 1,200 (5 x 2.40 x 100) and the
+      // Account has 1,000: short by 2,906.50 - 1,200 - 1,000 = 706.50.
+      id: 'open-short-of-cash', covers: 'financing', action: 'package', as: 'spread-refused', instrument: 'stock',
+      input: templateInput('bear_call_spread', { underlyingId: '$inst:stock', options: { expiration: '2026-03-20', strikes: { lower: 50, upper: 55 }, contracts: 5 }, financing: null }),
+      status: 'blocked', reason: 'The Account cannot fund the package: the preview is blocked until financing is chosen.',
+      expect: {
+        refused: 'Alpha is short 706.50 USD',
+        preview: {
+          blocking: 1, errors: ['cash'],
+          legs: [
+            { kind: 'trade', action: 'buy', purpose: 'primary', instrument: 'c55', qty: 5, estimate: 0.80, settleDate: '2026-03-03', cash: -400, fees: 3.25, dependsOn: [] },
+            { kind: 'trade', action: 'sell', purpose: 'primary', instrument: 'c50', qty: 5, estimate: 2.40, settleDate: '2026-03-03', cash: 1_200, fees: 3.25, dependsOn: [1] },
+          ],
+          cash: { USD: { purchases: 400, proceeds: 1_200, fees: 6.50, reserved: 2_500, required: 2_906.50, available: 1_000, shortfall: 706.50 } },
+        },
+      },
+    },
+    {
+      // Financing: Treasury. A funding leg of 706.50 is added first; both trade legs wait on it. The 55 calls fill 3 at
+      // 0.80 (the displayed size) and the 50 calls follow with 3 at 2.40; on the next cycle the last 2 of each fill.
+      // Commission by order: 3 x 0.65 = 1.95 then 2 x 0.65 = 1.30, each leg.
+      id: 'open', covers: ['open', 'financing', 'partial fill', 'dependency'], action: 'package', as: 'spread', instrument: 'stock',
+      input: templateInput('bear_call_spread', { underlyingId: '$inst:stock', options: { expiration: '2026-03-20', strikes: { lower: 50, upper: 55 }, contracts: 5 }, financing: { mode: 'treasury' } }),
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [
+            { kind: 'funding', action: 'treasury_funding', purpose: 'financing', qty: 706.50, cash: 706.50, dependsOn: [] },
+            { kind: 'trade', action: 'buy', purpose: 'primary', instrument: 'c55', qty: 5, estimate: 0.80, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2026-03-03', calendar: 'US', cash: -400, fees: 3.25, dependsOn: [1] },
+            { kind: 'trade', action: 'sell', purpose: 'primary', instrument: 'c50', qty: 5, estimate: 2.40, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2026-03-03', calendar: 'US', cash: 1_200, fees: 3.25, dependsOn: [2, 1] },
+          ],
+          cash: { USD: { purchases: 400, proceeds: 1_200, fees: 6.50, reserved: 2_500, financingIn: 706.50, required: 2_906.50, available: 1_000, shortfall: 0, netCash: 1_500 } }, // 1,200 + 706.50 - 400 - 6.50
+          netPremium: { amount: -800, ccy: 'USD', type: 'credit', complete: true }, // 400 paid - 1,200 received
+          // The bought 55 calls cover the written 50 calls: only the width is reserved, nothing for uncovered calls.
+          optionRequirement: [{ ccy: 'USD', amount: 2_500, finite: 2_500, naked: 0, uncoveredCallUnits: 0 }],
+        },
+        result: {
+          status: 'partial',
+          orders: [
+            { kind: 'funding', status: 'filled', filledQty: 706.50 },
+            { kind: 'trade', action: 'buy', instrument: 'c55', status: 'partial', qty: 5, filledQty: 3, avgPrice: 0.80, fills: [{ qty: 3, price: 0.80, model: 'quoted-bid-ask', settleDate: '2026-03-03', source: 'Test fixture' }] },
+            { kind: 'trade', action: 'sell', instrument: 'c50', status: 'partial', qty: 5, filledQty: 3, avgPrice: 2.40, fills: [{ qty: 3, price: 2.40, model: 'quoted-bid-ask', settleDate: '2026-03-03', source: 'Test fixture' }] },
+          ],
+        },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'transfer.funding', summary: 'Treasury funding: 706.50 USD from Treasury to Alpha' },
+          { type: 'trade.fill', summary: 'Bought 3 CFL260320C55 @ 0.80 USD', owner: 'account', date: '2026-03-02' },
+          { type: 'trade.fill', summary: 'Sold 3 CFL260320C50 @ 2.40 USD', owner: 'account', date: '2026-03-02' },
+          { type: 'trade.fill', summary: 'Bought 2 CFL260320C55 @ 0.80 USD', owner: 'account', date: '2026-03-02' },
+          { type: 'trade.fill', summary: 'Sold 2 CFL260320C50 @ 2.40 USD', owner: 'account', date: '2026-03-02' },
+        ],
+        cash: {
+          // settled 1,000 + 706.50; owed: -241.95 - 161.30 (3 x 80 + 1.95, 2 x 80 + 1.30); owed to it: 718.05 + 478.70
+          // (720 - 1.95, 480 - 1.30): net +793.50. Reserved 2,500. To trade: 1,706.50 + 793.50 - 2,500 = 0.
+          // To withdraw: 1,706.50 - 403.25 - 2,500 = -1,196.75.
+          account: { USD: { settled: 1_706.50, unsettled: 793.50, reserved: 2_500, availableToTrade: 0, availableToWithdraw: -1_196.75 } },
+          treasury: { USD: { settled: 998_293.50, unsettled: 0, reserved: 0, availableToTrade: 998_293.50, availableToWithdraw: 998_293.50 } },
+        },
+        positions: [
+          { instrument: 'c50', lot: 'spread', owner: 'account', direction: 'short', qty: -5, avgCost: 2.40, cost: -1_200, price: 2.45, value: -1_225, unrealized: -25 }, // -5 x 2.45 x 100
+          { instrument: 'c55', lot: 'spread', owner: 'account', direction: 'long', qty: 5, avgCost: 0.80, cost: 400, price: 0.75, value: 375, unrealized: -25 },
+        ],
+        holdings: { c50: { long: 0, short: 5, net: -5 }, c55: { long: 5, short: 0, net: 5 } },
+        pending: [
+          { instrument: 'c50', lot: 'spread', dueDate: '2026-03-03', amount: 478.70, into: 'cash' },
+          { instrument: 'c50', lot: 'spread', dueDate: '2026-03-03', amount: 718.05, into: 'cash' },
+          { instrument: 'c55', lot: 'spread', dueDate: '2026-03-03', amount: -241.95, into: 'cash' },
+          { instrument: 'c55', lot: 'spread', dueDate: '2026-03-03', amount: -161.30, into: 'cash' },
+        ],
+        lifecycle: [
+          { type: 'option.expiry', instrument: 'c50', dueDate: '2026-03-20', status: 'pending' },
+          { type: 'option.expiry', instrument: 'c55', dueDate: '2026-03-20', status: 'pending' },
+        ],
+        pnl: {
+          account: { realized: 0, commissions: -6.50, fees: 0, unrealized: -50, total: -56.50 },
+          book: { realized: 0, commissions: -6.50, unrealized: -50, total: -56.50 },
+          treasury: { realized: 0, commissions: 0, unrealized: 0, total: 0 },
+        },
+        nav: { account: 1_650, treasury: 998_293.50, book: 999_943.50 }, // 1,706.50 + 793.50 + 375 - 1,225; 1,000,000 - 56.50
+        balance: {
+          account: { cash: 1_706.50, receivable: 1_196.75, payable: 403.25, positions: -850, assets: 2_053.25, liabilities: 403.25, netAssets: 1_650 },
+          treasury: { cash: 998_293.50, assets: 998_293.50, liabilities: 0, netAssets: 998_293.50 },
+          book: { cash: 1_000_000, receivable: 1_196.75, payable: 403.25, positions: -850, assets: 1_000_346.75, liabilities: 403.25, netAssets: 999_943.50 },
+        },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: MAR(3),
+      expect: {
+        events: [
+          // Receipts are settled before payments on the same day.
+          { type: 'settlement.receive', summary: 'received 718.05 USD into settled cash', cash: { USD: 718.05 }, date: '2026-03-03' },
+          { type: 'settlement.receive', summary: 'received 478.70 USD into settled cash', cash: { USD: 478.70 } },
+          { type: 'settlement.pay', summary: 'paid 241.95 USD from settled cash', cash: { USD: -241.95 } },
+          { type: 'settlement.pay', summary: 'paid 161.30 USD from settled cash', cash: { USD: -161.30 } },
+        ],
+        cash: { account: { USD: { settled: 2_500, unsettled: 0, reserved: 2_500, availableToTrade: 0, availableToWithdraw: 0 } } }, // 1,706.50 + 793.50
+        pending: [],
+        balance: {
+          account: { cash: 2_500, receivable: null, payable: null, assets: 1_650, liabilities: 0 },
+          book: { cash: 1_000_793.50, receivable: null, payable: null, assets: 999_943.50, liabilities: 0 },
+        },
+      },
+    },
+    {
+      // A fresh quote for the 55 call only. The 50 call's quote of yesterday still marks it, but is too old to trade on.
+      id: 'c55-quote-day2', action: 'quote', instrument: 'c55', quote: { bid: 0.60, ask: 0.70, last: 0.65, bidSize: 20, askSize: 20 },
+      expect: {
+        positions: [
+          { instrument: 'c50', lot: 'spread', qty: -5, value: -1_225, unrealized: -25 },
+          { instrument: 'c55', lot: 'spread', qty: 5, price: 0.65, value: 325, unrealized: -75 }, // 5 x 0.65 x 100 - 400
+        ],
+        pnl: { account: { unrealized: -100, total: -106.50 }, book: { unrealized: -100, total: -106.50 } },
+        nav: { account: 1_600, book: 999_893.50 },
+        balance: { account: { positions: -900, assets: 1_600, netAssets: 1_600 }, book: { positions: -900, assets: 999_893.50, netAssets: 999_893.50 } },
+      },
+    },
+    {
+      // The 50 call's quote stops updating: the same figures, last observed at 09:50. It still marks the written calls,
+      // but from 09:52 it is too old to trade on.
+      id: 'c50-quote-stops', action: 'quote', instrument: 'c50', quote: { bid: 2.40, ask: 2.50, last: 2.45, bidSize: 20, askSize: 20, asOf: MAR(3, '09:50') },
+      expect: {},
+    },
+    {
+      // The same spread in a second instance. 55 calls: 5 x 0.70 x 100 = 350 at the fresh ask. 50 calls: the quote is
+      // ten minutes old, so the leg is estimated at its last price, 5 x 2.45 x 100 = 1,225, and will wait. Reserved 2,500 for the
+      // new instance. Needs 350 + 6.50 + 2,500 = 2,856.50; brings 1,225; the Account has 0 free: funding 1,631.50.
+      id: 'open-second', covers: ['open', 'financing', 'failed dependent leg'], action: 'package', as: 'second', instrument: 'stock',
+      input: templateInput('bear_call_spread', { underlyingId: '$inst:stock', options: { expiration: '2026-03-20', strikes: { lower: 50, upper: 55 }, contracts: 5 }, financing: { mode: 'treasury' } }),
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: ['not-executable'],
+          legs: [
+            { kind: 'funding', purpose: 'financing', qty: 1_631.50, cash: 1_631.50 },
+            { kind: 'trade', action: 'buy', instrument: 'c55', qty: 5, estimate: 0.70, settleDate: '2026-03-04', cash: -350, fees: 3.25, dependsOn: [1] },
+            { kind: 'trade', action: 'sell', instrument: 'c50', qty: 5, estimate: null, reference: 2.45, executable: false, settleDate: '2026-03-04', cash: 1_225, fees: 3.25, dependsOn: [2, 1] },
+          ],
+          cash: { USD: { purchases: 350, proceeds: 1_225, fees: 6.50, reserved: 2_500, financingIn: 1_631.50, required: 2_856.50, available: 0, shortfall: 0 } },
+        },
+        result: {
+          status: 'partial',
+          orders: [
+            { kind: 'funding', status: 'filled' },
+            { kind: 'trade', action: 'buy', instrument: 'c55', status: 'filled', filledQty: 5, avgPrice: 0.70 },
+            { kind: 'trade', action: 'sell', instrument: 'c50', status: 'working', filledQty: 0, reason: 'The last quote is 600 seconds old. Waiting for a fresh quote.' },
+          ],
+        },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'transfer.funding', summary: 'Treasury funding: 1,631.50 USD from Treasury to Alpha' },
+          { type: 'trade.fill', summary: 'Bought 5 CFL260320C55 @ 0.70 USD', date: '2026-03-03' },
+        ],
+        // settled 2,500 + 1,631.50; owed 350 + 3.25; reserved still 2,500 (nothing written in "second" yet).
+        cash: {
+          account: { USD: { settled: 4_131.50, unsettled: -353.25, reserved: 2_500, availableToTrade: 1_278.25, availableToWithdraw: 1_278.25 } },
+          treasury: { USD: { settled: 996_662, availableToTrade: 996_662, availableToWithdraw: 996_662 } }, // 998,293.50 - 1,631.50
+        },
+        positions: [
+          { instrument: 'c50', lot: 'spread', qty: -5, value: -1_225, unrealized: -25 },
+          { instrument: 'c55', lot: 'second', owner: 'account', direction: 'long', qty: 5, avgCost: 0.70, cost: 350, price: 0.65, value: 325, unrealized: -25 },
+          { instrument: 'c55', lot: 'spread', qty: 5, value: 325, unrealized: -75 },
+        ],
+        holdings: { c50: { long: 0, short: 5, net: -5 }, c55: { long: 10, short: 0, net: 10 } },
+        pending: [{ instrument: 'c55', lot: 'second', dueDate: '2026-03-04', amount: -353.25, into: 'cash' }],
+        openOrders: [{ instrument: 'c50', kind: 'trade', action: 'sell', status: 'working', qty: 5, filledQty: 0 }],
+        lifecycle: [
+          { type: 'option.expiry', instrument: 'c50', dueDate: '2026-03-20', status: 'pending' },
+          { type: 'option.expiry', instrument: 'c55', dueDate: '2026-03-20', status: 'pending' },
+          { type: 'option.expiry', instrument: 'c55', dueDate: '2026-03-20', status: 'pending' },
+        ],
+        pnl: { account: { commissions: -9.75, unrealized: -125, total: -134.75 }, book: { commissions: -9.75, unrealized: -125, total: -134.75 } },
+        nav: { account: 3_203.25, treasury: 996_662, book: 999_865.25 }, // 1,600 + 1,631.50 - 3.25 - 25
+        balance: {
+          account: { cash: 4_131.50, payable: 353.25, positions: -575, assets: 3_556.50, liabilities: 353.25, netAssets: 3_203.25 }, // -1,225 + 325 + 325
+          treasury: { cash: 996_662, assets: 996_662, netAssets: 996_662 },
+          book: { cash: 1_000_793.50, payable: 353.25, positions: -575, assets: 1_000_218.50, liabilities: 353.25, netAssets: 999_865.25 },
+        },
+      },
+    },
+    {
+      // A third instance, the same way. The Account now has 1,278.25 free: funding 2,856.50 - 1,225 - 1,278.25 = 353.25.
+      id: 'open-third', covers: ['open', 'financing', 'failed dependent leg'], action: 'package', as: 'third', instrument: 'stock',
+      input: templateInput('bear_call_spread', { underlyingId: '$inst:stock', options: { expiration: '2026-03-20', strikes: { lower: 50, upper: 55 }, contracts: 5 }, financing: { mode: 'treasury' } }),
+      expect: {
+        preview: {
+          blocking: 0, warnings: ['not-executable'],
+          legs: [
+            { kind: 'funding', qty: 353.25, cash: 353.25 },
+            { kind: 'trade', action: 'buy', instrument: 'c55', qty: 5, estimate: 0.70, cash: -350, fees: 3.25, dependsOn: [1] },
+            { kind: 'trade', action: 'sell', instrument: 'c50', qty: 5, estimate: null, cash: 1_225, fees: 3.25, dependsOn: [2, 1] },
+          ],
+          cash: { USD: { purchases: 350, proceeds: 1_225, fees: 6.50, reserved: 2_500, financingIn: 353.25, required: 2_856.50, available: 1_278.25, shortfall: 0 } },
+        },
+        result: { status: 'partial', orders: [{ kind: 'funding', status: 'filled' }, { action: 'buy', status: 'filled', filledQty: 5, avgPrice: 0.70 }, { action: 'sell', status: 'working', filledQty: 0 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'transfer.funding', summary: 'Treasury funding: 353.25 USD from Treasury to Alpha' },
+          { type: 'trade.fill', summary: 'Bought 5 CFL260320C55 @ 0.70 USD' },
+        ],
+        cash: {
+          account: { USD: { settled: 4_484.75, unsettled: -706.50, reserved: 2_500, availableToTrade: 1_278.25, availableToWithdraw: 1_278.25 } }, // 4,131.50 + 353.25; -353.25 x 2
+          treasury: { USD: { settled: 996_308.75, availableToTrade: 996_308.75, availableToWithdraw: 996_308.75 } },
+        },
+        positions: [
+          { instrument: 'c50', lot: 'spread', qty: -5, value: -1_225 },
+          { instrument: 'c55', lot: 'second', qty: 5, value: 325 },
+          { instrument: 'c55', lot: 'spread', qty: 5, value: 325 },
+          { instrument: 'c55', lot: 'third', owner: 'account', direction: 'long', qty: 5, avgCost: 0.70, cost: 350, price: 0.65, value: 325, unrealized: -25 },
+        ],
+        holdings: { c55: { long: 15, short: 0, net: 15 } },
+        pending: [
+          { instrument: 'c55', lot: 'second', dueDate: '2026-03-04', amount: -353.25 },
+          { instrument: 'c55', lot: 'third', dueDate: '2026-03-04', amount: -353.25 },
+        ],
+        openOrders: [{ instrument: 'c50', action: 'sell', status: 'working', qty: 5, filledQty: 0 }, { instrument: 'c50', action: 'sell', status: 'working', qty: 5, filledQty: 0 }],
+        lifecycle: [
+          { type: 'option.expiry', instrument: 'c50' }, { type: 'option.expiry', instrument: 'c55' }, { type: 'option.expiry', instrument: 'c55' }, { type: 'option.expiry', instrument: 'c55' },
+        ],
+        pnl: { account: { commissions: -13, unrealized: -150, total: -163 }, book: { commissions: -13, unrealized: -150, total: -163 } },
+        nav: { account: 3_528.25, treasury: 996_308.75, book: 999_837 },
+        balance: {
+          account: { cash: 4_484.75, payable: 706.50, positions: -250, assets: 4_234.75, liabilities: 706.50, netAssets: 3_528.25 }, // -1,225 + 3 x 325
+          treasury: { cash: 996_308.75, assets: 996_308.75, netAssets: 996_308.75 },
+          book: { cash: 1_000_793.50, payable: 706.50, positions: -250, assets: 1_000_543.50, liabilities: 706.50, netAssets: 999_837 },
+        },
+      },
+    },
+    {
+      // End of 3 March: the two 50-call legs are still working as Day orders and expire. Each instance holds its 55 calls
+      // and no written calls: it needs attention. The 55-call purchases settle on 4 March.
+      id: 'dependent-legs-expire', covers: ['failed dependent leg', 'settlement'], action: 'clock', to: MAR(4),
+      expect: {
+        events: [
+          { type: 'order.expired' }, { type: 'order.expired' },
+          { type: 'settlement.pay', summary: 'paid 353.25 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 353.25 USD from settled cash' },
+        ],
+        cash: { account: { USD: { settled: 3_778.25, unsettled: 0, availableToTrade: 1_278.25, availableToWithdraw: 1_278.25 } } }, // 4,484.75 - 706.50
+        pending: [],
+        openOrders: [],
+        failed: { orders: 2 },
+        alerts: ['strategy.attention', 'strategy.attention'],
+        balance: { account: { cash: 3_778.25, payable: null, assets: 3_528.25, liabilities: 0 }, book: { cash: 1_000_087, payable: null, assets: 999_837, liabilities: 0 } },
+      },
+    },
+  ],
+};
+
+export default [bearCall];

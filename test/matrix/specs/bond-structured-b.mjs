@@ -69,7 +69,7 @@ const BOND_TICKET = {
 //     a bond-market holiday); increased on Wednesday 18 November (settling Friday 20 November); held over Thanksgiving.
 //   - December factor 0.9548211 (0.9597012 after scheduled amortisation alone), effective 1 December, principal paid with
 //     November's interest on 25 December, Christmas: on Monday 28 December. A loss allocation is refused (guaranteed).
-//   - 1,500,000 sold on 7 December (settling 9 December, after the 1 December record date: November's coupon and the
+//   - 1,600,000 sold on 7 December (settling 9 December, after the 1 December record date: November's coupon and the
 //     December principal still come on the full 5,000,000); the rest sold on 28 December after the payment.
 // Commission: 0.25 basis point of clean principal. Days of 30/360 from 1 Nov: to 12 Nov 11, 17 Nov 16, 19 Nov 18, 20 Nov 19,
 // 27 Nov 26; from 1 Dec: to 4 Dec 3, 8 Dec 7, 9 Dec 8, 24 Dec 23, 30 Dec 29. A month's coupon is 6% / 12 of current face.
@@ -249,97 +249,97 @@ const specifiedPool = {
       },
     },
     {
-      // 1,500,000 sold at the bid: current face 1,432,231.65 x 101.50 / 100 = 1,453,715.125; 8 days to Wednesday 9 December
-      // 1,909.642; 0.25 bp = 36.343. Cost out 4,857,652.35 x 1.5 / 5 = 1,457,295.705 -> 1,457,295.71: realized -3,580.59.
-      id: 'reduce', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 1_500_000, from: 'lot',
+      // 1,600,000 sold at the bid: current face 1,527,713.76 x 101.50 / 100 = 1,550,629.466; 8 days to Wednesday 9 December
+      // 2,036.952; 0.25 bp = 38.766. Cost out 4,857,652.35 x 1.6 / 5 = 1,554,448.752: realized 1,550,629.47 - 1,554,448.75 = -3,819.28.
+      id: 'reduce', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 1_600_000, from: 'lot',
       expect: {
-        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 1_500_000, estimate: 101.5, settleDate: '2026-12-09', notional: 1_432_231.65,
-          gross: 1_453_715.12, accrued: 1_909.64, cash: 1_455_624.76, fees: 36.34 }] },
-        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 1_500_000, avgPrice: 101.5 }] },
-        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: /^Sold 1,500,000 FN-6\.0-MA9921-LLB @ 101\.50 USD \(realized [-−]3,580\.59 USD\)$/ }],
-        cash: { account: { USD: { settled: 1_099_504.26, unsettled: 1_487_655.42, availableToTrade: 2_587_159.68 } } }, // 32,067 + 1,455,588.42
-        positions: [{ instrument: 'main', lot: 'lot', qty: 3_500_000, cost: 3_400_356.64, avgCost: 101.75, price: 101.625, value: 3_396_179.3, unrealized: -4_177.34, accrued: 24_508.28 }], // 3,341,873.85 x 101.625 / 100 = 3,396,179.300
-        holdings: { main: { long: 3_500_000, short: 0, net: 3_500_000 } },
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 1_600_000, estimate: 101.5, settleDate: '2026-12-09', notional: 1_527_713.76,
+          gross: 1_550_629.47, accrued: 2_036.95, cash: 1_552_666.42, fees: 38.77 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 1_600_000, avgPrice: 101.5 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: /^Sold 1,600,000 FN-6\.0-MA9921-LLB @ 101\.50 USD \(realized [-−]3,819\.28 USD\)$/ }],
+        cash: { account: { USD: { settled: 1_099_504.26, unsettled: 1_584_694.65, availableToTrade: 2_684_198.91 } } }, // 32,067 + 1,552,627.65
+        positions: [{ instrument: 'main', lot: 'lot', qty: 3_400_000, cost: 3_303_203.6, avgCost: 101.75, price: 101.625, value: 3_299_145.61, unrealized: -4_057.99, accrued: 24_380.97 }], // 3,246,391.74 x 101.625 / 100 = 3,299,145.606
+        holdings: { main: { long: 3_400_000, short: 0, net: 3_400_000 } },
         // The next coupon (1 January, December's interest, paid Monday 25 January) is scheduled with the position change.
         lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2026-12-28', status: 'pending' }, { type: 'bond.coupon', instrument: 'main', dueDate: '2027-01-25', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2056-11-27', status: 'pending' }],
         pending: [
-          { instrument: 'main', owner: 'account', dueDate: '2026-12-09', amount: 1_455_588.42, ccy: 'USD', into: 'cash' },
+          { instrument: 'main', owner: 'account', dueDate: '2026-12-09', amount: 1_552_627.65, ccy: 'USD', into: 'cash' },
           { instrument: 'main', owner: 'account', dueDate: '2026-12-28', amount: 32_067, ccy: 'USD', into: 'cash' },
         ],
-        pnl: { account: { realized: -4_141.76, commissions: -158.6, unrealized: -4_177.34, total: 7_847.26 } },
-        nav: { account: 6_007_847.26, book: 7_007_847.26 },
-        balance: { account: { receivable: 1_487_655.42, accruedIncome: 24_508.28, positions: 3_396_179.3, assets: 6_007_847.26, netAssets: 6_007_847.26 } },
+        pnl: { account: { realized: -4_380.45, commissions: -161.03, unrealized: -4_057.99, total: 7_725.49 } },
+        nav: { account: 6_007_725.49, book: 7_007_725.49 },
+        balance: { account: { receivable: 1_584_694.65, accruedIncome: 24_380.97, positions: 3_299_145.61, assets: 6_007_725.49, netAssets: 6_007_725.49 } },
       },
     },
     {
       // Wednesday 9 December. End of day 8 Dec: November's coupon on the 5,000,000 held at the record date 24,030.8625, plus 7 days
-      // of December on 4,774,105.50 (the sale settles today) 5,569.7898, less the 8 days sold 1,909.6422: 27,691.01. 3,182.73 more.
+      // of December on 4,774,105.50 (the sale settles today) 5,569.7898, less the 8 days sold 2,036.9517: 27,563.70. 3,182.73 more.
       id: 'settle-reduce', covers: ['settlement', 'accrual'], action: 'clock', to: EST('2026-12-09'),
       expect: {
         events: [
-          { type: 'settlement.receive', summary: 'received 1,455,588.42 USD into settled cash', cash: { USD: 1_455_588.42 } },
+          { type: 'settlement.receive', summary: 'received 1,552,627.65 USD into settled cash', cash: { USD: 1_552_627.65 } },
           { type: 'accrual.coupon', summary: 'Interest accrued on FN-6.0-MA9921-LLB: 3,182.73 USD' },
         ],
-        cash: { account: { USD: { settled: 2_555_092.68, unsettled: 32_067, availableToTrade: 2_587_159.68 } } },
-        positions: [{ instrument: 'main', lot: 'lot', qty: 3_500_000, accrued: 27_691.01 }],
+        cash: { account: { USD: { settled: 2_652_131.91, unsettled: 32_067, availableToTrade: 2_684_198.91 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 3_400_000, accrued: 27_563.7 }],
         pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-12-28', amount: 32_067, ccy: 'USD', into: 'cash' }],
-        pnl: { account: { couponInterest: 19_507.69, total: 11_029.99 } },
-        nav: { account: 6_011_029.99, book: 7_011_029.99 },
-        balance: { account: { cash: 2_555_092.68, receivable: 32_067, accruedIncome: 27_691.01, assets: 6_011_029.99, netAssets: 6_011_029.99 } },
+        pnl: { account: { couponInterest: 19_507.69, total: 10_908.22 } },
+        nav: { account: 6_010_908.22, book: 7_010_908.22 },
+        balance: { account: { cash: 2_652_131.91, receivable: 32_067, accruedIncome: 27_563.7, assets: 6_010_908.22, netAssets: 6_010_908.22 } },
       },
     },
     {
       // Monday 28 December, after Christmas: the December principal 32,067.00 arrives, and November's coupon on the 5,000,000 held
-      // at the record date, on the November factor: 24,030.8625 paid as 24,030.86. The balance left, 27,691.01 - 24,030.86 =
-      // 3,660.15, is December's interest to 8 Dec worked whole (5,569.7898 - 1,909.6422 = 3,660.1476): no line. End of day
-      // Thursday 24 Dec: 3,341,873.85 x 6% x 23/360 = 12,810.516; 9,150.37 more.
+      // at the record date, on the November factor: 24,030.8625 paid as 24,030.86. The balance left, 27,563.70 - 24,030.86 =
+      // 3,532.84, is December's interest to 8 Dec worked whole (5,569.7898 - 2,036.9517 = 3,532.8381): no line. End of day
+      // Thursday 24 Dec: 3,246,391.74 x 6% x 23/360 = 12,444.502; 8,911.66 more.
       id: 'coupon-and-principal', covers: ['coupon', 'paydown (by hand)', 'settlement', 'market holiday'], action: 'clock', to: EST('2026-12-28'),
       expect: {
         events: [
           { type: 'settlement.receive', summary: 'received 32,067.00 USD into settled cash', cash: { USD: 32_067 }, date: '2026-12-28' },
           { type: 'bond.coupon', summary: 'Coupon received on 5,000,000 FN-6.0-MA9921-LLB (factor 0.9612345: current face 4,806,172.5): 24,030.86 USD', cash: { USD: 24_030.86 }, owner: 'account', date: '2026-12-28' },
-          { type: 'accrual.coupon', summary: 'Interest accrued on FN-6.0-MA9921-LLB: 9,150.37 USD' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on FN-6.0-MA9921-LLB: 8,911.66 USD' },
         ],
-        cash: { account: { USD: { settled: 2_611_190.54, unsettled: 0, availableToTrade: 2_611_190.54 } } },
-        positions: [{ instrument: 'main', lot: 'lot', qty: 3_500_000, accrued: 12_810.52 }],
+        cash: { account: { USD: { settled: 2_708_229.77, unsettled: 0, availableToTrade: 2_708_229.77 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 3_400_000, accrued: 12_444.5 }],
         pending: [],
         lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-01-25', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2056-11-27', status: 'pending' }],
-        pnl: { account: { couponInterest: 28_658.06, total: 20_180.36 } },
-        nav: { account: 6_020_180.36, book: 7_020_180.36 },
-        balance: { account: { cash: 2_611_190.54, receivable: null, accruedIncome: 12_810.52, assets: 6_020_180.36, netAssets: 6_020_180.36 } },
+        pnl: { account: { couponInterest: 28_419.35, total: 19_819.88 } },
+        nav: { account: 6_019_819.88, book: 7_019_819.88 },
+        balance: { account: { cash: 2_708_229.77, receivable: null, accruedIncome: 12_444.5, assets: 6_019_819.88, netAssets: 6_019_819.88 } },
       },
     },
     {
-      // The rest sold for settlement on Wednesday 30 December, before the December record date: 3,341,873.85 x 101.50 / 100 =
-      // 3,392,001.958; 29 days 16,152.390 (3,341.87 more than on the books); 0.25 bp = 84.800. Realized 3,392,001.96 -
-      // 3,400,356.64 = -8,354.68.
+      // The rest sold for settlement on Wednesday 30 December, before the December record date: 3,246,391.74 x 101.50 / 100 =
+      // 3,295,087.616; 29 days 15,690.893 (3,246.39 more than on the books); 0.25 bp = 82.377. Realized 3,295,087.62 -
+      // 3,303,203.60 = -8,115.98.
       id: 'close', covers: 'close', action: 'close', lot: 'lot', scope: 'strategy', percent: 100,
       expect: {
-        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 3_500_000, estimate: 101.5, settleDate: '2026-12-30', notional: 3_341_873.85,
-          gross: 3_392_001.96, accrued: 16_152.39, cash: 3_408_154.35, fees: 84.8 }] },
-        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 3_500_000, avgPrice: 101.5 }] },
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 3_400_000, estimate: 101.5, settleDate: '2026-12-30', notional: 3_246_391.74,
+          gross: 3_295_087.62, accrued: 15_690.89, cash: 3_310_778.51, fees: 82.38 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 3_400_000, avgPrice: 101.5 }] },
         events: [
           { type: 'strategy.legs_added' },
-          { type: 'trade.fill', summary: /^Sold 3,500,000 FN-6\.0-MA9921-LLB @ 101\.50 USD \(realized [-−]8,354\.68 USD\)$/ },
-          { type: 'accrual.coupon', summary: 'Interest earned to disposal of FN-6.0-MA9921-LLB: 3,341.87 USD' },
+          { type: 'trade.fill', summary: /^Sold 3,400,000 FN-6\.0-MA9921-LLB @ 101\.50 USD \(realized [-−]8,115\.98 USD\)$/ },
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of FN-6.0-MA9921-LLB: 3,246.39 USD' },
         ],
-        cash: { account: { USD: { settled: 2_611_190.54, unsettled: 3_408_069.55, availableToTrade: 6_019_260.09 } } },
+        cash: { account: { USD: { settled: 2_708_229.77, unsettled: 3_310_696.13, availableToTrade: 6_018_925.9 } } },
         positions: [],
         holdings: { main: null },
-        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-12-30', amount: 3_408_069.55, ccy: 'USD', into: 'cash' }],
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-12-30', amount: 3_310_696.13, ccy: 'USD', into: 'cash' }],
         lifecycle: [],
-        pnl: { account: { realized: -12_496.44, couponInterest: 31_999.93, commissions: -243.4, unrealized: 0, total: 19_260.09 } },
-        nav: { account: 6_019_260.09, book: 7_019_260.09 },
-        balance: { account: { cash: 2_611_190.54, receivable: 3_408_069.55, positions: null, accruedIncome: null, assets: 6_019_260.09, liabilities: 0, netAssets: 6_019_260.09 } },
+        pnl: { account: { realized: -12_496.43, couponInterest: 31_665.74, commissions: -243.41, unrealized: 0, total: 18_925.9 } },
+        nav: { account: 6_018_925.9, book: 7_018_925.9 },
+        balance: { account: { cash: 2_708_229.77, receivable: 3_310_696.13, positions: null, accruedIncome: null, assets: 6_018_925.9, liabilities: 0, netAssets: 6_018_925.9 } },
       },
     },
     {
       id: 'settle-close', covers: 'settlement', action: 'clock', to: EST('2026-12-30'),
       expect: {
-        events: [{ type: 'settlement.receive', summary: 'received 3,408,069.55 USD into settled cash', cash: { USD: 3_408_069.55 } }],
-        cash: { account: { USD: { settled: 6_019_260.09, unsettled: 0, availableToTrade: 6_019_260.09 } }, treasury: usdCash(1_000_000) },
+        events: [{ type: 'settlement.receive', summary: 'received 3,310,696.13 USD into settled cash', cash: { USD: 3_310_696.13 } }],
+        cash: { account: { USD: { settled: 6_018_925.9, unsettled: 0, availableToTrade: 6_018_925.9 } }, treasury: usdCash(1_000_000) },
         pending: [],
-        balance: { account: { cash: 6_019_260.09, receivable: null, assets: 6_019_260.09, liabilities: 0 } },
+        balance: { account: { cash: 6_018_925.9, receivable: null, assets: 6_018_925.9, liabilities: 0 } },
       },
     },
   ],
