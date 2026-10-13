@@ -698,4 +698,202 @@ const hedgeFund = {
   ],
 };
 
-export default [privateEquity, ventureCapital, hedgeFund];
+// ---------------------------------------------------------------------------------------------
+// infrastructure
+// ---------------------------------------------------------------------------------------------
+// Treasury buys 40% of the equity of a toll-road concession company at 50,000,000 for the whole (20,000,000), closing
+// on a stated date; an independent valuation at close; project distributions, capital expenditure (added to cost and to
+// the value until the next appraisal) and an operating expense by hand; the valuation goes stale after 190 days; a
+// semi-annual appraisal; a quarter of the stake sold, then the rest. Treasury's own Accounting screens are read and
+// compared with the API at browser level (owner_screens).
+const INF_POS = { instrument: 'main', lot: 'stake', owner: 'treasury', direction: 'owned' };
+const infM = (o) => ({ kind: 'direct_asset', capex: 0, income: 0, expenses: 0, ...o });
+const INF_V1 = { date: '2026-03-16', source: 'Independent valuation at financial close, Corland Advisory', stale: false, reported: 51_000_000 };
+const INF_V2 = { date: '2026-09-30', source: 'Semi-annual appraisal, Corland Advisory', stale: false, reported: 55_000_000 };
+const infrastructure = {
+  productId: 'infrastructure',
+  title: 'Ridgeline Toll Road Holdings: a 40% equity stake held by Treasury, bought and sold at stated prices, distributions, capex, appraisals by hand',
+  matrix: {
+    ...MANUAL_TICKET,
+    requiredFields: ['Trading owner (Treasury)', 'Action (Acquire, Sell)', 'Share of the asset', 'State a fill price (price for the whole asset)', 'Settlement date (financial close)', 'Asset (registration)', 'Valuation goes stale after (registration)'],
+    manualInputs: ['purchase and sale prices with their closing dates', 'valuations (value of the stake, date, source)', 'project distributions (income)', 'capital expenditure', 'operating expenses'],
+    settlement: 'Purchase and sales on the closing dates stated on the ticket (16 March, 16 November, 29 December 2026), on the US calendar',
+    lifecycle: 'Nothing automated; distributions, capex, expenses and valuations by hand; the valuation goes stale after 190 days',
+    accounting: 'Cost = purchase price plus capital expenditure; distributions in Dividends; expenses in Fees; valued at the appraisal plus capex since; realized P&L on each sale at average cost',
+    collateral: 'None: an equity stake held long',
+  },
+  start: '2026-03-02T15:00:00.000Z',
+  settlementCheck: { lag: 2, holidays: [] },
+  book: { name: 'Matrix infrastructure', reportingCcy: 'USD', capital: [{ ccy: 'USD', amount: 30_000_000 }], account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 1_000_000 }] }, settings: SETTINGS },
+  instruments: {
+    main: { productId: 'infrastructure', name: 'Ridgeline Toll Road Holdings LLC', symbol: 'RIDGE-TR', marketView: 'US_CASH', venueType: 'otc', issuer: 'Ridgeline Toll Road Holdings LLC', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD',
+      terms: { assetDescription: 'Ridgeline Toll Road: 42-mile tolled highway concession to 2061', location: 'Colorado, United States', valuationMaxAgeDays: 190 } },
+  },
+  expectAtStart: { cash: { account: { USD: { settled: 1_000_000 } }, treasury: { USD: { settled: 29_000_000, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 29_000_000 } } },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [], nav: { account: 1_000_000, treasury: 29_000_000, book: 30_000_000 }, provisional: { account: false, book: false }, failed: { orders: 0, settlements: 0, lifecycle: 0 } },
+  steps: [
+    {
+      // 0.4 of the asset at 50,000,000 for the whole = 20,000,000, paid at financial close on Monday 16 March 2026.
+      id: 'acquire', covers: 'open', action: 'ticket', owner: 'treasury', instrument: 'main', side: 'buy', qty: 0.4, as: 'stake', order: { statedPrice: 50_000_000, settle: { date: '2026-03-16' } }, settlementCheck: false,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 0.4, estimate: 50_000_000, model: 'stated-price', settleDate: '2026-03-16', calendar: 'US', cash: -20_000_000, fees: 0 }] },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 0.4, avgPrice: 50_000_000 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 0.4 RIDGE-TR @ 50,000,000.00 USD', owner: 'treasury', date: '2026-03-02' }],
+        cash: { treasury: { USD: { settled: 29_000_000, unsettled: -20_000_000, availableToTrade: 9_000_000 } } },
+        positions: [{ ...INF_POS, qty: 0.4, avgCost: 50_000_000, cost: 20_000_000, price: null, value: null, unrealized: null, provisional: true, manual: infM({ valuation: null }) }],
+        holdings: { main: { long: 0.4, short: 0, net: 0.4 } },
+        pending: [{ instrument: 'main', lot: 'stake', owner: 'treasury', dueDate: '2026-03-16', amount: -20_000_000, ccy: 'USD', into: 'cash' }],
+        pnl: { treasury: { realized: 0, dividends: 0, fees: 0 } },
+        nav: { account: 1_000_000, treasury: 29_000_000, book: 30_000_000 },
+        provisional: { account: false, book: true }, // only Treasury holds the unvalued stake
+        balance: { treasury: { cash: 29_000_000, positions: 20_000_000, payable: 20_000_000, assets: 49_000_000, liabilities: 20_000_000, netAssets: 29_000_000 } },
+      },
+    },
+    { id: 'treasury-screens-after-purchase', action: 'owner_screens', owner: 'treasury', expect: {} },
+    {
+      id: 'financial-close', covers: 'settlement', action: 'clock', to: '2026-03-16T14:00:00.000Z',
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 20,000,000.00 USD from settled cash', cash: { USD: -20_000_000 }, owner: 'treasury', date: '2026-03-16' }],
+        cash: { treasury: { USD: { settled: 9_000_000, unsettled: 0, availableToTrade: 9_000_000 } } },
+        pending: [],
+        balance: { treasury: { cash: 9_000_000, payable: null, assets: 29_000_000, liabilities: 0 } },
+      },
+    },
+    {
+      // 20,400,000 for our 0.4 at close: 51,000,000 for the whole asset.
+      id: 'valuation-at-close', covers: 'valuation', action: 'lifecycle', lot: 'stake', body: { action: 'valuation', value: 20_400_000, asOf: '2026-03-16', source: 'Independent valuation at financial close, Corland Advisory' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of RIDGE-TR entered by hand: 20,400,000.00 USD for the 0.4 held (51,000,000.00 value of the whole asset), as of 2026-03-16, source: Independent valuation at financial close, Corland Advisory. A manual input, not a market quote', owner: 'treasury' }],
+        positions: [{ ...INF_POS, qty: 0.4, cost: 20_000_000, price: 51_000_000, value: 20_400_000, unrealized: 400_000, provisional: false, freshness: 'manual', priceSource: 'Manual entry', manual: infM({ valuation: { ...INF_V1, rolledForward: 0 } }) }],
+        pnl: { treasury: { unrealized: 400_000, total: 400_000 } },
+        nav: { treasury: 29_400_000, book: 30_400_000 },
+        provisional: { account: false, book: false },
+        balance: { treasury: { positions: 20_400_000, assets: 29_400_000, netAssets: 29_400_000 } },
+      },
+    },
+    { id: 'q2-distribution-date', action: 'clock', to: '2026-06-30T14:00:00.000Z', expect: {} },
+    {
+      id: 'distribution-q2', covers: 'income', action: 'lifecycle', lot: 'stake', body: { action: 'income', kind: 'dividend', amount: 850_000, note: 'Q2 distribution from the concession company' },
+      expect: {
+        events: [{ type: 'manual.income', summary: 'Dividend from RIDGE-TR entered by hand: received 850,000.00 USD. Q2 distribution from the concession company', cash: { USD: 850_000 }, owner: 'treasury' }],
+        cash: { treasury: { USD: { settled: 9_850_000, availableToTrade: 9_850_000 } } },
+        positions: [{ ...INF_POS, qty: 0.4, cost: 20_000_000, value: 20_400_000, unrealized: 400_000, manual: infM({ income: 850_000, valuation: { ...INF_V1, rolledForward: 0 } }) }],
+        pnl: { treasury: { dividends: 850_000, total: 1_250_000 } },
+        nav: { treasury: 30_250_000, book: 31_250_000 },
+        balance: { treasury: { cash: 9_850_000, assets: 30_250_000, netAssets: 30_250_000 } },
+      },
+    },
+    { id: 'capex-date', action: 'clock', to: '2026-07-15T14:00:00.000Z', expect: {} },
+    {
+      // Capex raises cost to 21,200,000 and, until the next appraisal, the value to 20,400,000 + 1,200,000 = 21,600,000.
+      id: 'capex', covers: 'capital expenditure', action: 'lifecycle', lot: 'stake', body: { action: 'capex', amount: 1_200_000, note: 'Interchange widening at mile 17 (our 40% share)' },
+      expect: {
+        events: [{ type: 'manual.capex', summary: 'Capital expenditure on RIDGE-TR entered by hand: paid 1,200,000.00 USD, added to cost. Interchange widening at mile 17 (our 40% share)', cash: { USD: -1_200_000 }, owner: 'treasury' }],
+        cash: { treasury: { USD: { settled: 8_650_000, availableToTrade: 8_650_000 } } },
+        positions: [{ ...INF_POS, qty: 0.4, avgCost: 53_000_000, cost: 21_200_000, price: 54_000_000, value: 21_600_000, unrealized: 400_000, // 21,200,000 / 0.4; 21,600,000 / 0.4
+          manual: infM({ capex: 1_200_000, income: 850_000, valuation: { ...INF_V1, rolledForward: 1_200_000 } }) }],
+        nav: { treasury: 30_250_000, book: 31_250_000 },
+        balance: { treasury: { cash: 8_650_000, positions: 21_600_000 } },
+      },
+    },
+    {
+      id: 'operating-expense', covers: 'fee', action: 'lifecycle', lot: 'stake', body: { action: 'expense', kind: 'operating', amount: 150_000, note: 'Asset management and insurance, July' },
+      expect: {
+        events: [{ type: 'manual.expense', summary: 'Operating expense on RIDGE-TR entered by hand: paid 150,000.00 USD. Asset management and insurance, July', cash: { USD: -150_000 }, owner: 'treasury' }],
+        cash: { treasury: { USD: { settled: 8_500_000, availableToTrade: 8_500_000 } } },
+        positions: [{ ...INF_POS, qty: 0.4, cost: 21_200_000, value: 21_600_000, manual: infM({ capex: 1_200_000, income: 850_000, expenses: 150_000, valuation: { ...INF_V1, rolledForward: 1_200_000 } }) }],
+        pnl: { treasury: { fees: -150_000, total: 1_100_000 } }, // 850,000 + 400,000 - 150,000
+        nav: { treasury: 30_100_000, book: 31_100_000 },
+        balance: { treasury: { cash: 8_500_000, assets: 30_100_000, netAssets: 30_100_000 } },
+      },
+    },
+    {
+      // Monday 28 September 2026: the valuation at close (16 March) is 196 days old, past the 190-day limit.
+      id: 'valuation-stale', covers: 'valuation', action: 'clock', to: '2026-09-28T14:00:00.000Z',
+      expect: {
+        positions: [{ ...INF_POS, qty: 0.4, cost: 21_200_000, value: 21_600_000, freshness: 'stale', manual: infM({ capex: 1_200_000, income: 850_000, expenses: 150_000, valuation: { ...INF_V1, stale: true, rolledForward: 1_200_000 } }) }],
+        provisional: { account: false, book: true },
+      },
+    },
+    { id: 'appraisal-date', action: 'clock', to: '2026-10-19T14:00:00.000Z', expect: {} },
+    {
+      // 22,000,000 for our 0.4 at 30 September (55,000,000 for the whole); the July capex is before that date, so nothing is rolled forward.
+      id: 'appraisal', covers: 'valuation', action: 'lifecycle', lot: 'stake', body: { action: 'valuation', value: 22_000_000, asOf: '2026-09-30', source: 'Semi-annual appraisal, Corland Advisory' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of RIDGE-TR entered by hand: 22,000,000.00 USD for the 0.4 held (55,000,000.00 value of the whole asset), as of 2026-09-30, source: Semi-annual appraisal, Corland Advisory. A manual input, not a market quote', owner: 'treasury' }],
+        positions: [{ ...INF_POS, qty: 0.4, cost: 21_200_000, price: 55_000_000, value: 22_000_000, unrealized: 800_000, freshness: 'manual', manual: infM({ capex: 1_200_000, income: 850_000, expenses: 150_000, valuation: { ...INF_V2, rolledForward: 0 } }) }],
+        pnl: { treasury: { unrealized: 800_000, total: 1_500_000 } },
+        nav: { treasury: 30_500_000, book: 31_500_000 },
+        provisional: { account: false, book: false },
+        balance: { treasury: { positions: 22_000_000, assets: 30_500_000, netAssets: 30_500_000 } },
+      },
+    },
+    { id: 'treasury-screens-after-appraisal', action: 'owner_screens', owner: 'treasury', expect: {} },
+    {
+      // A quarter of the stake (0.1 of the asset) at 56,000,000 for the whole = 5,600,000, closing 16 November.
+      // Cost removed 21,200,000 x 0.1 / 0.4 = 5,300,000; realized 300,000.
+      id: 'partial-sale', covers: 'reduce', action: 'ticket', owner: 'treasury', instrument: 'main', side: 'sell', qty: 0.1, from: 'stake', order: { statedPrice: 56_000_000, settle: { date: '2026-11-16' } }, settlementCheck: false,
+      expect: {
+        preview: { blocking: 0, legs: [{ action: 'sell', qty: 0.1, estimate: 56_000_000, model: 'stated-price', settleDate: '2026-11-16', cash: 5_600_000, fees: 0 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 0.1, avgPrice: 56_000_000 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 0.1 RIDGE-TR @ 56,000,000.00 USD (realized 300,000.00 USD)', owner: 'treasury' }],
+        cash: { treasury: { USD: { settled: 8_500_000, unsettled: 5_600_000, availableToTrade: 14_100_000 } } },
+        positions: [{ ...INF_POS, qty: 0.3, avgCost: 53_000_000, cost: 15_900_000, price: 55_000_000, value: 16_500_000, unrealized: 600_000, manual: infM({ capex: 1_200_000, income: 850_000, expenses: 150_000, valuation: { ...INF_V2, rolledForward: 0 } }) }],
+        holdings: { main: { long: 0.3, short: 0, net: 0.3 } },
+        pending: [{ instrument: 'main', lot: 'stake', owner: 'treasury', dueDate: '2026-11-16', amount: 5_600_000, ccy: 'USD', into: 'cash' }],
+        pnl: { treasury: { realized: 300_000, unrealized: 600_000, total: 1_600_000 } },
+        nav: { treasury: 30_600_000, book: 31_600_000 }, // 8,500,000 + 5,600,000 + 16,500,000
+        balance: { treasury: { cash: 8_500_000, receivable: 5_600_000, positions: 16_500_000, assets: 30_600_000, netAssets: 30_600_000 } },
+      },
+    },
+    {
+      id: 'partial-sale-closes', covers: 'settlement', action: 'clock', to: '2026-11-16T15:00:00.000Z',
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 5,600,000.00 USD into settled cash', cash: { USD: 5_600_000 }, owner: 'treasury' }],
+        cash: { treasury: { USD: { settled: 14_100_000, unsettled: 0, availableToTrade: 14_100_000 } } },
+        pending: [],
+        balance: { treasury: { cash: 14_100_000, receivable: null } },
+      },
+    },
+    { id: 'year-end-date', action: 'clock', to: '2026-12-15T15:00:00.000Z', expect: {} },
+    {
+      id: 'distribution-q4', covers: 'income', action: 'lifecycle', lot: 'stake', body: { action: 'income', kind: 'dividend', amount: 600_000, note: 'Q4 distribution (our 30%)' },
+      expect: {
+        events: [{ type: 'manual.income', summary: 'Dividend from RIDGE-TR entered by hand: received 600,000.00 USD. Q4 distribution (our 30%)', cash: { USD: 600_000 }, owner: 'treasury' }],
+        cash: { treasury: { USD: { settled: 14_700_000, availableToTrade: 14_700_000 } } },
+        positions: [{ ...INF_POS, qty: 0.3, cost: 15_900_000, value: 16_500_000, manual: infM({ capex: 1_200_000, income: 1_450_000, expenses: 150_000, valuation: { ...INF_V2, rolledForward: 0 } }) }],
+        pnl: { treasury: { dividends: 1_450_000, total: 2_200_000 } },
+        nav: { treasury: 31_200_000, book: 32_200_000 },
+        balance: { treasury: { cash: 14_700_000, assets: 31_200_000, netAssets: 31_200_000 } },
+      },
+    },
+    {
+      // The rest, 0.3 at 57,000,000 = 17,100,000, closing Tuesday 29 December (after Christmas). Cost 15,900,000; realized 1,200,000.
+      id: 'final-sale', covers: 'close', action: 'ticket', owner: 'treasury', instrument: 'main', side: 'sell', qty: 0.3, from: 'stake', order: { statedPrice: 57_000_000, settle: { date: '2026-12-29' } }, settlementCheck: false,
+      expect: {
+        preview: { blocking: 0, legs: [{ action: 'sell', qty: 0.3, estimate: 57_000_000, model: 'stated-price', settleDate: '2026-12-29', cash: 17_100_000, fees: 0 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 0.3, avgPrice: 57_000_000 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 0.3 RIDGE-TR @ 57,000,000.00 USD (realized 1,200,000.00 USD)', owner: 'treasury' }],
+        cash: { treasury: { USD: { settled: 14_700_000, unsettled: 17_100_000, availableToTrade: 31_800_000 } } },
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', lot: 'stake', owner: 'treasury', dueDate: '2026-12-29', amount: 17_100_000, ccy: 'USD', into: 'cash' }],
+        pnl: { treasury: { realized: 1_500_000, dividends: 1_450_000, fees: -150_000, unrealized: 0, total: 2_800_000 } },
+        nav: { treasury: 31_800_000, book: 32_800_000 },
+        balance: { treasury: { cash: 14_700_000, receivable: 17_100_000, positions: null, assets: 31_800_000, netAssets: 31_800_000 } },
+      },
+    },
+    {
+      id: 'final-sale-closes', covers: 'settlement', action: 'clock', to: '2026-12-29T15:00:00.000Z',
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 17,100,000.00 USD into settled cash', cash: { USD: 17_100_000 }, owner: 'treasury', date: '2026-12-29' }],
+        cash: { treasury: { USD: { settled: 31_800_000, unsettled: 0, availableToTrade: 31_800_000 } }, account: { USD: { settled: 1_000_000 } } },
+        pending: [],
+        balance: { treasury: { cash: 31_800_000, receivable: null, assets: 31_800_000, liabilities: 0, netAssets: 31_800_000 } },
+      },
+    },
+    { id: 'treasury-screens-at-the-end', action: 'owner_screens', owner: 'treasury', expect: {} },
+  ],
+};
+
+export default [privateEquity, ventureCapital, hedgeFund, infrastructure];

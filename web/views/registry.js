@@ -648,10 +648,12 @@ function InstrumentForm({ inst: given, view, preset, onDone, onClose }) {
 }
 
 // ---- lifecycle events recorded by hand on the instrument itself -----------------------------------------------------
+/** Debt securities whose principal can be written down by hand: contingent convertibles and securitised paper. */
+const WRITEDOWN_IDS = ['coco_bond', 'mbs', 'rmbs', 'cmbs', 'agency_mbs', 'non_agency_mbs', 'specified_pool', 'abs', 'cmo', 'clo', 'cdo'];
 function LifecycleAdmin({ inst, onChanged }) {
   const t = inst.terms || {};
   const name = inst.symbol || inst.name;
-  const [v, setV] = useState({ recovery: null, weight: 1, newFactor: null, rate: null, ratio: null, ratioAsOf: '', callPrice: null, callShare: 1 });
+  const [v, setV] = useState({ recovery: null, weight: 1, newFactor: null, rate: null, ratio: null, ratioAsOf: '', callPrice: null, callShare: 1, wdFactor: null, wdKind: null, wdFrom: '' });
   const [step, setStep] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -662,7 +664,7 @@ function LifecycleAdmin({ inst, onChanged }) {
     setBusy(true); setError(null);
     try {
       await post(`/api/instruments/${inst.id}/lifecycle`, { action: step.action, ...step.body });
-      toast(step.done); setStep(null); setV({ recovery: null, weight: 1, newFactor: null, rate: null, ratio: null, ratioAsOf: '', callPrice: null, callShare: 1 });
+      toast(step.done); setStep(null); setV({ recovery: null, weight: 1, newFactor: null, rate: null, ratio: null, ratioAsOf: '', callPrice: null, callShare: 1, wdFactor: null, wdKind: null, wdFrom: '' });
       bump(); await onChanged();
     } catch (err) { setError(err); }
     setBusy(false);
@@ -699,6 +701,12 @@ function LifecycleAdmin({ inst, onChanged }) {
       text: whole ? `${name} is called by the issuer, recorded by hand: every holder, in every Book, is redeemed today at ${fmtNum(p, 2)}% of par with the accrued interest to today. The positions close, the remaining coupons and the redemption are cancelled, and the bond can no longer be traded. The Terminal checks the price against the call schedule.`
         : `A partial call of ${name}, recorded by hand: ${fmtNum(sh * 100, 4)}% of every holding, in every Book (in whole minimum denominations), is redeemed today at ${fmtNum(p, 2)}% of par with the accrued interest on it. The rest stays outstanding. The Terminal checks the price against the call schedule.` };
   };
+  const writeDown = () => {
+    const nf = v.wdFactor, kind = v.wdKind || (inst.productId === 'coco_bond' ? 'writedown' : 'loss');
+    if (!(nf > 0 && nf < factor)) return { invalid: `The factor after the write-down must be above 0 and below the current factor ${factor}. A full write-down is recorded on each position as an early redemption at 0.` };
+    return { action: 'writedown', body: { newFactor: nf, kind, effective: v.wdFrom || undefined }, confirm: 'Record write-down', done: 'Write-down recorded.',
+      text: `${kind === 'loss' ? 'A realized loss is allocated to' : 'A trigger event writes down'} ${name}, recorded by hand: the factor falls from ${factor} to ${nf}${v.wdFrom ? ` from ${v.wdFrom}` : ''} for every holder, in every Book. ${fmtNum((factor - nf) * 100, 4)}% of original face is written off with no payment: each position's cost falls in proportion and the cost written off is a realized loss. Interest accrued on the principal written off is cancelled. Later coupons and trades use the reduced principal.` };
+  };
   const suspend = (on) => ({ action: 'suspend_coupon', body: { suspended: on }, confirm: on ? 'Suspend coupons' : 'Resume coupons', done: on ? 'Coupons suspended.' : 'Coupons resumed.',
     text: on ? `No coupon accrues or is paid on ${name} for any holder, in any Book, until coupons are resumed. Coupon dates that pass while suspended are listed in the history as not paid and are not paid later. Interest accrued and not yet received is reversed out of coupon and interest income for every holder (non-accrual), and the bond trades flat, without accrued interest, until coupons are resumed.`
       : `Coupon accrual and payment restart on ${name} for every holder, in every Book. Coupon dates that passed while suspended are not paid afterwards; record any catch-up payment by hand.` });
@@ -723,6 +731,11 @@ function LifecycleAdmin({ inst, onChanged }) {
       <${Field} label="Call price (% of par)" hint=${`Call schedule: ${t.callSchedule.map((r) => `${r.date} at ${fmtNum(r.price, 2)}`).join('; ')}`}><${Num} value=${v.callPrice} onInput=${(x) => { setV({ ...v, callPrice: x }); setStep(null); }} /><//>
       <${Field} label="Share of the issue called" hint="1 = the whole issue; less is a partial call, pro rata"><${Num} value=${v.callShare ?? 1} onInput=${(x) => { setV({ ...v, callShare: x }); setStep(null); }} /><//>
       ${button('Review issuer call', issuerCall)}</div>` : null}
+    ${inst.family === 'bond' && WRITEDOWN_IDS.includes(inst.productId) ? html`<div class="grid-form" style=${GRID}>
+      <${Field} label="Principal written down to (factor)" hint=${`Current factor ${factor}. No payment is made for the part written off.`}><${Num} value=${v.wdFactor} onInput=${(x) => { setV({ ...v, wdFactor: x }); setStep(null); }} /><//>
+      <${Field} label="Kind of write-down"><${Select} value=${v.wdKind || (inst.productId === 'coco_bond' ? 'writedown' : 'loss')} onChange=${(x) => { setV({ ...v, wdKind: x }); setStep(null); }} options=${[{ value: 'writedown', label: 'Trigger event: write-down' }, { value: 'loss', label: 'Realized loss allocated' }]} /><//>
+      <${Field} label="Write-down effective from" hint="Today if empty; for a monthly pool, the first day of the period"><${Text} type="date" value=${v.wdFrom || ''} onInput=${(x) => { setV({ ...v, wdFrom: x }); setStep(null); }} /><//>
+      ${button('Review write-down', writeDown)}</div>` : null}
     ${inst.family === 'bond' && t.calledOn ? html`<p class="note">Called in full on ${t.calledOn}${isNum(t.calledAt) ? ` at ${fmtNum(t.calledAt, 2)}% of par` : ''}: nothing is outstanding.</p>` : null}
     ${inst.family === 'bond' ? html`<div class="grid-form" style=${GRID}>
       <${Field} label="New pool factor" hint=${`Current factor ${factor}`}><${Num} value=${v.newFactor} onInput=${(x) => { setV({ ...v, newFactor: x }); setStep(null); }} /><//>

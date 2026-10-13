@@ -642,3 +642,9 @@ table.ledger.pv-legs td.amt .sub, table.ledger.pv-legs td.amt .was { white-space
 table.ledger td.acts { white-space: normal; }
 .pos-acts { display: flex; flex-wrap: wrap; gap: 4px 8px; justify-content: flex-end; }
 @media (max-width: 600px) { .drawer table.ledger td, .drawer table.ledger th { padding-left: 6px; padding-right: 6px; } }
+.pos-acts-sm { display: none; }
+@media (max-width: 600px) {
+  .drawer table.ledger th.acts, .drawer table.ledger td.acts { display: none; }
+  .drawer .pos-acts-sm { display: block; margin-top: 4px; }
+  .drawer .pos-acts-sm .pos-acts, .drawer .pos-acts-sm .row { justify-content: flex-start !important; flex-wrap: wrap; }
+}

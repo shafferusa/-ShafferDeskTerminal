@@ -156,3 +156,4 @@
 - 2026-10-13T17:55Z | b3 | +0.2 | exchangeable_bond passes at engine, API and browser
 - 2026-10-13T17:56Z | o2 | +0.2 | digital_option passes at engine, API and browser
 - 2026-10-13T17:57Z | m1 | +0.2 | hedge_fund passes at engine, API and browser (notice, lock-up, 50% investor gate)
+- 2026-10-13T17:59Z | r1 | +0.2 | open_repo passes at engine, API and browser

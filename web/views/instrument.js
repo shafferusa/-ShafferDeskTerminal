@@ -181,6 +181,8 @@ function Ticket({ inst, detail, book, onDone }) {
     await openPreview(input, { openOverlay, toastError, onDone: (s) => { setQty(null); onDone?.(s); } });
     setBusy(false);
   };
+  const posActs = (p) => html`<div class="pos-acts">${FINANCEABLE.has(inst.family) ? html`<${HoldingFinancing} inst=${inst} book=${book} p=${{ ...p, owner: book.units.find((u) => u.id === p.unitId)?.name }} onDone=${onDone} />` : null}
+    <span class="row nowrap" style="gap:4px;justify-content:flex-end"><${Button} small onClick=${() => closePos(p, 0.5)}>Close half<//><${Button} small onClick=${() => closePos(p)}>Close<//></span></div>`;
   const closePos = async (p, fraction = 1) => {
     const pv = await openPreviewAction(p.strategyId, 'close', { positionIds: [p.positionId], fraction }, { onDone });
     return pv;
@@ -225,13 +227,12 @@ function Ticket({ inst, detail, book, onDone }) {
       <span class="note">Nothing is submitted until you confirm the preview.</span></div>
     ${mine.length ? html`<${Panel} title="Positions in this Account" flush>
       <${Table} columns=${[
-        { label: 'Strategy', render: (p) => p.strategy?.name || '' },
+        // On a narrow screen the buttons sit under the strategy name instead of in a last column (app.css, ui1).
+        { label: 'Strategy', render: (p) => html`${p.strategy?.name || ''}<div class="pos-acts-sm">${posActs(p)}</div>` },
         { label: 'Quantity', align: 'r', render: (p) => fmtQty(p.qty) },
         { label: 'Average cost', align: 'r', render: (p) => fmtPriceUnits(p.avgCost, inst.priceUnits) },
         { label: 'Unrealized', align: 'r', render: (p) => html`<${Money} value=${p.unrealized} ccy=${p.ccy} signed reason=${p.missingReason} />` },
-        { label: FINANCEABLE.has(inst.family) ? 'Financing and close' : '', align: 'r', cls: 'acts', title: FINANCEABLE.has(inst.family) ? 'Repo, lend or pledge this holding (opens the Treasury or Account dialog with it filled in), or close it' : undefined,
-          render: (p) => html`<div class="pos-acts">${FINANCEABLE.has(inst.family) ? html`<${HoldingFinancing} inst=${inst} book=${book} p=${{ ...p, owner: book.units.find((u) => u.id === p.unitId)?.name }} onDone=${onDone} />` : null}
-            <span class="row nowrap" style="gap:4px;justify-content:flex-end"><${Button} small onClick=${() => closePos(p, 0.5)}>Close half<//><${Button} small onClick=${() => closePos(p)}>Close<//></span></div>` },
+        { label: FINANCEABLE.has(inst.family) ? 'Financing and close' : '', align: 'r acts', title: FINANCEABLE.has(inst.family) ? 'Repo, lend or pledge this holding (opens the Treasury or Account dialog with it filled in), or close it' : undefined, render: (p) => posActs(p) },
       ]} rows=${mine} rowKey=${(p) => p.positionId} /><//>` : null}
     <${FinancingLinks} inst=${inst} book=${book} unitId=${unitId} longs=${longs} onShort=${() => setAction('sell_short')} canShort=${actions.includes('sell_short')} onDone=${onDone} />
   </div>`;

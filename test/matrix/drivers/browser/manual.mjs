@@ -19,6 +19,7 @@
 
 import { TERMS, MANUAL_KIND, eventLabel } from '../../../../server/products/manual.js';
 import * as swap from './swap.mjs';
+import * as bond from './bond.mjs';
 
 export const family = 'manual';
 
@@ -186,6 +187,8 @@ export const actions = {
     return {};
   },
   agreement: (...args) => swap.actions.agreement(...args),
+  // The Accounting screens in Treasury's scope, for a holding owned by Treasury (the bond driver's reader).
+  owner_screens: (...args) => bond.actions.owner_screens(...args),
 };
 
 /**

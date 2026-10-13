@@ -1515,4 +1515,230 @@ const exchangeableBond = {
   ],
 };
 
-export default [tips, foreignInflationLinked, callableBond, puttableBond, convertibleBond, exchangeableBond];
+// ---------------------------------------------------------------------------------------------
+// coco_bond
+// ---------------------------------------------------------------------------------------------
+// A bank's Additional Tier 1 contingent convertible: 7.25% fixed, coupons 20 March and 20 September, 30/360, perpetual
+// (first call date 20 September 2030 at par), T+2 (the instrument's own settlement convention), pieces of 200,000 (sold to
+// professional investors only). Coupons are fully discretionary and the principal is written down if the bank's CET1 ratio
+// falls below its trigger. Both are recorded by hand on the instrument form:
+//   - the issuer cancels the coupon: recorded as a coupon suspension; the interest accrued and not received is reversed
+//     (it will never be paid), the 20 September coupon date passes unpaid and is listed in the history;
+//   - the trigger event: a permanent write-down of 75% of the principal (factor 1 to 0.25), with no payment; each holder's
+//     cost falls by 75% and that cost is a realized loss.
+// After it the notes trade on the reduced principal (face x 0.25 x price) and flat (coupons cancelled); the holding is sold.
+//
+// Days of 30/360 from 20 Mar 2028: to 3 Aug 133, 4 Aug 134, 7 Aug 137, 8 Aug 138, 9 Aug 139. Commission: 1 basis point of
+// clean principal.
+const cocoBond = {
+  productId: 'coco_bond',
+  title: 'Nordhavn Bank 7.25% perpetual AT1 CoCo: pieces of 200,000 (odd lot refused), T+2, opened, increased, partly sold, coupon cancelled by hand, coupon date missed, trigger write-down of 75% by hand, sold on the reduced principal',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount (a multiple of 200,000)'],
+    manualInputs: ['Registration: Perpetual, a coupon date, Call schedule, Minimum denomination 200,000, Settlement convention 2', 'Coupon cancellation recorded by hand (instrument form, Review coupon suspension, Suspend coupons)', 'Trigger event recorded by hand (instrument form: Principal written down to 0.25, Kind of write-down: Trigger event, Review write-down, Record write-down)'],
+    settlement: 'T+2 on the US bond calendar (the instrument\'s own convention); after the write-down a trade settles face x factor x price, flat',
+    lifecycle: 'Daily accrual on 30/360 until the coupon is cancelled; accrued interest reversed on cancellation; coupon date passes unpaid (history); permanent write-down of principal; no maturity',
+    accounting: 'Clean cost at average; cancelled accrued interest reverses coupon income; the cost written down is a realized loss; realized P&L on the sales; commission expensed',
+    collateral: 'None for a long position',
+  },
+  start: EDT('2028-08-01'), // Tuesday
+  settlementCheck: { lag: 2, holidays: [] },
+  book: {
+    name: 'Matrix CoCo', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 3_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 2_000_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 1 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'coco_bond', name: 'Nordhavn Bank AB 7.25% Perpetual Contingent Convertible AT1 Notes', symbol: 'NORDH-7.25-AT1', marketView: 'US_CASH', venueType: 'otc', issuer: 'Nordhavn Bank AB', domicile: 'SE', underlyingGeo: 'SE', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { settleLag: 2 },
+      terms: { couponType: 'fixed', couponRate: 0.0725, frequency: 2, perpetual: true, anchorDate: '2023-09-20', issueDate: '2023-09-20', dayCount: '30/360', redemption: 100, minDenomination: 200_000, seniority: 'Additional Tier 1 (deeply subordinated)',
+        callSchedule: [{ date: '2030-09-20', price: 100 }] } },
+  },
+  quotes: { main: { bid: 97.6, ask: 98, last: 97.8, bidSize: 10_000_000, askSize: 10_000_000 } },
+  expectAtStart: { ...startState(2_000_000, 1_000_000), cash: { account: usdCash(2_000_000), treasury: usdCash(1_000_000) } },
+  steps: [
+    {
+      id: 'odd-lot', covers: 'minimum denomination', action: 'ticket', instrument: 'main', side: 'buy', qty: 250_000,
+      status: 'blocked', reason: 'AT1 notes trade in multiples of 200,000 face.',
+      expect: { refused: 'quantity must be a multiple of 200000' }, // the Terminal writes the step without a thousands separator
+    },
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 1_000_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 1_000_000, estimate: 98, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2028-08-03', calendar: 'USBOND',
+            gross: 980_000, accrued: 26_784.72, // 133 days: 1,000,000 x 7.25% x 133/360 = 26,784.722
+            cash: -1_006_784.72, fees: 98 }], // 1 bp of 980,000
+          cash: { USD: { purchases: 1_006_784.72, fees: 98, required: 1_006_882.72, available: 2_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 1_000_000, avgPrice: 98, fills: [{ qty: 1_000_000, price: 98, model: 'quoted-bid-ask', settleDate: '2028-08-03', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1,000,000 NORDH-7.25-AT1 @ 98.00 USD', owner: 'account', date: '2028-08-01' }],
+        cash: { account: { USD: { settled: 2_000_000, unsettled: -1_006_882.72, availableToTrade: 993_117.28 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 1_000_000, avgCost: 98, cost: 980_000, price: 97.8, value: 978_000, unrealized: -2_000, accrued: 26_784.72, priceSource: 'Test fixture' }],
+        holdings: { main: { long: 1_000_000, short: 0, net: 1_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2028-08-03', amount: -1_006_882.72, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2028-09-20', status: 'pending' }], // perpetual: no maturity
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -98, fees: 0, borrowFunding: 0, unrealized: -2_000, total: -2_098 } },
+        nav: { account: 1_997_902, book: 2_997_902 },
+        balance: { account: { cash: 2_000_000, accruedIncome: 26_784.72, positions: 978_000, payable: 1_006_882.72, assets: 3_004_784.72, liabilities: 1_006_882.72, netAssets: 1_997_902 } },
+      },
+    },
+    {
+      // Thursday 3 Aug (T+2). End of day 2 Aug: the purchase settles on the 3rd; the interest bought is on the books.
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EDT('2028-08-03'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 1,006,882.72 USD from settled cash', cash: { USD: -1_006_882.72 }, date: '2028-08-03' }],
+        cash: { account: { USD: { settled: 993_117.28, unsettled: 0, availableToTrade: 993_117.28 } } },
+        pending: [],
+        balance: { account: { cash: 993_117.28, payable: null, assets: 1_997_902, liabilities: 0 } },
+      },
+    },
+    {
+      // Thursday: T+2 is Monday 7 August.
+      id: 'increase', covers: 'increase', action: 'resize', lot: 'lot', factor: 1.4, // 1,000,000 -> 1,400,000
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', qty: 400_000, estimate: 98, settleDate: '2028-08-07',
+          gross: 392_000, accrued: 11_036.11, // 137 days: 400,000 x 7.25% x 137/360 = 11,036.111
+          cash: -403_036.11, fees: 39.2 }],
+          cash: { USD: { purchases: 403_036.11, fees: 39.2, required: 403_075.31, available: 993_117.28, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 400_000, avgPrice: 98 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Bought 400,000 NORDH-7.25-AT1 @ 98.00 USD' }],
+        cash: { account: { USD: { settled: 993_117.28, unsettled: -403_075.31, availableToTrade: 590_041.97 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_400_000, cost: 1_372_000, avgCost: 98, price: 97.8, value: 1_369_200, unrealized: -2_800, accrued: 37_820.83 }],
+        holdings: { main: { long: 1_400_000, short: 0, net: 1_400_000 } },
+        pending: [{ instrument: 'main', dueDate: '2028-08-07', amount: -403_075.31, into: 'cash' }],
+        pnl: { account: { commissions: -137.2, unrealized: -2_800, total: -2_937.20 } },
+        nav: { account: 1_997_062.80, book: 2_997_062.80 },
+        balance: { account: { cash: 993_117.28, accruedIncome: 37_820.83, positions: 1_369_200, payable: 403_075.31, assets: 2_400_138.11, liabilities: 403_075.31, netAssets: 1_997_062.80 } },
+      },
+    },
+    {
+      // Monday 7 Aug. End of day Friday 4 Aug: 1,000,000 settled, 134 days, 26,986.111, plus 400,000 to 7 Aug, 11,036.111:
+      // 38,022.22. On the books 37,820.83: 201.39 more.
+      id: 'settle-increase', covers: ['settlement', 'accrual'], action: 'clock', to: EDT('2028-08-07'),
+      expect: {
+        events: [
+          { type: 'settlement.pay', summary: 'paid 403,075.31 USD from settled cash', cash: { USD: -403_075.31 } },
+          { type: 'accrual.coupon', summary: 'Interest accrued on NORDH-7.25-AT1: 201.39 USD' },
+        ],
+        cash: { account: { USD: { settled: 590_041.97, unsettled: 0, availableToTrade: 590_041.97 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_400_000, accrued: 38_022.22 }],
+        pending: [],
+        pnl: { account: { couponInterest: 201.39, total: -2_735.81 } },
+        nav: { account: 1_997_264.19, book: 2_997_264.19 },
+        balance: { account: { cash: 590_041.97, payable: null, accruedIncome: 38_022.22, assets: 1_997_264.19, liabilities: 0, netAssets: 1_997_264.19 } },
+      },
+    },
+    {
+      // Cost out at the average 400,000 x 98% = 392,000; realized 390,400 - 392,000 = -1,600. Settles Wednesday 9 Aug.
+      id: 'reduce', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 400_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 400_000, estimate: 97.6, settleDate: '2028-08-09',
+          gross: 390_400, accrued: 11_197.22, // 139 days: 400,000 x 7.25% x 139/360 = 11,197.222
+          cash: 401_597.22, fees: 39.04 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 400_000, avgPrice: 97.6 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: /^Sold 400,000 NORDH-7\.25-AT1 @ 97\.60 USD \(realized [-−]1,600\.00 USD\)$/ }],
+        cash: { account: { USD: { settled: 590_041.97, unsettled: 401_558.18, availableToTrade: 991_600.15 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_000_000, cost: 980_000, avgCost: 98, price: 97.8, value: 978_000, unrealized: -2_000, accrued: 26_825 }], // 38,022.22 - 11,197.22
+        holdings: { main: { long: 1_000_000, short: 0, net: 1_000_000 } },
+        pending: [{ instrument: 'main', dueDate: '2028-08-09', amount: 401_558.18, into: 'cash' }],
+        pnl: { account: { realized: -1_600, commissions: -176.24, unrealized: -2_000, total: -3_574.85 } },
+        nav: { account: 1_996_425.15, book: 2_996_425.15 },
+        balance: { account: { cash: 590_041.97, receivable: 401_558.18, accruedIncome: 26_825, positions: 978_000, assets: 1_996_425.15, liabilities: 0, netAssets: 1_996_425.15 } },
+      },
+    },
+    {
+      // Wednesday 9 Aug. End of day 8 Aug: all 1,400,000 still settled (the sale settles on the 9th), 138 days, 38,908.333, less
+      // the 11,197.222 sold: 27,711.11. On the books 26,825.00: 886.11 more.
+      id: 'settle-reduce', covers: ['settlement', 'accrual'], action: 'clock', to: EDT('2028-08-09'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 401,558.18 USD into settled cash', cash: { USD: 401_558.18 } },
+          { type: 'accrual.coupon', summary: 'Interest accrued on NORDH-7.25-AT1: 886.11 USD' },
+        ],
+        cash: { account: { USD: { settled: 991_600.15, unsettled: 0, availableToTrade: 991_600.15 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_000_000, accrued: 27_711.11 }],
+        pending: [],
+        pnl: { account: { couponInterest: 1_087.50, total: -2_688.74 } },
+        nav: { account: 1_997_311.26, book: 2_997_311.26 },
+        balance: { account: { cash: 991_600.15, receivable: null, accruedIncome: 27_711.11, assets: 1_997_311.26, netAssets: 1_997_311.26 } },
+      },
+    },
+    {
+      // The bank cancels the 20 September coupon (discretionary for AT1), recorded by hand as a coupon suspension. The 27,711.11
+      // accrued will not be paid: reversed out of coupon and interest income. The notes now trade flat.
+      id: 'coupon-cancelled', covers: 'coupon cancellation (by hand)', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'suspend_coupon', suspended: true },
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Accrued interest reversed on NORDH-7.25-AT1: coupons suspended, not accrued or paid: 27,711.11 USD', owner: 'account' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_000_000, accrued: 0 }],
+        pnl: { account: { couponInterest: -26_623.61, total: -30_399.85 } }, // 1,087.50 - 27,711.11
+        nav: { account: 1_969_600.15, book: 2_969_600.15 },
+        balance: { account: { accruedIncome: null, assets: 1_969_600.15, netAssets: 1_969_600.15 } },
+      },
+    },
+    {
+      // Wednesday 20 September: the coupon date passes unpaid and is listed. The next coupon date is scheduled (it is also
+      // discretionary). Nothing accrued meanwhile.
+      id: 'coupon-date-missed', covers: 'coupon cancellation (by hand)', action: 'clock', to: EDT('2028-09-20'),
+      expect: {
+        events: [{ type: 'bond.coupon_missed', summary: 'Coupon of 2028-09-20 not paid on 1,000,000 NORDH-7.25-AT1: coupons are suspended', owner: 'account', date: '2028-09-20' }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2029-03-20', status: 'pending' }],
+      },
+    },
+    {
+      // The trigger event: the bank's CET1 ratio is reported below the trigger and 75% of the principal is written down
+      // permanently, recorded by hand: factor 1 to 0.25. 750,000 of the 1,000,000 face is written off with no payment; cost out
+      // 980,000 x 0.75 = 735,000, a realized loss. Left: cost 245,000 on 250,000 of principal (average cost still 98.00 per
+      // 100 of principal), valued 250,000 x 97.80 / 100 = 244,500.
+      id: 'trigger-write-down', covers: 'trigger event (by hand)', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'writedown', newFactor: 0.25, kind: 'writedown' },
+      expect: {
+        events: [{ type: 'bond.writedown', summary: 'Principal written down by hand on NORDH-7.25-AT1: factor 1 to 0.25, 750,000 of 1,000,000 face written off with no payment; cost 735,000.00 USD written off as realized loss', owner: 'account', date: '2028-09-20' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_000_000, cost: 245_000, avgCost: 98, price: 97.8, value: 244_500, unrealized: -500, accrued: 0 }],
+        pnl: { account: { realized: -736_600, unrealized: -500, total: -763_899.85 } }, // -1,600 - 735,000
+        nav: { account: 1_236_100.15, book: 2_236_100.15 },
+        balance: { account: { positions: 244_500, assets: 1_236_100.15, netAssets: 1_236_100.15 } },
+      },
+    },
+    {
+      id: 'written-down-quote', action: 'quote', instrument: 'main', quote: { bid: 38, ask: 41, last: 39.5, bidSize: 5_000_000, askSize: 5_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_000_000, price: 39.5, value: 98_750, unrealized: -146_250 }], // 250,000 x 39.50 / 100
+        pnl: { account: { unrealized: -146_250, total: -909_649.85 } },
+        nav: { account: 1_090_350.15, book: 2_090_350.15 },
+        balance: { account: { positions: 98_750, assets: 1_090_350.15, netAssets: 1_090_350.15 } },
+      },
+    },
+    {
+      // Sold on the reduced principal, flat: 1,000,000 face x 0.25 x 38.00 / 100 = 95,000; commission 1 bp, 9.50; settles
+      // Friday 22 September (T+2). Realized 95,000 - 245,000 = -150,000.
+      id: 'close', covers: 'close', action: 'close', lot: 'lot', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 1_000_000, estimate: 38, settleDate: '2028-09-22', notional: 250_000, gross: 95_000, accrued: 0, cash: 95_000, fees: 9.5 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 1_000_000, avgPrice: 38 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: /^Sold 1,000,000 NORDH-7\.25-AT1 @ 38\.00 USD \(realized [-−]150,000\.00 USD\)$/ }],
+        cash: { account: { USD: { settled: 991_600.15, unsettled: 94_990.50, availableToTrade: 1_086_590.65 } } },
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', dueDate: '2028-09-22', amount: 94_990.50, into: 'cash' }],
+        lifecycle: [],
+        pnl: { account: { realized: -886_600, commissions: -185.74, unrealized: 0, total: -913_409.35 } },
+        nav: { account: 1_086_590.65, book: 2_086_590.65 },
+        balance: { account: { cash: 991_600.15, receivable: 94_990.50, positions: null, assets: 1_086_590.65, liabilities: 0, netAssets: 1_086_590.65 } },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: EDT('2028-09-22'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 94,990.50 USD into settled cash', cash: { USD: 94_990.50 } }],
+        cash: { account: { USD: { settled: 1_086_590.65, unsettled: 0, availableToTrade: 1_086_590.65 } }, treasury: usdCash(1_000_000) },
+        pending: [],
+        balance: { account: { cash: 1_086_590.65, receivable: null, assets: 1_086_590.65, liabilities: 0 } },
+      },
+    },
+  ],
+};
+
+export default [tips, foreignInflationLinked, callableBond, puttableBond, convertibleBond, exchangeableBond, cocoBond];

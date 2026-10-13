@@ -450,4 +450,168 @@ const ndf = {
   ],
 };
 
-export default [fxForward, ndf];
+// ---------------------------------------------------------------------------------------------
+// fra
+// ---------------------------------------------------------------------------------------------
+// A EUR forward-rate agreement, 3x6 on three-month EURIBOR, under English law with a London dealer: the
+// Account buys 25,000,000 EUR notional at 2.15% (it pays the contract rate and receives the fixing) for the
+// interest period Wednesday 3 June to Thursday 3 September 2026 (92 days, ACT/360). The rate fixes two TARGET
+// business days before the period starts: Monday 1 June 2026.
+// The formula the Terminal uses, settled in cash at the start of the period (the value date):
+//     amount = N x (L - K) x d / (1 + L x d),  d = days / 360 = 92 / 360,  L the fixing, K the contract rate
+// positive received by the buyer. Quoted and marked in percent a year; value and unrealized P&L before the
+// fixing = N x (mark - K) / 100 x d, undiscounted.
+// Collateral under a Book agreement (CSA Dealer C, recorded in the scenario): no independent amount, variation
+// margin in USD, threshold 0, minimum transfer 5,000 USD; the EUR exposure is converted at the EUR/USD fixture
+// (1.08). Part of the contract (5,000,000) is terminated early at an amount agreed with the dealer.
+// Held across Good Friday (3 April) and 1 May (TARGET holidays). No commission.
+const FRA_DRAFT = {
+  productId: 'fra', name: 'EUR FRA 3x6 on 3M EURIBOR at 2.15%, period 3 June to 3 September 2026', symbol: 'EUR-FRA-3X6-0603', marketView: 'FOREIGN_DERIV', venueType: 'otc', jurisdiction: 'GB', tradingCcy: 'EUR',
+  terms: { forwardType: 'fra', periodStart: '2026-06-03', periodEnd: '2026-09-03', fixingRate: 'EURIBOR3M', fixingDate: '2026-06-01', dayCount: 'ACT/360', counterparty: 'Northgate Capital Markets Ltd, London',
+    collateralBasis: { type: 'agreement', agreementId: '$agreement:csa' } },
+};
+const fraRow = (qty, extra) => ({ instrument: 'main', lot: 'fra', owner: 'account', qty, basis: 'agreement', agreement: 'CSA Dealer C', flagged: false, iaPosted: 0, vmPosted: 0, vmCcy: 'USD', vmPending: 0, ...extra });
+const fra = {
+  productId: 'fra',
+  title: 'EUR 3x6 FRA on 3M EURIBOR, bought at 2.15% under a Book collateral agreement, partly terminated early, settled at the start of the period against the fixing',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: ['Kind of forward (Forward-rate agreement)', 'Interest period start', 'Interest period end', 'Fixing date', 'Reference rate code', 'Day count', 'Counterparty', 'Collateral basis (Agreement)', 'Account', 'Action (Buy / Sell)', 'Notional', 'State a fill price (contract rate)'],
+    automaticInputs: ['mark (quote fixture standing in for a dealer indication, % a year)', 'EURIBOR3M fixing (rate fixture standing in for Shaffer MarketData)', 'EUR/USD rate (FX fixture) for the collateral exposure and the reporting currency', 'variation margin from the agreement'],
+    manualInputs: ['contract rate (stated fill price)', 'collateral agreement (Treasury, Collateral, New agreement)', 'early termination of 5,000,000 at a stated amount'],
+    settlement: 'No cash at entry; at the start of the period N x (L - K) x d / (1 + L x d) in EUR against the fixing of 1 June, waiting visibly while the fixing is missing; the termination amount settles on the date agreed',
+    lifecycle: 'Variation margin under the agreement (automatic); early termination of part of the notional (manual); settlement at the period start against the fixing (automatic)',
+    accounting: 'Nil cost; value = N x (mark - K) / 100 x 92/360 in EUR, converted to USD at the fixture; termination and settlement amounts realized in EUR',
+    collateral: 'Book agreement CSA Dealer C: no independent amount; variation margin in USD, threshold 0, minimum transfer 5,000 USD; received collateral is restricted cash with a liability; returned when the contract ends',
+  },
+  start: AM('2026-03-02'),
+  settlementCheck: { lag: 0, holidays: ['2026-04-03', '2026-05-01'] },
+  book: {
+    name: 'Matrix FRA', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 5_000_000 }],
+    account: { name: 'Rates', funding: [{ ccy: 'USD', amount: 1_000_000 }] },
+    settings: { fees: { forward: { perUnit: 0, minimum: 0, bps: 0 } }, fill: FILL, settlement: {} },
+  },
+  instruments: {},
+  tradedOn: 'The contract names a collateral agreement of the Book, so a step registers it (Instruments, New instrument) once the agreement exists; it is then traded from the instrument drawer.',
+  fx: { 'EUR/USD': 1.08 },
+  expectAtStart: {
+    ...NO_STATE,
+    cash: { account: { USD: cashOf(1_000_000) }, treasury: { USD: cashOf(4_000_000) } },
+    positions: [], otc: [],
+    nav: { account: 1_000_000, treasury: 4_000_000, book: 5_000_000 },
+  },
+  steps: [
+    {
+      id: 'record-agreement', covers: 'collateral', action: 'agreement', as: 'csa',
+      agreement: { name: 'CSA Dealer C', counterparty: 'Northgate Capital Markets Ltd', kind: 'bilateral', covers: ['account'], independentAmount: { type: 'none' }, variationMargin: true, threshold: 0, minimumTransfer: 5_000, baseCcy: 'USD', postingCcy: 'USD', haircut: 0, nettingScope: 'position' },
+      expect: { events: [{ type: 'collateral.agreement', summary: 'Collateral agreement recorded: CSA Dealer C with Northgate Capital Markets Ltd (Bilateral (CSA-style))', owner: 'treasury' }] },
+    },
+    { id: 'register', covers: 'registration', action: 'register_instrument', as: 'main', draft: FRA_DRAFT, expect: {} },
+    { id: 'indication', action: 'quote', instrument: 'main', quote: { bid: 2.14, ask: 2.16, last: 2.15, bidSize: 100_000_000, askSize: 100_000_000 }, expect: {} },
+    {
+      id: 'open', covers: ['open', 'collateral'], action: 'ticket', instrument: 'main', side: 'buy', qty: 25_000_000, as: 'fra', order: { statedPrice: 2.15 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 25_000_000, estimate: 2.15, model: 'stated-price', settleDate: '2026-06-03', cash: 0, fees: 0 }] },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 25_000_000, avgPrice: 2.15 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought forward 25,000,000 EUR-FRA-3X6-0603 @ 2.15 for 2026-06-03', owner: 'account', date: '2026-03-02' }],
+        positions: [{ instrument: 'main', lot: 'fra', owner: 'account', direction: 'long', qty: 25_000_000, avgCost: 2.15, cost: 0, price: 2.15, value: 0, unrealized: 0, notional: 25_000_000, margin: 0 }],
+        holdings: { main: { long: 25_000_000, short: 0, net: 25_000_000 } },
+        lifecycle: [{ type: 'forward.maturity', instrument: 'main', dueDate: '2026-06-03', status: 'pending' }],
+        pnl: { account: { realized: 0, commissions: 0, unrealized: 0, total: 0 } },
+        balance: { account: { cash: 1_000_000, assets: 1_000_000, liabilities: 0, netAssets: 1_000_000 } },
+        otc: [fraRow(25_000_000, { mark: 2.15, markValue: 0, vmHeld: 0, vmStatus: 'not_valued_yet' })],
+      },
+    },
+    {
+      // Marked at 2.30%: 25,000,000 x 0.15 / 100 x 92/360 = 9,583.3333 = 9,583.33 EUR; at 1.08 = 10,350.00 USD.
+      id: 'mark', covers: 'mark', action: 'quote', instrument: 'main', quote: { bid: 2.29, ask: 2.31, last: 2.30, bidSize: 100_000_000, askSize: 100_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'fra', owner: 'account', direction: 'long', qty: 25_000_000, avgCost: 2.15, cost: 0, price: 2.30, value: 9_583.33, unrealized: 9_583.33, notional: 25_000_000, margin: 0 }],
+        pnl: { account: { unrealized: 10_350, total: 10_350 } },
+        nav: { account: 1_010_350, book: 5_010_350 },
+        balance: { account: { positions: 10_350, assets: 1_010_350, netAssets: 1_010_350 } },
+        otc: [fraRow(25_000_000, { mark: 2.30, markValue: 9_583.33, vmHeld: 0, vmStatus: 'not_valued_yet' })],
+      },
+    },
+    {
+      // Exposure 10,350.00 USD, threshold 0, not below the minimum transfer: the dealer posts 10,350.00 USD.
+      id: 'variation-margin', covers: ['variation margin', 'collateral'], action: 'clock', to: EOD('2026-03-02'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: '10,350.00 USD received', owner: 'account', date: '2026-03-02' }],
+        cash: { account: { USD: cashOf(1_000_000, { restricted: 10_350 }) } },
+        balance: { account: { assets: 1_020_700, liabilities: 10_350, netAssets: 1_010_350 } },
+        otc: [fraRow(25_000_000, { mark: 2.30, markValue: 9_583.33, vmHeld: 10_350, vmExposure: 10_350, vmStatus: 'ok' })],
+      },
+    },
+    // A day later the EUR/USD rate of Monday is stale: every total converted with it is provisional until a current
+    // rate is supplied (here the same 1.08, from the FX fixture standing in for Shaffer MarketData).
+    { id: 'tuesday', covers: 'stale FX', action: 'clock', to: AM('2026-03-03'), expect: { provisional: { account: true, book: true }, positions: [{ instrument: 'main', priceSource: 'X', freshness: 'X', price: 0 }] } },
+    { id: 'fx-tuesday', action: 'fx_rate', pair: 'EUR/USD', rate: 1.08, expect: { provisional: { account: false, book: false } } },
+    {
+      // 5,000,000 of the notional is terminated early: the dealer pays 1,900.00 EUR on Thursday 5 March (the date agreed).
+      // What is left: 20,000,000 x 0.15 / 100 x 92/360 = 7,666.6667 = 7,666.67 EUR = 8,280.00 USD (7,666.67 x 1.08 = 8,280.0036).
+      // Realized 1,900 EUR = 2,052.00 USD at 1.08.
+      id: 'terminate-part', covers: ['early termination', 'reduce'], action: 'lifecycle', lot: 'fra', body: { action: 'terminate', amount: 1_900, qty: 5_000_000, settleDate: '2026-03-05' },
+      expect: {
+        events: [{ type: 'forward.termination', summary: 'Terminated early: 5,000,000 of EUR-FRA-3X6-0603 (dealt 2.15) at a stated amount, received 1,900.00 EUR on 2026-03-05; 20,000,000 remains', owner: 'account', date: '2026-03-03' }],
+        cash: { account: { USD: cashOf(1_000_000, { restricted: 10_350 }), EUR: cashOf(0, { unsettled: 1_900, trade: 1_900, withdraw: 0 }) } },
+        positions: [{ instrument: 'main', lot: 'fra', owner: 'account', direction: 'long', qty: 20_000_000, avgCost: 2.15, cost: 0, price: 2.30, value: 7_666.67, unrealized: 7_666.67, notional: 20_000_000, margin: 0 }],
+        holdings: { main: { long: 20_000_000, short: 0, net: 20_000_000 } },
+        pending: [{ instrument: 'main', lot: 'fra', owner: 'account', dueDate: '2026-03-05', amount: 1_900, ccy: 'EUR', into: 'cash' }],
+        pnl: { account: { realized: 2_052, unrealized: 8_280, total: 10_332 } },
+        nav: { account: 1_010_332, book: 5_010_332 }, // 1,000,000 + 2,052 + 8,280
+        balance: { account: { positions: 8_280, receivable: 2_052, assets: 1_020_682, liabilities: 10_350, netAssets: 1_010_332 } },
+        otc: [fraRow(20_000_000, { mark: 2.30, markValue: 7_666.67, vmHeld: 10_350, vmExposure: 10_350, vmStatus: 'ok' })],
+      },
+    },
+    {
+      // Exposure now 8,280.00 against 10,350.00 held: 2,070.00 would go back, below the minimum transfer of 5,000. Nothing moves.
+      id: 'variation-below-minimum', covers: ['variation margin', 'collateral'], action: 'clock', to: EOD('2026-03-03'),
+      expect: {
+        events: [],
+        otc: [fraRow(20_000_000, { mark: 2.30, markValue: 7_666.67, vmHeld: 10_350, vmExposure: 8_280, vmStatus: 'ok' })],
+      },
+    },
+    {
+      id: 'termination-settles', covers: 'settlement', action: 'clock', to: AM('2026-03-05'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 1,900.00 EUR into settled cash', cash: { EUR: 1_900 }, owner: 'account', date: '2026-03-05' }],
+        cash: { account: { USD: cashOf(1_000_000, { restricted: 10_350 }), EUR: cashOf(1_900) } },
+        pending: [],
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 1_002_052, receivable: null } },
+      },
+    },
+    { id: 'fx-thursday', action: 'fx_rate', pair: 'EUR/USD', rate: 1.08, expect: { provisional: { account: false, book: false } } },
+    {
+      // Wednesday 3 June, the start of the period. The EURIBOR3M fixing of Monday 1 June has not been supplied: the
+      // settlement waits, visibly.
+      id: 'period-start-no-fixing', covers: ['fixing', 'holiday'], action: 'clock', to: AM('2026-06-03'),
+      expect: { lifecycle: [{ type: 'forward.maturity', instrument: 'main', dueDate: '2026-06-03', status: 'blocked' }], provisional: { account: true, book: true } },
+    },
+    { id: 'fx-period-start', action: 'fx_rate', pair: 'EUR/USD', rate: 1.08, expect: { provisional: { account: false, book: false } } },
+    {
+      // The fixing arrives: 2.40%. d = 92/360. 20,000,000 x 0.0025 x d = 12,777.7778; 1 + 0.024 x d = 1.0061333;
+      // 12,777.7778 / 1.0061333 = 12,699.8851 = 12,699.89 EUR received now. The variation margin of 10,350.00 USD goes
+      // back to the dealer: the contract has ended. Realized in EUR: 1,900 + 12,699.89 = 14,599.89 = 15,767.88 USD at 1.08.
+      id: 'fixing-arrives', covers: ['fixing', 'settlement', 'collateral'], action: 'rate', code: 'EURIBOR3M', value: 2.40, date: '2026-06-01',
+      expect: {
+        events: [
+          { type: 'forward.settlement', summary: 'FRA settled against EURIBOR3M fixing 2.4% (contract 2.15%): received 12,699.89 EUR', cash: { EUR: 12_699.89 }, owner: 'account', date: '2026-06-03' },
+          { type: 'collateral.variation', summary: '10,350.00 USD returned to the counterparty', owner: 'account' },
+        ],
+        cash: { account: { USD: cashOf(1_000_000), EUR: cashOf(14_599.89) } },
+        positions: [],
+        holdings: { main: null },
+        lifecycle: [],
+        pnl: { account: { realized: 15_767.88, unrealized: 0, total: 15_767.88 } },
+        nav: { account: 1_015_767.88, book: 5_015_767.88 },
+        balance: { account: { cash: 1_015_767.88, positions: null, assets: 1_015_767.88, liabilities: 0, netAssets: 1_015_767.88 } },
+        otc: [],
+      },
+    },
+  ],
+};
+
+export default [fxForward, ndf, fra];
