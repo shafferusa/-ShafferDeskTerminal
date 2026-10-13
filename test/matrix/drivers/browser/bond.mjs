@@ -56,7 +56,7 @@ const FORM_TERMS = new Set(['couponType', 'couponRate', 'referenceRate', 'spread
   // structured debt (added by b3): inflation-linked, callable, puttable, convertible and exchangeable bonds, securitised paper
   'indexRatio', 'inflationFloor', 'callSchedule', 'putSchedule', 'conversionRatio', 'paymentDelayDays', 'guarantor',
   // structured debt, group B (added by b4)
-  'poolCharacteristics', 'servicingFeeRate', 'seniorTranche', 'seniorBalance', 'seniorRemaining', 'pikAllowed']);
+  'poolCharacteristics', 'servicingFeeRate', 'seniorTranche', 'seniorBalance', 'seniorRemaining', 'pikAllowed', 'referenceEntity']);
 const has = (v) => v !== undefined && v !== null && v !== '';
 const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** A call or put schedule as the form takes it: "2028-06-15 101; 2029-06-15 100". */
@@ -132,6 +132,7 @@ export async function contractTerms(ui, dialog, draft, ctx) {
   // ---- structured debt, group B (b4) ----
   if (has(t.poolCharacteristics)) await ui.input(dialog, 'Pool characteristics').fill(String(t.poolCharacteristics));
   if (has(t.servicingFeeRate)) await ui.input(dialog, 'Servicing fee').fill(String(t.servicingFeeRate));
+  if (has(t.referenceEntity)) await ui.input(dialog, 'Reference entity').fill(String(t.referenceEntity));
   if (t.pikAllowed) await ui.field(dialog, 'Interest deferrable (PIK)').locator('input[type=checkbox]').check();
   if (has(t.seniorTranche)) {
     await ui.input(dialog, 'Senior tranche (paid principal first)').fill(String(t.seniorTranche));
@@ -226,6 +227,7 @@ const MANUAL_FORMS = {
   call: { fields: (b) => [['Call price', b.price], ['Share of the issue called', b.share]], review: 'Review issuer call', confirm: 'Record issuer call', done: /Issuer call recorded/ },
   writedown: { fields: (b) => [['Principal written down to', b.newFactor], ['Write-down effective from', b.effective]], select: (b) => [['Kind of write-down', b.kind]], review: 'Review write-down', confirm: 'Record write-down', done: /Write-down recorded/ },
   // b4
+  credit_event: { fields: (b) => [['Recovery rate (decimal)', b.recovery], ['Recovery settles on', b.settleDate]], review: 'Review credit event', confirm: 'Record credit event', done: /Credit event recorded/ },
   pik: { fields: (b) => [['Coupon paid in kind', b.couponDate]], review: 'Review coupon paid in kind', confirm: 'Record coupon paid in kind', done: /Coupon to be paid in kind recorded/ },
   senior_balance: { fields: (b) => [['Senior tranche now outstanding', b.remaining]], review: 'Review senior tranche balance', confirm: 'Record senior tranche balance', done: /Senior tranche balance recorded/ },
 };

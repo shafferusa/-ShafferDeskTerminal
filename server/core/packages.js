@@ -1167,11 +1167,20 @@ export function createPackages(app) {
         trades.push({ purpose, role: `close_${p.id}`, kind: 'trade', action, instrumentId: inst.id, qty: q, group: inst.family === 'option' ? 'options' : null });
       }
     }
+    // t2: written options are bought back first, and the sale of a long option or security on the same underlying (the
+    // protection that covers them) waits on those buy-backs. Closing a spread then never leaves its written leg
+    // uncovered: sold first, the protection would push the instance's reserve to the uncovered figure (the full strike
+    // value for a put), the sale could be refused or tie up that cash, and a buy-back that cannot fill would leave the
+    // written leg naked. A buy-back that fills in part lets the same share of the protection go.
+    const undOf = (t) => { const i = instruments.get(t.instrumentId); return i.family === 'option' ? i.underlying_id || i.id : i.id; };
+    const buyBacks = trades.filter((t) => t.action === 'buy' && instruments.get(t.instrumentId).family === 'option');
+    if (buyBacks.length) trades.splice(0, trades.length, ...buyBacks, ...trades.filter((t) => !buyBacks.includes(t)));
+    const coveredBy = (t) => (t.action === 'sell' && t.kind === 'trade' ? buyBacks.filter((b) => undOf(b) === undOf(t)) : []);
     // A return of borrowed securities waits for the cover of the matching short.
     const legs = [...trades, ...after];
     const roleN = new Map(legs.map((l, i) => [l.role, i + 1]));
     for (const l of legs) {
-      l.dependsOn = [];
+      l.dependsOn = coveredBy(l).map((b) => roleN.get(b.role));
       if (l.kind === 'return_sec') {
         const cover = trades.find((t) => t.action === 'buy_to_cover' && t.instrumentId === l.underlyingId);
         if (cover) l.dependsOn.push(roleN.get(cover.role));

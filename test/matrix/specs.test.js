@@ -80,7 +80,9 @@ for (const spec of specs) {
         const ccy = inst.tradingCcy;
         // A debt security with a pool factor or an index ratio settles on its principal outstanding (current face, or face x
         // index ratio): the leg states it as `notional`, and the spec works it out by hand from the factor or ratio it states.
-        const units = getProduct(inst.productId)?.family === 'bond' && typeof leg.notional === 'number' ? leg.notional : leg.qty;
+        // s3: so does a credit default swap on an index (or tranche, or ABS reference) whose factor is below 1: its upfront is on
+        // the notional outstanding, notional x factor, which the leg states as `notional`.
+        const units = ['bond', 'cds'].includes(getProduct(inst.productId)?.family) && typeof leg.notional === 'number' ? leg.notional : leg.qty;
         const principal = units * px * (inst.multiplier ?? 1);
         const where = `${spec.productId}:${step.id}`;
         if (typeof leg.cash === 'number') {

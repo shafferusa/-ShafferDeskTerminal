@@ -633,4 +633,344 @@ const cdsSovereign = {
   ],
 };
 
-export default [cdsSingleName, cdsSovereign];
+// ---------------------------------------------------------------------------------------------
+// cds_index
+// ---------------------------------------------------------------------------------------------
+// MCX North America Investment Grade, Series 46, five years (125 names, equal weights of 0.8%), standard contract, 100 bp,
+// maturity 20 June 2031; protection bought by TREASURY, cleared: margin account at Meridian Clearing House (initial margin
+// 2% of the notional outstanding, full variation margin both ways, no minimum transfer), posted and received by Treasury.
+// Commission 20.00 per million of notional traded; T+3 on the USD calendar.
+//   bought 25,000,000 on Wed 6 May 2026 at 0.50: upfront 125,000.00; accrued 20 March to the step-in date 7 May, 48 days:
+//     25,000,000 x 1% x 48/360 = 33,333.33 received; settles Mon 11 May
+//   Brightwater Paper Co. (weight 0.8%) fails to pay on Wed 10 June; auction final price 30 recorded Mon 15 June,
+//     settling Thu 18 June: affected 25,000,000 x 0.008 = 200,000.00; protection 200,000 x 0.70 = 140,000.00; accrued
+//     premium 20 March to 10 June included, 83 days: 200,000 x 1% x 83/360 = 461.11; net receivable 139,538.89. The
+//     defaulted part's share of the accrued received at trade, 33,333.33 x 0.008 = 266.67, and of the cost,
+//     125,000 x 0.008 = 1,000.00, go with it: realized 139,538.89 - 1,000.00 + 266.67 = 138,805.56. Index factor 0.992:
+//     24,800,000 outstanding; initial margin 2% of it, 496,000.00 (4,000.00 back)
+//   coupon Mon 22 June: 24,800,000 x 1% x 94/360 = 64,755.56; with the 33,066.66 still carried from the trade, a premium
+//     cost of 31,688.90; coupon Mon 21 September: 24,800,000 x 1% x 91/360 = 62,688.89
+//   rolled on Tue 22 September into Series 47 (maturity 20 December 2031) at the marks entered by hand: Series 46 sold at
+//     0.60 on its outstanding notional, 24,800,000 x 0.60 / 100 = 148,800.00 received against the 124,000.00 of cost
+//     left (realized 24,800.00), and 2 days of accrued paid (21 to 23 September), 24,800,000 x 1% x 2/360 = 1,377.78,
+//     realized; Series 47 bought on 24,800,000 at 0.95, 235,600.00 paid, 1,377.78 accrued received (carried). Commission
+//     500.00 (25,000,000 traded) and 496.00 (24,800,000). Both settle Fri 25 September
+//   Series 47 terminated on Thu 15 October at 0.80: 198,400.00 received; cost 235,600.00, realized -37,200.00; accrued
+//     21 September to 16 October, 25 days, paid: 24,800,000 x 1% x 25/360 = 17,222.22, realized; the 1,377.78 carried
+//     from the roll is premium income for the time held; settles Tue 20 October
+const IG46_NAME = 'MCX NA IG Series 46 5Y index CDS 100bp 20 Jun 2031';
+const IG47_NAME = 'MCX NA IG Series 47 5Y index CDS 100bp 20 Dec 2031';
+const ccpBasis = { type: 'agreement', agreementId: '$agreement:ccp' };
+const IG46_DRAFT = {
+  productId: 'cds_index', name: IG46_NAME, symbol: 'MCXIG-S46', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 0.01,
+  conventions: { tradingCalendar: 'USD', settlementCalendar: 'USD', paymentCalendar: 'USD' },
+  terms: { referenceEntity: 'MCX North America Investment Grade Index, Series 46 (125 names, 0.8% each)', coupon: 0.01, effective: '2026-03-20', maturity: '2031-06-20', recovery: 0.4, indexFactor: 1, convention: 'standard', creditEventSet: 'corporate_xr', settlement: 'auction', counterparty: 'Meridian Clearing House', collateralBasis: ccpBasis },
+};
+const IG47_DRAFT = { ...IG46_DRAFT, name: IG47_NAME, symbol: 'MCXIG-S47', terms: { ...IG46_DRAFT.terms, referenceEntity: 'MCX North America Investment Grade Index, Series 47 (125 names, 0.8% each)', effective: '2026-09-21', maturity: '2031-12-20' } };
+const cdsIndex = {
+  productId: 'cds_index',
+  title: 'Index CDS bought by Treasury, cleared: a constituent\'s failure to pay reduces the index factor and the contract goes on; rolled into the new series; terminated',
+  matrix: {
+    ...OTC_TICKET,
+    ticket: `${OTC_TICKET.ticket}; the clearing account is recorded first under Treasury, Collateral; Trading owner Treasury; the strategy instance's Roll for the new series`,
+    automaticInputs: ['coupon dates from the IMM roll dates and the USD calendar', 'premium accrued to the step-in date, exchanged at trade', 'full coupons on the notional outstanding (index factor)', 'upfront on the notional outstanding', 'settlement date T+3 on the USD calendar', 'commission from the Book fee schedule', 'initial margin and variation margin from the clearing terms', 'the roll package: old series terminated, the notional outstanding entered in the new series'],
+    manualInputs: ['the clearing account (initial margin, currency)', 'upfront of each trade (stated fill price) and the roll at the marks entered by hand', 'marks per 100 entered by hand for each series', 'a constituent\'s credit event: kind, event date, auction final price, weight in the index, settlement date'],
+    settlement: 'Upfronts, accrued premium and commission settle T+3 on the USD calendar; coupons on the adjusted coupon dates; the constituent\'s auction settlement on its stated date',
+    lifecycle: 'Buy protection; a constituent\'s failure to pay settled at the auction final price on its weight, the index factor falls to 0.992 and the contract goes on with smaller coupons; roll into Series 47 (one package: terminate Series 46, enter Series 47); terminate Series 47; nothing scheduled afterwards',
+    accounting: 'Carried at the mark on the notional outstanding less the upfronts paid; the defaulted part\'s cost and carried accrued realized with its settlement; accrued premium received at trade carried until the coupon; coupons, the roll and the termination are realized P&L; commission expensed',
+    collateral: 'Cleared account "Meridian Clearing House" posted by Treasury: initial margin 2% of the notional outstanding (trued up when the index factor falls, moved from the old to the new series in the roll, returned at the end); variation margin on the mark each end of day, no minimum transfer, received collateral restricted',
+  },
+  start: at('2026-05-06'),
+  settlementCheck: { lag: 3, holidays: [] },
+  book: {
+    name: 'Matrix index CDS', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 10_000_000 }],
+    account: { name: 'Index desk', funding: [{ ccy: 'USD', amount: 1_000_000 }] },
+    settings: { fees: { cds: { perUnit: 0.00002, minimum: 0, bps: 0 } }, fill: FILL, settlement: { cds: 3 } },
+  },
+  instruments: {},
+  tradedOn: 'Both series are registered by steps (registry form) once the clearing account they name is recorded.',
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 1_000_000 } },
+      treasury: { USD: { settled: 9_000_000, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 9_000_000, availableToWithdraw: 9_000_000 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [], otc: [], alerts: [],
+    nav: { account: 1_000_000, treasury: 9_000_000, book: 10_000_000 },
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+  },
+  steps: [
+    {
+      id: 'record-clearing-account', covers: 'collateral', action: 'agreement', as: 'ccp',
+      agreement: { name: 'Cleared CDS account', counterparty: 'Meridian Clearing House', kind: 'cleared', covers: ['treasury'], postedBy: 'treasury', independentAmount: { type: 'pct', pct: 0.02 }, variationMargin: true, minimumTransfer: 0, baseCcy: 'USD', postingCcy: 'USD', haircut: 0, nettingScope: 'position' },
+      expect: { events: [{ type: 'collateral.agreement', summary: 'Collateral agreement recorded: Cleared CDS account with Meridian Clearing House (Cleared)', owner: 'treasury' }] },
+    },
+    { id: 'register-series-46', covers: 'registration', action: 'register_instrument', as: 'main', draft: IG46_DRAFT, expect: {} },
+    { id: 'register-series-47', covers: 'registration', action: 'register_instrument', as: 's47', draft: IG47_DRAFT, expect: {} },
+    otcTicket({
+      id: 'treasury-buys-protection', covers: ['open', 'buy protection', 'accrued at trade', 'collateral'], owner: 'treasury', instrument: 'main', side: 'buy', qty: 25_000_000, upfront: 0.50, as: 'idx',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 25_000_000, estimate: 0.5, model: 'stated-price', settleDate: '2026-05-11', calendar: 'USD',
+            cash: -91_666.67, accrued: -33_333.33, fees: 500, notional: 25_000_000 }], // -125,000 + 33,333.33; 25,000,000 x 0.00002
+          cash: { USD: { fees: 500, margin: 500_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 25_000_000, avgPrice: 0.5 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Bought 25,000,000 MCXIG-S46 @ 0.50 USD; premium accrued from 2026-03-20 to the step-in date 2026-05-07 (48 days), 33,333.33 USD, received from the counterparty with the settlement', owner: 'treasury', date: '2026-05-06' },
+          { type: 'cds.accrued', summary: '33,333.33 USD carried as owed back with the next coupon', owner: 'treasury' },
+          { type: 'cds.collateral', summary: `Collateral posted on ${IG46_NAME} under "Cleared CDS account" (Meridian Clearing House): 500,000.00 USD`, cash: { USD: -500_000 }, owner: 'treasury' },
+        ],
+        cash: { treasury: { USD: { settled: 8_500_000, unsettled: -92_166.67, margin: 500_000, availableToTrade: 8_407_833.33, availableToWithdraw: 8_407_833.33 } } },
+        positions: [{ instrument: 'main', lot: 'idx', owner: 'treasury', direction: 'protection bought', qty: 25_000_000, avgCost: 0.5, cost: 125_000, price: null, value: null, unrealized: null, provisional: true, notional: 25_000_000, margin: 500_000, accrued: -33_333.33 }],
+        holdings: { main: { long: 25_000_000, short: 0, net: 25_000_000 } },
+        pending: [{ instrument: 'main', owner: 'treasury', dueDate: '2026-05-11', amount: -92_166.67, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'cds.premium', instrument: 'main', dueDate: '2026-06-22', status: 'pending' },
+          { type: 'cds.maturity', instrument: 'main', dueDate: '2031-06-20', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', lot: 'idx', owner: 'treasury', qty: 25_000_000, basis: 'agreement', agreement: 'Cleared CDS account', mark: null, iaRequired: 500_000, iaPosted: 500_000, vmPosted: 0, vmHeld: 0 }],
+        pnl: { treasury: { realized: 0, commissions: -500, unrealized: 0, total: -500 } },
+        nav: { treasury: 8_999_500, book: 9_999_500 },
+        provisional: { book: true },
+        balance: { treasury: { cash: 8_500_000, margin: 500_000, positions: 125_000, payable: 92_166.67, accruedExpense: 33_333.33, assets: 9_125_000, liabilities: 125_500, netAssets: 8_999_500 } },
+      },
+    }),
+    { id: 'treasury-screens-after-the-trade', covers: 'owner screens', action: 'owner_screens', owner: 'treasury', expect: {} },
+    {
+      id: 'mark-at-trade', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 0.50, note: 'Clearing house settlement price per 100, entered by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'idx', price: 0.5, value: 125_000, unrealized: 0, provisional: false, priceSource: 'Manual entry' }],
+        otc: [{ instrument: 'main', mark: 0.5, markValue: 125_000 }],
+        provisional: { book: false },
+      },
+    },
+    {
+      id: 'variation-margin-received', covers: 'variation margin', action: 'clock', to: eod('2026-05-06'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under "Cleared CDS account" (Meridian Clearing House): 125,000.00 USD received.', owner: 'treasury', date: '2026-05-06' }],
+        cash: { treasury: { USD: { restricted: 125_000 } } },
+        otc: [{ instrument: 'main', vmHeld: 125_000, vmExposure: 125_000, vmStatus: 'ok' }],
+        balance: { treasury: { restricted: 125_000, collateralReceived: 125_000, assets: 9_250_000, liabilities: 250_500 } },
+      },
+    },
+    { id: 'thursday', action: 'clock', to: at('2026-05-07'), expect: {} },
+    {
+      id: 'mark-wider', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 0.55, note: 'Clearing house settlement price per 100, entered by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'idx', price: 0.55, value: 137_500, unrealized: 12_500 }],
+        otc: [{ instrument: 'main', mark: 0.55, markValue: 137_500 }],
+        pnl: { treasury: { unrealized: 12_500, total: 12_000 } },
+        nav: { treasury: 9_012_000, book: 10_012_000 },
+        balance: { treasury: { positions: 137_500, assets: 9_262_500, netAssets: 9_012_000 } },
+      },
+    },
+    {
+      id: 'variation-margin-topped-up', covers: 'variation margin', action: 'clock', to: eod('2026-05-07'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under "Cleared CDS account" (Meridian Clearing House): 12,500.00 USD received.', owner: 'treasury' }],
+        cash: { treasury: { USD: { restricted: 137_500 } } },
+        otc: [{ instrument: 'main', vmHeld: 137_500, vmExposure: 137_500 }],
+        balance: { treasury: { restricted: 137_500, collateralReceived: 137_500, assets: 9_275_000, liabilities: 263_000 } },
+      },
+    },
+    {
+      id: 'settle-upfront', covers: 'settlement', action: 'clock', to: at('2026-05-11'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 92,166.67 USD from settled cash', cash: { USD: -92_166.67 }, owner: 'treasury', date: '2026-05-11' }],
+        cash: { treasury: { USD: { settled: 8_407_833.33, unsettled: 0, availableToTrade: 8_407_833.33, availableToWithdraw: 8_407_833.33 } } },
+        pending: [],
+        balance: { treasury: { cash: 8_407_833.33, payable: null, assets: 9_182_833.33, liabilities: 170_833.33 } },
+      },
+    },
+    { id: 'auction-day', action: 'clock', to: at('2026-06-15'), expect: {} },
+    {
+      id: 'constituent-fails-to-pay', covers: ['credit event', 'index factor', 'cash settlement', 'collateral'], action: 'instrument_lifecycle', instrument: 'main',
+      body: { action: 'credit_event', eventType: 'failure_to_pay', eventDate: '2026-06-10', recovery: 0.30, entity: 'Brightwater Paper Co.', weight: 0.008, settlement: 'auction', settleDate: '2026-06-18' },
+      expect: {
+        events: [
+          { type: 'cds.credit_event', summary: 'Failure to pay of Brightwater Paper Co. on 2026-06-10 recorded by hand for MCXIG-S46, auction final price 30.000%; index factor 1 to 0.992; protection 140,000.00 USD (200,000.00 USD x 70.000%); accrued premium 461.11 USD; receivable 139,538.89 USD on 2026-06-18', owner: 'treasury', date: '2026-06-15' },
+          { type: 'cds.collateral', summary: `Collateral returned on ${IG46_NAME} under "Cleared CDS account" (Meridian Clearing House): 4,000.00 USD`, cash: { USD: 4_000 }, owner: 'treasury' },
+        ],
+        cash: { treasury: { USD: { settled: 8_411_833.33, unsettled: 139_538.89, margin: 496_000, availableToTrade: 8_551_372.22, availableToWithdraw: 8_411_833.33 } } },
+        positions: [{ instrument: 'main', lot: 'idx', qty: 25_000_000, cost: 124_000, avgCost: 0.5, // 124,000 / (24,800,000 / 100)
+          price: 0.55, value: 136_400, unrealized: 12_400, notional: 24_800_000, margin: 496_000, accrued: -33_066.66 }], // 24,800,000 x 0.55 / 100; 33,333.33 - 266.67
+        pending: [{ instrument: 'main', owner: 'treasury', dueDate: '2026-06-18', amount: 139_538.89, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'main', markValue: 136_400, iaRequired: 496_000, iaPosted: 496_000 }],
+        pnl: { treasury: { realized: 138_805.56, unrealized: 12_400, total: 150_705.56 } },
+        nav: { treasury: 9_150_705.56, book: 10_150_705.56 },
+        balance: { treasury: { cash: 8_411_833.33, margin: 496_000, receivable: 139_538.89, positions: 136_400, accruedExpense: 33_066.66, assets: 9_321_272.22, liabilities: 170_566.66, netAssets: 9_150_705.56 } },
+      },
+    },
+    {
+      id: 'variation-margin-on-the-smaller-index', covers: 'variation margin', action: 'clock', to: eod('2026-06-15'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under "Cleared CDS account" (Meridian Clearing House): 1,100.00 USD returned to the counterparty.' }], // 137,500 - 136,400
+        cash: { treasury: { USD: { restricted: 136_400 } } },
+        otc: [{ instrument: 'main', vmHeld: 136_400, vmExposure: 136_400 }],
+        balance: { treasury: { restricted: 136_400, collateralReceived: 136_400, assets: 9_320_172.22, liabilities: 169_466.66 } },
+      },
+    },
+    {
+      id: 'auction-settlement', covers: 'settlement', action: 'clock', to: at('2026-06-18'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 139,538.89 USD into settled cash', cash: { USD: 139_538.89 } }],
+        cash: { treasury: { USD: { settled: 8_551_372.22, unsettled: 0, availableToTrade: 8_551_372.22, availableToWithdraw: 8_551_372.22 } } },
+        pending: [],
+        balance: { treasury: { cash: 8_551_372.22, receivable: null } },
+      },
+    },
+    {
+      id: 'coupon-on-the-smaller-index', covers: ['premium', 'index factor'], action: 'clock', to: at('2026-06-22'),
+      expect: {
+        events: [{ type: 'cds.premium', summary: `CDS premium paid on ${IG46_NAME} for 2026-03-20 to 2026-06-21 included (94 days on 24,800,000.00 USD): 64,755.56 USD; the accrued premium of 33,066.66 USD exchanged at trade is settled with it`, cash: { USD: -64_755.56 }, owner: 'treasury' }],
+        cash: { treasury: { USD: { settled: 8_486_616.66, availableToTrade: 8_486_616.66, availableToWithdraw: 8_486_616.66 } } },
+        positions: [{ instrument: 'main', lot: 'idx', accrued: 0 }],
+        lifecycle: [
+          { type: 'cds.premium', instrument: 'main', dueDate: '2026-09-21', status: 'pending' },
+          { type: 'cds.maturity', instrument: 'main', dueDate: '2031-06-20', status: 'pending' },
+        ],
+        pnl: { treasury: { realized: 107_116.66, total: 119_016.66 } }, // 138,805.56 - 31,688.90
+        nav: { treasury: 9_119_016.66, book: 10_119_016.66 },
+        balance: { treasury: { cash: 8_486_616.66, accruedExpense: null, assets: 9_255_416.66, liabilities: 136_400, netAssets: 9_119_016.66 } },
+      },
+    },
+    {
+      id: 'september-coupon', covers: 'premium', action: 'clock', to: at('2026-09-21'),
+      expect: {
+        events: [{ type: 'cds.premium', summary: `CDS premium paid on ${IG46_NAME} for 2026-06-22 to 2026-09-20 included (91 days on 24,800,000.00 USD): 62,688.89 USD`, cash: { USD: -62_688.89 } }],
+        cash: { treasury: { USD: { settled: 8_423_927.77, availableToTrade: 8_423_927.77, availableToWithdraw: 8_423_927.77 } } },
+        lifecycle: [
+          { type: 'cds.premium', instrument: 'main', dueDate: '2026-12-21', status: 'pending' },
+          { type: 'cds.maturity', instrument: 'main', dueDate: '2031-06-20', status: 'pending' },
+        ],
+        pnl: { treasury: { realized: 44_427.77, total: 56_327.77 } },
+        nav: { treasury: 9_056_327.77, book: 10_056_327.77 },
+        balance: { treasury: { cash: 8_423_927.77, assets: 9_192_727.77, netAssets: 9_056_327.77 } },
+      },
+    },
+    { id: 'roll-day', action: 'clock', to: at('2026-09-22'), expect: {} },
+    {
+      id: 'mark-series-46', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 0.60, note: 'Clearing house settlement price per 100, entered by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'idx', price: 0.6, value: 148_800, unrealized: 24_800 }], // 24,800,000 x 0.60 / 100
+        otc: [{ instrument: 'main', mark: 0.6, markValue: 148_800 }],
+        pnl: { treasury: { unrealized: 24_800, total: 68_727.77 } },
+        nav: { treasury: 9_068_727.77, book: 10_068_727.77 },
+        balance: { treasury: { positions: 148_800, assets: 9_205_127.77, netAssets: 9_068_727.77 } },
+      },
+    },
+    { id: 'mark-series-47', covers: 'manual mark', action: 'manual_price', instrument: 's47', value: 0.95, note: 'Clearing house settlement price per 100, entered by hand', expect: {} },
+    {
+      // One package: Series 46 terminated at its mark, the 24,800,000 outstanding entered in Series 47 at its mark.
+      id: 'roll-into-series-47', covers: ['roll', 'close', 'open', 'accrued at trade', 'collateral'], action: 'roll', lot: 'idx', into: 's47',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [
+            { kind: 'trade', action: 'sell', instrument: 'main', qty: 25_000_000, estimate: 0.6, model: 'manual-mark', priceSource: 'Manual entry', settleDate: '2026-09-25', cash: 147_422.22, accrued: -1_377.78, fees: 500, notional: 24_800_000 }, // 148,800 - 1,377.78
+            { kind: 'trade', action: 'buy', instrument: 's47', qty: 24_800_000, estimate: 0.95, model: 'manual-mark', priceSource: 'Manual entry', settleDate: '2026-09-25', cash: -234_222.22, accrued: -1_377.78, fees: 496, notional: 24_800_000 }, // -235,600 + 1,377.78
+          ],
+        },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 25_000_000, avgPrice: 0.6 }, { action: 'buy', status: 'filled', filledQty: 24_800_000, avgPrice: 0.95 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 25,000,000 MCXIG-S46 @ 0.60 USD (realized 24,800.00 USD); premium accrued from 2026-09-21 to the step-in date 2026-09-23 (2 days), 1,377.78 USD, paid to the counterparty with the settlement', owner: 'treasury' },
+          { type: 'cds.accrued', summary: 'Premium accrued on the 25,000,000 terminated on MCXIG-S46, 1,377.78 USD, paid with the termination: realized as premium for the time it was held' },
+          { type: 'cds.collateral', summary: `Collateral returned on ${IG46_NAME} under "Cleared CDS account" (Meridian Clearing House): 496,000.00 USD`, cash: { USD: 496_000 } },
+          { type: 'collateral.variation', summary: 'Variation margin under "Cleared CDS account" (Meridian Clearing House): 136,400.00 USD returned to the counterparty. The last position of the netting set ended.' },
+          { type: 'trade.fill', summary: 'Bought 24,800,000 MCXIG-S47 @ 0.95 USD; premium accrued from 2026-09-21 to the step-in date 2026-09-23 (2 days), 1,377.78 USD, received from the counterparty with the settlement' },
+          { type: 'cds.accrued', summary: '1,377.78 USD carried as owed back with the next coupon' },
+          { type: 'cds.collateral', summary: `Collateral posted on ${IG47_NAME} under "Cleared CDS account" (Meridian Clearing House): 496,000.00 USD`, cash: { USD: -496_000 } },
+        ],
+        // Available to withdraw counts the payable but not the receivable: 8,423,927.77 - 234,718.22.
+        cash: { treasury: { USD: { settled: 8_423_927.77, unsettled: -87_796, restricted: 0, margin: 496_000, availableToTrade: 8_336_131.77, availableToWithdraw: 8_189_209.55 } } }, // 146,922.22 - 234,718.22
+        positions: [{ instrument: 's47', lot: 'idx', owner: 'treasury', direction: 'protection bought', qty: 24_800_000, avgCost: 0.95, cost: 235_600, price: 0.95, value: 235_600, unrealized: 0, provisional: false, notional: 24_800_000, margin: 496_000, accrued: -1_377.78 }],
+        holdings: { main: null, s47: { long: 24_800_000, short: 0, net: 24_800_000 } },
+        pending: [
+          { instrument: 'main', owner: 'treasury', dueDate: '2026-09-25', amount: 146_922.22, ccy: 'USD', into: 'cash' },
+          { instrument: 's47', owner: 'treasury', dueDate: '2026-09-25', amount: -234_718.22, ccy: 'USD', into: 'cash' },
+        ],
+        lifecycle: [
+          { type: 'cds.premium', instrument: 's47', dueDate: '2026-12-21', status: 'pending' },
+          { type: 'cds.maturity', instrument: 's47', dueDate: '2031-12-22', status: 'pending' }, // 20 December 2031 is a Saturday
+        ],
+        otc: [{ instrument: 's47', lot: 'idx', owner: 'treasury', qty: 24_800_000, basis: 'agreement', mark: 0.95, markValue: 235_600, iaRequired: 496_000, iaPosted: 496_000, vmHeld: 0 }],
+        pnl: { treasury: { realized: 67_849.99, commissions: -1_496, unrealized: 0, total: 66_353.99 } }, // 44,427.77 + 24,800 - 1,377.78
+        nav: { treasury: 9_066_353.99, book: 10_066_353.99 },
+        balance: { treasury: { cash: 8_423_927.77, margin: 496_000, restricted: null, collateralReceived: null, receivable: 146_922.22, payable: 234_718.22, positions: 235_600, accruedExpense: 1_377.78, assets: 9_302_449.99, liabilities: 236_096, netAssets: 9_066_353.99 } },
+      },
+    },
+    {
+      id: 'variation-margin-on-series-47', covers: 'variation margin', action: 'clock', to: eod('2026-09-22'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under "Cleared CDS account" (Meridian Clearing House): 235,600.00 USD received.' }],
+        cash: { treasury: { USD: { restricted: 235_600 } } },
+        otc: [{ instrument: 's47', vmHeld: 235_600, vmExposure: 235_600 }],
+        balance: { treasury: { restricted: 235_600, collateralReceived: 235_600, assets: 9_538_049.99, liabilities: 471_696 } },
+      },
+    },
+    {
+      id: 'settle-roll', covers: 'settlement', action: 'clock', to: at('2026-09-25'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 146,922.22 USD into settled cash', cash: { USD: 146_922.22 } },
+          { type: 'settlement.pay', summary: 'paid 234,718.22 USD from settled cash', cash: { USD: -234_718.22 } },
+        ],
+        cash: { treasury: { USD: { settled: 8_336_131.77, unsettled: 0, availableToTrade: 8_336_131.77, availableToWithdraw: 8_336_131.77 } } },
+        pending: [],
+        balance: { treasury: { cash: 8_336_131.77, receivable: null, payable: null, assets: 9_303_331.77, liabilities: 236_977.78 } },
+      },
+    },
+    { id: 'mid-october', action: 'clock', to: at('2026-10-15'), expect: {} },
+    {
+      id: 'mark-series-47-lower', covers: 'manual mark', action: 'manual_price', instrument: 's47', value: 0.80, note: 'Clearing house settlement price per 100, entered by hand',
+      expect: {
+        positions: [{ instrument: 's47', lot: 'idx', price: 0.8, value: 198_400, unrealized: -37_200 }],
+        otc: [{ instrument: 's47', mark: 0.8, markValue: 198_400 }],
+        pnl: { treasury: { unrealized: -37_200, total: 29_153.99 } },
+        nav: { treasury: 9_029_153.99, book: 10_029_153.99 },
+        balance: { treasury: { positions: 198_400, assets: 9_266_131.77, netAssets: 9_029_153.99 } },
+      },
+    },
+    {
+      // 198,400.00 received against 235,600.00 of cost: realized -37,200.00; accrued 25 days paid, 17,222.22, realized; the
+      // 1,377.78 carried from the roll is income for the time held. Settles Tue 20 October.
+      id: 'terminate-series-47', covers: ['close', 'full termination', 'accrued at trade', 'collateral'], action: 'close', lot: 'idx', instrument: 's47', owner: 'treasury', scope: 'position', percent: 100, order: { statedPrice: 0.80 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 's47', qty: 24_800_000, estimate: 0.8, model: 'stated-price', settleDate: '2026-10-20', cash: 181_177.78, accrued: -17_222.22, fees: 496 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 24_800_000, avgPrice: 0.8 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 24,800,000 MCXIG-S47 @ 0.80 USD (realized -37,200.00 USD); premium accrued from 2026-09-21 to the step-in date 2026-10-16 (25 days), 17,222.22 USD, paid to the counterparty with the settlement', owner: 'treasury' },
+          { type: 'cds.accrued', summary: 'Premium accrued on the 24,800,000 terminated on MCXIG-S47, 17,222.22 USD, paid with the termination' },
+          { type: 'cds.accrued', summary: 'Accrued premium on MCXIG-S47 settled with the termination: 1,377.78 USD premium income for the time held' },
+          { type: 'cds.collateral', summary: `Collateral returned on ${IG47_NAME} under "Cleared CDS account" (Meridian Clearing House): 496,000.00 USD`, cash: { USD: 496_000 } },
+          { type: 'collateral.variation', summary: 'Variation margin under "Cleared CDS account" (Meridian Clearing House): 235,600.00 USD returned to the counterparty. The last position of the netting set ended.' },
+        ],
+        cash: { treasury: { USD: { settled: 8_832_131.77, unsettled: 180_681.78, margin: 0, restricted: 0, availableToTrade: 9_012_813.55, availableToWithdraw: 8_832_131.77 } } },
+        positions: [], holdings: { s47: null }, lifecycle: [], otc: [],
+        pending: [{ instrument: 's47', owner: 'treasury', dueDate: '2026-10-20', amount: 180_681.78, ccy: 'USD', into: 'cash' }],
+        pnl: { treasury: { realized: 14_805.55, commissions: -1_992, unrealized: 0, total: 12_813.55 } }, // 67,849.99 - 37,200 - 17,222.22 + 1,377.78
+        nav: { treasury: 9_012_813.55, book: 10_012_813.55 },
+        balance: { treasury: { cash: 8_832_131.77, margin: null, restricted: null, collateralReceived: null, positions: null, accruedExpense: null, receivable: 180_681.78, assets: 9_012_813.55, liabilities: 0, netAssets: 9_012_813.55 } },
+      },
+    },
+    {
+      // -92,166.67 + 139,538.89 - 64,755.56 - 62,688.89 + 146,922.22 - 234,718.22 + 180,681.78 = +12,813.55 on 9,000,000.
+      id: 'settle-termination', covers: ['settlement', 'close'], action: 'clock', to: at('2026-10-20'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 180,681.78 USD into settled cash', cash: { USD: 180_681.78 } }],
+        cash: { treasury: { USD: { settled: 9_012_813.55, unsettled: 0, availableToTrade: 9_012_813.55, availableToWithdraw: 9_012_813.55 } } },
+        pending: [], lifecycle: [], otc: [], alerts: [],
+        balance: { treasury: { cash: 9_012_813.55, receivable: null } },
+      },
+    },
+    { id: 'treasury-screens-at-the-end', covers: 'owner screens', action: 'owner_screens', owner: 'treasury', expect: {} },
+  ],
+};
+
+export default [cdsSingleName, cdsSovereign, cdsIndex];

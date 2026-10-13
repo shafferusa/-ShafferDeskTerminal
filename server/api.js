@@ -437,6 +437,8 @@ export function createApi(app) {
     const out = db.tx(() => {
       switch (body.action) {
         case 'credit_event': {
+          // b4: a credit-linked note's reference entity (server/products/bond.js, creditEvent).
+          if (inst.family === 'bond') return plugin.manualEvent(app, { inst, action: 'credit_event', body });
           need(plugin.creditEvent, 'A credit event applies to credit default swaps.');
           // s3: the event's type, date, settlement method, defaulted name (basket, index) and settlement date are passed on.
           const ce = plugin.creditEvent(app, { inst, recovery: body.recovery, weight: body.weight, eventType: body.eventType, eventDate: body.eventDate, settlement: body.settlement, entity: body.entity, settleDate: body.settleDate, note: body.note });

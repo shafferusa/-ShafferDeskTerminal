@@ -709,6 +709,14 @@ function LifecycleAdmin({ inst, onChanged }) {
       text: r === 0 ? `${t.seniorTranche} is retired, recorded by hand. ${name} receives principal from now on: record its own factor as a paydown. No cash moves now; every holder gets a history line.`
         : `${t.seniorTranche} has ${fmtNum(r, 0)} outstanding (was ${fmtNum(t.seniorRemaining, 0)}), recorded by hand. ${name} still receives no principal: its paydowns stay refused until ${t.seniorTranche} is retired. No cash moves; every holder gets a history line.` };
   };
+  // b4: the credit event of a credit-linked note's reference entity.
+  const clnCreditEvent = () => {
+    const R = v.clnRecovery;
+    if (!isNum(R) || R < 0 || R > 1) return { invalid: 'Enter the recovery as a decimal from 0 to 1 (0.38 = 38% of par), from the auction or the calculation agent.' };
+    const d = v.clnSettle || '';
+    return { action: 'credit_event', body: { recovery: R, settleDate: d || undefined }, confirm: 'Record credit event', done: 'Credit event recorded.',
+      text: `A credit event of ${t.referenceEntity}, recorded by hand. For every holder of ${name}, in every Book: the coupon ends (interest ceases from the last coupon date, so the interest accrued since it is forfeited), and principal is reduced to the recovery and settled at ${fmtNum(R * 100, 2)}% of par${d ? `, receivable until ${d}` : ' today'}. The difference from each position's cost is realized, and the notes can no longer be traded.` };
+  };
   // b4: a coupon of a deferrable tranche or a PIK-toggle loan, elected to be paid in kind.
   const pik = () => {
     const d = v.pikDate || '';
@@ -742,6 +750,11 @@ function LifecycleAdmin({ inst, onChanged }) {
       <${Field} label="Kind of write-down"><${Select} value=${v.wdKind || (inst.productId === 'coco_bond' ? 'writedown' : 'loss')} onChange=${(x) => { setV({ ...v, wdKind: x }); setStep(null); }} options=${[{ value: 'writedown', label: 'Trigger event: write-down' }, { value: 'loss', label: 'Realized loss allocated' }]} /><//>
       <${Field} label="Write-down effective from" hint="Today if empty; for a monthly pool, the first day of the period"><${Text} type="date" value=${v.wdFrom || ''} onInput=${(x) => { setV({ ...v, wdFrom: x }); setStep(null); }} /><//>
       ${button('Review write-down', writeDown)}</div>` : null}
+    ${inst.family === 'bond' && t.referenceEntity && !t.creditEvent ? html`<div class="grid-form" style=${GRID}>
+      <${Field} label="Recovery rate (decimal)" hint=${`Credit event of ${t.referenceEntity}: the final price from the auction, 0.38 = 38% of par. Not assumed.`}><${Num} value=${v.clnRecovery ?? null} onInput=${(x) => { setV({ ...v, clnRecovery: x }); setStep(null); }} /><//>
+      <${Field} label="Recovery settles on" hint="The auction settlement date. Today if empty."><${Text} type="date" value=${v.clnSettle || ''} onInput=${(x) => { setV({ ...v, clnSettle: x }); setStep(null); }} /><//>
+      ${button('Review credit event', clnCreditEvent)}</div>` : null}
+    ${inst.family === 'bond' && t.creditEvent ? html`<p class="note">Credit event of ${t.referenceEntity} recorded ${t.creditEvent.date}: settled at the recovery, ${fmtNum(t.creditEvent.recovery * 100, 2)}% of par, on ${t.creditEvent.settleDate}.</p>` : null}
     ${inst.family === 'bond' && t.pikAllowed ? html`<div class="grid-form" style=${GRID}>
       <${Field} label="Coupon paid in kind" hint=${`Deferrable: the coupon date to capitalise. The next coupon if empty.${t.pikCoupons?.length ? ` Paid in kind so far: ${t.pikCoupons.join(', ')}.` : ''}`}><${Text} type="date" value=${v.pikDate || ''} onInput=${(x) => { setV({ ...v, pikDate: x }); setStep(null); }} /><//>
       ${button('Review coupon paid in kind', pik)}</div>` : null}

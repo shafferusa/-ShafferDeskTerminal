@@ -1664,4 +1664,221 @@ const bondTrs = {
   ],
 };
 
-export default [amortizingSwap, accretingSwap, equitySwap, equityIndexSwap, equityTrs, bondTrs];
+// ---------------------------------------------------------------------------------------------
+// index_trs
+// ---------------------------------------------------------------------------------------------
+// A six-month total-return swap on the Kestrel 100 price index: receive the index price return each quarter and every
+// dividend of the index (published as index points, recorded by hand on the index as a cash dividend per index unit),
+// pay 3-month term SOFR + 0.35% ACT/360; fixed notional; both legs paid 2 business days after each reset date (US+USD).
+// Position-level collateral terms: a fixed independent amount of 300,000, no variation margin.
+//
+// The index level is carried by a reference instrument registered as an ETF (the catalog has no index product).
+//   period 1  2026-10-01 to 2027-01-01  92 days  Friday 1 January is New Year's Day: the fixing is Thursday 31 December's close
+//             index 2,400.00 to 2,460.00 (+2.5%)   TSFR3M 3.80%   paid Tuesday 5 January
+//   period 2  2027-01-01 to 2027-04-01  (terminated in full on 4 March)
+//   dividends 6.40 index points ex 12 November 2026: reference units 6,000,000 / 2,400 = 2,500
+//             4.10 index points ex 11 February 2027: reference units 3,000,000 / 2,460 (the second period starts from 2,460)
+const K100 = { productId: 'etf', name: 'Kestrel 100 Index (reference level)', symbol: 'K100', marketView: 'US_CASH', venue: 'Kestrel Indices', venueType: 'exchange', venueCountry: 'US', issuer: 'Kestrel Indices LLC', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', terms: {} };
+const ITRS_NAME = 'Index TRS K100 total return v TSFR3M + 0.35% 1 Apr 2027';
+const indexTrs = {
+  productId: 'index_trs',
+  title: 'Six-month index total-return swap on the Kestrel 100: receive the price return and the index dividends, pay term SOFR + 0.35%, terminated early',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'return leg: Reference asset (the index level), Options "Total return (pass income through)"', 'financing leg: Index, Spread, Day count', 'both legs: Payment lag (business days) 2'],
+    automaticInputs: ['reset and payment schedule on the US+USD calendar', 'index closes for the reset dates (close fixture standing in for Shaffer MarketData)', 'TSFR3M fixings (rate fixture)', 'index dividends passed through: reference units from the start fixing of the period containing the ex-date', 'settlement date, T+2', 'commission from the Book fee schedule', 'independent amount from the position-level terms'],
+    manualInputs: ['the index level, registered as a reference instrument because the catalog has no index product', 'each index dividend (index points), recorded by hand on the index as a cash dividend', 'settlement amounts of the partial and full terminations (stated fill prices)', 'mark of the contract, entered by hand'],
+    settlement: 'Upfront and termination amounts and commission settle T+2 on the US+USD calendar; leg payments are cash on their payment date; index dividends pass through on their ex-date',
+    lifecycle: 'Index dividends passed through in each period (from that period\'s start fixing); a reset on New Year\'s Day takes the last business day\'s close and is paid after it; partial termination; full termination before maturity; nothing paid or scheduled afterwards',
+    accounting: 'Carried at the mark; return, financing, dividends passed through and termination results are realized P&L; commission expensed',
+    collateral: 'Position-level terms: fixed independent amount 300,000 (posted at entry, unchanged by the partial termination, returned on the full termination); no variation margin',
+  },
+  start: at('2026-09-29'),
+  settlementCheck: { lag: 2, holidays: [] }, // no NASDAQ or Federal Reserve holiday in the windows used (29 September to 1 October, 3 to 7 December 2026, 4 to 8 March 2027)
+  book: bookOf('Matrix index TRS', 'Index desk', 'USD', 4_000_000, 1_500_000, { perUnit: 0.00003, minimum: 0, bps: 0 }, { equity: NO_FEE }), // 30.00 per million of notional
+  instruments: {
+    index: K100,
+    main: {
+      productId: 'index_trs', name: ITRS_NAME, symbol: 'ITRS-K100-0427', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { tradingCalendar: 'US', settlementCalendar: 'US+USD', paymentCalendar: 'US+USD' },
+      terms: {
+        effective: '2026-10-01', maturity: '2027-04-01', counterparty: 'Dealer T',
+        collateralBasis: { type: 'position', independentAmount: { type: 'fixed', amount: 300_000 }, variationMargin: false },
+        legs: [
+          { side: 'receive', type: 'return', ccy: 'USD', months: 3, underlyingId: '$inst:index', passDividends: true, resetNotional: false, paymentLag: 2 },
+          { side: 'pay', type: 'float', ccy: 'USD', index: 'TSFR3M', spread: 0.0035, months: 3, dayCount: 'ACT/360', paymentLag: 2 },
+        ],
+      },
+    },
+  },
+  rates: { TSFR3M: { byDate: { '2026-10-01': 3.80 } } },
+  expectAtStart: startOf('USD', 4_000_000, 1_500_000),
+  steps: [
+    {
+      // 6,000,000 as written, no upfront. Commission 6,000,000 x 0.00003 = 180, settling Thursday 1 October. Independent amount 300,000.
+      id: 'open', covers: ['open', 'collateral'], action: 'ticket', instrument: 'main', side: 'buy', qty: 6_000_000, as: 'itrs', order: { statedPrice: 0 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 6_000_000, estimate: 0, model: 'stated-price', settleDate: '2026-10-01', cash: 0, fees: 180 }],
+          cash: { USD: { purchases: 0, fees: 180, margin: 300_000, required: 300_180, available: 1_500_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 6_000_000, avgPrice: 0, fills: [{ qty: 6_000_000, price: 0, model: 'stated-price', settleDate: '2026-10-01' }] }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Entered as written: 6,000,000 notional of ITRS-K100-0427 at 0.00 per 100 notional', owner: 'account', date: '2026-09-29' },
+          { type: 'swap.collateral', summary: `Collateral posted on ${ITRS_NAME} under its position-level terms: 300,000.00 USD (independent amount, fixed amount for the position)`, cash: { USD: -300_000 }, owner: 'account' },
+        ],
+        cash: { account: { USD: { settled: 1_200_000, unsettled: -180, margin: 300_000, restricted: 0, availableToTrade: 1_199_820, availableToWithdraw: 1_199_820 } } },
+        positions: [{ instrument: 'main', lot: 'itrs', owner: 'account', direction: 'as written', qty: 6_000_000, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, notional: 6_000_000, margin: 300_000 }],
+        holdings: { main: { long: 6_000_000, short: 0, net: 6_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-10-01', amount: -180, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-01-05', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-01-05', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-04-05', status: 'pending' }, // 1 April + 2 business days
+        ],
+        otc: [{ instrument: 'main', lot: 'itrs', owner: 'account', qty: 6_000_000, basis: 'position', mark: null, iaRequired: 300_000, iaPosted: 300_000, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: -180, unrealized: 0, total: -180 } },
+        nav: { account: 1_499_820, book: 3_999_820 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 1_200_000, margin: 300_000, payable: 180, positions: null, assets: 1_500_000, liabilities: 180, netAssets: 1_499_820 } },
+      },
+    },
+    {
+      id: 'settle-commission', covers: 'settlement', action: 'clock', to: at('2026-10-01'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 180.00 USD from settled cash', cash: { USD: -180 }, date: '2026-10-01' }],
+        cash: { account: { USD: { settled: 1_199_820, unsettled: 0, availableToTrade: 1_199_820, availableToWithdraw: 1_199_820 } } },
+        pending: [],
+        balance: { account: { cash: 1_199_820, payable: null, assets: 1_499_820, liabilities: 0 } },
+      },
+    },
+    { id: 'start-level', covers: 'reset fixing', action: 'close_price', instrument: 'index', date: '2026-10-01', value: 2_400, expect: {} },
+    {
+      // 6,000,000 x 0.50 / 100 = 30,000.
+      id: 'mark', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 0.50, note: 'Dealer mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'itrs', price: 0.5, value: 30_000, unrealized: 30_000, provisional: false, priceSource: 'Manual entry', priceStatus: 'manual' }],
+        otc: [{ instrument: 'main', mark: 0.5, markValue: 30_000 }],
+        pnl: { account: { unrealized: 30_000, total: 29_820 } },
+        nav: { account: 1_529_820, book: 4_029_820 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 30_000, assets: 1_529_820, netAssets: 1_529_820 } },
+      },
+    },
+    { id: 'first-dividend-recorded', covers: 'dividend', action: 'corporate_action', instrument: 'index', type: 'cash_dividend', exDate: '2026-11-12', amount: 6.40, expect: {} },
+    {
+      // 6,000,000 / 2,400 = 2,500 reference units x 6.40 points = 16,000.00, received.
+      id: 'first-dividend-passed-through', covers: ['dividend', 'dividend pass-through'], action: 'clock', to: at('2026-11-12'),
+      expect: {
+        events: [{ type: 'swap.dividend', summary: `Dividend pass-through on ${ITRS_NAME}: received 16,000.00 USD (2,500 reference shares x 6.4)`, cash: { USD: 16_000 }, owner: 'account' }],
+        cash: { account: { USD: { settled: 1_215_820, availableToTrade: 1_215_820, availableToWithdraw: 1_215_820 } } },
+        pnl: { account: { realized: 16_000, total: 45_820 } },
+        nav: { account: 1_545_820, book: 4_045_820 },
+        balance: { account: { cash: 1_215_820, assets: 1_545_820, netAssets: 1_545_820 } },
+      },
+    },
+    { id: 'early-december', action: 'clock', to: at('2026-12-03'), expect: {} },
+    {
+      // Half (3,000,000) terminated at 0.40 per 100: 12,000 received; commission 90; realized 12,000. Settles Monday 7 December. The fixed independent amount stays.
+      id: 'partial-termination', covers: ['reduce', 'partial termination'], action: 'close', lot: 'itrs', scope: 'strategy', percent: 50, order: { statedPrice: 0.40 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 3_000_000, estimate: 0.4, model: 'stated-price', settleDate: '2026-12-07', cash: 12_000, fees: 90 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 3_000_000, avgPrice: 0.4 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Terminated in part: 3,000,000 of 6,000,000 notional of ITRS-K100-0427 at 0.40 per 100 notional (realized 12,000.00 USD)' }],
+        cash: { account: { USD: { settled: 1_215_820, unsettled: 11_910, availableToTrade: 1_227_730, availableToWithdraw: 1_215_820 } } },
+        positions: [{ instrument: 'main', lot: 'itrs', qty: 3_000_000, cost: 0, avgCost: 0, price: 0.5, value: 15_000, unrealized: 15_000, notional: 3_000_000, margin: 300_000 }],
+        holdings: { main: { long: 3_000_000, short: 0, net: 3_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-12-07', amount: 11_910, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: 3_000_000, markValue: 15_000, iaRequired: 300_000, iaPosted: 300_000 }],
+        pnl: { account: { realized: 28_000, commissions: -270, unrealized: 15_000, total: 42_730 } },
+        nav: { account: 1_542_730, book: 4_042_730 },
+        balance: { account: { cash: 1_215_820, receivable: 11_910, positions: 15_000, assets: 1_542_730, liabilities: 0, netAssets: 1_542_730 } },
+      },
+    },
+    {
+      id: 'settle-partial-termination', covers: 'settlement', action: 'clock', to: at('2026-12-07'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 11,910.00 USD into settled cash', cash: { USD: 11_910 } }],
+        cash: { account: { USD: { settled: 1_227_730, unsettled: 0, availableToTrade: 1_227_730, availableToWithdraw: 1_227_730 } } },
+        pending: [],
+        balance: { account: { cash: 1_227_730, receivable: null } },
+      },
+    },
+    // Friday 1 January ends the first period and is New Year's Day: the close of Thursday 31 December is the fixing.
+    { id: 'year-end-level', covers: 'reset fixing', action: 'close_price', instrument: 'index', date: '2026-12-31', value: 2_460, expect: {} },
+    { id: 'new-years-day', covers: 'payment across a holiday', action: 'clock', to: at('2027-01-01'), expect: { events: [] } },
+    {
+      // First period, on the 3,000,000 left:
+      //   return, received:   3,000,000 x (2,460 / 2,400 - 1) = 75,000.00
+      //   financing, paid:    3,000,000 x (3.80% + 0.35%) x 92/360 = 31,816.67
+      id: 'first-reset', covers: ['return payment', 'financing payment', 'payment across a holiday'], action: 'clock', to: at('2027-01-05'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap receipt on ${ITRS_NAME}, leg A (return), period 2026-10-01 to 2027-01-01: 75,000.00 USD`, cash: { USD: 75_000 }, owner: 'account', date: '2027-01-05' },
+          { type: 'swap.payment', summary: `Swap payment on ${ITRS_NAME}, leg B (float), period 2026-10-01 to 2027-01-01: 31,816.67 USD`, cash: { USD: -31_816.67 }, owner: 'account', date: '2027-01-05' },
+        ],
+        cash: { account: { USD: { settled: 1_270_913.33, availableToTrade: 1_270_913.33, availableToWithdraw: 1_270_913.33 } } },
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-04-05', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-04-05', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-04-05', status: 'pending' },
+        ],
+        pnl: { account: { realized: 71_183.33, total: 85_913.33 } }, // 28,000 + 75,000 - 31,816.67; then - 270 + 15,000
+        nav: { account: 1_585_913.33, book: 4_085_913.33 },
+        balance: { account: { cash: 1_270_913.33, assets: 1_585_913.33, netAssets: 1_585_913.33 } },
+      },
+    },
+    { id: 'second-dividend-recorded', covers: 'dividend', action: 'corporate_action', instrument: 'index', type: 'cash_dividend', exDate: '2027-02-11', amount: 4.10, expect: {} },
+    {
+      // In the second period the reference units are 3,000,000 / 2,460 (its start fixing): x 4.10 = 12,300,000 / 2,460 = 5,000.00, received.
+      id: 'second-dividend-passed-through', covers: ['dividend', 'dividend pass-through'], action: 'clock', to: at('2027-02-11'),
+      expect: {
+        events: [{ type: 'swap.dividend', summary: /^Dividend pass-through on Index TRS K100 total return v TSFR3M \+ 0\.35% 1 Apr 2027: received 5,000\.00 USD \(1,219\.51219512 reference shares x 4\.1\)$/, cash: { USD: 5_000 }, owner: 'account' }],
+        cash: { account: { USD: { settled: 1_275_913.33, availableToTrade: 1_275_913.33, availableToWithdraw: 1_275_913.33 } } },
+        pnl: { account: { realized: 76_183.33, total: 90_913.33 } },
+        nav: { account: 1_590_913.33, book: 4_090_913.33 },
+        balance: { account: { cash: 1_275_913.33, assets: 1_590_913.33, netAssets: 1_590_913.33 } },
+      },
+    },
+    { id: 'early-march', action: 'clock', to: at('2027-03-04'), expect: {} },
+    {
+      // The rest (3,000,000) terminated at 0.65 per 100: 19,500 received; commission 90; realized 19,500. Settles Monday 8 March.
+      // The second period's return and financing are not paid: the termination amount is all-in. The 300,000 comes back.
+      id: 'full-termination', covers: ['close', 'full termination', 'collateral'], action: 'close', lot: 'itrs', scope: 'position', percent: 100, order: { statedPrice: 0.65 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 3_000_000, estimate: 0.65, model: 'stated-price', settleDate: '2027-03-08', cash: 19_500, fees: 90 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 3_000_000, avgPrice: 0.65 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Terminated: 3,000,000 notional of ITRS-K100-0427 at 0.65 per 100 notional (realized 19,500.00 USD)' },
+          { type: 'swap.collateral', summary: `Collateral returned on ${ITRS_NAME} under its position-level terms: 300,000.00 USD (independent amount, the position ended)`, cash: { USD: 300_000 } },
+        ],
+        cash: { account: { USD: { settled: 1_575_913.33, unsettled: 19_410, margin: 0, restricted: 0, availableToTrade: 1_595_323.33, availableToWithdraw: 1_575_913.33 } } },
+        positions: [], holdings: { main: null }, lifecycle: [], otc: [],
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2027-03-08', amount: 19_410, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: 95_683.33, commissions: -360, unrealized: 0, total: 95_323.33 } },
+        nav: { account: 1_595_323.33, book: 4_095_323.33 },
+        balance: { account: { cash: 1_575_913.33, margin: null, positions: null, receivable: 19_410, assets: 1_595_323.33, liabilities: 0, netAssets: 1_595_323.33 } },
+      },
+    },
+    {
+      id: 'settle-full-termination', covers: 'settlement', action: 'clock', to: at('2027-03-08'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 19,410.00 USD into settled cash', cash: { USD: 19_410 } }],
+        cash: { account: { USD: { settled: 1_595_323.33, unsettled: 0, availableToTrade: 1_595_323.33, availableToWithdraw: 1_595_323.33 } } },
+        pending: [],
+        balance: { account: { cash: 1_595_323.33, receivable: null } },
+      },
+    },
+    {
+      // The contract's last payment date: nothing is paid, posted or scheduled.
+      // 1,500,000 - 180 + 16,000 + 12,000 - 90 + 75,000 - 31,816.67 + 5,000 + 19,500 - 90 = 1,595,323.33.
+      id: 'nothing-left-at-maturity', covers: 'close', action: 'clock', to: at('2027-04-05'),
+      expect: { events: [], lifecycle: [], positions: [], pending: [], otc: [], alerts: [], cash: { account: { USD: { settled: 1_595_323.33, margin: 0, restricted: 0 } }, treasury: { USD: { settled: 2_500_000 } } }, nav: { account: 1_595_323.33, treasury: 2_500_000, book: 4_095_323.33 } },
+    },
+  ],
+};
+
+export default [amortizingSwap, accretingSwap, equitySwap, equityIndexSwap, equityTrs, bondTrs, indexTrs];

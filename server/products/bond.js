@@ -247,6 +247,11 @@ export const bond = {
       else if (t.couponType === 'zero') errors.push('A servicing fee is deducted from interest: a zero-coupon instrument has none to deduct it from.');
       else if (t.couponType === 'fixed' && !(t.servicingFeeRate < t.couponRate)) errors.push('The servicing fee must be below the gross coupon rate it is deducted from.');
     }
+    // b4: a credit-linked note pays its coupon and principal unless its reference entity has a credit event: the entity is part of
+    // what the note is.
+    if (typeof t.referenceEntity === 'string') t.referenceEntity = t.referenceEntity.trim();
+    if (!t.referenceEntity) delete t.referenceEntity;
+    if (draft.productId === 'credit_linked_note' && !t.referenceEntity) errors.push('A credit-linked note needs its reference entity: the company or sovereign whose credit event ends the coupon and reduces principal to the recovery.');
     // b4: a deferrable tranche (a CLO or CDO mezzanine class, a PIK-toggle loan): a coupon may be paid in kind, capitalised into
     // principal instead of paid in cash. The election is recorded by hand for each coupon (manual event 'pik').
     t.pikAllowed = Boolean(t.pikAllowed);
@@ -290,6 +295,7 @@ export const bond = {
     if (t.paymentDelayDays) rows.push(['Payment delay', `${t.paymentDelayDays} days after each accrual period ends`]);
     if (t.guarantor) rows.push(['Guarantor', `${t.guarantor} (principal and interest guaranteed; no loss allocation)`]);
     if (t.poolCharacteristics) rows.push(['Pool characteristics', `${t.poolCharacteristics} (stated at registration)`]);
+    if (t.referenceEntity) rows.push(['Reference entity', t.creditEvent ? `${t.referenceEntity}: credit event recorded ${t.creditEvent.date}, principal settled at the recovery ${fmtPx(t.creditEvent.recovery * 100)}% of par on ${t.creditEvent.settleDate}; coupons ended` : `${t.referenceEntity} (a credit event, recorded by hand, ends the coupon and settles principal at the recovery)`]);
     if (t.pikAllowed) rows.push(['Interest deferral', `Deferrable: a coupon may be paid in kind (capitalised into principal), elected by hand for each coupon${t.pikCoupons?.length ? `; paid in kind: ${t.pikCoupons.join(', ')}` : ''}`]);
     if (t.seniorTranche) rows.push(['Priority', `Sequential: principal only after ${t.seniorTranche} (stated balance ${fmtQty(t.seniorBalance)}) is retired; ${t.seniorRemaining > 0 ? `${fmtQty(t.seniorRemaining)} of it outstanding, as last recorded by hand` : `retired${t.seniorRetiredOn ? ` (recorded ${t.seniorRetiredOn})` : ''}: this tranche now receives principal`}`]);
     if (t.servicingFeeRate) rows.push(['Servicing fee', `${(t.servicingFeeRate * 100).toFixed(3)}% a year, deducted from interest before holders are paid${t.couponType === 'fixed' ? `: net coupon ${((t.couponRate - t.servicingFeeRate) * 100).toFixed(3)}%` : ''}`]);
@@ -311,6 +317,8 @@ export const bond = {
     if (inst.terms?.couponType === 'float' && settleDate && !inst.terms.couponSuspended && bond.accruedAmount(inst, 1, settleDate) === null) {
       return { code: 'no_fixing', message: `${inst.symbol || inst.name} has no ${inst.terms.referenceRate} fixing for its current coupon period, so the accrued interest of this trade cannot be computed. Supply or enter the fixing (Data connection, Manual entries) first.` };
     }
+    // b4: a credit-linked note after its reference entity's credit event: principal was settled at the recovery.
+    if (inst.terms?.creditEvent) return { code: 'credit_event', message: `${inst.symbol || inst.name}: a credit event of ${inst.terms.referenceEntity} was recorded on ${inst.terms.creditEvent.date}; the notes were settled at the recovery (${fmtPx(inst.terms.creditEvent.recovery * 100)}% of par) and can no longer be traded.` };
     // Called in full by the issuer (recorded by hand): nothing is outstanding to trade.
     if (inst.terms?.calledOn) return { code: 'called', message: `${inst.symbol || inst.name} was called by the issuer and redeemed in full on ${inst.terms.calledOn}. It can no longer be traded.` };
     const m = inst.terms?.perpetual ? null : inst.terms?.maturity;
@@ -559,6 +567,7 @@ export const bond = {
     if (action === 'writedown') return bond.writeDown(app, { inst, newFactor: body.newFactor, effective: body.effective, kind: body.kind, note: body.note });
     if (action === 'senior_balance') return bond.recordSeniorBalance(app, { inst, remaining: body.remaining, note: body.note });
     if (action === 'pik') return bond.electPik(app, { inst, couponDate: body.couponDate, note: body.note });
+    if (action === 'credit_event') return bond.creditEvent(app, { inst, recovery: body.recovery, settleDate: body.settleDate, note: body.note });
     throw new AppError(`Unknown debt-security event "${action}".`);
   },
   /** Position-level events recorded by hand (POST /api/positions/:id/lifecycle). */
@@ -799,6 +808,45 @@ export const bond = {
    *                     principal was scheduled and how much was prepaid (and the single monthly mortality, SMM).
    */
   /**
+   * Credit event of a credit-linked note's reference entity, recorded by hand (b4). The rule the Terminal applies, for every holder
+   * in every Book:
+   *   - the coupon ends: interest ceases from the last coupon date, so the interest accrued since it is forfeited (reversed out of
+   *     coupon and interest income) and no later coupon is paid;
+   *   - principal is reduced to the recovery (the final price of the reference entity's obligations, a decimal: 0.38 = 38% of
+   *     par) and settled at it: each position is redeemed at recovery x 100, receivable until `settleDate` (the auction
+   *     settlement date; today if not given), and the difference from carrying cost is realized;
+   *   - the note can no longer be traded.
+   */
+  creditEvent(app, { inst, recovery, settleDate, note }) {
+    const name = inst.symbol || inst.name;
+    need(inst.terms.referenceEntity, `${name} has no reference entity: a credit event is recorded on a credit-linked note (or, for a credit-default swap, on the swap).`);
+    need(!inst.terms.creditEvent, `A credit event of ${inst.terms.referenceEntity} was already recorded on ${inst.terms.creditEvent?.date}.`);
+    const R = num(recovery);
+    need(R !== null && R >= 0 && R <= 1, 'Enter the recovery as a decimal from 0 to 1 (0.38 = 38% of par), from the auction or the calculation agent.');
+    const today = app.clock.today();
+    const pay = settleDate ? String(settleDate) : today;
+    need(ISO_DATE_RE.test(pay) && pay >= today, 'The recovery settlement date must be YYYY-MM-DD and not earlier than today.');
+    const price = Math.round(R * 100 * 1e6) / 1e6;
+    app.instruments.update(inst.id, { terms: { ...inst.terms, couponSuspended: true, creditEvent: { date: today, recovery: R, settleDate: pay } } }, { system: true });
+    const fresh = app.instruments.get(inst.id);
+    const ccy = inst.trading_ccy;
+    const eventIds = [];
+    for (const p of app.positions.heldAround(inst.id)) {
+      if (isZero(p.qty)) continue;
+      const book = app.books.getBook(p.book_id), unit = app.books.getUnit(p.unit_id);
+      if (app.ledger.positionBalance(p.id, 'accrued.asset', ccy) !== 0) {
+        const id = trueUpAccrual(app, { book, unit, pos: p, inst: fresh, account: 'accrued.asset', pnlAccount: 'pnl.coupon', ccy, target: 0, summary: `Accrued interest forfeited on ${name}: credit event of ${inst.terms.referenceEntity}, interest ceases from the last coupon date`, type: 'accrual.coupon' });
+        if (id) eventIds.push(id);
+      }
+      const live = app.positions.get(p.id);
+      const r = redeem(app, { book, unit, inst: fresh, pos: live, price, face: Math.abs(live.qty), date: today, settleDate: pay, type: 'bond.credit_event', actor: 'user',
+        label: `Credit event of ${inst.terms.referenceEntity} recorded by hand${note ? ` (${note})` : ''}: principal reduced to the recovery and settled${pay > today ? ` on ${pay}` : ''}, coupons ended` });
+      eventIds.push(r.eventId);
+      bond.onPositionChange(app, { book, unit, inst: fresh, pos: app.positions.get(p.id) });
+    }
+    return { recovery: R, settleDate: pay, eventIds };
+  },
+  /**
    * A coupon to be paid in kind, recorded by hand (b4): a deferrable tranche (CLO or CDO mezzanine class whose coverage test
    * fails, a PIK-toggle loan whose borrower elects it) defers the coupon of `couponDate` (the next coupon date when not given)
    * and capitalises it. Interest goes on accruing and is income as before; on the coupon date the coupon is added to principal
@@ -930,7 +978,7 @@ function schedTerms(inst) {
   return { ...t, maturity: `${y + 200}${t.anchorDate.slice(4)}` };
 }
 
-function redeem(app, { book, unit, inst, pos, price, face, date, type, label, actor = 'engine', accrued = 0, scale = null, note = '' }) {
+function redeem(app, { book, unit, inst, pos, price, face, date, type, label, actor = 'engine', accrued = 0, scale = null, note = '', settleDate = null }) {
   const long = pos.qty > 0;
   // Principal per unit of face: the pool factor times the index ratio, unless the caller states it (an inflation floor).
   const s = scale ?? factorOf(inst) * ratioOf(inst);
@@ -938,7 +986,7 @@ function redeem(app, { book, unit, inst, pos, price, face, date, type, label, ac
   const extra = note || (isLinker(inst) ? ` on index ratio ${fmtRatio(ratioOf(inst))}: ${fmt(money(face * s * price / 100, ccy), ccy)}` : Math.abs(s - 1) > 1e-12 ? ` on current face ${fmtQty(money(face * s, ccy))}` : '');
   // Settle the outstanding accrued interest to zero against cash before closing the principal.
   return bookSecurityFill(app, {
-    book, unit, inst, action: long ? 'sell' : 'buy_to_cover', qty: face, price, fees: [], strategyId: pos.strategy_id, tradeDate: date, settleDate: app.clock.today(),
+    book, unit, inst, action: long ? 'sell' : 'buy_to_cover', qty: face, price, fees: [], strategyId: pos.strategy_id, tradeDate: date, settleDate: settleDate || app.clock.today(),
     eventType: type, actor, summary: `${label}: ${fmtQty(face)} ${inst.symbol || inst.name} at ${fmtPx(price)}% of par${extra}`,
   }, { unitCost: (price * s) / 100, accrued });
 }
