@@ -299,15 +299,20 @@ function Residual({ s, after }) {
 
 // ---- manage: close, resize, roll, add legs -------------------------------------------------------------------------
 function RollDialog({ s, onClose, onDone }) {
-  const rollable = s.positions.filter((p) => ['option', 'future'].includes(p.family));
-  const firstKind = rollable.some((p) => p.family === 'option') ? 'option' : 'future';
+  // s3: an index CDS position rolls into a new series of the index.
+  const isIndexCds = (p) => p.family === 'cds' && (p.instrument.productId || p.product) === 'cds_index';
+  const rollable = s.positions.filter((p) => ['option', 'future'].includes(p.family) || isIndexCds(p));
+  const firstKind = rollable.some((p) => p.family === 'option') ? 'option' : rollable.some((p) => p.family === 'future') ? 'future' : 'cds';
   const [sel, setSel] = useState(rollable.filter((p) => p.family === firstKind).map((p) => p.positionId));
   const [exp, setExp] = useState('');
   const [strike, setStrike] = useState(null);
   const [month, setMonth] = useState('');
+  const [series, setSeries] = useState('');
   const [busy, setBusy] = useState(false);
   const picked = rollable.filter((p) => sel.includes(p.positionId));
-  const options = picked.filter((p) => p.family === 'option'), futures = picked.filter((p) => p.family === 'future');
+  const options = picked.filter((p) => p.family === 'option'), futures = picked.filter((p) => p.family === 'future'), indices = picked.filter((p) => p.family === 'cds');
+  const seriesList = useLive(() => (indices.length ? get('/api/instruments', { family: 'cds', limit: 500 }) : null), [indices.length > 0], { interval: false });
+  const seriesOptions = (seriesList.data?.items || []).filter((i) => (i.productId || i.product_id) === 'cds_index' && !indices.some((p) => p.instrument.id === i.id) && !i.terms?.ended);
   const undId = options[0]?.instrument.underlyingId || '';
   const chain = useLive(() => (undId ? get(`/api/instruments/${undId}/chain`, { expiration: exp }) : null), [undId, exp], { interval: false });
   const months = useLive(() => get('/api/instruments', { family: 'future', limit: 500 }), [], { interval: false });
@@ -315,10 +320,10 @@ function RollDialog({ s, onClose, onDone }) {
   const one = options.length === 1 ? options[0] : null;
   const roots = new Set(futures.map((p) => p.instrument.terms.root).filter(Boolean));
   const monthOptions = (months.data?.items || []).filter((i) => !futures.some((p) => p.instrument.id === i.id) && (!roots.size || roots.has(i.terms.root)));
-  const ready = picked.length > 0 && (!options.length || exp) && (!futures.length || month);
+  const ready = picked.length > 0 && (!options.length || exp) && (!futures.length || month) && (!indices.length || series);
   const go = async () => {
     setBusy(true);
-    const pv = await openPreviewAction(s.id, 'roll', { positionIds: sel, newExpiration: options.length ? exp : undefined, newStrike: one && isNum(strike) ? strike : undefined, newInstrumentId: futures.length ? month : undefined }, { onDone });
+    const pv = await openPreviewAction(s.id, 'roll', { positionIds: sel, newExpiration: options.length ? exp : undefined, newStrike: one && isNum(strike) ? strike : undefined, newInstrumentId: futures.length ? month : indices.length ? series : undefined }, { onDone });
     setBusy(false);
     if (pv) onClose();
   };
@@ -336,6 +341,8 @@ function RollDialog({ s, onClose, onDone }) {
       </div>` : null}
       ${futures.length ? html`<${Field} label="Contract month to roll into" hint="Contract months come from the registry until Shaffer MarketData supplies derivative contract data.">
         <${Select} value=${month} onChange=${setMonth} placeholder=${monthOptions.length ? 'Choose a contract month' : 'No other contract month is registered'} options=${monthOptions.map((i) => ({ value: i.id, label: `${i.symbol || i.name}${i.terms.expiration ? `, last trading day ${i.terms.expiration}` : ''}` }))} /><//>` : null}
+      ${indices.length ? html`<${Field} label="Series to roll into" hint="The old series is terminated and the notional still outstanding in it (notional x index factor) is entered in the new series, in one package. Register the new series under Instruments first.">
+        <${Select} value=${series} onChange=${setSeries} placeholder=${seriesOptions.length ? 'Choose the new series' : 'No other index series is registered'} options=${seriesOptions.map((i) => ({ value: i.id, label: `${i.symbol || i.name}, matures ${i.terms.maturity}` }))} /><//>` : null}
     </div><//>`;
 }
 function Manage({ s, after, onClose }) {
@@ -358,7 +365,7 @@ function Manage({ s, after, onClose }) {
         <div style=${inline}><div style="width:120px"><${Num} value=${exactQty} onInput=${setExactQty} placeholder="amount" /></div><${Button} disabled=${!picked || !(exactQty > 0 && exactQty <= Math.abs(picked.qty))} onClick=${() => openPreviewAction(s.id, 'close', { positionIds: [picked.positionId], qty: exactQty }, { onDone: after })}>Preview close of this amount<//></div><//>` : null}
       ${can('resize') ? html`<${Field} label="Resize, multiple of the current size" hint="0.5 halves every leg, 2 doubles it">
         <div style=${inline}><div style="width:84px"><${Num} value=${factor} onInput=${setFactor} placeholder="1" /></div><${Button} disabled=${!(factor > 0) || factor === 1} onClick=${() => openPreviewAction(s.id, 'resize', { factor }, { onDone: after })}>Preview resize<//></div><//>` : null}
-      ${can('roll') || can('add_legs') ? html`<${Field} label="Change the legs" hint=${can('roll') ? 'Roll moves option or futures positions to a new contract' : 'Add legs to this strategy instance on the Strategy page'}>
+      ${can('roll') || can('add_legs') ? html`<${Field} label="Change the legs" hint=${can('roll') ? 'Roll moves option, futures or index CDS positions to a new contract or series' : 'Add legs to this strategy instance on the Strategy page'}>
         <div style=${inline}>${can('roll') ? html`<${Button} onClick=${() => openOverlay((close) => html`<${RollDialog} s=${s} onClose=${close} onDone=${after} />`)}>Roll<//>` : null}
           ${can('add_legs') ? html`<${Button} onClick=${() => { location.hash = `#/strategy/attach/${s.id}`; onClose(); }}>Add legs<//>` : null}</div><//>` : null}
     </div><//>`;

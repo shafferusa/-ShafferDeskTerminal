@@ -1094,7 +1094,7 @@ export function createPackages(app) {
     if (active.length) actions.push('cancel_working');
     if (s.status === 'attention') actions.push('retry', 'unwind', 'accept');
     if (['open', 'attention', 'partial'].includes(s.status) && pos.length) actions.push('close', 'resize', 'hedge', 'add_legs');
-    if (pos.some((p) => ['option', 'future'].includes(p.family))) actions.push('roll');
+    if (pos.some((p) => ['option', 'future'].includes(p.family) || (p.family === 'cds' && instruments.get(p.instrument.id)?.product_id === 'cds_index'))) actions.push('roll'); // s3: index CDS series roll
     return {
       id: s.id, name: s.name, template: s.template, templateName: tpl?.name || s.template, status: s.status, bookId: s.book_id, unit: { id: unit.id, name: unit.name, kind: unit.kind },
       underlying: s.underlying_id ? app.valuation.lite(instruments.get(s.underlying_id)) : null, params: s.params, previewAtSubmit: s.preview, note: s.note,
@@ -1234,6 +1234,14 @@ export function createPackages(app) {
         need(target && target.family === 'future' && target.id !== inst.id, 'Choose the contract month to roll into.');
         legs.push({ purpose, role: `close_${p.id}`, kind: 'trade', action: p.qty > 0 ? 'sell' : 'buy', instrumentId: inst.id, qty: Math.abs(p.qty) });
         legs.push({ purpose, role: `open_${p.id}`, kind: 'trade', action: p.qty > 0 ? 'buy' : 'sell', instrumentId: target.id, qty: Math.abs(p.qty) });
+      } else if (inst.family === 'cds' && inst.product_id === 'cds_index') {
+        // s3: an index CDS rolls into a new series of the same product: the old series is terminated and the notional still
+        // outstanding in it (notional x index factor) is entered in the new one, in one package.
+        const target = instruments.get(newInstrumentId);
+        need(target && target.family === 'cds' && target.product_id === 'cds_index' && target.id !== inst.id, 'Choose the index series to roll into.');
+        const outstanding = round(Math.abs(p.qty) * (inst.terms.indexFactor ?? 1), 2);
+        legs.push({ purpose, role: `close_${p.id}`, kind: 'trade', action: p.qty > 0 ? 'sell' : 'buy', instrumentId: inst.id, qty: Math.abs(p.qty) });
+        legs.push({ purpose, role: `open_${p.id}`, kind: 'trade', action: p.qty > 0 ? 'buy' : 'sell', instrumentId: target.id, qty: outstanding });
       }
     }
     need(legs.length, 'Choose option or futures positions to roll.');

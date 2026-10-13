@@ -265,12 +265,13 @@ async function previewFor(t, ctx, step) {
     // option alone); a futures position moves into the contract month `into`. One package, one confirmation.
     const lot = ctx.lot(step.lot);
     const s = await t.strategy(lot.strategyId);
-    const rollable = s.positions.filter((p) => ['option', 'future'].includes(p.family));
+    // s3: an index CDS position rolls into a new series (`into`), like a futures position into a contract month.
+    const rollable = s.positions.filter((p) => ['option', 'future'].includes(p.family) || (p.family === 'cds' && p.product === 'cds_index') || (p.family === 'cds' && p.instrument?.productId === 'cds_index'));
     const kind = rollable.some((p) => p.family === 'option') ? 'option' : 'future';
     const want = step.positions ? step.positions.map((k) => ctx.inst(k).id) : null;
     const picked = rollable.filter((p) => (want ? want.includes(p.instrument.id) : p.family === kind));
     if (!picked.length) throw new Error(`"${step.lot}" holds no option or futures position to roll.`);
-    const options = picked.filter((p) => p.family === 'option'), futures = picked.filter((p) => p.family === 'future');
+    const options = picked.filter((p) => p.family === 'option'), futures = picked.filter((p) => p.family === 'future' || p.family === 'cds');
     const args = { positionIds: picked.map((p) => p.positionId), newExpiration: options.length ? step.newExpiration : undefined, newStrike: options.length === 1 && step.newStrike !== undefined && step.newStrike !== null ? step.newStrike : undefined, newInstrumentId: futures.length && step.into ? ctx.inst(step.into).id : undefined };
     return { lot: lot.name, pv: await t.previewAction(lot.strategyId, 'roll', args) };
   }
