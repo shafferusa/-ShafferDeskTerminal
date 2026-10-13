@@ -770,4 +770,113 @@ const equityForward = {
   ],
 };
 
-export default [equityForward, fxForward, ndf, fra];
+// ---------------------------------------------------------------------------------------------
+// bond_forward
+// ---------------------------------------------------------------------------------------------
+// A forward purchase of a US Treasury note for physical delivery: the Account buys 2,000,000 face of the
+// UST 4% 15-Nov-2030 from a dealer at a clean price of 99.25 for value Monday 18 May 2026. Quantity is face
+// amount and price is % of par (the forward takes its underlying's multiplier, 0.01). On the value date the
+// note is delivered against payment (simulated): the invoice is the clean price plus the interest accrued from
+// the last coupon (15 May 2026) to the value date, ACT/ACT: 2,000,000 x 4% / 2 x 3 / 184 days = 652.17.
+// The note is then sold at the bid and settles T+1 with its own accrued interest.
+// Collateral: position-level terms, independent amount 1% of the notional, no variation margin.
+// Commission on the forward: 0.00001 USD per unit of face (20.00 USD on 2,000,000), paid on the value date;
+// no commission on the note itself.
+const bondForward = {
+  productId: 'bond_forward',
+  title: 'Bond forward: 2,000,000 face of the UST 4% Nov-2030 bought forward at 99.25 for value 18 May 2026, delivered (simulated) with accrued interest, then sold',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: ['Kind of forward (Forward on an asset)', 'Underlying (the bond)', 'Settlement (Physical delivery)', 'Value date', 'Counterparty', 'Collateral basis and its terms', 'Account', 'Action (Buy)', 'Face amount', 'State a fill price (% of par, clean)'],
+    automaticInputs: ['forward mark (quote fixture standing in for a dealer indication, % of par)', 'note bid and ask (quote fixture)', 'accrued interest at delivery from the note\'s coupon schedule (ACT/ACT)', 'independent amount from the position-level terms', 'commission from the Book fee schedule'],
+    manualInputs: ['dealt clean forward price (stated fill price)'],
+    settlement: 'No cash at entry other than the independent amount; on the value date the note is delivered against payment of the clean price plus accrued interest (simulated, labelled); the later sale of the note settles T+1',
+    lifecycle: 'Physical delivery on the value date (automatic); the delivered note then accrues and is sold',
+    accounting: 'Nil cost; forward value = face x (mark - dealt) / 100; the delivered note carried at the dealt clean price with the accrued interest paid as an asset',
+    collateral: 'Position-level terms: independent amount 1% of notional posted at entry and returned at delivery; no variation margin',
+  },
+  start: AM('2026-05-04'),
+  settlementCheck: { lag: 1, holidays: [] },
+  book: {
+    name: 'Matrix bond forward', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 3_000_000 }],
+    account: { name: 'Rates', funding: [{ ccy: 'USD', amount: 2_500_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0 }, forward: { perUnit: 0.00001, minimum: 0, bps: 0 } }, fill: FILL, settlement: { bond: 1 } },
+  },
+  instruments: {
+    note: { productId: 'treasury_note', name: 'US Treasury Note 4% 15-Nov-2030', symbol: 'UST-4-NOV30', marketView: 'US_CASH', venueType: 'otc', issuer: 'United States Treasury', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      terms: { couponType: 'fixed', couponRate: 0.04, frequency: 2, maturity: '2030-11-15', issueDate: '2023-11-15', dayCount: 'ACT/ACT', redemption: 100, minDenomination: 100 } },
+    main: {
+      productId: 'bond_forward', name: 'UST 4% Nov-2030 forward, value 18 May 2026', symbol: 'UST30-F0518', marketView: 'US_DERIV', venueType: 'otc', jurisdiction: 'US', tradingCcy: 'USD', underlying: 'note',
+      terms: { forwardType: 'asset', settlement: 'physical', valueDate: '2026-05-18', counterparty: 'Harbourline Bank N.A., New York',
+        collateralBasis: { type: 'position', independentAmount: { type: 'pct', pct: 0.01 }, variationMargin: false } },
+    },
+  },
+  quotes: {
+    note: { bid: 99.20, ask: 99.30, last: 99.25, bidSize: 50_000_000, askSize: 50_000_000 },
+    main: { bid: 99.22, ask: 99.28, last: 99.25, bidSize: 50_000_000, askSize: 50_000_000 },
+  },
+  expectAtStart: {
+    ...NO_STATE,
+    cash: { account: { USD: cashOf(2_500_000) }, treasury: { USD: cashOf(500_000) } },
+    positions: [], otc: [],
+    nav: { account: 2_500_000, treasury: 500_000, book: 3_000_000 },
+  },
+  steps: [
+    {
+      // Notional 2,000,000 x 99.25 / 100 = 1,985,000.00; independent amount 1% = 19,850.00; commission 2,000,000 x 0.00001 = 20.00.
+      id: 'buy-forward', covers: ['open', 'collateral'], action: 'ticket', instrument: 'main', side: 'buy', qty: 2_000_000, as: 'fwd', settlementCheck: false, order: { statedPrice: 99.25 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 2_000_000, estimate: 99.25, model: 'stated-price', settleDate: '2026-05-18', fees: 20 }],
+          cash: { USD: { purchases: 0, fees: 20, margin: 19_850, required: 19_870, available: 2_500_000, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 2_000_000, avgPrice: 99.25 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Bought forward 2,000,000 UST30-F0518 @ 99.25 for 2026-05-18', owner: 'account', date: '2026-05-04' },
+          { type: 'forward.collateral', summary: '19,850.00 USD (independent amount, 1.00% of 1,985,000.00 USD notional)', cash: { USD: -19_850 }, owner: 'account' },
+        ],
+        cash: { account: { USD: cashOf(2_480_150, { unsettled: -20, margin: 19_850 }) } },
+        positions: [{ instrument: 'main', lot: 'fwd', owner: 'account', direction: 'long', qty: 2_000_000, avgCost: 99.25, cost: 0, price: 99.25, value: 0, unrealized: 0, notional: 1_985_000, margin: 19_850 }],
+        holdings: { main: { long: 2_000_000, short: 0, net: 2_000_000 } },
+        pending: [{ instrument: 'main', lot: 'fwd', owner: 'account', dueDate: '2026-05-18', amount: -20, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'forward.maturity', instrument: 'main', dueDate: '2026-05-18', status: 'pending' }],
+        pnl: { account: { realized: 0, commissions: -20, unrealized: 0, total: -20 } },
+        nav: { account: 2_499_980, book: 2_999_980 },
+        balance: { account: { cash: 2_480_150, margin: 19_850, payable: 20, assets: 2_500_000, liabilities: 20, netAssets: 2_499_980 } },
+        otc: [{ instrument: 'main', lot: 'fwd', owner: 'account', qty: 2_000_000, basis: 'position', agreement: null, flagged: false, mark: 99.25, markValue: 0, iaRequired: 19_850, iaPosted: 19_850, iaCcy: 'USD', iaStatus: 'ok', postedBy: 'account', vmPosted: 0, vmHeld: 0 }],
+      },
+    },
+    {
+      // The forward's indication: 99.55. 2,000,000 x (99.55 - 99.25) / 100 = 6,000.00.
+      id: 'mark', covers: 'mark', action: 'quote', instrument: 'main', quote: { bid: 99.52, ask: 99.58, last: 99.55, bidSize: 50_000_000, askSize: 50_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'fwd', owner: 'account', direction: 'long', qty: 2_000_000, avgCost: 99.25, cost: 0, price: 99.55, value: 6_000, unrealized: 6_000, notional: 1_985_000, margin: 19_850 }],
+        pnl: { account: { unrealized: 6_000, total: 5_980 } },
+        nav: { account: 2_505_980, book: 3_005_980 },
+        balance: { account: { positions: 6_000, assets: 2_506_000, netAssets: 2_505_980 } },
+        otc: [{ instrument: 'main', lot: 'fwd', owner: 'account', qty: 2_000_000, basis: 'position', agreement: null, flagged: false, mark: 99.55, markValue: 6_000, iaRequired: 19_850, iaPosted: 19_850, iaCcy: 'USD', iaStatus: 'ok', postedBy: 'account', vmPosted: 0, vmHeld: 0 }],
+      },
+    },
+    { id: 'friday-before', action: 'clock', to: AM('2026-05-15'), expect: {} },
+    { id: 'note-quote', action: 'quote', instrument: 'note', quote: { bid: 99.50, ask: 99.60, last: 99.55, bidSize: 50_000_000, askSize: 50_000_000 }, expect: {} },
+    {
+      // Value date. Commission 20.00 paid. The note is delivered (simulated) against 1,985,000.00 + 652.17 accrued
+      // = 1,985,652.17, paid the same day; the independent amount 19,850.00 comes back.
+      // Cash: 2,480,150 - 20 - 1,985,652.17 + 19,850 = 514,327.83. The note: cost 1,985,000.00, worth 2,000,000 x 99.55 / 100 = 1,991,000.00.
+      id: 'value-date-delivery', covers: ['physical delivery', 'settlement', 'accrued interest', 'collateral'], action: 'clock', to: AM('2026-05-18'),
+      expect: {
+        events: [
+          { type: 'settlement.pay', summary: 'paid 20.00 USD from settled cash', cash: { USD: -20 }, owner: 'account', date: '2026-05-18' },
+          { type: 'forward.delivery', summary: 'Simulated forward delivery (paper entry, no goods or securities move): received 2,000,000 UST-4-NOV30 at 99.25 on UST30-F0518', owner: 'account', date: '2026-05-18' },
+        ],
+        cash: { account: { USD: cashOf(514_327.83) } },
+        positions: [{ instrument: 'note', lot: 'fwd', owner: 'account', direction: 'long', qty: 2_000_000, avgCost: 99.25, cost: 1_985_000, price: 99.55, value: 1_991_000, unrealized: 6_000, accrued: 652.17 }],
+        holdings: { main: null, note: { long: 2_000_000, short: 0, net: 2_000_000 } },
+        pending: [],
+        otc: [],
+      },
+    },
+  ],
+};
+
+export default [equityForward, bondForward, fxForward, ndf, fra];
