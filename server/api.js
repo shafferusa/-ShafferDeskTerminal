@@ -462,7 +462,10 @@ export function createApi(app) {
           return plugin.paydown(app, { book: holder ? books.getBook(holder.book_id) : null, unit: holder ? books.getUnit(holder.unit_id) : null, inst, newFactor: body.newFactor, effective: body.effective, payDate: body.payDate, scheduledFactor: body.scheduledFactor, note: body.note });
         }
         // Debt-security events recorded by hand: an index ratio, an issuer call, a write-down or loss allocation (server/products/bond.js).
-        case 'index_ratio': case 'call': case 'writedown': need(inst.family === 'bond' && plugin.manualEvent, 'This event applies to debt securities.'); return plugin.manualEvent(app, { inst, action: body.action, body });
+        case 'index_ratio': case 'call': case 'writedown':
+        // b4: structured group B (senior tranche balance of a sequential CMO class, ...).
+        case 'senior_balance':
+          need(inst.family === 'bond' && plugin.manualEvent, 'This event applies to debt securities.'); return plugin.manualEvent(app, { inst, action: body.action, body });
         case 'suspend_coupon': need(inst.family === 'bond' && plugin.suspendCoupons, 'Coupon suspension applies to debt securities.'); return plugin.suspendCoupons(app, { inst, suspended: Boolean(body.suspended) });
         case 'set_rate': {
           need(['repo', 'loan'].includes(inst.family), 'A rate reset applies to loans and repos.');

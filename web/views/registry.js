@@ -11,6 +11,7 @@ import { bump, fmtNum, get, isNum, openOverlay, post, put, titleCase, toast, use
 import { Awaiting, Button, Check, Empty, ErrorNote, Field, Holdings, Missing, Modal, Notice, Num, Panel, Pill, Prov, Select, Seg, Support, Table, Tabs, Text } from '../lib/ui.js';
 import { ContractFields, draftToContract, newDraft } from '../lib/contracts.js';
 import { openInstrument } from './instrument.js';
+import { CreditAdmin } from './credit-admin.js'; // s3: credit events, pay-as-you-go and cancellation on a CDS
 
 const ARRANGEMENTS = ['loan', 'repo', 'secloan'];
 const LEVELS = [
@@ -670,15 +671,6 @@ function LifecycleAdmin({ inst, onChanged }) {
     setBusy(false);
   };
   const button = (label, make) => html`<div class="field" style="justify-content:flex-start;padding-top:19px"><div><${Button} disabled=${busy} onClick=${() => review(make())}>${label}<//></div></div>`;
-  const creditEvent = () => {
-    const R = v.recovery, w = v.weight ?? 1;
-    if (!isNum(R) || R < 0 || R > 1) return { invalid: 'Enter the recovery rate as a decimal between 0 and 1 (0.4 = 40%).' };
-    if (!(w > 0 && w <= 1)) return { invalid: 'The weight must be above 0 and at most 1.' };
-    const whole = w >= 1;
-    return { action: 'credit_event', body: { recovery: R, weight: w }, confirm: 'Record credit event', done: 'Credit event recorded.',
-      text: whole ? `Every holder of ${name}, in every Book, settles now. Protection buyers receive ${pct(1 - R, 1)} of their notional${indexFactor !== 1 ? ` (at index factor ${indexFactor})` : ''}, less the premium accrued to today; protection sellers pay the same amount. The contract is then terminated for every holder and its remaining premium payments are cancelled.`
-        : `Every holder of ${name}, in every Book, settles protection on ${pct(w, 2)} of their notional: buyers receive ${pct(1 - R, 1)} of that part, less the premium accrued on it; sellers pay the same amount. The index factor then falls from ${indexFactor} to ${fmtNum(indexFactor * (1 - w), 6)} and the contract continues on the reduced notional.` };
-  };
   const paydown = () => {
     const nf = v.newFactor;
     if (!(nf > 0 && nf < factor)) return { invalid: `The new factor must be above 0 and below the current factor ${factor}.` };
@@ -708,6 +700,15 @@ function LifecycleAdmin({ inst, onChanged }) {
     return { action: 'writedown', body: { newFactor: nf, kind, effective: v.wdFrom || undefined }, confirm: 'Record write-down', done: 'Write-down recorded.',
       text: `${kind === 'loss' ? 'A realized loss is allocated to' : 'A trigger event writes down'} ${name}, recorded by hand: the factor falls from ${factor} to ${nf}${v.wdFrom ? ` from ${v.wdFrom}` : ''} for every holder, in every Book. ${fmtNum((factor - nf) * 100, 4)}% of original face is written off with no payment: each position's cost falls in proportion and the cost written off is a realized loss. Interest accrued on the principal written off is cancelled. Later coupons and trades use the reduced principal.` };
   };
+  // b4: the senior tranche of a sequential CMO class, paid down by hand from each remittance report.
+  const seniorBalance = () => {
+    const r = v.srRemaining;
+    if (!isNum(r) || r < 0) return { invalid: `Enter the balance of ${t.seniorTranche} still outstanding: 0 or more (0 when it is retired).` };
+    if (!(r < t.seniorRemaining)) return { invalid: `${t.seniorTranche} has ${fmtNum(t.seniorRemaining, 0)} outstanding as last recorded; enter less than that.` };
+    return { action: 'senior_balance', body: { remaining: r }, confirm: 'Record senior tranche balance', done: 'Senior tranche balance recorded.',
+      text: r === 0 ? `${t.seniorTranche} is retired, recorded by hand. ${name} receives principal from now on: record its own factor as a paydown. No cash moves now; every holder gets a history line.`
+        : `${t.seniorTranche} has ${fmtNum(r, 0)} outstanding (was ${fmtNum(t.seniorRemaining, 0)}), recorded by hand. ${name} still receives no principal: its paydowns stay refused until ${t.seniorTranche} is retired. No cash moves; every holder gets a history line.` };
+  };
   const suspend = (on) => ({ action: 'suspend_coupon', body: { suspended: on }, confirm: on ? 'Suspend coupons' : 'Resume coupons', done: on ? 'Coupons suspended.' : 'Coupons resumed.',
     text: on ? `No coupon accrues or is paid on ${name} for any holder, in any Book, until coupons are resumed. Coupon dates that pass while suspended are listed in the history as not paid and are not paid later. Interest accrued and not yet received is reversed out of coupon and interest income for every holder (non-accrual), and the bond trades flat, without accrued interest, until coupons are resumed.`
       : `Coupon accrual and payment restart on ${name} for every holder, in every Book. Coupon dates that passed while suspended are not paid afterwards; record any catch-up payment by hand.` });
@@ -720,10 +721,7 @@ function LifecycleAdmin({ inst, onChanged }) {
   };
   return html`<div><h4 style="margin-bottom:6px">Lifecycle events recorded by hand</h4>
     <p class="note" style="margin-bottom:8px">These act at once on every holder of the instrument, in every Book. They are separate from Save changes and each one asks for confirmation first.${inst.locked ? '' : ' This instrument has not been traded, so there is no holder to affect yet; an event only changes its terms.'}</p>
-    ${inst.family === 'cds' ? html`<div class="grid-form" style=${GRID}>
-      <${Field} label="Recovery rate (decimal)" hint="0.4 = 40%. From the settlement, not assumed."><${Num} value=${v.recovery} onInput=${(x) => { setV({ ...v, recovery: x }); setStep(null); }} /><//>
-      <${Field} label="Share of notional affected" hint="1 for a single name. For an index, the weight of the defaulted name."><${Num} value=${v.weight} onInput=${(x) => { setV({ ...v, weight: x }); setStep(null); }} /><//>
-      ${button('Review credit event', creditEvent)}</div>` : null}
+    ${inst.family === 'cds' ? html`<${CreditAdmin} inst=${inst} onChanged=${onChanged} />` : null}
     ${inst.family === 'bond' && isNum(t.indexRatio) ? html`<div class="grid-form" style=${GRID}>
       <${Field} label="New index ratio" hint=${`Current ${fmtNum(t.indexRatio, 5)}${t.indexRatioAsOf ? `, as of ${t.indexRatioAsOf}` : ', from registration'}. Entered by hand: no index feed.`}><${Num} value=${v.ratio} onInput=${(x) => { setV({ ...v, ratio: x }); setStep(null); }} /><//>
       <${Field} label="Index ratio as of" hint="The date it applies to. Today if empty."><${Text} type="date" value=${v.ratioAsOf || ''} onInput=${(x) => { setV({ ...v, ratioAsOf: x }); setStep(null); }} /><//>
@@ -737,6 +735,9 @@ function LifecycleAdmin({ inst, onChanged }) {
       <${Field} label="Kind of write-down"><${Select} value=${v.wdKind || (inst.productId === 'coco_bond' ? 'writedown' : 'loss')} onChange=${(x) => { setV({ ...v, wdKind: x }); setStep(null); }} options=${[{ value: 'writedown', label: 'Trigger event: write-down' }, { value: 'loss', label: 'Realized loss allocated' }]} /><//>
       <${Field} label="Write-down effective from" hint="Today if empty; for a monthly pool, the first day of the period"><${Text} type="date" value=${v.wdFrom || ''} onInput=${(x) => { setV({ ...v, wdFrom: x }); setStep(null); }} /><//>
       ${button('Review write-down', writeDown)}</div>` : null}
+    ${inst.family === 'bond' && t.seniorTranche ? html`<div class="grid-form" style=${GRID}>
+      <${Field} label="Senior tranche now outstanding" hint=${t.seniorRemaining > 0 ? `${t.seniorTranche}: ${fmtNum(t.seniorRemaining, 0)} outstanding of ${fmtNum(t.seniorBalance, 0)}. From the remittance report; 0 when retired.` : `${t.seniorTranche} is retired: this tranche receives principal.`}><${Num} value=${v.srRemaining ?? null} onInput=${(x) => { setV({ ...v, srRemaining: x }); setStep(null); }} /><//>
+      ${t.seniorRemaining > 0 ? button('Review senior tranche balance', seniorBalance) : null}</div>` : null}
     ${inst.family === 'bond' && t.calledOn ? html`<p class="note">Called in full on ${t.calledOn}${isNum(t.calledAt) ? ` at ${fmtNum(t.calledAt, 2)}% of par` : ''}: nothing is outstanding.</p>` : null}
     ${inst.family === 'bond' ? html`<div class="grid-form" style=${GRID}>
       <${Field} label="New pool factor" hint=${`Current factor ${factor}`}><${Num} value=${v.newFactor} onInput=${(x) => { setV({ ...v, newFactor: x }); setStep(null); }} /><//>

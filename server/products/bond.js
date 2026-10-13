@@ -247,6 +247,17 @@ export const bond = {
       else if (t.couponType === 'zero') errors.push('A servicing fee is deducted from interest: a zero-coupon instrument has none to deduct it from.');
       else if (t.couponType === 'fixed' && !(t.servicingFeeRate < t.couponRate)) errors.push('The servicing fee must be below the gross coupon rate it is deducted from.');
     }
+    // b4: priority of a sequential-pay tranche (a CMO class): it receives principal only after the tranche senior to it has
+    // been paid down to zero. The senior tranche's stated balance is a term; what is left of it is recorded by hand from each
+    // remittance report (senior_balance), and a paydown of this tranche is refused while any of it is outstanding.
+    if (typeof t.seniorTranche === 'string') t.seniorTranche = t.seniorTranche.trim();
+    if (!t.seniorTranche) { delete t.seniorTranche; delete t.seniorBalance; delete t.seniorRemaining; } else {
+      t.seniorBalance = num(t.seniorBalance);
+      if (!(t.seniorBalance > 0)) errors.push(`State the original balance of ${t.seniorTranche}, the tranche paid principal first.`);
+      const rem = t.seniorRemaining === undefined || t.seniorRemaining === null || t.seniorRemaining === '' ? t.seniorBalance : num(t.seniorRemaining);
+      if (!(rem >= 0) || (t.seniorBalance > 0 && rem > t.seniorBalance)) errors.push(`The balance of ${t.seniorTranche} still outstanding must be between 0 and its original balance.`);
+      t.seniorRemaining = rem;
+    }
     if (t.issueDate && !ISO_DATE_RE.test(t.issueDate)) errors.push('Issue date must be YYYY-MM-DD.');
     // Minimum denomination: trades are in multiples of it (the quantity step of the ticket and the preview).
     if (t.minDenomination === undefined || t.minDenomination === null || t.minDenomination === '') delete t.minDenomination;
@@ -274,6 +285,7 @@ export const bond = {
     if (t.paymentDelayDays) rows.push(['Payment delay', `${t.paymentDelayDays} days after each accrual period ends`]);
     if (t.guarantor) rows.push(['Guarantor', `${t.guarantor} (principal and interest guaranteed; no loss allocation)`]);
     if (t.poolCharacteristics) rows.push(['Pool characteristics', `${t.poolCharacteristics} (stated at registration)`]);
+    if (t.seniorTranche) rows.push(['Priority', `Sequential: principal only after ${t.seniorTranche} (stated balance ${fmtQty(t.seniorBalance)}) is retired; ${t.seniorRemaining > 0 ? `${fmtQty(t.seniorRemaining)} of it outstanding, as last recorded by hand` : `retired${t.seniorRetiredOn ? ` (recorded ${t.seniorRetiredOn})` : ''}: this tranche now receives principal`}`]);
     if (t.servicingFeeRate) rows.push(['Servicing fee', `${(t.servicingFeeRate * 100).toFixed(3)}% a year, deducted from interest before holders are paid${t.couponType === 'fixed' ? `: net coupon ${((t.couponRate - t.servicingFeeRate) * 100).toFixed(3)}%` : ''}`]);
     if (t.writtenDown) rows.push(['Written down', `${t.writtenDown.kind === 'loss' ? 'Losses allocated' : 'Principal written down'} to factor ${t.factor} on ${t.writtenDown.date}`]);
     if (t.issueDate) rows.push(['Issue date', t.issueDate]);
@@ -515,6 +527,7 @@ export const bond = {
     if (action === 'index_ratio') return bond.recordIndexRatio(app, { inst, ratio: body.ratio, asOf: body.asOf });
     if (action === 'call') return bond.callIssue(app, { inst, price: body.price, share: body.share, note: body.note });
     if (action === 'writedown') return bond.writeDown(app, { inst, newFactor: body.newFactor, effective: body.effective, kind: body.kind, note: body.note });
+    if (action === 'senior_balance') return bond.recordSeniorBalance(app, { inst, remaining: body.remaining, note: body.note });
     throw new AppError(`Unknown debt-security event "${action}".`);
   },
   /** Position-level events recorded by hand (POST /api/positions/:id/lifecycle). */
@@ -754,7 +767,33 @@ export const bond = {
    *   scheduledFactor   optional: the factor after the scheduled amortisation only. The history then says how much of the
    *                     principal was scheduled and how much was prepaid (and the single monthly mortality, SMM).
    */
+  /**
+   * The balance still outstanding on the tranche senior to a sequential-pay tranche, recorded by hand from a remittance report
+   * (b4). Until it reaches zero this tranche receives no principal: its paydowns are refused. At zero the senior tranche is
+   * retired and this tranche's own factor is recorded by hand from then on. Every holder gets a history line; no cash moves.
+   */
+  recordSeniorBalance(app, { inst, remaining, note }) {
+    const name = inst.symbol || inst.name;
+    const t = inst.terms;
+    need(t.seniorTranche, `${name} has no senior tranche in its terms: it is not paid principal after another tranche.`);
+    const r = num(remaining);
+    need(r !== null && r >= 0, `Enter the balance of ${t.seniorTranche} still outstanding, 0 or more (0 when it is retired).`);
+    need(t.seniorRemaining > 0, `${t.seniorTranche} is already retired; ${name} receives principal and its own factor is recorded as a paydown.`);
+    need(r < t.seniorRemaining, `${t.seniorTranche} has ${fmtQty(t.seniorRemaining)} outstanding as last recorded; a senior tranche is only paid down: enter less than that.`);
+    const today = app.clock.today();
+    const retired = isZero(r);
+    app.instruments.update(inst.id, { terms: { ...t, seniorRemaining: r, ...(retired ? { seniorRetiredOn: today } : {}) } }, { system: true });
+    const summary = `${t.seniorTranche} (senior to ${name}) balance recorded by hand${note ? ` (${note})` : ''}: ${fmtQty(t.seniorRemaining)} to ${fmtQty(r)}${retired ? `: retired. ${name} now receives principal; its own factor is recorded as a paydown` : `. ${name} receives no principal until it is retired`}`;
+    const eventIds = [];
+    for (const p of app.positions.heldAround(inst.id)) {
+      if (isZero(p.qty)) continue;
+      eventIds.push(app.ledger.post({ bookId: p.book_id, unitId: p.unit_id, type: 'bond.senior_balance', instrumentId: inst.id, strategyId: p.strategy_id, positionId: p.id, actor: 'user', summary, data: { from: t.seniorRemaining, to: r, retired, manual: true } }));
+    }
+    return { remaining: r, retired, eventIds };
+  },
   paydown(app, { book, unit, inst, newFactor, effective, payDate, scheduledFactor, note }) {
+    // b4: a sequential tranche is paid no principal while the tranche senior to it is outstanding.
+    if (inst.terms.seniorTranche && inst.terms.seniorRemaining > 0) throw new AppError(`${inst.symbol || inst.name} receives principal only after ${inst.terms.seniorTranche} is retired: ${fmtQty(inst.terms.seniorRemaining)} of it is outstanding as last recorded. Principal collected goes to ${inst.terms.seniorTranche} first; record its balance (senior tranche balance) as it is paid down, and this tranche's factor once it is retired.`);
     const nf = num(newFactor);
     const old = factorOf(inst);
     need(nf > 0 && nf < old, `New factor must be below the current factor ${old} and above zero.`);

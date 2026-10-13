@@ -122,8 +122,10 @@ const exact = (x) => (Number.isFinite(x) ? Number(x.toPrecision(14)) : x);
 /** Contractual amount of one leg for one period, unsigned for side. Returns {amount} or {missing}. */
 function legAmount(app, inst, pos, leg, period) {
   const state = pos.data.legs?.[leg.id] || {};
-  const scale = pos.data.notionalScale ?? 1;
-  const N = Math.abs(pos.qty) * (leg.notionalFactor ?? 1) * scheduleFactor(leg, period.start) * (leg.type === 'price' ? 1 : scale);
+  // The notional reset in force for this period (s2): a reset made at the end of a period applies from the next one, so the
+  // financing of the period that just ended is on the notional it started with, whichever leg is paid first.
+  const scale = scaleAt(pos, period.start);
+  const N =Math.abs(pos.qty) * (leg.notionalFactor ?? 1) * scheduleFactor(leg, period.start) * (leg.type === 'price' ? 1 : scale);
   const yf = yearFraction(period.start, period.end, leg.dayCount || 'ACT/360');
   const used = [];
   switch (leg.type) {
@@ -537,7 +539,10 @@ export const swap = {
       const patch = { legs };
       if (leg.type === 'return') {
         legs[leg.id].lastFixing = r.fixing;
-        if (leg.resetNotional) patch.notionalScale = (pos.data.notionalScale ?? 1) * r.ratio;
+        if (leg.resetNotional) {
+          patch.notionalScale = (pos.data.notionalScale ?? 1) * r.ratio;
+          patch.scaleSteps = [...(pos.data.scaleSteps || []), { from: period.end, scale: patch.notionalScale }];
+        }
       }
       const updated = app.positions.change(pos, { data: patch });
       // A notional reset changes the independent amount the terms call for.
@@ -632,6 +637,15 @@ function normalizeNotionalSchedule(l, t, at, errors) {
   out.sort((a, b) => (a.from < b.from ? -1 : 1));
   for (let i = 1; i < out.length; i++) if (out[i].from === out[i - 1].from) errors.push(`${at}: the notional schedule states ${out[i].from} twice.`);
   return out;
+}
+
+/** Notional reset factor in force for a period starting on `date`: the last reset whose period ended on or before it (1 before any). */
+function scaleAt(pos, date) {
+  const steps = pos.data.scaleSteps;
+  if (!steps?.length) return pos.data.notionalScale ?? 1;
+  let s = 1;
+  for (const x of steps) if (x.from <= date) s = x.scale;
+  return s;
 }
 
 /** Factor of the notional in force on `date` (the first period's before the start): the largest any scheduled leg states; 1 without a schedule. */

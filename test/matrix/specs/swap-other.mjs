@@ -734,9 +734,11 @@ const accretingSwap = {
 // price, and the financing of the next period is on the reset notional. Position-level collateral terms: an
 // independent amount of 10% of the (reset) notional, no variation margin.
 //
-// Payment calendar US+USD (a day both NASDAQ and the Federal Reserve are open): the reset dates are exchange days.
+// Payment calendar US+USD (a day both NASDAQ and the Federal Reserve are open): the reset dates are exchange days. Both legs
+// are paid 2 business days after the period end (the closing price of the reset date is known only after the close).
 //   period 1  2026-04-01 to 2026-07-01  91 days  HLVR 80.00 to 86.00   TSFR3M 4.30% for 1 April
-//   period 2  2026-07-01 to 2026-10-01  92 days  (terminated before the end: in part on 13 August, in full on 10 September)
+//             paid Monday 6 July: Thursday 2 July is the first business day, Friday 3 July NASDAQ is closed (Independence Day observed)
+//   period 2  2026-07-01 to 2026-10-01  92 days  would be paid Monday 5 October (terminated before: in part on 13 August, in full on 10 September)
 const HLVR = { productId: 'common_stock', name: 'Halvorsen Robotics Inc.', symbol: 'HLVR', marketView: 'US_CASH', venue: 'NASDAQ', venueType: 'exchange', venueCountry: 'US', issuer: 'Halvorsen Robotics Inc.', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', terms: {} };
 const EQS_NAME = 'Equity swap HLVR price return v TSFR3M + 0.50% 1 Oct 2026';
 const equitySwap = {
@@ -744,11 +746,11 @@ const equitySwap = {
   title: 'Six-month single-stock equity swap on HLVR: receive the price return, pay term SOFR + 0.50% on a notional that resets quarterly',
   matrix: {
     ...OTC_TICKET,
-    requiredFields: [...OTC_TICKET.requiredFields, 'return leg: Leg type "Return on a reference asset", Reference asset (the stock), Reset and payment, Options "Notional resets" (and not "Total return")', 'financing leg: Index, Spread, Day count'],
+    requiredFields: [...OTC_TICKET.requiredFields, 'return leg: Leg type "Return on a reference asset", Reference asset (the stock), Reset and payment, Options "Notional resets" (and not "Total return")', 'financing leg: Index, Spread, Day count', 'both legs: Payment lag (business days) 2'],
     automaticInputs: ['reset and payment schedule on the US+USD calendar', 'HLVR closes for each reset date (close fixture standing in for Shaffer MarketData)', 'TSFR3M fixings (rate fixture)', 'notional reset after each payment, and the financing on it', 'settlement date, T+2', 'commission from the Book fee schedule', 'independent amount on the reset notional'],
     manualInputs: ['the reference stock, registered as a common stock', 'upfront and termination amounts (stated fill prices)', 'mark of the contract, entered by hand', 'the dividend on the reference, recorded by hand (not passed through: price return)'],
     settlement: 'Upfront and termination amounts and commission settle T+2 on the US+USD calendar; leg payments are cash on their payment date',
-    lifecycle: 'Return and financing amounts each quarter; the notional resets after each payment and the next financing is on it; a dividend on the reference is not passed through on a price-return leg; partial termination and full termination at stated amounts; nothing paid or scheduled afterwards',
+    lifecycle: 'Return and financing amounts each quarter, paid 2 business days after the reset date (across Independence Day observed); the notional resets after each payment and the next financing is on it; a dividend on the reference is not passed through on a price-return leg; partial termination and full termination at stated amounts; nothing paid or scheduled afterwards',
     accounting: 'Carried at the mark; return and financing payments and termination results are realized P&L; commission expensed',
     collateral: 'Position-level terms: independent amount 10% of the notional (trued up when the notional resets and on the partial termination, returned on the full termination); no variation margin',
   },
@@ -764,8 +766,8 @@ const equitySwap = {
         effective: '2026-04-01', maturity: '2026-10-01', counterparty: 'Prime broker P',
         collateralBasis: { type: 'position', independentAmount: { type: 'pct', pct: 0.10 }, variationMargin: false },
         legs: [
-          { side: 'receive', type: 'return', ccy: 'USD', months: 3, underlyingId: '$inst:hlvr', passDividends: false, resetNotional: true },
-          { side: 'pay', type: 'float', ccy: 'USD', index: 'TSFR3M', spread: 0.005, months: 3, dayCount: 'ACT/360' },
+          { side: 'receive', type: 'return', ccy: 'USD', months: 3, underlyingId: '$inst:hlvr', passDividends: false, resetNotional: true, paymentLag: 2 },
+          { side: 'pay', type: 'float', ccy: 'USD', index: 'TSFR3M', spread: 0.005, months: 3, dayCount: 'ACT/360', paymentLag: 2 },
         ],
       },
     },
@@ -793,9 +795,9 @@ const equitySwap = {
         holdings: { main: { long: 5_000_000, short: 0, net: 5_000_000 } },
         pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-04-01', amount: -500, ccy: 'USD', into: 'cash' }],
         lifecycle: [
-          { type: 'swap.payment', instrument: 'main', dueDate: '2026-07-01', status: 'pending' },
-          { type: 'swap.payment', instrument: 'main', dueDate: '2026-07-01', status: 'pending' },
-          { type: 'swap.maturity', instrument: 'main', dueDate: '2026-10-01', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-07-06', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-07-06', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2026-10-05', status: 'pending' }, // the last payment date
         ],
         otc: [{ instrument: 'main', lot: 'eqs', owner: 'account', qty: 5_000_000, basis: 'position', mark: null, iaRequired: 500_000, iaPosted: 500_000, vmPosted: 0, vmHeld: 0 }],
         pnl: { account: { realized: 0, commissions: -500, unrealized: 0, total: -500 } },
@@ -836,24 +838,29 @@ const equitySwap = {
     // HLVR closes at 86.00 on 1 July: the end of the first period.
     { id: 'reset-price', covers: 'reset fixing', action: 'close_price', instrument: 'hlvr', date: '2026-07-01', value: 86, expect: {} },
     {
+      // Friday 3 July: NASDAQ is closed for Independence Day (observed), so the joint calendar is closed. Nothing is paid yet.
+      id: 'independence-day', covers: 'payment across a holiday', action: 'clock', to: at('2026-07-03'),
+      expect: { events: [], cash: { account: { USD: { settled: 999_500 } } } },
+    },
+    {
       // First period, notional 5,000,000:
       //   return, received:    5,000,000 x (86 / 80 - 1) = 5,000,000 x 7.5% = 375,000.00
       //   financing, paid:     5,000,000 x (4.30% + 0.50%) x 91/360 = 60,666.67 (on the notional of the period, before the reset)
       // The notional resets to 5,000,000 x 86 / 80 = 5,375,000: independent amount 537,500, 37,500 more.
-      id: 'first-reset', covers: ['return payment', 'financing payment', 'notional reset', 'collateral'], action: 'clock', to: at('2026-07-01'),
+      id: 'first-reset', covers: ['return payment', 'financing payment', 'notional reset', 'collateral', 'payment across a holiday'], action: 'clock', to: at('2026-07-06'),
       expect: {
         events: [
-          { type: 'swap.payment', summary: `Swap receipt on ${EQS_NAME}, leg A (return), period 2026-04-01 to 2026-07-01: 375,000.00 USD`, cash: { USD: 375_000 }, owner: 'account', date: '2026-07-01' },
+          { type: 'swap.payment', summary: `Swap receipt on ${EQS_NAME}, leg A (return), period 2026-04-01 to 2026-07-01: 375,000.00 USD`, cash: { USD: 375_000 }, owner: 'account', date: '2026-07-06' },
           { type: 'swap.collateral', summary: `Collateral posted on ${EQS_NAME} under its position-level terms: 37,500.00 USD (independent amount, 10.00% of 5,375,000.00 USD notional)`, cash: { USD: -37_500 } },
-          { type: 'swap.payment', summary: `Swap payment on ${EQS_NAME}, leg B (float), period 2026-04-01 to 2026-07-01: 60,666.67 USD`, cash: { USD: -60_666.67 }, owner: 'account', date: '2026-07-01' },
+          { type: 'swap.payment', summary: `Swap payment on ${EQS_NAME}, leg B (float), period 2026-04-01 to 2026-07-01: 60,666.67 USD`, cash: { USD: -60_666.67 }, owner: 'account', date: '2026-07-06' },
         ],
         cash: { account: { USD: { settled: 1_276_333.33, margin: 537_500, availableToTrade: 1_276_333.33, availableToWithdraw: 1_276_333.33 } } },
         positions: [{ instrument: 'main', lot: 'eqs', notional: 5_375_000, margin: 537_500 }],
         otc: [{ instrument: 'main', iaRequired: 537_500, iaPosted: 537_500 }],
         lifecycle: [
-          { type: 'swap.maturity', instrument: 'main', dueDate: '2026-10-01', status: 'pending' },
-          { type: 'swap.payment', instrument: 'main', dueDate: '2026-10-01', status: 'pending' },
-          { type: 'swap.payment', instrument: 'main', dueDate: '2026-10-01', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2026-10-05', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-10-05', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-10-05', status: 'pending' },
         ],
         pnl: { account: { realized: 314_333.33, total: 373_833.33 } }, // 375,000 - 60,666.67; then - 500 + 60,000
         nav: { account: 1_873_833.33, book: 3_373_833.33 },
@@ -934,8 +941,8 @@ const equitySwap = {
       },
     },
     {
-      // The contract's maturity date: nothing is paid, posted or scheduled. 1,500,000 - 500 + 375,000 - 60,666.67 + 18,000 - 200 + 15,000 - 300 = 1,846,333.33.
-      id: 'nothing-left-at-maturity', covers: 'close', action: 'clock', to: at('2026-10-01'),
+      // The contract's last payment date: nothing is paid, posted or scheduled. 1,500,000 - 500 + 375,000 - 60,666.67 + 18,000 - 200 + 15,000 - 300 = 1,846,333.33.
+      id: 'nothing-left-at-maturity', covers: 'close', action: 'clock', to: at('2026-10-05'),
       expect: { events: [], lifecycle: [], positions: [], pending: [], otc: [], alerts: [], cash: { account: { USD: { settled: 1_846_333.33, margin: 0, restricted: 0 } }, treasury: { USD: { settled: 1_500_000 } } }, nav: { account: 1_846_333.33, treasury: 1_500_000, book: 3_346_333.33 } },
     },
   ],

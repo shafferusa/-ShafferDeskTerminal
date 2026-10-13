@@ -342,6 +342,35 @@ export const actions = {
     return { result: normalizeResult(s, null, ctx), problems: await statusProblems(drawer, s) };
   },
 
+  /**
+   * Roll: the Roll dialog of the strategy instance (Manage, Roll). Every option position of the instance is selected
+   * when the dialog opens; `positions` narrows that. The new expiration is typed (no option chain is supplied for the
+   * fixtures), the new strike only when one option is rolled alone; a futures position takes the month named by `into`.
+   */
+  async roll(ui, t, ctx, step, { previewAndConfirm, expectsRefusal }) {
+    const lot = ctx.lot(step.lot);
+    const drawer = await openStrategyDrawer(ui, ctx, lot.strategyId);
+    const roll = ui.button(drawer, 'Roll');
+    if (!await roll.count()) return { refusal: { message: 'The strategy instance offers no Roll: it holds no option or futures position.', where: 'strategy instance, Manage' } };
+    await roll.click();
+    const dlg = ui.dialog(/^Roll positions of /);
+    await dlg.waitFor();
+    if (step.positions) {
+      const wanted = step.positions.map((k) => ctx.inst(k).symbol || ctx.inst(k).name);
+      const boxes = dlg.getByRole('checkbox');
+      for (let i = 0; i < await boxes.count(); i++) {
+        const label = (await boxes.nth(i).locator('xpath=..').innerText()).trim();
+        await boxes.nth(i).setChecked(wanted.some((w) => label.includes(w)));
+      }
+    }
+    if (step.newExpiration) await ui.input(dlg, 'New expiration').fill(step.newExpiration);
+    if (step.newStrike !== undefined && step.newStrike !== null) await ui.input(dlg, 'New strike').fill(String(step.newStrike));
+    if (step.into) await ui.select(dlg, 'Contract month to roll into').selectOption(ctx.inst(step.into).id);
+    const go = ui.button(dlg, 'Preview roll');
+    if (await go.isDisabled()) return { refusal: { message: 'Preview roll is disabled: the Roll dialog is not complete.', where: 'Roll dialog' } };
+    return previewAndConfirm(ui, ctx, () => go.click(), { expectsRefusal });
+  },
+
   /** The scripted hedge service stands in for Shaffer Hedge: set through the API, like any fixture. */
   async hedge_script(ui, t, ctx, step) {
     await t.http.post('/api/demo/hedge-script', resolveRefs(step.script, ctx));
