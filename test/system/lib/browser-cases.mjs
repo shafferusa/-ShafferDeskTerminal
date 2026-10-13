@@ -2282,7 +2282,7 @@ export async function restartScreens(b, c) {
     const hrA = JSON.stringify(b.sql('SELECT * FROM hedge_requests'));
     const before = await screens();
     const hr0 = JSON.stringify(b.sql('SELECT * FROM hedge_requests'));
-    { const a0 = JSON.parse(hrA)[0] || {}, a1 = JSON.parse(hr0)[0] || {}; const d = Object.keys({ ...a0, ...a1 }).filter((k) => !['request', 'response'].includes(k) && a0[k] !== a1[k]); if (d.length) c.note(`DIAG2 while reading the screens before the restart, hedge_requests changed: ${d.map((k) => `${k}: ${String(a0[k]).slice(0, 200)} -> ${String(a1[k]).slice(0, 200)}`).join(' ; ')}`); }
+    { const a0 = JSON.parse(hrA)[0] || {}, a1 = JSON.parse(hr0)[0] || {}; const d = Object.keys({ ...a0, ...a1 }).filter((k) => !['request', 'response'].includes(k) && a0[k] !== a1[k]); if (d.length) console.log(`DIAG2 while reading the screens before the restart, hedge_requests changed: ${d.map((k) => `${k}: ${String(a0[k]).slice(0, 200)} -> ${String(a1[k]).slice(0, 200)}`).join(' ; ')}`); }
     await b.restart();
     await page.reload();
     await page.locator('.shell .topbar').waitFor();

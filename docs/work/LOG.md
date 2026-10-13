@@ -136,3 +136,4 @@
 - 2026-10-13T17:34Z | o2 | +0.2 | bond_option passes at engine, API and browser
 - 2026-10-13T17:35Z | b3 | +0.2 | tips passes at engine, API and browser
 - 2026-10-13T17:40Z | b3 | +0.2 | foreign_inflation_linked passes at engine, API and browser
+- 2026-10-13T17:40Z | ui1 | +0.5 | Marketplace item 2: product-tab navigation (URL tab restored on reload/Back, last tab per view, find/show addresses, search across tabs and other Marketplaces, links from instrument page and registry)

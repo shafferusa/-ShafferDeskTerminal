@@ -300,7 +300,9 @@ export function createApi(app) {
     }
     await freshQuotes([...held.values()]);
     const pairs = app.ledger.currencies(ids).filter((c) => c !== book.reporting_ccy).map((c) => `${c}/${book.reporting_ccy}`);
-    const key = `fx:${bookId}`;
+    // The interval is per set of pairs: a currency that has just appeared in the Book (cash received from an exchange)
+    // is refreshed at once, not left on whatever observation of it happens to be cached.
+    const key = `fx:${bookId}:${[...pairs].sort().join(',')}`;
     const now = app.clock.ms();
     if (pairs.length && now - (lastQuoteRefresh.get(key) || 0) >= app.data.getRefresh().fxMs * 0.9) {
       await app.data.refresh({ pairs });

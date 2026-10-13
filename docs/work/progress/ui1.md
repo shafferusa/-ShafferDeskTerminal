@@ -22,11 +22,13 @@
 
 - Session 2 (resumed 2026-10-13): item 1 financing links rebuilt in web/views/instrument.js (FINANCEABLE, holdingBlock, notFinanceable, openFinancing, HoldingFinancing, FinancingLinks: Borrow this security / Repo this holding / Lend this holding / Finance this position / Reverse repo, each disabled with its reason; holding-level Repo/Lend/Finance column in the ticket's positions table and the Positions tab; derivatives and other families show the reason and the Treasury/Account link). treasury.js (ui1 regions): preset.positionId picks the named holding; viewFor no longer infers a view from the currency. catalog.js conventionRoute financing: jurisdiction > stated view > security lent/pledged > Foreign convention (collateral passed from instruments.js routeFor). npm test 462/463 (only fw's commodity_future). Verified in browser (demo 8881): ALFA drawer links, Repo dialog prefilled with the Account and ALFA 100, Lend from the Positions-tab holding -> preview -> confirm -> 'Lend ALFA executed', links then disabled with 'All 100 held are on loan'. Browser 8 products: all pass (equity_option needed test/matrix/drivers/browser/option.mjs Underlying label regex made tolerant: someone's uncommitted contracts.js edit made the option Underlying optional).
 
+- Item 2 (saved): markets.js last tab per view (localStorage sdt.mk.tab.<view>), URL /find/<text> and /show/<id> (row marked .mk-focus, scrolled), Elsewhere panel (search matches in the other 3 Marketplaces with view+tab links). instrument.js drawer subtitle has the tab; Overview Market view links to the tab (closes drawer); arrangements say "financing arrangement". registry.js MarketLink in search results and registry list. app.css block appended. Verified with steps/nav.mjs (tab click -> URL, Back restores, reload restores, remembered tab, search hits elsewhere, link lands with row marked).
+- Item 3 (saved): marketplaces.test.js tests 9-13 (205 products US/foreign listed -> one tab of one view; convention for global FX/crypto/OTC; API registration of one instrument per tab US+foreign, listed in exactly one view/tab; never US from USD; hand-set override labelled). docs/ARCHITECTURE.md (navigation, Financing links, financing record view), README row, scripts/coverage-report.js convention list, docs/COVERAGE.md regenerated. Browser 8 products pass (interest_rate_swap flaked once on audit-trail screen-vs-API at settlement, passed on rerun).
+
 ## In progress
-- Item 2 (tab memory, show-in-Marketplace links, cross-Marketplace search), item 3 (205-product routing test, docs), item 4 screens, item 5 browser driver.
+- Item 4 screens.
 
 ## Next
-1. markets.js: remember last tab per view; #/markets/<view>/<tab>/show/<id> highlights a row; search hits in other Marketplaces with links. registry.js search + drawer Overview: link to the view and tab.
-2. test/core/marketplaces.test.js: every product routed US and Foreign to one tab of one view; API registration never US from currency. Docs: ARCHITECTURE, README, COVERAGE (npm run coverage).
-3. Screens (multi.mjs) every view/tab, demo+normal, light/dark, 1440/1024/390, empty Book, no-Accounts Book; register instruments in every tab via API.
-4. npm run test:browser -- --product=common_stock,treasury_note,equity_option,equity_index_future,interest_rate_swap,unsecured_loan,fx_spot,crude_oil ; save-note ui1 per milestone (0.5 each for items 1-4).
+1. Seed an instrument in every tab of every view via API on 8881 (demo) and 8882 (normal); empty Book; Book with no Accounts.
+2. multi.mjs sweep: every view x tab, light/dark, 1440/1024/390, demo/normal; check scrollWidth, console errors, clipping; fix.
+3. Browser driver run; save item 4; report.

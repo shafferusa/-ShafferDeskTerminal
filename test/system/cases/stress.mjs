@@ -795,6 +795,27 @@ export default [
     levels: { engine: 'a double click is a browser event: no engine call or HTTP request can make one; what a program can send twice is SE/SA:stress:repeated-requests and SE/SA:nodup:concurrent-confirmations', api: 'a double click is a browser event: no engine call or HTTP request can make one; what a program can send twice is SE/SA:stress:repeated-requests and SE/SA:nodup:concurrent-confirmations', browser: (b, c) => b.cases.doubleClickRecords(b, c) },
   },
   {
+    id: 'double-click-treasury',
+    title: 'Double click on the Treasury confirming buttons: withdrawal, borrowing, repo, securities loan',
+    proves: 'Double-clicking the button that records a withdrawal, or the Confirm of a borrowing, a repo or a securities loan, records it once.',
+    expected: 'A Book with 3,000,000.00 of capital; Treasury holds 1,000,000 face of a Treasury note at 100.00 and 1,000 DTL shares, settled (Tuesday). (1) "Record withdrawal" of 30,000.00 double-clicked: one request, one withdrawal, Treasury cash down 30,000.00 once. (2) A cash loan borrowed by Treasury, 100,000.00 at 5% to 1 April, previewed from "New loan or deposit" and its Confirm double-clicked: one borrowing, Treasury owes 100,000.00 and its cash is up 100,000.00, once. (3) A repo of the note, 900,000.00 against 1,000,000 face at a 2% haircut, Confirm double-clicked: one repo, Treasury cash up 900,000.00 once, 1,000,000 face pledged (not 2,000,000). (4) 500 DTL lent from "Lend a security" at a 1% fee, Confirm double-clicked: one securities loan, 500 of the 1,000 on loan. The integrity read is clean.',
+    levels: { engine: 'a double click is a browser event: no engine call or HTTP request can make one; what a program can send twice is SE/SA:stress:repeated-requests and SE/SA:nodup:concurrent-confirmations', api: 'a double click is a browser event: no engine call or HTTP request can make one; what a program can send twice is SE/SA:stress:repeated-requests and SE/SA:nodup:concurrent-confirmations', browser: (b, c) => b.cases.doubleClickTreasury(b, c) },
+  },
+  {
+    id: 'double-click-reference',
+    title: 'Double click on Register instrument, Save price, Save assumptions and Save request',
+    proves: 'Double-clicking the buttons that register an instrument, enter a price by hand, save the Book\'s assumptions or complete a hedge request does it once.',
+    expected: '(1) A common stock DCW registered from "New instrument", "Register instrument" double-clicked: one request, one instrument DCW. (2) A price of 12.50 for DCW entered on Data connection, Manual entries, "Save price" double-clicked: one request, one manual price on file. (3) On Settings the equity commission changed to 0.01, "Save assumptions" double-clicked: one request, one settings change recorded. (4) A purchase made without a context has one incomplete hedge request; in its popup (opened from the hedge review queue) the investment Strategy, a 60-day holding period and downside protection are entered and "Save request" double-clicked: one request, still one hedge request for the position, now complete, and no order was created by saving it or by a recommendation coming back. The integrity read is clean.',
+    levels: { engine: 'a double click is a browser event: no engine call or HTTP request can make one; what a program can send twice is SE/SA:stress:repeated-requests and SE/SA:nodup:concurrent-confirmations', api: 'a double click is a browser event: no engine call or HTTP request can make one; what a program can send twice is SE/SA:stress:repeated-requests and SE/SA:nodup:concurrent-confirmations', browser: (b, c) => b.cases.doubleClickReference(b, c) },
+  },
+  {
+    id: 'double-click-agreements',
+    title: 'Double click on Record agreement, Close agreement and Retry failed calls',
+    proves: 'Double-clicking the buttons that record or close a collateral agreement, or retry failed collateral calls, does it once: one agreement, one closing, one collateral movement.',
+    expected: 'Account Beta holds a swap under an agreement with variation margin, marked at -50,000.00 (-5 per 100 on 1,000,000); at the end of Monday the 50,000.00 call fails (Beta has 30,000.00). On Treasury, Collateral: (1) a new agreement "CSA Dealer B" covering Alpha, "Record agreement" double-clicked: one request, one agreement, no error shown. (2) Its "Close agreement" double-clicked: one request, the agreement closed, one closing recorded, no error shown. (3) Beta receives 100,000.00; "Retry failed calls" double-clicked: one request, one variation-margin movement, Beta has posted 50,000.00 once, and a later cycle posts nothing more. The integrity read is clean.',
+    levels: { engine: 'a double click is a browser event: no engine call or HTTP request can make one; what a program can send twice is SE/SA:stress:repeated-requests and SE/SA:nodup:concurrent-confirmations', api: 'a double click is a browser event: no engine call or HTTP request can make one; what a program can send twice is SE/SA:stress:repeated-requests and SE/SA:nodup:concurrent-confirmations', browser: (b, c) => b.cases.doubleClickAgreements(b, c) },
+  },
+  {
     id: 'confirm-changed',
     title: 'A confirmation refused because the price moved, then confirmed on the new figures',
     proves: 'When the figures move between preview and confirmation nothing is submitted, the dialog shows what changed, and the second confirmation (even double-clicked) trades once at the new figures.',
