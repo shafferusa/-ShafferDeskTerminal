@@ -413,8 +413,9 @@ export function createOrders(app) {
     }
     const strategy = app.packages.getStrategyRow(o.strategy_id);
     const loanInst = app.instruments.create({
-      // r1: a bond is borrowed under a bond loan, a share under a stock loan, any other security (a fund, an ETF) under a securities borrowing.
-      productId: inst.family === 'bond' ? 'bond_loan' : inst.family === 'equity' ? 'stock_loan' : 'securities_borrowing', name: `Borrow of ${inst.symbol || inst.name} (${strategy.name})`, marketView: inst.market_view.replace('_DERIV', '_CASH'),
+      // r1: a bond is borrowed under a bond loan, a share under a stock loan, fund units (an ETF, an ETN, a closed-end fund) and
+      // anything else under a securities borrowing.
+      productId: inst.family === 'bond' ? 'bond_loan' : inst.family === 'equity' && !['etf', 'etn', 'closed_end_fund'].includes(inst.product_id) ? 'stock_loan' : 'securities_borrowing', name: `Borrow of ${inst.symbol || inst.name} (${strategy.name})`, marketView: inst.market_view.replace('_DERIV', '_CASH'),
       venueType: 'otc', underlyingId: inst.id, tradingCcy: inst.trading_ccy,
       terms: { feeRate, collateralPct: book.settings.short.collateralPct, availabilitySource: source, counterparty: 'Simulated lender' },
     }, { actor: 'engine' });

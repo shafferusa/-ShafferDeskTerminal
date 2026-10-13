@@ -92,7 +92,7 @@ const ROWS = [
   ['cmbs', 'Commercial MBS', 'Securitised debt', 'bond', 'cash', P, 'Principal paydowns are recorded by hand.'],
   ['agency_mbs', 'Agency MBS', 'Securitised debt', 'bond', 'cash', P, 'Principal paydowns (pool factor) are recorded by hand.'],
   ['non_agency_mbs', 'Non-agency MBS', 'Securitised debt', 'bond', 'cash', P, 'Principal paydowns and losses are recorded by hand.'],
-  ['tba_mortgage', 'TBA mortgage contract', 'Securitised debt', 'forward', 'deriv', P, 'Booked as a forward on a pool; pool allocation and delivery are recorded by hand.'],
+  ['tba_mortgage', 'TBA mortgage contract', 'Securitised debt', 'forward', 'deriv', P, 'Booked as a forward on the pass-through coupon. The pool the seller allocates is recorded by hand on the position before settlement (checked for good delivery) and delivered on paper (simulated) on the settlement date.'],
   ['specified_pool', 'Mortgage specified pool', 'Securitised debt', 'bond', 'cash', P, 'Principal paydowns (pool factor) are recorded by hand.'],
   ['abs', 'Asset-backed security', 'Securitised debt', 'bond', 'cash', P, 'Principal paydowns are recorded by hand.'],
   ['cmo', 'Collateralised mortgage obligation (CMO)', 'Securitised debt', 'bond', 'cash', P, 'Tranche paydowns are recorded by hand.'],
@@ -182,13 +182,13 @@ const ROWS = [
   ['perpetual_future', 'Perpetual future', 'Futures', 'future', 'deriv', P, 'Funding payments are recorded by hand; there is no expiry.'],
 
   // ---- Forwards ----
-  ['equity_forward', 'Equity forward', 'Forwards', 'forward', 'deriv', F, 'Cash-settled against a supplied or entered fixing, or physically delivered into the underlying position.'],
-  ['bond_forward', 'Bond forward', 'Forwards', 'forward', 'deriv', F, ''],
+  ['equity_forward', 'Equity forward', 'Forwards', 'forward', 'deriv', F, 'Cash-settled against a supplied or entered fixing, or physically delivered (simulated, delivery against payment on the value date) from or into the underlying position. Early termination at a stated amount.'],
+  ['bond_forward', 'Bond forward', 'Forwards', 'forward', 'deriv', F, 'In face amount and % of par. Physically delivered (simulated) on the value date at the clean price plus accrued interest, or cash-settled against the bond\'s close.'],
   ['fx_forward', 'FX forward', 'Forwards', 'forward', 'deriv', F, 'Deliverable: the two currency amounts are exchanged on the value date.'],
   ['ndf', 'Non-deliverable forward', 'Forwards', 'forward', 'deriv', F, 'Cash-settled against the fixing on the fixing date.'],
-  ['commodity_forward', 'Commodity forward', 'Forwards', 'forward', 'deriv', F, ''],
+  ['commodity_forward', 'Commodity forward', 'Forwards', 'forward', 'deriv', F, 'In the commodity\'s own units. Cash-settled against its close on the value date (a missing fixing waits visibly), or delivered (simulated).'],
   ['fra', 'Forward-rate agreement', 'Forwards', 'forward', 'deriv', F, 'Settled at the start of the period, discounted at the fixing.'],
-  ['fx_swap', 'FX swap', 'Forwards', 'forward', 'deriv', F, 'Booked as a near leg and a far leg in one package.'],
+  ['fx_swap', 'FX swap', 'Forwards', 'forward', 'deriv', F, 'Booked as a near leg and a far leg (each a deliverable FX forward of its own value date) in one package on the Strategies page.'],
   ['credit_spread_forward', 'Credit-spread forward', 'Credit derivatives', 'manual', 'deriv', M, 'Settlement amount and valuation are entered by hand.'],
 
   // ---- Listed and OTC options ----

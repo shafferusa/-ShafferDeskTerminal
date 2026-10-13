@@ -24,6 +24,7 @@
 //   underlying                     Underlying (asset) or Fixing source (currency pair) (ndf): picked by symbol
 //   terms.settlement               Settlement: cash | physical (asset)
 //   multiplier                     Multiplier (asset)
+//   terms.coupon                   Pool coupon (a TBA mortgage contract)
 //   terms.periodStart, periodEnd, fixingRate, dayCount     the FRA's period, reference rate code and day count
 //   terms.counterparty, collateralBasis, collateral        as on every OTC contract
 
@@ -108,6 +109,7 @@ export async function contractTerms(ui, dialog, draft, ctx) {
   if (t.settleCcy) await ui.input(dialog, 'Settlement currency').fill(t.settleCcy);
   if (draft.underlying) await pickInstrument(ui, ui.field(dialog, t.forwardType === 'ndf' ? 'Fixing source (currency pair)' : exactly('Underlying')), ctx.inst(draft.underlying));
   if (t.settlement) await ui.select(dialog, exactly('Settlement')).selectOption(t.settlement);
+  if (t.coupon !== undefined && t.coupon !== null) await ui.input(dialog, /^\s*Pool coupon/).fill(String(t.coupon));
   if (t.forwardType === 'asset' && draft.multiplier !== undefined && draft.multiplier !== null) await ui.input(dialog, exactly('Multiplier')).fill(String(draft.multiplier));
   if (t.forwardType === 'fra') {
     await ui.input(dialog, 'Interest period start').fill(t.periodStart);

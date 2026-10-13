@@ -31,6 +31,8 @@
 
 ## In progress
 - Part 1 done apart from the 1-point save (retry npm test).
+- Next: core tests for asset-forward fixes (delivery from holdings / blocked, bond forward units, TBA allocation);
+  full npm test; rerun all forwards + touched futures at 3 levels; 1-point save; final report.
 - ndf: passed engine / API / browser (saved 0.2).
 - fra: passed E/A/B. Terminal fixes for it: contracts.js shows Fixing date for an FRA; api.js refreshBook also refreshes
   FX pairs of open positions' currencies (and the engine driver mirror) - NAV was provisional on a stale EUR rate.
@@ -39,7 +41,9 @@
   underlying's; quantity/price labels from the underlying (qtyLabelFor, terms.quantityUnit/priceUnits); delivery
   against payment ON the value date (was the underlying's lag from it). bond.js fillsOf counts 'forward.delivery' and
   'option.delivery' events as fills (accrued interest bought on delivery was reversed by the next EOD).
-- bond_forward passes E/A/B; equity_forward re-passes E/A/B with same-day delivery. commodity_forward passes E/A/B. fx_swap passes E/A/B (package on the Strategies page: driver actions.package). Remaining: tba_mortgage.
+- bond_forward passes E/A/B; equity_forward re-passes E/A/B with same-day delivery. commodity_forward passes E/A/B. fx_swap passes E/A/B (package on the Strategies page: driver actions.package). tba_mortgage passes E/A/B (fx.js: TBA terms.tba/coupon, no underlying needed, multiplier 0.01; `allocate` lifecycle
+  action + api.js case; delivery of the allocated pool, blocked visibly without one; UI "Pool allocation" dialog and
+  "Pool coupon" form field). ALL 8 forward products pass at engine, API and browser. catalog.js forward notes updated.
 - test/core/forwards.test.js (4 tests) passes. equity_forward passes E/A/B (delivery from holdings fix in fx.js settleForwardTask).
   then equity_forward (agreement basis? physical delivery), bond_forward, commodity_forward, fx_swap, tba_mortgage.
 

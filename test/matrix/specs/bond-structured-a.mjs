@@ -2733,4 +2733,244 @@ const cmbs = {
   ],
 };
 
-export default [tips, foreignInflationLinked, callableBond, puttableBond, convertibleBond, exchangeableBond, cocoBond, mbs, cmbs, agencyMbs, nonAgencyMbs];
+// ---------------------------------------------------------------------------------------------
+// rmbs
+// ---------------------------------------------------------------------------------------------
+// A Dutch prime residential MBS, Class A, in euros, listed on Euronext Amsterdam: 3.50% fixed, QUARTERLY on the 28th of
+// January, April, July and October, 30/360, interest and principal paid on the interest payment date itself (no payment
+// delay; a date on a weekend moves to the next TARGET day), T+2 on the TARGET calendar (the deal's own convention), factor
+// 0.8123456 after the January 2030 payment. In a Book that reports in US dollars (EUR/USD 1.10, fixture, throughout).
+//   - Bought on Tuesday 9 April 2030; increased on Thursday 18 April, settling Tuesday 23 April over Good Friday and Easter
+//     Monday (TARGET closed both days; New York is open on Easter Monday, so the Terminal's end of day runs then).
+//   - The 28 April payment date is a Sunday: the coupon is paid on Monday 29 April, on the factor of the quarter that ended.
+//     The paydown is recorded by hand on the payment date: factor 0.8123456 to 0.791102 from 28 April (0.8089001 after
+//     scheduled amortisation alone), principal paid at once.
+//   - A quarter is sold the same day, settling Thursday 2 May (1 May is a TARGET holiday); the rest is sold for 6 May.
+// Commission: 0.5 basis point of clean principal. Days of 30/360 from 28 Jan: to 11 Apr 73, 17 Apr 79, 22 Apr 84, 23 Apr 85;
+// from 28 Apr: to 1 May 3, 2 May 4, 6 May 8. A quarter's coupon is 3.5% / 4 of current face. Reporting-currency rule as in
+// foreign_inflation_linked (posting by posting; FX effects are cents of rounding at a constant rate).
+const rmbs = {
+  productId: 'rmbs',
+  title: 'Dutch Prime Residential Mortgage Securities 2027-1 Class A in euros (reported in dollars): quarterly 30/360, T+2 TARGET over Easter, coupon on a Sunday payment date paid Monday, paydown recorded by hand on the payment date, partial sale over 1 May, close',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount (original face)'],
+    manualInputs: ['Registration: Pool factor, Payments per year 4, Settlement convention 2 (no payment delay)', 'Paydown recorded by hand on the payment date (New pool factor, Factor effective from, Factor after scheduled principal; paid at once)'],
+    settlement: 'T+2 on the TARGET calendar (venue country NL); Good Friday, Easter Monday and 1 May skipped; current face = original face x factor',
+    lifecycle: 'Quarterly coupon on the factor of the quarter, paid on the payment date (next TARGET day); paydown by hand paid on the payment date; accrued 30/360 on current face',
+    accounting: 'Euro position, cost per 100 of current face, accrued, coupon, paydown realized P&L; dollar figures at the current rate for balances and unrealized, at the booking rate for income, commission and realized P&L',
+    collateral: 'None for a long position',
+  },
+  start: EDT('2030-04-09'), // Tuesday
+  settlementCheck: { lag: 2, holidays: ['2030-04-19', '2030-04-22', '2030-05-01'] }, // Good Friday, Easter Monday, Labour Day (TARGET)
+  book: {
+    name: 'Matrix euro RMBS', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 1_000_000 }, { ccy: 'EUR', amount: 7_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'EUR', amount: 6_000_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.5 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  fx: { 'EUR/USD': 1.1 },
+  instruments: {
+    main: { productId: 'rmbs', name: 'Dutch Prime Residential Mortgage Securities 2027-1 Class A 3.50%', symbol: 'DPRMS-27-1-A', marketView: 'FOREIGN_CASH', venueType: 'exchange', venue: 'Euronext Amsterdam', venueCountry: 'NL', issuer: 'Dutch Prime Residential Mortgage Securities 2027-1 B.V.', domicile: 'NL', underlyingGeo: 'NL', tradingCcy: 'EUR', multiplier: 0.01,
+      conventions: { settleLag: 2 },
+      terms: { couponType: 'fixed', couponRate: 0.035, frequency: 4, maturity: '2061-04-28', issueDate: '2027-04-28', dayCount: '30/360', redemption: 100, factor: 0.8123456, seniority: 'Senior (Class A)' } },
+  },
+  quotes: { main: { bid: 99.6, ask: 99.8, last: 99.7, bidSize: 20_000_000, askSize: 20_000_000 } },
+  expectAtStart: {
+    ...startState(6_600_000, 2_100_000), // 6,000,000 EUR x 1.10; 1,000,000 USD + 1,000,000 EUR x 1.10
+    cash: { account: { EUR: idle(6_000_000) }, treasury: { USD: idle(1_000_000), EUR: idle(1_000_000) } },
+  },
+  steps: [
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 4_000_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 4_000_000, estimate: 99.8, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2030-04-11', calendar: 'TARGET',
+            notional: 3_249_382.40, // current face: 4,000,000 x 0.8123456
+            gross: 3_242_883.64, // 3,249,382.40 x 99.80 / 100 = 3,242,883.635
+            accrued: 23_061.59, // 73 days: 3,249,382.40 x 3.5% x 73/360 = 23,061.5867
+            cash: -3_265_945.23, fees: 162.14 }], // 0.5 bp of 3,242,883.64 = 162.144
+          cash: { EUR: { purchases: 3_265_945.23, fees: 162.14, required: 3_266_107.37, available: 6_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 4_000_000, avgPrice: 99.8, fills: [{ qty: 4_000_000, price: 99.8, model: 'quoted-bid-ask', settleDate: '2030-04-11', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 4,000,000 DPRMS-27-1-A @ 99.80 EUR', owner: 'account', date: '2030-04-09' }],
+        cash: { account: { EUR: { settled: 6_000_000, unsettled: -3_266_107.37, availableToTrade: 2_733_892.63 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 4_000_000, avgCost: 99.8, cost: 3_242_883.64, price: 99.7,
+          value: 3_239_634.25, unrealized: -3_249.39, accrued: 23_061.59, priceSource: 'Test fixture' }], // 3,249,382.40 x 99.70 / 100 = 3,239,634.253
+        holdings: { main: { long: 4_000_000, short: 0, net: 4_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2030-04-11', amount: -3_266_107.37, ccy: 'EUR', into: 'cash' }],
+        // 28 April 2030 is a Sunday: paid Monday 29 April. 28 April 2061 is a Thursday.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2030-04-29', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2061-04-28', status: 'pending' }],
+        // Dollars at 1.10: commission 162.14 x 1.10 = 178.35; unrealized -3,249.39 x 1.10 = -3,574.33. FX effects 0.01: rounding of
+        // the translated postings (accrued 25,367.75 booked against 25,367.749, position 3,567,172.00 against 3,567,172.004 ...).
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -178.35, fees: 0, borrowFunding: 0, unrealized: -3_574.33, fx: 0.01, total: -3_752.67 } },
+        nav: { account: 6_596_247.32, book: 8_696_247.32 }, // (6,000,000 - 3,266,107.37 + 3,239,634.25 + 23,061.59) x 1.10
+        balance: { account: { cash: 6_600_000, accruedIncome: 25_367.75, positions: 3_563_597.68, payable: 3_592_718.11, assets: 10_188_965.42, liabilities: 3_592_718.11, netAssets: 6_596_247.32,
+          local: { EUR: { cash: 6_000_000, accruedIncome: 23_061.59, positions: 3_239_634.25, payable: 3_266_107.37 } } } },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EDT('2030-04-11'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 3,266,107.37 EUR from settled cash', cash: { EUR: -3_266_107.37 }, date: '2030-04-11' }],
+        cash: { account: { EUR: { settled: 2_733_892.63, unsettled: 0, availableToTrade: 2_733_892.63 } } },
+        pending: [],
+        balance: { account: { cash: 3_007_281.89, payable: null, assets: 6_596_247.32, liabilities: 0, local: { EUR: { cash: 2_733_892.63, payable: null } } } },
+      },
+    },
+    {
+      // Thursday 18 April. End of day 17 Apr: 3,249,382.40 x 3.5% x 79/360 = 24,957.06; 1,895.47 more (2,085.02 dollars).
+      id: 'before-easter', covers: 'accrual', action: 'clock', to: EDT('2030-04-18'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on DPRMS-27-1-A: 1,895.47 EUR' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 4_000_000, accrued: 24_957.06 }],
+        pnl: { account: { couponInterest: 2_085.02, fx: 0, total: -1_667.66 } },
+        nav: { account: 6_598_332.33, book: 8_698_332.33 },
+        balance: { account: { accruedIncome: 27_452.77, assets: 6_598_332.33, netAssets: 6_598_332.33, local: { EUR: { accruedIncome: 24_957.06 } } } },
+      },
+    },
+    {
+      // T+2 from Thursday 18 April skips Good Friday and Easter Monday (TARGET): settles Tuesday 23 April, 85 days.
+      id: 'increase-over-easter', covers: ['increase', 'market holiday'], action: 'resize', lot: 'lot', factor: 1.5, // 4,000,000 -> 6,000,000
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', qty: 2_000_000, estimate: 99.8, settleDate: '2030-04-23', calendar: 'TARGET', notional: 1_624_691.20,
+          gross: 1_621_441.82, accrued: 13_426.27, cash: -1_634_868.09, fees: 81.07 }], // 1,624,691.20 x 99.80 / 100 = 1,621,441.818; x 3.5% x 85/360 = 13,426.268; 0.5 bp = 81.072
+          cash: { EUR: { purchases: 1_634_868.09, fees: 81.07, required: 1_634_949.16, available: 2_733_892.63, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 2_000_000, avgPrice: 99.8 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Bought 2,000,000 DPRMS-27-1-A @ 99.80 EUR' }],
+        cash: { account: { EUR: { settled: 2_733_892.63, unsettled: -1_634_949.16, availableToTrade: 1_098_943.47 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 6_000_000, cost: 4_864_325.46, avgCost: 99.8, price: 99.7, value: 4_859_451.38, unrealized: -4_874.08, accrued: 38_383.33 }], // 4,874,073.60 x 99.70 / 100
+        holdings: { main: { long: 6_000_000, short: 0, net: 6_000_000 } },
+        pending: [{ instrument: 'main', dueDate: '2030-04-23', amount: -1_634_949.16, ccy: 'EUR', into: 'cash' }],
+        pnl: { account: { commissions: -267.53, unrealized: -5_361.49, fx: 0.01, total: -3_543.99 } }, // 178.35 + 81.07 x 1.10 (89.18)
+        nav: { account: 6_596_456, book: 8_696_456 },
+        balance: { account: { cash: 3_007_281.89, accruedIncome: 42_221.66, positions: 5_345_396.52, payable: 1_798_444.08, assets: 8_394_900.07, liabilities: 1_798_444.08, netAssets: 6_596_456,
+          local: { EUR: { accruedIncome: 38_383.33, positions: 4_859_451.38, payable: 1_634_949.16 } } } },
+      },
+    },
+    {
+      // Tuesday 23 April. End of day Monday 22 Apr (Easter Monday: TARGET closed, New York open): 3,249,382.40 to 22 Apr, 84 days,
+      // 26,536.6229, plus the 2,000,000 to 23 Apr, 13,426.2683: 39,962.89. On the books 38,383.33: 1,579.56 more.
+      id: 'settle-after-easter', covers: ['settlement', 'market holiday', 'accrual'], action: 'clock', to: EDT('2030-04-23'),
+      expect: {
+        events: [
+          { type: 'settlement.pay', summary: 'paid 1,634,949.16 EUR from settled cash', cash: { EUR: -1_634_949.16 }, date: '2030-04-23' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on DPRMS-27-1-A: 1,579.56 EUR' },
+        ],
+        cash: { account: { EUR: { settled: 1_098_943.47, unsettled: 0, availableToTrade: 1_098_943.47 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 6_000_000, accrued: 39_962.89 }],
+        pending: [],
+        pnl: { account: { couponInterest: 3_822.54, fx: 0, total: -1_806.48 } },
+        nav: { account: 6_598_193.51, book: 8_698_193.51 },
+        balance: { account: { cash: 1_208_837.82, payable: null, accruedIncome: 43_959.18, assets: 6_598_193.51, liabilities: 0, netAssets: 6_598_193.51, local: { EUR: { cash: 1_098_943.47, payable: null, accruedIncome: 39_962.89 } } } },
+      },
+    },
+    {
+      // Monday 29 April: the quarter's coupon (payment date Sunday 28 April) on the 6,000,000 settled before it, on the factor of
+      // the quarter: 4,874,073.60 x 3.5% / 4 = 42,648.144 -> 42,648.14. On the books 39,962.89: 2,685.25 more (2,953.78 dollars).
+      id: 'payment-date', covers: 'coupon', action: 'clock', to: EDT('2030-04-29'),
+      expect: {
+        events: [
+          { type: 'bond.coupon', summary: 'Coupon received on 6,000,000 DPRMS-27-1-A (factor 0.8123456: current face 4,874,073.6): 42,648.14 EUR', cash: { EUR: 42_648.14 }, owner: 'account', date: '2030-04-29' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on DPRMS-27-1-A: 2,685.25 EUR' },
+        ],
+        cash: { account: { EUR: { settled: 1_141_591.61, availableToTrade: 1_141_591.61 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 6_000_000, accrued: 0 }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2030-07-29', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2061-04-28', status: 'pending' }], // 28 July 2030 is a Sunday
+        pnl: { account: { couponInterest: 6_776.32, total: 1_147.30 } },
+        nav: { account: 6_601_147.29, book: 8_701_147.29 },
+        balance: { account: { cash: 1_255_750.77, accruedIncome: null, assets: 6_601_147.29, netAssets: 6_601_147.29, local: { EUR: { cash: 1_141_591.61, accruedIncome: null } } } },
+      },
+    },
+    {
+      // The paydown, recorded by hand on the payment date: 0.8123456 to 0.791102 from 28 April, paid at once: 6,000,000 x 0.0212436 =
+      // 127,461.60 euro. Scheduled 0.0034455 (0.8123456 - 0.8089001), prepaid 0.0177981 (SMM 0.0177981 / 0.8089001 = 2.2003% for the
+      // quarter). Cost out 4,864,325.46 x 0.0212436 / 0.8123456 = 127,206.68: realized +254.92 euro (280.41 dollars). Nothing has
+      // accrued in the new quarter, so nothing is restated.
+      id: 'paydown-on-payment-date', covers: ['paydown (by hand)', 'prepayment (by hand)'], action: 'instrument_lifecycle', instrument: 'main',
+      body: { action: 'paydown', newFactor: 0.791102, effective: '2030-04-28', scheduledFactor: 0.8089001 },
+      expect: {
+        events: [{ type: 'bond.paydown', summary: 'Principal paydown on DPRMS-27-1-A: factor 0.8123456 to 0.791102 from 2030-04-28; scheduled principal 0.0034455, prepaid 0.0177981 of original face (SMM 2.2003%), 127,461.60 EUR received', owner: 'account', date: '2030-04-29', cash: { EUR: 127_461.6 } }],
+        cash: { account: { EUR: { settled: 1_269_053.21, availableToTrade: 1_269_053.21 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 6_000_000, cost: 4_737_118.78, avgCost: 99.8, price: 99.7, value: 4_732_372.16, unrealized: -4_746.62, accrued: 0 }], // 4,746,612 x 99.70 / 100 = 4,732,372.164
+        pnl: { account: { realized: 280.41, unrealized: -5_221.28, total: 1_567.92 } },
+        nav: { account: 6_601_567.91, book: 8_701_567.91 },
+        balance: { account: { cash: 1_395_958.53, positions: 5_205_609.38, assets: 6_601_567.91, netAssets: 6_601_567.91, local: { EUR: { cash: 1_269_053.21, positions: 4_732_372.16 } } } },
+      },
+    },
+    {
+      // A quarter sold: current face 1,500,000 x 0.791102 = 1,186,653 at 99.60 = 1,181,906.39; settles Thursday 2 May (1 May is a
+      // TARGET holiday), 4 days of accrued 461.48 (sold before it is earned: the accrued balance goes below zero until then).
+      // Cost out 4,737,118.78 / 4 = 1,184,279.70: realized -2,373.31 euro (-2,610.64 dollars).
+      id: 'reduce-over-may-day', covers: ['reduce', 'market holiday'], action: 'ticket', instrument: 'main', side: 'sell', qty: 1_500_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 1_500_000, estimate: 99.6, settleDate: '2030-05-02', calendar: 'TARGET', notional: 1_186_653,
+          gross: 1_181_906.39, accrued: 461.48, cash: 1_182_367.87, fees: 59.1 }] }, // 1,186,653 x 99.60 / 100 = 1,181,906.388; x 3.5% x 4/360 = 461.476; 0.5 bp = 59.095
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 1_500_000, avgPrice: 99.6 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: /^Sold 1,500,000 DPRMS-27-1-A @ 99\.60 EUR \(realized [-−]2,373\.31 EUR\)$/ }],
+        cash: { account: { EUR: { settled: 1_269_053.21, unsettled: 1_182_308.77, availableToTrade: 2_451_361.98 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 4_500_000, cost: 3_552_839.08, avgCost: 99.8, price: 99.7, value: 3_549_279.12, unrealized: -3_559.96, accrued: -461.48 }], // 3,559,959 x 99.70 / 100
+        holdings: { main: { long: 4_500_000, short: 0, net: 4_500_000 } },
+        pending: [{ instrument: 'main', dueDate: '2030-05-02', amount: 1_182_308.77, ccy: 'EUR', into: 'cash' }],
+        pnl: { account: { realized: -2_330.23, commissions: -332.54, unrealized: -3_915.96, total: 197.59 } }, // 280.41 - 2,610.64; + 59.10 x 1.10 (65.01)
+        nav: { account: 6_600_197.58, book: 8_700_197.58 },
+        balance: { account: { cash: 1_395_958.53, receivable: 1_300_539.65, accruedIncome: -507.63, positions: 3_904_207.03, assets: 6_600_197.58, netAssets: 6_600_197.58,
+          local: { EUR: { receivable: 1_182_308.77, accruedIncome: -461.48, positions: 3_549_279.12 } } } },
+      },
+    },
+    {
+      // Thursday 2 May. End of day 1 May (New York open): the 6,000,000 still settled face (the sale settles today), 3 days on
+      // 4,746,612, 1,384.4285, less the 4 days sold 461.4757: 922.95. On the books -461.48: 1,384.43 more (1,522.87 dollars).
+      id: 'settle-reduce', covers: ['settlement', 'accrual'], action: 'clock', to: EDT('2030-05-02'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 1,182,308.77 EUR into settled cash', cash: { EUR: 1_182_308.77 } },
+          { type: 'accrual.coupon', summary: 'Interest accrued on DPRMS-27-1-A: 1,384.43 EUR' },
+        ],
+        cash: { account: { EUR: { settled: 2_451_361.98, unsettled: 0, availableToTrade: 2_451_361.98 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 4_500_000, accrued: 922.95 }],
+        pending: [],
+        pnl: { account: { couponInterest: 8_299.19, total: 1_720.46 } },
+        nav: { account: 6_601_720.46, book: 8_701_720.46 },
+        balance: { account: { cash: 2_696_498.18, receivable: null, accruedIncome: 1_015.25, assets: 6_601_720.46, netAssets: 6_601_720.46, local: { EUR: { cash: 2_451_361.98, receivable: null, accruedIncome: 922.95 } } } },
+      },
+    },
+    {
+      // The rest sold for Monday 6 May: 3,559,959 x 99.60 / 100 = 3,545,719.16; 8 days accrued 2,768.86 (1,845.91 more than on the
+      // books); realized 3,545,719.16 - 3,552,839.08 = -7,119.92 euro (-7,831.91 dollars).
+      id: 'close', covers: 'close', action: 'close', lot: 'lot', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 4_500_000, estimate: 99.6, settleDate: '2030-05-06', calendar: 'TARGET', notional: 3_559_959,
+          gross: 3_545_719.16, accrued: 2_768.86, cash: 3_548_488.02, fees: 177.29 }], // x 3.5% x 8/360 = 2,768.857; 0.5 bp = 177.286
+        },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 4_500_000, avgPrice: 99.6 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: /^Sold 4,500,000 DPRMS-27-1-A @ 99\.60 EUR \(realized [-−]7,119\.92 EUR\)$/ },
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of DPRMS-27-1-A: 1,845.91 EUR' },
+        ],
+        cash: { account: { EUR: { settled: 2_451_361.98, unsettled: 3_548_310.73, availableToTrade: 5_999_672.71 } } },
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', dueDate: '2030-05-06', amount: 3_548_310.73, ccy: 'EUR', into: 'cash' }],
+        lifecycle: [],
+        pnl: { account: { realized: -10_162.14, couponInterest: 10_329.69, commissions: -527.56, unrealized: 0, fx: 0.01, total: -360 } },
+        nav: { account: 6_599_639.98, book: 8_699_639.98 }, // 5,999,672.71 x 1.10 = 6,599,639.981
+        balance: { account: { cash: 2_696_498.18, receivable: 3_903_141.80, positions: null, accruedIncome: null, assets: 6_599_639.98, liabilities: 0, netAssets: 6_599_639.98,
+          local: { EUR: { receivable: 3_548_310.73, positions: null, accruedIncome: null } } } },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: EDT('2030-05-06'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 3,548,310.73 EUR into settled cash', cash: { EUR: 3_548_310.73 } }],
+        cash: { account: { EUR: { settled: 5_999_672.71, unsettled: 0, availableToTrade: 5_999_672.71 } }, treasury: { USD: { settled: 1_000_000 }, EUR: { settled: 1_000_000 } } },
+        pending: [],
+        balance: { account: { cash: 6_599_639.98, receivable: null, assets: 6_599_639.98, liabilities: 0, local: { EUR: { cash: 5_999_672.71, receivable: null } } } },
+      },
+    },
+  ],
+};
+
+export default [tips, foreignInflationLinked, callableBond, puttableBond, convertibleBond, exchangeableBond, cocoBond, mbs, rmbs, cmbs, agencyMbs, nonAgencyMbs];

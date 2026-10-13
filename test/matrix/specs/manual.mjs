@@ -2130,4 +2130,175 @@ const recoverySwap = {
   ],
 };
 
-export default [privateEquity, ventureCapital, hedgeFund, infrastructure, directRealEstate, insuranceLinked, varianceSwap, volatilitySwap, correlationSwap, dispersionSwap, recoverySwap];
+// ---------------------------------------------------------------------------------------------
+// weather_derivative
+// ---------------------------------------------------------------------------------------------
+// A heating-degree-day call on Chicago O'Hare for November 2026 to March 2027: strike 4,000 HDD (base 65 F), 5,000 USD a
+// degree day, capped at 2,000,000. Premium 180,000 paid; uncollateralized (stated on the contract). Marks by hand; a quarter
+// sold back to the dealer at an agreed price; the period's HDD total entered by hand once the season ends: the payout is
+// capped. The payment T+2 on the US calendar is counted after the season ends on 31 March 2027.
+const WX_POS = { instrument: 'main', lot: 'option', owner: 'account', direction: 'holder' };
+const weatherDerivative = {
+  productId: 'weather_derivative',
+  title: "Chicago O'Hare HDD call, November 2026 to March 2027, strike 4,000, 5,000 a degree day, capped at 2,000,000: premium, marks, partial sale, capped settlement, by hand",
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: ['Trading owner', 'Action (Enter the contract, Terminate)', 'Contracts', 'State a fill price (the premium)', 'Station, index, base temperature, period, strike, tick, cap, payoff, side (registration)', 'Collateral basis (registration, required): uncollateralized'],
+    manualInputs: ['premium', 'marks (value to us, date, source)', 'agreed price of the part sold back', 'the HDD total for the period'],
+    settlement: 'Premium and the part sold T+2 on the US calendar; final settlement T+2 after the HDD total is entered (1 April 2027, paid 5 April)',
+    lifecycle: 'The end of the period waits, visibly, for the index entered by hand; payout = min(tick x max(HDD - strike, 0), cap)',
+    accounting: 'Cost = premium; valued at the mark by hand; the part sold and the final payout realized against the premium',
+    collateral: 'Uncollateralized, an explicit paper assumption on the contract',
+  },
+  start: '2026-10-05T14:00:00.000Z', // Monday 5 October 2026
+  settlementCheck: { lag: 2, holidays: [] },
+  book: { name: 'Matrix weather derivative', reportingCcy: 'USD', capital: [{ ccy: 'USD', amount: 3_000_000 }], account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 2_000_000 }] }, settings: SETTINGS },
+  instruments: {
+    main: { productId: 'weather_derivative', name: "Chicago O'Hare HDD call, Nov 2026 to Mar 2027, strike 4,000 (Eastgate Energy Trading)", symbol: 'HDD-ORD-2627C', marketView: 'US_DERIV', venueType: 'otc', jurisdiction: 'US', underlyingGeo: 'US', tradingCcy: 'USD',
+      terms: { station: "Chicago O'Hare International Airport (KORD)", index: 'HDD', baseTemp: 65, periodStart: '2026-11-01', periodEnd: '2027-03-31', strike: 4000, tick: 5000, cap: 2_000_000, optionType: 'call', side: 'long', valuationMaxAgeDays: 30,
+        counterparty: 'Eastgate Energy Trading', collateralBasis: { type: 'uncollateralized' } } },
+  },
+  expectAtStart: SIMPLE_START(2_000_000, 1_000_000),
+  steps: [
+    {
+      id: 'buy-the-call', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 1, as: 'option', order: { statedPrice: 180_000 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 1, estimate: 180_000, model: 'stated-price', settleDate: '2026-10-07', calendar: 'US', cash: -180_000, fees: 0, notional: 2_000_000 }], // the cap
+          cash: { USD: { purchases: 180_000, required: 180_000, available: 2_000_000, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 1, avgPrice: 180_000 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1 HDD-ORD-2627C @ 180,000.00 USD', owner: 'account', date: '2026-10-05' }],
+        cash: { account: { USD: { settled: 2_000_000, unsettled: -180_000, availableToTrade: 1_820_000 } } },
+        positions: [{ ...WX_POS, qty: 1, avgCost: 180_000, cost: 180_000, price: null, value: null, unrealized: null, provisional: true, manual: { kind: 'weather', endDate: '2027-03-31', valuation: null } }],
+        holdings: { main: { long: 1, short: 0, net: 1 } },
+        pending: [{ instrument: 'main', lot: 'option', owner: 'account', dueDate: '2026-10-07', amount: -180_000, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'manual.settlement', instrument: 'main', dueDate: '2027-03-31', status: 'pending', owner: 'account' }],
+        otc: [{ instrument: 'main', lot: 'option', owner: 'account', qty: 1, basis: 'uncollateralized', iaPosted: 0, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, fees: 0 } },
+        nav: { account: 2_000_000, book: 3_000_000 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 2_000_000, positions: 180_000, payable: 180_000, assets: 2_180_000, liabilities: 180_000, netAssets: 2_000_000 } },
+      },
+    },
+    {
+      id: 'premium-paid', covers: 'settlement', action: 'clock', to: '2026-10-07T14:00:00.000Z',
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 180,000.00 USD from settled cash', cash: { USD: -180_000 } }],
+        cash: { account: { USD: { settled: 1_820_000, unsettled: 0, availableToTrade: 1_820_000 } } },
+        pending: [],
+        balance: { account: { cash: 1_820_000, payable: null, assets: 2_000_000, liabilities: 0 } },
+      },
+    },
+    { id: 'november', action: 'clock', to: '2026-11-02T15:00:00.000Z', expect: {} },
+    {
+      id: 'mark-november', covers: 'valuation', action: 'lifecycle', lot: 'option', body: { action: 'valuation', value: 210_000, asOf: '2026-11-02', source: 'Dealer mark, Eastgate Energy Trading' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of HDD-ORD-2627C entered by hand: 210,000.00 USD for the 1 held, as of 2026-11-02, source: Dealer mark, Eastgate Energy Trading. A manual input, not a market quote' }],
+        positions: [{ ...WX_POS, qty: 1, cost: 180_000, price: 210_000, value: 210_000, unrealized: 30_000, provisional: false, freshness: 'manual' }],
+        otc: [{ instrument: 'main', mark: 210_000, markValue: 210_000 }],
+        pnl: { account: { unrealized: 30_000, total: 30_000 } },
+        nav: { account: 2_030_000, book: 3_030_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 210_000, assets: 2_030_000, netAssets: 2_030_000 } },
+      },
+    },
+    {
+      // Monday 14 December: the 2 November mark is 42 days old (limit 30).
+      id: 'december', covers: 'valuation', action: 'clock', to: '2026-12-14T15:00:00.000Z',
+      expect: { positions: [{ ...WX_POS, qty: 1, value: 210_000, freshness: 'stale' }], provisional: { account: true, book: true } },
+    },
+    {
+      id: 'mark-december', covers: 'valuation', action: 'lifecycle', lot: 'option', body: { action: 'valuation', value: 260_000, asOf: '2026-12-14', source: 'Dealer mark after a cold first half of December' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of HDD-ORD-2627C entered by hand: 260,000.00 USD for the 1 held, as of 2026-12-14, source: Dealer mark after a cold first half of December. A manual input, not a market quote' }],
+        positions: [{ ...WX_POS, qty: 1, cost: 180_000, price: 260_000, value: 260_000, unrealized: 80_000, freshness: 'manual' }],
+        otc: [{ instrument: 'main', mark: 260_000, markValue: 260_000 }],
+        pnl: { account: { unrealized: 80_000, total: 80_000 } },
+        nav: { account: 2_080_000, book: 3_080_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 260_000, assets: 2_080_000, netAssets: 2_080_000 } },
+      },
+    },
+    {
+      // A quarter sold back at 260,000 a contract: 65,000 received T+2 (16 December); cost 45,000; realized 20,000.
+      id: 'sell-a-quarter', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 0.25, from: 'option', order: { statedPrice: 260_000 },
+      expect: {
+        preview: { blocking: 0, legs: [{ action: 'sell', qty: 0.25, estimate: 260_000, model: 'stated-price', settleDate: '2026-12-16', cash: 65_000, fees: 0 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 0.25, avgPrice: 260_000 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 0.25 HDD-ORD-2627C @ 260,000.00 USD (realized 20,000.00 USD)' }],
+        cash: { account: { USD: { settled: 1_820_000, unsettled: 65_000, availableToTrade: 1_885_000 } } },
+        positions: [{ ...WX_POS, qty: 0.75, avgCost: 180_000, cost: 135_000, price: 260_000, value: 195_000, unrealized: 60_000 }],
+        holdings: { main: { long: 0.75, short: 0, net: 0.75 } },
+        pending: [{ instrument: 'main', lot: 'option', owner: 'account', dueDate: '2026-12-16', amount: 65_000, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: 0.75, markValue: 195_000 }],
+        pnl: { account: { realized: 20_000, unrealized: 60_000, total: 80_000 } },
+        nav: { account: 2_080_000, book: 3_080_000 },
+        balance: { account: { cash: 1_820_000, receivable: 65_000, positions: 195_000, assets: 2_080_000, netAssets: 2_080_000 } },
+      },
+    },
+    {
+      id: 'sale-paid', covers: 'settlement', action: 'clock', to: '2026-12-16T15:00:00.000Z',
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 65,000.00 USD into settled cash', cash: { USD: 65_000 } }],
+        cash: { account: { USD: { settled: 1_885_000, unsettled: 0, availableToTrade: 1_885_000 } } },
+        pending: [],
+        balance: { account: { cash: 1_885_000, receivable: null } },
+      },
+    },
+    {
+      // Monday 1 February 2027: the 14 December mark is 49 days old.
+      id: 'february', covers: 'valuation', action: 'clock', to: '2027-02-01T15:00:00.000Z',
+      expect: { positions: [{ ...WX_POS, qty: 0.75, value: 195_000, freshness: 'stale' }], provisional: { account: true, book: true } },
+    },
+    {
+      // A very cold January: the 0.75 held is worth 1,200,000 (1,600,000 a contract).
+      id: 'mark-february', covers: 'valuation', action: 'lifecycle', lot: 'option', body: { action: 'valuation', value: 1_200_000, asOf: '2027-02-01', source: 'Dealer mark, Eastgate Energy Trading' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of HDD-ORD-2627C entered by hand: 1,200,000.00 USD for the 0.75 held (1,600,000.00 mark per contract, signed), as of 2027-02-01, source: Dealer mark, Eastgate Energy Trading. A manual input, not a market quote' }],
+        positions: [{ ...WX_POS, qty: 0.75, cost: 135_000, price: 1_600_000, value: 1_200_000, unrealized: 1_065_000, freshness: 'manual' }],
+        otc: [{ instrument: 'main', mark: 1_600_000, markValue: 1_200_000 }],
+        pnl: { account: { unrealized: 1_065_000, total: 1_085_000 } },
+        nav: { account: 3_085_000, book: 4_085_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 1_200_000, assets: 3_085_000, netAssets: 3_085_000 } },
+      },
+    },
+    {
+      // Thursday 1 April 2027 (daylight time): the season ended on 31 March; the payout waits for the HDD total.
+      id: 'season-ends', covers: 'settlement', action: 'clock', to: '2027-04-01T14:00:00.000Z',
+      expect: {
+        lifecycle: [{ type: 'manual.settlement', instrument: 'main', dueDate: '2027-03-31', status: 'blocked', owner: 'account', reason: /^Waiting for the realised value, entered by hand \(Lifecycle, Final settlement\)\. Payment = the smaller of the cap and 5,000\.00 USD x max\(HDD - 4,000\.00, 0\)/ }],
+        positions: [{ ...WX_POS, qty: 0.75, value: 1_200_000, freshness: 'stale' }],
+        provisional: { account: true, book: true },
+      },
+    },
+    {
+      // HDD for the season: 4,620. 5,000 x (4,620 - 4,000) = 3,100,000, capped at 2,000,000 a contract; x 0.75 = 1,500,000,
+      // paid T+2 = Monday 5 April 2027. Realized 1,500,000 - 135,000 = 1,365,000, so 1,385,000 in all with the quarter sold.
+      id: 'capped-payout', covers: 'close', action: 'lifecycle', lot: 'option', body: { action: 'settle', realised: 4620 },
+      expect: {
+        events: [{ type: 'manual.settlement', summary: 'Final settlement of HDD-ORD-2627C entered by hand: HDD 4,620.00 against the strike 4,000.00 (call): 5,000.00 USD x 620.00 = 3,100,000.00 USD, capped at 2,000,000.00 USD, x 0.75 held = 1,500,000.00 USD received 2027-04-05', owner: 'account', date: '2027-04-01' }],
+        cash: { account: { USD: { settled: 1_885_000, unsettled: 1_500_000, availableToTrade: 3_385_000 } } },
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', lot: 'option', owner: 'account', dueDate: '2027-04-05', amount: 1_500_000, ccy: 'USD', into: 'cash' }],
+        lifecycle: [],
+        otc: [],
+        pnl: { account: { realized: 1_385_000, unrealized: 0, total: 1_385_000 } },
+        nav: { account: 3_385_000, book: 4_385_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { cash: 1_885_000, receivable: 1_500_000, positions: null, assets: 3_385_000, netAssets: 3_385_000 } },
+      },
+    },
+    {
+      id: 'payout-paid', covers: 'settlement', action: 'clock', to: '2027-04-05T14:00:00.000Z',
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 1,500,000.00 USD into settled cash', cash: { USD: 1_500_000 }, date: '2027-04-05' }],
+        cash: { account: { USD: { settled: 3_385_000, unsettled: 0, availableToTrade: 3_385_000 } } },
+        pending: [],
+        balance: { account: { cash: 3_385_000, receivable: null, assets: 3_385_000, liabilities: 0, netAssets: 3_385_000 } },
+      },
+    },
+  ],
+};
+
+export default [privateEquity, ventureCapital, hedgeFund, infrastructure, directRealEstate, insuranceLinked, varianceSwap, volatilitySwap, correlationSwap, dispersionSwap, recoverySwap, weatherDerivative];

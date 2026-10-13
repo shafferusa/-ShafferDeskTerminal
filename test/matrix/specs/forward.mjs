@@ -1212,4 +1212,177 @@ const fxSwap = {
   ],
 };
 
-export default [equityForward, bondForward, fxForward, ndf, commodityForward, fra, fxSwap];
+// ---------------------------------------------------------------------------------------------
+// tba_mortgage
+// ---------------------------------------------------------------------------------------------
+// A TBA ("to be announced") purchase of Fannie Mae / Freddie Mac UMBS 30-year 5.5% pass-throughs for June 2026
+// settlement (SIFMA class A settlement date, Thursday 11 June 2026): the Account buys 5,000,000 original face at
+// 100.25. Which pools are delivered is not known at the trade: the seller notifies the allocation two business
+// days before settlement (Tuesday 9 June, "48-hour day"). The catalog marks the product partial: the allocation
+// is recorded by hand on the position (Lifecycle, Pool allocation), checked for good delivery (an agency
+// pass-through with the contract's 5.5% coupon); the delivery of the allocated pool on the settlement date is then
+// simulated and labelled. A 6% pool offered in allocation is refused.
+// The pool delivered: UMBS 30-year 5.5% pool BX7781, factor 0.95, 30/360, paying 24 days after each monthly period.
+// On delivery the price applies to current face: 5,000,000 x 0.95 = 4,750,000.00 current face; principal
+// 4,750,000 x 100.25 / 100 = 4,761,875.00; accrued from 1 June to 11 June, 10 days 30/360: 4,750,000 x 5.5% x
+// 10 / 360 = 7,256.9444 = 7,256.94; invoice 4,769,131.94. The pool is then sold at the bid, settling T+3 (its
+// own convention).
+// Collateral: position-level terms (in the manner of an MSFTA): no independent amount, variation margin with a
+// threshold of 0 and a minimum transfer of 25,000 USD. Held across Memorial Day (25 May 2026). No commission.
+const POOL = (key, coupon, symbol, factor) => ({
+  productId: 'agency_mbs', name: `Fannie Mae UMBS 30-Year ${(coupon * 100).toFixed(2)}% Pool ${key}`, symbol, marketView: 'US_CASH', venueType: 'otc', issuer: 'Federal National Mortgage Association', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+  conventions: { settleLag: 3 },
+  terms: { couponType: 'fixed', couponRate: coupon, frequency: 12, maturity: '2056-05-01', issueDate: '2026-05-01', dayCount: '30/360', redemption: 100, factor, paymentDelayDays: 24, guarantor: 'Fannie Mae' },
+});
+const tbaRow = (extra) => ({ instrument: 'main', lot: 'tba', owner: 'account', qty: 5_000_000, basis: 'position', agreement: null, flagged: false, iaPosted: 0, vmHeld: 0, vmCcy: 'USD', ...extra });
+const tbaMortgage = {
+  productId: 'tba_mortgage',
+  title: 'UMBS 30-year 5.5% TBA for June 2026: 5,000,000 original face bought at 100.25, variation margin posted, pool allocated by hand (a 6% pool refused), delivered (simulated) on 11 June, pool sold',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: ['Kind of forward (Forward on an asset)', 'Settlement (Physical delivery)', 'Pool coupon', 'Value date (SIFMA settlement date)', 'Counterparty', 'Collateral basis and its terms', 'Account', 'Action (Buy)', 'Original face', 'State a fill price (% of par)', 'pool allocation: Allocated pool'],
+    automaticInputs: ['TBA mark (quote fixture standing in for a dealer indication)', 'pool bid and ask (quote fixture)', 'accrued interest and current face of the delivered pool from its registered terms', 'variation margin from the position-level terms'],
+    manualInputs: ['dealt TBA price (stated fill price)', 'registration of the allocated pool (Instruments, New instrument: agency MBS with its factor and payment delay)', 'pool allocation recorded on the position (Lifecycle, Pool allocation)'],
+    settlement: 'No cash at entry; variation margin posted and returned; on the settlement date the allocated pool is delivered (simulated) against the price on current face plus accrued interest; the pool sale settles T+3',
+    lifecycle: 'Variation margin (automatic); pool allocation by hand, with good-delivery checks (a pool of another coupon is refused); delivery of the allocated pool on the settlement date (automatic once allocated, waiting visibly otherwise)',
+    accounting: 'Nil cost; TBA value = original face x (mark - dealt) / 100; the delivered pool carried at the dealt price on current face, accrued interest bought as an asset; the pool sale realizes against it',
+    collateral: 'Position-level terms: no independent amount; variation margin, threshold 0, minimum transfer 25,000 USD; returned when the contract settles',
+  },
+  start: AM('2026-05-18'),
+  settlementCheck: { lag: 3, holidays: ['2026-05-25'] },
+  book: {
+    name: 'Matrix TBA', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 6_000_000 }],
+    account: { name: 'Mortgages', funding: [{ ccy: 'USD', amount: 5_000_000 }] },
+    settings: { fees: { forward: { perUnit: 0, minimum: 0, bps: 0 }, bond: { perUnit: 0, minimum: 0, bps: 0 } }, fill: FILL, settlement: { bond: 3 } },
+  },
+  instruments: {
+    pool: POOL('BX7781', 0.055, 'FN-5.5-BX7781', 0.95),
+    pool6: POOL('BX9902', 0.06, 'FN-6.0-BX9902', 0.97),
+    main: {
+      productId: 'tba_mortgage', name: 'UMBS 30-Year 5.5% TBA, June 2026', symbol: 'UMBS-5.5-JUN26', marketView: 'US_DERIV', venueType: 'otc', jurisdiction: 'US', tradingCcy: 'USD',
+      terms: { forwardType: 'asset', settlement: 'physical', coupon: 0.055, valueDate: '2026-06-11', counterparty: 'Harbourline Securities LLC',
+        collateralBasis: { type: 'position', independentAmount: { type: 'none' }, variationMargin: true, threshold: 0, minimumTransfer: 25_000 } },
+    },
+  },
+  quotes: {
+    pool: { bid: 100.30, ask: 100.50, last: 100.40, bidSize: 50_000_000, askSize: 50_000_000 },
+    main: { bid: 100.20, ask: 100.30, last: 100.25, bidSize: 50_000_000, askSize: 50_000_000 },
+  },
+  expectAtStart: {
+    ...NO_STATE,
+    cash: { account: { USD: cashOf(5_000_000) }, treasury: { USD: cashOf(1_000_000) } },
+    positions: [], otc: [],
+    nav: { account: 5_000_000, treasury: 1_000_000, book: 6_000_000 },
+  },
+  steps: [
+    {
+      // 5,000,000 x 100.25 / 100 = 5,012,500.00 notional. No independent amount, no commission: nothing moves.
+      id: 'buy-tba', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 5_000_000, as: 'tba', settlementCheck: false, order: { statedPrice: 100.25 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 5_000_000, estimate: 100.25, model: 'stated-price', settleDate: '2026-06-11', fees: 0 }] },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 5_000_000, avgPrice: 100.25 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought forward 5,000,000 UMBS-5.5-JUN26 @ 100.25 for 2026-06-11', owner: 'account', date: '2026-05-18' }],
+        positions: [{ instrument: 'main', lot: 'tba', owner: 'account', direction: 'long', qty: 5_000_000, avgCost: 100.25, cost: 0, price: 100.25, value: 0, unrealized: 0, notional: 5_012_500, margin: 0 }],
+        holdings: { main: { long: 5_000_000, short: 0, net: 5_000_000 } },
+        lifecycle: [{ type: 'forward.maturity', instrument: 'main', dueDate: '2026-06-11', status: 'pending' }],
+        pnl: { account: { realized: 0, unrealized: 0, total: 0 } },
+        balance: { account: { cash: 5_000_000, assets: 5_000_000, liabilities: 0, netAssets: 5_000_000 } },
+        otc: [tbaRow({ mark: 100.25, markValue: 0, vmPosted: 0, vmStatus: 'not_valued_yet' })],
+      },
+    },
+    {
+      // The TBA falls to 99.75: 5,000,000 x (99.75 - 100.25) / 100 = -25,000.00.
+      id: 'mark-down', covers: 'mark', action: 'quote', instrument: 'main', quote: { bid: 99.70, ask: 99.80, last: 99.75, bidSize: 50_000_000, askSize: 50_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'tba', owner: 'account', direction: 'long', qty: 5_000_000, avgCost: 100.25, cost: 0, price: 99.75, value: -25_000, unrealized: -25_000, notional: 5_012_500, margin: 0 }],
+        pnl: { account: { unrealized: -25_000, total: -25_000 } },
+        nav: { account: 4_975_000, book: 5_975_000 },
+        balance: { account: { positions: -25_000, assets: 4_975_000, netAssets: 4_975_000 } },
+        otc: [tbaRow({ mark: 99.75, markValue: -25_000, vmPosted: 0, vmStatus: 'not_valued_yet' })],
+      },
+    },
+    {
+      // Worth -25,000.00, threshold 0: 25,000.00 is called, not below the minimum transfer of 25,000. The Account posts it.
+      id: 'variation-posted', covers: ['variation margin', 'collateral'], action: 'clock', to: EOD('2026-05-18'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: '25,000.00 USD posted', cash: { USD: -25_000 }, owner: 'account', date: '2026-05-18' }],
+        cash: { account: { USD: cashOf(4_975_000, { margin: 25_000 }) } },
+        balance: { account: { cash: 4_975_000, margin: 25_000, assets: 5_000_000 - 25_000, netAssets: 4_975_000 } },
+        otc: [tbaRow({ mark: 99.75, markValue: -25_000, vmPosted: 25_000, vmExposure: -25_000, vmStatus: 'ok' })],
+      },
+    },
+    { id: 'allocation-day', action: 'clock', to: AM('2026-06-09'), expect: {} }, // over Memorial Day; the 48-hour day
+    {
+      // The seller first names a 6% pool: not good delivery for a 5.5% TBA. Refused, nothing recorded.
+      id: 'allocate-wrong-coupon', covers: 'pool allocation', action: 'lifecycle', lot: 'tba', instrument: 'main', body: { action: 'allocate', instrumentId: '$inst:pool6' },
+      status: 'blocked', reason: 'A pool of another coupon is not good delivery for the contract.',
+      expect: { refused: 'FN-6.0-BX9902 pays 6%; UMBS-5.5-JUN26 is settled with 5.5% pools.' },
+    },
+    {
+      id: 'allocate', covers: 'pool allocation', action: 'lifecycle', lot: 'tba', instrument: 'main', body: { action: 'allocate', instrumentId: '$inst:pool' },
+      expect: {
+        events: [{ type: 'forward.allocation', summary: 'Pool allocated by hand on UMBS-5.5-JUN26: FN-5.5-BX7781, 5,000,000 original face at factor 0.95 (4,750,000.00 USD current face), to be delivered on 2026-06-11', owner: 'account', date: '2026-06-09' }],
+      },
+    },
+    {
+      // Settlement date. The allocated pool is delivered (simulated) against 4,761,875.00 + 7,256.94 = 4,769,131.94, paid
+      // the same day; the variation margin of 25,000.00 comes back. Cash: 4,975,000 - 4,769,131.94 + 25,000 = 230,868.06.
+      // The pool: cost 4,761,875.00, worth 4,750,000 x 100.40 / 100 = 4,769,000.00 (unrealized 7,125.00), accrued 7,256.94.
+      id: 'settlement-delivery', covers: ['physical delivery', 'settlement', 'accrued interest', 'collateral'], action: 'clock', to: AM('2026-06-11'),
+      expect: {
+        events: [
+          { type: 'forward.delivery', summary: 'Simulated forward delivery (paper entry, no goods or securities move): received 5,000,000 FN-5.5-BX7781 at 100.25 on UMBS-5.5-JUN26', owner: 'account', date: '2026-06-11' },
+          { type: 'settlement.pay', summary: 'paid 4,769,131.94 USD from settled cash', cash: { USD: -4_769_131.94 }, owner: 'account', date: '2026-06-11' },
+          { type: 'collateral.variation', summary: '25,000.00 USD returned', cash: { USD: 25_000 }, owner: 'account' },
+        ],
+        cash: { account: { USD: cashOf(230_868.06) } },
+        positions: [{ instrument: 'pool', lot: 'tba', owner: 'account', direction: 'long', qty: 5_000_000, avgCost: 100.25, cost: 4_761_875, price: 100.40, value: 4_769_000, unrealized: 7_125, accrued: 7_256.94 }],
+        holdings: { main: null, pool: { long: 5_000_000, short: 0, net: 5_000_000 } },
+        // The pool's first coupon: the period to 1 July, paid 24 days later, 25 July (a Saturday): Monday 27 July. Its final
+        // principal: maturity 1 May 2056 plus the same 24-day delay, Thursday 25 May 2056.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'pool', dueDate: '2026-07-27', status: 'pending' }, { type: 'bond.maturity', instrument: 'pool', dueDate: '2056-05-25', status: 'pending' }],
+        pnl: { account: { realized: 0, couponInterest: 0, unrealized: 7_125, total: 7_125 } },
+        nav: { account: 5_007_125, book: 6_007_125 }, // 230,868.06 + 4,769,000 + 7,256.94
+        balance: { account: { cash: 230_868.06, margin: null, positions: 4_769_000, accruedIncome: 7_256.94, assets: 5_007_125, liabilities: 0, netAssets: 5_007_125 } },
+        otc: [],
+      },
+    },
+    {
+      // The pool is sold at the bid, 100.30, settling T+3: Tuesday 16 June. Accrued then: 15 days 30/360 on current face,
+      // 4,750,000 x 5.5% x 15 / 360 = 10,885.4167 = 10,885.42. Proceeds 4,750,000 x 100.30 / 100 = 4,764,250.00 + 10,885.42
+      // = 4,775,135.42. Realized (100.30 - 100.25) x 4,750,000 / 100 = 2,375.00; interest while held 10,885.42 - 7,256.94 = 3,628.48.
+      id: 'sell-pool', covers: ['close', 'accrued interest'], action: 'ticket', ticketOf: 'bond', instrument: 'pool', side: 'sell', qty: 5_000_000, from: 'tba',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'pool', qty: 5_000_000, estimate: 100.30, model: 'quoted-bid-ask', settleDate: '2026-06-16', accrued: 10_885.42, fees: 0 }] },
+        result: { orders: [{ action: 'sell', status: 'filled', filledQty: 5_000_000, avgPrice: 100.30 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 5,000,000 FN-5.5-BX7781 @ 100.30 USD (realized 2,375.00 USD)', owner: 'account', date: '2026-06-11' },
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of FN-5.5-BX7781: 3,628.48 USD', owner: 'account' },
+        ],
+        cash: { account: { USD: cashOf(230_868.06, { unsettled: 4_775_135.42, trade: 5_006_003.48, withdraw: 230_868.06 }) } },
+        positions: [],
+        holdings: { pool: null },
+        pending: [{ instrument: 'pool', lot: 'tba', owner: 'account', dueDate: '2026-06-16', amount: 4_775_135.42, ccy: 'USD', into: 'cash' }],
+        lifecycle: [],
+        pnl: { account: { realized: 2_375, couponInterest: 3_628.48, unrealized: 0, total: 6_003.48 } },
+        nav: { account: 5_006_003.48, book: 6_006_003.48 },
+        balance: { account: { cash: 230_868.06, positions: null, accruedIncome: null, receivable: 4_775_135.42, assets: 5_006_003.48, liabilities: 0, netAssets: 5_006_003.48 } },
+      },
+    },
+    {
+      // By hand, the whole scenario: the TBA delivered at its dealt price (variation margin posted and returned, nothing
+      // realized on it), the pool sold 2,375.00 above cost, 3,628.48 of interest earned: 6,003.48.
+      id: 'sale-settles', covers: 'settlement', action: 'clock', to: AM('2026-06-16'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 4,775,135.42 USD into settled cash', cash: { USD: 4_775_135.42 }, owner: 'account', date: '2026-06-16' }],
+        cash: { account: { USD: cashOf(5_006_003.48) } },
+        pending: [],
+        balance: { account: { cash: 5_006_003.48, receivable: null, assets: 5_006_003.48 } },
+      },
+    },
+  ],
+};
+
+export default [equityForward, bondForward, fxForward, ndf, commodityForward, fra, fxSwap, tbaMortgage];
