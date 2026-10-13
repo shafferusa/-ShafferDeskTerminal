@@ -2933,4 +2933,237 @@ const privateCreditSpec = {
   ],
 };
 
-export default [specifiedPool, absSpec, cmoSpec, cloSpec, cdoSpec, clnSpec, structuredNoteSpec, catBondSpec, syndicatedLoanSpec, leveragedLoanSpec, privateCreditSpec];
+// ---------------------------------------------------------------------------------------------
+// distressed_debt
+// ---------------------------------------------------------------------------------------------
+// Distressed debt: the term loan of a retailer heading into Chapter 11, Harlan Retail Group Term Loan B due 15 June 2031
+// (TSOFR3M + 4.50%, quarterly on 15 March, June, September and December, ACT/360), traded by assignment on LSTA distressed
+// documentation: settlement T+20 by market practice (the instrument's convention), no delayed compensation. Once in default it
+// trades flat: no accrued interest changes hands. The default and the plan's recovery distributions are recorded by hand.
+//   - Bought on Monday 14 January 2030 at 62.00 while still paying (with accrued), settling T+20 over MLK Day: Tuesday 12 February.
+//   - 14 March: the borrower announces it will not pay the 15 March interest: the default is recorded by hand (coupons suspended):
+//     the interest accrued, including the 68,833.33 bought with the loan, is reversed; the 15 March coupon passes unpaid.
+//   - The loan now trades flat: 2,000,000 more bought at 41.00 on 20 March, settling T+20 on 17 April.
+//   - 15 May: the plan's interim distribution, 20.00 per 100 in cash, recorded by hand: a return of capital. 3,000,000 sold flat
+//     at 17.00, settling T+20 over Memorial Day on 13 June.
+//   - 17 June: the 15 June coupon passes unpaid; the final distribution, 10.00 per 100, closes the claim. Nothing can be traded
+//     after it.
+// Commission: 0.5 basis point of clean principal. Days (ACT/360) from 15 Dec 2029: to 12 Feb 59, 13 Mar 88.
+const distressedSpec = {
+  productId: 'distressed_debt',
+  title: 'Harlan Retail Group Term Loan B on distressed documentation: bought T+20 over MLK Day with accrued, default by hand (accrued reversed, coupons unpaid), trades flat, interim and final recovery distributions by hand, partial sale over Memorial Day, closed',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount'],
+    automaticInputs: ['bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData)', 'fill price and fill model', 'accrued interest while performing; none once in default (flat)', 'settlement date T+20 from the instrument convention and the US bond calendar', 'commission from the Book fee schedule'],
+    manualInputs: ['Registration: Trading documentation distressed, Settlement convention 20', 'Default recorded by hand (instrument form: Review coupon suspension, Suspend coupons)', 'Recovery distributions recorded by hand (Recovery distribution per 100, Distribution interim or final)'],
+    settlement: 'T+20 on the US bond calendar (distressed documentation), MLK Day and Memorial Day skipped; flat once in default',
+    lifecycle: 'Automatic: accrual and coupons while performing; coupon dates in default listed as not paid. Manual: the default (non-accrual), the interim and final recovery distributions. Refused: trading after the final distribution. Not modelled: distributions in new securities (record them as a sale at the distribution value and a purchase of the new instrument)',
+    accounting: 'Purchased accrued interest reversed out of coupon income on default; interim distribution lowers cost (cost recovery); final distribution and the sale realized; commission expensed',
+    collateral: 'None for a long position',
+  },
+  start: EST('2030-01-14'), // Monday
+  settlementCheck: { lag: 20, holidays: ['2030-01-21', '2030-05-27'] }, // MLK Day, Memorial Day
+  book: {
+    name: 'Matrix distressed debt', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 6_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 5_000_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.5 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'distressed_debt', name: 'Harlan Retail Group Term Loan B due 15-Jun-2031', symbol: 'HARLAN-TLB-31', marketView: 'US_CASH', venueType: 'otc', issuer: 'Harlan Retail Group Inc', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { settleLag: 20 },
+      terms: { couponType: 'float', referenceRate: 'TSOFR3M', spread: 0.045, currentCoupon: 0.084, frequency: 4, maturity: '2031-06-15', issueDate: '2024-06-15', dayCount: 'ACT/360', redemption: 100, seniority: 'Senior secured first lien (in distress)', tradingDocs: 'distressed' } },
+  },
+  quotes: { main: { bid: 60, ask: 62, last: 61, bidSize: 10_000_000, askSize: 10_000_000 } },
+  expectAtStart: { ...startState(5_000_000, 1_000_000), cash: { account: usdCash(5_000_000), treasury: usdCash(1_000_000) } },
+  steps: [
+    {
+      // 5,000,000 at 62.00 = 3,100,000, settling T+20 on Tuesday 12 February; while performing the accrued is paid: 59 days at 8.40%
+      // 68,833.33; 0.5 bp = 155.00.
+      id: 'open', covers: ['open', 'market holiday'], action: 'ticket', instrument: 'main', side: 'buy', qty: 5_000_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 5_000_000, estimate: 62, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2030-02-12', calendar: 'USBOND',
+            gross: 3_100_000, accrued: 68_833.33, cash: -3_168_833.33, fees: 155 }],
+          cash: { USD: { purchases: 3_168_833.33, fees: 155, required: 3_168_988.33, available: 5_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 5_000_000, avgPrice: 62, fills: [{ qty: 5_000_000, price: 62, model: 'quoted-bid-ask', settleDate: '2030-02-12', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 5,000,000 HARLAN-TLB-31 @ 62.00 USD', owner: 'account', date: '2030-01-14' }],
+        cash: { account: { USD: { settled: 5_000_000, unsettled: -3_168_988.33, availableToTrade: 1_831_011.67 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 5_000_000, avgCost: 62, cost: 3_100_000, price: 61, value: 3_050_000, unrealized: -50_000, accrued: 68_833.33, priceSource: 'Test fixture' }],
+        holdings: { main: { long: 5_000_000, short: 0, net: 5_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2030-02-12', amount: -3_168_988.33, ccy: 'USD', into: 'cash' }],
+        // 15 March 2030 is a Friday. 15 June 2031 is a Sunday: Monday 16 June 2031.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2030-03-15', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2031-06-16', status: 'pending' }],
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -155, fees: 0, borrowFunding: 0, unrealized: -50_000, total: -50_155 } },
+        nav: { account: 4_949_845, book: 5_949_845 },
+        balance: { account: { cash: 5_000_000, accruedIncome: 68_833.33, positions: 3_050_000, payable: 3_168_988.33, assets: 8_118_833.33, liabilities: 3_168_988.33, netAssets: 4_949_845 } },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EST('2030-02-12'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 3,168,988.33 USD from settled cash', cash: { USD: -3_168_988.33 }, date: '2030-02-12' }],
+        cash: { account: { USD: { settled: 1_831_011.67, unsettled: 0, availableToTrade: 1_831_011.67 } } },
+        pending: [],
+        balance: { account: { cash: 1_831_011.67, payable: null, assets: 4_949_845, liabilities: 0 } },
+      },
+    },
+    {
+      // Thursday 14 March. End of day 13 Mar: 5,000,000 x 8.40% x 88/360 = 102,666.67; 33,833.34 more.
+      id: 'accrue', covers: 'accrual', action: 'clock', to: EDT('2030-03-14'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on HARLAN-TLB-31: 33,833.34 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 5_000_000, accrued: 102_666.67 }],
+        pnl: { account: { couponInterest: 33_833.34, total: -16_321.66 } },
+        nav: { account: 4_983_678.34, book: 5_983_678.34 },
+        balance: { account: { accruedIncome: 102_666.67, assets: 4_983_678.34, netAssets: 4_983_678.34 } },
+      },
+    },
+    {
+      // The default, recorded by hand: the borrower will not pay the 15 March interest. Coupons are suspended (non-accrual): the
+      // 102,666.67 accrued, which includes the 68,833.33 bought, is reversed out of coupon and interest income (-68,833.33 net).
+      id: 'default', covers: 'default (by hand)', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'suspend_coupon', suspended: true },
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Accrued interest reversed on HARLAN-TLB-31: coupons suspended, not accrued or paid: 102,666.67 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 5_000_000, accrued: 0 }],
+        pnl: { account: { couponInterest: -68_833.33, total: -118_988.33 } },
+        nav: { account: 4_881_011.67, book: 5_881_011.67 },
+        balance: { account: { accruedIncome: null, assets: 4_881_011.67, netAssets: 4_881_011.67 } },
+      },
+    },
+    {
+      // Friday 15 March: the coupon date passes unpaid, and says so.
+      id: 'coupon-unpaid', covers: ['coupon', 'default (by hand)'], action: 'clock', to: EDT('2030-03-15'),
+      expect: {
+        events: [{ type: 'bond.coupon_missed', summary: 'Coupon of 2030-03-15 not paid on 5,000,000 HARLAN-TLB-31: coupons are suspended', owner: 'account', date: '2030-03-15' }],
+        // 15 June 2030 is a Saturday: Monday 17 June.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2030-06-17', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2031-06-16', status: 'pending' }],
+      },
+    },
+    {
+      id: 'price-falls', action: 'quote', instrument: 'main', quote: { bid: 40, ask: 41, last: 40.5, bidSize: 10_000_000, askSize: 10_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 5_000_000, price: 40.5, value: 2_025_000, unrealized: -1_075_000 }],
+        pnl: { account: { unrealized: -1_075_000, total: -1_143_988.33 } },
+        nav: { account: 3_856_011.67, book: 4_856_011.67 },
+        balance: { account: { positions: 2_025_000, assets: 3_856_011.67, netAssets: 3_856_011.67 } },
+      },
+    },
+    // Wednesday 20 March: nothing accrues in default.
+    { id: 'march-20', action: 'clock', to: EDT('2030-03-20'), expect: { events: [] } },
+    {
+      // 2,000,000 more at 41.00, flat (no accrued in default): 820,000; 0.5 bp = 41.00. T+20: Wednesday 17 April.
+      id: 'increase-flat', covers: ['increase', 'traded flat'], action: 'resize', lot: 'lot', factor: 1.4,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', qty: 2_000_000, estimate: 41, settleDate: '2030-04-17', gross: 820_000, accrued: 0, cash: -820_000, fees: 41 }],
+          cash: { USD: { purchases: 820_000, fees: 41, required: 820_041, available: 1_831_011.67, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 2_000_000, avgPrice: 41 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Bought 2,000,000 HARLAN-TLB-31 @ 41.00 USD' }],
+        cash: { account: { USD: { settled: 1_831_011.67, unsettled: -820_041, availableToTrade: 1_010_970.67 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 7_000_000, cost: 3_920_000, avgCost: 56, price: 40.5, value: 2_835_000, unrealized: -1_085_000, accrued: 0 }],
+        holdings: { main: { long: 7_000_000, short: 0, net: 7_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2030-04-17', amount: -820_041, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { commissions: -196, unrealized: -1_085_000, total: -1_154_029.33 } },
+        nav: { account: 3_845_970.67, book: 4_845_970.67 },
+        balance: { account: { positions: 2_835_000, payable: 820_041, assets: 4_666_011.67, liabilities: 820_041, netAssets: 3_845_970.67 } },
+      },
+    },
+    {
+      id: 'settle-increase', covers: 'settlement', action: 'clock', to: EDT('2030-04-17'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 820,041.00 USD from settled cash', cash: { USD: -820_041 } }],
+        cash: { account: { USD: { settled: 1_010_970.67, unsettled: 0, availableToTrade: 1_010_970.67 } } },
+        pending: [],
+        balance: { account: { cash: 1_010_970.67, payable: null, assets: 3_845_970.67, liabilities: 0 } },
+      },
+    },
+    // Wednesday 15 May, the plan's effective date (Good Friday has passed; nothing accrues).
+    { id: 'plan-effective', action: 'clock', to: EDT('2030-05-15'), expect: { events: [] } },
+    {
+      // The interim distribution, 20.00 per 100 in cash: 7,000,000 x 20% = 1,400,000.00. A return of capital: cost 3,920,000 to
+      // 2,520,000 (below cost: nothing realized). The claim stays open.
+      id: 'interim-recovery', covers: 'recovery distribution (by hand)', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'recovery', percent: 20, final: false },
+      expect: {
+        events: [{ type: 'bond.recovery', summary: 'Interim recovery distribution recorded by hand on HARLAN-TLB-31: 20.00 per 100 of principal on 7,000,000: 1,400,000.00 USD received, a return of capital that lowers the cost; the claim stays open', cash: { USD: 1_400_000 }, owner: 'account', date: '2030-05-15' }],
+        cash: { account: { USD: { settled: 2_410_970.67, availableToTrade: 2_410_970.67 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 7_000_000, cost: 2_520_000, avgCost: 36, price: 40.5, value: 2_835_000, unrealized: 315_000 }],
+        pnl: { account: { unrealized: 315_000, total: 245_970.67 } },
+        nav: { account: 5_245_970.67, book: 6_245_970.67 },
+        balance: { account: { cash: 2_410_970.67, assets: 5_245_970.67, netAssets: 5_245_970.67 } },
+      },
+    },
+    {
+      // The claim trades on what is left to recover.
+      id: 'price-after-distribution', action: 'quote', instrument: 'main', quote: { bid: 17, ask: 18, last: 17.5, bidSize: 10_000_000, askSize: 10_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 7_000_000, price: 17.5, value: 1_225_000, unrealized: -1_295_000 }],
+        pnl: { account: { unrealized: -1_295_000, total: -1_364_029.33 } },
+        nav: { account: 3_635_970.67, book: 4_635_970.67 },
+        balance: { account: { positions: 1_225_000, assets: 3_635_970.67, netAssets: 3_635_970.67 } },
+      },
+    },
+    {
+      // 3,000,000 sold flat at 17.00 = 510,000; 0.5 bp = 25.50; T+20 over Memorial Day: Thursday 13 June. Cost out 2,520,000 x 3 / 7 =
+      // 1,080,000: realized -570,000.
+      id: 'reduce-flat', covers: ['reduce', 'traded flat', 'market holiday'], action: 'ticket', instrument: 'main', side: 'sell', qty: 3_000_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 3_000_000, estimate: 17, settleDate: '2030-06-13', gross: 510_000, accrued: 0, cash: 510_000, fees: 25.5 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 3_000_000, avgPrice: 17 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: /^Sold 3,000,000 HARLAN-TLB-31 @ 17\.00 USD \(realized [-−]570,000\.00 USD\)$/ }],
+        cash: { account: { USD: { settled: 2_410_970.67, unsettled: 509_974.5, availableToTrade: 2_920_945.17 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 4_000_000, cost: 1_440_000, avgCost: 36, price: 17.5, value: 700_000, unrealized: -740_000 }],
+        holdings: { main: { long: 4_000_000, short: 0, net: 4_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2030-06-13', amount: 509_974.5, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: -570_000, commissions: -221.5, unrealized: -740_000, total: -1_379_054.83 } },
+        nav: { account: 3_620_945.17, book: 4_620_945.17 },
+        balance: { account: { receivable: 509_974.5, positions: 700_000, assets: 3_620_945.17, netAssets: 3_620_945.17 } },
+      },
+    },
+    {
+      id: 'settle-reduce', covers: ['settlement', 'market holiday'], action: 'clock', to: EDT('2030-06-13'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 509,974.50 USD into settled cash', cash: { USD: 509_974.5 } }],
+        cash: { account: { USD: { settled: 2_920_945.17, unsettled: 0, availableToTrade: 2_920_945.17 } } },
+        pending: [],
+        balance: { account: { cash: 2_920_945.17, receivable: null, assets: 3_620_945.17, netAssets: 3_620_945.17 } },
+      },
+    },
+    {
+      // Monday 17 June: the 15 June coupon (a Saturday) passes unpaid.
+      id: 'june-coupon-unpaid', covers: ['coupon', 'default (by hand)'], action: 'clock', to: EDT('2030-06-17'),
+      expect: {
+        events: [{ type: 'bond.coupon_missed', summary: 'Coupon of 2030-06-15 not paid on 4,000,000 HARLAN-TLB-31: coupons are suspended', owner: 'account', date: '2030-06-17' }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2030-09-16', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2031-06-16', status: 'pending' }],
+      },
+    },
+    {
+      // The final distribution, 10.00 per 100: 4,000,000 x 10% = 400,000.00, and the claim closes. Realized 400,000 - 1,440,000 =
+      // -1,040,000. Paid today.
+      id: 'final-recovery', covers: ['recovery distribution (by hand)', 'close'], action: 'instrument_lifecycle', instrument: 'main', body: { action: 'recovery', percent: 10, final: true },
+      expect: {
+        events: [
+          { type: 'bond.recovery', summary: 'Final recovery distribution recorded by hand: the claim is settled and closed: 4,000,000 HARLAN-TLB-31 at 10.00% of par', owner: 'account', date: '2030-06-17' },
+          { type: 'settlement.receive', summary: 'received 400,000.00 USD into settled cash', cash: { USD: 400_000 } },
+        ],
+        cash: { account: { USD: { settled: 3_320_945.17, unsettled: 0, availableToTrade: 3_320_945.17 } }, treasury: usdCash(1_000_000) },
+        positions: [],
+        holdings: { main: null },
+        pending: [],
+        lifecycle: [],
+        pnl: { account: { realized: -1_610_000, unrealized: 0, total: -1_679_054.83 } },
+        nav: { account: 3_320_945.17, book: 4_320_945.17 },
+        balance: { account: { cash: 3_320_945.17, positions: null, assets: 3_320_945.17, liabilities: 0, netAssets: 3_320_945.17 } },
+      },
+    },
+    {
+      id: 'trade-after-final-recovery', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 1_000_000, as: 'lot2',
+      status: 'blocked', reason: 'After the final distribution the claim is closed: nothing is left to trade.',
+      expect: { refused: 'can no longer be traded' },
+    },
+  ],
+};
+
+export default [specifiedPool, absSpec, cmoSpec, cloSpec, cdoSpec, clnSpec, structuredNoteSpec, catBondSpec, syndicatedLoanSpec, leveragedLoanSpec, privateCreditSpec, distressedSpec];
