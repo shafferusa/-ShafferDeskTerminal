@@ -245,7 +245,7 @@ function CashTable({ cash }) {
   return html`<table class="ledger"><thead><tr><th></th>${rows.map((r) => html`<th class="r">${r.ccy}</th>`)}</tr></thead><tbody>
     ${line('Purchases', 'purchases')}${line('Sale proceeds', 'proceeds')}${line('Short-sale proceeds (restricted)', 'restrictedProceeds')}
     ${line('Fees and commissions', 'fees')}${line('Margin', 'margin')}${line('Collateral top-up', 'collateral')}${line('Reserved against short options', 'reserved')}
-    ${line('Financing received', 'financingIn')}${line('Financing paid out', 'financingOut')}
+    ${line('Financing received', 'financingIn')}${line('Financing paid out', 'financingOut')}${line('Paid from the short\'s restricted collateral', 'coverCollateral')}
     <tr><td class="strong">Cash required</td>${rows.map((r) => html`<td class="r strong">${fmtMoney(r.required, r.ccy)}</td>`)}</tr>
     <tr><td>Available to trade now</td>${rows.map((r) => html`<td class="r">${fmtMoney(r.available, r.ccy)}</td>`)}</tr>
     <tr><td>Shortfall</td>${rows.map((r) => html`<td class=${`r ${r.shortfall > 0 ? 'loss strong' : ''}`}>${r.shortfall > 0 ? fmtMoney(r.shortfall, r.ccy) : 'none'}</td>`)}</tr>

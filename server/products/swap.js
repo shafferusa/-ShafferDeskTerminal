@@ -578,9 +578,21 @@ export const swap = {
     let eventId = null;
     for (const leg of inst.terms.legs) {
       if (leg.type !== 'return' || !leg.passDividends || leg.underlyingId !== ca.instrument_id) continue;
-      const p0 = pos.data.legs?.[leg.id]?.lastFixing ?? inst.terms.initialPrices?.[leg.id] ?? null;
-      if (p0 === null) continue;
-      const shares = (Math.abs(pos.qty) * (leg.notionalFactor ?? 1) * (pos.data.notionalScale ?? 1)) / p0;
+      // Reference units: the notional of the period containing the ex-date over that period's start fixing (s2). The start
+      // fixing is the close of the period's first day (the contract's initial price for the first period, when it states one);
+      // it used to be the last reset paid, so a dividend in the first period, before any reset, was silently not passed through.
+      const exDate = ca.ex_date || app.clock.today();
+      const period = legSchedule(inst, leg).find((p) => p.start <= exDate && exDate < p.end);
+      if (!period) continue;
+      const stated = period.start === inst.terms.effective ? inst.terms.initialPrices?.[leg.id] ?? null : null;
+      const o0 = stated === null ? app.data.closeFor(leg.underlyingId, fixingDate(inst, period.start)) : null;
+      const p0 = stated ?? (o0 && o0.value !== null ? o0.value : null);
+      if (p0 === null) {
+        app.alerts.raise({ bookId: book.id, unitId: unit.id, level: 'error', code: 'swap.dividend_unpriced', refType: 'position', refId: pos.id, message: `Dividend of ${ca.amount} on ${app.instruments.get(ca.instrument_id)?.symbol || 'the reference asset'} (ex-date ${exDate}) was not passed through on ${inst.name}: the ${fixingDate(inst, period.start)} fixing the period starts from is missing, so the reference units cannot be worked out. Record the pass-through by hand (the position's manual cash flow).` });
+        continue;
+      }
+      if (o0) app.data.recordUsed(o0);
+      const shares = (Math.abs(pos.qty) * (leg.notionalFactor ?? 1) * scaleAt(pos, period.start)) / p0;
       const s = sign(pos.qty) * (leg.side === 'receive' ? 1 : -1);
       const amount = money(s * shares * ca.amount, leg.ccy);
       if (amount === 0) continue;

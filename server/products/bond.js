@@ -124,7 +124,7 @@ function accrualTarget(app, inst, pos, date, { paying = null } = {}) {
   }
   for (const c of unpaidCoupons(app, pos.id)) {
     if (c.couponDate > date || c.couponDate === paying) continue;
-    const per100 = couponPer100(schedTerms(inst), c.couponDate);
+    const per100 = couponPer100(couponTerms(inst, c.couponDate), c.couponDate);
     if (per100 === null) return null;
     total += (entitledFace(app, pos, c.couponDate) * couponScale(inst, c.couponDate) * per100) / 100;
   }
@@ -247,6 +247,11 @@ export const bond = {
       else if (t.couponType === 'zero') errors.push('A servicing fee is deducted from interest: a zero-coupon instrument has none to deduct it from.');
       else if (t.couponType === 'fixed' && !(t.servicingFeeRate < t.couponRate)) errors.push('The servicing fee must be below the gross coupon rate it is deducted from.');
     }
+    // b4: a deferrable tranche (a CLO or CDO mezzanine class, a PIK-toggle loan): a coupon may be paid in kind, capitalised into
+    // principal instead of paid in cash. The election is recorded by hand for each coupon (manual event 'pik').
+    t.pikAllowed = Boolean(t.pikAllowed);
+    if (!t.pikAllowed) delete t.pikAllowed;
+    if (!Array.isArray(t.pikCoupons) || !t.pikCoupons.length) delete t.pikCoupons;
     // b4: priority of a sequential-pay tranche (a CMO class): it receives principal only after the tranche senior to it has
     // been paid down to zero. The senior tranche's stated balance is a term; what is left of it is recorded by hand from each
     // remittance report (senior_balance), and a paydown of this tranche is refused while any of it is outstanding.
@@ -285,6 +290,7 @@ export const bond = {
     if (t.paymentDelayDays) rows.push(['Payment delay', `${t.paymentDelayDays} days after each accrual period ends`]);
     if (t.guarantor) rows.push(['Guarantor', `${t.guarantor} (principal and interest guaranteed; no loss allocation)`]);
     if (t.poolCharacteristics) rows.push(['Pool characteristics', `${t.poolCharacteristics} (stated at registration)`]);
+    if (t.pikAllowed) rows.push(['Interest deferral', `Deferrable: a coupon may be paid in kind (capitalised into principal), elected by hand for each coupon${t.pikCoupons?.length ? `; paid in kind: ${t.pikCoupons.join(', ')}` : ''}`]);
     if (t.seniorTranche) rows.push(['Priority', `Sequential: principal only after ${t.seniorTranche} (stated balance ${fmtQty(t.seniorBalance)}) is retired; ${t.seniorRemaining > 0 ? `${fmtQty(t.seniorRemaining)} of it outstanding, as last recorded by hand` : `retired${t.seniorRetiredOn ? ` (recorded ${t.seniorRetiredOn})` : ''}: this tranche now receives principal`}`]);
     if (t.servicingFeeRate) rows.push(['Servicing fee', `${(t.servicingFeeRate * 100).toFixed(3)}% a year, deducted from interest before holders are paid${t.couponType === 'fixed' ? `: net coupon ${((t.couponRate - t.servicingFeeRate) * 100).toFixed(3)}%` : ''}`]);
     if (t.writtenDown) rows.push(['Written down', `${t.writtenDown.kind === 'loss' ? 'Losses allocated' : 'Principal written down'} to factor ${t.factor} on ${t.writtenDown.date}`]);
@@ -378,7 +384,7 @@ export const bond = {
         const face = inst.terms.couponSuspended ? 0 : entitledFace(app, pos, c.couponDate);
         if (isZero(face)) continue;
         app.tasks.schedule({ ...common, type: 'bond.coupon', dueDate: c.dueDate, data: { key: c.couponDate, couponDate: c.couponDate } });
-        const per100 = couponPer100(t, c.couponDate);
+        const per100 = couponPer100(couponTerms(inst, c.couponDate), c.couponDate);
         if (per100 === null) owed = null; // a floating coupon without its fixing: the balance waits for it
         else if (owed !== null) owed += (face * couponScale(inst, c.couponDate) * per100) / 100;
       }
@@ -440,16 +446,39 @@ export const bond = {
         scheduleNext();
         return { done: true, eventId };
       }
-      const per100 = couponPer100(t, couponDate);
+      const per100 = couponPer100(couponTerms(inst, couponDate), couponDate);
       if (per100 === null) {
         return { blocked: `Awaiting the ${inst.terms.referenceRate} fixing of ${periodStart} for the coupon period ${periodStart} to ${couponDate}. ${app.data.describe().awaitingMessage}, or enter the fixing manually.`, needs: [{ kind: 'rate', subject: inst.terms.referenceRate, date: periodStart }] };
       }
       const cScale = couponScale(inst, couponDate);
       const amount = money((face * cScale * per100) / 100, ccy);
+      // b4: a coupon elected to be paid in kind is capitalised: principal (the factor) rises by the coupon for every holder,
+      // once for the instrument; this holder's coupon goes into its position's cost instead of its cash.
+      if ((inst.terms.pikCoupons || []).includes(couponDate)) {
+        let fresh = app.instruments.get(inst.id);
+        if (!(fresh.terms.pikApplied || {})[couponDate]) {
+          const old = factorOf(fresh);
+          const nf = Math.round(old * (1 + per100 / 100) * 1e10) / 1e10;
+          app.instruments.update(inst.id, { terms: { ...fresh.terms, factor: nf, factorHistory: [...(fresh.terms.factorHistory || []), { from: couponDate, factor: nf, prior: old, pik: true }], pikApplied: { ...(fresh.terms.pikApplied || {}), [couponDate]: nf } } }, { system: true });
+          fresh = app.instruments.get(inst.id);
+        }
+        const nf = fresh.terms.pikApplied[couponDate];
+        const eventId = ledger.post({
+          ...base, type: 'bond.pik', summary: `Coupon of ${couponDate} paid in kind on ${fmtQty(Math.abs(face))} ${inst.symbol || inst.name}${principalNote(inst, face, cScale)}: ${fmt(Math.abs(amount), ccy)} added to principal, factor ${Number(cScale.toFixed(10))} to ${nf}`,
+          data: { couponDate, per100, face, pik: true, factor: nf },
+          entries: [{ account: 'pos', ccy, amount, positionId: pos.id }, { account: 'accrued.asset', ccy, amount: -amount, positionId: pos.id }],
+        });
+        app.positions.change(live, { dCost: amount });
+        if (inst.terms.couponType === 'float') resetFloat(app, fresh, couponDate);
+        const asOf = live.data?.accruedThrough && live.data.accruedThrough > couponDate ? live.data.accruedThrough : couponDate;
+        if (!isZero(live.qty)) accrueTo(app, { book, unit, inst: app.instruments.get(inst.id), pos: positions.get(pos.id), date: asOf, paying: couponDate });
+        scheduleNext();
+        return { done: true, eventId };
+      }
       // b4: a servicing fee came off the gross interest before the holder was paid: say how much.
       let servicing = '';
       if (inst.terms.servicingFeeRate) {
-        const grossPer100 = couponPer100({ ...t, couponRate: inst.terms.couponType === 'fixed' ? inst.terms.couponRate : t.couponRate, currentCoupon: inst.terms.couponType === 'float' ? inst.terms.currentCoupon : t.currentCoupon }, couponDate);
+        const grossPer100 = couponPer100({ ...t, couponRate: inst.terms.couponType === 'fixed' ? inst.terms.couponRate : t.couponRate, currentCoupon: inst.terms.couponType === 'float' ? (inst.terms.periodCoupons?.[couponDate] ?? inst.terms.currentCoupon) : t.currentCoupon }, couponDate);
         const gross = money((face * cScale * grossPer100) / 100, ccy);
         servicing = `; gross interest ${fmt(Math.abs(gross), ccy)} less servicing fee ${fmt(Math.abs(money(gross - amount, ccy)), ccy)} (${(inst.terms.servicingFeeRate * 100).toFixed(3)}% a year)`;
       }
@@ -528,6 +557,7 @@ export const bond = {
     if (action === 'call') return bond.callIssue(app, { inst, price: body.price, share: body.share, note: body.note });
     if (action === 'writedown') return bond.writeDown(app, { inst, newFactor: body.newFactor, effective: body.effective, kind: body.kind, note: body.note });
     if (action === 'senior_balance') return bond.recordSeniorBalance(app, { inst, remaining: body.remaining, note: body.note });
+    if (action === 'pik') return bond.electPik(app, { inst, couponDate: body.couponDate, note: body.note });
     throw new AppError(`Unknown debt-security event "${action}".`);
   },
   /** Position-level events recorded by hand (POST /api/positions/:id/lifecycle). */
@@ -768,6 +798,34 @@ export const bond = {
    *                     principal was scheduled and how much was prepaid (and the single monthly mortality, SMM).
    */
   /**
+   * A coupon to be paid in kind, recorded by hand (b4): a deferrable tranche (CLO or CDO mezzanine class whose coverage test
+   * fails, a PIK-toggle loan whose borrower elects it) defers the coupon of `couponDate` (the next coupon date when not given)
+   * and capitalises it. Interest goes on accruing and is income as before; on the coupon date the coupon is added to principal
+   * for every holder instead of being paid: the factor rises by coupon / principal, each position's cost rises by its coupon,
+   * and no cash moves. Later interest runs on the larger principal.
+   */
+  electPik(app, { inst, couponDate, note }) {
+    const name = inst.symbol || inst.name;
+    const t = schedTerms(inst);
+    need(inst.terms.pikAllowed, `${name} is not deferrable: its terms do not allow a coupon to be paid in kind. A missed coupon is recorded as a coupon suspension.`);
+    need(inst.terms.couponType !== 'zero', `${name} pays no coupon to defer.`);
+    const today = app.clock.today();
+    const d = couponDate ? String(couponDate) : nextCouponDate(t, addBusinessDays(today, -1, 'ALLDAYS'));
+    need(ISO_DATE_RE.test(d || ''), 'The coupon date must be YYYY-MM-DD.');
+    need(nextCouponDate(t, addBusinessDays(d, -1, 'ALLDAYS')) === d, `${d} is not a coupon date of ${name}; the next is ${nextCouponDate(t, addBusinessDays(today, -1, 'ALLDAYS'))}.`);
+    need(couponDue(inst, d) >= today, `The coupon of ${d} has already fallen due; a coupon is elected to be paid in kind before it is paid.`);
+    need(!(inst.terms.pikCoupons || []).includes(d), `The coupon of ${d} is already to be paid in kind.`);
+    need(!app.db.get(`SELECT 1 AS x FROM tasks WHERE instrument_id = ? AND type = 'bond.coupon' AND status = 'done' AND json_extract(data, '$.couponDate') = ?`, inst.id, d), `The coupon of ${d} has already been paid.`);
+    app.instruments.update(inst.id, { terms: { ...inst.terms, pikCoupons: [...(inst.terms.pikCoupons || []), d] } }, { system: true });
+    const summary = `Coupon of ${d} on ${name} to be paid in kind, recorded by hand${note ? ` (${note})` : ''}: interest is still earned; on ${couponDue(inst, d)} it is added to principal instead of paid`;
+    const eventIds = [];
+    for (const p of app.positions.heldAround(inst.id)) {
+      if (isZero(p.qty)) continue;
+      eventIds.push(app.ledger.post({ bookId: p.book_id, unitId: p.unit_id, type: 'bond.pik_election', instrumentId: inst.id, strategyId: p.strategy_id, positionId: p.id, actor: 'user', summary, data: { couponDate: d, manual: true } }));
+    }
+    return { couponDate: d, eventIds };
+  },
+  /**
    * The balance still outstanding on the tranche senior to a sequential-pay tranche, recorded by hand from a remittance report
    * (b4). Until it reaches zero this tranche receives no principal: its paydowns are refused. At zero the senior tranche is
    * retired and this tranche's own factor is recorded by hand from then on. Every holder gets a history line; no cash moves.
@@ -847,6 +905,17 @@ export const bond = {
   },
 };
 
+/**
+ * Terms for the coupon of `couponDate` (b4). A floating coupon is reset to the next period's rate when it is paid; when an
+ * instrument has several holders the first holder's payment resets it, so the rate of the period that ended is kept in
+ * `terms.periodCoupons` and every later holder is paid at that rate, not at the new period's.
+ */
+function couponTerms(inst, couponDate) {
+  const pc = inst.terms.periodCoupons?.[couponDate];
+  if (inst.terms.couponType !== 'float' || pc === undefined || pc === null) return schedTerms(inst);
+  return schedTerms({ ...inst, terms: { ...inst.terms, currentCoupon: pc } });
+}
+
 /** Terms used for schedule arithmetic (a perpetual gets a far-off synthetic maturity on its anchor). */
 function schedTerms(inst) {
   let t = inst.terms;
@@ -899,7 +968,10 @@ function resetFloat(app, inst, resetDate) {
   const o = app.data.rate(inst.terms.referenceRate, resetDate);
   const ok = o && (o.forDate || '').slice(0, 10) >= addBusinessDays(resetDate, -5, 'ALLDAYS');
   const current = ok ? o.value / 100 + (inst.terms.spread || 0) : null;
-  app.instruments.update(inst.id, { terms: { ...inst.terms, currentCoupon: current, currentCouponFixing: ok ? { date: o.forDate, value: o.value, obsId: app.data.recordUsed(o) } : null } }, { system: true });
+  // b4: the rate of the period that ended stays with its coupon date (couponTerms), for the holders not yet paid.
+  const kept = inst.terms.periodCoupons?.[resetDate] ?? inst.terms.currentCoupon;
+  const periodCoupons = kept === null || kept === undefined ? inst.terms.periodCoupons : { ...(inst.terms.periodCoupons || {}), [resetDate]: kept };
+  app.instruments.update(inst.id, { terms: { ...inst.terms, currentCoupon: current, currentCouponFixing: ok ? { date: o.forDate, value: o.value, obsId: app.data.recordUsed(o) } : null, ...(periodCoupons ? { periodCoupons } : {}) } }, { system: true });
   if (!ok) app.alerts.raise({ level: 'warning', code: 'bond.fixing', refType: 'instrument', refId: inst.id, message: `${inst.symbol || inst.name}: no ${inst.terms.referenceRate} fixing for the coupon period starting ${resetDate}. Interest is not accruing until the fixing is supplied or entered.` });
 }
 

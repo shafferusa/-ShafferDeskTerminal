@@ -225,3 +225,4 @@
 - 2026-10-13T19:37Z | b4 | +0.2 | cmo passes at engine, API and browser
 - 2026-10-13T19:38Z | t1 | +0.2 | T:long template passes at engine, API and browser
 - 2026-10-13T19:38Z | t2 | +0.2 | long_straddle passes at engine, API and browser
+- 2026-10-13T19:41Z | s3 | +0.2 | cds_single_name passes at engine, API and browser

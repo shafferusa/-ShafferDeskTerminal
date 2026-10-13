@@ -1197,4 +1197,219 @@ const equityIndexSwap = {
   ],
 };
 
-export default [amortizingSwap, accretingSwap, equitySwap, equityIndexSwap];
+// ---------------------------------------------------------------------------------------------
+// equity_trs
+// ---------------------------------------------------------------------------------------------
+// A six-month euro equity total-return swap on Valcourt Industries (VALC, Euronext Paris), in a Book that reports
+// in US dollars. Receive the total return (price return each quarter, and every cash dividend passed through when
+// the stock goes ex), pay 3-month EURIBOR + 0.60% ACT/360, on a fixed notional; both legs paid 2 TARGET business
+// days after each reset date. Uncollateralized (paper assumption).
+//
+//   period 1  2026-04-01 to 2026-07-01  91 days  VALC 40.00 to 42.00 (+5%)    EURIBOR3M 2.10%   paid Friday 3 July
+//   period 2  2026-07-01 to 2026-10-01  92 days  VALC 42.00 to 39.90 (-5%)    EURIBOR3M 2.00%   paid Monday 5 October
+//   dividend  1.20 EUR, ex-date Wednesday 20 May: reference units = notional / start fixing of the period = 5,000,000 / 40 = 125,000
+// Reporting currency: EUR balances at the EUR/USD fixture (1.10, then 1.12 from 6 July); ledger entries keep the rate of
+// their day and the difference is the FX effect. The trade on Monday 30 March settles Wednesday 1 April (T+2 TARGET).
+const VALC = { productId: 'common_stock', name: 'Valcourt Industries SA', symbol: 'VALC', marketView: 'FOREIGN_CASH', venue: 'Euronext Paris', venueType: 'exchange', venueCountry: 'FR', issuer: 'Valcourt Industries SA', domicile: 'FR', underlyingGeo: 'FR', tradingCcy: 'EUR', terms: {} };
+const ETRS_NAME = 'EUR equity TRS VALC v EURIBOR3M + 0.60% 1 Oct 2026';
+const equityTrs = {
+  productId: 'equity_trs',
+  title: 'Six-month euro equity total-return swap on a Euronext Paris stock, dividends passed through, in a USD-reporting Book',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'return leg: Reference asset (the stock), Options "Total return (pass income through)"', 'financing leg: Index (EURIBOR3M), Spread, Day count', 'both legs: Payment lag (business days) 2'],
+    automaticInputs: ['reset and payment schedule on the TARGET calendar', 'VALC closes for the reset dates (close fixture standing in for Shaffer MarketData)', 'EURIBOR3M fixings (rate fixture)', 'dividend pass-through: reference units from the period\'s start fixing, paid when the stock goes ex', 'EUR/USD rate (FX fixture) for the reporting-currency figures', 'settlement date, T+2 TARGET', 'commission from the Book fee schedule'],
+    manualInputs: ['the reference stock, registered as a common stock', 'upfront amount of the increase (stated fill price)', 'mark of the contract, entered by hand', 'the cash dividend on VALC, recorded by hand on the stock (Instrument drawer, Dividends and corporate actions)'],
+    settlement: 'Upfront amounts and commission settle T+2 on TARGET; leg payments are cash on their payment date; a dividend passes through on its ex-date (the form has no separate pay date)',
+    lifecycle: 'Total return: price return each quarter and the dividend passed through when the stock goes ex (in the first period, before any reset); increase inside the first period; across Good Friday and Easter Monday; a negative return paid in the second period; maturity; nothing left afterwards',
+    accounting: 'Euro amounts in a USD-reporting Book: realized and unrealized P&L at the rate of their day, the revaluation of euro balances is the FX effect; the dividend pass-through is realized P&L; the upfront carried is written off at maturity',
+    collateral: 'Uncollateralized (paper assumption): nothing is posted or received, whatever the mark',
+  },
+  start: at('2026-03-30'),
+  settlementCheck: { lag: 2, holidays: [] }, // TARGET: no holiday in the windows used (30 March to 1 April, 6 to 8 May 2026)
+  book: {
+    name: 'Matrix equity TRS', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 2_000_000 }, { ccy: 'EUR', amount: 1_000_000 }],
+    account: { name: 'Equity finance', funding: [{ ccy: 'EUR', amount: 800_000 }] },
+    settings: { fees: { swap: { perUnit: 0.00005, minimum: 0, bps: 0 }, equity: NO_FEE }, fill: FILL, settlement: { swap: 2 } }, // 50.00 EUR per million of notional
+  },
+  instruments: {
+    valc: VALC,
+    main: {
+      productId: 'equity_trs', name: ETRS_NAME, symbol: 'ETRS-VALC-1026', marketView: 'FOREIGN_DERIV', venueType: 'otc', venueCountry: 'FR', tradingCcy: 'EUR', multiplier: 0.01,
+      conventions: { tradingCalendar: 'TARGET', settlementCalendar: 'TARGET', paymentCalendar: 'TARGET' },
+      terms: {
+        effective: '2026-04-01', maturity: '2026-10-01', counterparty: 'Banque R', collateralBasis: { type: 'uncollateralized' },
+        legs: [
+          { side: 'receive', type: 'return', ccy: 'EUR', months: 3, underlyingId: '$inst:valc', passDividends: true, resetNotional: false, paymentLag: 2 },
+          { side: 'pay', type: 'float', ccy: 'EUR', index: 'EURIBOR3M', spread: 0.006, months: 3, dayCount: 'ACT/360', paymentLag: 2 },
+        ],
+      },
+    },
+  },
+  fx: { 'EUR/USD': 1.10 },
+  rates: { EURIBOR3M: { currency: 'EUR', byDate: { '2026-04-01': 2.10 } } },
+  expectAtStart: {
+    cash: {
+      account: { EUR: { settled: 800_000, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 800_000 } },
+      treasury: { USD: { settled: 2_000_000, unsettled: 0 }, EUR: { settled: 200_000, unsettled: 0 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], lifecycleFailures: [], borrowings: [], otc: [], alerts: [],
+    nav: { account: 880_000, treasury: 2_220_000, book: 3_100_000 }, // 800,000 EUR x 1.10; 2,000,000 + 200,000 x 1.10
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+  },
+  steps: [
+    {
+      // 4,000,000 EUR as written, no upfront. Commission 4,000,000 x 0.00005 = 200 EUR (220 USD), settling Wednesday 1 April.
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 4_000_000, as: 'trs', order: { statedPrice: 0 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 4_000_000, estimate: 0, model: 'stated-price', settleDate: '2026-04-01', calendar: 'TARGET', cash: 0, fees: 200 }],
+          cash: { EUR: { purchases: 0, fees: 200, margin: 0, required: 200, available: 800_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 4_000_000, avgPrice: 0, fills: [{ qty: 4_000_000, price: 0, model: 'stated-price', settleDate: '2026-04-01' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Entered as written: 4,000,000 notional of ETRS-VALC-1026 at 0.00 per 100 notional', owner: 'account', date: '2026-03-30' }],
+        cash: { account: { EUR: { settled: 800_000, unsettled: -200, margin: 0, restricted: 0, availableToTrade: 799_800, availableToWithdraw: 799_800 } } },
+        positions: [{ instrument: 'main', lot: 'trs', owner: 'account', direction: 'as written', qty: 4_000_000, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, notional: 4_000_000, margin: 0 }],
+        holdings: { main: { long: 4_000_000, short: 0, net: 4_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-04-01', amount: -200, ccy: 'EUR', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-07-03', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-07-03', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2026-10-05', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', lot: 'trs', owner: 'account', qty: 4_000_000, basis: 'uncollateralized', agreement: null, iaPosted: 0, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: -220, unrealized: 0, fx: 0, total: -220 } },
+        nav: { account: 879_780, book: 3_099_780 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 880_000, payable: 220, positions: null, assets: 880_000, liabilities: 220, netAssets: 879_780 } },
+      },
+    },
+    {
+      id: 'settle-commission', covers: 'settlement', action: 'clock', to: at('2026-04-01'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 200.00 EUR from settled cash', cash: { EUR: -200 }, date: '2026-04-01' }],
+        cash: { account: { EUR: { settled: 799_800, unsettled: 0, availableToTrade: 799_800, availableToWithdraw: 799_800 } } },
+        pending: [],
+        balance: { account: { cash: 879_780, payable: null, assets: 879_780, liabilities: 0 } },
+      },
+    },
+    { id: 'start-price', covers: 'reset fixing', action: 'close_price', instrument: 'valc', date: '2026-04-01', value: 40, expect: {} },
+    {
+      // 4,000,000 x 0.60 / 100 = 24,000 EUR = 26,400 USD.
+      id: 'mark', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 0.60, note: 'Dealer mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'trs', price: 0.6, value: 24_000, unrealized: 24_000, provisional: false, priceSource: 'Manual entry', priceStatus: 'manual' }],
+        otc: [{ instrument: 'main', mark: 0.6, markValue: 24_000 }],
+        pnl: { account: { unrealized: 26_400, total: 26_180 } },
+        nav: { account: 906_180, book: 3_126_180 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 26_400, assets: 906_180, netAssets: 906_180 } },
+      },
+    },
+    { id: 'after-easter', covers: 'holiday', action: 'clock', to: at('2026-05-06'), expect: { events: [] } }, // Good Friday 3 April, Easter Monday 6 April, 1 May: TARGET closed, nothing due
+    {
+      // 1,000,000 more at 0.50 per 100: 5,000 EUR paid; commission 50; settles Friday 8 May. Cost 5,000; value 5,000,000 x 0.60 / 100 = 30,000; unrealized 25,000 EUR = 27,500 USD.
+      // The added notional takes the whole first period (its return from the 1 April fixing).
+      id: 'increase', covers: 'increase', action: 'resize', lot: 'trs', factor: 1.25, order: { statedPrice: 0.50 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 1_000_000, estimate: 0.5, model: 'stated-price', settleDate: '2026-05-08', cash: -5_000, fees: 50 }], cash: { EUR: { purchases: 5_000, fees: 50, required: 5_050, available: 799_800, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 1_000_000, avgPrice: 0.5 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Increased as written: 1,000,000 notional of ETRS-VALC-1026 at 0.50 per 100 notional' }],
+        cash: { account: { EUR: { settled: 799_800, unsettled: -5_050, availableToTrade: 794_750, availableToWithdraw: 794_750 } } },
+        positions: [{ instrument: 'main', lot: 'trs', qty: 5_000_000, cost: 5_000, avgCost: 0.1, price: 0.6, value: 30_000, unrealized: 25_000, notional: 5_000_000 }],
+        holdings: { main: { long: 5_000_000, short: 0, net: 5_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-05-08', amount: -5_050, ccy: 'EUR', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: 5_000_000, markValue: 30_000 }],
+        pnl: { account: { commissions: -275, unrealized: 27_500, total: 27_225 } },
+        nav: { account: 907_225, book: 3_127_225 }, // (799,800 - 5,050 + 30,000) x 1.10
+        balance: { account: { cash: 879_780, payable: 5_555, positions: 33_000, assets: 912_780, liabilities: 5_555, netAssets: 907_225 } },
+      },
+    },
+    {
+      id: 'settle-increase', covers: 'settlement', action: 'clock', to: at('2026-05-08'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 5,050.00 EUR from settled cash', cash: { EUR: -5_050 } }],
+        cash: { account: { EUR: { settled: 794_750, unsettled: 0, availableToTrade: 794_750, availableToWithdraw: 794_750 } } },
+        pending: [],
+        balance: { account: { cash: 874_225, payable: null, assets: 907_225, liabilities: 0 } },
+      },
+    },
+    { id: 'dividend-recorded', covers: 'dividend', action: 'corporate_action', instrument: 'valc', type: 'cash_dividend', exDate: '2026-05-20', amount: 1.20, expect: {} },
+    {
+      // VALC goes ex 1.20 EUR. Reference units 5,000,000 / 40.00 = 125,000; passed through, received: 125,000 x 1.20 = 150,000.00 EUR (165,000 USD).
+      id: 'dividend-passed-through', covers: ['dividend', 'dividend pass-through'], action: 'clock', to: at('2026-05-20'),
+      expect: {
+        events: [{ type: 'swap.dividend', summary: `Dividend pass-through on ${ETRS_NAME}: received 150,000.00 EUR (125,000 reference shares x 1.2)`, cash: { EUR: 150_000 }, owner: 'account' }],
+        cash: { account: { EUR: { settled: 944_750, availableToTrade: 944_750, availableToWithdraw: 944_750 } } },
+        pnl: { account: { realized: 165_000, total: 192_225 } },
+        nav: { account: 1_072_225, book: 3_292_225 }, // (944,750 + 30,000) x 1.10
+        balance: { account: { cash: 1_039_225, assets: 1_072_225, netAssets: 1_072_225 } },
+      },
+    },
+    { id: 'first-reset-price', covers: 'reset fixing', action: 'close_price', instrument: 'valc', date: '2026-07-01', value: 42, expect: {} },
+    {
+      // First period, 5,000,000 EUR:
+      //   return, received:  5,000,000 x (42 / 40 - 1) = 250,000.00 EUR
+      //   financing, paid:   5,000,000 x (2.10% + 0.60%) x 91/360 = 34,125.00 EUR
+      id: 'first-period', covers: ['return payment', 'financing payment'], action: 'clock', to: at('2026-07-03'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap receipt on ${ETRS_NAME}, leg A (return), period 2026-04-01 to 2026-07-01: 250,000.00 EUR`, cash: { EUR: 250_000 }, owner: 'account', date: '2026-07-03' },
+          { type: 'swap.payment', summary: `Swap payment on ${ETRS_NAME}, leg B (float), period 2026-04-01 to 2026-07-01: 34,125.00 EUR`, cash: { EUR: -34_125 }, owner: 'account', date: '2026-07-03' },
+        ],
+        cash: { account: { EUR: { settled: 1_160_625, availableToTrade: 1_160_625, availableToWithdraw: 1_160_625 } } },
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2026-10-05', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-10-05', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-10-05', status: 'pending' },
+        ],
+        pnl: { account: { realized: 402_462.50, total: 429_687.50 } }, // (150,000 + 250,000 - 34,125) x 1.10; then - 275 + 27,500
+        nav: { account: 1_309_687.50, book: 3_529_687.50 },
+        balance: { account: { cash: 1_276_687.50, assets: 1_309_687.50, netAssets: 1_309_687.50 } },
+      },
+    },
+    { id: 'july-fixing', action: 'rate', code: 'EURIBOR3M', value: 2.00, date: '2026-07-01', currency: 'EUR', expect: {} },
+    {
+      // The euro rises to 1.12. The Account's euro net assets, 1,160,625 + 30,000 = 1,190,625, gain 1,190,625 x 0.02 = 23,812.50 USD:
+      // 500 of it is the unrealized result now worth more (25,000 x 1.12 = 28,000), the rest, 23,312.50, is the FX effect.
+      // Treasury's 200,000 EUR gain 4,000 more: the Book's FX effect is 27,312.50.
+      id: 'euro-rises', covers: 'reporting currency', action: 'fx_rate', pair: 'EUR/USD', rate: 1.12,
+      expect: {
+        pnl: { account: { realized: 402_462.50, commissions: -275, unrealized: 28_000, fx: 23_312.50, total: 453_500 }, book: { fx: 27_312.50, total: 457_500 } },
+        nav: { account: 1_333_500, treasury: 2_224_000, book: 3_557_500 },
+        balance: { account: { cash: 1_299_900, positions: 33_600, assets: 1_333_500, netAssets: 1_333_500 } }, // 1,160,625 x 1.12; 30,000 x 1.12
+      },
+    },
+    { id: 'second-reset-price', covers: 'reset fixing', action: 'close_price', instrument: 'valc', date: '2026-10-01', value: 39.90, expect: {} },
+    {
+      // Second period, 5,000,000 EUR, starting from the 42.00 the first period ended on:
+      //   return, paid:      5,000,000 x (39.90 / 42 - 1) = -250,000.00 EUR, paid
+      //   financing, paid:   5,000,000 x (2.00% + 0.60%) x 92/360 = 33,222.22 EUR
+      // The swap matures: the 5,000 EUR still carried is written off. At 1.12: -280,000.00, -37,208.89 and -5,600.00 USD.
+      // Euro cash: 800,000 - 200 - 5,000 - 50 + 150,000 + 250,000 - 34,125 - 250,000 - 33,222.22 = 877,402.78 EUR = 982,691.11 USD.
+      id: 'second-period-and-maturity', covers: ['return payment', 'financing payment', 'negative return', 'maturity', 'close'], action: 'clock', to: at('2026-10-05'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap payment on ${ETRS_NAME}, leg A (return), period 2026-07-01 to 2026-10-01: 250,000.00 EUR`, cash: { EUR: -250_000 }, owner: 'account', date: '2026-10-05' },
+          { type: 'swap.payment', summary: `Swap payment on ${ETRS_NAME}, leg B (float), period 2026-07-01 to 2026-10-01: 33,222.22 EUR`, cash: { EUR: -33_222.22 }, owner: 'account', date: '2026-10-05' },
+          { type: 'swap.matured', summary: `Swap matured: ${ETRS_NAME} (notional 5,000,000)`, owner: 'account' },
+        ],
+        cash: { account: { EUR: { settled: 877_402.78, unsettled: 0, margin: 0, restricted: 0, reserved: 0, availableToTrade: 877_402.78, availableToWithdraw: 877_402.78 } }, treasury: { EUR: { settled: 200_000 }, USD: { settled: 2_000_000 } } },
+        positions: [], holdings: { main: null }, lifecycle: [], otc: [], pending: [], alerts: [],
+        pnl: { account: { realized: 79_653.61, commissions: -275, unrealized: 0, fx: 23_312.50, total: 102_691.11 }, book: { fx: 27_312.50, total: 106_691.11 } }, // 402,462.50 - 280,000 - 37,208.89 - 5,600
+        nav: { account: 982_691.11, treasury: 2_224_000, book: 3_206_691.11 },
+        provisional: { account: false, book: false },
+        balance: { account: { cash: 982_691.11, positions: null, assets: 982_691.11, liabilities: 0, netAssets: 982_691.11 } },
+      },
+    },
+    {
+      id: 'nothing-left', action: 'clock', to: at('2026-10-06'),
+      expect: { events: [], lifecycle: [], positions: [], pending: [], otc: [], alerts: [], cash: { account: { EUR: { settled: 877_402.78, margin: 0, restricted: 0 } } } },
+    },
+  ],
+};
+
+export default [amortizingSwap, accretingSwap, equitySwap, equityIndexSwap, equityTrs];

@@ -493,11 +493,11 @@ export function createAccounting(app) {
         accountBorrowings: acctBorrow,
         accounts: accounts.map((u) => {
           const am = metrics(bookId, [u.id]);
-          const own = ledger.balances([u.id]);
-          const funded = new Map(); for (const [ccy, amt] of own.filter((b) => b.account === 'internal').map((b) => [b.ccy, -b.amount])) funded.set(ccy, amt);
-          const borrowed = new Map(); for (const b of own.filter((x) => x.account === 'loan.liab')) borrowed.set(b.ccy, -b.amount);
+          const unitBal = ledger.balances([u.id]);
+          const funded = new Map(); for (const [ccy, amt] of unitBal.filter((b) => b.account === 'internal').map((b) => [b.ccy, -b.amount])) funded.set(ccy, amt);
+          const borrowed = new Map(); for (const b of unitBal.filter((x) => x.account === 'loan.liab')) borrowed.set(b.ccy, -b.amount);
           // s7: funding at the rates it was booked at, the same figure as the funding line of the balance sheets.
-          const fundRows = own.filter((b) => b.account === 'internal');
+          const fundRows = unitBal.filter((b) => b.account === 'internal');
           const fundingReceived = { ...cell(funded), rc: money(-fundRows.reduce((a, b) => a + (b.amount_rc || 0), 0), rc), complete: !fundRows.some((b) => b.rc_missing > 0) };
           return { id: u.id, name: u.name, nav: navStatus(bookId, am), fundingReceived, cashBorrowed: cell(borrowed) };
         }),

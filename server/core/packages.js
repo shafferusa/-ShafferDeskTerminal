@@ -289,7 +289,9 @@ export function createPackages(app) {
     // Principal a cross-currency swap pays when the trade settles is counted with purchases, and named apart in a shortfall message.
     const principalOut = {};
     const bumpPrincipal = (oc) => { if (oc.amount < 0) { bump(oc.ccy, 'purchases', -oc.amount); principalOut[oc.ccy] = (principalOut[oc.ccy] || 0) - oc.amount; } else bump(oc.ccy, 'proceeds', oc.amount); };
-    const bump = (ccy, key, x) => { needs[ccy] = needs[ccy] || { purchases: 0, proceeds: 0, restrictedProceeds: 0, fees: 0, margin: 0, collateral: 0, reserved: 0, financingIn: 0, financingOut: 0 }; needs[ccy][key] += x; };
+    const bump = (ccy, key, x) => { needs[ccy] = needs[ccy] || { purchases: 0, proceeds: 0, restrictedProceeds: 0, fees: 0, margin: 0, collateral: 0, reserved: 0, financingIn: 0, financingOut: 0, coverCollateral: 0 }; needs[ccy][key] += x; };
+    // t1: restricted short-sale collateral a cover in this package is paid from (by short position), as the order engine pays it.
+    const coverUsed = new Map();
     let anyUnknownCash = false;
     const payoffLegs = [];
 
@@ -384,7 +386,18 @@ export function createPackages(app) {
             bump(ccy, 'collateral', (s.collateralPct - 1) * econ.cash);
             bump(ccy, 'margin', s.marginPct * econ.cash);
             row.shortCollateral = { topUp: money((s.collateralPct - 1) * econ.cash, ccy), marginHold: money(s.marginPct * econ.cash, ccy), collateralPct: s.collateralPct, marginPct: s.marginPct };
-          } else if (econ.cash < 0) bump(ccy, 'purchases', -econ.cash);
+          } else if (econ.cash < 0) {
+            bump(ccy, 'purchases', -econ.cash);
+            // t1: a cover is paid from the short's restricted collateral first (orders.js tryTrade; settlement into
+            // cash.restricted), so that collateral is a source for it here; only what it does not cover needs free cash.
+            const sp = l.action === 'buy_to_cover' && attach ? positions.find(unit.id, inst.id, attach.id) : null;
+            if (sp && sp.qty < 0) {
+              const held = ledger.positionBalance(sp.id, 'cash.restricted', ccy) + db.get(`SELECT COALESCE(SUM(amount), 0) AS s FROM settlements WHERE position_id = ? AND ccy = ? AND status = 'pending' AND amount > 0 AND accounts LIKE '["cash.restricted"%'`, sp.id, ccy).s;
+              const use = Math.max(0, Math.min(-econ.cash + feeTotal, held - (coverUsed.get(sp.id) || 0)));
+              coverUsed.set(sp.id, (coverUsed.get(sp.id) || 0) + use);
+              bump(ccy, 'coverCollateral', use);
+            }
+          }
           else bump(ccy, 'proceeds', econ.cash);
           for (const oc of econ.otherCash || []) bumpPrincipal(oc);
           if (inst.family === 'future' && (inst.terms.initialMargin === null || inst.terms.initialMargin === undefined)) check('warning', 'no-margin', `Leg ${l.n}: no initial margin figure has been supplied for ${inst.symbol || inst.name}, so none will be posted.`, l.n);
@@ -536,11 +549,11 @@ export function createPackages(app) {
     for (const [ccy, n] of Object.entries(needs)) {
       const have = ledger.cash(unit.id, ccy);
       const required = n.purchases + n.fees + n.margin + n.collateral + n.reserved + n.financingOut;
-      const sources = n.proceeds + n.financingIn;
+      const sources = n.proceeds + n.financingIn + n.coverCollateral;
       const shortfall = Math.max(0, required - sources - have.availableToTrade);
       cash[ccy] = {
         ccy, purchases: money(n.purchases, ccy), proceeds: money(n.proceeds, ccy), restrictedProceeds: money(n.restrictedProceeds, ccy), fees: money(n.fees, ccy), margin: money(n.margin, ccy),
-        collateral: money(n.collateral, ccy), reserved: money(n.reserved, ccy), financingIn: money(n.financingIn, ccy), financingOut: money(n.financingOut, ccy),
+        collateral: money(n.collateral, ccy), reserved: money(n.reserved, ccy), financingIn: money(n.financingIn, ccy), financingOut: money(n.financingOut, ccy), coverCollateral: money(n.coverCollateral, ccy),
         required: money(required, ccy), available: have.availableToTrade, settled: have.settled, shortfall: money(shortfall, ccy),
         netCash: money(n.proceeds + n.financingIn - n.purchases - n.fees - n.financingOut, ccy),
       };
@@ -568,7 +581,8 @@ export function createPackages(app) {
     // buying power at once. If a purchase here settles before that cash arrives, say so up front.
     const flows = []; // { ccy, date, amount } for the trade legs of this package
     for (const r of out) {
-      if (r.kind !== 'trade' || !r.settleDate || r.instrument?.family === 'future' || r.action === 'sell_short') continue;
+      // A short sale settles into restricted cash, and a cover is paid from it first: neither draws on settled cash here.
+      if (r.kind !== 'trade' || !r.settleDate || r.instrument?.family === 'future' || r.action === 'sell_short' || r.action === 'buy_to_cover') continue;
       if (typeof r.cash === 'number' && r.cash !== 0) flows.push({ ccy: r.currency, date: r.settleDate, amount: r.cash });
       for (const oc of r.otherCash || []) if (oc.amount) flows.push({ ccy: oc.ccy, date: r.settleDate, amount: oc.amount });
     }

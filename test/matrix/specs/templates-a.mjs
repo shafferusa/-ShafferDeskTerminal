@@ -533,4 +533,63 @@ const longTemplate = {
   ],
 };
 
-export default [longTemplate];
+
+// ---------------------------------------------------------------------------------------------
+// short
+// ---------------------------------------------------------------------------------------------
+const shortTemplate = {
+  template: 'short',
+  title: 'Short template on Kestrel Logistics: simulated borrow linked to the short sale, partial fills, failures, financing, closure',
+  matrix: {
+    ...TEMPLATE_MATRIX,
+    ticket: 'Strategies page (Short): Trading owner and intent, Instrument and template, Securities borrow, Order and funding; then the package preview (legs editable). The strategy instance drawer for Cancel working legs, Retry, Unwind, Accept, Resize and Close',
+    manualInputs: ['limit price of the short-sale leg, changed in the preview', 'investment Strategy, holding period and objective for the hedge request'],
+    settlement: 'Short-sale proceeds T+1 into restricted cash; covers T+1 paid from restricted cash first',
+    lifecycle: 'Borrow first, short sale after it; daily borrow fee; end-of-day collateral mark and margin reserve; cover returns the borrow',
+    accounting: 'Short position at negative cost; borrow fee under borrowing and funding expenses; the borrow is one record in the borrowing register',
+    collateral: 'Restricted cash 102% of market value; 30% margin reserve',
+  },
+  start: MAR(2),
+  settlementCheck: { lag: 1, holidays: [] },
+  book: book('Matrix template short', { funding: 60_000 }),
+  instruments: { main: STOCK },
+  quotes: { main: { bid: 49.95, ask: 50.05, last: 50.00, bidSize: 500, askSize: 500 } },
+  borrow: { main: { available: true, quantity: 50_000, feeRate: 0.018 } },
+  expectAtStart: startState(60_000),
+  steps: [
+    { id: 'hedge-request', covers: ['hedge request'], action: 'hedge_request', input: pageInput('short', { quantity: 1500, ...CONTEXT, hedgeObjective: { type: 'upside_protection_short' } }), strategyPage: { ...PAGE_CONTEXT, objective: 'Upside protection for shorts', template: 'Short', underlying: 'main', quantity: 1500 }, expect: { result: {} } },
+    { id: 'borrow-withdrawn', action: 'borrow', instrument: 'main', terms: { available: false, quantity: 0, feeRate: 0.018 }, expect: {} },
+    { id: 'borrow-unavailable', covers: ['borrow unavailable'], action: 'package', instrument: 'main', input: pageInput('short', { quantity: 1500 }), strategyPage: { template: 'Short', underlying: 'main', quantity: 1500 }, status: 'blocked', reason: 'No borrow is available, so the dependent short sale cannot be confirmed.', expect: { refused: 'is not available to borrow' } },
+    { id: 'borrow-back', action: 'borrow', instrument: 'main', terms: { available: true, quantity: 50_000, feeRate: 0.018 }, expect: {} },
+    { id: 'open-partial', covers: ['open', 'borrow', 'partial fill'], action: 'package', as: 'core', instrument: 'main', input: pageInput('short', { quantity: 1500 }), strategyPage: { template: 'Short', underlying: 'main', quantity: 1500 }, expect: {} },
+    { id: 'cancel-remainder', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'core', expect: {} },
+    { id: 'retry', covers: ['retry'], action: 'recover', how: 'retry', lot: 'core', expect: {} },
+    { id: 'limit-never-reached', covers: ['failed dependent leg'], action: 'package', as: 'limited', instrument: 'main', input: pageInput('short', { quantity: 400 }), strategyPage: { template: 'Short', underlying: 'main', quantity: 400 }, editLegs: { 2: { orderType: 'limit', limitPrice: 52 } }, expect: {} },
+    { id: 'cancel-limited', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'limited', expect: {} },
+    { id: 'unwind', covers: ['unwind', 'return'], action: 'recover', how: 'unwind', lot: 'limited', expect: {} },
+    { id: 'thin-book', action: 'quote', instrument: 'main', quote: { bid: 49.95, ask: 50.05, last: 50.00, bidSize: 100, askSize: 100 }, expect: {} },
+    { id: 'kept-partial', covers: ['partial fill'], action: 'package', as: 'kept', instrument: 'main', input: pageInput('short', { quantity: 400 }), strategyPage: { template: 'Short', underlying: 'main', quantity: 400 }, expect: {} },
+    { id: 'cancel-kept', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'kept', expect: {} },
+    { id: 'accept-kept', covers: ['accept as it stands'], action: 'strategy_action', how: 'accept', lot: 'kept', expect: {} },
+    { id: 'deep-book', action: 'quote', instrument: 'main', quote: { bid: 49.95, ask: 50.05, last: 50.00, bidSize: 10000, askSize: 10000 }, expect: {} },
+    { id: 'cash-short-not-financed', covers: ['financing: not financed'], action: 'package', instrument: 'main', input: pageInput('short', { quantity: 2000 }), strategyPage: { template: 'Short', underlying: 'main', quantity: 2000 }, status: 'blocked', reason: 'blocked', expect: { refused: 'is short' } },
+    { id: 'funded-from-treasury', covers: ['financing: Treasury funding'], action: 'package', as: 'funded', instrument: 'main', input: pageInput('short', { quantity: 2000, financing: { mode: 'treasury' } }), strategyPage: { template: 'Short', underlying: 'main', quantity: 2000, financing: { mode: 'treasury' } }, expect: {} },
+    { id: 'funded-by-loan', covers: ['financing: borrow'], action: 'package', as: 'levered', instrument: 'main', contractAs: 'loan', input: pageInput('short', { quantity: 600, financing: { mode: 'loan', rateType: 'fixed', rate: 0.06 } }), strategyPage: { template: 'Short', underlying: 'main', quantity: 600, financing: { mode: 'loan', rate: 0.06 } }, expect: {} },
+    { id: 'resize-up', covers: ['resize', 'increase'], action: 'resize', lot: 'core', factor: 1.2, expect: {} },
+    { id: 'roll-refused', covers: ['roll'], action: 'roll', lot: 'core', newExpiration: '2026-04-17', status: 'unsupported', reason: 'A short holding of shares has no option or futures position to roll.', expect: { refused: { engine: 'holds no option or futures position to roll', api: 'holds no option or futures position to roll', browser: 'offers no Roll' } } },
+    { id: 'next-day', covers: ['settlement', 'collateral mark'], action: 'clock', to: MAR(3), expect: {} },
+    { id: 'fee-day', covers: ['borrow fee'], action: 'clock', to: MAR(3, '17:30'), expect: {} },
+    { id: 'next-morning', action: 'clock', to: MAR(4), expect: {} },
+    { id: 'price-down', action: 'quote', instrument: 'main', quote: { bid: 47.95, ask: 48.05, last: 48.00, bidSize: 10000, askSize: 10000 }, expect: {} },
+    { id: 'close-share', covers: ['reduce', 'close share'], action: 'close', lot: 'core', scope: 'strategy', percent: 50, expect: {} },
+    { id: 'close-exact', covers: ['reduce', 'close exact amount'], action: 'close', lot: 'core', instrument: 'main', qty: 300, expect: {} },
+    { id: 'close-all', covers: ['close'], action: 'close', lot: 'core', scope: 'strategy', expect: {} },
+    { id: 'close-levered', covers: ['close'], action: 'close', lot: 'levered', scope: 'strategy', expect: {} },
+    { id: 'close-funded', covers: ['close'], action: 'close', lot: 'funded', scope: 'strategy', expect: {} },
+    { id: 'close-kept', covers: ['close'], action: 'close', lot: 'kept', scope: 'strategy', expect: {} },
+    { id: 'settle-covers', covers: ['settlement'], action: 'clock', to: MAR(5), expect: {} },
+    { id: 'repay-loan', covers: ['repay'], action: 'repay', lot: 'levered', instrument: 'loan', expect: {} },
+  ],
+};
+
+export default [longTemplate, shortTemplate];

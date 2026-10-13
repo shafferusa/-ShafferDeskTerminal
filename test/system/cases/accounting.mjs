@@ -279,7 +279,7 @@ export const EXPECT = {
       T: { netAssets: 657_277.50 },
       N: { netAssets: 861_010.91 },
       // S: the put is carried at its cost, -240, not at a price: positions -49,975 - 240 = -50,215 USD.
-      S: { lines: { positions: { USD: -50_215, EUR: 49_950 } }, netAssets: 616_847.34 },
+      S: { lines: { cash: { USD: 548_959.20, EUR: 9_990 }, restricted: { USD: 50_974.50 }, positions: { USD: -50_215, EUR: 49_950 }, accruedExpense: { USD: 4.16 } }, netAssets: 616_847.34 },
     },
     book: { netAssets: 2_135_135.75 },
     pnl: { book: { unrealized: 9_819, total: 25_135.75, unrealizedComplete: false } },
@@ -404,7 +404,10 @@ export async function readBooks(w, ids) {
 const PNL_KEYS = ['realized', 'dividends', 'couponInterest', 'borrowFunding', 'lendingIncome', 'commissions', 'fees'];
 export function pnlFigures(p) {
   const o = Object.fromEntries(PNL_KEYS.map((k) => [k, p.categories.find((c) => c.key === k)?.rc ?? 0]));
-  return { ...o, unrealized: p.unrealized.current, unrealizedComplete: p.unrealized.complete, fx: p.fx.current, total: p.investmentPnl, fxByCcy: Object.fromEntries((p.fx.byCurrency || []).map((x) => [x.ccy, r2(x.translation + x.dealing)])) };
+  // FX effects: the translation of each currency's balances, and the dealing cost on conversions (the rest of the FX line),
+  // as the P&L statement shows them.
+  const translation = Object.fromEntries((p.fx.byCurrency || []).map((x) => [x.ccy, x.translation]));
+  return { ...o, unrealized: p.unrealized.current, unrealizedComplete: p.unrealized.complete, fx: p.fx.current, total: p.investmentPnl, fxByCcy: translation, fxDealing: r2(p.fx.current - Object.values(translation).reduce((a, x) => a + x, 0)) };
 }
 const repBy = (bs, key, unit) => { const r = bs.representedBy.find((x) => x.key === key); return unit ? r.cells[unit]?.rc ?? 0 : r.total.rc; };
 
@@ -473,7 +476,10 @@ export function compareCheckpoint(c, name, books, ids) {
       else c.near(got[f], v, L(`P&L ${k === 'book' ? 'Book' : unitName[k]}: ${f}`), 0.011);
     }
   }
-  if (X.fxByCcy) for (const [ccy, v] of Object.entries(X.fxByCcy)) c.near(pnlFigures(books.pnl.book).fxByCcy[ccy], v, L(`FX effect in ${ccy}`), 0.011);
+  if (X.fxByCcy) {
+    for (const [ccy, v] of Object.entries(X.fxByCcy)) c.near(pnlFigures(books.pnl.book).fxByCcy[ccy], v, L(`FX effect: translation of ${ccy} balances`), 0.011);
+    c.near(pnlFigures(books.pnl.book).fxDealing, 0, L('FX effect: no dealing cost (every conversion at the reporting rate)'), 0.011);
+  }
   // Internal transfers make no Book P&L: the owners' P&L adds up to the Book's.
   const sumTotals = ['T', 'N', 'S'].reduce((a, k) => a + (books.pnl[k].investmentPnl ?? 0), 0);
   c.near(books.pnl.book.investmentPnl, sumTotals, L('Book P&L = Treasury + North + South (internal transfers create none)'), 0.03);
