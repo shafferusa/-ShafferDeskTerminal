@@ -1449,4 +1449,240 @@ const cdoSpec = {
   ],
 };
 
-export default [specifiedPool, absSpec, cmoSpec, cloSpec, cdoSpec];
+// ---------------------------------------------------------------------------------------------
+// credit_linked_note
+// ---------------------------------------------------------------------------------------------
+// A credit-linked note: Harrowgate Bank N.A. 7.25% Credit-Linked Notes due 20 December 2030, linked to Calderon Energy Corp.
+// The bank pays a 7.25% coupon (quarterly on 20 March, June, September and December, 30/360) and par at maturity unless
+// Calderon Energy has a credit event; then the coupon ends (interest ceases from the last coupon date) and principal is
+// reduced to the recovery, the final price of Calderon's senior unsecured debt in the credit-event auction, and settled at it.
+// T+2 on the US bond calendar, pieces of 1,000.
+//   - Bought on Tuesday 14 September 2027 (settling Thursday 16 September); the 20 September coupon is paid.
+//   - Calderon's spreads widen; 1,000,000 more bought on Wednesday 6 October (settling Friday 8 October); 1,000,000 sold on
+//     Friday 8 October, settling Wednesday 13 October (T+2 over Columbus Day, a bond-market holiday).
+//   - Calderon files for bankruptcy; the auction on Thursday 18 November sets the final price at 38.00: the credit event is
+//     recorded by hand, recovery 0.38, settling Wednesday 24 November. The interest accrued since 20 September is forfeited,
+//     the notes are settled at 38.00, and they can no longer be traded.
+// Commission: 0.5 basis point of clean principal. Days of 30/360: 20 Jun to 16 Sep 86; from 20 Sep: to 5 Oct 15, 7 Oct 17,
+// 8 Oct 18, 12 Oct 22, 13 Oct 23, 17 Nov 57. A quarter's coupon is 7.25% / 4 of face.
+const clnDraft = {
+  productId: 'credit_linked_note', name: 'Harrowgate Bank N.A. 7.25% Credit-Linked Notes due 20-Dec-2030 (Calderon Energy Corp)', symbol: 'HARR-CLN-CALD-30', marketView: 'US_CASH', venueType: 'otc', issuer: 'Harrowgate Bank N.A.', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+  conventions: { settleLag: 2 },
+  terms: { couponType: 'fixed', couponRate: 0.0725, frequency: 4, maturity: '2030-12-20', issueDate: '2025-12-20', dayCount: '30/360', redemption: 100, minDenomination: 1_000, seniority: 'Senior unsecured (credit-linked)', referenceEntity: 'Calderon Energy Corp' },
+};
+const clnSpec = {
+  productId: 'credit_linked_note',
+  title: 'Harrowgate Bank 7.25% credit-linked notes on Calderon Energy: registration needs the reference entity, bought, coupon, increased, partial sale over Columbus Day, credit event by hand ends the coupon (accrued forfeited) and settles principal at the 38% recovery, no trading after',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount (a multiple of 1,000)'],
+    manualInputs: ['Registration: Reference entity (required)', 'Credit event recorded by hand on the instrument form (Recovery rate, Recovery settles on, Review credit event, Record credit event)'],
+    settlement: 'T+2 on the US bond calendar, Columbus Day skipped; after the credit event, the recovery settles on the auction settlement date',
+    lifecycle: 'Automatic: daily accrual, quarterly coupon. Manual: the credit event (coupon ends, accrued since the last coupon forfeited, principal settled at the recovery). Refused: trading after the credit event. Not modelled: the auction itself (the recovery is entered), physical settlement by delivery of obligations',
+    accounting: 'Cost at average; coupon and interest income (the forfeited accrued reversed out of it); principal settled at the recovery against cost is a realized loss; commission expensed',
+    collateral: 'None for a long position (the issuer\'s own credit is not collateralised)',
+  },
+  start: EDT('2027-09-14'), // Tuesday
+  settlementCheck: { lag: 2, holidays: ['2027-10-11'] }, // Columbus Day (bond market)
+  book: {
+    name: 'Matrix CLN', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 5_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 4_000_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.5 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: { main: clnDraft },
+  quotes: { main: { bid: 99.25, ask: 99.5, last: 99.375, bidSize: 10_000_000, askSize: 10_000_000 } },
+  expectAtStart: { ...startState(4_000_000, 1_000_000), cash: { account: usdCash(4_000_000), treasury: usdCash(1_000_000) } },
+  steps: [
+    {
+      id: 'register-without-reference-entity', covers: 'registration', action: 'register_instrument',
+      draft: { ...clnDraft, name: 'Harrowgate Bank N.A. 6.50% Credit-Linked Notes due 2029', symbol: 'HARR-CLN-29', terms: { ...clnDraft.terms, couponRate: 0.065, maturity: '2029-12-20', referenceEntity: undefined } },
+      status: 'blocked', reason: 'A credit-linked note cannot be registered without the reference entity its credit event depends on.',
+      expect: { refused: 'needs its reference entity' },
+    },
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 2_000_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 2_000_000, estimate: 99.5, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2027-09-16', calendar: 'USBOND',
+            gross: 1_990_000, accrued: 34_638.89, // 86 days: 2,000,000 x 7.25% x 86/360 = 34,638.889
+            cash: -2_024_638.89, fees: 99.5 }], // 0.5 bp of 1,990,000
+          cash: { USD: { purchases: 2_024_638.89, fees: 99.5, required: 2_024_738.39, available: 4_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 2_000_000, avgPrice: 99.5, fills: [{ qty: 2_000_000, price: 99.5, model: 'quoted-bid-ask', settleDate: '2027-09-16', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 2,000,000 HARR-CLN-CALD-30 @ 99.50 USD', owner: 'account', date: '2027-09-14' }],
+        cash: { account: { USD: { settled: 4_000_000, unsettled: -2_024_738.39, availableToTrade: 1_975_261.61 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 2_000_000, avgCost: 99.5, cost: 1_990_000, price: 99.375, value: 1_987_500, unrealized: -2_500, accrued: 34_638.89, priceSource: 'Test fixture' }],
+        holdings: { main: { long: 2_000_000, short: 0, net: 2_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2027-09-16', amount: -2_024_738.39, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-09-20', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2030-12-20', status: 'pending' }],
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -99.5, fees: 0, borrowFunding: 0, unrealized: -2_500, total: -2_599.5 } },
+        nav: { account: 3_997_400.5, book: 4_997_400.5 },
+        balance: { account: { cash: 4_000_000, accruedIncome: 34_638.89, positions: 1_987_500, payable: 2_024_738.39, assets: 6_022_138.89, liabilities: 2_024_738.39, netAssets: 3_997_400.5 } },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EDT('2027-09-16'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 2,024,738.39 USD from settled cash', cash: { USD: -2_024_738.39 }, date: '2027-09-16' }],
+        cash: { account: { USD: { settled: 1_975_261.61, unsettled: 0, availableToTrade: 1_975_261.61 } } },
+        pending: [],
+        balance: { account: { cash: 1_975_261.61, payable: null, assets: 3_997_400.5, liabilities: 0 } },
+      },
+    },
+    {
+      // Monday 20 September: the coupon 2,000,000 x 7.25% / 4 = 36,250.00. The balance stands at 20 September: 0; 36,250.00 -
+      // 34,638.89 = 1,611.11 more income.
+      id: 'coupon', covers: 'coupon', action: 'clock', to: EDT('2027-09-20'),
+      expect: {
+        events: [
+          { type: 'bond.coupon', summary: 'Coupon received on 2,000,000 HARR-CLN-CALD-30: 36,250.00 USD', cash: { USD: 36_250 }, owner: 'account', date: '2027-09-20' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on HARR-CLN-CALD-30: 1,611.11 USD' },
+        ],
+        cash: { account: { USD: { settled: 2_011_511.61, availableToTrade: 2_011_511.61 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_000_000, accrued: 0 }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-12-20', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2030-12-20', status: 'pending' }],
+        pnl: { account: { couponInterest: 1_611.11, total: -988.39 } },
+        nav: { account: 3_999_011.61, book: 4_999_011.61 },
+        balance: { account: { cash: 2_011_511.61, accruedIncome: null, assets: 3_999_011.61, netAssets: 3_999_011.61 } },
+      },
+    },
+    {
+      id: 'spreads-widen', action: 'quote', instrument: 'main', quote: { bid: 97, ask: 97.5, last: 97.25, bidSize: 10_000_000, askSize: 10_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_000_000, price: 97.25, value: 1_945_000, unrealized: -45_000 }],
+        pnl: { account: { unrealized: -45_000, total: -43_488.39 } },
+        nav: { account: 3_956_511.61, book: 4_956_511.61 },
+        balance: { account: { positions: 1_945_000, assets: 3_956_511.61, netAssets: 3_956_511.61 } },
+      },
+    },
+    {
+      // Wednesday 6 October. End of day 5 Oct: 2,000,000 x 7.25% x 15/360 = 6,041.67.
+      id: 'accrue', covers: 'accrual', action: 'clock', to: EDT('2027-10-06'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on HARR-CLN-CALD-30: 6,041.67 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_000_000, accrued: 6_041.67 }],
+        pnl: { account: { couponInterest: 7_652.78, total: -37_446.72 } },
+        nav: { account: 3_962_553.28, book: 4_962_553.28 },
+        balance: { account: { accruedIncome: 6_041.67, assets: 3_962_553.28, netAssets: 3_962_553.28 } },
+      },
+    },
+    {
+      // 1,000,000 more at 97.50 = 975,000, settling Friday 8 October; 18 days 3,625.00; 0.5 bp = 48.75.
+      id: 'increase', covers: 'increase', action: 'resize', lot: 'lot', factor: 1.5,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', qty: 1_000_000, estimate: 97.5, settleDate: '2027-10-08', gross: 975_000, accrued: 3_625, cash: -978_625, fees: 48.75 }],
+          cash: { USD: { purchases: 978_625, fees: 48.75, required: 978_673.75, available: 2_011_511.61, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 1_000_000, avgPrice: 97.5 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Bought 1,000,000 HARR-CLN-CALD-30 @ 97.50 USD' }],
+        cash: { account: { USD: { settled: 2_011_511.61, unsettled: -978_673.75, availableToTrade: 1_032_837.86 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 3_000_000, cost: 2_965_000, avgCost: 98.8333333, price: 97.25, value: 2_917_500, unrealized: -47_500, accrued: 9_666.67 }],
+        holdings: { main: { long: 3_000_000, short: 0, net: 3_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2027-10-08', amount: -978_673.75, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { commissions: -148.25, unrealized: -47_500, total: -39_995.47 } },
+        nav: { account: 3_960_004.53, book: 4_960_004.53 },
+        balance: { account: { cash: 2_011_511.61, accruedIncome: 9_666.67, positions: 2_917_500, payable: 978_673.75, assets: 4_938_678.28, liabilities: 978_673.75, netAssets: 3_960_004.53 } },
+      },
+    },
+    {
+      // Friday 8 October. End of day 7 Oct: 2,000,000 x 17 days 6,847.2222 + 1,000,000 bought to 8 Oct (18 days) 3,625: 10,472.22.
+      // 805.55 more.
+      id: 'settle-increase', covers: ['settlement', 'accrual'], action: 'clock', to: EDT('2027-10-08'),
+      expect: {
+        events: [
+          { type: 'settlement.pay', summary: 'paid 978,673.75 USD from settled cash', cash: { USD: -978_673.75 } },
+          { type: 'accrual.coupon', summary: 'Interest accrued on HARR-CLN-CALD-30: 805.55 USD' },
+        ],
+        cash: { account: { USD: { settled: 1_032_837.86, unsettled: 0, availableToTrade: 1_032_837.86 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 3_000_000, accrued: 10_472.22 }],
+        pending: [],
+        pnl: { account: { couponInterest: 8_458.33, total: -39_189.92 } },
+        nav: { account: 3_960_810.08, book: 4_960_810.08 },
+        balance: { account: { cash: 1_032_837.86, payable: null, accruedIncome: 10_472.22, assets: 3_960_810.08, liabilities: 0, netAssets: 3_960_810.08 } },
+      },
+    },
+    {
+      // 1,000,000 sold at 97.00 = 970,000, settling Wednesday 13 October (Columbus Day, Monday 11th, is closed): 23 days 4,631.94;
+      // 0.5 bp = 48.50. Cost out 2,965,000 / 3 = 988,333.333: realized 970,000 - 988,333.33 = -18,333.33.
+      id: 'reduce', covers: ['reduce', 'market holiday'], action: 'ticket', instrument: 'main', side: 'sell', qty: 1_000_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 1_000_000, estimate: 97, settleDate: '2027-10-13', gross: 970_000, accrued: 4_631.94, cash: 974_631.94, fees: 48.5 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 1_000_000, avgPrice: 97 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: /^Sold 1,000,000 HARR-CLN-CALD-30 @ 97\.00 USD \(realized [-−]18,333\.33 USD\)$/ }],
+        cash: { account: { USD: { settled: 1_032_837.86, unsettled: 974_583.44, availableToTrade: 2_007_421.3 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_000_000, cost: 1_976_666.67, avgCost: 98.8333335, price: 97.25, value: 1_945_000, unrealized: -31_666.67, accrued: 5_840.28 }],
+        holdings: { main: { long: 2_000_000, short: 0, net: 2_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2027-10-13', amount: 974_583.44, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: -18_333.33, commissions: -196.75, unrealized: -31_666.67, total: -41_738.42 } },
+        nav: { account: 3_958_261.58, book: 4_958_261.58 },
+        balance: { account: { receivable: 974_583.44, accruedIncome: 5_840.28, positions: 1_945_000, assets: 3_958_261.58, netAssets: 3_958_261.58 } },
+      },
+    },
+    {
+      // Wednesday 13 October. End of day 12 Oct: 3,000,000 x 22 days 13,291.6667 less the 23 days sold 4,631.9444: 8,659.72.
+      // 2,819.44 more.
+      id: 'settle-reduce', covers: ['settlement', 'accrual', 'market holiday'], action: 'clock', to: EDT('2027-10-13'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 974,583.44 USD into settled cash', cash: { USD: 974_583.44 } },
+          { type: 'accrual.coupon', summary: 'Interest accrued on HARR-CLN-CALD-30: 2,819.44 USD' },
+        ],
+        cash: { account: { USD: { settled: 2_007_421.3, unsettled: 0, availableToTrade: 2_007_421.3 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_000_000, accrued: 8_659.72 }],
+        pending: [],
+        pnl: { account: { couponInterest: 11_277.77, total: -38_918.98 } },
+        nav: { account: 3_961_081.02, book: 4_961_081.02 },
+        balance: { account: { cash: 2_007_421.3, receivable: null, accruedIncome: 8_659.72, assets: 3_961_081.02, netAssets: 3_961_081.02 } },
+      },
+    },
+    {
+      // Thursday 18 November, the auction day. End of day 17 Nov: 2,000,000 x 7.25% x 57/360 = 22,958.33. 14,298.61 more.
+      id: 'auction-day', covers: 'accrual', action: 'clock', to: EST('2027-11-18'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on HARR-CLN-CALD-30: 14,298.61 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_000_000, accrued: 22_958.33 }],
+        pnl: { account: { couponInterest: 25_576.38, total: -24_620.37 } },
+        nav: { account: 3_975_379.63, book: 4_975_379.63 },
+        balance: { account: { accruedIncome: 22_958.33, assets: 3_975_379.63, netAssets: 3_975_379.63 } },
+      },
+    },
+    {
+      // The credit event, recorded by hand: recovery 0.38 from the auction, settling 24 November. The interest accrued since
+      // 20 September, 22,958.33, is forfeited (reversed out of coupon and interest income). Principal is settled at 38.00:
+      // 2,000,000 x 38% = 760,000.00 receivable on 24 November; realized 760,000 - 1,976,666.67 = -1,216,666.67. The December
+      // coupon and the redemption are cancelled.
+      id: 'credit-event', covers: ['credit event (by hand)', 'close'], action: 'instrument_lifecycle', instrument: 'main', body: { action: 'credit_event', recovery: 0.38, settleDate: '2027-11-24' },
+      expect: {
+        events: [
+          { type: 'accrual.coupon', summary: 'Accrued interest forfeited on HARR-CLN-CALD-30: credit event of Calderon Energy Corp, interest ceases from the last coupon date: 22,958.33 USD' },
+          { type: 'bond.credit_event', summary: 'Credit event of Calderon Energy Corp recorded by hand: principal reduced to the recovery and settled on 2027-11-24, coupons ended: 2,000,000 HARR-CLN-CALD-30 at 38.00% of par', owner: 'account', date: '2027-11-18' },
+        ],
+        cash: { account: { USD: { settled: 2_007_421.3, unsettled: 760_000, availableToTrade: 2_767_421.3 } } },
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2027-11-24', amount: 760_000, ccy: 'USD', into: 'cash' }],
+        lifecycle: [],
+        pnl: { account: { realized: -1_235_000, couponInterest: 2_618.05, unrealized: 0, total: -1_232_578.7 } },
+        nav: { account: 2_767_421.3, book: 3_767_421.3 },
+        balance: { account: { receivable: 760_000, accruedIncome: null, positions: null, assets: 2_767_421.3, netAssets: 2_767_421.3 } },
+      },
+    },
+    {
+      id: 'trade-after-credit-event', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 1_000_000, as: 'lot2',
+      status: 'blocked', reason: 'After the credit event the notes were settled at the recovery: nothing is left to trade.',
+      expect: { refused: 'can no longer be traded' },
+    },
+    {
+      id: 'recovery-settles', covers: 'settlement', action: 'clock', to: EST('2027-11-24'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 760,000.00 USD into settled cash', cash: { USD: 760_000 } }],
+        cash: { account: { USD: { settled: 2_767_421.3, unsettled: 0, availableToTrade: 2_767_421.3 } }, treasury: usdCash(1_000_000) },
+        pending: [],
+        balance: { account: { cash: 2_767_421.3, receivable: null, assets: 2_767_421.3, liabilities: 0 } },
+      },
+    },
+  ],
+};
+
+export default [specifiedPool, absSpec, cmoSpec, cloSpec, cdoSpec, clnSpec];

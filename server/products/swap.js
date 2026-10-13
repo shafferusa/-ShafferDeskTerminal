@@ -506,6 +506,8 @@ export const swap = {
       const sched = legSchedule(inst, leg);
       const period = sched.find((p) => p.end === task.data.periodEnd);
       if (!leg || !period) return 'done';
+      // Net settlement (s2): the legs of one currency that end a period on the same date settle as one net amount.
+      if (t.netSettlement) return netPayment(app, task, { book, unit, inst, pos, leg, sched, period, base, awaiting });
       // A position opened part-way through a period pays from its own start date.
       const from = pos.data.cashflowsFrom || t.effective;
       const eff = { ...period, start: from > period.start && from < period.end && leg.type !== 'return' ? from : period.start };

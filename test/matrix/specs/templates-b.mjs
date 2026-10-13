@@ -468,55 +468,35 @@ const bearCall = {
     },
     { id: 'c50-quote-stops-again', action: 'quote', instrument: 'c50', quote: { bid: 2.20, ask: 2.30, last: 2.25, bidSize: 20, askSize: 20, asOf: MAR(5, '09:50') }, expect: {} },
     {
-      // Close 40% of "spread": sell 2 of its 55 calls (2 x 0.50 x 100 = 100) and buy back 2 of its 50 calls (estimated at
-      // the last 2.25: 450; no fresh quote, so it waits). The 55-call sale fills first; the 50 calls it covered are now
-      // short 5 against 3: 2 calls (200 shares) uncovered add 20% of 200 x 50.00 = 2,000, so "spread" reserves 4,500.
-      // Realized on the sale: 2 x (0.50 - 0.80) x 100 = -60.
-      id: 'close-part-buyback-fails', covers: ['reduce', 'failed leg'], action: 'close', lot: 'spread', instrument: 'c55', scope: 'strategy', percent: 40,
+      // Close 40% of "spread": buy back 2 of its 50 calls (estimated at the last 2.25: 450; no fresh quote, so it waits)
+      // and sell 2 of its 55 calls (2 x 0.50 x 100 = 100). The sale of the 55 calls waits on the buy-back: the
+      // protection is not sold while the written calls it covers are still open. Nothing fills.
+      id: 'close-part-buyback-fails', covers: ['reduce', 'failed leg', 'dependency'], action: 'close', lot: 'spread', instrument: 'c55', scope: 'strategy', percent: 40,
       expect: {
         preview: {
           blocking: 0, warnings: ['not-executable'], intent: 'close',
           legs: [
-            { kind: 'trade', action: 'sell', instrument: 'c55', qty: 2, estimate: 0.50, settleDate: '2026-03-06', cash: 100, fees: 1.30 },
-            { kind: 'trade', action: 'buy', instrument: 'c50', qty: 2, estimate: null, reference: 2.25, executable: false, settleDate: '2026-03-06', cash: -450, fees: 1.30 },
+            { kind: 'trade', action: 'buy', instrument: 'c50', qty: 2, estimate: null, reference: 2.25, executable: false, settleDate: '2026-03-06', cash: -450, fees: 1.30, dependsOn: [] },
+            { kind: 'trade', action: 'sell', instrument: 'c55', qty: 2, estimate: 0.50, settleDate: '2026-03-06', cash: 100, fees: 1.30, dependsOn: [1] },
           ],
           cash: { USD: { purchases: 450, proceeds: 100, fees: 2.60, reserved: 0, required: 452.60, available: 4_875, shortfall: 0 } },
         },
-        result: { status: 'partial', orders: [{ action: 'sell', instrument: 'c55', status: 'filled', filledQty: 2, avgPrice: 0.50 }, { action: 'buy', instrument: 'c50', status: 'working', filledQty: 0 }] },
-        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 2 CFL260320C55 @ 0.50 USD (realized -60.00 USD)', date: '2026-03-05' }],
-        // owed to the Account 100 - 1.30 = 98.70; reserved 4,500 + 2,500
-        cash: { account: { USD: { settled: 9_875, unsettled: 98.70, reserved: 7_000, availableToTrade: 2_973.70, availableToWithdraw: 2_875 } } },
-        positions: [
-          { instrument: 'c50', lot: 'second', value: -1_125 },
-          { instrument: 'c50', lot: 'spread', qty: -5, value: -1_125, unrealized: 75 },
-          { instrument: 'c55', lot: 'second', qty: 5, value: 275 },
-          { instrument: 'c55', lot: 'spread', qty: 3, avgCost: 0.80, cost: 240, value: 165, unrealized: -75 }, // 3 x 0.55 x 100 - 240
-          { instrument: 'c55', lot: 'third', qty: 5, value: 275 },
-        ],
-        holdings: { c55: { long: 13, short: 0, net: 13 } },
-        pending: [{ instrument: 'c55', lot: 'spread', dueDate: '2026-03-06', amount: 98.70, into: 'cash' }],
-        openOrders: [{ instrument: 'c50', kind: 'trade', action: 'buy', status: 'working', qty: 2, filledQty: 0 }],
-        pnl: { account: { realized: -60, commissions: -17.55, unrealized: -175, total: -252.55 }, book: { realized: -60, commissions: -17.55, unrealized: -175, total: -252.55 } },
-        nav: { account: 8_438.70, book: 999_747.45 }, // 8,450 - 10 (sold 0.05 under the mark) - 1.30
-        balance: {
-          account: { cash: 9_875, receivable: 98.70, positions: -1_535, assets: 8_438.70, netAssets: 8_438.70 },
-          book: { cash: 1_001_183.75, receivable: 98.70, positions: -1_535, assets: 999_747.45, netAssets: 999_747.45 },
-        },
+        result: { status: 'partial', orders: [{ action: 'buy', instrument: 'c50', status: 'working', filledQty: 0 }, { action: 'sell', instrument: 'c55', status: 'pending', filledQty: 0, reason: 'Waiting on leg 4' }] },
+        events: [{ type: 'strategy.legs_added' }],
+        openOrders: [{ instrument: 'c50', kind: 'trade', action: 'buy', status: 'working', qty: 2, filledQty: 0 }, { instrument: 'c55', kind: 'trade', action: 'sell', status: 'pending', qty: 2, filledQty: 0 }],
       },
     },
     {
-      // End of 5 March: the buy-back expires. "spread" holds 3 bought and 5 written calls and needs attention.
-      id: 'buyback-expires', covers: ['failed leg', 'settlement'], action: 'clock', to: MAR(6),
+      // End of 5 March: both legs of the close expire unfilled. "spread" still holds its 5 + 5 and needs attention.
+      id: 'close-legs-expire', covers: 'failed leg', action: 'clock', to: MAR(6),
       expect: {
         events: [
-          { type: 'settlement.receive', summary: 'received 98.70 USD into settled cash', date: '2026-03-06' },
-          { type: 'order.expired', summary: 'expired: buy 2 CFL260320C50. Day order did not fill before the end of the business day' },
+          { type: 'order.expired', summary: 'Leg 5 expired: sell 2 CFL260320C55. Day order did not fill before the end of the business day' },
+          { type: 'order.expired', summary: 'Leg 4 expired: buy 2 CFL260320C50. Day order did not fill before the end of the business day' },
         ],
-        cash: { account: { USD: { settled: 9_973.70, unsettled: 0, reserved: 7_000, availableToTrade: 2_973.70, availableToWithdraw: 2_973.70 } } },
-        pending: [], openOrders: [],
-        failed: { orders: 3 },
+        openOrders: [],
+        failed: { orders: 4 },
         alerts: ['strategy.attention'],
-        balance: { account: { cash: 9_973.70, receivable: null }, book: { cash: 1_001_282.45, receivable: null } },
       },
     },
     {
@@ -526,12 +506,12 @@ const bearCall = {
           { instrument: 'c50', lot: 'second', price: 2.05, value: -1_025, unrealized: 75 }, // -5 x 2.05 x 100 + 1,100
           { instrument: 'c50', lot: 'spread', price: 2.05, value: -1_025, unrealized: 175 },
           { instrument: 'c55', lot: 'second', value: 275, unrealized: -75 },
-          { instrument: 'c55', lot: 'spread', value: 165, unrealized: -75 },
+          { instrument: 'c55', lot: 'spread', value: 275, unrealized: -125 },
           { instrument: 'c55', lot: 'third', value: 275, unrealized: -75 },
         ],
-        pnl: { account: { unrealized: 25, total: -52.55 }, book: { unrealized: 25, total: -52.55 } },
-        nav: { account: 8_638.70, book: 999_947.45 }, // 9,973.70 - 2,050 + 715
-        balance: { account: { positions: -1_335, assets: 8_638.70, netAssets: 8_638.70 }, book: { positions: -1_335, assets: 999_947.45, netAssets: 999_947.45 } },
+        pnl: { account: { unrealized: -25, total: -41.25 }, book: { unrealized: -25, total: -41.25 } },
+        nav: { account: 8_650, book: 999_958.75 }, // 9,875 - 2,050 + 825
+        balance: { account: { positions: -1_225, assets: 8_650, netAssets: 8_650 }, book: { positions: -1_225, assets: 999_958.75, netAssets: 999_958.75 } },
       },
     },
     {
@@ -541,35 +521,35 @@ const bearCall = {
           { instrument: 'c50', lot: 'second', value: -1_025, unrealized: 75 },
           { instrument: 'c50', lot: 'spread', value: -1_025, unrealized: 175 },
           { instrument: 'c55', lot: 'second', price: 0.45, value: 225, unrealized: -125 },
-          { instrument: 'c55', lot: 'spread', price: 0.45, value: 135, unrealized: -105 },
+          { instrument: 'c55', lot: 'spread', price: 0.45, value: 225, unrealized: -175 },
           { instrument: 'c55', lot: 'third', price: 0.45, value: 225, unrealized: -125 },
         ],
-        pnl: { account: { unrealized: -105, total: -182.55 }, book: { unrealized: -105, total: -182.55 } },
-        nav: { account: 8_508.70, book: 999_817.45 }, // 9,973.70 - 2,050 + 585
-        balance: { account: { positions: -1_465, assets: 8_508.70, netAssets: 8_508.70 }, book: { positions: -1_465, assets: 999_817.45, netAssets: 999_817.45 } },
+        pnl: { account: { unrealized: -175, total: -191.25 }, book: { unrealized: -175, total: -191.25 } },
+        nav: { account: 8_500, book: 999_808.75 }, // 9,875 - 2,050 + 675
+        balance: { account: { positions: -1_375, assets: 8_500, netAssets: 8_500 }, book: { positions: -1_375, assets: 999_808.75, netAssets: 999_808.75 } },
       },
     },
     {
-      // Unwind "spread": sell its 3 remaining 55 calls at 0.40 (120) and buy back its 5 50 calls at 2.10 (1,050).
-      // Realized: 3 x (0.40 - 0.80) x 100 = -120 and 5 x (2.40 - 2.10) x 100 = +150. Nothing is left in it.
-      id: 'unwind-spread', covers: ['unwind', 'close'], action: 'recover', how: 'unwind', lot: 'spread',
+      // Unwind "spread": buy back its 5 50 calls at 2.10 (1,050), then sell its 5 55 calls at 0.40 (200), which wait on
+      // the buy-back. Realized: 5 x (2.40 - 2.10) x 100 = +150 and 5 x (0.40 - 0.80) x 100 = -200. Nothing is left in it.
+      id: 'unwind-spread', covers: ['unwind', 'close', 'dependency'], action: 'recover', how: 'unwind', lot: 'spread',
       expect: {
         preview: {
           blocking: 0, errors: [], intent: 'unwind',
           legs: [
-            { kind: 'trade', action: 'sell', instrument: 'c55', qty: 3, estimate: 0.40, settleDate: '2026-03-09', cash: 120, fees: 1.95 },
-            { kind: 'trade', action: 'buy', instrument: 'c50', qty: 5, estimate: 2.10, settleDate: '2026-03-09', cash: -1_050, fees: 3.25 },
+            { kind: 'trade', action: 'buy', instrument: 'c50', qty: 5, estimate: 2.10, settleDate: '2026-03-09', cash: -1_050, fees: 3.25, dependsOn: [] },
+            { kind: 'trade', action: 'sell', instrument: 'c55', qty: 5, estimate: 0.40, settleDate: '2026-03-09', cash: 200, fees: 3.25, dependsOn: [1] },
           ],
-          cash: { USD: { purchases: 1_050, proceeds: 120, fees: 5.20, reserved: 0, required: 1_055.20, available: 2_973.70, shortfall: 0 } },
+          cash: { USD: { purchases: 1_050, proceeds: 200, fees: 6.50, reserved: 0, required: 1_056.50, available: 4_875, shortfall: 0 } },
         },
-        result: { status: 'closed', orders: [{ action: 'sell', instrument: 'c55', status: 'filled', filledQty: 3, avgPrice: 0.40 }, { action: 'buy', instrument: 'c50', status: 'filled', filledQty: 5, avgPrice: 2.10 }] },
+        result: { status: 'closed', orders: [{ action: 'buy', instrument: 'c50', status: 'filled', filledQty: 5, avgPrice: 2.10 }, { action: 'sell', instrument: 'c55', status: 'filled', filledQty: 5, avgPrice: 0.40 }] },
         events: [
           { type: 'strategy.legs_added' },
-          { type: 'trade.fill', summary: 'Sold 3 CFL260320C55 @ 0.40 USD (realized -120.00 USD)' },
           { type: 'trade.fill', summary: 'Bought 5 CFL260320C50 @ 2.10 USD (realized 150.00 USD)' },
+          { type: 'trade.fill', summary: 'Sold 5 CFL260320C55 @ 0.40 USD (realized -200.00 USD)' },
         ],
-        // owed: -1,053.25 (1,050 + 3.25); owed to it: 118.05 (120 - 1.95). "spread" reserves nothing now; "second" 2,500.
-        cash: { account: { USD: { settled: 9_973.70, unsettled: -935.20, reserved: 2_500, availableToTrade: 6_538.50, availableToWithdraw: 6_420.45 } } },
+        // owed: -1,053.25 (1,050 + 3.25); owed to it: 196.75 (200 - 3.25). "spread" reserves nothing now; "second" 2,500.
+        cash: { account: { USD: { settled: 9_875, unsettled: -856.50, reserved: 2_500, availableToTrade: 6_518.50, availableToWithdraw: 6_321.75 } } },
         positions: [
           { instrument: 'c50', lot: 'second', qty: -5, value: -1_025, unrealized: 75 },
           { instrument: 'c55', lot: 'second', qty: 5, value: 225, unrealized: -125 },
@@ -578,15 +558,15 @@ const bearCall = {
         holdings: { c50: { long: 0, short: 5, net: -5 }, c55: { long: 10, short: 0, net: 10 } },
         pending: [
           { instrument: 'c50', lot: 'spread', dueDate: '2026-03-09', amount: -1_053.25, into: 'cash' },
-          { instrument: 'c55', lot: 'spread', dueDate: '2026-03-09', amount: 118.05, into: 'cash' },
+          { instrument: 'c55', lot: 'spread', dueDate: '2026-03-09', amount: 196.75, into: 'cash' },
         ],
         lifecycle: [{ type: 'option.expiry', instrument: 'c50' }, { type: 'option.expiry', instrument: 'c55' }, { type: 'option.expiry', instrument: 'c55' }],
         alerts: [],
-        pnl: { account: { realized: -30, commissions: -22.75, unrealized: -175, total: -227.75 }, book: { realized: -30, commissions: -22.75, unrealized: -175, total: -227.75 } },
-        nav: { account: 8_463.50, book: 999_772.25 }, // 8,508.70 - 25 - 15 - 5.20
+        pnl: { account: { realized: -50, commissions: -22.75, unrealized: -175, total: -247.75 }, book: { realized: -50, commissions: -22.75, unrealized: -175, total: -247.75 } },
+        nav: { account: 8_443.50, book: 999_752.25 }, // 8,500 - 25 - 25 (0.05 from the marks on 500 units each way) - 6.50
         balance: {
-          account: { cash: 9_973.70, receivable: 118.05, payable: 1_053.25, positions: -575, assets: 9_516.75, liabilities: 1_053.25, netAssets: 8_463.50 },
-          book: { cash: 1_001_282.45, receivable: 118.05, payable: 1_053.25, positions: -575, assets: 1_000_825.50, liabilities: 1_053.25, netAssets: 999_772.25 },
+          account: { cash: 9_875, receivable: 196.75, payable: 1_053.25, positions: -575, assets: 9_496.75, liabilities: 1_053.25, netAssets: 8_443.50 },
+          book: { cash: 1_001_183.75, receivable: 196.75, payable: 1_053.25, positions: -575, assets: 1_000_805.50, liabilities: 1_053.25, netAssets: 999_752.25 },
         },
       },
     },
@@ -594,21 +574,21 @@ const bearCall = {
       id: 'settle-unwind', covers: 'settlement', action: 'clock', to: MAR(9),
       expect: {
         events: [
-          { type: 'settlement.receive', summary: 'received 118.05 USD into settled cash', date: '2026-03-09' },
+          { type: 'settlement.receive', summary: 'received 196.75 USD into settled cash', date: '2026-03-09' },
           { type: 'settlement.pay', summary: 'paid 1,053.25 USD from settled cash', date: '2026-03-09' },
         ],
-        cash: { account: { USD: { settled: 9_038.50, unsettled: 0, availableToTrade: 6_538.50, availableToWithdraw: 6_538.50 } } }, // 9,973.70 + 118.05 - 1,053.25
+        cash: { account: { USD: { settled: 9_018.50, unsettled: 0, availableToTrade: 6_518.50, availableToWithdraw: 6_518.50 } } }, // 9,875 + 196.75 - 1,053.25
         pending: [],
         balance: {
-          account: { cash: 9_038.50, receivable: null, payable: null, assets: 8_463.50, liabilities: 0 },
-          book: { cash: 1_000_347.25, receivable: null, payable: null, assets: 999_772.25, liabilities: 0 },
+          account: { cash: 9_018.50, receivable: null, payable: null, assets: 8_443.50, liabilities: 0 },
+          book: { cash: 1_000_327.25, receivable: null, payable: null, assets: 999_752.25, liabilities: 0 },
         },
       },
     },
     { id: 'expiry-close', action: 'close_price', instrument: 'stock', date: '2026-03-20', value: 48.00, expect: {} },
     {
       // The stock closes at 48, below both strikes: every remaining call expires worthless. Realized: the written 50s of
-      // "second" keep their 1,100 premium; the 55s of "second" and "third" lose 350 each. 370 = -30 + 1,100 - 350 - 350.
+      // "second" keep their 1,100 premium; the 55s of "second" and "third" lose 350 each. 350 = -50 + 1,100 - 350 - 350.
       id: 'expiry', covers: ['expiry', 'close'], action: 'clock', to: MAR(20, '17:30'),
       expect: {
         events: [
@@ -616,15 +596,15 @@ const bearCall = {
           { type: 'option.expired', summary: 'Expired worthless: 5 CFL260320C55 (fixing 48)', date: '2026-03-20' },
           { type: 'option.expired', summary: 'Expired worthless: 5 CFL260320C50 (fixing 48)', date: '2026-03-20' },
         ],
-        cash: { account: { USD: { settled: 9_038.50, unsettled: 0, reserved: 0, availableToTrade: 9_038.50, availableToWithdraw: 9_038.50 } } },
+        cash: { account: { USD: { settled: 9_018.50, unsettled: 0, reserved: 0, availableToTrade: 9_018.50, availableToWithdraw: 9_018.50 } } },
         positions: [],
         holdings: { c50: null, c55: null },
         lifecycle: [],
-        pnl: { account: { realized: 370, commissions: -22.75, unrealized: 0, total: 347.25 }, book: { realized: 370, commissions: -22.75, unrealized: 0, total: 347.25 } },
-        nav: { account: 9_038.50, treasury: 991_308.75, book: 1_000_347.25 }, // 1,000,000 + 347.25
+        pnl: { account: { realized: 350, commissions: -22.75, unrealized: 0, total: 327.25 }, book: { realized: 350, commissions: -22.75, unrealized: 0, total: 327.25 } },
+        nav: { account: 9_018.50, treasury: 991_308.75, book: 1_000_327.25 }, // 1,000,000 + 327.25
         balance: {
-          account: { cash: 9_038.50, positions: null, assets: 9_038.50, liabilities: 0, netAssets: 9_038.50 },
-          book: { cash: 1_000_347.25, positions: null, assets: 1_000_347.25, liabilities: 0, netAssets: 1_000_347.25 },
+          account: { cash: 9_018.50, positions: null, assets: 9_018.50, liabilities: 0, netAssets: 9_018.50 },
+          book: { cash: 1_000_327.25, positions: null, assets: 1_000_327.25, liabilities: 0, netAssets: 1_000_327.25 },
         },
       },
     },

@@ -247,3 +247,17 @@ start fixing never asked of the data service; a return or price fixing asked for
   out 4,857,652.35 x 1.5 / 5 = 1,457,295.705 -> 1,457,295.71 by hand; the Terminal removes 1,457,295.70 (JS gives
   1,457,295.7049999998), so realized differs by 0.01. Fix: pre-round
   the product to 9 decimals. Left open because every family's partial sale goes through it; the spec now sells 1,600,000.
+
+## t1 (templates): a pending cover's payable is counted against free cash although it settles from restricted cash
+- Where: server/core/ledger.js `cash()` (availableToTrade / availableToWithdraw count every pay.settle balance, including a
+  buy-to-cover whose settlement row goes `into cash.restricted`).
+- Found by: T:short (templates-a.mjs), steps close-share .. close-kept: after covering one short, availableToTrade drops by the
+  cover's cost although the order engine pays it from the short's restricted collateral (orders.js tryTrade adds the position's
+  restricted cash) and settlement takes it from restricted cash (then releases the surplus).
+- Effect: with little free cash, the cover of a second short the same day is refused by the preview ("Alpha is short ...") while
+  the order engine would accept it; availability can even go negative. The preview now counts the package's OWN cover against
+  its short's collateral (packages.js, coverCollateral, t1), but not other covers still settling.
+- Right: a payable settling into cash.restricted should reduce free cash only by what exceeds that position's restricted cash.
+- Not fixed by t1: the equity short_sale spec (equity.mjs, cover-part) states the current figures (availableToTrade 450,383 counts
+  the cover payable); changing ledger.cash changes that finished family's expectations. Needs the equity owner's decision.
+- Reproduce: T:short with the Treasury top-up step removed: close-exact is refused at the preview.
