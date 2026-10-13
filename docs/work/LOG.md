@@ -259,3 +259,4 @@
 - 2026-10-13T20:10Z | s2 | +0.2 | electricity_swap passes at engine, API and browser (peak and off-peak MWh, four legs net, EUR Book)
 - 2026-10-13T20:11Z | b4 | +0.2 | syndicated_loan passes at engine, API and browser
 - 2026-10-13T20:11Z | b4 | +0 | syndicated_loan spec audit: stated settlement marked (settlementCheck false)
+- 2026-10-13T20:13Z | s2 | +0.2 | freight_swap passes at engine, API and browser (route average on London days, cleared terms); all 13 s2 products pass

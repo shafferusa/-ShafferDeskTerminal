@@ -349,6 +349,7 @@ export const bond = {
     if (t.paymentDelayDays) rows.push(['Payment delay', `${t.paymentDelayDays} days after each accrual period ends`]);
     if (t.guarantor) rows.push(['Guarantor', `${t.guarantor} (principal and interest guaranteed; no loss allocation)`]);
     if (t.poolCharacteristics) rows.push(['Pool characteristics', `${t.poolCharacteristics} (stated at registration)`]);
+    if (t.repricings?.length) rows.push(['Repricings', t.repricings.map((r) => `${r.from}: spread ${(r.prior * 100).toFixed(3)}% to ${(r.spread * 100).toFixed(3)}%${r.premium ? ` (premium ${fmtPx(r.premium)}%)` : ''}`).join('; ')]);
     if (t.tradingDocs) rows.push(['Trading documentation', t.tradingDocs === 'par' ? 'Par (assignment): delayed compensation to the buyer for the days a trade settles after the standard date' : 'Distressed (assignment): no delayed compensation']);
     if (t.collateralAccount) rows.push(['Collateral account', `${t.collateralAccount}${t.issueSize ? `; holds the outstanding principal, ${fmtQty(money(t.issueSize * (t.factor ?? 1), inst.trading_ccy))} of the ${fmtQty(t.issueSize)} issued` : ''}${t.collateralReleased ? `; released to the sponsor so far ${fmtQty(t.collateralReleased)}` : ''}`]);
     if (t.sponsor) rows.push(['Sponsor (ceding insurer)', t.sponsor]);
@@ -680,6 +681,7 @@ export const bond = {
     if (action === 'pik') return bond.electPik(app, { inst, couponDate: body.couponDate, note: body.note });
     if (action === 'credit_event') return bond.creditEvent(app, { inst, recovery: body.recovery, settleDate: body.settleDate, note: body.note });
     if (action === 'observation') return bond.recordObservation(app, { inst, date: body.date, level: body.level, note: body.note });
+    if (action === 'reprice') return bond.reprice(app, { inst, spread: body.spread, premium: body.premium, note: body.note });
     throw new AppError(`Unknown debt-security event "${action}".`);
   },
   /** Position-level events recorded by hand (POST /api/positions/:id/lifecycle). */
@@ -922,6 +924,50 @@ export const bond = {
    *   scheduledFactor   optional: the factor after the scheduled amortisation only. The history then says how much of the
    *                     principal was scheduled and how much was prepaid (and the single monthly mortality, SMM).
    */
+  /**
+   * A repricing amendment of a floating-rate loan, recorded by hand (b4): the lenders agree a new spread over the reference rate.
+   * It takes effect at the start of an interest period (recorded on the payment date that starts it, after that day's interest
+   * has been paid and the rate reset): the running period's rate becomes the fixing plus the new spread, and so do later resets.
+   * A repricing within the soft-call period pays every holder a premium (`premium`, % of principal outstanding, e.g. 1 for
+   * "101 soft call"), received at once as interest income.
+   */
+  reprice(app, { inst, spread, premium, note }) {
+    const name = inst.symbol || inst.name;
+    const t = inst.terms;
+    need(t.couponType === 'float', `${name} pays a fixed coupon: a repricing of the spread applies to floating-rate loans.`);
+    const sp = num(spread);
+    need(sp !== null && sp >= 0 && sp < 0.5, 'Enter the new spread as a decimal a year (0.03 = 3.00%).');
+    need(Math.abs(sp - (t.spread || 0)) > 1e-12, `The spread of ${name} is already ${((t.spread || 0) * 100).toFixed(3)}%.`);
+    const has = (v) => v !== undefined && v !== null && v !== '';
+    const prem = has(premium) ? num(premium) : 0;
+    need(prem !== null && prem >= 0 && prem <= 10, 'The repricing premium is a percentage of principal from 0 to 10 (1 for a 101 soft call).');
+    const today = app.clock.today();
+    const st = schedTerms(inst);
+    // The interest period that starts on the payment date that is today.
+    let start = null;
+    for (const d of [today, ...[1, 2, 3, 4, 5, 6, 7].map((k) => addBusinessDays(today, -k, 'ALLDAYS'))]) {
+      if (nextCouponDate(st, addBusinessDays(d, -1, 'ALLDAYS')) === d && couponDue(inst, d) === today) { start = d; break; }
+    }
+    need(start, `A repricing takes effect at the start of an interest period: record it on an interest payment date of ${name}. Today is not one.`);
+    const waiting = app.db.get(`SELECT 1 AS x FROM tasks WHERE instrument_id = ? AND type = 'bond.coupon' AND status IN ('pending','blocked','failed') AND json_extract(data, '$.couponDate') = ?`, inst.id, start);
+    need(!waiting, `The interest due today on ${name} has not been paid yet: it is paid at the old spread first.`);
+    const old = t.spread || 0;
+    const current = t.currentCoupon === null || t.currentCoupon === undefined ? t.currentCoupon : Math.round((t.currentCoupon - old + sp) * 1e10) / 1e10;
+    app.instruments.update(inst.id, { terms: { ...t, spread: sp, currentCoupon: current, repricings: [...(t.repricings || []), { from: start, spread: sp, prior: old, premium: prem }] } }, { system: true });
+    const ccy = inst.trading_ccy;
+    const eventIds = [];
+    for (const p of app.positions.heldAround(inst.id)) {
+      if (isZero(p.qty)) continue;
+      const amount = prem > 0 ? money(Math.abs(p.qty) * scaleOn(inst, today) * prem / 100, ccy) * Math.sign(p.qty) : 0;
+      eventIds.push(app.ledger.post({
+        bookId: p.book_id, unitId: p.unit_id, type: 'loan.repricing', instrumentId: inst.id, strategyId: p.strategy_id, positionId: p.id, actor: 'user',
+        summary: `Repricing of ${name} recorded by hand${note ? ` (${note})` : ''}: spread ${(old * 100).toFixed(3)}% to ${(sp * 100).toFixed(3)}% from ${start}${current !== null && current !== undefined ? `, the period's rate ${((current) * 100).toFixed(3)}%` : ''}${amount ? `; repricing premium ${fmtPx(prem)}% of principal: ${fmt(Math.abs(amount), ccy)} ${amount > 0 ? 'received' : 'paid'}` : ''}`,
+        data: { from: start, spread: sp, prior: old, premium: prem, amount, manual: true },
+        entries: amount ? [{ account: 'cash', ccy, amount, positionId: p.id }, { account: 'pnl.coupon', ccy, amount: -amount, positionId: p.id }] : [],
+      }));
+    }
+    return { spread: sp, from: start, eventIds };
+  },
   /**
    * The observation of a structured note's linked underlying on a coupon date, recorded by hand (b4; the Terminal has no index
    * feed for it). It decides that date's contingent coupon (paid if at or above the coupon barrier) and, on the maturity date,

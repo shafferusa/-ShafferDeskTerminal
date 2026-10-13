@@ -711,6 +711,14 @@ function LifecycleAdmin({ inst, onChanged }) {
       text: r === 0 ? `${t.seniorTranche} is retired, recorded by hand. ${name} receives principal from now on: record its own factor as a paydown. No cash moves now; every holder gets a history line.`
         : `${t.seniorTranche} has ${fmtNum(r, 0)} outstanding (was ${fmtNum(t.seniorRemaining, 0)}), recorded by hand. ${name} still receives no principal: its paydowns stay refused until ${t.seniorTranche} is retired. No cash moves; every holder gets a history line.` };
   };
+  // b4: a repricing amendment of a floating-rate loan (new spread from today's interest period, optional soft-call premium).
+  const reprice = () => {
+    const sp = v.rpSpread, pr = v.rpPremium ?? 0;
+    if (!isNum(sp) || sp < 0 || sp >= 0.5) return { invalid: 'Enter the new spread as a decimal a year (0.03 = 3.00%).' };
+    if (!isNum(pr) || pr < 0 || pr > 10) return { invalid: 'The repricing premium is a percentage of principal from 0 to 10 (1 for a 101 soft call).' };
+    return { action: 'reprice', body: { spread: sp, premium: pr }, confirm: 'Record repricing', done: 'Repricing recorded.',
+      text: `${name} is repriced, recorded by hand: the spread over ${t.referenceRate} goes from ${pct(t.spread || 0, 3)} to ${pct(sp, 3)} from the interest period that starts today (record it on an interest payment date, after that day's interest is paid). Later resets use the new spread.${pr > 0 ? ` Every holder, in every Book, receives a repricing premium of ${fmtNum(pr, 2)}% of its principal outstanding, now.` : ''}` };
+  };
   // b4: the observation of a structured note's linked underlying on a coupon date.
   const observation = () => {
     const d = v.obsDate || '', l = v.obsLevel;
@@ -761,6 +769,10 @@ function LifecycleAdmin({ inst, onChanged }) {
       <${Field} label="Kind of write-down"><${Select} value=${v.wdKind || wdDefault(inst)} onChange=${(x) => { setV({ ...v, wdKind: x }); setStep(null); }} options=${[{ value: 'writedown', label: 'Trigger event: write-down' }, { value: 'loss', label: 'Realized loss allocated' }, ...(inst.productId === 'catastrophe_bond' ? [{ value: 'trigger', label: 'Covered event: principal loss, collateral released' }] : [])]} /><//>
       <${Field} label="Write-down effective from" hint="Today if empty; for a monthly pool, the first day of the period"><${Text} type="date" value=${v.wdFrom || ''} onInput=${(x) => { setV({ ...v, wdFrom: x }); setStep(null); }} /><//>
       ${button('Review write-down', writeDown)}</div>` : null}
+    ${inst.family === 'bond' && t.couponType === 'float' && t.tradingDocs ? html`<div class="grid-form" style=${GRID}>
+      <${Field} label="New spread (decimal)" hint=${`Repricing amendment. Current spread ${pct(t.spread || 0, 3)} over ${t.referenceRate}.`}><${Num} value=${v.rpSpread ?? null} onInput=${(x) => { setV({ ...v, rpSpread: x }); setStep(null); }} /><//>
+      <${Field} label="Repricing premium (% of principal)" hint="1 for a 101 soft call; 0 if none"><${Num} value=${v.rpPremium ?? null} onInput=${(x) => { setV({ ...v, rpPremium: x }); setStep(null); }} /><//>
+      ${button('Review repricing', reprice)}</div>` : null}
     ${inst.family === 'bond' && isNum(t.couponBarrier) ? html`<div class="grid-form" style=${GRID}>
       <${Field} label="Observation date" hint=${`A coupon date. Recorded so far: ${Object.keys(t.observations || {}).join(', ') || 'none'}.`}><${Text} type="date" value=${v.obsDate || ''} onInput=${(x) => { setV({ ...v, obsDate: x }); setStep(null); }} /><//>
       <${Field} label="Observed level" hint=${`${t.linkedTo}: coupon barrier ${fmtNum(t.couponBarrier * t.initialLevel, 2)}${t.principalProtected ? '' : `, principal barrier ${fmtNum(t.principalBarrier * t.initialLevel, 2)}`}. Entered by hand; no index feed.`}><${Num} value=${v.obsLevel ?? null} onInput=${(x) => { setV({ ...v, obsLevel: x }); setStep(null); }} /><//>

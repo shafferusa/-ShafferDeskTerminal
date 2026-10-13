@@ -2892,4 +2892,236 @@ const electricitySwap = {
   ],
 };
 
-export default [amortizingSwap, accretingSwap, equitySwap, equityIndexSwap, equityTrs, bondTrs, indexTrs, commoditySwap, commodityBasisSwap, commodityIndexSwap, energySwap, electricitySwap];
+// ---------------------------------------------------------------------------------------------
+// freight_swap
+// ---------------------------------------------------------------------------------------------
+// A freight forward (FFA) on a Panamax time-charter route average: 30 days a month for November and December 2026 at a fixed
+// 14,500 USD a day, against the average of the daily route assessments of each month, bought (pay fixed, receive the average:
+// a charterer hedging its hire cost). Net settled 5 USD business days after each month. Cleared: collateral under the Book's
+// clearing terms, a fixed independent amount of 15,000 and full variation margin on the mark entered by hand.
+//
+// The catalog has no freight index product: the route average is carried by a reference instrument registered as a physical
+// commodity (never traded), whose closes are the daily assessments. Pricing days: London business days (the UK calendar):
+//   November  21 assessments, 319,200 in all: average 15,200        paid Tuesday 8 December (1 December + 5 USD business days)
+//   December  23 weekdays less Christmas Day and Boxing Day (observed Monday 28th): 21 assessments, 291,900: average 13,900
+//             (21 December not supplied; entered by hand as 14,070)   paid Friday 8 January 2027 (1 January is a holiday)
+const ROUTE = { productId: 'physical_commodity', name: 'Panamax 4TC time-charter route average (assessment stand-in)', symbol: 'PMX-4TC', marketView: 'FOREIGN_CASH', venue: 'Freight assessment (OTC reference)', venueType: 'otc', venueCountry: 'GB', tradingCcy: 'USD', terms: { quantityUnit: 'days', priceUnits: 'USD per day' } };
+const ROUTE_FIX = { '2026-11-02': 15335, '2026-11-03': 15120, '2026-11-04': 15455, '2026-11-05': 15055, '2026-11-06': 15260, '2026-11-09': 15380, '2026-11-10': 14935, '2026-11-11': 15225, '2026-11-12': 15105, '2026-11-13': 15340, '2026-11-16': 15170, '2026-11-17': 15460, '2026-11-18': 15050, '2026-11-19': 15205, '2026-11-20': 15370, '2026-11-23': 15060, '2026-11-24': 15220, '2026-11-25': 15115, '2026-11-26': 15345, '2026-11-27': 15190, '2026-11-30': 14805,
+  '2026-12-01': 14035, '2026-12-02': 13820, '2026-12-03': 14155, '2026-12-04': 13755, '2026-12-07': 13960, '2026-12-08': 14080, '2026-12-09': 13635, '2026-12-10': 13925, '2026-12-11': 13805, '2026-12-14': 14040, '2026-12-15': 13870, '2026-12-16': 14160, '2026-12-17': 13750, '2026-12-18': 13905, /* 21 December by hand: 14,070 */ '2026-12-22': 13760, '2026-12-23': 13920, '2026-12-24': 13815, '2026-12-29': 14045, '2026-12-30': 13890, '2026-12-31': 13505 };
+const FFA_NAME = 'Panamax 4TC FFA 14,500/day x 30 days Nov-Dec 2026';
+const FFA_DRAFT = {
+  productId: 'freight_swap', name: FFA_NAME, symbol: 'FFA-PMX4TC-1226', marketView: 'FOREIGN_DERIV', venueType: 'otc', venueCountry: 'GB', tradingCcy: 'USD', multiplier: 0.01,
+  conventions: USD_CALENDARS,
+  terms: {
+    effective: '2026-11-01', maturity: '2027-01-01', counterparty: 'Freight broker Z (cleared)', netSettlement: true,
+    collateralBasis: { type: 'agreement', agreementId: '$agreement:ccp' },
+    legs: [
+      { side: 'pay', type: 'price', ccy: 'USD', months: 1, units: 1, fixedPrice: 14_500, paymentLag: 5 },
+      { side: 'receive', type: 'price', ccy: 'USD', months: 1, units: 1, underlyingId: '$inst:route', averaging: 'daily', pricingCalendar: 'UK', paymentLag: 5 },
+    ],
+  },
+};
+const freightSwap = {
+  productId: 'freight_swap',
+  title: 'Panamax time-charter freight swap (FFA), 30 days a month for two months against the route average on London days, cleared',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'Net settlement', 'fixed leg: Fixed price (USD a day), Units per unit of notional 1 (days)', 'floating leg: Reference asset (the route average), Floating price "Average of each pricing day", Pricing calendar UK', 'both legs: Payment monthly, Payment lag 5'],
+    automaticInputs: ['monthly periods, London pricing days (Christmas and Boxing Day excluded), payment 5 USD business days after each month', 'daily route assessments (close fixtures standing in for Shaffer MarketData) and their average', 'net amount of each month', 'settlement date, T+2 USD', 'commission from the Book fee schedule (per day)', 'independent amount and variation margin from the clearing terms'],
+    manualInputs: ['clearing terms (Treasury, Collateral, kind Cleared)', 'the route average, registered as a reference instrument because the catalog has no freight index product', 'an assessment the data service did not supply, entered by hand', 'settlement amount of the partial termination (stated fill price)', 'mark of the contract, entered by hand'],
+    settlement: 'Termination amount and commission settle T+2 USD; each month settles net 5 USD business days after it ends',
+    lifecycle: 'Each month: the route average of the London pricing days against the fixed rate, x 30 days, one net amount; December excludes Christmas and Boxing Day observed; a missing assessment holds the month and the maturity visibly until entered by hand; partial termination; maturity; nothing left afterwards',
+    accounting: 'Carried at the mark; net monthly amounts and the termination result are realized P&L; commission expensed',
+    collateral: 'Clearing terms: fixed independent amount 15,000 (posted at entry, returned at maturity); full variation margin on the mark entered by hand: received (restricted), partly returned twice, the rest returned at maturity',
+  },
+  start: at('2026-10-28'),
+  settlementCheck: { lag: 2, holidays: [] }, // no Federal Reserve holiday between 28 and 30 October or 10 and 14 December 2026
+  book: bookOf('Matrix freight swap', 'Chartering', 'USD', 1_500_000, 500_000, { perUnit: 10, minimum: 0, bps: 0 }, { spot: NO_FEE }), // 10.00 per day of quantity
+  instruments: { route: ROUTE },
+  tradedOn: 'The contract is registered by the step register-under-clearing-terms (registry form), after the clearing terms it names have been recorded.',
+  closes: { route: ROUTE_FIX },
+  expectAtStart: startOf('USD', 1_500_000, 500_000),
+  steps: [
+    {
+      id: 'record-clearing-terms', covers: 'collateral', action: 'agreement', as: 'ccp',
+      agreement: { name: 'Clearing terms Freight broker Z', counterparty: 'Freight broker Z', kind: 'cleared', covers: ['account'], independentAmount: { type: 'fixed', amount: 15_000 }, variationMargin: true, threshold: 0, minimumTransfer: 0, baseCcy: 'USD', postingCcy: 'USD', haircut: 0, nettingScope: 'position' },
+      expect: { events: [{ type: 'collateral.agreement', summary: 'Collateral agreement recorded: Clearing terms Freight broker Z with Freight broker Z (Cleared)', owner: 'treasury' }] },
+    },
+    { id: 'register-under-clearing-terms', covers: 'registration', action: 'register_instrument', as: 'main', draft: FFA_DRAFT, expect: {} },
+    {
+      // 30 days a month, bought, no upfront. Commission 30 x 10 = 300, settling Friday 30 October. Independent amount 15,000.
+      id: 'open', covers: ['open', 'collateral'], action: 'ticket', instrument: 'main', side: 'buy', qty: 30, as: 'ffa', order: { statedPrice: 0 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 30, estimate: 0, model: 'stated-price', settleDate: '2026-10-30', calendar: 'USD', cash: 0, fees: 300 }],
+          cash: { USD: { purchases: 0, fees: 300, margin: 15_000, required: 15_300, available: 500_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 30, avgPrice: 0, fills: [{ qty: 30, price: 0, model: 'stated-price', settleDate: '2026-10-30' }] }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Entered as written: 30 notional of FFA-PMX4TC-1226 at 0.00 per 100 notional', owner: 'account', date: '2026-10-28' },
+          { type: 'swap.collateral', summary: `Collateral posted on ${FFA_NAME} under "Clearing terms Freight broker Z" (Freight broker Z): 15,000.00 USD (independent amount, fixed amount for the position)`, cash: { USD: -15_000 }, owner: 'account' },
+        ],
+        cash: { account: { USD: { settled: 485_000, unsettled: -300, margin: 15_000, restricted: 0, availableToTrade: 484_700, availableToWithdraw: 484_700 } } },
+        positions: [{ instrument: 'main', lot: 'ffa', owner: 'account', direction: 'as written', qty: 30, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, notional: 30, margin: 15_000 }],
+        holdings: { main: { long: 30, short: 0, net: 30 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-10-30', amount: -300, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-12-08', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-12-08', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-01-08', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', lot: 'ffa', owner: 'account', qty: 30, basis: 'agreement', agreement: 'Clearing terms Freight broker Z', mark: null, iaRequired: 15_000, iaPosted: 15_000, vmPosted: 0, vmHeld: 0, vmStatus: 'not_valued_yet' }],
+        pnl: { account: { realized: 0, commissions: -300, unrealized: 0, total: -300 } },
+        nav: { account: 499_700, book: 1_499_700 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 485_000, margin: 15_000, payable: 300, positions: null, assets: 500_000, liabilities: 300, netAssets: 499_700 } },
+      },
+    },
+    {
+      id: 'settle-commission', covers: 'settlement', action: 'clock', to: at('2026-10-30'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 300.00 USD from settled cash', cash: { USD: -300 }, date: '2026-10-30' }],
+        cash: { account: { USD: { settled: 484_700, unsettled: 0, availableToTrade: 484_700, availableToWithdraw: 484_700 } } },
+        pending: [],
+        otc: [{ instrument: 'main', vmStatus: 'cannot_value', vmReason: /FFA-PMX4TC-1226 has no mark/ }], alerts: ['collateral.unvalued'],
+        balance: { account: { cash: 484_700, payable: null, assets: 499_700, liabilities: 0 } },
+      },
+    },
+    {
+      // Mark 50,000 per 100 days: 30 x 50,000 / 100 = 15,000.
+      id: 'mark', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 50_000, note: 'Broker mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'ffa', price: 50_000, value: 15_000, unrealized: 15_000, provisional: false, priceSource: 'Manual entry', priceStatus: 'manual' }],
+        otc: [{ instrument: 'main', mark: 50_000, markValue: 15_000 }],
+        pnl: { account: { unrealized: 15_000, total: 14_700 } },
+        nav: { account: 514_700, book: 1_514_700 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 15_000, assets: 514_700, netAssets: 514_700 } },
+      },
+    },
+    {
+      // Cleared, no threshold: the 15,000 mark is received in variation margin (restricted cash, a liability).
+      id: 'variation-margin-received', covers: 'variation margin', action: 'clock', to: eod('2026-10-30'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under "Clearing terms Freight broker Z" (Freight broker Z): 15,000.00 USD received. Netting set of 1 position marked at 15,000.00 USD; threshold 0.00 USD.', owner: 'account' }],
+        cash: { account: { USD: { settled: 484_700, restricted: 15_000, availableToTrade: 484_700, availableToWithdraw: 484_700 } } },
+        otc: [{ instrument: 'main', vmHeld: 15_000, vmExposure: 15_000, vmStatus: 'ok' }],
+        alerts: [],
+        balance: { account: { restricted: 15_000, collateralReceived: 15_000, assets: 529_700, liabilities: 15_000, netAssets: 514_700 } },
+      },
+    },
+    {
+      // November: 21 London assessments, 319,200 in all, average 15,200; 30 days.
+      //   leg A, fixed 14,500 x 30 = 435,000.00 paid; leg B, 15,200 x 30 = 456,000.00 received; net received 30 x 700 = 21,000.00.
+      id: 'november-settled', covers: ['averaging', 'net settlement', 'route average'], action: 'clock', to: at('2026-12-08'),
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Net swap receipt on ${FFA_NAME}, period 2026-11-01 to 2026-12-01: 21,000.00 USD (leg A, fixed price 14,500.00 x 30: 435,000.00 USD paid; leg B, average of 21 fixings 15,200.00 x 30: 456,000.00 USD received)`, cash: { USD: 21_000 }, owner: 'account', date: '2026-12-08' }],
+        cash: { account: { USD: { settled: 505_700, availableToTrade: 505_700, availableToWithdraw: 505_700 } } },
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-01-08', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-01-08', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-01-08', status: 'pending' },
+        ],
+        pnl: { account: { realized: 21_000, total: 35_700 } },
+        nav: { account: 535_700, book: 1_535_700 },
+        balance: { account: { cash: 505_700, assets: 550_700, netAssets: 535_700 } },
+      },
+    },
+    {
+      // 30 x 20,000 / 100 = 6,000.
+      id: 'mark-lower', action: 'manual_price', instrument: 'main', value: 20_000, note: 'Broker mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'ffa', price: 20_000, value: 6_000, unrealized: 6_000 }],
+        otc: [{ instrument: 'main', mark: 20_000, markValue: 6_000 }],
+        pnl: { account: { unrealized: 6_000, total: 26_700 } },
+        nav: { account: 526_700, book: 1_526_700 },
+        balance: { account: { positions: 6_000, assets: 541_700, netAssets: 526_700 } },
+      },
+    },
+    {
+      id: 'variation-margin-returned', covers: 'variation margin', action: 'clock', to: eod('2026-12-08'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under "Clearing terms Freight broker Z" (Freight broker Z): 9,000.00 USD returned to the counterparty. Netting set of 1 position marked at 6,000.00 USD; threshold 0.00 USD.', owner: 'account' }],
+        cash: { account: { USD: { restricted: 6_000 } } },
+        otc: [{ instrument: 'main', vmHeld: 6_000, vmExposure: 6_000 }],
+        balance: { account: { restricted: 6_000, collateralReceived: 6_000, assets: 532_700, liabilities: 6_000 } },
+      },
+    },
+    { id: 'december-tenth', action: 'clock', to: at('2026-12-10'), expect: {} },
+    {
+      // Half (15 days a month) terminated at 20,000 per 100 days: 15 x 20,000 / 100 = 3,000 received; commission 150; realized 3,000. Settles Monday 14 December.
+      id: 'partial-termination', covers: ['reduce', 'partial termination'], action: 'close', lot: 'ffa', scope: 'strategy', percent: 50, order: { statedPrice: 20_000 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 15, estimate: 20_000, model: 'stated-price', settleDate: '2026-12-14', cash: 3_000, fees: 150 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 15, avgPrice: 20_000 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Terminated in part: 15 of 30 notional of FFA-PMX4TC-1226 at 20,000.00 per 100 notional (realized 3,000.00 USD)' }],
+        cash: { account: { USD: { settled: 505_700, unsettled: 2_850, availableToTrade: 508_550, availableToWithdraw: 505_700 } } },
+        positions: [{ instrument: 'main', lot: 'ffa', qty: 15, cost: 0, avgCost: 0, price: 20_000, value: 3_000, unrealized: 3_000, notional: 15, margin: 15_000 }],
+        holdings: { main: { long: 15, short: 0, net: 15 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-12-14', amount: 2_850, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: 15, markValue: 3_000, iaRequired: 15_000, iaPosted: 15_000 }],
+        pnl: { account: { realized: 24_000, commissions: -450, unrealized: 3_000, total: 26_550 } },
+        nav: { account: 526_550, book: 1_526_550 },
+        balance: { account: { cash: 505_700, receivable: 2_850, positions: 3_000, assets: 532_550, liabilities: 6_000, netAssets: 526_550 } },
+      },
+    },
+    {
+      id: 'variation-margin-returned-again', covers: 'variation margin', action: 'clock', to: eod('2026-12-10'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under "Clearing terms Freight broker Z" (Freight broker Z): 3,000.00 USD returned to the counterparty. Netting set of 1 position marked at 3,000.00 USD; threshold 0.00 USD.', owner: 'account' }],
+        cash: { account: { USD: { restricted: 3_000 } } },
+        otc: [{ instrument: 'main', vmHeld: 3_000, vmExposure: 3_000 }],
+        balance: { account: { restricted: 3_000, collateralReceived: 3_000, assets: 529_550, liabilities: 3_000 } },
+      },
+    },
+    {
+      id: 'settle-partial-termination', covers: 'settlement', action: 'clock', to: at('2026-12-14'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 2,850.00 USD into settled cash', cash: { USD: 2_850 } }],
+        cash: { account: { USD: { settled: 508_550, unsettled: 0, availableToTrade: 508_550, availableToWithdraw: 508_550 } } },
+        pending: [],
+        balance: { account: { cash: 508_550, receivable: null } },
+      },
+    },
+    {
+      // Friday 8 January 2027. December's average needs 21 assessments; 21 December's is missing. Nothing moves, and the maturity waits.
+      id: 'december-blocked-assessment-missing', covers: ['missing fixing', 'averaging', 'holiday in the pricing period'], action: 'clock', to: at('2027-01-08'),
+      expect: {
+        events: [],
+        lifecycle: [
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-01-08', status: 'blocked', reason: /Waiting for the final leg payments/ },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-01-08', status: 'blocked', reason: /Awaiting the averaging fixings of PMX-4TC for 2026-12-21 \(1 of the 21 pricing days of the period 2026-12-01 to 2027-01-01\)/ },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-01-08', status: 'blocked', reason: /Awaiting the averaging fixings of PMX-4TC for 2026-12-21/ },
+        ],
+      },
+    },
+    {
+      // 14,070 for 21 December, by hand. December: 21 assessments, 291,900 in all, average 13,900; on the 15 days left:
+      //   leg A, 14,500 x 15 = 217,500.00 paid; leg B, 13,900 x 15 = 208,500.00 received; net paid 15 x 600 = 9,000.00.
+      // The swap matures; the 15,000 independent amount comes back to us and the 3,000 of variation margin goes back to the clearing broker.
+      // 500,000 - 300 + 21,000 + 3,000 - 150 - 9,000 = 514,550.
+      id: 'assessment-entered-december-and-maturity', covers: ['missing fixing', 'averaging', 'net settlement', 'maturity', 'close', 'collateral'], action: 'manual_price', instrument: 'route', value: 14_070, forDate: '2026-12-21', note: 'Published route assessment, entered by hand',
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Net swap payment on ${FFA_NAME}, period 2026-12-01 to 2027-01-01: 9,000.00 USD (leg A, fixed price 14,500.00 x 15: 217,500.00 USD paid; leg B, average of 21 fixings 13,900.00 x 15: 208,500.00 USD received)`, cash: { USD: -9_000 }, owner: 'account', date: '2027-01-08' },
+          { type: 'swap.matured', summary: `Swap matured: ${FFA_NAME} (notional 15)`, owner: 'account' },
+          { type: 'swap.collateral', summary: `Collateral returned on ${FFA_NAME} under "Clearing terms Freight broker Z" (Freight broker Z): 15,000.00 USD (independent amount, the position ended)`, cash: { USD: 15_000 } },
+          { type: 'collateral.variation', summary: 'Variation margin under "Clearing terms Freight broker Z" (Freight broker Z): 3,000.00 USD returned to the counterparty. The last position of the netting set ended.' },
+        ],
+        cash: { account: { USD: { settled: 514_550, unsettled: 0, margin: 0, restricted: 0, reserved: 0, availableToTrade: 514_550, availableToWithdraw: 514_550 } }, treasury: { USD: { settled: 1_000_000 } } },
+        positions: [], holdings: { main: null }, lifecycle: [], otc: [], pending: [], alerts: [],
+        pnl: { account: { realized: 15_000, commissions: -450, unrealized: 0, total: 14_550 } },
+        nav: { account: 514_550, treasury: 1_000_000, book: 1_514_550 },
+        balance: { account: { cash: 514_550, margin: null, restricted: null, collateralReceived: null, positions: null, assets: 514_550, liabilities: 0, netAssets: 514_550 } },
+      },
+    },
+    {
+      id: 'nothing-left', action: 'clock', to: at('2027-01-11'),
+      expect: { events: [], lifecycle: [], positions: [], pending: [], otc: [], alerts: [], cash: { account: { USD: { settled: 514_550, margin: 0, restricted: 0 } } } },
+    },
+  ],
+};
+
+export default [amortizingSwap, accretingSwap, equitySwap, equityIndexSwap, equityTrs, bondTrs, indexTrs, commoditySwap, commodityBasisSwap, commodityIndexSwap, energySwap, electricitySwap, freightSwap];

@@ -241,6 +241,7 @@ const MANUAL_FORMS = {
   call: { fields: (b) => [['Call price', b.price], ['Share of the issue called', b.share]], review: 'Review issuer call', confirm: 'Record issuer call', done: /Issuer call recorded/ },
   writedown: { fields: (b) => [['Principal written down to', b.newFactor], ['Write-down effective from', b.effective]], select: (b) => [['Kind of write-down', b.kind]], review: 'Review write-down', confirm: 'Record write-down', done: /Write-down recorded/ },
   // b4
+  reprice: { fields: (b) => [['New spread', b.spread], ['Repricing premium', b.premium]], review: 'Review repricing', confirm: 'Record repricing', done: /Repricing recorded/ },
   observation: { fields: (b) => [['Observation date', b.date], ['Observed level', b.level]], review: 'Review observation', confirm: 'Record observation', done: /Observation recorded/ },
   credit_event: { fields: (b) => [['Recovery rate (decimal)', b.recovery], ['Recovery settles on', b.settleDate]], review: 'Review credit event', confirm: 'Record credit event', done: /Credit event recorded/ },
   pik: { fields: (b) => [['Coupon paid in kind', b.couponDate]], review: 'Review coupon paid in kind', confirm: 'Record coupon paid in kind', done: /Coupon to be paid in kind recorded/ },
