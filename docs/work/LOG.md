@@ -232,3 +232,4 @@
 - 2026-10-13T19:44Z | t2 | +0.2 | long_strangle passes at engine, API and browser
 - 2026-10-13T19:44Z | s7 | +1.5 | s7: accounting verification system case passes at API (1,154 checks) and browser level (1,405 checks, Accounting screens read at 6 checkpoints)
 - 2026-10-13T19:47Z | s3 | +0.2 | cds_sovereign passes at engine, API and browser
+- 2026-10-13T19:47Z | b4 | +0.2 | clo passes at engine, API and browser
