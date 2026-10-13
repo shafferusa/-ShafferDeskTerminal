@@ -14732,6 +14732,470 @@
    "covers": [
     "restart"
    ]
+  },
+  "B:T:long_call:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 4648,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "setup",
+   "covers": []
+  },
+  "B:T:long_call:hedge-request": {
+   "status": "passed",
+   "message": "",
+   "ms": 3380,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "hedge-request",
+   "covers": [
+    "hedge request"
+   ]
+  },
+  "B:T:long_call:open-partial": {
+   "status": "passed",
+   "message": "",
+   "ms": 3734,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "open-partial",
+   "covers": [
+    "open",
+    "partial fill"
+   ]
+  },
+  "B:T:long_call:cancel-remainder": {
+   "status": "passed",
+   "message": "",
+   "ms": 1200,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "cancel-remainder",
+   "covers": [
+    "cancel working legs",
+    "needs attention"
+   ]
+  },
+  "B:T:long_call:retry": {
+   "status": "passed",
+   "message": "",
+   "ms": 1250,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "retry",
+   "covers": [
+    "retry"
+   ]
+  },
+  "B:T:long_call:kept-partial": {
+   "status": "passed",
+   "message": "",
+   "ms": 3516,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "kept-partial",
+   "covers": [
+    "partial fill"
+   ]
+  },
+  "B:T:long_call:cancel-kept": {
+   "status": "passed",
+   "message": "",
+   "ms": 1267,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "cancel-kept",
+   "covers": [
+    "cancel working legs",
+    "needs attention"
+   ]
+  },
+  "B:T:long_call:accept-kept": {
+   "status": "passed",
+   "message": "",
+   "ms": 1216,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "accept-kept",
+   "covers": [
+    "accept as it stands"
+   ]
+  },
+  "B:T:long_call:unwound-partial": {
+   "status": "passed",
+   "message": "",
+   "ms": 3734,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "unwound-partial",
+   "covers": [
+    "partial fill"
+   ]
+  },
+  "B:T:long_call:cancel-unwound": {
+   "status": "passed",
+   "message": "",
+   "ms": 1216,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "cancel-unwound",
+   "covers": [
+    "cancel working legs",
+    "needs attention"
+   ]
+  },
+  "B:T:long_call:unwind": {
+   "status": "passed",
+   "message": "",
+   "ms": 1252,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "unwind",
+   "covers": [
+    "unwind"
+   ]
+  },
+  "B:T:long_call:deep-book": {
+   "status": "passed",
+   "message": "",
+   "ms": 514,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "deep-book",
+   "covers": []
+  },
+  "B:T:long_call:resize-up": {
+   "status": "passed",
+   "message": "",
+   "ms": 1100,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "resize-up",
+   "covers": [
+    "resize",
+    "increase"
+   ]
+  },
+  "B:T:long_call:roll": {
+   "status": "passed",
+   "message": "",
+   "ms": 1384,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "roll",
+   "covers": [
+    "roll"
+   ]
+  },
+  "B:T:long_call:next-day": {
+   "status": "passed",
+   "message": "",
+   "ms": 750,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "next-day",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:T:long_call:sweep-to-treasury": {
+   "status": "passed",
+   "message": "",
+   "ms": 1016,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "sweep-to-treasury",
+   "covers": [
+    "transfer"
+   ]
+  },
+  "B:T:long_call:cash-short-not-financed": {
+   "status": "blocked",
+   "message": "The calls cost 2,020.00 with commission and 913.00 is available; \"Do not finance\" leaves it blocked. Terminal: \"Alpha is short 1,107.00 USD: the package needs 2,020.00 USD (purchases 2,000.00 USD, fees 20.00 USD, margin and collateral 0.00 USD, reserved 0.00 USD) and 913.00 USD is available. Add Treasury funding or a borrowing leg, convert currency, or reduce the size.\"",
+   "ms": 3517,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "cash-short-not-financed",
+   "covers": [
+    "financing: not financed"
+   ]
+  },
+  "B:T:long_call:funded-from-treasury": {
+   "status": "passed",
+   "message": "",
+   "ms": 3584,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "funded-from-treasury",
+   "covers": [
+    "financing: Treasury funding"
+   ]
+  },
+  "B:T:long_call:funded-by-loan": {
+   "status": "passed",
+   "message": "",
+   "ms": 3732,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "funded-by-loan",
+   "covers": [
+    "financing: borrow"
+   ]
+  },
+  "B:T:long_call:settle-financed": {
+   "status": "passed",
+   "message": "",
+   "ms": 634,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "settle-financed",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:T:long_call:treasury-top-up": {
+   "status": "passed",
+   "message": "",
+   "ms": 933,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "treasury-top-up",
+   "covers": [
+    "transfer"
+   ]
+  },
+  "B:T:long_call:close-levered": {
+   "status": "passed",
+   "message": "",
+   "ms": 1233,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "close-levered",
+   "covers": [
+    "close",
+    "repay"
+   ]
+  },
+  "B:T:long_call:settle-close-levered": {
+   "status": "passed",
+   "message": "",
+   "ms": 634,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "settle-close-levered",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:T:long_call:expiry-close": {
+   "status": "passed",
+   "message": "",
+   "ms": 616,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "expiry-close",
+   "covers": []
+  },
+  "B:T:long_call:expiry-quote": {
+   "status": "passed",
+   "message": "",
+   "ms": 601,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "expiry-quote",
+   "covers": []
+  },
+  "B:T:long_call:expiry": {
+   "status": "passed",
+   "message": "",
+   "ms": 649,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "expiry",
+   "covers": [
+    "expiry",
+    "exercise",
+    "lapse"
+   ]
+  },
+  "B:T:long_call:settle-expiry": {
+   "status": "passed",
+   "message": "",
+   "ms": 584,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "settle-expiry",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:T:long_call:close-kept": {
+   "status": "passed",
+   "message": "",
+   "ms": 1166,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "close-kept",
+   "covers": [
+    "close"
+   ]
+  },
+  "B:T:long_call:close-share": {
+   "status": "passed",
+   "message": "",
+   "ms": 1233,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "close-share",
+   "covers": [
+    "reduce",
+    "close share"
+   ]
+  },
+  "B:T:long_call:close-exact": {
+   "status": "passed",
+   "message": "",
+   "ms": 1335,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "close-exact",
+   "covers": [
+    "reduce",
+    "close exact amount"
+   ]
+  },
+  "B:T:long_call:close-all": {
+   "status": "passed",
+   "message": "",
+   "ms": 1299,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "close-all",
+   "covers": [
+    "close"
+   ]
+  },
+  "B:T:long_call:settle-closes": {
+   "status": "passed",
+   "message": "",
+   "ms": 617,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "settle-closes",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:T:long_call:restart": {
+   "status": "passed",
+   "message": "",
+   "ms": 2966,
+   "commit": "db03185+changes",
+   "at": "2026-10-13T23:05:41.325Z",
+   "product": null,
+   "template": "long_call",
+   "family": "templates",
+   "step": "restart",
+   "covers": [
+    "restart"
+   ]
   }
  },
  "runs": {
@@ -15855,7 +16319,26 @@
     "viewport": "1440x900",
     "server": "server/index.js --demo, engine timer off"
    }
+  },
+  "T:long_call": {
+   "at": "2026-10-13T23:05:41.325Z",
+   "commit": "db03185+changes",
+   "ms": 56511,
+   "family": "templates",
+   "steps": 33,
+   "ran": 33,
+   "passed": 32,
+   "failed": 0,
+   "blocked": 1,
+   "unsupported": 0,
+   "environment": {
+    "node": "v22.22.0",
+    "platform": "linux",
+    "browser": "Chromium 141.0.7390.37",
+    "viewport": "1440x900",
+    "server": "server/index.js --demo, engine timer off"
+   }
   }
  },
- "updatedAt": "2026-10-13T22:00:07.834Z"
+ "updatedAt": "2026-10-13T23:05:41.325Z"
 }

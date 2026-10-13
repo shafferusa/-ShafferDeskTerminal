@@ -647,7 +647,7 @@ export function HedgeQueue({ book, compact }) {
       ${waiting ? html`<${Button} small busy=${busy} onClick=${refresh}>Ask again now<//>` : null}</header>
     <div class="body flush"><div class="tablewrap"><table class="ledger margin hq-table"><thead><tr><th>Position</th><th>Held in</th><th>State</th><th>Source and freshness</th><th>Asked</th><th></th></tr></thead><tbody>
       ${d.items.map((x) => html`<tr key=${x.id} data-request=${x.id} data-state=${x.state}>
-        <td class="wrap hq-head"><div class="strong">${x.primary ? `${x.primary.direction === 'short' ? 'Short' : 'Long'} ${fmtQty(x.primary.quantity)} ${x.primary.symbol || x.primary.name}` : `Scope: ${SCOPE_LABEL[x.scope.type] || x.scope.type}`}</div>
+        <td class="wrap hq-head"><div class="strong">${x.primary ? `${x.primary.direction === 'short' ? 'Short' : 'Long'} ${fmtQty(x.primary.quantity)}${x.primary.quantityUnit === 'contracts' ? ' contracts,' : ''} ${x.primary.symbol || x.primary.name}` : `Scope: ${SCOPE_LABEL[x.scope.type] || x.scope.type}`}</div>
           ${x.strategy ? html`<div class="sub"><a href="javascript:void 0" onClick=${() => openStrategy(x.strategy.id)}>${x.strategy.name}</a></div>` : null}
           <div class="sub">Investment Strategy: <${StrategyRef} s=${x.investmentStrategy} missing="Not set" /></div></td>
         <td data-label="Held in">${x.owner || book.name}</td>

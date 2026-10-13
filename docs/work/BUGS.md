@@ -389,3 +389,13 @@ Open (s9, not fixed: larger than a small interface fix):
   (a short sale with no borrow, alert delivery.short left open, the later assignment booked as a cover paid from restricted cash).
   Now, within a strategy instance and underlying, options in the money that receive the underlying settle before those that deliver
   it (option plugin expiryDelivery; ordering only when both kinds are due the same day). Found by T:bull_put_spread expiry.
+
+## fin (last two items before the freeze), 2026-10-13
+Fixed:
+- server/core/hedge.js (t1b open item): option-only packages (long call, long put, cash-secured put, verticals and the other
+  option-only templates) now send their option position as the hedge request's primary: kind option_package, direction long for
+  bought options / debit structures and short for written options / credit structures (verticals decided from strikes, never from
+  prices), quantity in contracts, notional = contracts x deliverable x underlying mark (missing when there is no mark), underlying
+  and structure named. The request is complete once Strategy, holding period and objective are given. The demo fixture
+  (server/data/demo-hedge.js) answers with a labelled note and no packages. Tests in test/core/hedge.test.js; long_call now has a
+  hedge-request step (templates-a.mjs) passing at engine, API and browser.

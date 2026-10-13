@@ -28,12 +28,34 @@ export const DEMO_INVESTMENT_STRATEGIES = [
   { id: 'DEMO-IS-003', name: 'Global Macro Carry', version: 'demo-1' },
 ];
 
+/**
+ * An option-only package (long call, long put, cash-secured put, spreads, ...): the fixture proposes nothing and
+ * says why, truthfully for the structure. A package whose written options are all covered by bought options of the
+ * same right (expiring no earlier, at least as many contracts) has its maximum loss fixed by its own legs; a written
+ * option that is not covered is not defined-risk, and the fixture simply has no proposal for it.
+ */
+function optionPackageNote(p) {
+  const legs = p.structure?.legs || [];
+  const what = `${p.instrument?.name || 'This option package'}${p.direction ? ` (${p.direction} ${p.quantity ?? '?'} contracts)` : ''}`;
+  const uncovered = legs.filter((w) => w.action === 'sell').filter((w) => {
+    const cover = legs.filter((b) => b.action === 'buy' && b.right === w.right && (b.expiration || '') >= (w.expiration || '')).reduce((a, b) => a + b.contracts, 0);
+    const written = legs.filter((x) => x.action === 'sell' && x.right === w.right).reduce((a, x) => a + x.contracts, 0);
+    return cover < written;
+  });
+  if (!uncovered.length) {
+    const loss = legs.every((l) => l.action === 'buy') ? 'the premium paid' : p.direction === 'short' ? 'the strike width less the credit received' : 'the net premium paid';
+    return `${FIXTURE_NOTE} No further price protection is proposed: ${what} is already a defined-risk option structure (the most it can lose is ${loss}). The demo fixture does not layer a hedge on top.`;
+  }
+  return `${FIXTURE_NOTE} No proposal: ${what} includes a written option that no bought option covers, so it is not a defined-risk structure${uncovered.some((w) => w.right === 'P') && p.structure?.template === 'cash_secured_put' ? ' (its risk is assignment at the strike, paid from the exercise cash the template reserves)' : ''}. The demo fixture has no canned proposal for written options; that decision belongs to Shaffer Hedge.`;
+}
+
 export async function demoHedgeResponse(app, request) {
   const now = app.clock.now().toISOString();
   const today = app.clock.today();
   const p = request.primary;
   const packages = [];
   const response = { source: 'Demo fixture (not Shaffer Hedge)', version: DEMO_FIXTURE_VERSION, asOf: now, modelRun: null, fixture: true, recommendedId: null, packages };
+  if (p?.kind === 'option_package') { response.note = optionPackageNote(p); return response; }
   if (!p?.instrument?.terminalId) return response;
   const inst = app.instruments.get(p.instrument.terminalId);
   if (!inst || !['equity', 'fund'].includes(inst.family)) {

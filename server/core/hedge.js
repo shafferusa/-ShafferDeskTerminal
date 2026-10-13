@@ -23,6 +23,7 @@ import { fmtQty } from '../products/common.js';
 import { contractBasis, normalizeBasis, OTC_FAMILIES } from './agreements.js';
 import { getProduct } from './catalog.js';
 import { createProtection } from './protection.js';
+import { getTemplate } from './templates.js';
 import { isZero, need, newId, num } from './util.js';
 
 export const HEDGE_OBJECTIVES = [
@@ -254,6 +255,75 @@ export function createHedge(app) {
   }
   const scopeUnitIds = (bookId, unitId, scopeType) => (scopeType === 'book' ? books.unitsOf(bookId).map((u) => u.id) : unitId ? [unitId] : []);
 
+  // ---- option-only packages (long call, long put, cash-secured put, spreads, ...) --------------------------------
+  // A package with no leg on a security has no share quantity to protect. Its primary is the option position
+  // itself: direction long for a bought option or a debit structure, short for a written option or a credit
+  // structure; quantity in contracts (per leg); notional = contracts x deliverable units x the underlying's mark
+  // where a mark exists, otherwise missing. Debit or credit is decided from the structure, never from prices:
+  //   all options bought -> long; all written -> short;
+  //   a vertical (one bought, one written, same right, expiration and size): a call bought at the lower strike or a
+  //   put bought at the higher strike is a debit spread (long), the reverse a credit spread (short);
+  //   the other mixed templates by what they are: iron condor / iron butterfly credit (short); long butterfly,
+  //   long calendar, long diagonal debit (long). Anything else mixed (synthetics, custom) has no direction stated.
+  const MIXED_DIRECTION = { iron_condor: 'short', iron_butterfly: 'short', long_butterfly: 'long', long_calendar: 'long', long_diagonal: 'long' };
+  function optionPackageDirection(template, legs) {
+    const bought = legs.filter((l) => l.action === 'buy'), written = legs.filter((l) => l.action === 'sell');
+    if (!written.length) return { direction: 'long', basis: 'Every option in the package is bought.' };
+    if (!bought.length) return { direction: 'short', basis: 'Every option in the package is written.' };
+    if (legs.length === 2 && bought.length === 1) {
+      const [b, w] = [bought[0], written[0]];
+      if (b.right === w.right && b.expiration === w.expiration && b.contracts === w.contracts && b.strike !== w.strike) {
+        const debit = b.right === 'C' ? b.strike < w.strike : b.strike > w.strike;
+        return { direction: debit ? 'long' : 'short', basis: `${debit ? 'Debit' : 'Credit'} vertical spread: the ${b.right === 'C' ? 'call' : 'put'} bought at ${b.strike} is ${debit ? 'nearer to' : 'further from'} exercise than the one written at ${w.strike}.` };
+      }
+    }
+    if (MIXED_DIRECTION[template]) return { direction: MIXED_DIRECTION[template], basis: `${MIXED_DIRECTION[template] === 'long' ? 'Debit' : 'Credit'} structure by its template.` };
+    return { direction: null, basis: 'Bought and written options with no debit or credit structure the Terminal can state without prices.' };
+  }
+
+  /** The option legs of a previewed package when every primary leg is an option; null otherwise. */
+  function optionOnlyLegs(pvLegs) {
+    const primary = (pvLegs || []).filter((l) => l.purpose === 'primary' && ['trade', 'link'].includes(l.kind));
+    if (!primary.length) return null;
+    const out = [];
+    for (const l of primary) {
+      const oi = l.instrumentId ? instruments.get(l.instrumentId) : null;
+      if (!l.option && oi?.family !== 'option') return null;
+      const t = l.option || oi.terms || {};
+      out.push({
+        role: l.role || null, action: l.action === 'sell' ? 'sell' : 'buy', contracts: Math.abs(num(l.qty) || 0), right: t.right, strike: num(t.strike), expiration: t.expiration || null,
+        deliverableUnits: num(t.deliverableUnits) ?? num(t.deliverable?.units) ?? num(t.multiplier) ?? oi?.multiplier ?? null, multiplier: num(t.multiplier) ?? oi?.multiplier ?? null,
+        instrumentId: oi?.id || null, underlyingId: t.underlyingId || oi?.underlying_id || null,
+      });
+    }
+    return out;
+  }
+
+  /** The primary of an option-only package: the option position, on its underlying, with the structure named. */
+  function optionPackagePrimary(op) {
+    const und = op.underlyingId ? instruments.get(op.underlyingId) : null;
+    if (!und || !op.legs?.length) return null;
+    const tpl = op.template ? getTemplate(op.template) : null;
+    const name = op.name || tpl?.name || 'Option package';
+    const { direction, basis } = optionPackageDirection(op.template, op.legs);
+    const contracts = Math.min(...op.legs.map((l) => l.contracts));
+    const units = [...new Set(op.legs.map((l) => l.deliverableUnits))];
+    const deliverable = units.length === 1 && units[0] > 0 ? units[0] : null;
+    const obs = app.data.price(und.id);
+    const mark = typeof obs?.value === 'number' && Number.isFinite(obs.value) ? obs.value : null;
+    const notional = contracts > 0 && deliverable !== null && mark !== null ? contracts * deliverable * mark : null;
+    return {
+      positionId: null, kind: 'option_package',
+      instrument: { terminalId: null, family: 'option', productId: 'option_package', symbol: `${und.symbol} ${name}`, name: `${name} on ${und.symbol || und.name}`, currency: und.trading_ccy, underlying: { terminalId: und.id, shafferId: und.external_ids?.shaffer ?? null, symbol: und.symbol, name: und.name }, terms: { template: op.template || null } },
+      underlying: instrumentRef(und),
+      structure: { template: op.template || null, name, legs: op.legs },
+      direction, directionBasis: basis, quantity: contracts > 0 ? contracts : null, quantityUnit: 'contracts', deliverableUnits: deliverable,
+      notional, notionalBasis: notional !== null ? `${contracts} contracts x ${deliverable} deliverable units x ${mark} underlying mark` : mark === null ? 'Missing: no mark for the underlying.' : 'Missing: the legs have different deliverables.',
+      currency: und.trading_ccy, status: 'proposed', averagePrice: null,
+      priceObservation: obs ? { value: obs.value, status: obs.status, source: obs.source, asOf: obs.asOf } : null,
+    };
+  }
+
   /**
    * Build the hedge request for Shaffer Hedge.
    * input: { bookId, unitId, scope: {type, id?}, instrumentId, direction, quantity, notional, investmentStrategy, holdingPeriod,
@@ -288,6 +358,8 @@ export function createHedge(app) {
         existingPosition = positionFact(main);
       }
     }
+    // An option-only package (no leg on a security): its primary is the option position (see optionPackagePrimary).
+    if (!primary && input.optionPrimary && scopeType !== 'account' && scopeType !== 'book') primary = optionPackagePrimary(input.optionPrimary);
     if (!primary && inst && scopeType !== 'account' && scopeType !== 'book') {
       const obs = app.data.price(inst.id);
       const qty = num(input.quantity);
@@ -490,7 +562,7 @@ export function createHedge(app) {
       id: v.id, status: v.status, state: v.state, stateLabel: v.stateLabel, message: v.message, complete: v.complete, missing: v.missing, connection: v.connection,
       source: v.source, freshness: v.freshness, canExecute: v.canExecute, packages: row.response?.packages?.length ?? 0, trigger: v.trigger, scope: v.scope, strategyId: v.strategyId, bookId: v.bookId, unitId: v.unitId,
       investmentStrategy: v.request.investmentStrategy, selectedPackage: v.selectedPackage,
-      primary: p ? { positionId: p.positionId || null, symbol: p.instrument?.symbol, name: p.instrument?.name, direction: p.direction, quantity: p.quantity, status: p.status } : null,
+      primary: p ? { positionId: p.positionId || null, symbol: p.instrument?.symbol, name: p.instrument?.name, direction: p.direction, quantity: p.quantity, quantityUnit: p.quantityUnit || null, status: p.status } : null,
       refreshedAt: v.request.refreshedAt || null, createdAt: v.createdAt, updatedAt: v.updatedAt,
     };
   }
@@ -583,6 +655,7 @@ export function createHedge(app) {
       objective: patch.objective !== undefined ? patch.objective : { type: q.objective?.type, serverDefined: q.objective?.serverDefined, settings: q.objective?.settings },
       instrumentId: q.primary?.instrument?.terminalId || undefined, direction: q.primary?.direction, quantity: proposed ? q.primary.quantity : undefined, notional: proposed ? q.primary.notional : undefined,
       builtProposedLegs: row.strategy_id ? null : q.proposedLegs, existingPositionId: proposed ? q.primary.positionId || undefined : undefined,
+      optionPrimary: proposed && q.primary.kind === 'option_package' ? { template: q.primary.structure?.template || null, name: q.primary.structure?.name, underlyingId: q.primary.underlying?.terminalId, legs: q.primary.structure?.legs || [] } : undefined,
     });
     req.requestId = row.id;
     req.createdAt = q.createdAt;
@@ -617,6 +690,7 @@ export function createHedge(app) {
         const pv = await app.packages.preview({ ...input.package, bookId: input.bookId, unitId: input.unitId, hedgeLinkId: null, hedgePackageId: null, financing: null, clientToken: undefined });
         const main = pv.legs.find((l) => l.purpose === 'primary' && ['trade', 'link'].includes(l.kind));
         const short = main && (main.action === 'sell_short' || (main.kind === 'link' && main.existing?.qty < 0) || (main.action === 'sell' && main.instrument?.family !== 'option'));
+        const optionLegs = optionOnlyLegs(pv.legs);
         input = {
           ...input,
           proposedLegs: pv.legs.map((l) => ({ role: l.role, purpose: l.purpose, kind: l.kind, action: l.action, qty: l.qty, instrumentId: l.instrumentId, option: l.option, contract: l.contract })),
@@ -624,6 +698,8 @@ export function createHedge(app) {
           quantity: num(input.quantity) ?? (main && main.instrumentId === (input.instrumentId || main.instrumentId) ? main.qty : null),
           direction: input.direction || (short ? 'short' : 'long'),
           existingPositionId: input.package.mode === 'existing' ? input.package.existingPositionId || undefined : undefined,
+          // No security leg: the option position itself is the primary, sized in contracts.
+          optionPrimary: optionLegs ? { template: input.package.template || null, underlyingId: pv.underlying?.id || optionLegs[0].underlyingId || input.instrumentId || null, legs: optionLegs } : undefined,
         };
       } catch (err) {
         packageNote = `The execution template could not be resolved into legs yet: ${err.message}`;

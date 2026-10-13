@@ -707,3 +707,63 @@ test('a package with an unpriced leg is completed with a stated fill price and e
   assert.deepEqual(cleared.hedge.completion.missing.map((m) => m.what), ['price']);
   assert.deepEqual(ledgerImbalance(app), []);
 });
+
+// ---- option-only packages (fin) -----------------------------------------------------------------------------------
+// A package with no leg on a security: its primary is the option position, sized in contracts, so the Strategies page's
+// request is complete once the Investment Strategy, holding period and objective are given.
+test('option-only templates: the primary is the option position (direction, contracts, notional from the mark) and the request is complete', async () => {
+  const { app, inst } = makeApp();
+  const { book, acct } = makeBook(app);
+  pin(app, inst.ALFA.id, 190);
+  const ctx = { investmentStrategy: { name: 'Core Equity' }, holdingPeriod: { days: 30 }, objective: { type: 'downside_protection' } };
+  const ask = (template, strikes, contracts, extra = {}) => app.hedge.request({
+    bookId: book.id, unitId: acct.id, scope: { type: 'trade' }, trigger: 'strategy_page', instrumentId: inst.ALFA.id, ...ctx, ...extra,
+    package: { bookId: book.id, unitId: acct.id, template, underlyingId: inst.ALFA.id, origin: 'strategy_page', mode: 'new', options: { expiration: EXP, strikes, contracts } },
+  });
+  // Hand-worked: contracts x deliverable (100 shares) x ALFA mark 190.
+  const cases = [
+    ['long_call', { call: 200 }, 3, 'long', 57_000], //       3 x 100 x 190: a bought call
+    ['long_put', { put: 180 }, 2, 'long', 38_000], //         2 x 100 x 190: a bought put
+    ['cash_secured_put', { put: 180 }, 4, 'short', 76_000], // 4 x 100 x 190: a written put
+    ['bull_call_spread', { lower: 180, upper: 200 }, 5, 'long', 95_000], //  buy the 180 call, write the 200 call: debit
+    ['bear_put_spread', { lower: 180, upper: 200 }, 1, 'long', 19_000], //   buy the 200 put, write the 180 put: debit
+    ['bull_put_spread', { lower: 180, upper: 200 }, 3, 'short', 57_000], //  write the 200 put, buy the 180 put: credit
+    ['bear_call_spread', { lower: 180, upper: 200 }, 2, 'short', 38_000], // write the 180 call, buy the 200 call: credit
+  ];
+  for (const [template, strikes, contracts, direction, notional] of cases) {
+    const r = await ask(template, strikes, contracts);
+    const p = r.request.primary;
+    assert.deepEqual(r.missing, [], `${template}: complete`);
+    assert.equal(r.state, 'recommendation_ready', template);
+    assert.deepEqual([p.kind, p.direction, p.quantity, p.quantityUnit, p.deliverableUnits, p.notional, p.currency, p.status], ['option_package', direction, contracts, 'contracts', 100, notional, 'USD', 'proposed'], template);
+    assert.equal(p.underlying.terminalId, inst.ALFA.id, `${template}: the underlying is named`);
+    assert.equal(p.structure.template, template, `${template}: the structure is named`);
+    assert.equal(p.structure.legs.length, template.includes('spread') ? 2 : 1);
+    assert.equal(r.source.kind, 'demo-fixture');
+    assert.deepEqual(r.response.packages, [], `${template}: the fixture proposes nothing for an option structure`);
+    assert.match(r.message, /^Demo fixture, not Shaffer Hedge output\./, `${template}: the answer is labelled fixture`);
+    if (template === 'cash_secured_put') assert.match(r.message, /not a defined-risk structure/);
+    else assert.match(r.message, /No further price protection is proposed: .* is already a defined-risk option structure/);
+  }
+  // Without the context it is incomplete for the context only, never for the amount; completing it keeps the option primary.
+  const bare = await ask('bull_put_spread', { lower: 180, upper: 200 }, 3, { investmentStrategy: null, holdingPeriod: null, objective: null });
+  assert.deepEqual(bare.missing, ['investment Strategy', 'hedge objective', 'intended holding period']);
+  const done = await app.hedge.complete(bare.id, { investmentStrategy: { name: 'Core Equity' }, holdingPeriod: { days: 30 }, objective: { type: 'downside_protection' } });
+  assert.deepEqual([done.id, done.missing, done.request.primary.kind, done.request.primary.direction, done.request.primary.quantity, done.request.primary.notional], [bare.id, [], 'option_package', 'short', 3, 57_000]);
+});
+
+test('option-only template with no mark for the underlying: the notional is missing, not zero, and the request is still complete', async () => {
+  const { app } = makeApp({ demo: false });
+  const stock = app.instruments.create({ productId: 'common_stock', name: 'Example Corp', symbol: 'EXMP', marketView: 'US_CASH', venue: 'NYSE', tradingCcy: 'USD' });
+  const { book, acct } = makeBook(app);
+  const spec = { multiplier: 100, deliverableUnits: 100, exercise: 'american', settlement: 'physical' };
+  const r = await app.hedge.request({
+    bookId: book.id, unitId: acct.id, scope: { type: 'trade' }, trigger: 'strategy_page', instrumentId: stock.id, investmentStrategy: { name: 'Core Equity' }, holdingPeriod: { days: 30 }, objective: { type: 'downside_protection' },
+    package: { bookId: book.id, unitId: acct.id, template: 'long_put', underlyingId: stock.id, origin: 'strategy_page', mode: 'new', options: { expiration: EXP, strikes: { put: 45 }, contracts: 2, contractSpec: spec } },
+  });
+  const p = r.request.primary;
+  assert.deepEqual(r.missing, []);
+  assert.equal(r.state, 'awaiting_connection', 'complete; normal mode waits for Shaffer Hedge');
+  assert.deepEqual([p.kind, p.direction, p.quantity, p.deliverableUnits, p.notional], ['option_package', 'long', 2, 100, null]);
+  assert.match(p.notionalBasis, /no mark for the underlying/);
+});

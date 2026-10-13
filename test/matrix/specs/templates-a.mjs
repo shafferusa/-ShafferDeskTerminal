@@ -4633,7 +4633,10 @@ const longCall = {
   title: 'Long call on Kestrel Logistics: calls bought as a package, partial fills, recovery, financing, roll, exercise and lapse at expiry',
   matrix: {
     ...OPTION_ONLY_MATRIX,
-    ticket: 'Strategies page (Long Call): Trading owner and intent, Underlying of the options, Option contracts (expiration, call strike, contracts), Order and funding; then the package preview. The strategy instance drawer for Cancel working legs, Retry, Unwind, Accept, Resize, Roll and Close',
+    // fin: the option-only hedge request (its primary is the option position, in contracts) is exercised here.
+    automaticInputs: [...OPTION_ONLY_MATRIX.automaticInputs, 'hedge request answered by the labelled demo fixture'],
+    manualInputs: [...OPTION_ONLY_MATRIX.manualInputs, 'investment Strategy (chosen by ID from the labelled demo list), holding period and hedge objective for the hedge request'],
+    ticket: 'Strategies page (Long Call): Trading owner and intent, Underlying of the options, Option contracts (expiration, call strike, contracts), Order and funding, Hedge panel; then the package preview. The strategy instance drawer for Cancel working legs, Retry, Unwind, Accept, Resize, Roll and Close',
     settlement: 'Premium T+1 on the US calendar; shares received on exercise are paid for T+1 at the strike; Treasury funding moves at once; a margin loan is drawn at once and repaid with interest to the day',
     lifecycle: 'Partial fills against displayed size; a cancelled remainder needs attention; retry, unwind and accept; resize; roll to April; automatic exercise in the money at expiry (simulated delivery of the shares, paid at the strike); lapse out of the money; close by share, exact amount and in full',
     accounting: 'Bought calls at premium cost; premium realized at sale, exercise or lapse; shares received on exercise at the strike; commissions expensed; the margin loan is one borrowing record of the Account',
@@ -4651,6 +4654,26 @@ const longCall = {
   },
   expectAtStart: startState(),
   steps: [
+    {
+      // fin: the Strategies page's hedge request for an option-only package. No leg is on the stock, so the primary is the
+      // option position itself: bought calls, so long; 10 contracts; notional 10 x 100 (deliverable) x 50.00 (KSTL's mark,
+      // the last of the quote fixture) = 50,000; the underlying and the structure are named. With the Investment Strategy,
+      // holding period and objective given it is complete. The labelled demo fixture proposes nothing for a bought call
+      // (its risk is the premium paid) and says so.
+      id: 'hedge-request', covers: ['hedge request'], action: 'hedge_request',
+      input: lcall(10, 50, { ...CONTEXT }),
+      strategyPage: { ...PAGE_CONTEXT, ...lcallPage(10, 50) },
+      expect: {
+        result: {
+          state: 'recommendation_ready', complete: true, missing: [], source: { kind: 'demo-fixture', label: 'Demo fixture, not Shaffer Hedge' },
+          packages: [], recommendedId: null,
+          note: 'Demo fixture, not Shaffer Hedge output. Structure and sizing are illustrative only. No further price protection is proposed: Long Call on KSTL (long 10 contracts) is already a defined-risk option structure (the most it can lose is the premium paid). The demo fixture does not layer a hedge on top.',
+          investmentStrategy: { id: 'DEMO-IS-002', name: 'Core Equity', resolved: true }, holdingDays: 30, objective: 'downside_protection', scope: 'trade',
+          primary: { kind: 'option_package', instrument: null, underlying: 'main', structure: 'long_call', direction: 'long', quantity: 10, quantityUnit: 'contracts', deliverableUnits: 100, notional: 50_000, status: 'proposed' },
+          proposedProtection: [], linkedProtection: [], hedgesHeld: [], // the bought call is the primary, not protection; nothing is held yet
+        },
+      },
+    },
     {
       // 10 contracts at the 1.90 ask: 10 x 1.90 x 100 = 1,900, commission 10 x 0.50 = 5. Ask size 3: 3 on confirmation,
       // 3 in the next cycle, 4 working.

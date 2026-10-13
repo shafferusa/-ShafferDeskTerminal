@@ -359,7 +359,11 @@ export function hedgeRequestView(r, ctx) {
     packages: (r.response?.packages || []).map((p) => p.id), recommendedId: r.response?.recommendedId ?? null, note: r.response?.note ?? null,
     investmentStrategy: q.investmentStrategy ? { id: q.investmentStrategy.id ?? null, name: q.investmentStrategy.name ?? null, resolved: Boolean(q.investmentStrategy.resolved) } : null,
     holdingDays: q.holdingPeriod?.days ?? null, objective: q.objective?.type ?? null, scope: q.scope?.type ?? null,
-    primary: q.primary ? { instrument: key(q.primary.instrument), direction: q.primary.direction, quantity: q.primary.quantity ?? null, status: q.primary.status ?? null } : null,
+    primary: q.primary ? {
+      instrument: key(q.primary.instrument), direction: q.primary.direction, quantity: q.primary.quantity ?? null, status: q.primary.status ?? null,
+      // fin: an option-only package's primary is the option position, on its underlying, with the structure named.
+      ...(q.primary.kind === 'option_package' ? { kind: q.primary.kind, underlying: key(q.primary.underlying), structure: q.primary.structure?.template ?? null, quantityUnit: q.primary.quantityUnit, deliverableUnits: q.primary.deliverableUnits ?? null, notional: q.primary.notional ?? null } : {}),
+    } : null,
     proposedProtection: (q.proposedLegs || []).filter((l) => l.isProtection).map((l) => ({ action: l.action, quantity: l.quantity, right: l.instrument?.terms?.right ?? null, strike: l.instrument?.terms?.strike ?? null })),
     linkedProtection: (q.linkedProtection || []).map((h) => ({ instrument: key(h.instrument), quantity: h.quantity, allocatedUnits: h.allocatedUnits ?? null })),
     hedgesHeld: (q.hedgesHeld || []).map((h) => ({ instrument: key(h.instrument), quantity: h.quantity, relation: h.relation })),
