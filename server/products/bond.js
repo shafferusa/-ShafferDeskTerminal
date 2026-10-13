@@ -88,6 +88,15 @@ function principalNote(inst, face, scale) {
   return '';
 }
 const fmtRatio = (r) => Number(r).toFixed(5);
+/**
+ * The day a coupon (and the principal of the same period) is paid: its coupon date, or for securitised paper with a payment
+ * delay that many calendar days after it (the accrual period ends on the coupon date; Fannie Mae pays 24 days later, on the
+ * 25th), moved to the next business day of the payment calendar.
+ */
+function couponDue(inst, couponDate) {
+  const delay = inst.terms.paymentDelayDays || 0;
+  return adjust(delay ? addBusinessDays(couponDate, delay, 'ALLDAYS') : couponDate, 'following', paymentCalendarFor(inst));
+}
 
 /** The trades booked on a position: signed face, trade date and settlement date of each fill. */
 function fillsOf(app, positionId) {
@@ -353,8 +362,8 @@ export const bond = {
     // A position whose every trade settles on or after the coupon date has no face entitled to that coupon (it was
     // bought ex coupon): its schedule starts with the coupon after, not with one it will never be paid.
     if (next && isZero(entitledFace(app, pos, next)) && !app.db.get(`SELECT 1 AS x FROM tasks WHERE position_id = ? AND type = 'bond.coupon' AND status IN ('pending','blocked','failed') AND json_extract(data, '$.couponDate') = ?`, pos.id, next)) next = nextCouponDate(t, next);
-    if (next && inst.terms.couponType !== 'zero') app.tasks.schedule({ ...common, type: 'bond.coupon', dueDate: adjust(next, 'following', paymentCalendarFor(inst)), data: { key: next, couponDate: next } });
-    if (inst.terms.maturity) app.tasks.schedule({ ...common, type: 'bond.maturity', dueDate: adjust(inst.terms.maturity, 'following', paymentCalendarFor(inst)) });
+    if (next && inst.terms.couponType !== 'zero') app.tasks.schedule({ ...common, type: 'bond.coupon', dueDate: couponDue(inst, next), data: { key: next, couponDate: next } });
+    if (inst.terms.maturity) app.tasks.schedule({ ...common, type: 'bond.maturity', dueDate: couponDue(inst, inst.terms.maturity) });
   },
   dataNeeds(app, { inst, task, date }) {
     if (inst.terms.couponType !== 'float') return {};
@@ -392,7 +401,7 @@ export const bond = {
       const live = positions.get(pos.id);
       const scheduleNext = () => {
         const next = nextCouponDate(t, couponDate);
-        if (next && !isZero(live.qty)) app.tasks.schedule({ ...base, type: 'bond.coupon', dueDate: adjust(next, 'following', paymentCalendarFor(inst)), data: { key: next, couponDate: next } });
+        if (next && !isZero(live.qty)) app.tasks.schedule({ ...base, type: 'bond.coupon', dueDate: couponDue(inst, next), data: { key: next, couponDate: next } });
       };
       if (isZero(face)) { scheduleNext(); return 'done'; }
       if (inst.terms.couponSuspended) {
@@ -706,32 +715,69 @@ export const bond = {
     return { factor: nf, eventIds };
   },
   /** Principal paydown by hand: the pool factor falls and the paid-down face is redeemed at par. */
-  paydown(app, { book, unit, inst, newFactor }) {
+  /**
+   * Principal paydown by hand (scheduled amortisation and prepayments of securitised paper): the pool factor falls from its
+   * current value to `newFactor` for every holder, in every Book. Each holder is paid the face it was entitled to on the
+   * effective date (face settled before it) x (old factor - new factor) x the redemption price (and index ratio, if any);
+   * its position's cost falls in proportion and the difference from the cash is realized P&L (a premium or discount on the
+   * principal returned).
+   *   effective         the date the new factor applies from (the first day of the accrual period it is published for);
+   *                     today when not given. Accrued interest and coupons of the period that started on it run on the new
+   *                     factor; the coupon of the period that ended before it keeps the old one.
+   *   payDate           the day the principal is paid (with the coupon of the period that has ended, after the payment
+   *                     delay): a receivable until then, settled on that date. Today when not given (paid at once).
+   *   scheduledFactor   optional: the factor after the scheduled amortisation only. The history then says how much of the
+   *                     principal was scheduled and how much was prepaid (and the single monthly mortality, SMM).
+   */
+  paydown(app, { book, unit, inst, newFactor, effective, payDate, scheduledFactor, note }) {
     const nf = num(newFactor);
     const old = factorOf(inst);
     need(nf > 0 && nf < old, `New factor must be below the current factor ${old} and above zero.`);
+    const today = app.clock.today();
+    const from = effective ? String(effective) : today;
+    need(ISO_DATE_RE.test(from) && from <= today, 'The date the new factor is effective from must be YYYY-MM-DD and not later than today.');
+    const pay = payDate ? String(payDate) : today;
+    need(ISO_DATE_RE.test(pay) && pay >= today, 'The principal payment date must be YYYY-MM-DD and not earlier than today.');
+    const has = (v) => v !== undefined && v !== null && v !== '';
+    const sf = has(scheduledFactor) ? num(scheduledFactor) : null;
+    need(sf === null || (sf <= old + 1e-12 && sf >= nf - 1e-12), `The factor after scheduled principal must lie between the new factor ${nf} and the current factor ${old}.`);
+    const name = inst.symbol || inst.name;
+    const ccy = inst.trading_ccy;
+    const split = sf === null ? '' : `; scheduled principal ${Number((old - sf).toFixed(10))}, prepaid ${Number((sf - nf).toFixed(10))} of original face (SMM ${((sf - nf) / sf * 100).toFixed(4)}%)`;
+    const history = [...(inst.terms.factorHistory || []), { from, factor: nf, prior: old }];
+    app.instruments.update(inst.id, { terms: { ...inst.terms, factor: nf, factorHistory: history } }, { system: true });
+    const fresh = app.instruments.get(inst.id);
     const out = [];
     // Every holder of the instrument is paid down, in every Book.
     for (const p of app.positions.heldAround(inst.id)) {
       if (isZero(p.qty)) continue;
-      const b = app.books.getBook(p.book_id), u = app.books.getUnit(p.unit_id);
-      const ccy = inst.trading_ccy;
-      const paid = money(p.qty * (old - nf) * (inst.terms.redemption / 100), ccy);
+      const b = book && p.book_id === book.id ? book : app.books.getBook(p.book_id), u = unit && p.unit_id === unit.id ? unit : app.books.getUnit(p.unit_id);
+      const face = from === today ? p.qty : entitledFace(app, p, from);
+      const paid = money(face * (old - nf) * ratioOf(inst) * (inst.terms.redemption / 100), ccy);
       const costOut = money(p.cost * ((old - nf) / old), ccy);
+      const later = pay > today;
       const eventId = app.ledger.post({
         bookId: b.id, unitId: u.id, type: 'bond.paydown', instrumentId: inst.id, strategyId: p.strategy_id, positionId: p.id, actor: 'user',
-        summary: `Principal paydown on ${inst.symbol || inst.name}: factor ${old} to ${nf}, ${fmt(Math.abs(paid), ccy)} ${paid >= 0 ? 'received' : 'paid'}`,
-        data: { oldFactor: old, newFactor: nf },
+        summary: `Principal paydown on ${name}${note ? ` (${note})` : ''}: factor ${old} to ${nf}${from !== today ? ` from ${from}` : ''}${split}, ${fmt(Math.abs(paid), ccy)} ${later ? `${paid >= 0 ? 'receivable' : 'payable'} on ${pay}` : paid >= 0 ? 'received' : 'paid'}`,
+        data: { oldFactor: old, newFactor: nf, effective: from, payDate: pay, scheduledFactor: sf, manual: true },
         entries: [
-          { account: 'cash', ccy, amount: paid, positionId: p.id },
+          { account: later ? (paid >= 0 ? 'recv.settle' : 'pay.settle') : 'cash', ccy, amount: paid, positionId: p.id },
           { account: 'pos', ccy, amount: -costOut, positionId: p.id },
           { account: 'pnl.realized', ccy, amount: money(costOut - paid, ccy), positionId: p.id },
         ],
       });
-      app.positions.change(p, { dCost: -costOut });
+      const after = app.positions.change(p, { dCost: -costOut });
+      if (later && paid !== 0) app.settle.create({ bookId: b.id, unitId: u.id, instrumentId: inst.id, strategyId: p.strategy_id, positionId: p.id, kind: 'paydown', dueDate: pay, ccy, amount: paid, accounts: ['cash'] });
       out.push(eventId);
+      // Recorded after the period it applies from had begun: the interest accrued since then is restated on the new factor.
+      if (from < today && !fresh.terms.couponSuspended && after.data?.accruedThrough && after.data.accruedThrough >= from) {
+        const target = accrualTarget(app, fresh, after, after.data.accruedThrough);
+        if (target !== null) {
+          const id = trueUpAccrual(app, { book: b, unit: u, pos: after, inst: fresh, account: 'accrued.asset', pnlAccount: 'pnl.coupon', ccy, target: money(target, ccy), summary: `Accrued interest restated on the new factor of ${name}`, type: 'accrual.coupon' });
+          if (id) out.push(id);
+        }
+      }
     }
-    app.instruments.update(inst.id, { terms: { ...inst.terms, factor: nf } }, { system: true });
     return { eventIds: out };
   },
 };

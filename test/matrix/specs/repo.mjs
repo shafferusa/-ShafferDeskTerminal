@@ -1068,4 +1068,259 @@ const openRepo = {
   ],
 };
 
-export default [repo, reverseRepo, overnightRepo, termRepo, openRepo];
+// ---------------------------------------------------------------------------------------------
+// bilateral_repo
+// ---------------------------------------------------------------------------------------------
+// A bilateral repo: the Account deals directly with Pemberton Bank, which holds the collateral itself (no agent). The
+// Account repos 1,000,000 Kestrel Air notes for two weeks and, with the bank's agreement, substitutes its agency notes for
+// them the same day: the Kestrel notes are released (free to sell again) and the agency notes pledged. It then sends most
+// of its cash back to Treasury, so on the end date the automatic repurchase fails, visibly (a failed lifecycle item and an
+// alert), and interest goes on accruing. The next day Treasury funds the Account and the repurchase is made at once.
+//
+// Bilateral versus tri-party in the Terminal: nothing is simulated differently. A tri-party repo records its agent as a
+// term; collateral allocation and substitution by an agent are not simulated; a substitution is recorded by hand on any
+// repo, as here.
+//
+// Inputs: KESTREL-4.8-JUL31, 4.80% 30/360, coupons 15 Jan / 15 Jul, 99.40 / 99.50, last 99.45; PHFA-4.2-AUG30, 4.20% 30/360,
+// coupons 15 Feb / 15 Aug, 100.00 / 100.10, last 100.05 (fixtures); no commission; T+1. Repo 975,000 at 4.25% ACT/360,
+// 10 to 24 March 2026, haircut 2%.
+//   Bought 9 March, settle 10 March: Kestrel 995,000.00 + 55 days (30/360) of 4.80%: 7,333.33 = 1,002,333.33;
+//   PHFA 1,001,000.00 + 25 days of 4.20%: 2,916.67 = 1,003,916.67.
+//   Kestrel collateral 10 March: 994,500.00 + 7,333.33 = 1,001,833.33; less 2%: 981,796.66 supported.
+//   PHFA substitute 10 March: 1,000,500.00 + 2,916.67 = 1,003,416.67; less 2%: 983,348.34 against 975,000 owed.
+//   Interest: 975,000 x 0.0425 / 360 = 115.104167 a day; 14 days 1,611.46; 15 days 1,726.56.
+const KESTREL = { productId: 'corporate_bond', name: 'Kestrel Air Holdings 4.80% Notes 15-Jul-2031', symbol: 'KESTREL-4.8-JUL31', marketView: 'US_CASH', venueType: 'otc', issuer: 'Kestrel Air Holdings', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+  terms: { couponType: 'fixed', couponRate: 0.048, frequency: 2, maturity: '2031-07-15', issueDate: '2024-07-15', dayCount: '30/360', redemption: 100, minDenomination: 1_000, seniority: 'Senior unsecured' } };
+const PHFA = { productId: 'agency_debt', name: 'Prairie Home Finance Agency 4.20% 15-Aug-2030', symbol: 'PHFA-4.2-AUG30', marketView: 'US_CASH', venueType: 'otc', issuer: 'Prairie Home Finance Agency', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+  terms: { couponType: 'fixed', couponRate: 0.042, frequency: 2, maturity: '2030-08-15', issueDate: '2025-08-15', dayCount: '30/360', redemption: 100, minDenomination: 1_000 } };
+const BREPO = { owner: 'account', side: 'repo', productId: 'bilateral_repo', productLabel: 'Bilateral repo', ccy: 'USD', principal: 975_000, name: 'Pemberton bilateral repo', collateral: { instrument: 'kestrel', lot: 'kestrel' }, as: 'brepo',
+  terms: { collateralInstrumentId: '$inst:kestrel', collateralQty: 1_000_000, haircut: 0.02, rateType: 'fixed', rate: 0.0425, dayCount: 'ACT/360', term: 'term', endDate: '2026-03-24', style: 'classic', collateralType: 'gc', triparty: false, counterparty: 'Pemberton Bank' } };
+const KPOS = { instrument: 'kestrel', lot: 'kestrel', owner: 'account', direction: 'long', qty: 1_000_000, avgCost: 99.50, cost: 995_000, price: 99.45, value: 994_500, unrealized: -500 };
+const PPOS = { instrument: 'phfa', lot: 'phfa', owner: 'account', direction: 'long', qty: 1_000_000, avgCost: 100.10, cost: 1_001_000, price: 100.05, value: 1_000_500, unrealized: -500 };
+const BR_POS = { instrument: 'brepo', lot: 'brepo', owner: 'account', direction: 'repo (cash borrowed)', qty: -975_000, value: 975_000, carrying: -975_000, collateralHeld: null };
+const BI_LIFE = [
+  { type: 'bond.coupon', instrument: 'kestrel', dueDate: '2026-07-15', status: 'pending', owner: 'account' },
+  { type: 'bond.coupon', instrument: 'phfa', dueDate: '2026-08-17', status: 'pending', owner: 'account' }, // 15 August 2026 is a Saturday
+  { type: 'bond.maturity', instrument: 'phfa', dueDate: '2030-08-15', status: 'pending', owner: 'account' },
+  { type: 'bond.maturity', instrument: 'kestrel', dueDate: '2031-07-15', status: 'pending', owner: 'account' },
+];
+const BR_RECORD = { owner: 'account', origin: 'account', family: 'repo', type: 'Repo (cash borrowed against securities)', lot: 'brepo', principal: 975_000, principalRc: 975_000, ccy: 'USD', rate: 0.0425, rateType: 'fixed', rateText: '4.250% fixed', dayCount: 'ACT/360',
+  feesToDate: 0, startDate: '2026-03-10', maturity: '2026-03-24', term: 'term', lender: 'Pemberton Bank', schedule: 'Interest paid at repurchase', blocked: null };
+
+const bilateralRepo = {
+  productId: 'bilateral_repo',
+  title: 'Bilateral repo by an Account with Pemberton Bank: collateral substituted by hand, the automatic repurchase failing for want of cash and made the next day once funded',
+  matrix: {
+    ...REPO_TICKET,
+    automaticInputs: ['the collateral\'s dirty value and the cash it supports', 'repo interest accrued daily', 'the substitute\'s cover checked against what is owed', 'the repurchase on the end date, and its retry each cycle after it failed for want of cash, with interest to the day it is made'],
+    manualInputs: ['every term, entered on the ticket (Tri-party left unticked)', 'the substitution agreed with the counterparty, recorded with Collateral on the repo\'s row', 'internal funding of the Account from Treasury'],
+    settlement: 'None for the repo: cash received when confirmed and paid back at the repurchase. The bonds bought settle T+1',
+    lifecycle: 'Interest accrues daily; repurchased automatically on the end date; when the borrower lacks the cash the repurchase fails visibly (failed lifecycle item, alert), interest keeps accruing, and it is retried every cycle until made',
+    accounting: 'Cash borrowed is a liability of the Account; repo interest a funding expense; the pledged notes stay on the Account\'s balance sheet with their accrued coupon',
+    collateral: 'Pledged notes not sellable; substituted by hand (the old notes released, the new pledged, the cover rechecked); released on repurchase. Bilateral and tri-party are simulated alike: the agent of a tri-party repo is recorded as a term only',
+  },
+  tradedOn: 'A bilateral repo is not a registry instrument: it is entered on the Repo or reverse repo ticket of the Treasury page (for the Account) and registers itself when the ticket is confirmed. The collateral is a registered corporate bond, substituted by a registered agency bond.',
+  start: AT_1000('2026-03-09'), // Monday 9 March 2026, 10:00 New York
+  settlementCheck: { lag: 1, holidays: [] },
+  book: {
+    name: 'Matrix bilateral repo', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 3_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 2_100_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0 } }, fill: FILL, settlement: { bond: 1 } },
+  },
+  instruments: { kestrel: KESTREL, phfa: PHFA },
+  quotes: { kestrel: { bid: 99.40, ask: 99.50, last: 99.45, bidSize: 10_000_000, askSize: 10_000_000 }, phfa: { bid: 100.00, ask: 100.10, last: 100.05, bidSize: 10_000_000, askSize: 10_000_000 } },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 2_100_000, unsettled: 0, payable: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 2_100_000, availableToWithdraw: 2_100_000, borrowed: 0, lent: 0 } },
+      treasury: { USD: { settled: 900_000, availableToTrade: 900_000, availableToWithdraw: 900_000, borrowed: 0 } },
+    },
+    positions: [], holdings: {}, pending: [], openOrders: [], lifecycle: [], borrowings: [], lifecycleFailures: [],
+    nav: { account: 2_100_000, treasury: 900_000, book: 3_000_000 },
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+    pnl: { account: { couponInterest: 0, borrowFunding: 0, unrealized: 0, total: 0 }, book: { total: 0 } },
+    balance: {
+      account: { cash: 2_100_000, assets: 2_100_000, liabilities: 0, netAssets: 2_100_000, internal: 2_100_000 },
+      treasury: { cash: 900_000, assets: 900_000, netAssets: 900_000, internal: -2_100_000 },
+      book: { cash: 3_000_000, assets: 3_000_000, liabilities: 0, netAssets: 3_000_000, internal: 0 },
+    },
+    oversight: { accountBorrowings: [], treasuryOwn: [] },
+  },
+  steps: [
+    {
+      id: 'buy-kestrel', covers: 'collateral', action: 'ticket', ticketOf: 'bond', instrument: 'kestrel', side: 'buy', qty: 1_000_000, as: 'kestrel',
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'buy', instrument: 'kestrel', qty: 1_000_000, estimate: 99.50, settleDate: '2026-03-10', gross: 995_000, accrued: 7_333.33, cash: -1_002_333.33, fees: 0 }] },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 1_000_000, avgPrice: 99.50 }] },
+        events: [{ type: 'strategy.submitted', owner: 'account' }, { type: 'trade.fill', summary: 'Bought 1,000,000 KESTREL-4.8-JUL31 @ 99.50 USD', owner: 'account', date: '2026-03-09' }],
+        cash: { account: { USD: { settled: 2_100_000, unsettled: -1_002_333.33, payable: 1_002_333.33, availableToTrade: 1_097_666.67, availableToWithdraw: 1_097_666.67 } } },
+        positions: [{ ...KPOS, accrued: 7_333.33, pledged: 0 }],
+        holdings: { kestrel: { long: 1_000_000, short: 0, net: 1_000_000 } },
+        pending: [{ instrument: 'kestrel', lot: 'kestrel', owner: 'account', dueDate: '2026-03-10', amount: -1_002_333.33, ccy: 'USD', into: 'cash' }],
+        lifecycle: [BI_LIFE[0], BI_LIFE[3]],
+        pnl: { account: { unrealized: -500, total: -500 }, book: { total: -500 } },
+        nav: { account: 2_099_500, book: 2_999_500 },
+        balance: {
+          account: { cash: 2_100_000, positions: 994_500, accruedIncome: 7_333.33, payable: 1_002_333.33, assets: 3_101_833.33, liabilities: 1_002_333.33, netAssets: 2_099_500 },
+          book: { cash: 3_000_000, positions: 994_500, accruedIncome: 7_333.33, payable: 1_002_333.33, assets: 4_001_833.33, liabilities: 1_002_333.33, netAssets: 2_999_500 },
+        },
+      },
+    },
+    {
+      id: 'buy-the-agency-notes', covers: 'collateral', action: 'ticket', ticketOf: 'bond', instrument: 'phfa', side: 'buy', qty: 1_000_000, as: 'phfa',
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'buy', instrument: 'phfa', qty: 1_000_000, estimate: 100.10, settleDate: '2026-03-10', gross: 1_001_000, accrued: 2_916.67, cash: -1_003_916.67, fees: 0 }] },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 1_000_000, avgPrice: 100.10 }] },
+        events: [{ type: 'strategy.submitted', owner: 'account' }, { type: 'trade.fill', summary: 'Bought 1,000,000 PHFA-4.2-AUG30 @ 100.10 USD', owner: 'account', date: '2026-03-09' }],
+        cash: { account: { USD: { unsettled: -2_006_250, payable: 2_006_250, availableToTrade: 93_750, availableToWithdraw: 93_750 } } },
+        positions: [{ ...KPOS, accrued: 7_333.33, pledged: 0 }, { ...PPOS, accrued: 2_916.67, pledged: 0 }],
+        holdings: { kestrel: { long: 1_000_000, short: 0, net: 1_000_000 }, phfa: { long: 1_000_000, short: 0, net: 1_000_000 } },
+        pending: [
+          { instrument: 'kestrel', lot: 'kestrel', owner: 'account', dueDate: '2026-03-10', amount: -1_002_333.33, ccy: 'USD', into: 'cash' },
+          { instrument: 'phfa', lot: 'phfa', owner: 'account', dueDate: '2026-03-10', amount: -1_003_916.67, ccy: 'USD', into: 'cash' },
+        ],
+        lifecycle: BI_LIFE,
+        pnl: { account: { unrealized: -1_000, total: -1_000 }, book: { total: -1_000 } },
+        nav: { account: 2_099_000, book: 2_999_000 },
+        balance: {
+          account: { positions: 1_995_000, accruedIncome: 10_250, payable: 2_006_250, assets: 4_105_250, liabilities: 2_006_250, netAssets: 2_099_000 },
+          book: { positions: 1_995_000, accruedIncome: 10_250, payable: 2_006_250, assets: 5_005_250, liabilities: 2_006_250, netAssets: 2_999_000 },
+        },
+      },
+    },
+    {
+      id: 'bonds-settle', covers: 'settlement', action: 'clock', to: AT_1000('2026-03-10'),
+      expect: {
+        events: [
+          { type: 'settlement.pay', summary: /^Settlement: paid 1,002,333\.33 USD/, cash: { USD: -1_002_333.33 }, owner: 'account', date: '2026-03-10' },
+          { type: 'settlement.pay', summary: /^Settlement: paid 1,003,916\.67 USD/, cash: { USD: -1_003_916.67 }, owner: 'account', date: '2026-03-10' },
+        ],
+        cash: { account: { USD: { settled: 93_750, unsettled: 0, payable: 0, availableToTrade: 93_750, availableToWithdraw: 93_750 } } },
+        pending: [],
+        balance: { account: { cash: 93_750, payable: null, assets: 2_099_000, liabilities: 0 }, book: { cash: 993_750, payable: null, assets: 2_999_000, liabilities: 0 } },
+      },
+    },
+    repoTicket('repo-the-kestrel-notes', BREPO, {
+      covers: ['open', 'borrow', 'haircut', 'collateral'],
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'repo_open', action: 'repo', purpose: 'financing', qty: 975_000, cash: 975_000, fees: 0, ccy: 'USD', dailyCost: 115.10,
+            financing: { amount: 975_000, rateType: 'fixed', rate: 0.0425, maturity: '2026-03-24', interestFrom: '2026-03-10',
+              collateral: { qty: 1_000_000, clean: 994_500, accrued: 7_333.33, worth: 1_001_833.33, haircutAmount: 20_036.67, buffer: 0, supports: 981_796.66 }, forward: null } }],
+          cash: { USD: { financingIn: 975_000, financingOut: 0, required: 0, available: 93_750, shortfall: 0, netCash: 975_000 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'repo_open', action: 'repo', instrument: 'brepo', status: 'filled', qty: 975_000, filledQty: 975_000 }] },
+        events: [
+          { type: 'strategy.submitted', owner: 'account' },
+          { type: 'repo.open', summary: 'Repo: received 975,000.00 USD against 1,000,000 KESTREL-4.8-JUL31 at 4.250% fixed to 2026-03-24', cash: { USD: 975_000 }, owner: 'account', date: '2026-03-10' },
+        ],
+        cash: { account: { USD: { settled: 1_068_750, availableToTrade: 1_068_750, availableToWithdraw: 1_068_750, borrowed: 975_000 } } },
+        positions: [{ ...BR_POS, accrued: 0 }, { ...KPOS, accrued: 7_333.33, pledged: 1_000_000 }, { ...PPOS, accrued: 2_916.67, pledged: 0 }],
+        lifecycle: [{ type: 'repo.end', instrument: 'brepo', dueDate: '2026-03-24', status: 'pending', owner: 'account' }, ...BI_LIFE],
+        borrowings: [{ ...BR_RECORD, accrued: 0, costToDate: 0, collateral: 'KESTREL-4.8-JUL31: 1,000,000 pledged, haircut 2.00%', nextPayment: '2026-03-24', nextPaymentType: 'repo.end' }],
+        balance: {
+          account: { cash: 1_068_750, borrowed: 975_000, assets: 3_074_000, liabilities: 975_000, netAssets: 2_099_000 },
+          book: { cash: 1_968_750, borrowed: 975_000, assets: 3_974_000, liabilities: 975_000, netAssets: 2_999_000 },
+        },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'brepo', principal: 975_000, ccy: 'USD', accrued: 0 }], treasuryOwn: [], accounts: { account: { cashBorrowed: 975_000 } } },
+      },
+    }),
+    {
+      // Pemberton agrees to take the agency notes instead: 1,000,500.00 + 2,916.67 = 1,003,416.67, less 2% = 983,348.34 against
+      // 975,000.00 owed. Kestrel is released; nothing is posted.
+      id: 'substitute-the-collateral', covers: ['substitution', 'collateral'], action: 'lifecycle', lot: 'brepo', instrument: 'brepo', body: { action: 'collateral', change: 'substitute', qty: 1_000_000, positionId: '$pos:phfa:phfa' },
+      expect: {
+        events: [{ type: 'repo.collateral', summary: 'Collateral substituted on Pemberton bilateral repo: 1,000,000 KESTREL-4.8-JUL31 released, 1,000,000 PHFA-4.2-AUG30 pledged (now 1,000,000 PHFA-4.2-AUG30 pledged, worth 1,003,416.67 USD: cover 983,348.34 USD against 975,000.00 USD owed)', owner: 'account', date: '2026-03-10', cash: {} }],
+        positions: [{ ...BR_POS, accrued: 0 }, { ...KPOS, accrued: 7_333.33, pledged: 0 }, { ...PPOS, accrued: 2_916.67, pledged: 1_000_000 }],
+        borrowings: [{ ...BR_RECORD, accrued: 0, costToDate: 0, collateral: 'PHFA-4.2-AUG30: 1,000,000 pledged, haircut 2.00%', nextPayment: '2026-03-24', nextPaymentType: 'repo.end' }],
+      },
+    },
+    {
+      id: 'cash-back-to-treasury', covers: 'return to Treasury', action: 'transfer', from: 'account', to: 'treasury', ccy: 'USD', amount: 1_000_000,
+      expect: {
+        events: [{ type: 'transfer.return', summary: /1,000,000\.00 USD from Alpha to Treasury/, date: '2026-03-10' }],
+        cash: { account: { USD: { settled: 68_750, availableToTrade: 68_750, availableToWithdraw: 68_750 } }, treasury: { USD: { settled: 1_900_000, availableToTrade: 1_900_000, availableToWithdraw: 1_900_000 } } },
+        nav: { account: 1_099_000, treasury: 1_900_000, book: 2_999_000 },
+        balance: {
+          account: { cash: 68_750, assets: 2_074_000, netAssets: 1_099_000, internal: 1_100_000 },
+          treasury: { cash: 1_900_000, assets: 1_900_000, netAssets: 1_900_000, internal: -1_100_000 },
+          book: { cash: 1_968_750, internal: 0 },
+        },
+      },
+    },
+    {
+      // Tuesday 24 March, the end date: interest to today (14 days, 1,611.46) is accrued and the repurchase needs 976,611.46; the
+      // Account has 68,750.00. It fails, visibly. The run of Monday 23 March then accrues the coupons: Kestrel 68 days, 9,066.67
+      // (+1,733.34); PHFA 38 days, 4,433.33 (+1,516.66).
+      id: 'repurchase-fails-without-the-cash', covers: ['maturity', 'insufficient cash at repurchase'], action: 'clock', to: AT_1000('2026-03-24'),
+      expect: {
+        events: [
+          { type: 'accrual.interest', summary: 'Repo interest accrued on Pemberton bilateral repo: 1,611.46 USD', owner: 'account', date: '2026-03-24' },
+          { type: 'accrual.coupon', summary: /^Interest accrued on KESTREL-4\.8-JUL31: 1,733\.34 USD$/, owner: 'account', date: '2026-03-24' },
+          { type: 'accrual.coupon', summary: /^Interest accrued on PHFA-4\.2-AUG30: 1,516\.66 USD$/, owner: 'account', date: '2026-03-24' },
+        ],
+        positions: [{ ...BR_POS, accrued: -1_611.46 }, { ...KPOS, accrued: 9_066.67, pledged: 0 }, { ...PPOS, accrued: 4_433.33, pledged: 1_000_000 }],
+        lifecycle: BI_LIFE,
+        failed: { orders: 0, settlements: 0, lifecycle: 1 },
+        lifecycleFailures: [{ type: 'repo.end', instrument: 'brepo', dueDate: '2026-03-24', status: 'failed', owner: 'account', reason: 'Repurchase needs 976,611.46 USD (principal plus repo interest); Alpha has 68,750.00 USD of settled USD available.' }],
+        alerts: ['funding.failed'],
+        borrowings: [{ ...BR_RECORD, accrued: 1_611.46, costToDate: 1_611.46, collateral: 'PHFA-4.2-AUG30: 1,000,000 pledged, haircut 2.00%', nextPayment: null, nextPaymentType: null }],
+        pnl: { account: { couponInterest: 3_250, borrowFunding: -1_611.46, unrealized: -1_000, total: 638.54 }, book: { total: 638.54 } },
+        nav: { account: 1_100_638.54, book: 3_000_638.54 },
+        balance: {
+          account: { accruedIncome: 13_500, accruedExpense: 1_611.46, assets: 2_077_250, liabilities: 976_611.46, netAssets: 1_100_638.54 },
+          book: { accruedIncome: 13_500, accruedExpense: 1_611.46, assets: 3_977_250, liabilities: 976_611.46, netAssets: 3_000_638.54 },
+        },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'brepo', principal: 975_000, ccy: 'USD', accrued: 1_611.46 }] },
+      },
+    },
+    {
+      // Wednesday 25 March: tried again, still short; interest keeps running (15 days, 1,726.56: +115.10). The run of 24 March
+      // accrues Kestrel to 69 days (9,200.00, +133.33) and PHFA to 39 days (4,550.00, +116.67).
+      id: 'still-short-next-day', covers: ['insufficient cash at repurchase', 'interest accrual'], action: 'clock', to: AT_1000('2026-03-25'),
+      expect: {
+        events: [
+          { type: 'accrual.interest', summary: 'Repo interest accrued on Pemberton bilateral repo: 115.10 USD', owner: 'account', date: '2026-03-25' },
+          { type: 'accrual.coupon', summary: /^Interest accrued on KESTREL-4\.8-JUL31: 133\.33 USD$/, owner: 'account', date: '2026-03-25' },
+          { type: 'accrual.coupon', summary: /^Interest accrued on PHFA-4\.2-AUG30: 116\.67 USD$/, owner: 'account', date: '2026-03-25' },
+        ],
+        positions: [{ ...BR_POS, accrued: -1_726.56 }, { ...KPOS, accrued: 9_200, pledged: 0 }, { ...PPOS, accrued: 4_550, pledged: 1_000_000 }],
+        lifecycleFailures: [{ type: 'repo.end', instrument: 'brepo', dueDate: '2026-03-24', status: 'failed', owner: 'account', reason: 'Repurchase needs 976,726.56 USD (principal plus repo interest); Alpha has 68,750.00 USD of settled USD available.' }],
+        borrowings: [{ ...BR_RECORD, accrued: 1_726.56, costToDate: 1_726.56, collateral: 'PHFA-4.2-AUG30: 1,000,000 pledged, haircut 2.00%', nextPayment: null, nextPaymentType: null }],
+        pnl: { account: { couponInterest: 3_500, borrowFunding: -1_726.56, unrealized: -1_000, total: 773.44 }, book: { total: 773.44 } },
+        nav: { account: 1_100_773.44, book: 3_000_773.44 },
+        balance: {
+          account: { accruedIncome: 13_750, accruedExpense: 1_726.56, assets: 2_077_500, liabilities: 976_726.56, netAssets: 1_100_773.44 },
+          book: { accruedIncome: 13_750, accruedExpense: 1_726.56, assets: 3_977_500, liabilities: 976_726.56, netAssets: 3_000_773.44 },
+        },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'brepo', principal: 975_000, ccy: 'USD', accrued: 1_726.56 }] },
+      },
+    },
+    {
+      // Treasury funds the Account; the next cycle makes the repurchase: 975,000 + 1,726.56. The agency notes are released.
+      id: 'fund-and-repurchase', covers: ['funding from Treasury', 'repurchase', 'close', 'collateral released'], action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 950_000,
+      expect: {
+        events: [
+          { type: 'transfer.funding', summary: 'Treasury funding: 950,000.00 USD from Treasury to Alpha', date: '2026-03-25' },
+          { type: 'interest.payment', summary: 'Repo interest paid on Pemberton bilateral repo: 1,726.56 USD', cash: { USD: -1_726.56 }, owner: 'account', date: '2026-03-25' },
+          { type: 'repo.close', summary: 'Repo repurchase: paid 975,000.00 USD principal (interest 1,726.56 USD); collateral released', cash: { USD: -975_000 }, owner: 'account', date: '2026-03-25' },
+        ],
+        cash: { account: { USD: { settled: 42_023.44, availableToTrade: 42_023.44, availableToWithdraw: 42_023.44, borrowed: 0 } }, treasury: { USD: { settled: 950_000, availableToTrade: 950_000, availableToWithdraw: 950_000 } } }, // 68,750 + 950,000 - 976,726.56
+        positions: [{ ...KPOS, accrued: 9_200, pledged: 0 }, { ...PPOS, accrued: 4_550, pledged: 0 }],
+        failed: { orders: 0, settlements: 0, lifecycle: 0 }, lifecycleFailures: [], alerts: [], borrowings: [],
+        nav: { account: 2_050_773.44, treasury: 950_000, book: 3_000_773.44 },
+        balance: {
+          account: { cash: 42_023.44, borrowed: null, accruedExpense: null, assets: 2_050_773.44, liabilities: 0, netAssets: 2_050_773.44, internal: 2_050_000 },
+          treasury: { cash: 950_000, assets: 950_000, netAssets: 950_000, internal: -2_050_000 },
+          book: { cash: 992_023.44, borrowed: null, accruedExpense: null, assets: 3_000_773.44, liabilities: 0, netAssets: 3_000_773.44, internal: 0 },
+        },
+        oversight: { accountBorrowings: [], accounts: { account: { cashBorrowed: 0 } } },
+      },
+    },
+  ],
+};
+
+export default [repo, reverseRepo, overnightRepo, termRepo, openRepo, bilateralRepo];

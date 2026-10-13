@@ -25,6 +25,8 @@ const LIFECYCLE = {
   exercise: { title: 'Exercise', button: 'Record exercise', done: 'Exercise recorded.', note: 'Exercises a long option now. The option position is reduced and the underlying, or its cash value, is delivered at the strike.' },
   assign: { title: 'Early assignment', button: 'Record assignment', done: 'Assignment recorded.', note: 'Simulates the holder exercising against this short option. It never happens by itself before expiration.' },
   barrier: { title: 'Barrier event', button: 'Record barrier event', done: 'Barrier event recorded.', note: 'Records that the barrier was touched. The option is settled at expiration with the barrier taken into account.' },
+  knockout: { title: 'Credit event knock-out', button: 'Record knock-out', done: 'Knock-out recorded.', note: 'Records a credit event on the reference entity. This credit-default swaption ends now with nothing paid; its premium is realized and its collateral released.' },
+  extreme: { title: 'Lookback extreme', button: 'Record extreme', done: 'Extreme recorded.', note: 'Records the extreme price of the underlying observed so far (the Terminal does not monitor prices between closes). A later record replaces it. The option settles from it at expiration.' },
   redeem: { title: 'Early redemption', button: 'Record early redemption', done: 'Early redemption recorded.', note: 'Issuer call, investor put or tender at a stated price. Accrued interest to today is paid with it.' },
   put: { title: 'Holder put', button: 'Record holder put', done: 'Holder put recorded.', note: 'The holder puts the bonds back to the issuer, recorded by hand. Only on a put date of the schedule and at its price; accrued interest to today is paid with it.' },
   convert: { title: 'Conversion into shares', button: 'Record conversion', done: 'Conversion recorded.', note: 'The holder converts (or exchanges) bonds into shares at the registered conversion ratio, recorded by hand. The bonds converted close; the shares open at the bonds\' carrying cost; accrued interest is forfeited; a fraction of a share is paid in cash at the share price stated. If the issuer settles in cash instead, the bonds are redeemed for the shares\' value at that price.' },
@@ -153,6 +155,8 @@ function lifecycleFor(p, terms) {
   const a = [];
   if (['option', 'otcoption'].includes(p.family)) a.push(p.qty > 0 ? 'exercise' : 'assign');
   if (p.family === 'otcoption' && terms?.barrier && !p.data?.barrierHit) a.push('barrier');
+  if (p.family === 'otcoption' && terms?.knockOutOnCredit) a.push('knockout');
+  if (p.family === 'otcoption' && terms?.optionType === 'lookback') a.push('extreme');
   if (p.family === 'bond') a.push('redeem');
   if (p.family === 'future' && terms && !terms.perpetual) a.push('deliver');
   if (p.family === 'forward') a.push('terminate');
@@ -172,8 +176,11 @@ function LifecycleDialog({ p, action, terms, onClose, onDone }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const set = (patch) => setF({ ...f, ...patch });
-  const body = { exercise: { contracts: f.contracts }, assign: { contracts: f.contracts }, deliver: { contracts: f.contracts }, terminate: { amount: f.amount, qty: f.qty, settleDate: f.settleDate || undefined }, barrier: { note: f.note }, redeem: { price: f.price, face: f.face, label: f.label || undefined }, recall: { qty: f.qty, days: f.days ?? undefined }, cashflow: { category: f.category, amount: f.amount, note: f.note }, put: { face: f.face, label: f.label || undefined }, convert: { face: f.face, sharePrice: f.sharePrice ?? undefined, settlement: f.settlement || 'shares' } }[action];
-  const ready = { exercise: f.contracts > 0, assign: f.contracts > 0, deliver: f.contracts > 0, terminate: isNum(f.amount) && f.qty > 0, barrier: true, redeem: isNum(f.price) && f.price >= 0 && f.face > 0, recall: f.qty > 0, cashflow: isNum(f.amount) && f.amount !== 0, put: f.face > 0, convert: f.face > 0 }[action];
+  // A swaption is exercised into its swap (or credit default swap) at an entry price per 100 that the desk states.
+  const intoContract = action === 'exercise' && terms?.settlement === 'physical' && ['swap', 'cds'].includes(terms?.underlyingFamily);
+  const extremeWord = terms?.lookbackType === 'floating' ? (terms?.right === 'C' ? 'minimum' : 'maximum') : (terms?.right === 'C' ? 'maximum' : 'minimum');
+  const body = { exercise: { contracts: f.contracts, ...(intoContract ? { price: f.price ?? 0 } : {}) }, knockout: { note: f.note }, extreme: { value: f.value, date: f.date || undefined, note: f.note }, assign: { contracts: f.contracts }, deliver: { contracts: f.contracts }, terminate: { amount: f.amount, qty: f.qty, settleDate: f.settleDate || undefined }, barrier: { note: f.note }, redeem: { price: f.price, face: f.face, label: f.label || undefined }, recall: { qty: f.qty, days: f.days ?? undefined }, cashflow: { category: f.category, amount: f.amount, note: f.note }, put: { face: f.face, label: f.label || undefined }, convert: { face: f.face, sharePrice: f.sharePrice ?? undefined, settlement: f.settlement || 'shares' } }[action];
+  const ready = { knockout: true, extreme: isNum(f.value) && f.value > 0, exercise: f.contracts > 0, assign: f.contracts > 0, deliver: f.contracts > 0, terminate: isNum(f.amount) && f.qty > 0, barrier: true, redeem: isNum(f.price) && f.price >= 0 && f.face > 0, recall: f.qty > 0, cashflow: isNum(f.amount) && f.amount !== 0, put: f.face > 0, convert: f.face > 0 }[action];
   const go = async () => {
     setBusy(true); setError(null);
     try {
@@ -195,6 +202,9 @@ function LifecycleDialog({ p, action, terms, onClose, onDone }) {
           <${Field} label="Settlement date" hint="Leave empty for two business days"><${Text} type="date" value=${f.settleDate} onInput=${(v) => set({ settleDate: v })} /><//>` : null}
         ${action === 'deliver' ? html`<${Field} label="Contracts to deliver" hint=${`Up to ${fmtQty(size)}`}><${Num} value=${f.contracts} onInput=${(v) => set({ contracts: v })} /><//>` : null}
         ${['exercise', 'assign'].includes(action) ? html`<${Field} label=${action === 'exercise' ? 'Contracts to exercise' : 'Contracts assigned'} hint=${`Up to ${fmtQty(size)}`}><${Num} value=${f.contracts} onInput=${(v) => set({ contracts: v })} /><//>` : null}
+        ${intoContract ? html`<${Field} label="Entry price of the underlying contract (per 100 of notional)" hint="Stated, not computed: 0 for a swap struck at the swaption's rate"><${Num} value=${f.price} onInput=${(v) => set({ price: v })} placeholder="0" /><//>` : null}
+        ${action === 'extreme' ? html`<${Field} label=${`Observed ${extremeWord}`}><${Num} value=${f.value} onInput=${(v) => set({ value: v })} /><//>
+          <${Field} label="Observed on" hint="Optional"><${Text} type="date" value=${f.date || ''} onInput=${(v) => set({ date: v })} /><//>` : null}
         ${action === 'redeem' ? html`<${Field} label="Redemption price (% of par)"><${Num} value=${f.price} onInput=${(v) => set({ price: v })} /><//>
           <${Field} label="Face amount redeemed" hint=${`Up to ${fmtQty(size)}`}><${Num} value=${f.face} onInput=${(v) => set({ face: v })} /><//>
           <${Field} label="Label" hint="Optional, for the history" span=${2}><${Text} value=${f.label} onInput=${(v) => set({ label: v })} placeholder="For example: issuer call" /><//>` : null}
@@ -208,7 +218,7 @@ function LifecycleDialog({ p, action, terms, onClose, onDone }) {
           <${Field} label="Business days to return" hint="Leave empty for the standard two"><${Num} value=${f.days} onInput=${(v) => set({ days: v })} placeholder="2" /><//>` : null}
         ${action === 'cashflow' ? html`<${Field} label="Kind of cash flow" span=${2}><${Select} value=${f.category} onChange=${(v) => set({ category: v })} options=${CASHFLOW.map(([value, label]) => ({ value, label }))} /><//>
           <${Field} label=${`Amount (${p.ccy})`} hint="Negative for cash paid"><${Num} value=${f.amount} onInput=${(v) => set({ amount: v })} /><//>` : null}
-        ${['cashflow', 'barrier'].includes(action) ? html`<${Field} label="Note" span="all" hint="Optional, kept in the history"><${Text} value=${f.note} onInput=${(v) => set({ note: v })} /><//>` : null}
+        ${['cashflow', 'barrier', 'knockout', 'extreme'].includes(action) ? html`<${Field} label="Note" span="all" hint="Optional, kept in the history"><${Text} value=${f.note} onInput=${(v) => set({ note: v })} /><//>` : null}
       </div></div><//>`;
 }
 function valueCell(p) {

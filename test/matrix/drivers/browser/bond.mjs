@@ -317,6 +317,10 @@ export const actions = {
       }
     } else if (kind === 'paydown') {
       await ui.input(dlg, 'New pool factor').fill(String(step.body.newFactor));
+      // Optional parts of a paydown (b3): the date the factor is effective from, the payment date, the scheduled factor.
+      if (has(step.body.effective)) await ui.input(dlg, 'Factor effective from').fill(String(step.body.effective));
+      if (has(step.body.payDate)) await ui.input(dlg, 'Principal paid on').fill(String(step.body.payDate));
+      if (has(step.body.scheduledFactor)) await ui.input(dlg, 'Factor after scheduled principal').fill(String(step.body.scheduledFactor));
       review = ui.button(dlg, 'Review paydown'); confirm = 'Record paydown'; done = /Paydown recorded/;
     } else {
       review = ui.button(dlg, step.body.suspended ? 'Review coupon suspension' : 'Review resuming coupons');

@@ -15,12 +15,12 @@
 //                   Collateral terms, Other collateral terms
 //   ticket          the instrument drawer's ticket
 //   actions         agreement, close / resize at a stated amount, owner_screens, manual_rate: the swap
-//                   driver's paths (the same screens); lifecycle: Exercise and Early assignment (the listed
-//                   option driver's dialogs), Barrier event; settlement_amount: the amount of an exotic
-//                   option entered by hand on the Pending tab
+//                   driver's paths (the same screens); lifecycle: Exercise (with an entry price when a
+//                   swaption is exercised into its contract), Early assignment, Barrier event, Credit event
+//                   knock-out, Lookback extreme; settlement_amount and settlement_value: entered by hand on
+//                   the option's expiry item (Accounting, Pending)
 
 import { actions as swapActions } from './swap.mjs';
-import { actions as optionActions } from './option.mjs';
 
 export const family = 'otcoption';
 
@@ -163,6 +163,35 @@ async function openStrategy(ui, t, ctx, strategyId) {
   return drawer;
 }
 
+const LIFECYCLE = {
+  exercise: { menu: 'Exercise', qty: 'Contracts to exercise', button: 'Record exercise' },
+  assign: { menu: 'Early assignment', qty: 'Contracts assigned', button: 'Record assignment' },
+  barrier: { menu: 'Barrier event', button: 'Record barrier event' },
+  knockout: { menu: 'Credit event knock-out', button: 'Record knock-out' },
+  extreme: { menu: 'Lookback extreme', button: 'Record extreme' },
+};
+
+/** The expiry item of the lot's option position on the Pending tab of its owner: type the amount or value and save it. */
+async function onExpiryItem(ui, t, ctx, step, what) {
+  const lot = ctx.lot(step.lot);
+  const s = await t.strategy(lot.strategyId);
+  const inst = ctx.inst(step.instrument || lot.instrument);
+  await ui.closeOverlays();
+  await ui.reloadAt(`#/accounting/pending/${s.unit.id}`);
+  const section = ui.section(ui.page.locator('main'), 'Lifecycle items');
+  await section.waitFor();
+  const row = section.locator('tbody tr').filter({ hasText: inst.symbol || inst.name }).filter({ hasText: 'blocked' }).first();
+  await row.waitFor();
+  const input = row.locator('input').first();
+  await input.fill(String(what === 'amount' ? step.amount : step.value));
+  await ui.drawn();
+  const path = what === 'amount' ? /^\/api\/tasks\/[^/]+\/settlement-amount$/ : /^\/api\/tasks\/[^/]+\/settlement-value$/;
+  const r = await ui.respondsTo('POST', path, () => ui.button(row, what === 'amount' ? 'Save settlement amount' : 'Save settlement value').click());
+  if (!r.ok) return { refusal: { message: r.body?.error, status: r.status, where: 'Pending tab, expiry item' } };
+  await ui.toast(what === 'amount' ? /Settlement amount saved/ : /Settlement value saved/);
+  return {};
+}
+
 export const actions = {
   agreement: swapActions.agreement,
   close: swapActions.close,
@@ -171,29 +200,41 @@ export const actions = {
   manual_rate: swapActions.manual_rate,
 
   /**
-   * Lifecycle events recorded by hand on the position (strategy instance, the position's Lifecycle menu): Exercise and
-   * Early assignment through the listed option driver's dialogs; a barrier event through the Barrier event dialog.
+   * Lifecycle events recorded by hand on the position (strategy instance, the position's Lifecycle menu, then its dialog):
+   * Exercise (with the entry price of the swap or credit default swap a swaption is exercised into), Early assignment,
+   * Barrier event, Credit event knock-out, Lookback extreme. A manual cash flow is left to the shared path.
    */
   async lifecycle(ui, t, ctx, step, tools) {
     const kind = step.body?.action;
-    if (kind === 'exercise' || kind === 'assign') return optionActions.lifecycle(ui, t, ctx, step, tools);
-    if (kind !== 'barrier') return undefined;
+    const L = LIFECYCLE[kind];
+    if (!L) return undefined;
     const lot = ctx.lot(step.lot);
     const drawer = await openStrategy(ui, t, ctx, lot.strategyId);
     const row = tools.positionRow(drawer, ctx.inst(step.instrument || lot.instrument));
     const menu = row.locator('select').first();
     const offered = (await menu.locator('option').allInnerTexts()).map((x) => x.trim()).filter((x) => x && x !== 'Lifecycle');
-    if (!offered.includes('Barrier event')) return { refusal: { message: `The Lifecycle menu of this position offers only: ${offered.join(', ') || 'nothing'}. "Barrier event" is not offered.`, where: 'strategy instance, position Lifecycle menu' } };
-    await menu.selectOption({ label: 'Barrier event' });
-    const dlg = ui.dialog(/^Barrier event: /);
+    if (!offered.includes(L.menu)) return { refusal: { message: `The Lifecycle menu of this position offers only: ${offered.join(', ') || 'nothing'}. "${L.menu}" is not offered.`, where: 'strategy instance, position Lifecycle menu' } };
+    await menu.selectOption({ label: L.menu });
+    const dlg = ui.dialog(new RegExp(`^${esc(L.menu)}: `));
     await dlg.waitFor();
-    if (step.body.note) await ui.input(dlg, 'Note').fill(step.body.note);
-    const r = await ui.respondsTo('POST', /^\/api\/positions\/[^/]+\/lifecycle$/, () => ui.button(dlg, 'Record barrier event').click());
+    const b = step.body;
+    if (L.qty && b.contracts !== undefined && b.contracts !== null) await ui.input(dlg, L.qty).fill(String(b.contracts));
+    if (kind === 'exercise' && b.price !== undefined && b.price !== null) await ui.input(dlg, /^\s*Entry price of the underlying contract/).fill(String(b.price));
+    if (kind === 'extreme') {
+      await ui.input(dlg, /^\s*Observed (maximum|minimum)/).fill(String(b.value));
+      if (b.date) await ui.input(dlg, 'Observed on').fill(b.date);
+    }
+    if (b.note && ['barrier', 'knockout', 'extreme'].includes(kind)) await ui.input(dlg, 'Note').fill(b.note);
+    const r = await ui.respondsTo('POST', /^\/api\/positions\/[^/]+\/lifecycle$/, () => ui.button(dlg, L.button).click());
     if (!r.ok) {
       await dlg.locator('.notice.err', { hasText: r.body?.error || 'no message' }).first().waitFor();
-      return { refusal: { message: (await dlg.locator('.notice.err').first().innerText()).trim(), status: r.status, where: 'Barrier event dialog message' } };
+      return { refusal: { message: (await dlg.locator('.notice.err').first().innerText()).trim(), status: r.status, where: `${L.menu} dialog message` } };
     }
     await dlg.waitFor({ state: 'hidden' });
     return {};
   },
+
+  /** The settlement amount (or a basket's or spread's settlement value) entered on the expiry item: Accounting, Pending. */
+  async settlement_amount(ui, t, ctx, step) { return onExpiryItem(ui, t, ctx, step, 'amount'); },
+  async settlement_value(ui, t, ctx, step) { return onExpiryItem(ui, t, ctx, step, 'value'); },
 };

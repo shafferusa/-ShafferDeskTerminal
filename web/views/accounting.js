@@ -578,11 +578,26 @@ function TaskAmount({ t, onChanged }) {
     <${Button} small busy=${busy} disabled=${!isNum(amount) || amount < 0} onClick=${save}>Save settlement amount<//></div>
     <div class="sub">Total due to the option holder. Enter 0 if it expired worthless.${isNum(t.data?.manualAmount) ? ` Saved so far: ${fmtNum(t.data.manualAmount)}.` : ''}</div>`;
 }
+/** The value a basket or spread option settles against, entered by hand on its expiry item. */
+function TaskValue({ t, onChanged }) {
+  const [value, setValue] = useState(t.data?.settlementValue ?? null);
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    setBusy(true);
+    try { await post(`/api/tasks/${t.id}/settlement-value`, { value }); toast('Settlement value saved. The option settles on the next engine cycle.'); bump(); onChanged(); } catch (err) { toastError(err); }
+    setBusy(false);
+  };
+  return html`<div class="row" style="flex-wrap:nowrap;margin-top:4px"><div style="width:120px"><${Num} value=${value} onInput=${setValue} placeholder="value at expiry" /></div>
+    <${Button} small busy=${busy} disabled=${!isNum(value)} onClick=${save}>Save settlement value<//></div>
+    <div class="sub">The composite's value at expiry, entered by hand. The payoff is worked out from it against the strike.${isNum(t.data?.settlementValue) ? ` Saved so far: ${fmtNum(t.data.settlementValue)}.` : ''}</div>`;
+}
 function PendingTab({ d, units, multi, owner, setOwner, reload }) {
   const mine = (x) => !owner || x.unitId === owner;
   const open = d.openOrders.filter(mine), part = d.partiallyFilled.filter(mine), settle = d.awaitingSettlement.filter(mine), tasks = d.lifecycle.filter(mine);
   const blocked = tasks.filter((t) => t.status === 'blocked');
   const need = (t) => (t.needs || []).map((n) => (n.kind === 'settlement-amount' ? html`<${TaskAmount} t=${t} onChanged=${reload} />`
+    : n.kind === 'settlement-value' ? html`<${TaskValue} t=${t} onChanged=${reload} />`
+    : n.kind === 'lookback-extreme' ? html`<div class="sub">Needs the observed extreme: record it from the position's Lifecycle menu (Lookback extreme) on its strategy instance.</div>`
     : n.kind === 'price' && n.subject ? html`<div class="sub">Needs the ${n.date || ''} closing price. ${link('Enter it on the instrument', () => openInstrument(n.subject, { tab: 'overview' }))}.</div>`
       : html`<div class="sub">Needs ${n.kind === 'rate' ? `the ${n.date || ''} fixing of rate ${n.subject}` : words(n.kind)}.</div>`));
   const tile = (n, label, sub, tone) => html`<div class="stat" style=${`border-left-color:var(--${tone})`}><span class="k">${label}</span><span class="v">${n}</span><span class="s">${sub}</span></div>`;

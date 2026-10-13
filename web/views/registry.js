@@ -653,7 +653,7 @@ const WRITEDOWN_IDS = ['coco_bond', 'mbs', 'rmbs', 'cmbs', 'agency_mbs', 'non_ag
 function LifecycleAdmin({ inst, onChanged }) {
   const t = inst.terms || {};
   const name = inst.symbol || inst.name;
-  const [v, setV] = useState({ recovery: null, weight: 1, newFactor: null, rate: null, ratio: null, ratioAsOf: '', callPrice: null, callShare: 1, wdFactor: null, wdKind: null, wdFrom: '' });
+  const [v, setV] = useState({ recovery: null, weight: 1, newFactor: null, rate: null, ratio: null, ratioAsOf: '', callPrice: null, callShare: 1, wdFactor: null, wdKind: null, wdFrom: '', pdFrom: '', pdPay: '', pdSched: null });
   const [step, setStep] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -664,7 +664,7 @@ function LifecycleAdmin({ inst, onChanged }) {
     setBusy(true); setError(null);
     try {
       await post(`/api/instruments/${inst.id}/lifecycle`, { action: step.action, ...step.body });
-      toast(step.done); setStep(null); setV({ recovery: null, weight: 1, newFactor: null, rate: null, ratio: null, ratioAsOf: '', callPrice: null, callShare: 1, wdFactor: null, wdKind: null, wdFrom: '' });
+      toast(step.done); setStep(null); setV({ recovery: null, weight: 1, newFactor: null, rate: null, ratio: null, ratioAsOf: '', callPrice: null, callShare: 1, wdFactor: null, wdKind: null, wdFrom: '', pdFrom: '', pdPay: '', pdSched: null });
       bump(); await onChanged();
     } catch (err) { setError(err); }
     setBusy(false);
@@ -682,8 +682,9 @@ function LifecycleAdmin({ inst, onChanged }) {
   const paydown = () => {
     const nf = v.newFactor;
     if (!(nf > 0 && nf < factor)) return { invalid: `The new factor must be above 0 and below the current factor ${factor}.` };
-    return { action: 'paydown', body: { newFactor: nf }, confirm: 'Record paydown', done: 'Paydown recorded.',
-      text: `The pool factor of ${name} falls from ${factor} to ${nf}. Every holder, in every Book, is paid down: a long holder receives ${Number((factor - nf).toFixed(8))} of its face amount at the redemption price (${t.redemption ?? 100}% of par) in cash, and a short holder pays it. Each position's cost falls in proportion and the difference is booked as realized profit or loss. Later coupons follow the reduced face.` };
+    if (isNum(v.pdSched) && !(v.pdSched <= factor && v.pdSched >= nf)) return { invalid: `The factor after scheduled principal must lie between ${nf} and ${factor}.` };
+    return { action: 'paydown', body: { newFactor: nf, effective: v.pdFrom || undefined, payDate: v.pdPay || undefined, scheduledFactor: isNum(v.pdSched) ? v.pdSched : undefined }, confirm: 'Record paydown', done: 'Paydown recorded.',
+      text: `The pool factor of ${name} falls from ${factor} to ${nf}${v.pdFrom ? ` from ${v.pdFrom}` : ''}. Every holder, in every Book, is paid down: a long holder receives ${Number((factor - nf).toFixed(8))} of its face amount at the redemption price (${t.redemption ?? 100}% of par) in cash${v.pdPay ? `, receivable until ${v.pdPay}` : ''}, and a short holder pays it. Each position's cost falls in proportion and the difference is booked as realized profit or loss. Interest and trades from the effective date follow the reduced face; the coupon of the period before keeps the old one.` };
   };
   const indexRatio = () => {
     const r = v.ratio, old = t.indexRatio;
@@ -739,6 +740,9 @@ function LifecycleAdmin({ inst, onChanged }) {
     ${inst.family === 'bond' && t.calledOn ? html`<p class="note">Called in full on ${t.calledOn}${isNum(t.calledAt) ? ` at ${fmtNum(t.calledAt, 2)}% of par` : ''}: nothing is outstanding.</p>` : null}
     ${inst.family === 'bond' ? html`<div class="grid-form" style=${GRID}>
       <${Field} label="New pool factor" hint=${`Current factor ${factor}`}><${Num} value=${v.newFactor} onInput=${(x) => { setV({ ...v, newFactor: x }); setStep(null); }} /><//>
+      <${Field} label="Factor effective from" hint="First day of the accrual period it is published for. Today if empty."><${Text} type="date" value=${v.pdFrom || ''} onInput=${(x) => { setV({ ...v, pdFrom: x }); setStep(null); }} /><//>
+      <${Field} label="Principal paid on" hint="The payment date (after any payment delay). Today if empty."><${Text} type="date" value=${v.pdPay || ''} onInput=${(x) => { setV({ ...v, pdPay: x }); setStep(null); }} /><//>
+      <${Field} label="Factor after scheduled principal" hint="Optional: splits the paydown into scheduled principal and prepayments"><${Num} value=${v.pdSched} onInput=${(x) => { setV({ ...v, pdSched: x }); setStep(null); }} /><//>
       ${button('Review paydown', paydown)}
       <${Field} label="Coupons" span=${2}><div class="row" style="min-height:30px"><${Pill} tone=${t.couponSuspended ? 'warn' : 'ok'}>${t.couponSuspended ? 'suspended' : 'paying'}<//>
         <${Button} disabled=${busy} onClick=${() => review(suspend(!t.couponSuspended))}>${t.couponSuspended ? 'Review resuming coupons' : 'Review coupon suspension'}<//></div><//>

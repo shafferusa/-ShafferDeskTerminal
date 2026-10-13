@@ -360,17 +360,39 @@ function settleForwardTask(app, task, { book, unit, inst, pos }) {
     if (t.forwardType === 'asset' && t.settlement === 'physical') {
       const und = app.instruments.get(inst.underlying_id);
       const plugin = app.products.get(und.family);
-      const units = Math.abs(q) * inst.multiplier;
-      const undPos = positions.find(unit.id, und.id, pos.strategy_id);
-      const action = q > 0 ? (undPos && undPos.qty < 0 ? 'buy_to_cover' : 'buy') : 'sell';
-      const d = plugin.fill(app, {
-        book, unit, inst: und, action, qty: units, price: k, fees: [], strategyId: pos.strategy_id, tradeDate: t.valueDate, settleDate: plugin.settleDate(app, und, t.valueDate, book), actor: 'engine',
-        eventType: 'forward.delivery', summary: `Simulated forward delivery (paper entry, no goods or securities move): ${q > 0 ? 'received' : 'delivered'} ${fmtQty(units)} ${und.symbol || und.name} at ${fmtPx(k)}`, data: { fromForward: inst.id, simulated: true },
-      });
+      const units = qty8(Math.abs(q) * inst.multiplier);
+      const settleDate = plugin.settleDate(app, und, t.valueDate, book);
+      const label = (n) => `Simulated forward delivery (paper entry, no goods or securities move): ${q > 0 ? 'received' : 'delivered'} ${fmtQty(n)} ${und.symbol || und.name} at ${fmtPx(k)} on ${inst.symbol || inst.name}`;
+      const base = { book, unit, inst: und, price: k, fees: [], tradeDate: t.valueDate, settleDate, actor: 'engine', eventType: 'forward.delivery', data: { fromForward: inst.id, simulated: true } };
+      let firstEvent = null;
+      if (q > 0) {
+        const undPos = positions.find(unit.id, und.id, pos.strategy_id);
+        const d = plugin.fill(app, { ...base, action: undPos && undPos.qty < 0 ? 'buy_to_cover' : 'buy', qty: units, strategyId: pos.strategy_id, summary: label(units) });
+        firstEvent = d.eventId;
+        const undNow = positions.find(unit.id, und.id, pos.strategy_id);
+        if (undNow && plugin.onPositionChange) plugin.onPositionChange(app, { book, unit, inst: und, pos: undNow });
+      } else {
+        // fw: the seller delivers what the unit holds (in any of its strategy instances, its own first). Without enough of
+        // the underlying the delivery waits, visibly: it never opens an unborrowed short position.
+        const sources = positions.list({ unitIds: [unit.id] }).filter((p) => p.instrument_id === und.id && p.qty > 1e-9)
+          .sort((a, b) => (a.strategy_id === pos.strategy_id ? -1 : b.strategy_id === pos.strategy_id ? 1 : 0));
+        const have = qty8(sources.reduce((a, p) => a + p.qty, 0));
+        if (have < units - 1e-9) {
+          return { blocked: `Delivery due on ${inst.symbol || inst.name}: ${fmtQty(units)} ${und.symbol || und.name} must be delivered at ${fmtPx(k)}, but ${unit.name} holds ${fmtQty(have)}. Buy or borrow the rest; the delivery is made once it is held.`, needs: [] };
+        }
+        let left = units;
+        for (const src of sources) {
+          if (left <= 1e-9) break;
+          const n = Math.min(src.qty, left);
+          const d = plugin.fill(app, { ...base, action: 'sell', qty: n, strategyId: src.strategy_id, summary: label(n) });
+          firstEvent ||= d.eventId;
+          left = qty8(left - n);
+          const now = positions.get(src.id);
+          if (plugin.onPositionChange) plugin.onPositionChange(app, { book, unit, inst: und, pos: now });
+        }
+      }
       positions.change(pos, { dQty: -q, data: { avgStrike: null } });
-      const undNow = positions.find(unit.id, und.id, pos.strategy_id);
-      if (undNow && plugin.onPositionChange) plugin.onPositionChange(app, { book, unit, inst: und, pos: undNow });
-      return { done: true, eventId: d.eventId };
+      return { done: true, eventId: firstEvent };
     }
 
     // Cash settlement against a fixing (NDF, cash-settled asset forward).

@@ -896,4 +896,211 @@ const infrastructure = {
   ],
 };
 
-export default [privateEquity, ventureCapital, hedgeFund, infrastructure];
+// ---------------------------------------------------------------------------------------------
+// direct_real_estate
+// ---------------------------------------------------------------------------------------------
+// A London office building bought outright in sterling by the Account of a US dollar Book (GBP/USD 1.25 from a labelled
+// fixture, unchanged, so every reporting figure is the sterling figure x 1.25). Completion on a stated date across the
+// Easter bank holidays; acquisition costs capitalised; rent and an operating expense by hand; a roof replacement; the
+// acquisition valuation goes stale after 180 days; 49% sold to a joint-venture partner; an autumn appraisal; the rest sold,
+// completing across Christmas and the substitute Boxing Day holiday (UK calendar).
+const RE_POS = { instrument: 'main', lot: 'building', owner: 'account', direction: 'owned' };
+const reM = (o) => ({ kind: 'direct_asset', capex: 0, income: 0, expenses: 0, ...o });
+const RE_V1 = { date: '2026-04-07', source: 'Acquisition valuation, Rothwell Chartered Surveyors', stale: false, reported: 20_500_000 };
+const RE_V2 = { date: '2026-10-31', source: 'Autumn appraisal, Rothwell Chartered Surveyors', stale: false, reported: 21_400_000 };
+const directRealEstate = {
+  productId: 'direct_real_estate',
+  title: '14 Albion Wharf, London SE1: an office building bought in GBP in a USD Book, rent, costs, capex, appraisals, a 49% joint-venture sale and the final sale, by hand',
+  matrix: {
+    ...MANUAL_TICKET,
+    requiredFields: ['Trading owner', 'Action (Acquire, Sell)', 'Share of the asset', 'State a fill price (price for the whole asset)', 'Settlement date (completion)', 'Asset (registration)', 'Valuation goes stale after (registration)'],
+    manualInputs: ['purchase and sale prices with completion dates', 'acquisition costs and capital expenditure (added to cost)', 'rent received', 'operating expenses', 'valuations with date and source'],
+    settlement: 'Purchase and sales on the completion dates stated on the ticket, checked against the UK calendar (7 April after Easter; 30 December after Christmas and 28 December)',
+    lifecycle: 'Nothing automated; rent, expenses, capex and appraisals by hand; valuation stale after 180 days',
+    accounting: 'In GBP, reported in USD at 1.25; cost = price + capitalised costs and capex; rent in Dividends; expenses in Fees; valued at the appraisal plus capex since; realized P&L on each sale at average cost',
+    collateral: 'None: a building owned outright',
+  },
+  start: '2026-03-02T15:00:00.000Z',
+  settlementCheck: { lag: 2, holidays: [] },
+  book: { name: 'Matrix direct real estate', reportingCcy: 'USD', capital: [{ ccy: 'USD', amount: 2_000_000 }, { ccy: 'GBP', amount: 30_000_000 }], account: { name: 'Alpha', funding: [{ ccy: 'GBP', amount: 25_000_000 }] }, settings: SETTINGS },
+  fx: { 'GBP/USD': 1.25 },
+  instruments: {
+    main: { productId: 'direct_real_estate', name: '14 Albion Wharf, London SE1 (office building)', symbol: 'ALBW14', marketView: 'FOREIGN_CASH', venueType: 'otc', issuer: 'Albion Wharf Property Ltd', domicile: 'GB', underlyingGeo: 'GB', tradingCcy: 'GBP',
+      terms: { assetDescription: 'Grade A office building, 82,000 sq ft, let to three tenants', location: 'London SE1, United Kingdom', valuationMaxAgeDays: 180 } },
+  },
+  expectAtStart: { cash: { account: { GBP: { settled: 25_000_000, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 25_000_000 } }, treasury: { GBP: { settled: 5_000_000 }, USD: { settled: 2_000_000 } } },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [], nav: { account: 31_250_000, treasury: 8_250_000, book: 39_500_000 }, provisional: { account: false, book: false }, failed: { orders: 0, settlements: 0, lifecycle: 0 } },
+  steps: [
+    {
+      id: 'acquire', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 1, as: 'building', order: { statedPrice: 20_000_000, settle: { date: '2026-04-07' } }, settlementCheck: false,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 1, estimate: 20_000_000, model: 'stated-price', settleDate: '2026-04-07', calendar: 'UK', cash: -20_000_000, fees: 0 }] },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 1, avgPrice: 20_000_000 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1 ALBW14 @ 20,000,000.00 GBP', owner: 'account', date: '2026-03-02' }],
+        cash: { account: { GBP: { settled: 25_000_000, unsettled: -20_000_000, availableToTrade: 5_000_000 } } },
+        positions: [{ ...RE_POS, qty: 1, avgCost: 20_000_000, cost: 20_000_000, price: null, value: null, unrealized: null, provisional: true, manual: reM({ valuation: null }) }],
+        holdings: { main: { long: 1, short: 0, net: 1 } },
+        pending: [{ instrument: 'main', lot: 'building', owner: 'account', dueDate: '2026-04-07', amount: -20_000_000, ccy: 'GBP', into: 'cash' }],
+        pnl: { account: { realized: 0, dividends: 0, fees: 0, fx: 0 } },
+        nav: { account: 31_250_000, book: 39_500_000 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 31_250_000, positions: 25_000_000, payable: 25_000_000, assets: 56_250_000, liabilities: 25_000_000, netAssets: 31_250_000, local: { GBP: { cash: 25_000_000, positions: 20_000_000, payable: 20_000_000 } } } },
+      },
+    },
+    {
+      id: 'completion', covers: 'settlement', action: 'clock', to: '2026-04-07T14:00:00.000Z', // Tuesday 7 April 2026, after Good Friday and Easter Monday
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 20,000,000.00 GBP from settled cash', cash: { GBP: -20_000_000 }, date: '2026-04-07' }],
+        cash: { account: { GBP: { settled: 5_000_000, unsettled: 0, availableToTrade: 5_000_000 } } },
+        pending: [],
+        balance: { account: { cash: 6_250_000, payable: null, assets: 31_250_000, liabilities: 0, local: { GBP: { cash: 5_000_000, positions: 20_000_000, payable: null } } } },
+      },
+    },
+    {
+      id: 'acquisition-costs', covers: 'capital expenditure', action: 'lifecycle', lot: 'building', body: { action: 'capex', amount: 1_100_000, note: 'Stamp duty land tax and legal fees on acquisition' },
+      expect: {
+        events: [{ type: 'manual.capex', summary: 'Capital expenditure on ALBW14 entered by hand: paid 1,100,000.00 GBP, added to cost. Stamp duty land tax and legal fees on acquisition', cash: { GBP: -1_100_000 } }],
+        cash: { account: { GBP: { settled: 3_900_000, availableToTrade: 3_900_000 } } },
+        positions: [{ ...RE_POS, qty: 1, avgCost: 21_100_000, cost: 21_100_000, value: null, provisional: true, manual: reM({ capex: 1_100_000, valuation: null }) }],
+        nav: { account: 31_250_000, book: 39_500_000 }, // (3,900,000 + 21,100,000 at cost) x 1.25
+        balance: { account: { cash: 4_875_000, positions: 26_375_000, local: { GBP: { cash: 3_900_000, positions: 21_100_000 } } } },
+      },
+    },
+    {
+      // The surveyor values the building at 20,500,000 on completion; the costs paid that day are not part of its value.
+      id: 'valuation-at-acquisition', covers: 'valuation', action: 'lifecycle', lot: 'building', body: { action: 'valuation', value: 20_500_000, asOf: '2026-04-07', source: 'Acquisition valuation, Rothwell Chartered Surveyors' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of ALBW14 entered by hand: 20,500,000.00 GBP for the 1 held, as of 2026-04-07, source: Acquisition valuation, Rothwell Chartered Surveyors. A manual input, not a market quote' }],
+        positions: [{ ...RE_POS, qty: 1, cost: 21_100_000, price: 20_500_000, value: 20_500_000, unrealized: -600_000, provisional: false, freshness: 'manual', priceSource: 'Manual entry', manual: reM({ capex: 1_100_000, valuation: { ...RE_V1, rolledForward: 0 } }) }],
+        pnl: { account: { unrealized: -750_000, total: -750_000 } }, // -600,000 x 1.25
+        nav: { account: 30_500_000, book: 38_750_000 }, // (3,900,000 + 20,500,000) x 1.25
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 25_625_000, assets: 30_500_000, netAssets: 30_500_000, local: { GBP: { positions: 20_500_000 } } } },
+      },
+    },
+    { id: 'april-rent-date', action: 'clock', to: '2026-04-30T14:00:00.000Z', expect: {} },
+    {
+      id: 'rent-april', covers: 'income', action: 'lifecycle', lot: 'building', body: { action: 'income', kind: 'rent', amount: 105_000, note: 'Rent for April, three tenants' },
+      expect: {
+        events: [{ type: 'manual.income', summary: 'Rent from ALBW14 entered by hand: received 105,000.00 GBP. Rent for April, three tenants', cash: { GBP: 105_000 } }],
+        cash: { account: { GBP: { settled: 4_005_000, availableToTrade: 4_005_000 } } },
+        positions: [{ ...RE_POS, qty: 1, cost: 21_100_000, value: 20_500_000, manual: reM({ capex: 1_100_000, income: 105_000, valuation: { ...RE_V1, rolledForward: 0 } }) }],
+        pnl: { account: { dividends: 131_250, total: -618_750 } }, // 105,000 x 1.25
+        nav: { account: 30_631_250, book: 38_881_250 },
+        balance: { account: { cash: 5_006_250, assets: 30_631_250, netAssets: 30_631_250, local: { GBP: { cash: 4_005_000 } } } },
+      },
+    },
+    {
+      id: 'operating-costs', covers: 'fee', action: 'lifecycle', lot: 'building', body: { action: 'expense', kind: 'operating', amount: 18_000, note: 'Service charge shortfall and business rates on vacant space, April' },
+      expect: {
+        events: [{ type: 'manual.expense', summary: 'Operating expense on ALBW14 entered by hand: paid 18,000.00 GBP. Service charge shortfall and business rates on vacant space, April', cash: { GBP: -18_000 } }],
+        cash: { account: { GBP: { settled: 3_987_000, availableToTrade: 3_987_000 } } },
+        positions: [{ ...RE_POS, qty: 1, cost: 21_100_000, value: 20_500_000, manual: reM({ capex: 1_100_000, income: 105_000, expenses: 18_000, valuation: { ...RE_V1, rolledForward: 0 } }) }],
+        pnl: { account: { fees: -22_500, total: -641_250 } },
+        nav: { account: 30_608_750, book: 38_858_750 },
+        balance: { account: { cash: 4_983_750, assets: 30_608_750, netAssets: 30_608_750, local: { GBP: { cash: 3_987_000 } } } },
+      },
+    },
+    { id: 'may-rent-date', action: 'clock', to: '2026-05-29T14:00:00.000Z', expect: {} },
+    {
+      id: 'rent-may', covers: 'income', action: 'lifecycle', lot: 'building', body: { action: 'income', kind: 'rent', amount: 105_000, note: 'Rent for May' },
+      expect: {
+        events: [{ type: 'manual.income', summary: 'Rent from ALBW14 entered by hand: received 105,000.00 GBP. Rent for May', cash: { GBP: 105_000 } }],
+        cash: { account: { GBP: { settled: 4_092_000, availableToTrade: 4_092_000 } } },
+        positions: [{ ...RE_POS, qty: 1, cost: 21_100_000, value: 20_500_000, manual: reM({ capex: 1_100_000, income: 210_000, expenses: 18_000, valuation: { ...RE_V1, rolledForward: 0 } }) }],
+        pnl: { account: { dividends: 262_500, total: -510_000 } },
+        nav: { account: 30_740_000, book: 38_990_000 },
+        balance: { account: { cash: 5_115_000, assets: 30_740_000, netAssets: 30_740_000, local: { GBP: { cash: 4_092_000 } } } },
+      },
+    },
+    { id: 'roof-date', action: 'clock', to: '2026-06-15T14:00:00.000Z', expect: {} },
+    {
+      // Roof replacement: cost 21,100,000 + 400,000 = 21,500,000; value 20,500,000 + 400,000 since the valuation = 20,900,000.
+      id: 'roof', covers: 'capital expenditure', action: 'lifecycle', lot: 'building', body: { action: 'capex', amount: 400_000, note: 'Roof replacement and plant upgrade' },
+      expect: {
+        events: [{ type: 'manual.capex', summary: 'Capital expenditure on ALBW14 entered by hand: paid 400,000.00 GBP, added to cost. Roof replacement and plant upgrade', cash: { GBP: -400_000 } }],
+        cash: { account: { GBP: { settled: 3_692_000, availableToTrade: 3_692_000 } } },
+        positions: [{ ...RE_POS, qty: 1, avgCost: 21_500_000, cost: 21_500_000, price: 20_900_000, value: 20_900_000, unrealized: -600_000, manual: reM({ capex: 1_500_000, income: 210_000, expenses: 18_000, valuation: { ...RE_V1, rolledForward: 400_000 } }) }],
+        nav: { account: 30_740_000, book: 38_990_000 },
+        balance: { account: { cash: 4_615_000, positions: 26_125_000, local: { GBP: { cash: 3_692_000, positions: 20_900_000 } } } },
+      },
+    },
+    {
+      // Monday 5 October 2026: the acquisition valuation (7 April) is 181 days old, past the 180-day limit.
+      id: 'valuation-stale', covers: 'valuation', action: 'clock', to: '2026-10-05T14:00:00.000Z',
+      expect: {
+        positions: [{ ...RE_POS, qty: 1, cost: 21_500_000, value: 20_900_000, freshness: 'stale', manual: reM({ capex: 1_500_000, income: 210_000, expenses: 18_000, valuation: { ...RE_V1, stale: true, rolledForward: 400_000 } }) }],
+        provisional: { account: true, book: true },
+      },
+    },
+    { id: 'jv-sale-date', action: 'clock', to: '2026-11-02T15:00:00.000Z', expect: {} },
+    {
+      // 49% to a joint-venture partner at 21,000,000 for the whole = 10,290,000, completing 16 November.
+      // Cost removed 21,500,000 x 0.49 = 10,535,000; realized -245,000. Value left 0.51 x 20,900,000 = 10,659,000 against cost 10,965,000.
+      id: 'joint-venture-sale', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 0.49, from: 'building', order: { statedPrice: 21_000_000, settle: { date: '2026-11-16' } }, settlementCheck: false,
+      expect: {
+        preview: { blocking: 0, legs: [{ action: 'sell', qty: 0.49, estimate: 21_000_000, model: 'stated-price', settleDate: '2026-11-16', cash: 10_290_000, fees: 0 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 0.49, avgPrice: 21_000_000 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 0.49 ALBW14 @ 21,000,000.00 GBP (realized -245,000.00 GBP)' }],
+        cash: { account: { GBP: { settled: 3_692_000, unsettled: 10_290_000, availableToTrade: 13_982_000 } } },
+        positions: [{ ...RE_POS, qty: 0.51, avgCost: 21_500_000, cost: 10_965_000, price: 20_900_000, value: 10_659_000, unrealized: -306_000, freshness: 'stale',
+          manual: reM({ capex: 1_500_000, income: 210_000, expenses: 18_000, valuation: { ...RE_V1, stale: true, rolledForward: 204_000 } }) }], // 400,000 a unit x 0.51
+        holdings: { main: { long: 0.51, short: 0, net: 0.51 } },
+        pending: [{ instrument: 'main', lot: 'building', owner: 'account', dueDate: '2026-11-16', amount: 10_290_000, ccy: 'GBP', into: 'cash' }],
+        pnl: { account: { realized: -306_250, unrealized: -382_500, total: -448_750 } }, // -245,000 x 1.25; -306,000 x 1.25; -306,250 + 262,500 - 22,500 - 382,500
+        nav: { account: 30_801_250, book: 39_051_250 }, // (3,692,000 + 10,290,000 + 10,659,000) x 1.25
+        balance: { account: { cash: 4_615_000, receivable: 12_862_500, positions: 13_323_750, assets: 30_801_250, netAssets: 30_801_250, local: { GBP: { cash: 3_692_000, receivable: 10_290_000, positions: 10_659_000 } } } },
+      },
+    },
+    {
+      id: 'joint-venture-completes', covers: 'settlement', action: 'clock', to: '2026-11-16T15:00:00.000Z',
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 10,290,000.00 GBP into settled cash', cash: { GBP: 10_290_000 } }],
+        cash: { account: { GBP: { settled: 13_982_000, unsettled: 0, availableToTrade: 13_982_000 } } },
+        pending: [],
+        balance: { account: { cash: 17_477_500, receivable: null, local: { GBP: { cash: 13_982_000, receivable: null } } } },
+      },
+    },
+    {
+      // Our 51% is worth 10,914,000 at 31 October (21,400,000 for the whole building).
+      id: 'appraisal', covers: 'valuation', action: 'lifecycle', lot: 'building', body: { action: 'valuation', value: 10_914_000, asOf: '2026-10-31', source: 'Autumn appraisal, Rothwell Chartered Surveyors' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of ALBW14 entered by hand: 10,914,000.00 GBP for the 0.51 held (21,400,000.00 value of the whole asset), as of 2026-10-31, source: Autumn appraisal, Rothwell Chartered Surveyors. A manual input, not a market quote' }],
+        positions: [{ ...RE_POS, qty: 0.51, cost: 10_965_000, price: 21_400_000, value: 10_914_000, unrealized: -51_000, freshness: 'manual', manual: reM({ capex: 1_500_000, income: 210_000, expenses: 18_000, valuation: { ...RE_V2, rolledForward: 0 } }) }],
+        pnl: { account: { unrealized: -63_750, total: -130_000 } }, // -51,000 x 1.25
+        nav: { account: 31_120_000, book: 39_370_000 }, // (13,982,000 + 10,914,000) x 1.25
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 13_642_500, assets: 31_120_000, netAssets: 31_120_000, local: { GBP: { positions: 10_914_000 } } } },
+      },
+    },
+    { id: 'final-sale-date', action: 'clock', to: '2026-12-15T15:00:00.000Z', expect: {} },
+    {
+      // The remaining 51% at 21,600,000 for the whole = 11,016,000, completing Wednesday 30 December (after 25 and 28 December).
+      // Cost 10,965,000; realized 51,000.
+      id: 'final-sale', covers: 'close', action: 'ticket', instrument: 'main', side: 'sell', qty: 0.51, from: 'building', order: { statedPrice: 21_600_000, settle: { date: '2026-12-30' } }, settlementCheck: false,
+      expect: {
+        preview: { blocking: 0, legs: [{ action: 'sell', qty: 0.51, estimate: 21_600_000, model: 'stated-price', settleDate: '2026-12-30', cash: 11_016_000, fees: 0 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 0.51, avgPrice: 21_600_000 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 0.51 ALBW14 @ 21,600,000.00 GBP (realized 51,000.00 GBP)' }],
+        cash: { account: { GBP: { settled: 13_982_000, unsettled: 11_016_000, availableToTrade: 24_998_000 } } },
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', lot: 'building', owner: 'account', dueDate: '2026-12-30', amount: 11_016_000, ccy: 'GBP', into: 'cash' }],
+        pnl: { account: { realized: -242_500, dividends: 262_500, fees: -22_500, unrealized: 0, fx: 0, total: -2_500 } }, // (-245,000 + 51,000) x 1.25
+        nav: { account: 31_247_500, book: 39_497_500 }, // 24,998,000 x 1.25
+        balance: { account: { cash: 17_477_500, receivable: 13_770_000, positions: null, assets: 31_247_500, netAssets: 31_247_500, local: { GBP: { cash: 13_982_000, receivable: 11_016_000, positions: null } } } },
+      },
+    },
+    {
+      id: 'final-completion', covers: 'settlement', action: 'clock', to: '2026-12-30T15:00:00.000Z',
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 11,016,000.00 GBP into settled cash', cash: { GBP: 11_016_000 }, date: '2026-12-30' }],
+        cash: { account: { GBP: { settled: 24_998_000, unsettled: 0, availableToTrade: 24_998_000 } } },
+        pending: [],
+        balance: { account: { cash: 31_247_500, receivable: null, assets: 31_247_500, liabilities: 0, netAssets: 31_247_500, local: { GBP: { cash: 24_998_000, receivable: null } } } },
+      },
+    },
+  ],
+};
+
+export default [privateEquity, ventureCapital, hedgeFund, infrastructure, directRealEstate];

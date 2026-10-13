@@ -347,6 +347,17 @@ export async function actThroughClient(t, ctx, step) {
         ctx.agreements.set(step.as || a.name, { id: view.id, name: view.name });
         return {};
       }
+      case 'settlement_amount': case 'settlement_value': {
+        // The expiry item of an option position (Accounting, Pending): its settlement amount, or the value a basket or
+        // spread option settles against, entered by hand. `lot` (and `instrument`) name the position.
+        const { position } = await positionIn(t, ctx, step.lot, step.instrument);
+        const pend = await t.accounting(ctx.bookId, 'pending', { scope: 'book' });
+        const task = pend.lifecycle.find((x) => x.positionId === position.positionId && x.type === 'option.expiry');
+        if (!task) throw new Error(`"${step.lot}" has no open expiry item to enter a settlement ${step.action === 'settlement_amount' ? 'amount' : 'value'} on.`);
+        if (step.action === 'settlement_amount') await t.http.post(`/api/tasks/${task.id}/settlement-amount`, { amount: step.amount });
+        else await t.http.post(`/api/tasks/${task.id}/settlement-value`, { value: step.value });
+        return {};
+      }
       case 'quote': await t.fixture('quote', { instrumentId: ctx.inst(step.instrument).id, ...step.quote }); return {};
       case 'close_price': await t.fixture('close', { instrumentId: ctx.inst(step.instrument).id, date: step.date, value: step.value }); return {};
       case 'fx_rate': await t.fixture('fx', { pair: step.pair, rate: step.rate }); return {};
