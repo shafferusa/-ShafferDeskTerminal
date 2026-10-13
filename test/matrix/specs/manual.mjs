@@ -1483,18 +1483,16 @@ const varianceSwap = {
       },
     },
     {
-      id: 'termination-paid', covers: 'settlement', action: 'clock', to: ny('2026-03-25'),
+      // Wednesday 25 March: the termination is paid; the 20 March mark is now 5 days old, past the 3-day limit.
+      id: 'termination-paid', covers: ['settlement', 'valuation'], action: 'clock', to: ny('2026-03-25'),
       expect: {
         events: [{ type: 'settlement.receive', summary: 'received 60,000.00 USD into settled cash', cash: { USD: 60_000 } }],
         cash: { account: { USD: { settled: 2_060_000, unsettled: 0, availableToTrade: 2_060_000 } } },
         pending: [],
+        positions: [{ ...VS_POS, qty: 0.6, value: 36_000, freshness: 'stale' }],
+        provisional: { account: true, book: true },
         balance: { account: { cash: 2_060_000, receivable: null } },
       },
-    },
-    {
-      // Friday 27 March: the 20 March mark is 7 days old, past the 3-day limit.
-      id: 'mark-stale', covers: 'valuation', action: 'clock', to: ny('2026-03-27'),
-      expect: { positions: [{ ...VS_POS, qty: 0.6, value: 36_000, freshness: 'stale' }], provisional: { account: true, book: true } },
     },
     { id: 'june', action: 'clock', to: ny('2026-06-15'), expect: {} },
     {
