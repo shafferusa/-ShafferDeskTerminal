@@ -263,6 +263,43 @@ function exerciseAllowed(app, inst, verb) {
   need(false, 'This option is European: it can only be exercised at expiration.');
 }
 
+/**
+ * What an OTC option settles against at expiry when it is not the plain fixing: the average of the averaging fixings
+ * (Asian), the recorded extreme (lookback), a value entered by hand (basket, spread). Returns { blocked, needs } while
+ * an input is missing, { S, computed } once everything is there, or null for the plain fixing (vanilla, digital,
+ * barrier, quanto, compound).
+ */
+function otcExpiryInput(app, { inst, pos, task }) {
+  const t = inst.terms;
+  const und = inst.underlying_id ? app.instruments.get(inst.underlying_id) : null;
+  const undName = und ? und.symbol || und.name : 'the underlying';
+  const awaiting = app.data.describe().awaitingMessage;
+  if (t.optionType === 'asian') {
+    const got = t.averagingDates.map((d) => ({ d, o: app.data.closeFor(inst.underlying_id, d) }));
+    const missing = got.filter((x) => !x.o || x.o.value === null).map((x) => x.d);
+    if (missing.length) return { blocked: `Awaiting the averaging fixings of ${undName} for ${missing.join(', ')}. ${awaiting}, or enter each closing price by hand (instrument drawer, Overview, "Closing price or fixing for date").`, needs: missing.map((d) => ({ kind: 'price', subject: inst.underlying_id, date: d })) };
+    for (const x of got) app.data.recordUsed(x.o);
+    const avg = got.reduce((a, x) => a + x.o.value, 0) / got.length;
+    return { S: avg, computed: { perUnit: intrinsic(t.right, avg, t.strike), note: `average of ${got.length} fixings ${fmtPx(Math.round(avg * 1e6) / 1e6)}`, average: avg, fixings: got.map((x) => ({ date: x.d, value: x.o.value })) } };
+  }
+  if (t.optionType === 'lookback') {
+    const x = pos.data.lookbackExtreme;
+    const which = t.lookbackType === 'floating' ? (t.right === 'C' ? 'minimum' : 'maximum') : (t.right === 'C' ? 'maximum' : 'minimum');
+    if (x === undefined || x === null) return { blocked: `Record the observed ${which} of ${undName} over the life of the option (the position's Lifecycle menu, Lookback extreme). The Terminal does not monitor prices between closes.`, needs: [{ kind: 'lookback-extreme', positionId: pos.id }] };
+    if (t.lookbackType === 'fixed') return { S: x, computed: { perUnit: intrinsic(t.right, x, t.strike), note: `observed ${which} ${fmtPx(x)}, recorded by hand`, extreme: x } };
+    const f = fixingFor(app, inst, t.expiration);
+    if (!f) return { blocked: `Awaiting the ${t.expiration} fixing for ${undName}. ${awaiting}, or enter the closing price manually.`, needs: [{ kind: 'price', subject: inst.underlying_id, date: t.expiration }] };
+    const perUnit = Math.max(0, t.right === 'C' ? f.value - x : x - f.value);
+    return { S: f.value, obs: f.obs, computed: { perUnit, note: `close ${fmtPx(f.value)} against the observed ${which} ${fmtPx(x)}, recorded by hand`, extreme: x } };
+  }
+  if (t.optionType === 'basket' || t.optionType === 'spread') {
+    const v = task.data.settlementValue;
+    if (v === undefined || v === null) return { blocked: `Enter the ${t.optionType} value at expiry (${t.underlyingDescription}): a composite the Terminal does not compute. Accounting, Pending, Settlement value.`, needs: [{ kind: 'settlement-value', taskId: task.id }] };
+    return { S: v, computed: { perUnit: intrinsic(t.right, v, t.strike), note: `${t.optionType} value ${fmtPx(v)}, entered by hand`, value: v } };
+  }
+  return null;
+}
+
 function makeOptionPlugin(family, listed) {
   return {
     family,
@@ -279,7 +316,14 @@ function makeOptionPlugin(family, listed) {
       const rows = [['Type', `${t.right === 'C' ? 'Call' : 'Put'}${t.optionType !== 'vanilla' ? ` (${t.optionType})` : ''}`], ['Strike', t.strike], ['Expiration', t.expiration], ['Exercise', t.exercise], ['Settlement', t.settlement], ['Multiplier', inst.multiplier]];
       if (listed) rows.push(['Deliverable per contract', `${t.deliverable.units} units${t.deliverable.cash ? ` + ${t.deliverable.cash} cash` : ''}`]);
       if (t.payout) rows.push(['Digital payout per unit', t.payout]);
-      if (t.barrier) rows.push(['Barrier', `${t.barrier.type} at ${t.barrier.level}`]);
+      if (t.barrier) rows.push(['Barrier', `${t.barrier.type} at ${t.barrier.level}${t.barrier.rebate ? `, rebate ${t.barrier.rebate} per unit` : ''}`]);
+      if (t.exerciseDates) rows.push(['Bermudan exercise dates', t.exerciseDates.join(', ')]);
+      if (t.averagingDates) rows.push(['Averaging dates', t.averagingDates.join(', ')]);
+      if (t.lookbackType) rows.push(['Lookback', t.lookbackType === 'floating' ? 'Floating strike: expiry close against the observed extreme' : 'Fixed strike: observed extreme against the strike']);
+      if (t.quantoRate) rows.push(['Quanto conversion rate (fixed)', t.quantoRate]);
+      if (t.underlyingDescription) rows.push(['Underlying reference', t.underlyingDescription]);
+      if (t.paymentDate) rows.push(['Cash settlement paid on', t.paymentDate]);
+      if (t.knockOutOnCredit) rows.push(['Credit event', 'Knocks the option out: it ends with nothing paid']);
       if (t.counterparty) rows.push(['Counterparty', t.counterparty]);
       if (!listed && app?.agreements) rows.push(...app.agreements.describeRows(inst));
       return rows;
@@ -289,7 +333,7 @@ function makeOptionPlugin(family, listed) {
      * strike x multiplier, in the trading currency). Only the writer of an option has an obligation to secure: the
      * buyer has paid the premium and owes nothing more, so a long position calls for no independent amount.
      */
-    collateralNotional: (app, inst, { qtyAfter }) => (qtyAfter < 0 ? Math.abs(qtyAfter) * inst.terms.strike * inst.multiplier : 0),
+    collateralNotional: (app, inst, { qtyAfter }) => (qtyAfter < 0 ? Math.abs(qtyAfter) * inst.terms.strike * inst.multiplier * (inst.terms.quantoRate || 1) : 0),
     qtyStep: () => (listed ? 1 : 1e-6),
     settleDate: (app, inst, tradeDate, book) => standardSettleDate(inst, tradeDate, book),
     economics(app, { inst, action, qty, price, unit, strategyId, book }) {
@@ -303,7 +347,8 @@ function makeOptionPlugin(family, listed) {
         ccy: inst.trading_ccy, principal: gross, cash: buy ? -gross : gross, accrued: 0,
         // Notional is the value of the deliverable, which is not the premium paid.
         // (OTC: quantity x multiplier x price, the multiplier turning the underlying's price into money as it does the premium.)
-        notional: listed ? qty * underlyingUnits(app, inst) * (undPx !== null ? undPx : inst.terms.strike) : qty * inst.multiplier * (undPx !== null ? undPx : inst.terms.strike),
+        // A quanto's underlying is priced in another currency: its notional is converted at the contract's fixed rate.
+        notional: listed ? qty * underlyingUnits(app, inst) * (undPx !== null ? undPx : inst.terms.strike) : qty * inst.multiplier * (undPx !== null ? undPx : inst.terms.strike) * (inst.terms.quantoRate || 1),
         notionalBasis: undPx !== null ? 'underlying price' : 'strike (no underlying price available)',
         exposure: null, initialMargin: coll ? coll.initialMargin : 0, ...(coll ? { collateral: coll } : {}), notes: coll ? [...coll.notes] : [],
       };
@@ -315,7 +360,7 @@ function makeOptionPlugin(family, listed) {
       const v = valueSecurity(inst, pos, obs, mark);
       const und = inst.underlying_id ? app.data.price(inst.underlying_id) : null;
       const px = und?.value ?? null;
-      v.notional = px !== null ? money(Math.abs(pos.qty) * (listed ? underlyingUnits(app, inst) : inst.multiplier) * px, inst.trading_ccy) : null;
+      v.notional = px !== null ? money(Math.abs(pos.qty) * (listed ? underlyingUnits(app, inst) : inst.multiplier * (inst.terms.quantoRate || 1)) * px, inst.trading_ccy) : null;
       v.exposure = null;
       return v;
     },
@@ -327,7 +372,8 @@ function makeOptionPlugin(family, listed) {
     dataNeeds(app, { inst, task }) {
       if (task?.type === 'option.expiry' && inst.underlying_id) {
         const und = app.instruments.get(inst.underlying_id);
-        if (und) return { closes: [{ instrument: und, date: inst.terms.expiration }] };
+        // An Asian option needs the close of every averaging date.
+        if (und) return { closes: [...new Set([...(inst.terms.averagingDates || []), inst.terms.expiration])].map((date) => ({ instrument: und, date })) };
       }
       if (task?.type === 'option.expiry' && inst.terms.fixingRate) return { rateCodes: [inst.terms.fixingRate], rateFrom: addBusinessDays(inst.terms.expiration, -10, 'ALLDAYS') };
       return {};
@@ -336,7 +382,22 @@ function makeOptionPlugin(family, listed) {
       if (task.type !== 'option.expiry') return { failed: `Unknown task ${task.type}` };
       if (!pos || Math.abs(pos.qty) < 1e-9) return 'done';
       const t = inst.terms;
-      if (EXOTIC_MANUAL.has(t.optionType) && (task.data.manualAmount === undefined || task.data.manualAmount === null)) {
+      const hasManual = task.data.manualAmount !== undefined && task.data.manualAmount !== null;
+      if (!listed && !hasManual) {
+        // Payoffs settled from inputs that are entered by hand or supplied (averaging fixings, a recorded extreme, a value).
+        const pre = otcExpiryInput(app, { inst, pos, task });
+        if (pre?.blocked) return pre;
+        if (pre) {
+          const r = settleOption(app, { book, unit, inst, pos, S: pre.S ?? null, obs: pre.obs || null, computed: pre.computed, date: t.expiration, mode: 'engine' });
+          app.agreements.onPositionChange({ pos }); // the option ended: its collateral is released
+          return { done: true, eventId: r?.eventId };
+        }
+      }
+      if (EXOTIC_MANUAL.has(t.optionType) && !hasManual) {
+        if (t.optionType === 'swaption' && t.settlement === 'physical') {
+          const und = app.instruments.get(inst.underlying_id);
+          return { blocked: `Record the exercise decision: exercise into ${und ? und.symbol || und.name : 'the underlying swap'} from the position's Lifecycle menu (Exercise, with the entry price per 100), or enter 0 as the settlement amount if the swaption is not exercised. The Terminal does not value the swap to decide for you.`, needs: [{ kind: 'settlement-amount', taskId: task.id }] };
+        }
         return { blocked: `Enter the settlement amount for this ${t.optionType} option (it is not computed by the Terminal).`, needs: [{ kind: 'settlement-amount', taskId: task.id }] };
       }
       if (task.data.manualAmount !== undefined && task.data.manualAmount !== null) {
@@ -365,18 +426,47 @@ function makeOptionPlugin(family, listed) {
       return { done: true, eventId: r?.eventId };
     },
     /** User-initiated early exercise of a long American option. */
-    exercise(app, { book, unit, inst, pos, contracts }) {
+    exercise(app, { book, unit, inst, pos, contracts, price }) {
       need(pos.qty > 0, 'Only a long option can be exercised.');
       exerciseAllowed(app, inst, 'exercised');
       const q = num(contracts) ?? pos.qty;
       need(q > 0 && q <= pos.qty + 1e-9, `You hold ${fmtQty(pos.qty)}; cannot exercise ${fmtQty(q)}.`);
+      const ot = inst.terms.optionType;
+      if (!listed && inst.terms.settlement === 'cash' && ['asian', 'lookback', 'basket', 'spread', 'swaption', 'other'].includes(ot)) {
+        throw new AppError(`A cash-settled ${ot} option is settled by its expiry item, from ${{ asian: 'its averaging fixings', lookback: 'the extreme recorded on it', basket: 'the basket value entered at expiry', spread: 'the spread value entered at expiry' }[ot] || 'the settlement amount entered at expiry'} (Accounting, Pending). It is not exercised by hand.`);
+      }
       let S = null, obs = null;
       if (inst.terms.settlement === 'cash') {
         obs = inst.underlying_id ? app.data.price(inst.underlying_id) : null;
         need(obs && obs.value !== null, 'Cash-settled exercise needs a current underlying price, and none is available.');
         S = obs.value;
       }
-      return settleOption(app, { book, unit, inst, pos, S, date: app.clock.today(), contracts: q, obs, mode: 'user' });
+      return settleOption(app, { book, unit, inst, pos, S, date: app.clock.today(), contracts: q, obs, mode: 'user', entryPrice: price });
+    },
+    /** A credit event on the reference entity of a knock-out credit-default swaption: it ends now with nothing paid. */
+    knockOut(app, { book, unit, inst, pos, note }) {
+      need(!listed && inst.terms.knockOutOnCredit, 'Only a credit-default swaption that knocks out on a credit event can be knocked out.');
+      need(Math.abs(pos.qty) > 1e-9, 'This position is already closed.');
+      const und = inst.underlying_id ? app.instruments.get(inst.underlying_id) : null;
+      const entity = und?.terms?.referenceEntity || (und ? und.symbol || und.name : 'the reference entity');
+      const r = bookSecurityFill(app, { book, unit, inst, strategyId: pos.strategy_id, tradeDate: app.clock.today(), qty: Math.abs(pos.qty), fees: [], actor: 'user', action: pos.qty > 0 ? 'sell' : 'buy', price: 0, settleDate: app.clock.today(), eventType: 'option.knocked_out',
+        summary: `Knocked out by a credit event on ${entity}: ${fmtQty(Math.abs(pos.qty))} ${inst.symbol || inst.name} ends with nothing paid (recorded by hand)${note ? `. ${note}` : ''}`, data: { knockOut: true, note: note || null } }, { unitCost: 0 });
+      return { outcome: 'knocked_out', eventId: r.eventId, realized: r.realized };
+    },
+    /** The observed maximum (call) or minimum (put) of a lookback's underlying, recorded by hand. A later record replaces it. */
+    recordExtreme(app, { book, unit, inst, pos, value, date, note }) {
+      need(!listed && inst.terms.optionType === 'lookback', 'An observed extreme is recorded on a lookback option only.');
+      const v = num(value);
+      need(v !== null && v > 0, `Enter the observed ${inst.terms.right === 'C' ? 'maximum' : 'minimum'} of the underlying as a positive price.`);
+      need(!date || ISO_DATE_RE.test(date), 'The date of the extreme is a date (YYYY-MM-DD).');
+      need(!date || date <= inst.terms.expiration, 'The extreme must be observed on or before the expiration date.');
+      const which = inst.terms.lookbackType === 'floating' ? (inst.terms.right === 'C' ? 'minimum' : 'maximum') : (inst.terms.right === 'C' ? 'maximum' : 'minimum');
+      const prev = pos.data.lookbackExtreme ?? null;
+      app.positions.setData(pos, { lookbackExtreme: v, lookbackExtremeDate: date || app.clock.today(), lookbackExtremeAt: app.clock.now().toISOString() });
+      const und = inst.underlying_id ? app.instruments.get(inst.underlying_id) : null;
+      const eventId = app.ledger.post({ bookId: book.id, unitId: unit.id, type: 'option.lookback_extreme', instrumentId: inst.id, strategyId: pos.strategy_id, positionId: pos.id,
+        summary: `Observed ${which} of ${und ? und.symbol || und.name : 'the underlying'} recorded on ${inst.symbol || inst.name}: ${fmtPx(v)}${date ? ` on ${date}` : ''}${prev !== null ? ` (replaces ${fmtPx(prev)})` : ''}, recorded by hand${note ? `. ${note}` : ''}`, data: { extreme: v, which, date: date || null, previous: prev } });
+      return { eventId };
     },
     /** Simulated early assignment of a short American option (never happens on its own). */
     assign(app, { book, unit, inst, pos, contracts }) {

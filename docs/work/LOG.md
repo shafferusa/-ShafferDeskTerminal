@@ -159,3 +159,4 @@
 - 2026-10-13T17:59Z | r1 | +0.2 | open_repo passes at engine, API and browser
 - 2026-10-13T18:00Z | m1 | +0.2 | infrastructure passes at engine, API and browser (Treasury-owned stake)
 - 2026-10-13T18:01Z | fw | +0.2 | fw: fra passes at engine, API and browser
+- 2026-10-13T18:01Z | b3 | +0.2 | coco_bond passes at engine, API and browser

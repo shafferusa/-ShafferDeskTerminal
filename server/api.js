@@ -381,7 +381,10 @@ export function createApi(app) {
     const out = db.tx(() => {
       let result;
       switch (body.action) {
-        case 'exercise': need(plugin.exercise, 'This position cannot be exercised.'); result = plugin.exercise(app, { ...ctx, contracts: body.contracts }); break;
+        case 'exercise': need(plugin.exercise, 'This position cannot be exercised.'); result = plugin.exercise(app, { ...ctx, contracts: body.contracts, price: body.price }); break;
+        // OTC options: a credit event knocking out a credit-default swaption; the observed extreme of a lookback.
+        case 'knockout': need(plugin.knockOut, 'A knock-out applies to credit-default swaptions.'); result = plugin.knockOut(app, { ...ctx, note: body.note }); break;
+        case 'extreme': need(plugin.recordExtreme, 'An observed extreme applies to lookback options.'); result = plugin.recordExtreme(app, { ...ctx, value: body.value, date: body.date, note: body.note }); break;
         case 'assign': need(plugin.assign, 'Assignment does not apply to this position.'); result = plugin.assign(app, { ...ctx, contracts: body.contracts }); break;
         case 'redeem': need(plugin.redeemEarly, 'Early redemption does not apply to this position.'); result = plugin.redeemEarly(app, { ...ctx, price: body.price, face: body.face, label: body.label }); break;
         // A holder's put and a conversion or exchange into shares, recorded by hand (server/products/bond.js).
@@ -464,6 +467,18 @@ export function createApi(app) {
     const amount = num(body.amount);
     need(amount !== null && amount >= 0, 'Enter the total settlement amount due to the option holder (zero if it expired worthless).');
     app.tasks.setData(t.id, { ...t.data, manualAmount: amount });
+    return { ok: true };
+  });
+  // The value a basket or spread option settles against (its composite at expiry), entered by hand; the payoff is worked out from it.
+  r.post('/api/tasks/:id/settlement-value', ({ params, body }) => {
+    const t = app.tasks.get(params.id);
+    need(t, 'Lifecycle item not found.', { status: 404 });
+    need(t.type === 'option.expiry', 'A settlement value is entered on the expiry item of an option.');
+    const inst = instruments.get(t.instrument_id);
+    need(inst && ['basket', 'spread'].includes(inst.terms.optionType), 'A settlement value is entered for a basket or spread option; other options settle against their fixing or a settlement amount.');
+    const value = num(body.value);
+    need(value !== null && (inst.terms.optionType === 'spread' || value > 0), inst.terms.optionType === 'spread' ? 'Enter the spread value at expiry as a number (it can be negative).' : 'Enter the basket value at expiry as a positive number.');
+    app.tasks.setData(t.id, { ...t.data, settlementValue: value, settlementValueAt: app.clock.now().toISOString() });
     return { ok: true };
   });
   r.get('/api/corporate-actions', ({ query }) => ({ items: app.corpactions.list(query.instrumentId).map((c) => ({ ...c, instrument: app.valuation.lite(instruments.get(c.instrument_id)) })) }));

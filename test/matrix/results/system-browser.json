@@ -121,9 +121,97 @@
    "title": "Insufficient collateral: repo",
    "commit": "849aeaa",
    "at": "2026-10-13T18:01:04.174Z"
+  },
+  "SB:refusals:collateral-pledged-position": {
+   "status": "passed",
+   "message": "pledged sale: \"Blocks submission. Leg 1: only 0 of the 1,000,000 TTSY31 held is unencumbered; the rest is pledged or out on loan and cannot be sold until it is released.\"",
+   "ms": 4841,
+   "checks": 12,
+   "area": "refusals",
+   "case": "collateral-pledged-position",
+   "title": "Insufficient collateral: selling a pledged position",
+   "commit": "a22fe69",
+   "at": "2026-10-13T18:01:09.033Z"
+  },
+  "SB:refusals:collateral-independent-amount": {
+   "status": "passed",
+   "message": "",
+   "ms": 3998,
+   "checks": 12,
+   "area": "refusals",
+   "case": "collateral-independent-amount",
+   "title": "Insufficient collateral: an OTC independent amount that cannot be posted",
+   "commit": "a22fe69+changes",
+   "at": "2026-10-13T18:01:13.099Z"
+  },
+  "SB:refusals:quote-missing": {
+   "status": "passed",
+   "message": "Pending tab row: \"Alpha Buy 100 BQM Leg 1 of Long BQM, primary Market, until cancelled working 100 none set when it fills No dependency No price is available for this instrument. Enter a manual price or state a fill pr\"",
+   "ms": 6175,
+   "checks": 17,
+   "area": "refusals",
+   "case": "quote-missing",
+   "title": "Missing quote: trade preview, order and valuation",
+   "commit": "a22fe69+changes",
+   "at": "2026-10-13T18:01:19.295Z"
+  },
+  "SB:refusals:quote-stale": {
+   "status": "passed",
+   "message": "Pending tab row: \"Alpha Buy 100 BQS Leg 1 of Long BQS, primary Market, until cancelled working 100 none set when it fills No dependency The last quote is 3602 seconds old. Waiting for a fresh quote. Cancel order\"",
+   "ms": 4135,
+   "checks": 18,
+   "area": "refusals",
+   "case": "quote-stale",
+   "title": "Stale quote: trade preview, order and valuation",
+   "commit": "a22fe69+changes",
+   "at": "2026-10-13T18:01:23.442Z"
+  },
+  "SB:refusals:fx-missing": {
+   "status": "passed",
+   "message": "",
+   "ms": 3701,
+   "checks": 13,
+   "area": "refusals",
+   "case": "fx-missing",
+   "title": "Missing FX rate: trade preview and valuation",
+   "commit": "a22fe69+changes",
+   "at": "2026-10-13T18:01:27.155Z"
+  },
+  "SB:refusals:fx-stale": {
+   "status": "passed",
+   "message": "",
+   "ms": 3646,
+   "checks": 12,
+   "area": "refusals",
+   "case": "fx-stale",
+   "title": "Stale FX rate: trade preview and valuation",
+   "commit": "a22fe69+changes",
+   "at": "2026-10-13T18:01:30.823Z"
+  },
+  "SB:refusals:incomplete-terms": {
+   "status": "passed",
+   "message": "an option with no strike: \"The instrument was not saved. Correct these and save again: Option type must be call or put. Strike must be a positive number. Expiration date is required (YYYY-MM-DD). Contract multiplier is required for a listed option (premium multiplier\"\na bond with no maturity: \"The instrument was not saved. Maturity date is required (or mark the bond as perpetual).\"\na future with no expiration: \"The instrument was not saved. Correct these and save again: Contract multiplier (point value) is required. Expiration (last trading day) is required, or mark the contract as perpetual.\"",
+   "ms": 3258,
+   "checks": 18,
+   "area": "refusals",
+   "case": "incomplete-terms",
+   "title": "Incomplete contract terms",
+   "commit": "a22fe69+changes",
+   "at": "2026-10-13T18:01:34.093Z"
+  },
+  "SB:refusals:calendar-closed-day": {
+   "status": "passed",
+   "message": "",
+   "ms": 2829,
+   "checks": 17,
+   "area": "refusals",
+   "case": "calendar-closed-day",
+   "title": "Calendar: an order on a day its market is closed waits, visibly, and fills once",
+   "commit": "a22fe69+changes",
+   "at": "2026-10-13T18:01:36.936Z"
   }
  },
- "updatedAt": "2026-10-13T18:01:04.174Z",
+ "updatedAt": "2026-10-13T18:01:36.936Z",
  "environment": {
   "node": "v22.22.0",
   "platform": "linux",
