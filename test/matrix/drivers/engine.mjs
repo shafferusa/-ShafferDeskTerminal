@@ -51,7 +51,9 @@ export async function openEngineTerminal({ sandbox, at, demo = true }) {
       if (i.underlying_id) { const u = app.instruments.get(i.underlying_id); if (u) held.set(u.id, u); }
     }
     const insts = [...held.values()];
-    const pairs = app.ledger.currencies(ids).filter((c) => c !== book.reporting_ccy).map((c) => `${c}/${book.reporting_ccy}`);
+    // As the API: currencies of ledger balances and of the open positions' values.
+    const ccys = new Set([...app.ledger.currencies(ids), ...insts.map((i) => i.trading_ccy).filter(Boolean)]);
+    const pairs = [...ccys].filter((c) => c !== book.reporting_ccy).map((c) => `${c}/${book.reporting_ccy}`);
     await app.data.refresh({ instruments: insts, sessions: insts, valuations: insts.filter((i) => ['swap', 'cds', 'forward', 'otcoption', 'bond'].includes(i.family)), pairs });
   }
 

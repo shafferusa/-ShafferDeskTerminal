@@ -13,7 +13,11 @@ import { normalizeBasis } from '../core/agreements.js';
 import { bookSecurityFill, fmtPx, fmtQty, valueSecurity } from './common.js';
 import { calendarFor, standardSettleDate } from './security.js';
 
-const EXOTIC_MANUAL = new Set(['asian', 'lookback', 'basket', 'spread', 'quanto', 'compound', 'swaption', 'other']);
+// Payoffs whose settlement amount the Terminal cannot work out from its own inputs: entered by hand on the expiry item
+// (Pending tab, Settlement amount). A physically settled swaption is exercised into its swap by hand instead. Asian,
+// lookback, basket, spread, quanto and compound options settle from inputs entered or supplied (see otcExpiryInput).
+const EXOTIC_MANUAL = new Set(['swaption', 'other']);
+const dateList = (v) => [...new Set((Array.isArray(v) ? v : String(v || '').split(/[\s,;]+/)).map((x) => String(x).trim()).filter(Boolean))].sort();
 
 function normalizeOption(app, draft, listed) {
   const errors = [];
@@ -67,6 +71,45 @@ function normalizeOption(app, draft, listed) {
       if (!(num(b.level) > 0)) errors.push('Barrier level must be positive.');
       t.barrier = { type: b.type, level: num(b.level), rebate: num(b.rebate) ?? 0 };
     }
+    const undFam = und?.family || null;
+    if (undFam) t.underlyingFamily = undFam; else delete t.underlyingFamily;
+    // A cash settlement can be paid on a stated date after the fixing (an interest-rate option pays at the end of its period).
+    if (t.paymentDate === '' || t.paymentDate === null || t.paymentDate === undefined) delete t.paymentDate;
+    else if (!ISO_DATE_RE.test(t.paymentDate)) errors.push('The cash settlement payment date is a date (YYYY-MM-DD).');
+    else if (ISO_DATE_RE.test(t.expiration || '') && t.paymentDate < t.expiration) errors.push('The cash settlement payment date cannot be before the expiration date.');
+    if (t.optionType === 'asian') {
+      // Average-price option: the arithmetic mean of the underlying's closes on the averaging dates replaces the final fixing.
+      t.averagingDates = dateList(t.averagingDates);
+      if (!t.averagingDates.length) errors.push('An Asian option needs its averaging dates (YYYY-MM-DD, separated by commas).');
+      else if (t.averagingDates.some((x) => !ISO_DATE_RE.test(x))) errors.push('Each averaging date is a date (YYYY-MM-DD).');
+      else if (ISO_DATE_RE.test(t.expiration || '') && t.averagingDates.some((x) => x > t.expiration)) errors.push('An averaging date cannot be after the expiration date.');
+      if (!draft.underlying_id) errors.push('An Asian option averages the closes of an underlying instrument: choose it.');
+      t.settlement = 'cash';
+    } else delete t.averagingDates;
+    if (t.optionType === 'lookback') {
+      // Fixed strike: the observed maximum (call) or minimum (put) against the strike. Floating strike: the expiry close
+      // against the observed minimum (call) or maximum (put). The extreme is recorded by hand on the position.
+      t.lookbackType = t.lookbackType === 'floating' ? 'floating' : 'fixed';
+      if (t.lookbackType === 'floating' && !draft.underlying_id) errors.push('A floating-strike lookback settles against the underlying close at expiry: choose the underlying instrument.');
+      t.settlement = 'cash';
+    } else delete t.lookbackType;
+    if (t.optionType === 'basket' || t.optionType === 'spread') {
+      // A composite the Terminal does not compute: its value at expiry is entered by hand and settled against the strike.
+      t.settlement = 'cash';
+      if (!String(t.underlyingDescription || '').trim()) errors.push(t.optionType === 'basket' ? 'A basket option names its basket (components and weights) under "Underlying reference": its value at expiry is entered by hand.' : 'A spread option names its spread (the two legs) under "Underlying reference": its value at expiry is entered by hand.');
+    }
+    if (t.optionType === 'quanto') {
+      // The underlying's fixing, in its own currency, against the strike in that currency, converted at the fixed rate.
+      t.quantoRate = num(t.quantoRate);
+      if (!(t.quantoRate > 0)) errors.push('A quanto option needs its fixed conversion rate (trading currency per unit of the underlying\'s currency).');
+      if (!draft.underlying_id) errors.push('A quanto option settles against an underlying instrument: choose it.');
+      t.settlement = 'cash';
+    } else delete t.quantoRate;
+    if (t.optionType === 'swaption' && t.settlement === 'physical' && !['swap', 'cds'].includes(undFam)) errors.push('A physically settled swaption is exercised into its swap: choose the underlying swap (or credit default swap) contract.');
+    if (t.optionType === 'compound' && t.settlement === 'physical' && !['otcoption', 'option'].includes(undFam)) errors.push('A compound option is exercised into an option: choose the underlying option.');
+    // A credit-default swaption ends with nothing paid if the reference entity has a credit event before expiry.
+    if (t.optionType === 'swaption' && undFam === 'cds') t.knockOutOnCredit = t.knockOutOnCredit !== false;
+    else delete t.knockOutOnCredit;
     // An OTC option carries counterparty exposure: collateral follows the basis stated on the contract.
     t.collateralBasis = normalizeBasis(t.collateralBasis, errors);
     if (!t.collateralBasis) delete t.collateralBasis;
@@ -104,7 +147,7 @@ function fixingFor(app, inst, date) {
  * Settle `contracts` of an option position at fixing S (exercise, assignment, cash settlement or
  * worthless expiry). manualAmount (total cash to the long side) overrides the formula for exotics.
  */
-export function settleOption(app, { book, unit, inst, pos, S, date, contracts, mode, obs, manualAmount }) {
+export function settleOption(app, { book, unit, inst, pos, S, date, contracts, mode, obs, manualAmount, computed, entryPrice }) {
   const t = inst.terms;
   const long = pos.qty > 0;
   const q = Math.min(Math.abs(pos.qty), contracts ?? Math.abs(pos.qty));
@@ -121,16 +164,20 @@ export function settleOption(app, { book, unit, inst, pos, S, date, contracts, m
   let perUnit;
   if (manualAmount !== undefined && manualAmount !== null) perUnit = manualAmount / (q * inst.multiplier);
   else if (!active) perUnit = barrier?.rebate || 0;
+  else if (computed) perUnit = computed.perUnit; // worked out from averaging fixings, a recorded extreme or a value entered by hand
   else if (t.optionType === 'digital') perUnit = intrinsic(t.right, S, t.strike) > 0 ? t.payout : 0;
+  else if (t.optionType === 'quanto' && t.quantoRate) perUnit = intrinsic(t.right, S, t.strike) * t.quantoRate;
   else perUnit = intrinsic(t.right, S, t.strike);
+  const fixingText = computed?.note ? ` (${computed.note})` : S !== undefined && S !== null ? ` (fixing ${inst.family === 'otcoption' ? fmtPx(S) : S}${t.optionType === 'quanto' && t.quantoRate ? `, converted at the fixed rate ${t.quantoRate}` : ''})` : '';
   const threshold = inst.family === 'option' ? 0.01 : 1e-9;
   const itm = perUnit >= threshold;
   const forced = mode === 'user'; // an explicit early exercise is honoured even if not in the money
-  const settleDate = addBusinessDays(date, 1, calendarFor(inst));
+  // Cash is paid T+1 on the contract's calendar, or on the payment date the contract states (end of an interest period).
+  const settleDate = inst.family === 'otcoption' && t.paymentDate && t.paymentDate > date ? t.paymentDate : addBusinessDays(date, 1, calendarFor(inst));
   const label = `${fmtQty(q)} ${inst.symbol || inst.name}`;
 
   if (!itm && !forced) {
-    const r = bookSecurityFill(app, { ...base, action: closeAction, price: 0, settleDate: date, eventType: 'option.expired', summary: `Expired worthless: ${label}${S !== undefined && S !== null ? ` (fixing ${S})` : ''}`, data: { fixing: S ?? null, fixingObsId: obsId } }, { unitCost: 0 });
+    const r = bookSecurityFill(app, { ...base, action: closeAction, price: 0, settleDate: date, eventType: 'option.expired', summary: `Expired worthless: ${label}${inst.family === 'otcoption' ? fixingText : S !== undefined && S !== null ? ` (fixing ${S})` : ''}`, data: { fixing: S ?? null, fixingObsId: obsId, ...(computed ? { computed } : {}) } }, { unitCost: 0 });
     return { outcome: 'expired', eventId: r.eventId, realized: r.realized };
   }
 
@@ -138,8 +185,8 @@ export function settleOption(app, { book, unit, inst, pos, S, date, contracts, m
     // An OTC option states the amount in its own quotation (per 100 of face for a bond option) and the fixing it came from.
     const und = inst.family === 'otcoption' && inst.underlying_id ? app.instruments.get(inst.underlying_id) : null;
     const per = inst.family !== 'otcoption' ? `${money(perUnit, inst.trading_ccy)} per unit`
-      : `${fmtPx(perUnit)} ${inst.trading_ccy} per ${und?.family === 'bond' ? '100 of face' : 'unit'}${manualAmount !== undefined && manualAmount !== null ? ' (settlement amount entered by hand)' : S !== undefined && S !== null ? ` (fixing ${fmtPx(S)})` : ''}`;
-    const r = bookSecurityFill(app, { ...base, action: closeAction, price: perUnit, settleDate, eventType: 'option.cash_settled', summary: `${long ? 'Exercised' : 'Assigned'} (cash settlement): ${label} at ${per}`, data: { fixing: S ?? null, fixingObsId: obsId, perUnit, ...(manualAmount !== undefined && manualAmount !== null ? { manualAmount } : {}) } }, { unitCost: perUnit * inst.multiplier });
+      : `${fmtPx(perUnit)} ${inst.trading_ccy} per ${und?.family === 'bond' ? '100 of face' : 'unit'}${manualAmount !== undefined && manualAmount !== null ? ' (settlement amount entered by hand)' : !active ? ' (barrier rebate)' : fixingText}`;
+    const r = bookSecurityFill(app, { ...base, action: closeAction, price: perUnit, settleDate, eventType: 'option.cash_settled', summary: `${long ? 'Exercised' : 'Assigned'} (cash settlement): ${label} at ${per}`, data: { fixing: S ?? null, fixingObsId: obsId, perUnit, ...(manualAmount !== undefined && manualAmount !== null ? { manualAmount } : {}), ...(computed ? { computed } : {}) } }, { unitCost: perUnit * inst.multiplier });
     return { outcome: 'cash_settled', eventId: r.eventId, realized: r.realized };
   }
 
@@ -161,9 +208,27 @@ export function settleOption(app, { book, unit, inst, pos, S, date, contracts, m
   }
   const r = bookSecurityFill(app, { ...base, action: closeAction, price: 0, settleDate: date, eventType: long ? 'option.exercised' : 'option.assigned', summary: `${long ? 'Exercised' : 'Assigned'}: ${label} at strike ${t.strike}`, data: { fixing: S ?? null, fixingObsId: obsId, strike: t.strike } }, { unitCost: 0 });
   const undPlugin = app.products.get(und.family);
+  const how0 = `${long ? 'exercise' : 'assignment'} of ${inst.symbol || inst.name}`;
+  if (und.family === 'swap' || und.family === 'cds') {
+    // A swaption (or credit-default swaption) is exercised into its contract, which then lives with its own legs,
+    // schedule and collateral basis. A call is a payer: it enters the contract as written (buys protection); a put
+    // enters the opposite side (sells protection). The entry price per 100 of notional is stated (0 for a swap struck
+    // at the swaption's rate); nothing is computed by a model.
+    const enter = receives ? 'buy' : 'sell';
+    const px = num(entryPrice) ?? 0;
+    const side = und.family === 'cds' ? (enter === 'buy' ? 'bought protection on' : 'sold protection on') : (enter === 'buy' ? 'entered as written' : 'entered the opposite side of');
+    const d = undPlugin.fill(app, {
+      book, unit, inst: und, action: enter, qty: units, price: px, fees: [], strategyId: pos.strategy_id, tradeDate: date, settleDate: undPlugin.settleDate(app, und, date, book), actor: mode === 'user' ? 'user' : 'engine',
+      eventType: 'option.delivery', summary: `Simulated exercise into ${und.symbol || und.name}: ${side} ${fmtQty(units)} notional at ${fmtPx(px)} per 100 on ${how0}`,
+      data: { fromOption: inst.id, simulated: true, entryPrice: px },
+    });
+    const undNow = app.positions.find(unit.id, und.id, pos.strategy_id);
+    if (undNow && undPlugin.onPositionChange) undPlugin.onPositionChange(app, { book, unit, inst: und, pos: undNow });
+    return { outcome: long ? 'exercised' : 'assigned', eventId: r.eventId, realized: r.realized, deliveryEventId: d.eventId };
+  }
   const undPos = app.positions.find(unit.id, und.id, pos.strategy_id);
   let action = receives ? 'buy' : 'sell';
-  if (!receives && !['future', 'fx'].includes(und.family) && (!undPos || undPos.qty < units - 1e-9)) {
+  if (!receives && !['future', 'fx', 'otcoption', 'option'].includes(und.family) && (!undPos || undPos.qty < units - 1e-9)) {
     app.alerts.raise({ bookId: book.id, unitId: unit.id, level: 'warning', code: 'delivery.short', refType: 'position', refId: pos.id, message: `${long ? 'Exercise' : 'Assignment'} of ${label} delivered ${fmtQty(units)} ${und.symbol || und.name} that the strategy did not hold. The resulting short position has no securities borrow arranged.` });
   }
   if (receives && undPos && undPos.qty < 0) action = 'buy_to_cover';

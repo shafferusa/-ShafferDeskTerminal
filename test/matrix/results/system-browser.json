@@ -33,9 +33,42 @@
    "title": "Book isolation through every API route",
    "commit": "db44e3c+changes",
    "at": "2026-10-13T17:59:16.855Z"
+  },
+  "SB:isolation:no-netting": {
+   "status": "passed",
+   "message": "",
+   "ms": 12483,
+   "checks": 37,
+   "area": "isolation",
+   "case": "no-netting",
+   "title": "Nothing nets or consolidates across Books",
+   "commit": "03a4d9e",
+   "at": "2026-10-13T17:59:29.356Z"
+  },
+  "SB:isolation:normal-mode-refusals": {
+   "status": "passed",
+   "message": "moving the clock (behind the screen): \"The clock can only be moved in demo mode.\"\na quote fixture (behind the screen): \"Test fixtures exist only in demo mode.\"",
+   "ms": 5813,
+   "checks": 23,
+   "area": "isolation",
+   "case": "normal-mode-refusals",
+   "title": "Fixtures and the clock are refused in normal mode",
+   "commit": "03a4d9e",
+   "at": "2026-10-13T17:59:35.183Z"
+  },
+  "SB:isolation:demo-normal-databases": {
+   "status": "passed",
+   "message": "",
+   "ms": 23518,
+   "checks": 19,
+   "area": "isolation",
+   "case": "demo-normal-databases",
+   "title": "Demo and normal paper databases are separate files",
+   "commit": "03a4d9e+changes",
+   "at": "2026-10-13T17:59:58.719Z"
   }
  },
- "updatedAt": "2026-10-13T17:59:16.855Z",
+ "updatedAt": "2026-10-13T17:59:58.719Z",
  "environment": {
   "node": "v22.22.0",
   "platform": "linux",

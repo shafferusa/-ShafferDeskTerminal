@@ -544,10 +544,7 @@ const fra = {
         otc: [fraRow(25_000_000, { mark: 2.30, markValue: 9_583.33, vmHeld: 10_350, vmExposure: 10_350, vmStatus: 'ok' })],
       },
     },
-    // A day later the EUR/USD rate of Monday is stale: every total converted with it is provisional until a current
-    // rate is supplied (here the same 1.08, from the FX fixture standing in for Shaffer MarketData).
-    { id: 'tuesday', covers: 'stale FX', action: 'clock', to: AM('2026-03-03'), expect: { provisional: { account: true, book: true }, positions: [{ instrument: 'main', priceSource: 'X', freshness: 'X', price: 0 }] } },
-    { id: 'fx-tuesday', action: 'fx_rate', pair: 'EUR/USD', rate: 1.08, expect: { provisional: { account: false, book: false } } },
+    { id: 'tuesday', action: 'clock', to: AM('2026-03-03'), expect: {} },
     {
       // 5,000,000 of the notional is terminated early: the dealer pays 1,900.00 EUR on Thursday 5 March (the date agreed).
       // What is left: 20,000,000 x 0.15 / 100 x 92/360 = 7,666.6667 = 7,666.67 EUR = 8,280.00 USD (7,666.67 x 1.08 = 8,280.0036).
@@ -579,18 +576,15 @@ const fra = {
         events: [{ type: 'settlement.receive', summary: 'received 1,900.00 EUR into settled cash', cash: { EUR: 1_900 }, owner: 'account', date: '2026-03-05' }],
         cash: { account: { USD: cashOf(1_000_000, { restricted: 10_350 }), EUR: cashOf(1_900) } },
         pending: [],
-        provisional: { account: true, book: true },
         balance: { account: { cash: 1_002_052, receivable: null } },
       },
     },
-    { id: 'fx-thursday', action: 'fx_rate', pair: 'EUR/USD', rate: 1.08, expect: { provisional: { account: false, book: false } } },
     {
       // Wednesday 3 June, the start of the period. The EURIBOR3M fixing of Monday 1 June has not been supplied: the
       // settlement waits, visibly.
       id: 'period-start-no-fixing', covers: ['fixing', 'holiday'], action: 'clock', to: AM('2026-06-03'),
-      expect: { lifecycle: [{ type: 'forward.maturity', instrument: 'main', dueDate: '2026-06-03', status: 'blocked' }], provisional: { account: true, book: true } },
+      expect: { lifecycle: [{ type: 'forward.maturity', instrument: 'main', dueDate: '2026-06-03', status: 'blocked' }] },
     },
-    { id: 'fx-period-start', action: 'fx_rate', pair: 'EUR/USD', rate: 1.08, expect: { provisional: { account: false, book: false } } },
     {
       // The fixing arrives: 2.40%. d = 92/360. 20,000,000 x 0.0025 x d = 12,777.7778; 1 + 0.024 x d = 1.0061333;
       // 12,777.7778 / 1.0061333 = 12,699.8851 = 12,699.89 EUR received now. The variation margin of 10,350.00 USD goes

@@ -290,6 +290,9 @@ export const actions = {
     await drawer.getByRole('button', { name: /^Edit$/ }).first().click();
     const dlg = ui.dialog(`Edit ${inst.symbol || inst.name}`);
     await dlg.waitFor();
+    // The lifecycle part is drawn once the instrument has loaded: wait for it before looking for its buttons.
+    await dlg.getByText('Lifecycle events recorded by hand').first().waitFor();
+    await ui.drawn();
     let review, confirm, done;
     if (MANUAL_FORMS[kind]) {
       // A form of the "Lifecycle events recorded by hand" part (b3): fill its fields, then review and confirm.

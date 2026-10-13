@@ -299,7 +299,10 @@ export function createApi(app) {
       held.set(i.id, i);
     }
     await freshQuotes([...held.values()]);
-    const pairs = app.ledger.currencies(ids).filter((c) => c !== book.reporting_ccy).map((c) => `${c}/${book.reporting_ccy}`);
+    // Currencies of ledger balances and of open positions' values (fw: a EUR contract held with no EUR cash still needs
+    // a current EUR rate, or the NAV is flagged provisional on a stale one while a current rate is available).
+    const ccys = new Set([...app.ledger.currencies(ids), ...[...held.values()].map((i) => i.trading_ccy).filter(Boolean)]);
+    const pairs = [...ccys].filter((c) => c !== book.reporting_ccy).map((c) => `${c}/${book.reporting_ccy}`);
     // The interval is per set of pairs: a currency that has just appeared in the Book (cash received from an exchange)
     // is refreshed at once, not left on whatever observation of it happens to be cached.
     const key = `fx:${bookId}:${[...pairs].sort().join(',')}`;
