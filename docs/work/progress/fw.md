@@ -22,8 +22,16 @@
 - npm test 281/283 at 17:50: failures are others' WIP (private_equity spec audit; convertible_preferred 'convert' action,
   logged in BUGS.md). The 1-point save waits for a green npm test.
 
+## Part 2 (forwards): test/matrix/specs/forward.mjs, test/matrix/drivers/browser/forward.mjs
+- Terminal additions in server/products/fx.js (forward plugin): FX/NDF value date must be a business day of both
+  currencies' calendars; `terminate` (early termination at a stated amount, lifecycle action, api.js case 'terminate');
+  asset-forward physical delivery labelled "Simulated forward delivery (paper entry ...)". UI: strategy-detail.js
+  "Early termination" dialog (amount, notional terminated, settlement date).
+- fx_forward: passed engine / API / browser (saved 0.2).
+
 ## In progress
 - Part 1 done apart from the 1-point save (retry npm test).
+- Next product: ndf.
 
 ## Next
 1. Part 2: forwards family, 8 products, one at a time, save 0.2 each.
