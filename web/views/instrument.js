@@ -5,7 +5,7 @@
 // trading, settlement and payment calendars; a calendar that is approximate or weekends only is
 // flagged with a badge and a sentence on both.
 import { html, useEffect, useState } from '../vendor/preact-htm.js';
-import { bump, currentBook, fmtMoney, fmtNum, fmtPrice, fmtQty, fmtTime, get, getState, isNum, openOverlay, post, setUnit, toast, toastError, useLive, VIEW_LABEL } from '../lib/core.js';
+import { bump, currentBook, fmtMoney, fmtNum, fmtPrice, fmtPriceUnits, fmtQty, fmtTime, get, getState, isNum, openOverlay, post, setUnit, toast, toastError, useLive, VIEW_LABEL } from '../lib/core.js';
 import { Awaiting, Button, Check, Drawer, Empty, Field, Holdings, holdingsFromPositions, KV, LineChart, Missing, Modal, Money, Notice, Num, Panel, Pill, Price, Prov, Seg, Select, Signed, Support, Table, Tabs, Text } from '../lib/ui.js';
 import { openPreview } from './preview.js';
 import { strategyInput, StrategyPicker } from './hedge.js';
@@ -171,8 +171,8 @@ function Ticket({ inst, detail, book, onDone }) {
   return html`<div class="stack">
     <div class="row">
       <div><div class="note">Current market price</div><div style="font-size:20px"><${Price} obs=${obs} reason=${detail.marketState.connection === 'awaiting' ? detail.marketState.message : 'No price available'} /></div></div>
-      ${obs && isNum(obs.bid) ? html`<div class="stat"><span class="k">Bid</span><span class="v" style="font-size:15px">${fmtPrice(obs.bid)}</span><span class="s">${isNum(obs.bidSize) ? `size ${fmtQty(obs.bidSize)}` : ''}</span></div>
-        <div class="stat"><span class="k">Ask</span><span class="v" style="font-size:15px">${fmtPrice(obs.ask)}</span><span class="s">${isNum(obs.askSize) ? `size ${fmtQty(obs.askSize)}` : ''}</span></div>` : null}
+      ${obs && isNum(obs.bid) ? html`<div class="stat"><span class="k">Bid</span><span class="v" style="font-size:15px">${fmtPriceUnits(obs.bid, inst.priceUnits)}</span><span class="s">${isNum(obs.bidSize) ? `size ${fmtQty(obs.bidSize)}` : ''}</span></div>
+        <div class="stat"><span class="k">Ask</span><span class="v" style="font-size:15px">${fmtPriceUnits(obs.ask, inst.priceUnits)}</span><span class="s">${isNum(obs.askSize) ? `size ${fmtQty(obs.askSize)}` : ''}</span></div>` : null}
       <span class="spacer"></span><span class="note">${inst.priceUnits}, ${inst.tradingCcy}</span>
     </div>
     ${!obs ? html`<${Awaiting} compact what="There is no price for this instrument. A paper order would wait as a working order. Enter a price on the Overview tab, or state a fill price below." />` : null}
@@ -188,7 +188,7 @@ function Ticket({ inst, detail, book, onDone }) {
       <${Field} label="State a fill price" hint="Optional. Recorded as a manual input, not a market quote."><${Num} value=${stated} onInput=${setStated} placeholder="none" /><//>
       <${SettlementField} inst=${inst} detail=${detail} book=${book} value=${stl} onChange=${setStl} />
     </div>
-    ${reducing && from ? html`<${Notice}>${action === 'sell' ? 'Sells from' : 'Covers'} <b>${from.strategy?.name || 'the position'}</b> in this Account, which is ${from.qty > 0 ? 'long' : 'short'} ${fmtQty(Math.abs(from.qty))}${isNum(from.avgCost) ? ` at an average ${fmtPrice(from.avgCost)}` : ''}.${action === 'buy_to_cover' ? ' The matching borrowed securities are returned once the cover fills.' : ''}${qty > Math.abs(from.qty) ? html` <b>${fmtQty(qty)} is more than it holds.</b>` : ''}<//>` : null}
+    ${reducing && from ? html`<${Notice}>${action === 'sell' ? 'Sells from' : 'Covers'} <b>${from.strategy?.name || 'the position'}</b> in this Account, which is ${from.qty > 0 ? 'long' : 'short'} ${fmtQty(Math.abs(from.qty))}${isNum(from.avgCost) ? ` at an average ${fmtPriceUnits(from.avgCost, inst.priceUnits)}` : ''}.${action === 'buy_to_cover' ? ' The matching borrowed securities are returned once the cover fills.' : ''}${qty > Math.abs(from.qty) ? html` <b>${fmtQty(qty)} is more than it holds.</b>` : ''}<//>` : null}
     ${security && !longs.length && !shorts.length && detail.positions.length ? html`<div class="note">Held in other Accounts of this Book, not in this one. Choose that Account to sell it.</div>` : null}
     ${action === 'sell_short' ? html`<${Panel} title="Securities borrow">
       ${hasBorrowData ? html`<div><${Pill} tone=${detail.borrow.available ? 'ok' : 'bad'}>${detail.borrow.available ? 'Available to borrow' : 'Not available to borrow'}<//> fee ${fmtNum(detail.borrow.feeRate * 100, 3)}% a year${isNum(detail.borrow.quantity) ? `, ${fmtQty(detail.borrow.quantity)} available` : ''} <${Prov} obs=${detail.borrow.obs} /></div>`
@@ -208,7 +208,7 @@ function Ticket({ inst, detail, book, onDone }) {
       <${Table} columns=${[
         { label: 'Strategy', render: (p) => p.strategy?.name || '' },
         { label: 'Quantity', align: 'r', render: (p) => fmtQty(p.qty) },
-        { label: 'Average cost', align: 'r', render: (p) => fmtPrice(p.avgCost) },
+        { label: 'Average cost', align: 'r', render: (p) => fmtPriceUnits(p.avgCost, inst.priceUnits) },
         { label: 'Unrealized', align: 'r', render: (p) => html`<${Money} value=${p.unrealized} ccy=${p.ccy} signed reason=${p.missingReason} />` },
         { label: '', align: 'r', render: (p) => html`<${Button} small onClick=${() => closePos(p, 0.5)}>Close half<//> <${Button} small onClick=${() => closePos(p)}>Close<//>` },
       ]} rows=${mine} rowKey=${(p) => p.positionId} /><//>` : null}
@@ -269,8 +269,8 @@ function Overview({ inst, detail, reload }) {
   return html`<div class="stack">
     <${Panel} title="Current market price">
       ${obs ? html`<div class="stats">
-          <div class="stat"><span class="k">Price</span><span class="v">${fmtPrice(obs.value)}</span><span class="s"><${Prov} obs=${obs} /></span></div>
-          <div class="stat"><span class="k">Bid / ask</span><span class="v" style="font-size:15px">${isNum(obs.bid) ? `${fmtPrice(obs.bid)} / ${fmtPrice(obs.ask)}` : '—'}</span><span class="s">${isNum(obs.bidSize) ? `${fmtQty(obs.bidSize)} x ${fmtQty(obs.askSize)}` : ''}</span></div>
+          <div class="stat"><span class="k">Price</span><span class="v">${fmtPriceUnits(obs.value, inst.priceUnits)}</span><span class="s"><${Prov} obs=${obs} /></span></div>
+          <div class="stat"><span class="k">Bid / ask</span><span class="v" style="font-size:15px">${isNum(obs.bid) ? `${fmtPriceUnits(obs.bid, inst.priceUnits)} / ${fmtPriceUnits(obs.ask, inst.priceUnits)}` : '—'}</span><span class="s">${isNum(obs.bidSize) ? `${fmtQty(obs.bidSize)} x ${fmtQty(obs.askSize)}` : ''}</span></div>
           <div class="stat"><span class="k">Source</span><span class="v" style="font-size:14px">${obs.source}</span><span class="s">${fmtTime(obs.asOf, { seconds: true })}</span></div>
           <div class="stat"><span class="k">Currency and units</span><span class="v" style="font-size:14px">${obs.currency || inst.tradingCcy}</span><span class="s">${obs.units || inst.priceUnits}</span></div>
           <div class="stat"><span class="k">Freshness</span><span class="v" style="font-size:14px">${{ fresh: 'Fresh', stale: 'Stale', manual: 'Manual entry', unknown: 'Unknown' }[obs.freshness]}</span><span class="s">${detail.session?.state ? `session ${detail.session.state}` : ''}</span></div>
@@ -409,7 +409,7 @@ function Positions({ detail, reload }) {
   return html`<${Table} columns=${[
     { label: 'Held in', render: (p) => p.owner },
     { label: 'Strategy', render: (p) => (p.strategy ? html`<a href="javascript:void 0" onClick=${() => openStrategy(p.strategy.id)}>${p.strategy.name}</a>` : '') },
-    { label: 'Quantity', align: 'r', render: (p) => fmtQty(p.qty) }, { label: 'Average cost', align: 'r', render: (p) => fmtPrice(p.avgCost) },
+    { label: 'Quantity', align: 'r', render: (p) => fmtQty(p.qty) }, { label: 'Average cost', align: 'r', render: (p) => fmtPriceUnits(p.avgCost, detail.instrument?.priceUnits) },
     { label: 'Market value', align: 'r', render: (p) => html`<${Money} value=${p.mv} ccy=${p.ccy} reason=${p.missingReason} />` },
     { label: 'Unrealized', align: 'r', render: (p) => html`<${Money} value=${p.unrealized} ccy=${p.ccy} signed reason=${p.missingReason} />` },
     { label: '', align: 'r', render: (p) => html`<${Button} small onClick=${() => openPreviewAction(p.strategy.id, 'close', { positionIds: [p.positionId] }, { onDone: reload })}>Close<//>` },

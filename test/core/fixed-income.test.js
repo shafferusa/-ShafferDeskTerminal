@@ -44,14 +44,21 @@ test('bond: clean price plus accrued, daily accrual into coupon income, coupon a
 test('floating-rate note: a coupon without its fixing is blocked and says why', async () => {
   const { app, clock } = makeApp();
   const { book, acct } = makeBook(app);
-  const frn = app.instruments.create({ productId: 'floating_rate_note', name: 'Test FRN 2027', symbol: 'FRN27', marketView: 'US_CASH', venueType: 'otc', tradingCcy: 'USD', terms: { couponType: 'float', referenceRate: 'XYZ-3M', spread: 0.01, frequency: 4, maturity: '2027-03-15', issueDate: '2025-03-15', dayCount: 'ACT/360' } });
+  // Without the rate of the running period a purchase is refused: its accrued interest cannot be computed (b2, bond-corporate).
+  const unknown = app.instruments.create({ productId: 'floating_rate_note', name: 'Test FRN 2027 B', symbol: 'FRN27B', marketView: 'US_CASH', venueType: 'otc', tradingCcy: 'USD', terms: { couponType: 'float', referenceRate: 'XYZ-3M', spread: 0.01, frequency: 4, maturity: '2027-03-15', issueDate: '2025-03-15', dayCount: 'ACT/360' } });
+  await assert.rejects(trade(app, { bookId: book.id, unitId: acct.id, template: 'custom', legs: [{ kind: 'trade', action: 'buy', instrumentId: unknown.id, qty: 100_000, statedPrice: 100 }] }), /no XYZ-3M fixing for its current coupon period/);
+  // The running period's coupon known (5%, entered on the form); no XYZ-3M fixing is ever supplied for the next one.
+  const frn = app.instruments.create({ productId: 'floating_rate_note', name: 'Test FRN 2027', symbol: 'FRN27', marketView: 'US_CASH', venueType: 'otc', tradingCcy: 'USD', terms: { couponType: 'float', referenceRate: 'XYZ-3M', spread: 0.01, currentCoupon: 0.05, frequency: 4, maturity: '2027-03-15', issueDate: '2025-03-15', dayCount: 'ACT/360' } });
   const s = await trade(app, { bookId: book.id, unitId: acct.id, template: 'custom', legs: [{ kind: 'trade', action: 'buy', instrumentId: frn.id, qty: 100_000, statedPrice: 100 }] });
   assert.equal(s.orders[0].fills[0].model, 'stated-price');
-  await goTo(app, clock, '2026-03-16T15:00:00.000Z');
+  await goTo(app, clock, '2026-06-16T14:00:00.000Z');
   const t = app.accounting.pending(book.id, acct.id).lifecycle.find((x) => x.type === 'bond.coupon');
+  assert.equal(t.dueDate, '2026-06-15');
   assert.equal(t.status, 'blocked');
-  assert.match(t.reason, /Awaiting the XYZ-3M fixing/);
-  assert.equal(app.ledger.cash(acct.id, 'USD').settled, 400_000, 'no coupon cash was invented');
+  assert.match(t.reason, /Awaiting the XYZ-3M fixing of 2026-03-15/);
+  // Paid: 100,000 at 100 plus accrued to 3 Mar (78 days at 5% on ACT/360, 1,083.33); received: the 15 Mar coupon (90 days, 1,250.00).
+  // Nothing for the period without a fixing: no coupon cash was invented.
+  assert.equal(app.ledger.cash(acct.id, 'USD').settled, 400_166.67);
 });
 
 test('cash loan: interest accrues daily as funding expense and is paid on repayment', async () => {

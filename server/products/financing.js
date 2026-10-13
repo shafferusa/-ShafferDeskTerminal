@@ -146,6 +146,10 @@ export const loan = {
   checkOpen(app, { unit, inst, action, qty }) {
     const out = [];
     const ccy = inst.trading_ccy;
+    // Products that exist on one side only, as the tickets offer them: a deposit is placed, a margin loan or a facility
+    // drawing is borrowed.
+    if (action === 'lend_cash' && ['margin_loan', 'revolving_credit_facility'].includes(inst.product_id)) out.push('A margin loan or a credit facility drawing is borrowed, not lent. To lend cash, use a cash loan, a deposit or a certificate of deposit.');
+    if (action === 'borrow_cash' && ['bank_deposit', 'term_deposit', 'certificate_of_deposit'].includes(inst.product_id)) out.push('A deposit or certificate of deposit is placed (lent), not borrowed. To borrow cash, use a cash loan.');
     if (action === 'lend_cash') {
       const c = app.ledger.cash(unit.id, ccy);
       if (c.availableToWithdraw < qty - 0.004) out.push(`${unit.name} has ${fmt(c.availableToWithdraw, ccy)} of settled ${ccy} available to lend; ${fmt(qty, ccy)} requested.`);

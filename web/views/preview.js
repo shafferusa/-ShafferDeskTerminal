@@ -13,7 +13,7 @@
 // Below 1100 px the leg table turns into one block per leg, so no column is clipped; the package
 // totals and the confirmation controls stay in the footer, which never scrolls away.
 import { html, useState } from '../vendor/preact-htm.js';
-import { bump, fmtMoney, fmtNum, fmtPrice, fmtQty, fmtTime, get, isNum, openOverlay, post, put, toast } from '../lib/core.js';
+import { bump, fmtMoney, fmtNum, fmtPrice, fmtPriceUnits, fmtQty, fmtTime, get, isNum, openOverlay, post, put, toast } from '../lib/core.js';
 import { Button, Check, Checks, ErrorNote, Field, Modal, Money, Notice, Num, PayoffChart, Pill, Price, Prov, PURPOSE_LABEL, Select, Table, Text } from '../lib/ui.js';
 import { CollateralBasisFields, ContractFields, draftToContract } from '../lib/contracts.js';
 
@@ -143,6 +143,8 @@ function LegRow({ leg, edit, onEdit, onRemove, canRemove, changes }) {
   const heldCcy = isNum(leg.initialMargin) ? leg.currency : indep?.ccy || leg.currency;
   const e = { ...leg, ...edit };
   const p = leg.price;
+  // ui1: a price in % of par (bond) or per 100 notional (swap, CDS) keeps every decimal it carries (BUGS b1 #1).
+  const pu = p?.observation?.units || (leg.instrument?.family === 'bond' ? '% of par' : ['swap', 'cds'].includes(leg.instrument?.family) ? 'per 100 notional' : null);
   const set = (patch) => onEdit(leg.n, patch);
   const hasTerms = leg.instrument?.details?.length > 0;
   return html`<tr class=${changes?.length ? 'moved' : ''}>
@@ -177,13 +179,13 @@ function LegRow({ leg, edit, onEdit, onRemove, canRemove, changes }) {
     </td>
     <td class="wrap fillcell" data-label="Estimated fill">
       ${leg.kind === 'trade' ? html`
-        <div>${isNum(p?.estimate) ? html`<span class="price"><span class="v">${fmtPrice(p.estimate)}</span></span>` : html`<span class="missing" title=${p?.reason || ''}>no executable price</span>`}
+        <div>${isNum(p?.estimate) ? html`<span class="price"><span class="v">${fmtPriceUnits(p.estimate, pu)}</span></span>` : html`<span class="missing" title=${p?.reason || ''}>no executable price</span>`}
           ${p?.observation ? html` <${Prov} obs=${p.observation} />` : null}</div>
         <${Was} changes=${changes} field="price" />
-        <div class="sub">${p?.label}${isNum(p?.reference) && p?.reference !== p?.estimate ? `, reference ${fmtPrice(p.reference)}` : ''}</div>
+        <div class="sub">${p?.label}${isNum(p?.reference) && p?.reference !== p?.estimate ? `, reference ${fmtPriceUnits(p.reference, pu)}` : ''}</div>
         ${p?.note ? html`<div class="sub">${p.note}</div>` : null}
         ${p && !p.executable && p.reason ? html`<div class="sub" style="color:var(--amber)">${p.reason}</div>` : null}
-        ${leg.indicative ? html`<div class="sub">Indicative terms: ${fmtPrice(leg.indicative.value)} (${leg.indicative.status}, ${leg.indicative.source}). Not an executable quote.
+        ${leg.indicative ? html`<div class="sub">Indicative terms: ${fmtPriceUnits(leg.indicative.value, pu)} (${leg.indicative.status}, ${leg.indicative.source}). Not an executable quote.
           <button class="btn link small" onClick=${() => set({ statedPrice: leg.indicative.value })}>Use as my stated fill price</button></div>` : null}
         <div class="row" style="margin-top:4px"><span class="sub">state a fill price</span><${Num} cls="mini" value=${e.statedPrice} onInput=${(v) => set({ statedPrice: v })} placeholder="none" /></div>` : null}
       ${leg.kind === 'borrow_sec' ? html`
@@ -195,7 +197,7 @@ function LegRow({ leg, edit, onEdit, onRemove, canRemove, changes }) {
         <${Was} changes=${changes} field="borrow.feeRate" />` : null}
       ${leg.kind === 'funding' ? html`<div>From ${leg.fundingInfo?.from?.name || 'Treasury'}</div><div class="sub">${fmtMoney(leg.fundingInfo?.available, leg.currency)} available there. A transfer does not convert currency.</div>` : null}
       ${leg.kind === 'reserve' ? html`<div>${fmtMoney(leg.reserve?.amount, leg.reserve?.ccy)} stays in the Account but cannot be used elsewhere.</div>` : null}
-      ${leg.kind === 'link' ? html`<div>Existing position of ${fmtQty(leg.existing?.qty)}${isNum(leg.existing?.avgCost) ? ` at average cost ${fmtPrice(leg.existing.avgCost)}` : ''}</div><div class="sub">Nothing is bought or sold.</div>` : null}
+      ${leg.kind === 'link' ? html`<div>Existing position of ${fmtQty(leg.existing?.qty)}${isNum(leg.existing?.avgCost) ? ` at average cost ${fmtPriceUnits(leg.existing.avgCost, pu)}` : ''}</div><div class="sub">Nothing is bought or sold.</div>` : null}
       ${['loan', 'repo_open', 'lend_sec'].includes(leg.kind) && isNum(leg.dailyCost) ? html`<div class="sub">About ${fmtMoney(leg.dailyCost, leg.currency)} of interest a day</div>` : null}
       ${leg.financing && isNum(leg.financing.rate) ? html`<div class="sub">Rate ${fmtNum(leg.financing.rate * 100, 3)}% ${leg.financing.rateType || ''}${leg.financing.maturity ? `, to ${leg.financing.maturity}` : ''}</div>` : null}
       ${leg.financing?.referenceRate ? html`<div class="sub">${leg.financing.referenceRate} + ${fmtNum((leg.financing.spread || 0) * 100, 2)}%${isNum(leg.financing.fixing) ? `, fixing ${leg.financing.fixing}%` : ''}</div>` : null}

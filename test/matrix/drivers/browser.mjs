@@ -339,7 +339,9 @@ export async function readScreens(ui, ctx, t) {
       value: shown(firstLine(cellOf(pos, r, 'Value or notional'))), unrealized: shown(firstLine(cellOf(pos, r, 'Unrealized'))),
       // A contract on a notional amount (future, forward, swap) shows its notional there, labelled "notional", with the margin posted beneath.
       valueIsNotional: /(?:^|\n)\s*notional\s*(?:\n|$)/.test(cellOf(pos, r, 'Value or notional') || ''),
-      marginShown: (() => { const m = /(?:^|\n)\s*margin\s+([^\n]+)/.exec(cellOf(pos, r, 'Value or notional') || ''); return m ? shown(m[1]) : undefined; })(),
+      // An OTC contract shows its collateral in the next cell instead: "independent amount 200,000.00 USD posted" (what is posted for the
+      // position itself), beside the variation margin of its netting set.
+      marginShown: (() => { const m = /(?:^|\n)\s*margin\s+([^\n]+)/.exec(cellOf(pos, r, 'Value or notional') || '') || /(?:^|\n)\s*independent amount\s+([\d,.]+\s+[A-Z]{3})\s+posted/.exec(cellOf(pos, r, 'Accrued, collateral') || ''); return m ? shown(m[1]) : undefined; })(),
       extra: cellOf(pos, r, 'Accrued, collateral') || '',
     };
   });

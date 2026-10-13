@@ -150,7 +150,8 @@ function lifecycleFor(p, terms) {
   if (p.family === 'otcoption' && terms?.barrier && !p.data?.barrierHit) a.push('barrier');
   if (p.family === 'bond') a.push('redeem');
   if (p.family === 'secloan' && p.qty > 0) a.push('recall');
-  if (!FINANCING_FAMILIES.includes(p.family)) a.push('cashflow');
+  // A cash loan or facility drawing can carry a fee or other cash flow the engine does not generate (a commitment fee).
+  if (!FINANCING_FAMILIES.includes(p.family) || p.family === 'loan') a.push('cashflow');
   return a;
 }
 function LifecycleDialog({ p, action, terms, onClose, onDone }) {

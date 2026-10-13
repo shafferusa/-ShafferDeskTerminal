@@ -12,7 +12,7 @@
 // affected items are named; a value that cannot be computed is drawn as missing, never as zero.
 // History is append-only: a correction is a new event that points at the one it corrects.
 import { html, useEffect, useRef, useState } from '../vendor/preact-htm.js';
-import { bump, fmtMoney, fmtNum, fmtPrice, fmtQty, fmtTime, get, isNum, openOverlay, post, toast, toastError, useLive } from '../lib/core.js';
+import { bump, fmtMoney, fmtNum, fmtPrice, fmtPriceUnits, fmtQty, fmtTime, get, isNum, openOverlay, post, toast, toastError, useLive } from '../lib/core.js';
 import { Awaiting, Button, Check, Empty, ErrorNote, Field, Holdings, LineChart, Missing, Modal, Money, NavAffected, NavValue, Notice, Num, OrderStatus, Pill, Price, Prov, PURPOSE_LABEL, Seg, Select, StrategyStatus, Table, Tabs, Text } from '../lib/ui.js';
 import { openHedgeRequest, protectionText, protectionWords, sourceWords, StrategyRef } from './hedge.js';
 import { openInstrument } from './instrument.js';
@@ -510,8 +510,8 @@ function PositionsTab({ book, d, units, multi, owner, setOwner, reload }) {
           <div class="sub clip" style="max-width:190px" title=${p.instrument.name}><${Pill} tone=${p.purpose === 'hedge' ? 'pen' : p.purpose === 'financing' ? 'warn' : ''}>${PURPOSE_LABEL[p.purpose] || p.purpose}<//> ${p.instrument.symbol ? p.instrument.name : p.support?.productName || p.family}</div>
           <${PositionLinks} p=${p} reload=${reload} />` },
         { label: 'Quantity', align: 'r', render: (p) => html`${fmtQty(p.qty)}<div class=${`sub ${p.direction === 'long' ? 'gain' : p.direction === 'short' ? 'loss' : ''}`} style="white-space:normal;max-width:84px;margin-left:auto">${p.direction}</div>` },
-        { label: 'Average cost', align: 'r', render: (p) => (p.ledgerCarried ? '' : html`${isNum(p.avgCost) ? fmtPrice(p.avgCost) : html`<${Missing} reason="No cost basis" />`}${p.family === 'future' ? html`<div class="sub">last settlement</div>` : p.family === 'forward' ? html`<div class="sub">dealt price</div>` : null}`) },
-        { label: 'Current market price', align: 'r', title: 'Hover a price for its units and currency', render: (p) => (p.ledgerCarried ? '' : html`<span title=${`${p.priceUnits || 'price'}, ${p.ccy}`}><${Price} obs=${p.priceObs} value=${p.price} reason=${p.missingReason || 'No price available'} /></span>`) },
+        { label: 'Average cost', align: 'r', render: (p) => (p.ledgerCarried ? '' : html`${isNum(p.avgCost) ? fmtPriceUnits(p.avgCost, p.priceUnits) : html`<${Missing} reason="No cost basis" />`}${p.family === 'future' ? html`<div class="sub">last settlement</div>` : p.family === 'forward' ? html`<div class="sub">dealt price</div>` : null}`) },
+        { label: 'Current market price', align: 'r', title: 'Hover a price for its units and currency', render: (p) => (p.ledgerCarried ? '' : html`<span title=${`${p.priceUnits || 'price'}, ${p.ccy}`}><${Price} obs=${p.priceObs} value=${p.price} units=${p.priceUnits} reason=${p.missingReason || 'No price available'} /></span>`) },
         { label: 'Value or notional', align: 'r', title: 'Market value. Futures, forwards and swaps show their notional and the margin posted, not a market value.', render: valueCell },
         { label: 'Unrealized P&L', align: 'r', title: `In the position's currency, with the ${rc} equivalent beneath when it differs`, render: (p) => (p.ledgerCarried ? '' : html`<${Money} value=${p.unrealized} ccy=${p.ccy} signed reason=${p.missingReason} />
           ${p.ccy !== rc && !p.missing ? html`<div class="sub" title=${isNum(p.fxRate) ? `Converted at ${fmtNum(p.fxRate, p.fxRate < 0.1 ? 6 : 4)} ${rc} per ${p.ccy} (${p.fxObs?.statusLabel || 'rate'}, ${p.fxObs?.source || ''}). The rate and its source are in Net assets by currency below.` : ''}><${Money} value=${p.unrealizedRc} ccy=${rc} signed reason=${`No FX rate from ${p.ccy} to ${rc}`} /></div>` : null}`) },
