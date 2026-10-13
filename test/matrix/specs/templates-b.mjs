@@ -2139,4 +2139,573 @@ const ironCondor = {
   ],
 };
 
-export default [bearCall, longStraddle, longStrangle, ironCondor];
+// =====================================================================================================================
+// iron_butterfly
+// =====================================================================================================================
+// Marlow Paper Co. (NYSE) 17 April 2026 options, physical delivery: sell the 50 put and the 50 call (the body), buy the
+// 45 put and the 55 call (the wings), 5 each. Each written leg depends on its wing; one side's width is reserved
+// (5 x 100 x 5 = 2,500).
+//   butterfly  refused short of cash (measured leg by leg), then Treasury funding; the 55 call fills 3 of 5 first and
+//              the dependent written 50 call follows it. Held over Good Friday. The stock closes at 47 on 17 April: the
+//              written 50 put is assigned (500 shares received at 50, paid T+1), the 45 put and both calls lapse, on the
+//              same day. The shares are then sold.
+//   retry / accept / unwind  1 of each when the written call has no fresh quote; Accept keeps the other three to expiry
+//              (its written put is assigned: 100 shares).
+const IFLY_PAGE = (contracts, financing) => ({ template: 'Iron Butterfly', underlying: 'stock', expiration: '2026-04-17', strikes: { 'Lower wing (put bought)': 45, 'Middle strike (call and put sold)': 50, 'Upper wing (call bought)': 55 }, contracts, ...(financing ? { financing } : {}) });
+const iflyInput = (contracts, financing) => templateInput('iron_butterfly', { underlyingId: '$inst:stock', options: { expiration: '2026-04-17', strikes: { wingLower: 45, middle: 50, wingUpper: 55 }, contracts }, financing });
+const iflyOne = (as) => ({ action: 'package', as, instrument: 'stock', input: iflyInput(1, null), strategyPage: IFLY_PAGE(1, null) });
+const ironButterfly = {
+  template: 'iron_butterfly',
+  title: 'Iron butterfly on Marlow Paper Co. (NYSE): sell the 17 April 2026 50 put and 50 call, buy the 45 put and 55 call',
+  matrix: {
+    ...OPTION_TEMPLATE_MATRIX,
+    settlement: 'Premium of each leg T+1 on the US calendar; Treasury funding moves at once; shares received on assignment T+1 at the strike (settlement.equity = 1)',
+    lifecycle: 'Four expiry items settled from the stock close on 17 April 2026 (47: the written put is assigned with a simulated delivery of the shares, the bought put and both calls lapse); held across Good Friday; a failed dependent leg leaves the instance needing attention: Retry, Unwind or Accept; Close and Unwind buy the written legs back first',
+    accounting: 'Net credit received; average premium per leg; commission expensed; premium realized on buy-back, sale, assignment (closed at zero) and lapse; shares received carried at the strike and sold',
+    collateral: 'Each written leg is covered by its wing: one side\'s width is reserved (2,500), released at expiry; the cash need is measured leg by leg in execution order',
+  },
+  start: MAR(2),
+  settlementCheck: { lag: 1, holidays: ['2026-04-03'] },
+  book: book('Templates iron butterfly'),
+  instruments: {
+    stock: stockDraft('Marlow Paper Co.', 'MPC'),
+    p45: equityOption('MPC', 'MPC260417P45', 'P', 45, '2026-04-17'),
+    p50: equityOption('MPC', 'MPC260417P50', 'P', 50, '2026-04-17'),
+    c50: equityOption('MPC', 'MPC260417C50', 'C', 50, '2026-04-17'),
+    c55: equityOption('MPC', 'MPC260417C55', 'C', 55, '2026-04-17'),
+  },
+  quotes: {
+    stock: { bid: 49.98, ask: 50.02, last: 50.00, bidSize: 10000, askSize: 10000 },
+    p45: { bid: 0.60, ask: 0.70, last: 0.65, bidSize: 20, askSize: 20 },
+    p50: { bid: 2.00, ask: 2.10, last: 2.05, bidSize: 20, askSize: 20 },
+    c50: { bid: 2.10, ask: 2.20, last: 2.15, bidSize: 20, askSize: 20 },
+    c55: { bid: 0.50, ask: 0.60, last: 0.55, bidSize: 20, askSize: 3 }, // only 3 contracts displayed at the ask
+  },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 1_000, unsettled: 0, reserved: 0, availableToTrade: 1_000, availableToWithdraw: 1_000 } },
+      treasury: { USD: { settled: 999_000, unsettled: 0, reserved: 0, availableToTrade: 999_000, availableToWithdraw: 999_000 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 1_000, treasury: 999_000, book: 1_000_000 },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+  },
+  steps: [
+    {
+      // Netted: wings 350 + 300, commission 13, reserve 2,500, against 2,050 of premium and 1,000: 113 short. Leg by leg:
+      // 1,000 - 353.25 - 303.25 = 343.50 free; the written put brings 996.75 and needs 2,500: -1,159.75.
+      id: 'open-short-of-cash', covers: 'financing', action: 'package', as: 'refused', instrument: 'stock',
+      input: iflyInput(5, null), strategyPage: IFLY_PAGE(5, null),
+      status: 'blocked', reason: 'The Account cannot fund the package as its legs execute: the preview is blocked until financing is chosen.',
+      expect: {
+        refused: 'Alpha is short 1,159.75 USD while the legs execute',
+        preview: {
+          blocking: 1, errors: ['cash'],
+          legs: [
+            { kind: 'trade', action: 'buy', instrument: 'p45', qty: 5, estimate: 0.70, settleDate: '2026-03-03', cash: -350, fees: 3.25, dependsOn: [] },
+            { kind: 'trade', action: 'buy', instrument: 'c55', qty: 5, estimate: 0.60, settleDate: '2026-03-03', cash: -300, fees: 3.25, dependsOn: [] },
+            { kind: 'trade', action: 'sell', instrument: 'p50', qty: 5, estimate: 2.00, settleDate: '2026-03-03', cash: 1_000, fees: 3.25, dependsOn: [1] },
+            { kind: 'trade', action: 'sell', instrument: 'c50', qty: 5, estimate: 2.10, settleDate: '2026-03-03', cash: 1_050, fees: 3.25, dependsOn: [2] },
+          ],
+          cash: { USD: { purchases: 650, proceeds: 2_050, fees: 13, reserved: 2_500, required: 3_163, available: 1_000, shortfall: 1_159.75 } },
+        },
+      },
+    },
+    {
+      id: 'open', covers: ['open', 'financing', 'partial fill', 'dependency'], action: 'package', as: 'butterfly', instrument: 'stock',
+      input: iflyInput(5, { mode: 'treasury' }), strategyPage: IFLY_PAGE(5, { mode: 'treasury' }),
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [
+            { kind: 'funding', purpose: 'financing', qty: 1_159.75, cash: 1_159.75, dependsOn: [] },
+            { kind: 'trade', action: 'buy', instrument: 'p45', qty: 5, estimate: 0.70, model: 'quoted-bid-ask', settleDate: '2026-03-03', cash: -350, fees: 3.25, dependsOn: [1] },
+            { kind: 'trade', action: 'buy', instrument: 'c55', qty: 5, estimate: 0.60, settleDate: '2026-03-03', cash: -300, fees: 3.25, dependsOn: [1] },
+            { kind: 'trade', action: 'sell', instrument: 'p50', qty: 5, estimate: 2.00, settleDate: '2026-03-03', cash: 1_000, fees: 3.25, dependsOn: [2, 1] },
+            { kind: 'trade', action: 'sell', instrument: 'c50', qty: 5, estimate: 2.10, settleDate: '2026-03-03', cash: 1_050, fees: 3.25, dependsOn: [3, 1] },
+          ],
+          cash: { USD: { purchases: 650, proceeds: 2_050, fees: 13, reserved: 2_500, financingIn: 1_159.75, required: 3_163, available: 1_000, shortfall: 0, netCash: 2_546.75 } }, // 2,050 + 1,159.75 - 650 - 13
+          netPremium: { amount: -1_400, ccy: 'USD', type: 'credit', complete: true },
+          optionRequirement: [{ ccy: 'USD', amount: 2_500, finite: 2_500, naked: 0, uncoveredCallUnits: 0 }],
+        },
+        result: {
+          status: 'partial',
+          orders: [
+            { kind: 'funding', status: 'filled', filledQty: 1_159.75 },
+            { action: 'buy', instrument: 'p45', status: 'filled', filledQty: 5, avgPrice: 0.70 },
+            { action: 'buy', instrument: 'c55', status: 'partial', filledQty: 3, avgPrice: 0.60 },
+            { action: 'sell', instrument: 'p50', status: 'filled', filledQty: 5, avgPrice: 2.00 },
+            { action: 'sell', instrument: 'c50', status: 'partial', filledQty: 3, avgPrice: 2.10 },
+          ],
+        },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'transfer.funding', summary: 'Treasury funding: 1,159.75 USD from Treasury to Alpha' },
+          { type: 'trade.fill', summary: 'Bought 5 MPC260417P45 @ 0.70 USD', date: '2026-03-02' },
+          { type: 'trade.fill', summary: 'Bought 3 MPC260417C55 @ 0.60 USD' },
+          { type: 'trade.fill', summary: 'Sold 5 MPC260417P50 @ 2.00 USD' },
+          { type: 'trade.fill', summary: 'Sold 3 MPC260417C50 @ 2.10 USD' },
+          { type: 'trade.fill', summary: 'Bought 2 MPC260417C55 @ 0.60 USD' },
+          { type: 'trade.fill', summary: 'Sold 2 MPC260417C50 @ 2.10 USD' },
+        ],
+        cash: {
+          // owed 353.25 + 181.95 + 121.30 = 656.50; owed to it 996.75 + 628.05 + 418.70 = 2,043.50; reserved 2,500
+          account: { USD: { settled: 2_159.75, unsettled: 1_387, reserved: 2_500, availableToTrade: 1_046.75, availableToWithdraw: -996.75 } },
+          treasury: { USD: { settled: 997_840.25, unsettled: 0, availableToTrade: 997_840.25, availableToWithdraw: 997_840.25 } },
+        },
+        positions: [
+          { instrument: 'c50', lot: 'butterfly', owner: 'account', direction: 'short', qty: -5, avgCost: 2.10, cost: -1_050, price: 2.15, value: -1_075, unrealized: -25 },
+          { instrument: 'c55', lot: 'butterfly', owner: 'account', direction: 'long', qty: 5, avgCost: 0.60, cost: 300, price: 0.55, value: 275, unrealized: -25 },
+          { instrument: 'p45', lot: 'butterfly', owner: 'account', direction: 'long', qty: 5, avgCost: 0.70, cost: 350, price: 0.65, value: 325, unrealized: -25 },
+          { instrument: 'p50', lot: 'butterfly', owner: 'account', direction: 'short', qty: -5, avgCost: 2.00, cost: -1_000, price: 2.05, value: -1_025, unrealized: -25 },
+        ],
+        holdings: { c50: { long: 0, short: 5, net: -5 }, c55: { long: 5, short: 0, net: 5 }, p45: { long: 5, short: 0, net: 5 }, p50: { long: 0, short: 5, net: -5 } },
+        pending: [
+          { instrument: 'c50', lot: 'butterfly', dueDate: '2026-03-03', amount: 418.70, into: 'cash' },
+          { instrument: 'c50', lot: 'butterfly', dueDate: '2026-03-03', amount: 628.05, into: 'cash' },
+          { instrument: 'c55', lot: 'butterfly', dueDate: '2026-03-03', amount: -181.95, into: 'cash' },
+          { instrument: 'c55', lot: 'butterfly', dueDate: '2026-03-03', amount: -121.30, into: 'cash' },
+          { instrument: 'p45', lot: 'butterfly', dueDate: '2026-03-03', amount: -353.25, into: 'cash' },
+          { instrument: 'p50', lot: 'butterfly', dueDate: '2026-03-03', amount: 996.75, into: 'cash' },
+        ],
+        lifecycle: [
+          { type: 'option.expiry', instrument: 'c50', dueDate: '2026-04-17', status: 'pending' },
+          { type: 'option.expiry', instrument: 'c55', dueDate: '2026-04-17', status: 'pending' },
+          { type: 'option.expiry', instrument: 'p45', dueDate: '2026-04-17', status: 'pending' },
+          { type: 'option.expiry', instrument: 'p50', dueDate: '2026-04-17', status: 'pending' },
+        ],
+        pnl: {
+          account: { realized: 0, commissions: -13, fees: 0, unrealized: -100, total: -113 },
+          book: { realized: 0, commissions: -13, unrealized: -100, total: -113 },
+          treasury: { total: 0 },
+        },
+        nav: { account: 2_046.75, treasury: 997_840.25, book: 999_887 },
+        balance: {
+          account: { cash: 2_159.75, receivable: 2_043.50, payable: 656.50, positions: -1_500, assets: 2_703.25, liabilities: 656.50, netAssets: 2_046.75 },
+          treasury: { cash: 997_840.25, assets: 997_840.25, liabilities: 0, netAssets: 997_840.25 },
+          book: { cash: 1_000_000, receivable: 2_043.50, payable: 656.50, positions: -1_500, assets: 1_000_543.50, liabilities: 656.50, netAssets: 999_887 },
+        },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: MAR(3),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 996.75 USD into settled cash', date: '2026-03-03' },
+          { type: 'settlement.receive', summary: 'received 628.05 USD into settled cash' },
+          { type: 'settlement.receive', summary: 'received 418.70 USD into settled cash' },
+          { type: 'settlement.pay', summary: 'paid 353.25 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 181.95 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 121.30 USD from settled cash' },
+        ],
+        cash: { account: { USD: { settled: 3_546.75, unsettled: 0, availableToTrade: 1_046.75, availableToWithdraw: 1_046.75 } } },
+        pending: [],
+        balance: { account: { cash: 3_546.75, receivable: null, payable: null, assets: 2_046.75, liabilities: 0 }, book: { cash: 1_001_387, receivable: null, payable: null, assets: 999_887, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'fund-account', covers: 'internal funding', action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 2_000,
+      expect: {
+        events: [{ type: 'transfer.funding', summary: 'Treasury funding: 2,000.00 USD from Treasury to Alpha' }],
+        cash: { account: { USD: { settled: 5_546.75, availableToTrade: 3_046.75, availableToWithdraw: 3_046.75 } }, treasury: { USD: { settled: 995_840.25, availableToTrade: 995_840.25, availableToWithdraw: 995_840.25 } } },
+        nav: { account: 4_046.75, treasury: 995_840.25 },
+        balance: { account: { cash: 5_546.75, assets: 4_046.75, netAssets: 4_046.75 }, treasury: { cash: 995_840.25, assets: 995_840.25, netAssets: 995_840.25 } },
+      },
+    },
+    { id: 'c50-quote-stops', action: 'quote', instrument: 'c50', quote: { bid: 2.10, ask: 2.20, last: 2.15, bidSize: 20, askSize: 20, asOf: MAR(3, '09:50') }, expect: {} },
+    {
+      // 1 of each: wings 70 + 60, body 200 + 215 (the call estimated at its last 2.15), 2.60 commission, 500 reserved.
+      ...iflyOne('retry'), id: 'open-retry', covers: ['open', 'failed dependent leg'],
+      expect: {
+        preview: {
+          blocking: 0, warnings: ['not-executable'],
+          legs: [
+            { kind: 'trade', action: 'buy', instrument: 'p45', qty: 1, estimate: 0.70, settleDate: '2026-03-04', cash: -70, fees: 0.65, dependsOn: [] },
+            { kind: 'trade', action: 'buy', instrument: 'c55', qty: 1, estimate: 0.60, settleDate: '2026-03-04', cash: -60, fees: 0.65, dependsOn: [] },
+            { kind: 'trade', action: 'sell', instrument: 'p50', qty: 1, estimate: 2.00, settleDate: '2026-03-04', cash: 200, fees: 0.65, dependsOn: [1] },
+            { kind: 'trade', action: 'sell', instrument: 'c50', qty: 1, estimate: null, reference: 2.15, executable: false, settleDate: '2026-03-04', cash: 215, fees: 0.65, dependsOn: [2] },
+          ],
+          cash: { USD: { purchases: 130, proceeds: 415, fees: 2.60, reserved: 500, required: 632.60, available: 3_046.75, shortfall: 0 } },
+        },
+        result: { status: 'partial', orders: [{ instrument: 'p45', status: 'filled' }, { instrument: 'c55', status: 'filled' }, { instrument: 'p50', status: 'filled' }, { instrument: 'c50', status: 'working', filledQty: 0 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Bought 1 MPC260417P45 @ 0.70 USD', date: '2026-03-03' },
+          { type: 'trade.fill', summary: 'Bought 1 MPC260417C55 @ 0.60 USD' },
+          { type: 'trade.fill', summary: 'Sold 1 MPC260417P50 @ 2.00 USD' },
+        ],
+        cash: { account: { USD: { settled: 5_546.75, unsettled: 68.05, reserved: 3_000, availableToTrade: 2_614.80, availableToWithdraw: 2_415.45 } } }, // -70.65 - 60.65 + 199.35
+        positions: [
+          { instrument: 'c50', lot: 'butterfly', value: -1_075 },
+          { instrument: 'c55', lot: 'butterfly', value: 275 },
+          { instrument: 'c55', lot: 'retry', owner: 'account', direction: 'long', qty: 1, avgCost: 0.60, cost: 60, price: 0.55, value: 55, unrealized: -5 },
+          { instrument: 'p45', lot: 'butterfly', value: 325 },
+          { instrument: 'p45', lot: 'retry', owner: 'account', direction: 'long', qty: 1, avgCost: 0.70, cost: 70, price: 0.65, value: 65, unrealized: -5 },
+          { instrument: 'p50', lot: 'butterfly', value: -1_025 },
+          { instrument: 'p50', lot: 'retry', owner: 'account', direction: 'short', qty: -1, avgCost: 2.00, cost: -200, price: 2.05, value: -205, unrealized: -5 },
+        ],
+        holdings: { c55: { long: 6, short: 0, net: 6 }, p45: { long: 6, short: 0, net: 6 }, p50: { long: 0, short: 6, net: -6 } },
+        pending: [
+          { instrument: 'c55', lot: 'retry', dueDate: '2026-03-04', amount: -60.65 },
+          { instrument: 'p45', lot: 'retry', dueDate: '2026-03-04', amount: -70.65 },
+          { instrument: 'p50', lot: 'retry', dueDate: '2026-03-04', amount: 199.35 },
+        ],
+        openOrders: [{ instrument: 'c50', kind: 'trade', action: 'sell', status: 'working', qty: 1, filledQty: 0 }],
+        lifecycle: [{ instrument: 'c50' }, { instrument: 'c55' }, { instrument: 'c55' }, { instrument: 'p45' }, { instrument: 'p45' }, { instrument: 'p50' }, { instrument: 'p50' }],
+        pnl: { account: { commissions: -14.95, unrealized: -115, total: -129.95 }, book: { commissions: -14.95, unrealized: -115, total: -129.95 } },
+        nav: { account: 4_029.80, book: 999_870.05 },
+        balance: {
+          account: { cash: 5_546.75, receivable: 199.35, payable: 131.30, positions: -1_585, assets: 4_161.10, liabilities: 131.30, netAssets: 4_029.80 },
+          book: { cash: 1_001_387, receivable: 199.35, payable: 131.30, positions: -1_585, assets: 1_000_001.35, liabilities: 131.30, netAssets: 999_870.05 },
+        },
+      },
+    },
+    {
+      ...iflyOne('accept'), id: 'open-accept', covers: ['open', 'failed dependent leg'],
+      expect: {
+        preview: { blocking: 0, legs: [{ instrument: 'p45' }, { instrument: 'c55' }, { instrument: 'p50', dependsOn: [1] }, { instrument: 'c50', estimate: null, dependsOn: [2] }], cash: { USD: { required: 632.60, available: 2_614.80, shortfall: 0 } } },
+        result: { status: 'partial', orders: [{ status: 'filled' }, { status: 'filled' }, { status: 'filled' }, { instrument: 'c50', status: 'working' }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill' }, { type: 'trade.fill' }, { type: 'trade.fill' }],
+        cash: { account: { USD: { settled: 5_546.75, unsettled: 136.10, reserved: 3_500, availableToTrade: 2_182.85, availableToWithdraw: 1_784.15 } } },
+        positions: [
+          { instrument: 'c50', lot: 'butterfly' },
+          { instrument: 'c55', lot: 'accept', value: 55 }, { instrument: 'c55', lot: 'butterfly' }, { instrument: 'c55', lot: 'retry' },
+          { instrument: 'p45', lot: 'accept', value: 65 }, { instrument: 'p45', lot: 'butterfly' }, { instrument: 'p45', lot: 'retry' },
+          { instrument: 'p50', lot: 'accept', value: -205 }, { instrument: 'p50', lot: 'butterfly' }, { instrument: 'p50', lot: 'retry' },
+        ],
+        holdings: { c55: { long: 7, short: 0, net: 7 }, p45: { long: 7, short: 0, net: 7 }, p50: { long: 0, short: 7, net: -7 } },
+        pending: [
+          { instrument: 'c55', lot: 'accept' }, { instrument: 'c55', lot: 'retry' },
+          { instrument: 'p45', lot: 'accept' }, { instrument: 'p45', lot: 'retry' },
+          { instrument: 'p50', lot: 'accept' }, { instrument: 'p50', lot: 'retry' },
+        ],
+        openOrders: [{ instrument: 'c50', status: 'working' }, { instrument: 'c50', status: 'working' }],
+        lifecycle: [{ instrument: 'c50' }, { instrument: 'c55' }, { instrument: 'c55' }, { instrument: 'c55' }, { instrument: 'p45' }, { instrument: 'p45' }, { instrument: 'p45' }, { instrument: 'p50' }, { instrument: 'p50' }, { instrument: 'p50' }],
+        pnl: { account: { commissions: -16.90, unrealized: -130, total: -146.90 }, book: { commissions: -16.90, unrealized: -130, total: -146.90 } },
+        nav: { account: 4_012.85, book: 999_853.10 },
+        balance: {
+          account: { cash: 5_546.75, receivable: 398.70, payable: 262.60, positions: -1_670, assets: 4_275.45, liabilities: 262.60, netAssets: 4_012.85 },
+          book: { cash: 1_001_387, receivable: 398.70, payable: 262.60, positions: -1_670, assets: 1_000_115.70, liabilities: 262.60, netAssets: 999_853.10 },
+        },
+      },
+    },
+    {
+      ...iflyOne('unwind'), id: 'open-unwind', covers: ['open', 'failed dependent leg'],
+      expect: {
+        preview: { blocking: 0, legs: [{ instrument: 'p45' }, { instrument: 'c55' }, { instrument: 'p50' }, { instrument: 'c50', estimate: null }], cash: { USD: { required: 632.60, available: 2_182.85, shortfall: 0 } } },
+        result: { status: 'partial', orders: [{ status: 'filled' }, { status: 'filled' }, { status: 'filled' }, { instrument: 'c50', status: 'working' }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill' }, { type: 'trade.fill' }, { type: 'trade.fill' }],
+        cash: { account: { USD: { settled: 5_546.75, unsettled: 204.15, reserved: 4_000, availableToTrade: 1_750.90, availableToWithdraw: 1_152.85 } } },
+        positions: [
+          { instrument: 'c50', lot: 'butterfly' },
+          { instrument: 'c55', lot: 'accept' }, { instrument: 'c55', lot: 'butterfly' }, { instrument: 'c55', lot: 'retry' }, { instrument: 'c55', lot: 'unwind', value: 55 },
+          { instrument: 'p45', lot: 'accept' }, { instrument: 'p45', lot: 'butterfly' }, { instrument: 'p45', lot: 'retry' }, { instrument: 'p45', lot: 'unwind', value: 65 },
+          { instrument: 'p50', lot: 'accept' }, { instrument: 'p50', lot: 'butterfly' }, { instrument: 'p50', lot: 'retry' }, { instrument: 'p50', lot: 'unwind', value: -205 },
+        ],
+        holdings: { c55: { long: 8, short: 0, net: 8 }, p45: { long: 8, short: 0, net: 8 }, p50: { long: 0, short: 8, net: -8 } },
+        pending: [
+          { instrument: 'c55', lot: 'accept' }, { instrument: 'c55', lot: 'retry' }, { instrument: 'c55', lot: 'unwind', amount: -60.65 },
+          { instrument: 'p45', lot: 'accept' }, { instrument: 'p45', lot: 'retry' }, { instrument: 'p45', lot: 'unwind', amount: -70.65 },
+          { instrument: 'p50', lot: 'accept' }, { instrument: 'p50', lot: 'retry' }, { instrument: 'p50', lot: 'unwind', amount: 199.35 },
+        ],
+        openOrders: [{ instrument: 'c50', status: 'working' }, { instrument: 'c50', status: 'working' }, { instrument: 'c50', status: 'working' }],
+        lifecycle: [{ instrument: 'c50' }, { instrument: 'c55' }, { instrument: 'c55' }, { instrument: 'c55' }, { instrument: 'c55' }, { instrument: 'p45' }, { instrument: 'p45' }, { instrument: 'p45' }, { instrument: 'p45' }, { instrument: 'p50' }, { instrument: 'p50' }, { instrument: 'p50' }, { instrument: 'p50' }],
+        pnl: { account: { commissions: -18.85, unrealized: -145, total: -163.85 }, book: { commissions: -18.85, unrealized: -145, total: -163.85 } },
+        nav: { account: 3_995.90, book: 999_836.15 },
+        balance: {
+          account: { cash: 5_546.75, receivable: 598.05, payable: 393.90, positions: -1_755, assets: 4_389.80, liabilities: 393.90, netAssets: 3_995.90 },
+          book: { cash: 1_001_387, receivable: 598.05, payable: 393.90, positions: -1_755, assets: 1_000_230.05, liabilities: 393.90, netAssets: 999_836.15 },
+        },
+      },
+    },
+    {
+      id: 'call-legs-expire', covers: ['failed dependent leg', 'settlement'], action: 'clock', to: MAR(4),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 199.35 USD into settled cash', date: '2026-03-04' },
+          { type: 'settlement.receive', summary: 'received 199.35 USD into settled cash' },
+          { type: 'settlement.receive', summary: 'received 199.35 USD into settled cash' },
+          { type: 'settlement.pay', summary: 'paid 70.65 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 60.65 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 70.65 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 60.65 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 70.65 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 60.65 USD from settled cash' },
+          { type: 'order.expired', summary: 'Leg 4 expired: sell 1 MPC260417C50. Day order did not fill before the end of the business day' },
+          { type: 'order.expired', summary: 'Leg 4 expired: sell 1 MPC260417C50. Day order did not fill before the end of the business day' },
+          { type: 'order.expired', summary: 'Leg 4 expired: sell 1 MPC260417C50. Day order did not fill before the end of the business day' },
+        ],
+        cash: { account: { USD: { settled: 5_750.90, unsettled: 0, availableToTrade: 1_750.90, availableToWithdraw: 1_750.90 } } },
+        pending: [], openOrders: [],
+        failed: { orders: 3 },
+        alerts: ['strategy.attention', 'strategy.attention', 'strategy.attention'],
+        balance: { account: { cash: 5_750.90, receivable: null, payable: null, assets: 3_995.90, liabilities: 0 }, book: { cash: 1_001_591.15, receivable: null, payable: null, assets: 999_836.15, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'c50-quote-day3', action: 'quote', instrument: 'c50', quote: { bid: 1.90, ask: 2.00, last: 1.95, bidSize: 20, askSize: 20 },
+      expect: {
+        positions: [
+          { instrument: 'c50', lot: 'butterfly', price: 1.95, value: -975, unrealized: 75 }, // -5 x 1.95 x 100 + 1,050
+          { instrument: 'c55', lot: 'accept' }, { instrument: 'c55', lot: 'butterfly' }, { instrument: 'c55', lot: 'retry' }, { instrument: 'c55', lot: 'unwind' },
+          { instrument: 'p45', lot: 'accept' }, { instrument: 'p45', lot: 'butterfly' }, { instrument: 'p45', lot: 'retry' }, { instrument: 'p45', lot: 'unwind' },
+          { instrument: 'p50', lot: 'accept' }, { instrument: 'p50', lot: 'butterfly' }, { instrument: 'p50', lot: 'retry' }, { instrument: 'p50', lot: 'unwind' },
+        ],
+        pnl: { account: { unrealized: -45, total: -63.85 }, book: { unrealized: -45, total: -63.85 } },
+        nav: { account: 4_095.90, book: 999_936.15 },
+        balance: { account: { positions: -1_655, assets: 4_095.90, netAssets: 4_095.90 }, book: { positions: -1_655, assets: 999_936.15, netAssets: 999_936.15 } },
+      },
+    },
+    {
+      id: 'retry', covers: ['retry', 'failed dependent leg'], action: 'recover', how: 'retry', lot: 'retry',
+      expect: {
+        preview: { blocking: 0, errors: [], intent: 'retry', legs: [{ kind: 'trade', action: 'sell', instrument: 'c50', qty: 1, estimate: 1.90, settleDate: '2026-03-05', cash: 190, fees: 0.65 }], cash: { USD: { proceeds: 190, fees: 0.65, reserved: 0, required: 0.65, available: 1_750.90, shortfall: 0 } }, optionRequirement: [{ ccy: 'USD', amount: 500, finite: 500, naked: 0, uncoveredCallUnits: 0 }] },
+        result: { status: 'open', complete: true, orders: [{ action: 'sell', instrument: 'c50', status: 'filled', filledQty: 1, avgPrice: 1.90 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 1 MPC260417C50 @ 1.90 USD', date: '2026-03-04' }],
+        cash: { account: { USD: { settled: 5_750.90, unsettled: 189.35, reserved: 4_000, availableToTrade: 1_940.25, availableToWithdraw: 1_750.90 } } },
+        positions: [
+          { instrument: 'c50', lot: 'butterfly', value: -975 }, { instrument: 'c50', lot: 'retry', owner: 'account', direction: 'short', qty: -1, avgCost: 1.90, cost: -190, price: 1.95, value: -195, unrealized: -5 },
+          { instrument: 'c55', lot: 'accept' }, { instrument: 'c55', lot: 'butterfly' }, { instrument: 'c55', lot: 'retry' }, { instrument: 'c55', lot: 'unwind' },
+          { instrument: 'p45', lot: 'accept' }, { instrument: 'p45', lot: 'butterfly' }, { instrument: 'p45', lot: 'retry' }, { instrument: 'p45', lot: 'unwind' },
+          { instrument: 'p50', lot: 'accept' }, { instrument: 'p50', lot: 'butterfly' }, { instrument: 'p50', lot: 'retry' }, { instrument: 'p50', lot: 'unwind' },
+        ],
+        holdings: { c50: { long: 0, short: 6, net: -6 } },
+        pending: [{ instrument: 'c50', lot: 'retry', dueDate: '2026-03-05', amount: 189.35 }],
+        lifecycle: [{ instrument: 'c50' }, { instrument: 'c50' }, { instrument: 'c55' }, { instrument: 'c55' }, { instrument: 'c55' }, { instrument: 'c55' }, { instrument: 'p45' }, { instrument: 'p45' }, { instrument: 'p45' }, { instrument: 'p45' }, { instrument: 'p50' }, { instrument: 'p50' }, { instrument: 'p50' }, { instrument: 'p50' }],
+        alerts: ['strategy.attention', 'strategy.attention'],
+        pnl: { account: { commissions: -19.50, unrealized: -50, total: -69.50 }, book: { commissions: -19.50, unrealized: -50, total: -69.50 } },
+        nav: { account: 4_090.25, book: 999_930.50 },
+        balance: {
+          account: { cash: 5_750.90, receivable: 189.35, positions: -1_850, assets: 4_090.25, liabilities: 0, netAssets: 4_090.25 },
+          book: { cash: 1_001_591.15, receivable: 189.35, positions: -1_850, assets: 999_930.50, netAssets: 999_930.50 },
+        },
+      },
+    },
+    {
+      id: 'accept', covers: ['accept', 'failed dependent leg'], action: 'strategy_action', lot: 'accept', how: 'accept',
+      expect: { events: [{ type: 'strategy.accepted', summary: 'accepted as it stands with 1 leg unexecuted. The position no longer matches its template.' }], alerts: ['strategy.attention'] },
+    },
+    {
+      // Unwind: the written 50 put is bought back first at 2.10; the wings are sold after it at 0.60 and 0.50. -10 each.
+      id: 'unwind', covers: ['unwind', 'close', 'dependency'], action: 'recover', how: 'unwind', lot: 'unwind',
+      expect: {
+        preview: {
+          blocking: 0, errors: [], intent: 'unwind',
+          legs: [
+            { kind: 'trade', action: 'buy', instrument: 'p50', qty: 1, estimate: 2.10, settleDate: '2026-03-05', cash: -210, fees: 0.65, dependsOn: [] },
+            { kind: 'trade', action: 'sell', instrument: 'p45', qty: 1, estimate: 0.60, settleDate: '2026-03-05', cash: 60, fees: 0.65, dependsOn: [1] },
+            { kind: 'trade', action: 'sell', instrument: 'c55', qty: 1, estimate: 0.50, settleDate: '2026-03-05', cash: 50, fees: 0.65, dependsOn: [1] },
+          ],
+          cash: { USD: { purchases: 210, proceeds: 110, fees: 1.95, reserved: 0, required: 211.95, available: 1_940.25, shortfall: 0 } },
+        },
+        result: { status: 'closed', orders: [{ action: 'buy', instrument: 'p50', status: 'filled' }, { action: 'sell', instrument: 'p45', status: 'filled' }, { action: 'sell', instrument: 'c55', status: 'filled' }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Bought 1 MPC260417P50 @ 2.10 USD (realized -10.00 USD)' },
+          { type: 'trade.fill', summary: 'Sold 1 MPC260417P45 @ 0.60 USD (realized -10.00 USD)' },
+          { type: 'trade.fill', summary: 'Sold 1 MPC260417C55 @ 0.50 USD (realized -10.00 USD)' },
+        ],
+        cash: { account: { USD: { settled: 5_750.90, unsettled: 87.40, reserved: 3_500, availableToTrade: 2_338.30, availableToWithdraw: 2_040.25 } } }, // 189.35 - 210.65 + 59.35 + 49.35
+        positions: [
+          { instrument: 'c50', lot: 'butterfly' }, { instrument: 'c50', lot: 'retry' },
+          { instrument: 'c55', lot: 'accept' }, { instrument: 'c55', lot: 'butterfly' }, { instrument: 'c55', lot: 'retry' },
+          { instrument: 'p45', lot: 'accept' }, { instrument: 'p45', lot: 'butterfly' }, { instrument: 'p45', lot: 'retry' },
+          { instrument: 'p50', lot: 'accept' }, { instrument: 'p50', lot: 'butterfly' }, { instrument: 'p50', lot: 'retry' },
+        ],
+        holdings: { c55: { long: 7, short: 0, net: 7 }, p45: { long: 7, short: 0, net: 7 }, p50: { long: 0, short: 7, net: -7 } },
+        pending: [
+          { instrument: 'c50', lot: 'retry', amount: 189.35 },
+          { instrument: 'c55', lot: 'unwind', dueDate: '2026-03-05', amount: 49.35 },
+          { instrument: 'p45', lot: 'unwind', dueDate: '2026-03-05', amount: 59.35 },
+          { instrument: 'p50', lot: 'unwind', dueDate: '2026-03-05', amount: -210.65 },
+        ],
+        lifecycle: [{ instrument: 'c50' }, { instrument: 'c50' }, { instrument: 'c55' }, { instrument: 'c55' }, { instrument: 'c55' }, { instrument: 'p45' }, { instrument: 'p45' }, { instrument: 'p45' }, { instrument: 'p50' }, { instrument: 'p50' }, { instrument: 'p50' }],
+        alerts: [],
+        pnl: { account: { realized: -30, commissions: -21.45, unrealized: -35, total: -86.45 }, book: { realized: -30, commissions: -21.45, unrealized: -35, total: -86.45 } },
+        nav: { account: 4_073.30, book: 999_913.55 },
+        balance: {
+          account: { cash: 5_750.90, receivable: 298.05, payable: 210.65, positions: -1_765, assets: 4_283.95, liabilities: 210.65, netAssets: 4_073.30 },
+          book: { cash: 1_001_591.15, receivable: 298.05, payable: 210.65, positions: -1_765, assets: 1_000_124.20, liabilities: 210.65, netAssets: 999_913.55 },
+        },
+      },
+    },
+    {
+      id: 'settle-recovery', covers: 'settlement', action: 'clock', to: MAR(5),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 189.35 USD into settled cash', date: '2026-03-05' },
+          { type: 'settlement.receive', summary: 'received 59.35 USD into settled cash' },
+          { type: 'settlement.receive', summary: 'received 49.35 USD into settled cash' },
+          { type: 'settlement.pay', summary: 'paid 210.65 USD from settled cash' },
+        ],
+        cash: { account: { USD: { settled: 5_838.30, unsettled: 0, availableToTrade: 2_338.30, availableToWithdraw: 2_338.30 } } },
+        pending: [],
+        balance: { account: { cash: 5_838.30, receivable: null, payable: null, assets: 4_073.30, liabilities: 0 }, book: { cash: 1_001_678.55, receivable: null, payable: null, assets: 999_913.55, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'close-retry', covers: ['close', 'dependency'], action: 'close', lot: 'retry', instrument: 'p45', scope: 'strategy', percent: 100,
+      expect: {
+        preview: {
+          blocking: 0, errors: [], intent: 'close',
+          legs: [
+            { kind: 'trade', action: 'buy', instrument: 'p50', qty: 1, estimate: 2.10, settleDate: '2026-03-06', cash: -210, fees: 0.65, dependsOn: [] },
+            { kind: 'trade', action: 'buy', instrument: 'c50', qty: 1, estimate: 2.00, settleDate: '2026-03-06', cash: -200, fees: 0.65, dependsOn: [] },
+            { kind: 'trade', action: 'sell', instrument: 'p45', qty: 1, estimate: 0.60, settleDate: '2026-03-06', cash: 60, fees: 0.65, dependsOn: [1, 2] },
+            { kind: 'trade', action: 'sell', instrument: 'c55', qty: 1, estimate: 0.50, settleDate: '2026-03-06', cash: 50, fees: 0.65, dependsOn: [1, 2] },
+          ],
+          cash: { USD: { purchases: 410, proceeds: 110, fees: 2.60, reserved: 0, required: 412.60, available: 2_338.30, shortfall: 0 } },
+        },
+        result: { status: 'closed', orders: [{ instrument: 'p50', status: 'filled' }, { instrument: 'c50', status: 'filled' }, { instrument: 'p45', status: 'filled' }, { instrument: 'c55', status: 'filled' }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Bought 1 MPC260417P50 @ 2.10 USD (realized -10.00 USD)' },
+          { type: 'trade.fill', summary: 'Bought 1 MPC260417C50 @ 2.00 USD (realized -10.00 USD)' },
+          { type: 'trade.fill', summary: 'Sold 1 MPC260417P45 @ 0.60 USD (realized -10.00 USD)' },
+          { type: 'trade.fill', summary: 'Sold 1 MPC260417C55 @ 0.50 USD (realized -10.00 USD)' },
+        ],
+        cash: { account: { USD: { settled: 5_838.30, unsettled: -302.60, reserved: 3_000, availableToTrade: 2_535.70, availableToWithdraw: 2_427 } } },
+        positions: [
+          { instrument: 'c50', lot: 'butterfly', value: -975 },
+          { instrument: 'c55', lot: 'accept', value: 55 }, { instrument: 'c55', lot: 'butterfly', value: 275 },
+          { instrument: 'p45', lot: 'accept', value: 65 }, { instrument: 'p45', lot: 'butterfly', value: 325 },
+          { instrument: 'p50', lot: 'accept', value: -205 }, { instrument: 'p50', lot: 'butterfly', value: -1_025 },
+        ],
+        holdings: { c50: { long: 0, short: 5, net: -5 }, c55: { long: 6, short: 0, net: 6 }, p45: { long: 6, short: 0, net: 6 }, p50: { long: 0, short: 6, net: -6 } },
+        pending: [
+          { instrument: 'c50', lot: 'retry', dueDate: '2026-03-06', amount: -200.65 },
+          { instrument: 'c55', lot: 'retry', dueDate: '2026-03-06', amount: 49.35 },
+          { instrument: 'p45', lot: 'retry', dueDate: '2026-03-06', amount: 59.35 },
+          { instrument: 'p50', lot: 'retry', dueDate: '2026-03-06', amount: -210.65 },
+        ],
+        lifecycle: [{ instrument: 'c50' }, { instrument: 'c55' }, { instrument: 'c55' }, { instrument: 'p45' }, { instrument: 'p45' }, { instrument: 'p50' }, { instrument: 'p50' }],
+        pnl: { account: { realized: -70, commissions: -24.05, unrealized: -15, total: -109.05 }, book: { realized: -70, commissions: -24.05, unrealized: -15, total: -109.05 } },
+        nav: { account: 4_050.70, book: 999_890.95 },
+        balance: {
+          account: { cash: 5_838.30, receivable: 108.70, payable: 411.30, positions: -1_485, assets: 4_462, liabilities: 411.30, netAssets: 4_050.70 },
+          book: { cash: 1_001_678.55, receivable: 108.70, payable: 411.30, positions: -1_485, assets: 1_000_302.25, liabilities: 411.30, netAssets: 999_890.95 },
+        },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: MAR(6),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 59.35 USD into settled cash', date: '2026-03-06' },
+          { type: 'settlement.receive', summary: 'received 49.35 USD into settled cash' },
+          { type: 'settlement.pay', summary: 'paid 210.65 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 200.65 USD from settled cash' },
+        ],
+        cash: { account: { USD: { settled: 5_535.70, unsettled: 0, availableToTrade: 2_535.70, availableToWithdraw: 2_535.70 } } },
+        pending: [],
+        balance: { account: { cash: 5_535.70, receivable: null, payable: null, assets: 4_050.70, liabilities: 0 }, book: { cash: 1_001_375.95, receivable: null, payable: null, assets: 999_890.95, liabilities: 0 } },
+      },
+    },
+    {
+      // Cash for the shares an assignment of the written puts would deliver at 50.
+      id: 'fund-for-delivery', covers: 'internal funding', action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 30_000,
+      expect: {
+        events: [{ type: 'transfer.funding', summary: 'Treasury funding: 30,000.00 USD from Treasury to Alpha' }],
+        cash: { account: { USD: { settled: 35_535.70, availableToTrade: 32_535.70, availableToWithdraw: 32_535.70 } }, treasury: { USD: { settled: 965_840.25, availableToTrade: 965_840.25, availableToWithdraw: 965_840.25 } } },
+        nav: { account: 34_050.70, treasury: 965_840.25 },
+        balance: { account: { cash: 35_535.70, assets: 34_050.70, netAssets: 34_050.70 }, treasury: { cash: 965_840.25, assets: 965_840.25, netAssets: 965_840.25 } },
+      },
+    },
+    { id: 'stock-quote', action: 'quote', instrument: 'stock', quote: { bid: 46.98, ask: 47.02, last: 47.00, bidSize: 10000, askSize: 10000 }, expect: {} }, // no shares held yet
+    { id: 'expiry-close', action: 'close_price', instrument: 'stock', date: '2026-04-17', value: 47.00, expect: {} },
+    {
+      // Held across Good Friday. 17 April, close 47: the written 50 puts are assigned (closed at zero: their premium is
+      // realized, +1,000 and +200), 500 and 100 shares received at 50 (25,000 and 5,000, due 20 April); the 45 puts lapse
+      // (-350, -70), the written 50 calls lapse (+1,050), the 55 calls lapse (-300, -60). Realized -70 + 1,400 + 70 = 1,400.
+      // The shares are worth 600 x 47 = 28,200 against 30,000.
+      id: 'expiry', covers: ['expiry', 'assignment', 'holiday'], action: 'clock', to: APR(17, '17:30'),
+      expect: {
+        events: [
+          { type: 'option.expired', summary: 'Expired worthless: 5 MPC260417P45 (fixing 47)', date: '2026-04-17' },
+          { type: 'option.expired', summary: 'Expired worthless: 5 MPC260417C55 (fixing 47)' },
+          { type: 'option.assigned', summary: 'Assigned: 5 MPC260417P50 at strike 50' },
+          { type: 'option.delivery', summary: /^Simulated delivery: received 500 MPC at strike 50 on assignment of MPC260417P50/ },
+          { type: 'option.expired', summary: 'Expired worthless: 5 MPC260417C50 (fixing 47)' },
+          { type: 'option.expired', summary: 'Expired worthless: 1 MPC260417P45 (fixing 47)' },
+          { type: 'option.expired', summary: 'Expired worthless: 1 MPC260417C55 (fixing 47)' },
+          { type: 'option.assigned', summary: 'Assigned: 1 MPC260417P50 at strike 50' },
+          { type: 'option.delivery', summary: /^Simulated delivery: received 100 MPC at strike 50 on assignment of MPC260417P50/ },
+        ],
+        cash: { account: { USD: { settled: 35_535.70, unsettled: -30_000, reserved: 0, availableToTrade: 5_535.70, availableToWithdraw: 5_535.70 } } },
+        positions: [
+          { instrument: 'stock', lot: 'accept', owner: 'account', direction: 'long', qty: 100, avgCost: 50, cost: 5_000, price: 47, value: 4_700, unrealized: -300 },
+          { instrument: 'stock', lot: 'butterfly', owner: 'account', direction: 'long', qty: 500, avgCost: 50, cost: 25_000, price: 47, value: 23_500, unrealized: -1_500 },
+        ],
+        holdings: { c50: null, c55: null, p45: null, p50: null, stock: { long: 600, short: 0, net: 600 } },
+        pending: [{ instrument: 'stock', lot: 'butterfly', dueDate: '2026-04-20', amount: -25_000, into: 'cash' }, { instrument: 'stock', lot: 'accept', dueDate: '2026-04-20', amount: -5_000, into: 'cash' }],
+        lifecycle: [],
+        pnl: { account: { realized: 1_400, commissions: -24.05, unrealized: -1_800, total: -424.05 }, book: { realized: 1_400, commissions: -24.05, unrealized: -1_800, total: -424.05 } },
+        nav: { account: 33_735.70, book: 999_575.95 }, // 35,535.70 - 30,000 + 28,200
+        balance: {
+          account: { cash: 35_535.70, payable: 30_000, positions: 28_200, assets: 63_735.70, liabilities: 30_000, netAssets: 33_735.70 },
+          book: { cash: 1_001_375.95, payable: 30_000, positions: 28_200, assets: 1_029_575.95, liabilities: 30_000, netAssets: 999_575.95 },
+        },
+      },
+    },
+    {
+      id: 'settle-delivery', covers: 'settlement', action: 'clock', to: APR(20),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 25,000.00 USD from settled cash', date: '2026-04-20' }, { type: 'settlement.pay', summary: 'paid 5,000.00 USD from settled cash' }],
+        cash: { account: { USD: { settled: 5_535.70, unsettled: 0, availableToTrade: 5_535.70, availableToWithdraw: 5_535.70 } } },
+        pending: [],
+        balance: { account: { cash: 5_535.70, payable: null, assets: 33_735.70, liabilities: 0 }, book: { cash: 971_375.95, payable: null, assets: 999_575.95, liabilities: 0 } },
+      },
+    },
+    {
+      // 500 shares at the bid 46.98 = 23,490; commission 2.50. Realized 500 x (46.98 - 50) = -1,510.
+      id: 'close-butterfly', covers: ['close'], action: 'close', lot: 'butterfly', instrument: 'stock', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], intent: 'close', legs: [{ kind: 'trade', action: 'sell', instrument: 'stock', qty: 500, estimate: 46.98, settleDate: '2026-04-21', cash: 23_490, fees: 2.50 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', instrument: 'stock', status: 'filled', filledQty: 500, avgPrice: 46.98 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 500 MPC @ 46.98 USD (realized -1,510.00 USD)', date: '2026-04-20' }],
+        cash: { account: { USD: { settled: 5_535.70, unsettled: 23_487.50, availableToTrade: 29_023.20, availableToWithdraw: 5_535.70 } } },
+        positions: [{ instrument: 'stock', lot: 'accept', qty: 100, value: 4_700, unrealized: -300 }],
+        holdings: { stock: { long: 100, short: 0, net: 100 } },
+        pending: [{ instrument: 'stock', lot: 'butterfly', dueDate: '2026-04-21', amount: 23_487.50, into: 'cash' }],
+        pnl: { account: { realized: -110, commissions: -26.55, unrealized: -300, total: -436.55 }, book: { realized: -110, commissions: -26.55, unrealized: -300, total: -436.55 } },
+        nav: { account: 33_723.20, book: 999_563.45 },
+        balance: {
+          account: { cash: 5_535.70, receivable: 23_487.50, positions: 4_700, assets: 33_723.20, liabilities: 0, netAssets: 33_723.20 },
+          book: { cash: 971_375.95, receivable: 23_487.50, positions: 4_700, assets: 999_563.45, netAssets: 999_563.45 },
+        },
+      },
+    },
+    {
+      // 100 shares at 46.98 = 4,698; commission 0.50, raised to the 1.00 minimum. Realized -302.
+      id: 'close-accept', covers: ['close'], action: 'close', lot: 'accept', instrument: 'stock', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'sell', instrument: 'stock', qty: 100, estimate: 46.98, settleDate: '2026-04-21', cash: 4_698, fees: 1 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 100, avgPrice: 46.98 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 100 MPC @ 46.98 USD (realized -302.00 USD)' }],
+        cash: { account: { USD: { settled: 5_535.70, unsettled: 28_184.50, availableToTrade: 33_720.20, availableToWithdraw: 5_535.70 } } },
+        positions: [],
+        holdings: { stock: null },
+        pending: [{ instrument: 'stock', lot: 'accept', dueDate: '2026-04-21', amount: 4_697 }, { instrument: 'stock', lot: 'butterfly', dueDate: '2026-04-21', amount: 23_487.50 }],
+        pnl: { account: { realized: -412, commissions: -27.55, unrealized: 0, total: -439.55 }, book: { realized: -412, commissions: -27.55, unrealized: 0, total: -439.55 } },
+        nav: { account: 33_720.20, book: 999_560.45 },
+        balance: {
+          account: { cash: 5_535.70, receivable: 28_184.50, positions: null, assets: 33_720.20, netAssets: 33_720.20 },
+          book: { cash: 971_375.95, receivable: 28_184.50, positions: null, assets: 999_560.45, netAssets: 999_560.45 },
+        },
+      },
+    },
+    {
+      // Nothing left: 1,000 + 1,159.75 + 2,000 + 30,000 funded, less 439.55.
+      id: 'settle-final', covers: 'settlement', action: 'clock', to: APR(21),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 23,487.50 USD into settled cash', date: '2026-04-21' }, { type: 'settlement.receive', summary: 'received 4,697.00 USD into settled cash' }],
+        cash: { account: { USD: { settled: 33_720.20, unsettled: 0, reserved: 0, availableToTrade: 33_720.20, availableToWithdraw: 33_720.20 } } },
+        pending: [],
+        balance: { account: { cash: 33_720.20, receivable: null, assets: 33_720.20 }, book: { cash: 999_560.45, receivable: null, assets: 999_560.45 } },
+      },
+    },
+  ],
+};
+
+export default [bearCall, longStraddle, longStrangle, ironCondor, ironButterfly];

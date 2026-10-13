@@ -249,3 +249,4 @@
 - 2026-10-13T20:00Z | s2 | +0.2 | commodity_basis_swap passes at engine, API and browser (two averaged references and a differential, net)
 - 2026-10-13T20:01Z | s3 | +0.2 | cds_index_tranche passes at engine, API and browser
 - 2026-10-13T20:04Z | s3 | +0.2 | loan_cds passes at engine, API and browser
+- 2026-10-13T20:04Z | s2 | +0.2 | commodity_index_swap passes at engine, API and browser (monthly notional reset, missing last fixing by hand)
