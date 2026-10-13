@@ -384,3 +384,6 @@ Open (s9, not fixed: larger than a small interface fix):
 - Balance-sheet column choices (grouping, combined, filters) are kept in sessionStorage (web/views/accounting.js bsLoad/bsSave): they
   survive a reload and a server restart in the same tab, but not a new tab or a browser restart. If they are meant to persist like the
   theme and the Marketplace tab, they need localStorage.
+- server/core/packages.js growLegs / rollLegs (t1b, fixed): resizing a vertical spread sent the added written option with no
+  dependency on the added bought option, and rolling it sold the covering option before the written one was bought back (and
+  wrote the new option independently of the new cover). Found by T:bull_call_spread resize-up / roll. Now as in the template.

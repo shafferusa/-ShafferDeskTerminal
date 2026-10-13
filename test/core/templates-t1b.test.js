@@ -59,3 +59,22 @@ test('a cash-secured put with financing: the reservation waits for the funding l
   assert.deepEqual(pv.legs.map((l) => [l.kind, l.dependsOn]), [['funding', []], ['reserve', [1]], ['trade', [2, 1]]]);
   assert.equal(pv.legs[0].qty, 18_000, '19,000 reserved before the premium arrives; 1,000 free');
 });
+
+test('a vertical spread keeps its written leg covered when resized and rolled', async () => {
+  const { app, inst } = makeApp();
+  const { book, acct } = makeBook(app);
+  pin(app, inst.ALFA, 200, 200.04);
+  const call = (strike, expiration = '2026-04-17') => app.instruments.ensureOption({ underlyingId: inst.ALFA.id, expiration, strike, right: 'C', multiplier: 100, deliverableUnits: 100, exercise: 'american', settlement: 'physical', refSource: 'demo' });
+  pin(app, call(200), 8, 8.2); pin(app, call(210), 4, 4.2); pin(app, call(200, '2026-05-15'), 11, 11.2); pin(app, call(210, '2026-05-15'), 6, 6.2);
+  const r = await confirm(app, { bookId: book.id, unitId: acct.id, template: 'bull_call_spread', underlyingId: inst.ALFA.id, options: { expiration: '2026-04-17', strikes: { lower: 200, upper: 210 }, contracts: 2 } });
+  const sid = r.strategy.id;
+  // Resize: the added written calls wait for the added bought calls (as the template opened them).
+  const grow = await app.packages.previewAction(sid, 'resize', { factor: 2 });
+  assert.deepEqual(grow.legs.map((l) => [l.action, l.strike, l.dependsOn]), [['buy', 200, []], ['sell', 210, [1]]]);
+  // Roll: written calls bought back first, the covering calls sold after them; the new written calls wait for the new bought ones.
+  const roll = await app.packages.previewAction(sid, 'roll', { newExpiration: '2026-05-15' });
+  assert.deepEqual(roll.legs.map((l) => [l.action, l.strike, l.expiration, l.dependsOn]), [['buy', 210, '2026-04-17', []], ['sell', 200, '2026-04-17', [1]], ['buy', 200, '2026-05-15', []], ['sell', 210, '2026-05-15', [3]]]);
+  const done = await app.packages.submit({ bookId: book.id, unitId: acct.id, template: 'custom', attachTo: sid, intent: 'roll', legs: roll.legs, clientToken: roll.token, confirm: true });
+  assert.equal(done.strategy.status, 'open', done.strategy.orders.map((o) => `${o.status} ${o.statusReason || ''}`).join(' | '));
+  assert.deepEqual(ledgerImbalance(app), []);
+});
