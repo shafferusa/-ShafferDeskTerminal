@@ -448,6 +448,7 @@ export const swap = {
   dataNeeds(app, { inst, task }) {
     const out = { rateCodes: [], closes: [], instruments: [] };
     if (!task) return out; // swaps accrue nothing in the ledger between payment dates
+    if (task.type === 'swap.dividend') return dividendNeeds(app, inst, task); // s2
     const leg = inst.terms.legs.find((l) => l.id === task.data?.legId);
     // Fixings from the start of the period being paid: a leg that pays once, at maturity, has one period from the effective date.
     if (leg && task.data?.periodEnd) out.rateFrom = addDays(leg.months ? addMonths(task.data.periodEnd, -leg.months) : inst.terms.effective, -10);
@@ -556,7 +557,7 @@ export const swap = {
     }
 
     if (task.type === 'swap.maturity') {
-      const open = app.db.get(`SELECT COUNT(*) AS n FROM tasks WHERE position_id = ? AND type = 'swap.payment' AND status IN ('pending','blocked','failed')`, pos.id).n;
+      const open = app.db.get(`SELECT COUNT(*) AS n FROM tasks WHERE position_id = ? AND type IN ('swap.payment', 'swap.dividend') AND status IN ('pending','blocked','failed')`, pos.id).n;
       if (open) return { blocked: 'Waiting for the final leg payments to be made first.', needs: [] };
       // The principal that goes back at maturity must be there before the contract is ended.
       const short = notionalShortfall(app, unit, notionalExchangeDue(app, { inst, pos, date: app.clock.today() }));
@@ -722,6 +723,53 @@ function floatingPrice(app, inst, leg, period) {
   return { price, used, detail: { average: price, days: got.length, fixings: got.map((x) => ({ date: x.d, value: x.o.value })) } };
 }
 
+/** The leg period that contains a dividend's ex-date and the date of the fixing it starts from. */
+function dividendPeriod(inst, leg, exDate) {
+  const period = legSchedule(inst, leg).find((p) => p.start <= exDate && exDate < p.end);
+  return period ? { period, fixDate: fixingDate(inst, period.start) } : null;
+}
+function dividendNeeds(app, inst, task) {
+  const leg = inst.terms.legs.find((l) => l.id === task.data?.legId);
+  const u = leg && app.instruments.get(leg.underlyingId);
+  const p = leg && dividendPeriod(inst, leg, task.data.exDate);
+  return { rateCodes: [], instruments: u ? [u] : [], closes: u && p ? [{ instrument: u, date: p.fixDate }] : [] };
+}
+
+/**
+ * A cash dividend on the reference of a total-return leg, passed through: reference units = the notional of the period that
+ * contains the ex-date / that period's start fixing (the contract's initial price for the first period when it states one),
+ * x the dividend per unit. It used to take the last reset paid as the start, so a dividend in the first period was silently
+ * not passed through. A missing start fixing blocks it visibly, and the swap does not mature before it is paid.
+ */
+function passDividend(app, task, { book, unit, inst, pos }) {
+  const leg = inst.terms.legs.find((l) => l.id === task.data.legId);
+  const p = leg && dividendPeriod(inst, leg, task.data.exDate);
+  if (!leg || !p) return 'done';
+  const ref = app.instruments.get(leg.underlyingId);
+  const stated = p.period.start === inst.terms.effective ? inst.terms.initialPrices?.[leg.id] ?? null : null;
+  const o0 = stated === null ? app.data.closeFor(leg.underlyingId, p.fixDate) : null;
+  const p0 = stated ?? (o0 && o0.value !== null ? o0.value : null);
+  if (p0 === null) return { blocked: `Awaiting the ${p.fixDate} fixing for ${ref?.symbol || 'the reference asset'}, the start of the period, to pass through the dividend of ${task.data.perShare} (ex-date ${task.data.exDate}). ${app.data.describe().awaitingMessage}, or enter the fixing manually.`, needs: [{ kind: 'price', subject: leg.underlyingId, date: p.fixDate }] };
+  const used = o0 ? [app.data.recordUsed(o0)] : [];
+  const shares = (Math.abs(pos.qty) * (leg.notionalFactor ?? 1) * scaleAt(pos, p.period.start)) / p0;
+  const s = sign(pos.qty) * (leg.side === 'receive' ? 1 : -1);
+  const amount = money(s * shares * task.data.perShare, leg.ccy);
+  if (amount === 0) return 'done';
+  if (amount < 0 && app.ledger.balance(unit.id, 'cash', leg.ccy) < -amount - 0.004) {
+    const msg = `Dividend pass-through of ${fmt(-amount, leg.ccy)} on ${inst.name} could not be paid: insufficient settled ${leg.ccy} cash in ${unit.name}.`;
+    app.alerts.raise({ bookId: book.id, unitId: unit.id, level: 'error', code: 'funding.failed', refType: 'task', refId: task.id, message: msg });
+    return { failed: msg };
+  }
+  const eventId = app.ledger.post({
+    bookId: book.id, unitId: unit.id, type: 'swap.dividend', instrumentId: inst.id, strategyId: pos.strategy_id, positionId: pos.id, actor: 'engine',
+    summary: `Dividend pass-through on ${inst.name}: ${amount >= 0 ? 'received' : 'paid'} ${fmt(Math.abs(amount), leg.ccy)} (${fmtQty(shares)} reference shares x ${task.data.perShare})`,
+    data: { corporateActionId: task.data.corporateActionId, shares, perShare: task.data.perShare, startFixing: p0, exDate: task.data.exDate, obsIds: used },
+    entries: [{ account: 'cash', ccy: leg.ccy, amount, positionId: pos.id }, { account: 'pnl.realized', ccy: leg.ccy, amount: -amount, positionId: pos.id }],
+  });
+  app.alerts.resolve({ refType: 'task', refId: task.id, code: 'funding.failed' });
+  return { done: true, eventId };
+}
+
 /** Words for a price leg's averaging and hours, for the contract description. */
 function priceLegExtras(leg) {
   const out = [];
@@ -824,6 +872,8 @@ export const cds = {
     const r = bookSecurityFill(app, { ...c, summary }, { unitCost: (c.price * f) / 100, accrued: -acc.amount });
     if (r.wasFlat && !isZero(r.position.qty)) app.positions.change(r.position, { data: { premiumFrom: credit.premiumStart(c.inst, c.tradeDate), premiumPaidThrough: null } });
     const pos = app.positions.get(r.position.id);
+    // The accrued premium of the notional terminated is realized now; that of the notional opened is carried to the coupon.
+    if (acc.amount) credit.realizeTerminatedAccrual(app, { book: c.book, unit: c.unit, inst: c.inst, pos, strategyId: c.strategyId, booked: c.action === 'buy' ? -acc.amount : acc.amount, closedQty: Math.abs(r.closedQty || 0), qty: c.qty });
     if (acc.amount) credit.classifyTradeAccrual(app, { book: c.book, unit: c.unit, inst: c.inst, pos, strategyId: c.strategyId });
     if (isZero(pos.qty)) credit.settleAccruedOnClose(app, { book: c.book, unit: c.unit, inst: c.inst, pos });
     return { ...r, position: app.positions.get(r.position.id) };

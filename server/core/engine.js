@@ -246,6 +246,9 @@ export function createEngine(app) {
         summary.tasks += await processTasks(d);
         summary.corporateActions += app.corpactions.process(d);
       }
+      // Lifecycle work a corporate action has just created (a total-return swap's dividend pass-through, which may need a
+      // fixing fetched first) runs in this pass too, not one pass later.
+      if (summary.corporateActions) summary.tasks += await processTasks(today);
       const target = eodTarget();
       if (target) {
         await runEod(target);

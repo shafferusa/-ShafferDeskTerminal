@@ -776,7 +776,7 @@ async function readScreensAt(b, c, name, ctx) {
   const X = EXPECT[name];
   const L = (label) => `${name} screen: ${label}`;
   const { shown } = await import('../../matrix/drivers/browser.mjs');
-  const near2 = (s, want, label) => c.ok(s && s.value !== null && Math.abs(s.value - want) <= 0.5 * 10 ** -s.decimals + 1e-9, L(label), `expected ${want}, the screen shows "${s?.text}"`);
+  const near2 = (s, want, label) => c.ok(s && s.value !== null && Math.abs(s.value - want) <= 0.5 * 10 ** -s.dp + 1e-9, L(label), `expected ${want}, the screen shows "${s?.text}"`);
 
   // The Book selector, as a user does.
   if (!b.entered) {

@@ -1126,4 +1126,499 @@ const longStraddle = {
   ],
 };
 
-export default [bearCall, longStraddle];
+// =====================================================================================================================
+// long_strangle
+// =====================================================================================================================
+// Northfield 100 Index options (Cboe, European, cash-settled at 100 x the index), 20 March 2026: buy the 95 put and
+// the 105 call. The index level is carried by a reference instrument registered as an ETF and named as a reference
+// level (the catalog has no index product). Financing choice: a simulated margin loan (5% fixed, ACT/360) sized to the
+// shortfall, drawn before the legs that wait on it, accruing daily and repaid with its interest at the end.
+//   strangle  5 + 5, with the margin loan; the call fills 3 of 5 on its first cycle. The index fixes at 90 on 20 March:
+//             the put is settled in cash (5 x 5 x 100 = 2,500, paid T+1) and the call lapses, on the same day.
+//   retry / accept / unwind  1 + 1 each when the call has no fresh quote: the call legs expire unfilled; Retry buys
+//             one, Accept keeps a put alone (settled in cash at expiry), Unwind sells the put back.
+const STRANGLE_PAGE = (contracts, financing) => ({ template: 'Long Strangle', underlying: 'index', expiration: '2026-03-20', strikes: { 'Put strike': 95, 'Call strike': 105 }, contracts, ...(financing ? { financing } : {}) });
+const strangleInput = (contracts, financing) => templateInput('long_strangle', { underlyingId: '$inst:index', options: { expiration: '2026-03-20', strikes: { put: 95, call: 105 }, contracts }, financing });
+const indexOption = (symbol, right, strike) => ({
+  productId: 'index_option', name: `NFX 20 March 2026 ${strike} ${right === 'C' ? 'call' : 'put'}`, symbol, marketView: 'US_DERIV', venue: 'Cboe Options Exchange', venueType: 'exchange', venueCountry: 'US', underlyingGeo: 'US', tradingCcy: 'USD', underlying: 'index', multiplier: 100,
+  terms: { right, strike, expiration: '2026-03-20', exercise: 'european', settlement: 'cash', deliverable: { units: 100 } },
+});
+const strangleOne = (as) => ({ action: 'package', as, instrument: 'index', input: strangleInput(1, null), strategyPage: STRANGLE_PAGE(1, null) });
+const LOAN = 'Margin loan USD (Long Strangle NFX)';
+// Positions that do not change after the recovery steps, as the later steps restate them.
+const longStrangle = {
+  template: 'long_strangle',
+  title: 'Long strangle on the Northfield 100 Index (Cboe, cash-settled): buy the 20 March 2026 95 put and 105 call, financed by a margin loan',
+  matrix: {
+    ...OPTION_TEMPLATE_MATRIX,
+    automaticInputs: [...OPTION_TEMPLATE_MATRIX.automaticInputs.filter((x) => !x.startsWith('Treasury funding')), 'margin loan sized to the cash shortfall (Financing: borrow), its daily interest ACT/360 at the end-of-day run, and the interest settled with the repayment', 'index fixing for the expiration date (close fixture on the reference instrument)'],
+    manualInputs: [...OPTION_TEMPLATE_MATRIX.manualInputs, 'the loan rate, typed on the Strategies page', 'repayment of the margin loan from the Account'],
+    settlement: 'Premium T+1 on the US calendar; the loan is drawn in settled cash at once, ahead of the legs it funds; cash settlement of the put T+1 after expiry; the repayment pays principal and interest from settled cash',
+    lifecycle: 'Expiry items for the put and the call on the same day from the index fixing for 20 March 2026 (90: the put is settled in cash, the call lapses); a failed leg leaves the instance needing attention: Retry, Unwind or Accept; the loan accrues daily and is repaid in full',
+    accounting: 'Net debit paid; commission expensed; premium realized on sale, cash settlement and lapse; the loan is a liability with its accrued interest as an expense (borrow funding), repaid at the end',
+    collateral: 'None reserved: both legs are bought. The margin loan is secured on the Account as a whole (no specific pledge)',
+  },
+  start: MAR(2),
+  settlementCheck: { lag: 1, holidays: [] },
+  book: book('Templates long strangle', { funding: [{ ccy: 'USD', amount: 1_006.50 }] }),
+  instruments: {
+    index: { productId: 'etf', name: 'Northfield 100 Index (reference level)', symbol: 'NFX', marketView: 'US_CASH', venue: 'Northfield Indices', venueType: 'exchange', venueCountry: 'US', issuer: 'Northfield Indices LLC', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', terms: {} },
+    p95: indexOption('NFX260320P95', 'P', 95),
+    c105: indexOption('NFX260320C105', 'C', 105),
+  },
+  quotes: {
+    index: { bid: 99.99, ask: 100.01, last: 100, bidSize: 1000, askSize: 1000 },
+    p95: { bid: 2.40, ask: 2.50, last: 2.45, bidSize: 20, askSize: 20 },
+    c105: { bid: 2.28, ask: 2.38, last: 2.33, bidSize: 20, askSize: 3 }, // only 3 calls displayed at the ask
+  },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 1_006.50, unsettled: 0, reserved: 0, availableToTrade: 1_006.50, availableToWithdraw: 1_006.50 } },
+      treasury: { USD: { settled: 998_993.50, unsettled: 0, reserved: 0, availableToTrade: 998_993.50, availableToWithdraw: 998_993.50 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 1_006.50, treasury: 998_993.50, book: 1_000_000 },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+  },
+  steps: [
+    {
+      // 5 puts at 2.50 (1,250) and 5 calls at 2.38 (1,190), 6.50 commission: 2,446.50 against 1,006.50.
+      id: 'open-short-of-cash', covers: 'financing', action: 'package', as: 'refused', instrument: 'index',
+      input: strangleInput(5, null), strategyPage: STRANGLE_PAGE(5, null),
+      status: 'blocked', reason: 'The Account cannot pay for the package: the preview is blocked until financing is chosen.',
+      expect: {
+        refused: 'Alpha is short 1,440.00 USD',
+        preview: {
+          blocking: 1, errors: ['cash'],
+          legs: [
+            { kind: 'trade', action: 'buy', instrument: 'p95', qty: 5, estimate: 2.50, settleDate: '2026-03-03', cash: -1_250, fees: 3.25, dependsOn: [] },
+            { kind: 'trade', action: 'buy', instrument: 'c105', qty: 5, estimate: 2.38, settleDate: '2026-03-03', cash: -1_190, fees: 3.25, dependsOn: [] },
+          ],
+          cash: { USD: { purchases: 2_440, fees: 6.50, reserved: 0, required: 2_446.50, available: 1_006.50, shortfall: 1_440 } },
+        },
+      },
+    },
+    {
+      // Financing: borrow. A margin loan of 1,440 at 5% (1,440 x 0.05 / 360 = 0.20 a day) is drawn first. The puts fill
+      // 5 at 2.50; the calls 3 at 2.38 (the displayed size) and 2 on the next cycle (commission 1.95, then 1.30).
+      id: 'open', covers: ['open', 'financing', 'borrow', 'partial fill', 'dependency'], action: 'package', as: 'strangle', instrument: 'index', contractAs: 'mloan',
+      input: strangleInput(5, { mode: 'loan', rateType: 'fixed', rate: 0.05 }), strategyPage: STRANGLE_PAGE(5, { mode: 'loan', rate: 0.05 }),
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [
+            { kind: 'loan', action: 'borrow_cash', purpose: 'financing', qty: 1_440, cash: 1_440, ccy: 'USD', dailyCost: 0.20, financing: { amount: 1_440, rateType: 'fixed', rate: 0.05, maturity: null, interestFrom: '2026-03-02' }, dependsOn: [] },
+            { kind: 'trade', action: 'buy', purpose: 'primary', instrument: 'p95', qty: 5, estimate: 2.50, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2026-03-03', calendar: 'US', cash: -1_250, fees: 3.25, dependsOn: [1] },
+            { kind: 'trade', action: 'buy', purpose: 'primary', instrument: 'c105', qty: 5, estimate: 2.38, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2026-03-03', calendar: 'US', cash: -1_190, fees: 3.25, dependsOn: [1] },
+          ],
+          cash: { USD: { purchases: 2_440, fees: 6.50, reserved: 0, financingIn: 1_440, required: 2_446.50, available: 1_006.50, shortfall: 0, netCash: -1_006.50 } },
+          netPremium: { amount: 2_440, ccy: 'USD', type: 'debit', complete: true },
+          optionRequirement: [],
+        },
+        result: {
+          status: 'partial',
+          orders: [
+            { kind: 'loan', action: 'borrow_cash', instrument: 'mloan', status: 'filled', qty: 1_440, filledQty: 1_440 },
+            { kind: 'trade', action: 'buy', instrument: 'p95', status: 'filled', filledQty: 5, avgPrice: 2.50 },
+            { kind: 'trade', action: 'buy', instrument: 'c105', status: 'partial', qty: 5, filledQty: 3, avgPrice: 2.38 },
+          ],
+        },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'loan.drawdown', summary: 'Borrowed 1,440.00 USD (margin, 5.000% fixed, open-ended)', cash: { USD: 1_440 }, owner: 'account', date: '2026-03-02' },
+          { type: 'trade.fill', summary: 'Bought 5 NFX260320P95 @ 2.50 USD', date: '2026-03-02' },
+          { type: 'trade.fill', summary: 'Bought 3 NFX260320C105 @ 2.38 USD', date: '2026-03-02' },
+          { type: 'trade.fill', summary: 'Bought 2 NFX260320C105 @ 2.38 USD', date: '2026-03-02' },
+        ],
+        cash: {
+          // 1,006.50 + 1,440 borrowed; owed 1,253.25 + 715.95 + 477.30 = 2,446.50
+          account: { USD: { settled: 2_446.50, unsettled: -2_446.50, reserved: 0, availableToTrade: 0, availableToWithdraw: 0, borrowed: 1_440 } },
+          treasury: { USD: { settled: 998_993.50, unsettled: 0, availableToTrade: 998_993.50 } },
+        },
+        positions: [
+          { instrument: 'c105', lot: 'strangle', owner: 'account', direction: 'long', qty: 5, avgCost: 2.38, cost: 1_190, price: 2.33, value: 1_165, unrealized: -25 },
+          { instrument: 'mloan', lot: 'strangle', owner: 'account', direction: 'borrowed', qty: -1_440, value: 1_440, carrying: -1_440, accrued: 0, provisional: false },
+          { instrument: 'p95', lot: 'strangle', owner: 'account', direction: 'long', qty: 5, avgCost: 2.50, cost: 1_250, price: 2.45, value: 1_225, unrealized: -25 },
+        ],
+        holdings: { c105: { long: 5, short: 0, net: 5 }, p95: { long: 5, short: 0, net: 5 } },
+        pending: [
+          { instrument: 'c105', lot: 'strangle', dueDate: '2026-03-03', amount: -715.95, into: 'cash' },
+          { instrument: 'c105', lot: 'strangle', dueDate: '2026-03-03', amount: -477.30, into: 'cash' },
+          { instrument: 'p95', lot: 'strangle', dueDate: '2026-03-03', amount: -1_253.25, into: 'cash' },
+        ],
+        lifecycle: [
+          { type: 'option.expiry', instrument: 'c105', dueDate: '2026-03-20', status: 'pending' },
+          { type: 'option.expiry', instrument: 'p95', dueDate: '2026-03-20', status: 'pending' },
+          { type: 'loan.interest', instrument: 'mloan', dueDate: '2026-04-01', status: 'pending' },
+        ],
+        borrowings: [{ owner: 'account', origin: 'account', family: 'loan', type: 'Margin loan', lot: 'strangle', principal: 1_440, ccy: 'USD', rate: 0.05, rateType: 'fixed', dayCount: 'ACT/360', accrued: 0, costToDate: 0, startDate: '2026-03-02', maturity: null, lender: 'Simulated lender', nextPayment: '2026-04-01' }],
+        pnl: {
+          account: { realized: 0, commissions: -6.50, borrowFunding: 0, unrealized: -50, total: -56.50 },
+          book: { realized: 0, commissions: -6.50, borrowFunding: 0, unrealized: -50, total: -56.50 },
+          treasury: { total: 0 },
+        },
+        nav: { account: 950, treasury: 998_993.50, book: 999_943.50 }, // 1,006.50 - 56.50
+        balance: {
+          account: { cash: 2_446.50, payable: 2_446.50, positions: 2_390, borrowed: 1_440, assets: 4_836.50, liabilities: 3_886.50, netAssets: 950 },
+          treasury: { cash: 998_993.50, assets: 998_993.50, liabilities: 0, netAssets: 998_993.50 },
+          book: { cash: 1_001_440, payable: 2_446.50, positions: 2_390, borrowed: 1_440, assets: 1_003_830, liabilities: 3_886.50, netAssets: 999_943.50 },
+        },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'strangle', principal: 1_440, ccy: 'USD', accrued: 0 }], treasuryOwn: [] },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: MAR(3),
+      expect: {
+        events: [
+          { type: 'settlement.pay', summary: 'paid 1,253.25 USD from settled cash', date: '2026-03-03' },
+          { type: 'settlement.pay', summary: 'paid 715.95 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 477.30 USD from settled cash' },
+        ],
+        cash: { account: { USD: { settled: 0, unsettled: 0, availableToTrade: 0, availableToWithdraw: 0, borrowed: 1_440 } } },
+        pending: [],
+        balance: {
+          account: { cash: null, payable: null, assets: 2_390, liabilities: 1_440, netAssets: 950 },
+          book: { cash: 998_993.50, payable: null, assets: 1_001_383.50, liabilities: 1_440, netAssets: 999_943.50 },
+        },
+      },
+    },
+    {
+      id: 'fund-account', covers: 'internal funding', action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 2_000,
+      expect: {
+        events: [{ type: 'transfer.funding', summary: 'Treasury funding: 2,000.00 USD from Treasury to Alpha' }],
+        cash: { account: { USD: { settled: 2_000, availableToTrade: 2_000, availableToWithdraw: 2_000 } }, treasury: { USD: { settled: 996_993.50, availableToTrade: 996_993.50, availableToWithdraw: 996_993.50 } } },
+        nav: { account: 2_950, treasury: 996_993.50 },
+        balance: { account: { cash: 2_000, assets: 4_390, netAssets: 2_950 }, treasury: { cash: 996_993.50, assets: 996_993.50, netAssets: 996_993.50 } },
+      },
+    },
+    // The call's quote stops updating at 09:50.
+    { id: 'c105-quote-stops', action: 'quote', instrument: 'c105', quote: { bid: 2.28, ask: 2.38, last: 2.33, bidSize: 20, askSize: 20, asOf: MAR(3, '09:50') }, expect: {} },
+    {
+      // 1 put at 2.50 (250) and 1 call estimated at its last 2.33 (233), 1.30 commission: 484.30 of 2,000.
+      ...strangleOne('retry'), id: 'open-retry', covers: ['open', 'failed leg'],
+      expect: {
+        preview: {
+          blocking: 0, warnings: ['not-executable'],
+          legs: [
+            { kind: 'trade', action: 'buy', instrument: 'p95', qty: 1, estimate: 2.50, settleDate: '2026-03-04', cash: -250, fees: 0.65, dependsOn: [] },
+            { kind: 'trade', action: 'buy', instrument: 'c105', qty: 1, estimate: null, reference: 2.33, executable: false, settleDate: '2026-03-04', cash: -233, fees: 0.65, dependsOn: [] },
+          ],
+          cash: { USD: { purchases: 483, fees: 1.30, required: 484.30, available: 2_000, shortfall: 0 } },
+        },
+        result: { status: 'partial', orders: [{ instrument: 'p95', status: 'filled', filledQty: 1, avgPrice: 2.50 }, { instrument: 'c105', status: 'working', filledQty: 0 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1 NFX260320P95 @ 2.50 USD', date: '2026-03-03' }],
+        cash: { account: { USD: { settled: 2_000, unsettled: -250.65, availableToTrade: 1_749.35, availableToWithdraw: 1_749.35 } } },
+        positions: [
+          { instrument: 'c105', lot: 'strangle', value: 1_165 },
+          { instrument: 'mloan', lot: 'strangle', qty: -1_440 },
+          { instrument: 'p95', lot: 'retry', owner: 'account', direction: 'long', qty: 1, avgCost: 2.50, cost: 250, price: 2.45, value: 245, unrealized: -5 },
+          { instrument: 'p95', lot: 'strangle', value: 1_225 },
+        ],
+        holdings: { p95: { long: 6, short: 0, net: 6 } },
+        pending: [{ instrument: 'p95', lot: 'retry', dueDate: '2026-03-04', amount: -250.65, into: 'cash' }],
+        openOrders: [{ instrument: 'c105', kind: 'trade', action: 'buy', status: 'working', qty: 1, filledQty: 0 }],
+        lifecycle: [{ instrument: 'c105' }, { instrument: 'p95' }, { instrument: 'p95' }, { type: 'loan.interest' }],
+        pnl: { account: { commissions: -7.15, unrealized: -55, total: -62.15 }, book: { commissions: -7.15, unrealized: -55, total: -62.15 } },
+        nav: { account: 2_944.35, book: 999_937.85 },
+        balance: {
+          account: { cash: 2_000, payable: 250.65, positions: 2_635, assets: 4_635, liabilities: 1_690.65, netAssets: 2_944.35 },
+          book: { cash: 998_993.50, payable: 250.65, positions: 2_635, assets: 1_001_628.50, liabilities: 1_690.65, netAssets: 999_937.85 },
+        },
+      },
+    },
+    {
+      ...strangleOne('accept'), id: 'open-accept', covers: ['open', 'failed leg'],
+      expect: {
+        preview: { blocking: 0, legs: [{ instrument: 'p95', qty: 1, cash: -250 }, { instrument: 'c105', qty: 1, estimate: null, cash: -233 }], cash: { USD: { required: 484.30, available: 1_749.35, shortfall: 0 } } },
+        result: { status: 'partial', orders: [{ instrument: 'p95', status: 'filled', filledQty: 1 }, { instrument: 'c105', status: 'working', filledQty: 0 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1 NFX260320P95 @ 2.50 USD' }],
+        cash: { account: { USD: { settled: 2_000, unsettled: -501.30, availableToTrade: 1_498.70, availableToWithdraw: 1_498.70 } } },
+        positions: [
+          { instrument: 'c105', lot: 'strangle', value: 1_165 }, { instrument: 'mloan', lot: 'strangle', qty: -1_440 },
+          { instrument: 'p95', lot: 'accept', qty: 1, cost: 250, value: 245, unrealized: -5 }, { instrument: 'p95', lot: 'retry', value: 245 }, { instrument: 'p95', lot: 'strangle', value: 1_225 },
+        ],
+        holdings: { p95: { long: 7, short: 0, net: 7 } },
+        pending: [{ lot: 'accept', amount: -250.65 }, { lot: 'retry', amount: -250.65 }],
+        openOrders: [{ instrument: 'c105', status: 'working' }, { instrument: 'c105', status: 'working' }],
+        lifecycle: [{ instrument: 'c105' }, { instrument: 'p95' }, { instrument: 'p95' }, { instrument: 'p95' }, { type: 'loan.interest' }],
+        pnl: { account: { commissions: -7.80, unrealized: -60, total: -67.80 }, book: { commissions: -7.80, unrealized: -60, total: -67.80 } },
+        nav: { account: 2_938.70, book: 999_932.20 },
+        balance: {
+          account: { cash: 2_000, payable: 501.30, positions: 2_880, assets: 4_880, liabilities: 1_941.30, netAssets: 2_938.70 },
+          book: { cash: 998_993.50, payable: 501.30, positions: 2_880, assets: 1_001_873.50, liabilities: 1_941.30, netAssets: 999_932.20 },
+        },
+      },
+    },
+    {
+      ...strangleOne('unwind'), id: 'open-unwind', covers: ['open', 'failed leg'],
+      expect: {
+        preview: { blocking: 0, legs: [{ instrument: 'p95', qty: 1, cash: -250 }, { instrument: 'c105', qty: 1, estimate: null, cash: -233 }], cash: { USD: { required: 484.30, available: 1_498.70, shortfall: 0 } } },
+        result: { status: 'partial', orders: [{ instrument: 'p95', status: 'filled', filledQty: 1 }, { instrument: 'c105', status: 'working', filledQty: 0 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1 NFX260320P95 @ 2.50 USD' }],
+        cash: { account: { USD: { settled: 2_000, unsettled: -751.95, availableToTrade: 1_248.05, availableToWithdraw: 1_248.05 } } },
+        positions: [
+          { instrument: 'c105', lot: 'strangle', value: 1_165 }, { instrument: 'mloan', lot: 'strangle', qty: -1_440 },
+          { instrument: 'p95', lot: 'accept', value: 245 }, { instrument: 'p95', lot: 'retry', value: 245 }, { instrument: 'p95', lot: 'strangle', value: 1_225 }, { instrument: 'p95', lot: 'unwind', qty: 1, cost: 250, value: 245, unrealized: -5 },
+        ],
+        holdings: { p95: { long: 8, short: 0, net: 8 } },
+        pending: [{ lot: 'accept', amount: -250.65 }, { lot: 'retry', amount: -250.65 }, { lot: 'unwind', amount: -250.65 }],
+        openOrders: [{ instrument: 'c105', status: 'working' }, { instrument: 'c105', status: 'working' }, { instrument: 'c105', status: 'working' }],
+        lifecycle: [{ instrument: 'c105' }, { instrument: 'p95' }, { instrument: 'p95' }, { instrument: 'p95' }, { instrument: 'p95' }, { type: 'loan.interest' }],
+        pnl: { account: { commissions: -8.45, unrealized: -65, total: -73.45 }, book: { commissions: -8.45, unrealized: -65, total: -73.45 } },
+        nav: { account: 2_933.05, book: 999_926.55 },
+        balance: {
+          account: { cash: 2_000, payable: 751.95, positions: 3_125, assets: 5_125, liabilities: 2_191.95, netAssets: 2_933.05 },
+          book: { cash: 998_993.50, payable: 751.95, positions: 3_125, assets: 1_002_118.50, liabilities: 2_191.95, netAssets: 999_926.55 },
+        },
+      },
+    },
+    {
+      // End of 3 March: the call legs expire unfilled; the puts settle; the loan's first day of interest (0.20) accrues.
+      id: 'call-legs-expire', covers: ['failed leg', 'settlement', 'interest accrual'], action: 'clock', to: MAR(4),
+      expect: {
+        events: [
+          { type: 'settlement.pay', summary: 'paid 250.65 USD from settled cash', date: '2026-03-04' },
+          { type: 'settlement.pay', summary: 'paid 250.65 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 250.65 USD from settled cash' },
+          { type: 'accrual.interest', summary: `Interest accrued on ${LOAN}: 0.20 USD`, owner: 'account' },
+          { type: 'order.expired', summary: 'Leg 2 expired: buy 1 NFX260320C105. Day order did not fill before the end of the business day' },
+          { type: 'order.expired', summary: 'Leg 2 expired: buy 1 NFX260320C105. Day order did not fill before the end of the business day' },
+          { type: 'order.expired', summary: 'Leg 2 expired: buy 1 NFX260320C105. Day order did not fill before the end of the business day' },
+        ],
+        cash: { account: { USD: { settled: 1_248.05, unsettled: 0, availableToTrade: 1_248.05, availableToWithdraw: 1_248.05 } } },
+        positions: [
+          { instrument: 'c105', lot: 'strangle', value: 1_165 }, { instrument: 'mloan', lot: 'strangle', qty: -1_440, accrued: -0.20 },
+          { instrument: 'p95', lot: 'accept', value: 245 }, { instrument: 'p95', lot: 'retry', value: 245 }, { instrument: 'p95', lot: 'strangle', value: 1_225 }, { instrument: 'p95', lot: 'unwind', value: 245 },
+        ],
+        pending: [], openOrders: [],
+        borrowings: [{ lot: 'strangle', principal: 1_440, accrued: 0.20, costToDate: 0.20 }],
+        failed: { orders: 3 },
+        alerts: ['strategy.attention', 'strategy.attention', 'strategy.attention'],
+        pnl: { account: { borrowFunding: -0.20, total: -73.65 }, book: { borrowFunding: -0.20, total: -73.65 } },
+        nav: { account: 2_932.85, book: 999_926.35 },
+        balance: {
+          account: { cash: 1_248.05, payable: null, accruedExpense: 0.20, assets: 4_373.05, liabilities: 1_440.20, netAssets: 2_932.85 },
+          book: { cash: 998_241.55, payable: null, accruedExpense: 0.20, assets: 1_001_366.55, liabilities: 1_440.20, netAssets: 999_926.35 },
+        },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'strangle', principal: 1_440, ccy: 'USD', accrued: 0.20 }] },
+      },
+    },
+    {
+      id: 'c105-quote-day3', action: 'quote', instrument: 'c105', quote: { bid: 2.08, ask: 2.18, last: 2.13, bidSize: 20, askSize: 20 },
+      expect: {
+        positions: [
+          { instrument: 'c105', lot: 'strangle', price: 2.13, value: 1_065, unrealized: -125 }, { instrument: 'mloan', lot: 'strangle', qty: -1_440 },
+          { instrument: 'p95', lot: 'accept', value: 245 }, { instrument: 'p95', lot: 'retry', value: 245 }, { instrument: 'p95', lot: 'strangle', value: 1_225 }, { instrument: 'p95', lot: 'unwind', value: 245 },
+        ],
+        pnl: { account: { unrealized: -165, total: -173.65 }, book: { unrealized: -165, total: -173.65 } },
+        nav: { account: 2_832.85, book: 999_826.35 },
+        balance: { account: { positions: 3_025, assets: 4_273.05, netAssets: 2_832.85 }, book: { positions: 3_025, assets: 1_001_266.55, netAssets: 999_826.35 } },
+      },
+    },
+    {
+      id: 'retry', covers: ['retry', 'failed leg'], action: 'recover', how: 'retry', lot: 'retry',
+      expect: {
+        preview: { blocking: 0, errors: [], intent: 'retry', legs: [{ kind: 'trade', action: 'buy', instrument: 'c105', qty: 1, estimate: 2.18, settleDate: '2026-03-05', cash: -218, fees: 0.65 }], cash: { USD: { purchases: 218, fees: 0.65, required: 218.65, available: 1_248.05, shortfall: 0 } } },
+        result: { status: 'open', complete: true, orders: [{ kind: 'trade', action: 'buy', instrument: 'c105', status: 'filled', filledQty: 1, avgPrice: 2.18 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Bought 1 NFX260320C105 @ 2.18 USD', date: '2026-03-04' }],
+        cash: { account: { USD: { settled: 1_248.05, unsettled: -218.65, availableToTrade: 1_029.40, availableToWithdraw: 1_029.40 } } },
+        positions: [
+          { instrument: 'c105', lot: 'retry', owner: 'account', direction: 'long', qty: 1, avgCost: 2.18, cost: 218, price: 2.13, value: 213, unrealized: -5 },
+          { instrument: 'c105', lot: 'strangle', value: 1_065 }, { instrument: 'mloan', lot: 'strangle', qty: -1_440 },
+          { instrument: 'p95', lot: 'accept', value: 245 }, { instrument: 'p95', lot: 'retry', value: 245 }, { instrument: 'p95', lot: 'strangle', value: 1_225 }, { instrument: 'p95', lot: 'unwind', value: 245 },
+        ],
+        holdings: { c105: { long: 6, short: 0, net: 6 } },
+        pending: [{ instrument: 'c105', lot: 'retry', dueDate: '2026-03-05', amount: -218.65 }],
+        lifecycle: [{ instrument: 'c105' }, { instrument: 'c105' }, { instrument: 'p95' }, { instrument: 'p95' }, { instrument: 'p95' }, { instrument: 'p95' }, { type: 'loan.interest' }],
+        alerts: ['strategy.attention', 'strategy.attention'],
+        pnl: { account: { commissions: -9.10, unrealized: -170, total: -179.30 }, book: { commissions: -9.10, unrealized: -170, total: -179.30 } },
+        nav: { account: 2_827.20, book: 999_820.70 },
+        balance: {
+          account: { cash: 1_248.05, payable: 218.65, positions: 3_238, assets: 4_486.05, liabilities: 1_658.85, netAssets: 2_827.20 },
+          book: { cash: 998_241.55, payable: 218.65, positions: 3_238, assets: 1_001_479.55, liabilities: 1_658.85, netAssets: 999_820.70 },
+        },
+      },
+    },
+    {
+      id: 'accept', covers: ['accept', 'failed leg'], action: 'strategy_action', lot: 'accept', how: 'accept',
+      expect: { events: [{ type: 'strategy.accepted', summary: 'accepted as it stands with 1 leg unexecuted. The position no longer matches its template.' }], alerts: ['strategy.attention'] },
+    },
+    {
+      // Unwind sells the put back at 2.40: 240 - 0.65 = 239.35. Realized 1 x (2.40 - 2.50) x 100 = -10.
+      id: 'unwind', covers: ['unwind', 'close'], action: 'recover', how: 'unwind', lot: 'unwind',
+      expect: {
+        preview: { blocking: 0, errors: [], intent: 'unwind', legs: [{ kind: 'trade', action: 'sell', instrument: 'p95', qty: 1, estimate: 2.40, settleDate: '2026-03-05', cash: 240, fees: 0.65 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', instrument: 'p95', status: 'filled', filledQty: 1, avgPrice: 2.40 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 1 NFX260320P95 @ 2.40 USD (realized -10.00 USD)' }],
+        cash: { account: { USD: { settled: 1_248.05, unsettled: 20.70, availableToTrade: 1_268.75, availableToWithdraw: 1_029.40 } } }, // -218.65 + 239.35
+        positions: [
+          { instrument: 'c105', lot: 'retry', value: 213 }, { instrument: 'c105', lot: 'strangle', value: 1_065 }, { instrument: 'mloan', lot: 'strangle', qty: -1_440 },
+          { instrument: 'p95', lot: 'accept', value: 245 }, { instrument: 'p95', lot: 'retry', value: 245 }, { instrument: 'p95', lot: 'strangle', value: 1_225 },
+        ],
+        holdings: { p95: { long: 7, short: 0, net: 7 } },
+        pending: [{ instrument: 'c105', lot: 'retry', amount: -218.65 }, { instrument: 'p95', lot: 'unwind', dueDate: '2026-03-05', amount: 239.35 }],
+        lifecycle: [{ instrument: 'c105' }, { instrument: 'c105' }, { instrument: 'p95' }, { instrument: 'p95' }, { instrument: 'p95' }, { type: 'loan.interest' }],
+        alerts: [],
+        pnl: { account: { realized: -10, commissions: -9.75, unrealized: -165, total: -184.95 }, book: { realized: -10, commissions: -9.75, unrealized: -165, total: -184.95 } },
+        nav: { account: 2_821.55, book: 999_815.05 },
+        balance: {
+          account: { cash: 1_248.05, receivable: 239.35, payable: 218.65, positions: 2_993, assets: 4_480.40, liabilities: 1_658.85, netAssets: 2_821.55 },
+          book: { cash: 998_241.55, receivable: 239.35, payable: 218.65, positions: 2_993, assets: 1_001_473.90, liabilities: 1_658.85, netAssets: 999_815.05 },
+        },
+      },
+    },
+    {
+      id: 'settle-recovery', covers: ['settlement', 'interest accrual'], action: 'clock', to: MAR(5),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 239.35 USD into settled cash', date: '2026-03-05' },
+          { type: 'settlement.pay', summary: 'paid 218.65 USD from settled cash' },
+          { type: 'accrual.interest', summary: `Interest accrued on ${LOAN}: 0.20 USD` }, // 2 days: 0.40, less 0.20
+        ],
+        cash: { account: { USD: { settled: 1_268.75, unsettled: 0, availableToTrade: 1_268.75, availableToWithdraw: 1_268.75 } } },
+        positions: [
+          { instrument: 'c105', lot: 'retry', value: 213 }, { instrument: 'c105', lot: 'strangle', value: 1_065 }, { instrument: 'mloan', lot: 'strangle', qty: -1_440, accrued: -0.40 },
+          { instrument: 'p95', lot: 'accept', value: 245 }, { instrument: 'p95', lot: 'retry', value: 245 }, { instrument: 'p95', lot: 'strangle', value: 1_225 },
+        ],
+        pending: [],
+        borrowings: [{ lot: 'strangle', accrued: 0.40, costToDate: 0.40 }],
+        pnl: { account: { borrowFunding: -0.40, total: -185.15 }, book: { borrowFunding: -0.40, total: -185.15 } },
+        nav: { account: 2_821.35, book: 999_814.85 },
+        balance: {
+          account: { cash: 1_268.75, receivable: null, payable: null, accruedExpense: 0.40, assets: 4_261.75, liabilities: 1_440.40, netAssets: 2_821.35 },
+          book: { cash: 998_262.25, receivable: null, payable: null, accruedExpense: 0.40, assets: 1_001_255.25, liabilities: 1_440.40, netAssets: 999_814.85 },
+        },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'strangle', principal: 1_440, ccy: 'USD', accrued: 0.40 }] },
+      },
+    },
+    {
+      // Close "retry": its put at 2.40 and its call at 2.08. Realized -10 on each.
+      id: 'close-retry', covers: ['close'], action: 'close', lot: 'retry', instrument: 'p95', scope: 'strategy', percent: 100,
+      expect: {
+        preview: {
+          blocking: 0, errors: [], intent: 'close',
+          legs: [
+            { kind: 'trade', action: 'sell', instrument: 'p95', qty: 1, estimate: 2.40, settleDate: '2026-03-06', cash: 240, fees: 0.65 },
+            { kind: 'trade', action: 'sell', instrument: 'c105', qty: 1, estimate: 2.08, settleDate: '2026-03-06', cash: 208, fees: 0.65 },
+          ],
+          cash: { USD: { proceeds: 448, fees: 1.30, required: 1.30 } },
+        },
+        result: { status: 'closed', orders: [{ action: 'sell', instrument: 'p95', status: 'filled', avgPrice: 2.40 }, { action: 'sell', instrument: 'c105', status: 'filled', avgPrice: 2.08 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 1 NFX260320P95 @ 2.40 USD (realized -10.00 USD)' },
+          { type: 'trade.fill', summary: 'Sold 1 NFX260320C105 @ 2.08 USD (realized -10.00 USD)' },
+        ],
+        cash: { account: { USD: { settled: 1_268.75, unsettled: 446.70, availableToTrade: 1_715.45, availableToWithdraw: 1_268.75 } } }, // 239.35 + 207.35
+        positions: [
+          { instrument: 'c105', lot: 'strangle', value: 1_065 }, { instrument: 'mloan', lot: 'strangle', qty: -1_440 },
+          { instrument: 'p95', lot: 'accept', value: 245 }, { instrument: 'p95', lot: 'strangle', value: 1_225 },
+        ],
+        holdings: { c105: { long: 5, short: 0, net: 5 }, p95: { long: 6, short: 0, net: 6 } },
+        pending: [{ instrument: 'c105', lot: 'retry', dueDate: '2026-03-06', amount: 207.35 }, { instrument: 'p95', lot: 'retry', dueDate: '2026-03-06', amount: 239.35 }],
+        lifecycle: [{ instrument: 'c105' }, { instrument: 'p95' }, { instrument: 'p95' }, { type: 'loan.interest' }],
+        pnl: { account: { realized: -30, commissions: -11.05, unrealized: -155, total: -196.45 }, book: { realized: -30, commissions: -11.05, unrealized: -155, total: -196.45 } },
+        nav: { account: 2_810.05, book: 999_803.55 },
+        balance: {
+          account: { cash: 1_268.75, receivable: 446.70, positions: 2_535, assets: 4_250.45, liabilities: 1_440.40, netAssets: 2_810.05 },
+          book: { cash: 998_262.25, receivable: 446.70, positions: 2_535, assets: 1_001_243.95, liabilities: 1_440.40, netAssets: 999_803.55 },
+        },
+      },
+    },
+    {
+      id: 'settle-close', covers: ['settlement', 'interest accrual'], action: 'clock', to: MAR(6),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 239.35 USD into settled cash', date: '2026-03-06' },
+          { type: 'settlement.receive', summary: 'received 207.35 USD into settled cash' },
+          { type: 'accrual.interest', summary: `Interest accrued on ${LOAN}: 0.20 USD` },
+        ],
+        cash: { account: { USD: { settled: 1_715.45, unsettled: 0, availableToTrade: 1_715.45, availableToWithdraw: 1_715.45 } } },
+        positions: [
+          { instrument: 'c105', lot: 'strangle', value: 1_065 }, { instrument: 'mloan', lot: 'strangle', qty: -1_440, accrued: -0.60 },
+          { instrument: 'p95', lot: 'accept', value: 245 }, { instrument: 'p95', lot: 'strangle', value: 1_225 },
+        ],
+        pending: [],
+        borrowings: [{ lot: 'strangle', accrued: 0.60, costToDate: 0.60 }],
+        pnl: { account: { borrowFunding: -0.60, total: -196.65 }, book: { borrowFunding: -0.60, total: -196.65 } },
+        nav: { account: 2_809.85, book: 999_803.35 },
+        balance: {
+          account: { cash: 1_715.45, receivable: null, accruedExpense: 0.60, assets: 4_250.45, liabilities: 1_440.60, netAssets: 2_809.85 },
+          book: { cash: 998_708.95, receivable: null, accruedExpense: 0.60, assets: 1_001_243.95, liabilities: 1_440.60, netAssets: 999_803.35 },
+        },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'strangle', principal: 1_440, ccy: 'USD', accrued: 0.60 }] },
+      },
+    },
+    { id: 'expiry-fixing', action: 'close_price', instrument: 'index', date: '2026-03-20', value: 90, expect: {} },
+    {
+      // 20 March after the close: the index fixes at 90. The puts are settled in cash: 5 x (95 - 90) x 100 = 2,500 for
+      // "strangle" (realized 2,500 - 1,250 = 1,250) and 500 for "accept" (realized 250), both paid on 23 March; the calls
+      // lapse (realized -1,190). Interest to 20 March: 18 days x 0.20 = 3.60, of which 3.00 is new.
+      id: 'expiry', covers: ['expiry', 'cash settlement', 'interest accrual'], action: 'clock', to: MAR(20, '17:30'),
+      expect: {
+        events: [
+          { type: 'option.cash_settled', summary: /^Exercised \(cash settlement\): 5 NFX260320P95 at 5(\.00)? per unit/, date: '2026-03-20' },
+          { type: 'option.expired', summary: 'Expired worthless: 5 NFX260320C105 (fixing 90)', date: '2026-03-20' },
+          { type: 'option.cash_settled', summary: /^Exercised \(cash settlement\): 1 NFX260320P95 at 5(\.00)? per unit/, date: '2026-03-20' },
+          { type: 'accrual.interest', summary: `Interest accrued on ${LOAN}: 3.00 USD` },
+        ],
+        cash: { account: { USD: { settled: 1_715.45, unsettled: 3_000, reserved: 0, availableToTrade: 4_715.45, availableToWithdraw: 1_715.45, borrowed: 1_440 } } },
+        positions: [{ instrument: 'mloan', lot: 'strangle', qty: -1_440, value: 1_440, carrying: -1_440, accrued: -3.60 }],
+        holdings: { c105: null, p95: null },
+        pending: [{ instrument: 'p95', lot: 'accept', dueDate: '2026-03-23', amount: 500, into: 'cash' }, { instrument: 'p95', lot: 'strangle', dueDate: '2026-03-23', amount: 2_500, into: 'cash' }],
+        lifecycle: [{ type: 'loan.interest', instrument: 'mloan', dueDate: '2026-04-01', status: 'pending' }],
+        borrowings: [{ lot: 'strangle', principal: 1_440, accrued: 3.60, costToDate: 3.60 }],
+        pnl: { account: { realized: 280, commissions: -11.05, unrealized: 0, borrowFunding: -3.60, total: 265.35 }, book: { realized: 280, commissions: -11.05, unrealized: 0, borrowFunding: -3.60, total: 265.35 } },
+        nav: { account: 3_271.85, book: 1_000_265.35 }, // 1,006.50 + 2,000 funded + 265.35
+        balance: {
+          account: { cash: 1_715.45, receivable: 3_000, positions: null, borrowed: 1_440, accruedExpense: 3.60, assets: 4_715.45, liabilities: 1_443.60, netAssets: 3_271.85 },
+          book: { cash: 998_708.95, receivable: 3_000, positions: null, borrowed: 1_440, accruedExpense: 3.60, assets: 1_001_708.95, liabilities: 1_443.60, netAssets: 1_000_265.35 },
+        },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'strangle', principal: 1_440, ccy: 'USD', accrued: 3.60 }] },
+      },
+    },
+    {
+      id: 'cash-settlement-paid', covers: 'settlement', action: 'clock', to: MAR(23),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 2,500.00 USD into settled cash', date: '2026-03-23' },
+          { type: 'settlement.receive', summary: 'received 500.00 USD into settled cash' },
+        ],
+        cash: { account: { USD: { settled: 4_715.45, unsettled: 0, availableToTrade: 4_715.45, availableToWithdraw: 4_715.45 } } },
+        pending: [],
+        balance: { account: { cash: 4_715.45, receivable: null }, book: { cash: 1_001_708.95, receivable: null } },
+      },
+    },
+    {
+      // Repay the loan in full: 1,440 of principal and the interest to today, 21 days x 0.20 = 4.20 (0.60 newly accrued).
+      id: 'repay-loan', covers: ['repayment', 'close'], action: 'repay', lot: 'strangle', instrument: 'mloan',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'repay', action: 'repay_cash', purpose: 'financing', instrument: 'mloan', qty: 1_440, cash: -1_444.20, ccy: 'USD', financing: { amount: -1_444.20, principal: 1_440, interest: 4.20, full: true, rate: 0.05, maturity: null } }],
+          cash: { USD: { financingOut: 1_444.20, required: 1_444.20, available: 4_715.45, shortfall: 0, netCash: -1_444.20 } },
+        },
+        result: { status: 'closed', orders: [{ kind: 'repay', action: 'repay_cash', status: 'filled', qty: 1_440, filledQty: 1_440 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'accrual.interest', summary: `Interest accrued on ${LOAN}: 0.60 USD`, date: '2026-03-23' },
+          { type: 'loan.repayment', summary: /^Repaid 1,440\.00 USD of principal/, owner: 'account', date: '2026-03-23' },
+        ],
+        cash: { account: { USD: { settled: 3_271.25, unsettled: 0, availableToTrade: 3_271.25, availableToWithdraw: 3_271.25, borrowed: 0 } } }, // 4,715.45 - 1,444.20
+        positions: [],
+        lifecycle: [],
+        borrowings: [],
+        pnl: { account: { realized: 280, commissions: -11.05, borrowFunding: -4.20, total: 264.75 }, book: { borrowFunding: -4.20, total: 264.75 } },
+        nav: { account: 3_271.25, book: 1_000_264.75 },
+        balance: {
+          account: { cash: 3_271.25, borrowed: null, accruedExpense: null, assets: 3_271.25, liabilities: 0, netAssets: 3_271.25 },
+          book: { cash: 1_000_264.75, borrowed: null, accruedExpense: null, assets: 1_000_264.75, liabilities: 0, netAssets: 1_000_264.75 },
+        },
+        oversight: { accountBorrowings: [] },
+      },
+    },
+  ],
+};
+
+export default [bearCall, longStraddle, longStrangle];

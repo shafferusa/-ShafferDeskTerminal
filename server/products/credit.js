@@ -219,6 +219,24 @@ export function classifyTradeAccrual(app, { book, unit, inst, pos, strategyId })
   });
 }
 
+/**
+ * After a fill under the standard convention that terminated notional: the accrued premium exchanged for the terminated
+ * part is premium for the time it was held (paid by a protection buyer, received by a seller), so it is realized at once;
+ * only the accrued premium of notional opened or added is carried to the next coupon. `booked` is the signed amount the
+ * fill put in accrued premium (+ paid, - received). Returns the event id or null.
+ */
+export function realizeTerminatedAccrual(app, { book, unit, inst, pos, strategyId, booked, closedQty, qty }) {
+  const ccy = inst.trading_ccy;
+  if (!booked || !(closedQty > 0) || !(qty > 0)) return null;
+  const amount = money(booked * Math.min(1, closedQty / qty), ccy);
+  if (amount === 0) return null;
+  return app.ledger.post({
+    bookId: book.id, unitId: unit.id, type: 'cds.accrued', instrumentId: inst.id, strategyId, positionId: pos.id, actor: 'engine',
+    summary: `Premium accrued on the ${Number(closedQty).toLocaleString('en-US')} terminated on ${nameOf(inst)}, ${fmt(Math.abs(amount), ccy)}, ${amount > 0 ? 'paid' : 'received'} with the termination: realized as premium for the time it was held`,
+    entries: [{ account: 'accrued.asset', ccy, amount: -amount, positionId: pos.id }, { account: 'pnl.realized', ccy, amount, positionId: pos.id }],
+  });
+}
+
 /** A position that has closed carries no accrued premium: what is left is premium for the time it was held (realized). */
 export function settleAccruedOnClose(app, { book, unit, inst, pos }) {
   const ccy = inst.trading_ccy;
