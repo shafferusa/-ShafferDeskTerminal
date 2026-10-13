@@ -247,6 +247,14 @@ export function createOrders(app) {
     const forward = Boolean(plugin.forwardEstimate) && (o.data.statedPrice === null || o.data.statedPrice === undefined);
     const fwd = forward ? plugin.forwardEstimate(app, { inst, action: o.action, placedAt: o.created_at, orderType: o.order_type }) : null;
     if (fwd?.refusal) return reject(o, fwd.refusal);
+    if (fwd && !fwd.executable && BUY.has(o.action) && fwd.reference !== null) {
+      // A subscription waiting for its NAV keeps its estimated cost (last NAV, plus the fee schedule) reserved, so the
+      // cash cannot be spent twice. Released when the order deals or ends.
+      const px = fwd.reference;
+      const est0 = remaining * px * inst.multiplier + computeFees(book, inst, remaining, px).reduce((a, f) => a + f.amount, 0);
+      ledger.setHold({ bookId: book.id, unitId: unit.id, ccy: inst.trading_ccy, amount: est0, kind: 'fund_subscription', refType: 'order', refId: o.id, note: `Reserved for a fund subscription waiting for the NAV of ${fwd.dealingDate}` });
+    }
+    if (fwd?.executable) ledger.releaseHolds({ refType: 'order', refId: o.id });
     const today = fwd ? fwd.dealingDate : clock.today();
     const obs = fwd ? fwd.navObs : app.data.price(inst.id);
     const est = fwd || estimateFill(app, { inst, action: o.action, obs, book, statedPrice: o.data.statedPrice ?? null, limitPrice: o.limit_price, stopPrice: o.stop_price, orderType: o.order_type, stopTriggered });

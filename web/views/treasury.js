@@ -173,7 +173,8 @@ function RateDialog({ a, onClose, onDone }) {
 const useFxPairs = () => useLive(() => get('/api/instruments', { family: 'fx', limit: 200 }), [], { interval: false });
 const useQuote = (id) => useLive(() => (id ? get('/api/quotes', { ids: id }) : null), [id]).data?.quotes?.[id]?.observation || null;
 const noPairs = html`<${Empty} title="No currency pairs are registered">A conversion is a spot FX trade in a registered pair. Register the pair under <a href="#/instruments">Instruments</a> first.<//>`;
-const pairOptions = (pairs) => pairs.map((p) => ({ value: p.id, label: p.symbol || p.name }));
+// Two pairs registered with the same symbol (the demo feed's and one entered by hand) are told apart by their names.
+const pairOptions = (pairs) => pairs.map((p) => ({ value: p.id, label: pairs.some((q) => q !== p && (q.symbol || q.name) === (p.symbol || p.name)) ? `${p.symbol || p.name} (${p.name})` : p.symbol || p.name }));
 // FX rates need more decimals than a share price: 1.08432, 151.703.
 const fxPx = (x) => fmtNum(x, Math.abs(x) >= 20 ? 3 : 5);
 const rateLine = (pair, obs, status) => html`<div class="row"><span class="note">Current market price, ${pair.terms.quote} per ${pair.terms.base}</span>

@@ -65,6 +65,14 @@ export const RECORDED_ONLY = [
   { key: 'closeOut', label: 'Default and close-out provisions', note: 'A counterparty default is not simulated.' },
 ];
 
+/** Where the collateral basis of a blocked leg is chosen, in words (see `fixOf` in tradeRequirement). */
+const FIX_TEXT = {
+  draft: 'Choose it in this preview, or under Edit contract terms on the leg, then re-check.',
+  position: 'The position was opened before a basis was required: record its basis (in this preview, or under Treasury, Collateral), then re-check.',
+  contract: 'The contract is registered and not yet traded: record the basis on the contract (in this preview, or on the instrument), then re-check.',
+  locked: 'The contract has been traded, so its terms are locked: register a new contract that states a basis, or trade an existing position whose basis is on record.',
+};
+
 const truthy = (v) => v === true || v === 1 || v === '1' || v === 'true' || v === 'yes' || v === 'on';
 const pctText = (x) => `${(x * 100).toFixed(2)}%`;
 
@@ -425,13 +433,22 @@ export function createAgreements(app) {
     const eff = effective(basis, inst, unit.id);
     out.basis = { type: basis?.type || 'none', label: basisLabel(eff), agreementId: basis?.agreementId || null, source: basis?.source || null, flagged: eff.state !== 'ok' };
 
+    // Where the missing basis can be recorded, so a screen can offer the fix beside the block:
+    //   draft     a new contract on this package: its terms are edited before confirming
+    //   position  an open position opened before bases existed: its basis is recorded on the position
+    //   contract  a registered contract not yet traded: its terms can still be changed
+    //   locked    a registered contract that has been traded: its terms are locked
+    const fixOf = () => (inst.draft ? { kind: 'draft' } : pos && !isZero(pos.qty) && eff.state === 'none' ? { kind: 'position', positionId: pos.id, bookId }
+      : instruments.inUse?.(inst.id) ? { kind: 'locked', instrumentId: inst.id } : { kind: 'contract', instrumentId: inst.id });
     if (eff.state === 'none') {
-      if (opening) block('collateral-basis', `${label} states no collateral terms. Choose a collateral agreement, enter position-level terms, or choose "Uncollateralized (paper assumption)" on the contract. Nothing is assumed for you.`);
+      if (opening) out.basis.fix = fixOf();
+      if (opening) block('collateral-basis', `${label} states no collateral terms. Choose a collateral agreement, enter position-level terms, or choose "Uncollateralized (paper assumption)": one of the three is needed, and nothing is assumed for you. ${FIX_TEXT[out.basis.fix.kind]}`);
       else out.checks.push({ level: 'warning', code: 'collateral-none', message: `${label} has no collateral terms recorded. It is treated as uncollateralized: nothing is posted and nothing is received.` });
       return out;
     }
     if (eff.state === 'invalid') {
-      if (opening) block('collateral-basis', `${label}: ${eff.problem} Choose an agreement of this Book, position-level terms, or "Uncollateralized (paper assumption)".`);
+      if (opening) out.basis.fix = inst.draft ? { kind: 'draft' } : instruments.inUse?.(inst.id) ? { kind: 'locked', instrumentId: inst.id } : { kind: 'contract', instrumentId: inst.id };
+      if (opening) block('collateral-basis', `${label}: ${eff.problem} Choose one of three: an agreement of this Book, position-level terms, or "Uncollateralized (paper assumption)". ${FIX_TEXT[out.basis.fix.kind]}`);
       return out;
     }
     const a = eff.agreement;

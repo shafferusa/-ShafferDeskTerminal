@@ -1249,16 +1249,20 @@ export async function bookIsolation(b, c) {
     `#/account/${B.accountId}`, '#/strategy', '#/markets/US_CASH', '#/markets/US_DERIV', '#/instruments',
   ];
   const leaks = [];
+  const blank = [];
   for (const hash of screens) {
     await show(b, hash);
     await closeHedgePopup(b);
     const found = await foundOnPage(b, notA);
     if (found.length) leaks.push(`${hash}: ${found.join(', ')}`);
+    // Not an empty screen: it shows at least one id or name of Iso B's own (the scan above would pass on a blank page).
+    if (!(await foundOnPage(b, notB, 'main')).length) blank.push(hash);
     const errs = await errorsIn(page.locator('main'));
     c.eq(errs, [], `${hash} of Iso B loads without an error`);
   }
   c.eq(leaks, [], `${screens.length} screens of Iso B read whole: none shows or carries an id or a name of Iso A`);
-  c.note(`${screens.length} screens of Iso B scanned for ${notA.length} ids and names of Iso A`);
+  c.note(`${screens.length} screens of Iso B scanned for ${notA.length} ids and names of Iso A; screens showing none of Iso B's own ids or names either: ${blank.join(', ') || 'none'}`);
+  c.ok(blank.length <= 4, 'the screens read did show Iso B\'s own records (at most a few global ones show none)', blank.join(', '));
   // The screens did show Book B's own: its Account and its short holding.
   await show(b, '#/accounting/positions/book');
   const holdings = flat(await ui.section(page.locator('main'), 'Holdings by instrument').innerText());

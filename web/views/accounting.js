@@ -477,9 +477,12 @@ function PositionsTab({ book, d, units, multi, owner, setOwner, reload }) {
   const sorted = d.positions.filter((p) => mine(p.owner.id)).sort((a, b) => order.get(a.owner.id) - order.get(b.owner.id) || (a.strategy?.name || '~').localeCompare(b.strategy?.name || '~') || (a.strategy?.openedAt || '').localeCompare(b.strategy?.openedAt || '') || (a.strategyId || '').localeCompare(b.strategyId || '') || (a.purpose === 'financing') - (b.purpose === 'financing'));
   const rows = [];
   let last = null;
+  // Two instances can share a name (two purchases of one bond): each then also shows its own ID, and the older lists first.
+  const sameName = new Map();
+  for (const p of sorted) if (p.strategy) sameName.set(`${p.owner.id}|${p.strategy.name}`, new Set([...(sameName.get(`${p.owner.id}|${p.strategy.name}`) || []), p.strategy.id]));
   for (const p of sorted) {
     const key = `${p.owner.id}|${p.strategyId}`;
-    if (key !== last) rows.push({ _group: html`${unitLabel(p.owner)}: <${StratLink} s=${p.strategy} /> ${p.strategy ? html`<span class="sub" style="font-weight:400">${sentence(p.strategy.template)}${p.strategy.openedAt ? `, opened ${fmtTime(p.strategy.openedAt, { seconds: true })}` : ''}${p.strategy.investmentStrategy?.name ? html`, <${StrategyRef} s=${p.strategy.investmentStrategy} />` : ''}</span> <${StrategyStatus} status=${p.strategy.status} />` : ''}` });
+    if (key !== last) rows.push({ _group: html`${unitLabel(p.owner)}: <${StratLink} s=${p.strategy} /> ${p.strategy ? html`<span class="sub" style="font-weight:400">${sentence(p.strategy.template)}${p.strategy.openedAt ? `, opened ${fmtTime(p.strategy.openedAt, { seconds: true })}` : ''}${sameName.get(`${p.owner.id}|${p.strategy.name}`)?.size > 1 ? `, instance ${p.strategy.id}` : ''}${p.strategy.investmentStrategy?.name ? html`, <${StrategyRef} s=${p.strategy.investmentStrategy} />` : ''}</span> <${StrategyStatus} status=${p.strategy.status} />` : ''}` });
     last = key;
     rows.push(p);
   }

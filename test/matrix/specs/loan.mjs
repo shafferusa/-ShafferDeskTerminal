@@ -1329,14 +1329,11 @@ const cashLoan = {
       },
     },
     {
-      // The cash lent: 9, 10 and 13 April end-of-day runs; 13 April is a Monday (3 days). 7, 8 and 11 days: 140, 160, 220.
+      // The cash lent, to Monday 13 April: 2 to 13 April is 11 days, 220.00. The clock moves past several end-of-day runs at
+      // once, as after a stop of the Terminal: the catch-up books the difference once, 220.00 - 120.00 = 100.00, as of 13 April.
       id: 'accrue-the-cash-lent', covers: 'interest accrual', action: 'clock', to: AT_1730('2026-04-13'),
       expect: {
-        events: [
-          { type: 'accrual.interest', summary: 'Interest accrued on Tidewater two-week cash loan: 20.00 USD', owner: 'account', date: '2026-04-09' },
-          { type: 'accrual.interest', summary: 'Interest accrued on Tidewater two-week cash loan: 20.00 USD', owner: 'account', date: '2026-04-10' },
-          { type: 'accrual.interest', summary: 'Interest accrued on Tidewater two-week cash loan: 60.00 USD', owner: 'account', date: '2026-04-13' },
-        ],
+        events: [{ type: 'accrual.interest', summary: 'Interest accrued on Tidewater two-week cash loan: 100.00 USD', owner: 'account', date: '2026-04-13' }],
         positions: [{ instrument: 'cashlent', lot: 'cashlent', qty: 150_000, accrued: 220 }],
         pnl: { account: { couponInterest: 220, total: 220 }, book: { borrowFunding: -259.20, couponInterest: 220, fx: -144.10, total: -183.30 } },
         nav: { account: 200_220, book: 999_816.70 },

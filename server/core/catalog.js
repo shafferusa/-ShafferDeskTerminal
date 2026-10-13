@@ -298,8 +298,8 @@ export function catalogSummary() {
   const counts = { full: 0, partial: 0, manual: 0, planned: 0 };
   for (const p of PRODUCTS) counts[p.support]++;
   const pricing = { quoted: 0, model: 0, contractual: 0, manual: 0 };
-  const products = PRODUCTS.map((p) => { const basis = PRICING_BASIS[p.family] || 'quoted'; pricing[basis]++; return { ...p, pricing: basis }; });
-  return { families: FAMILIES, products, counts, pricing, pricingLabels: PRICING_LABEL, total: PRODUCTS.length };
+  const products = PRODUCTS.map((p) => { const basis = PRICING_BASIS[p.family] || 'quoted'; pricing[basis]++; return { ...p, pricing: basis, tab: PRODUCT_TAB[p.id] || null, assetClass: PRODUCT_ASSET[p.id] || null }; });
+  return { families: FAMILIES, products, counts, pricing, pricingLabels: PRICING_LABEL, total: PRODUCTS.length, marketTabs: MARKET_TABS, assetClasses: ASSET_CLASSES, routingBases: ROUTING_BASES };
 }
 
 export const MARKET_VIEWS = {

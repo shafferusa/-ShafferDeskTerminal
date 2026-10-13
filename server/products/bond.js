@@ -165,6 +165,9 @@ export const bond = {
   },
   schedTerms,
   accruedAmount(inst, qty, date) {
+    // Coupons suspended (a default, a missed or cancelled coupon recorded by hand): nothing accrues and the bond trades
+    // flat, without accrued interest, until coupons are resumed.
+    if (inst.terms.couponSuspended) return 0;
     const ai = accruedPer100(schedTerms(inst), date);
     return ai === null ? null : (qty * factorOf(inst) * ai) / 100;
   },
@@ -175,6 +178,7 @@ export const bond = {
     const buy = action === 'buy' || action === 'buy_to_cover';
     const notes = [];
     if (ai === null) notes.push('Accrued interest cannot be computed: the floating coupon has no fixing. It is booked as zero until the fixing is supplied.');
+    if (inst.terms.couponSuspended) notes.push('Coupons are suspended: the bond trades flat, without accrued interest.');
     // Principal and accrued interest are each rounded to the cent, as the fill books them, so the previewed
     // settlement amount is the amount that settles.
     const total = money(principal, ccy) + money(ai || 0, ccy);
@@ -262,7 +266,13 @@ export const bond = {
         const next = nextCouponDate(t, couponDate);
         if (next && !isZero(live.qty)) app.tasks.schedule({ ...base, type: 'bond.coupon', dueDate: adjust(next, 'following', paymentCalendarFor(inst)), data: { key: next, couponDate: next } });
       };
-      if (isZero(face) || inst.terms.couponSuspended) { scheduleNext(); return 'done'; }
+      if (isZero(face)) { scheduleNext(); return 'done'; }
+      if (inst.terms.couponSuspended) {
+        // A coupon date that passes while coupons are suspended is not paid, and says so in the history.
+        const eventId = ledger.post({ ...base, type: 'bond.coupon_missed', summary: `Coupon of ${couponDate} not paid on ${fmtQty(Math.abs(face))} ${inst.symbol || inst.name}: coupons are suspended`, data: { couponDate, face } });
+        scheduleNext();
+        return { done: true, eventId };
+      }
       const per100 = couponPer100(t, couponDate);
       if (per100 === null) {
         return { blocked: `Awaiting the ${inst.terms.referenceRate} fixing for the coupon period ending ${couponDate}. ${app.data.describe().awaitingMessage}, or enter the fixing manually.`, needs: [{ kind: 'rate', subject: inst.terms.referenceRate, date: couponDate }] };
@@ -308,6 +318,26 @@ export const bond = {
     const r = redeem(app, { book, unit, inst, pos, price: p, face: f, date, type: 'bond.early_redemption', label: label || 'Redeemed early', actor: 'user', accrued: Math.abs(bond.accruedAmount(inst, f, date) || 0) });
     bond.onPositionChange(app, { book, unit, inst, pos: app.positions.get(pos.id) });
     return r;
+  },
+  /**
+   * Coupon suspension by hand (an issuer default or a missed coupon; a cancelled discretionary coupon), and its resumption.
+   * Suspending puts every holding on non-accrual: the interest accrued and not yet received is reversed out of coupon and
+   * interest income, in every Book, because it will not be paid; no interest accrues, coupon dates pass unpaid (each one
+   * listed in the history) and the bond trades flat. Resuming restarts accrual and payment from the next end of day.
+   */
+  suspendCoupons(app, { inst, suspended }) {
+    app.instruments.update(inst.id, { terms: { ...inst.terms, couponSuspended: Boolean(suspended) } }, { system: true });
+    if (!suspended) return { suspended: false };
+    const ccy = inst.trading_ccy;
+    const name = inst.symbol || inst.name;
+    const eventIds = [];
+    for (const p of app.positions.heldAround(inst.id)) {
+      if (app.ledger.positionBalance(p.id, 'accrued.asset', ccy) === 0) continue;
+      const book = app.books.getBook(p.book_id), unit = app.books.getUnit(p.unit_id);
+      const id = trueUpAccrual(app, { book, unit, pos: p, inst, account: 'accrued.asset', pnlAccount: 'pnl.coupon', ccy, target: 0, summary: `Accrued interest reversed on ${name}: coupons suspended, not accrued or paid`, type: 'accrual.coupon' });
+      if (id) eventIds.push(id);
+    }
+    return { suspended: true, eventIds };
   },
   /** Principal paydown by hand: the pool factor falls and the paid-down face is redeemed at par. */
   paydown(app, { book, unit, inst, newFactor }) {

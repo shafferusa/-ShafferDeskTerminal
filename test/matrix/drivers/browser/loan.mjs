@@ -158,7 +158,8 @@ async function convertDialog(ui, ctx, step) {
   await dlg.waitFor();
   if (tk.page !== 'account') await ui.select(dlg, exactly('In')).selectOption({ label: unitName(ctx, ownerKey) });
   const pairs = ui.select(dlg, 'Currency pair');
-  await pairs.locator('option', { hasText: exactly(pair.symbol || pair.name) }).waitFor({ state: 'attached' });
+  // The pair is chosen by its registry id: the demo feed registers pairs of its own, which may carry the same label.
+  await pairs.locator(`option[value="${pair.id}"]`).waitFor({ state: 'attached' });
   await pairs.selectOption(pair.id);
   const { base, quote } = pair.terms;
   await ui.option(dlg, 'Direction', tk.action === 'sell' ? `Sell ${base}, receive ${quote}` : `Sell ${quote}, receive ${base}`).click();
@@ -184,7 +185,8 @@ async function borrowConvertDialog(ui, ctx, step) {
   await dlg.waitFor();
   if (tk.page !== 'account') await ui.select(dlg, 'Borrower').selectOption({ label: unitName(ctx, ownerKey) });
   const pairs = ui.select(dlg, 'Currency pair');
-  await pairs.locator('option', { hasText: exactly(pair.symbol || pair.name) }).waitFor({ state: 'attached' });
+  // The pair is chosen by its registry id: the demo feed registers pairs of its own, which may carry the same label.
+  await pairs.locator(`option[value="${pair.id}"]`).waitFor({ state: 'attached' });
   await pairs.selectOption(pair.id);
   const { base, quote } = pair.terms;
   const other = tk.ccy === base ? quote : base;

@@ -647,7 +647,7 @@ function LifecycleAdmin({ inst, onChanged }) {
       text: `The pool factor of ${name} falls from ${factor} to ${nf}. Every holder, in every Book, is paid down: a long holder receives ${Number((factor - nf).toFixed(8))} of its face amount at the redemption price (${t.redemption ?? 100}% of par) in cash, and a short holder pays it. Each position's cost falls in proportion and the difference is booked as realized profit or loss. Later coupons follow the reduced face.` };
   };
   const suspend = (on) => ({ action: 'suspend_coupon', body: { suspended: on }, confirm: on ? 'Suspend coupons' : 'Resume coupons', done: on ? 'Coupons suspended.' : 'Coupons resumed.',
-    text: on ? `No coupon accrues or is paid on ${name} for any holder, in any Book, until coupons are resumed. Coupon dates that pass while suspended are skipped and are not paid later. Interest already accrued stays on the books.`
+    text: on ? `No coupon accrues or is paid on ${name} for any holder, in any Book, until coupons are resumed. Coupon dates that pass while suspended are listed in the history as not paid and are not paid later. Interest accrued and not yet received is reversed out of coupon and interest income for every holder (non-accrual), and the bond trades flat, without accrued interest, until coupons are resumed.`
       : `Coupon accrual and payment restart on ${name} for every holder, in every Book. Coupon dates that passed while suspended are not paid afterwards; record any catch-up payment by hand.` });
   const setRate = () => {
     const r = v.rate;

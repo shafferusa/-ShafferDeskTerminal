@@ -4,7 +4,7 @@
 // through app.data (the single data adapter), and every paper-accounting operation goes through
 // the core modules. Service credentials never appear in any response.
 
-import { FAMILIES, MARKET_VIEWS, catalogSummary } from './core/catalog.js';
+import { FAMILIES, MARKET_TABS, MARKET_VIEWS, ASSET_CLASSES, ROUTING_BASES, catalogSummary, conventionRoute, getProduct, routingText, tabOf } from './core/catalog.js';
 import { BOOK_DEFAULTS } from './core/defaults.js';
 import { createIntegrity } from './core/integrity.js';
 import { ACCOUNTS } from './core/ledger.js';
@@ -37,15 +37,18 @@ export function createApi(app) {
     }
   }
 
-  async function analyticsFor(insts) {
+  // `strategyId` (optional): the investment Strategy the fair values are asked for. It is passed to Analytics Lab as a
+  // second argument and cached apart; a service that ignores it answers as before.
+  async function analyticsFor(insts, strategyId = null) {
     const now = app.clock.ms();
     const maxAge = app.data.getRefresh().analyticsMs;
-    const need2 = insts.filter((i) => !analyticsCache.has(i.id) || now - analyticsCache.get(i.id).at >= maxAge);
+    const key = (i) => (strategyId ? `${i.id}|${strategyId}` : i.id);
+    const need2 = insts.filter((i) => !analyticsCache.has(key(i)) || now - analyticsCache.get(key(i)).at >= maxAge);
     if (need2.length) {
-      const m = await app.data.analytics.instrumentAnalytics(need2);
-      for (const i of need2) analyticsCache.set(i.id, { at: now, value: m.get(i.id) ?? null });
+      const m = strategyId ? await app.data.analytics.instrumentAnalytics(need2, { strategyId }) : await app.data.analytics.instrumentAnalytics(need2);
+      for (const i of need2) analyticsCache.set(key(i), { at: now, value: m.get(i.id) ?? null });
     }
-    return new Map(insts.map((i) => [i.id, analyticsCache.get(i.id)?.value ?? null]));
+    return new Map(insts.map((i) => [i.id, analyticsCache.get(key(i))?.value ?? null]));
   }
 
   const touchStrategy = (sid) => { if (sid) { app.packages.recomputeHolds(sid); app.packages.refreshStrategy(sid); } };
@@ -140,10 +143,35 @@ export function createApi(app) {
     return inst;
   };
 
+  // `marketplace=1` adds the contract facts a Marketplace row shows that are not in the registry row: a bond's accrued
+  // interest per 100 face to today, worked out by the bond engine from the coupon schedule (contract arithmetic, not a
+  // valuation). `tab` keeps only one product-family tab (catalog.js MARKET_TABS).
+  const bondPlugin = () => app.products.get('bond');
+  const marketFacts = (inst) => {
+    if (inst.family !== 'bond') return null;
+    let ai = null;
+    try { ai = bondPlugin().accruedAmount(inst, 100, app.clock.today()); } catch { ai = null; }
+    return { accruedPer100: Number.isFinite(ai) ? ai : null, accruedAsOf: app.clock.today() };
+  };
   r.get('/api/instruments', ({ query }) => ({
     items: instruments.list({ view: query.view, family: query.family, productId: query.productId, q: query.q, underlyingId: query.underlyingId, includeArrangements: query.arrangements === '1', limit: query.limit })
-      .filter((i) => !query.tagView || i.market_view === query.tagView || i.tags.includes(query.tagView)).filter(visibleTo(query.bookId)).map(withHoldings(query.bookId)),
+      .filter((i) => !query.tagView || i.market_view === query.tagView || i.tags.includes(query.tagView)).filter(visibleTo(query.bookId))
+      .filter((i) => !query.tab || tabOf(i.product_id) === query.tab)
+      .map((i) => { const v = withHoldings(query.bookId)(i); return query.marketplace === '1' ? { ...v, market: marketFacts(i) } : v; }),
   }));
+  /**
+   * What the routing convention gives a draft, before it is registered (the registration form shows it):
+   * { view, basis, text } or { view: null, reason } when the view must be chosen by hand.
+   */
+  r.get('/api/instruments/routing', ({ query }) => {
+    const product = getProduct(query.productId);
+    need(product, 'Choose a product type from the catalog.');
+    const und = query.underlyingId ? instruments.get(query.underlyingId) : null;
+    const facts = { product, venueType: query.venueType || 'exchange', venueCountry: query.venueCountry || null, jurisdiction: query.jurisdiction || null, domicile: query.domicile || null, underlying: und, requestedView: query.marketView || null };
+    const conv = conventionRoute(facts);
+    if (!conv) return { view: null, basis: null, reason: `${product.name} is exchange-listed but no listing-venue country is recorded. Enter the venue country, state the jurisdiction, or choose the view by hand.` };
+    return { view: conv.view, basis: conv.basis, basisLabel: ROUTING_BASES[conv.basis], text: routingText({ ...conv, venue: query.venue, venueCountry: facts.venueCountry, jurisdiction: facts.jurisdiction, domicile: facts.domicile, underlying: und, family: product.family, venueType: facts.venueType }) };
+  });
   r.post('/api/instruments', ({ body }) => instruments.toView(instruments.create(body)));
   r.get('/api/instruments/:id', ({ params, query }) => withHoldings(query.bookId)(requireVisible(params.id, query.bookId)));
   r.put('/api/instruments/:id', ({ params, body }) => instruments.toView(instruments.update(params.id, body)));
@@ -199,7 +227,7 @@ export function createApi(app) {
     const ids = String(query.ids || '').split(',').filter(Boolean).slice(0, 300);
     const insts = ids.map((id) => instruments.get(id)).filter(Boolean);
     await freshQuotes(insts);
-    const an = await analyticsFor(insts);
+    const an = await analyticsFor(insts, query.strategyId || null);
     const out = {};
     for (const i of insts) out[i.id] = { observation: app.data.present(app.data.price(i.id)), session: app.data.session(i.id), analytics: an.get(i.id) };
     return { quotes: out, market: app.data.market.state().connection, analytics: app.data.analytics.state().connection, awaitingMessage: app.data.describe().awaitingMessage, at: app.clock.now().toISOString() };
@@ -382,7 +410,7 @@ export function createApi(app) {
           const holder = positions.heldAround(inst.id)[0];
           return plugin.paydown(app, { book: holder ? books.getBook(holder.book_id) : null, unit: holder ? books.getUnit(holder.unit_id) : null, inst, newFactor: body.newFactor });
         }
-        case 'suspend_coupon': need(inst.family === 'bond', 'Coupon suspension applies to debt securities.'); instruments.update(inst.id, { terms: { ...inst.terms, couponSuspended: Boolean(body.suspended) } }, { system: true }); return { suspended: Boolean(body.suspended) };
+        case 'suspend_coupon': need(inst.family === 'bond' && plugin.suspendCoupons, 'Coupon suspension applies to debt securities.'); return plugin.suspendCoupons(app, { inst, suspended: Boolean(body.suspended) });
         case 'set_rate': {
           need(['repo', 'loan'].includes(inst.family), 'A rate reset applies to loans and repos.');
           const rate = num(body.rate);

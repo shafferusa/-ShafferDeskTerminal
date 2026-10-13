@@ -126,7 +126,9 @@ function Shell() {
   }, [route.page]);
   useEffect(() => {
     if (!bookId) return;
-    get(`/api/books/${bookId}/alerts`).then((r) => setAlerts(r.items), () => {});
+    // An answer that arrives after the user switched Book belongs to the Book left behind: it is dropped.
+    const stillHere = () => getState().bookId === bookId;
+    get(`/api/books/${bookId}/alerts`).then((r) => { if (stillHere()) setAlerts(r.items); }, () => {});
     // Workflow 2: after a direct Marketplace fill the hedge request is made automatically and its popup
     // opens, with the recommended package or, while Analytics Lab is away, the waiting state. It never
     // opens on top of a dialog that is in use; it waits for that dialog to close.
@@ -136,12 +138,16 @@ function Shell() {
     promptOpening = true;
     get('/api/hedge/prompts', { bookId }).then(async (r) => {
       const h = r.items[0];
-      if (h && !document.querySelector('.modal')) {
+      if (h && !document.querySelector('.modal') && stillHere()) {
         await post(`/api/hedge/requests/${h.id}/seen`);
         const { HedgePopup } = await import('./views/hedge.js');
         openOverlay((close) => html`<${HedgePopup} request=${h} onClose=${close} />`);
       }
-    }).catch(() => {}).finally(() => { promptOpening = false; });
+    }).catch(() => {}).finally(() => {
+      promptOpening = false;
+      // The Book changed while this was on its way: look again, for the Book now selected.
+      if (!stillHere()) bump();
+    });
   }, [bookId, tick, overlayCount]);
 
   if (!status) return html`<div class="boot">Shaffer Desk Terminal</div>`;

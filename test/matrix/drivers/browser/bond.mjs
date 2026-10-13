@@ -203,6 +203,53 @@ export const actions = {
     await dlg.waitFor({ state: 'hidden' });
     return {};
   },
+  /**
+   * A lifecycle event recorded by hand on the instrument itself (added by b2): coupon suspension and its resumption
+   * (`body: { action: 'suspend_coupon', suspended: true | false }`), and a principal paydown (`body: { action: 'paydown',
+   * newFactor }`). The instrument drawer's Edit button opens the instrument form; its "Lifecycle events recorded by hand"
+   * part asks for a review and then a confirmation, which posts the event. Other actions fall through to the shared path.
+   */
+  async instrument_lifecycle(ui, t, ctx, step) {
+    const kind = step.body?.action;
+    if (!['suspend_coupon', 'paydown'].includes(kind)) return undefined;
+    const inst = ctx.inst(step.instrument);
+    const drawer = await ui.openInstrument(inst);
+    await drawer.getByRole('button', { name: /^Edit$/ }).first().click();
+    const dlg = ui.dialog(`Edit ${inst.symbol || inst.name}`);
+    await dlg.waitFor();
+    let review, confirm, done;
+    if (kind === 'paydown') {
+      await ui.input(dlg, 'New pool factor').fill(String(step.body.newFactor));
+      review = ui.button(dlg, 'Review paydown'); confirm = 'Record paydown'; done = /Paydown recorded/;
+    } else {
+      review = ui.button(dlg, step.body.suspended ? 'Review coupon suspension' : 'Review resuming coupons');
+      if (!await review.count()) {
+        const close = async () => { await ui.button(dlg, 'Cancel').click(); await dlg.waitFor({ state: 'hidden' }); };
+        await close();
+        return { refusal: { message: `Coupons are already ${step.body.suspended ? 'suspended' : 'being paid'}: the form offers no "${step.body.suspended ? 'Review coupon suspension' : 'Review resuming coupons'}".`, where: 'instrument form, Lifecycle events recorded by hand' } };
+      }
+      confirm = step.body.suspended ? 'Suspend coupons' : 'Resume coupons'; done = step.body.suspended ? /Coupons suspended/ : /Coupons resumed/;
+    }
+    await review.click();
+    await ui.drawn();
+    const invalid = dlg.locator('.notice.err');
+    if (await invalid.count()) {
+      const message = (await invalid.first().innerText()).trim();
+      await ui.button(dlg, 'Cancel').click();
+      return { refusal: { message, where: 'instrument form, Lifecycle events recorded by hand' } };
+    }
+    const r = await ui.respondsTo('POST', /^\/api\/instruments\/[^/]+\/lifecycle$/, () => ui.button(dlg, confirm).click());
+    if (!r.ok) {
+      await dlg.locator('.notice.err', { hasText: r.body?.error || 'no message' }).first().waitFor();
+      const message = r.body?.error;
+      await ui.button(dlg, 'Cancel').click();
+      return { refusal: { message, status: r.status, where: 'instrument form message' } };
+    }
+    await ui.toast(done);
+    await ui.button(dlg, 'Cancel').click();
+    await dlg.waitFor({ state: 'hidden' });
+    return {};
+  },
   async owner_screens(ui, t, ctx, step) {
     if (step.owner !== 'treasury') throw new Error('owner_screens reads the screens of Treasury: state `owner: \'treasury\'`.');
     const { readScreens, screenProblems } = await import('../browser.mjs');

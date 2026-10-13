@@ -171,3 +171,41 @@ test('the borrowing register carries the cash collateral of a securities borrow,
   assert.equal(app.accounting.balanceSheet(book.id, acct.id).borrowings.find((x) => x.family === 'secloan').collateral.cash, 20_402.04);
   assert.equal(app.accounting.treasury(book.id).borrowings.accountOriginated.find((x) => x.family === 'secloan').collateral.cash, 20_402.04);
 });
+
+test('the no-basis block names the three choices and says where the basis is recorded: new contract, registered contract, older position, locked contract', async () => {
+  const { app, clock } = makeApp();
+  const { book, acct } = makeBook(app);
+  const block = (pv) => pv.checks.find((c) => c.level === 'error' && c.code === 'collateral-basis');
+  const three = /Choose a collateral agreement, enter position-level terms, or choose "Uncollateralized \(paper assumption\)": one of the three is needed/;
+  // 1. A new contract on a Custom package (the Strategies page's template path): fixed in the preview.
+  const bare = irs(undefined);
+  delete bare.terms.collateralBasis;
+  const p1 = await app.packages.preview({ bookId: book.id, unitId: acct.id, template: 'custom', legs: [{ kind: 'trade', action: 'buy', qty: 100_000, statedPrice: 0, contract: bare }] });
+  assert.match(block(p1).message, three);
+  assert.deepEqual(p1.legs[0].collateral.basis.fix, { kind: 'draft' });
+  // 2. A registered contract not yet traded: recorded on the contract.
+  const reg = irs(undefined); delete reg.terms.collateralBasis;
+  const inst = app.instruments.create(reg);
+  const p2 = await app.packages.preview({ bookId: book.id, unitId: acct.id, template: 'custom', legs: [{ kind: 'trade', action: 'buy', qty: 100_000, statedPrice: 0, instrumentId: inst.id }] });
+  assert.deepEqual(p2.legs[0].collateral.basis.fix, { kind: 'contract', instrumentId: inst.id });
+  assert.match(block(p2).message, /record the basis on the contract/);
+  app.instruments.update(inst.id, { terms: { ...app.instruments.get(inst.id).terms, collateralBasis: { type: 'uncollateralized' } } });
+  const p2b = await app.packages.preview({ bookId: book.id, unitId: acct.id, template: 'custom', legs: [{ kind: 'trade', action: 'buy', qty: 100_000, statedPrice: 0, instrumentId: inst.id }] });
+  assert.equal(p2b.blocking, 0);
+  // 3. "Add legs" to a strategy whose position predates bases: recorded on the position.
+  const o = await open(app, book, acct, irs({ type: 'uncollateralized' }), 1_000_000);
+  const i = app.instruments.get(o.instrumentId);
+  const { collateralBasis: _gone, ...terms } = i.terms;
+  app.instruments.update(i.id, { terms }, { system: true });
+  app.db.run(`UPDATE positions SET data = json_remove(data, '$.collateralBasis') WHERE id = ?`, o.positionId);
+  const p3 = await app.packages.preview({ bookId: book.id, unitId: acct.id, template: 'custom', attachTo: o.s.id, legs: [{ kind: 'trade', action: 'buy', qty: 500_000, statedPrice: 0, instrumentId: o.instrumentId }] });
+  assert.deepEqual(p3.legs[0].collateral.basis.fix, { kind: 'position', positionId: o.positionId, bookId: book.id });
+  assert.match(block(p3).message, /record its basis/);
+  app.agreements.setPositionBasis(o.positionId, { type: 'uncollateralized' });
+  const p3b = await app.packages.preview({ bookId: book.id, unitId: acct.id, template: 'custom', attachTo: o.s.id, legs: [{ kind: 'trade', action: 'buy', qty: 500_000, statedPrice: 0, instrumentId: o.instrumentId }] });
+  assert.equal(p3b.blocking, 0, p3b.checks.map((c) => c.message).join(' | '));
+  // 4. The same traded contract in a new strategy instance: its terms are locked, and the block says so.
+  const p4 = await app.packages.preview({ bookId: book.id, unitId: acct.id, template: 'custom', legs: [{ kind: 'trade', action: 'buy', qty: 100_000, statedPrice: 0, instrumentId: o.instrumentId }] });
+  assert.deepEqual(p4.legs[0].collateral.basis.fix, { kind: 'locked', instrumentId: o.instrumentId });
+  assert.match(block(p4).message, /terms are locked: register a new contract that states a basis/);
+});

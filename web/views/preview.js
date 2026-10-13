@@ -13,9 +13,9 @@
 // Below 1100 px the leg table turns into one block per leg, so no column is clipped; the package
 // totals and the confirmation controls stay in the footer, which never scrolls away.
 import { html, useState } from '../vendor/preact-htm.js';
-import { bump, fmtMoney, fmtNum, fmtPrice, fmtQty, fmtTime, isNum, openOverlay, post, toast } from '../lib/core.js';
+import { bump, fmtMoney, fmtNum, fmtPrice, fmtQty, fmtTime, get, isNum, openOverlay, post, put, toast } from '../lib/core.js';
 import { Button, Check, Checks, ErrorNote, Field, Modal, Money, Notice, Num, PayoffChart, Pill, Price, Prov, PURPOSE_LABEL, Select, Table, Text } from '../lib/ui.js';
-import { ContractFields, draftToContract } from '../lib/contracts.js';
+import { CollateralBasisFields, ContractFields, draftToContract } from '../lib/contracts.js';
 
 const ORDER_TYPES = [{ value: 'market', label: 'Market' }, { value: 'limit', label: 'Limit' }, { value: 'stop', label: 'Stop' }, { value: 'stop_limit', label: 'Stop limit' }];
 const TIFS = [{ value: 'day', label: 'Day' }, { value: 'gtc', label: 'Until cancelled' }];
@@ -94,6 +94,42 @@ function ContractDialog({ leg, contract, onSave, onClose }) {
       <${Field} label="Currency"><${Text} value=${d.tradingCcy} onInput=${(v) => setD({ ...d, tradingCcy: v.toUpperCase() })} /><//>
       <${ContractFields} draft=${d} onChange=${setD} />
     </div><//>`;
+}
+
+/**
+ * An OTC leg blocked because no collateral basis is on record: the three choices, and the fix where it
+ * can be made from here (the server says where in `collateral.basis.fix`):
+ *   draft     a new contract on this package: the basis is written into its terms and the package re-checked
+ *   position  a position opened before a basis was required ("Add legs"): the basis is recorded on the position
+ *   contract  a registered contract not yet traded: the basis is recorded on the contract
+ *   locked    a traded contract: its terms are locked, so the way out is a new contract
+ */
+function BasisFix({ leg, unitId, onDraft, onRecheck }) {
+  const fix = leg.collateral?.basis?.fix;
+  const [basis, setBasis] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  if (!fix) return null;
+  const name = leg.instrument?.symbol || leg.instrument?.name || `leg ${leg.n}`;
+  const ready = basis?.type && (basis.type !== 'agreement' || basis.agreementId);
+  const apply = async () => {
+    setBusy(true); setError(null);
+    try {
+      if (fix.kind === 'draft') { await onDraft(leg.n, basis); return; }
+      if (fix.kind === 'position') { await put(`/api/books/${fix.bookId}/positions/${fix.positionId}/collateral-basis`, { basis }); toast('Collateral basis recorded on the position.'); }
+      if (fix.kind === 'contract') { const inst = await get(`/api/instruments/${fix.instrumentId}`); await put(`/api/instruments/${fix.instrumentId}`, { terms: { ...(inst.terms || {}), collateralBasis: basis } }); toast('Collateral basis recorded on the contract.'); }
+      bump(); await onRecheck();
+    } catch (err) { setError(err); } finally { setBusy(false); }
+  };
+  const where = { draft: `Chosen here, it is written into the terms of this new contract and the package is checked again.`,
+    position: `${name} is held in a position opened before a basis was required. Chosen here, the basis is recorded on that position for the rest of its life, then the package is checked again.`,
+    contract: `${name} is a registered contract that has not been traded yet. Chosen here, the basis is recorded on the contract, then the package is checked again.` };
+  return html`<${Notice} tone="err"><div data-testid="basis-fix" data-fix=${fix.kind}><b>Leg ${leg.n}: ${name} has no collateral basis.</b> Choose one of three: a collateral agreement of this Book, position-level terms, or "Uncollateralized (paper assumption)". Nothing is assumed from the product.
+    ${fix.kind === 'locked' ? html`<div style="margin-top:4px">${name} has been traded, so its contract terms are locked and no basis can be added to it. Register a new contract that states a basis (from the instrument registry, or as a new contract on this package), or add to an existing position whose basis is on record. A position held in it without a basis can have its basis recorded under <a href="#/treasury/collateral">Treasury, Collateral</a>.</div>`
+      : html`<div style="margin-top:4px">${where[fix.kind]}</div>
+        <div class="grid-form" style="margin-top:6px"><${CollateralBasisFields} value=${basis} onChange=${(b) => { setError(null); setBasis(b); }} ccy=${leg.currency} unitId=${unitId} /></div>
+        <div class="row" style="margin-top:6px"><${Button} small kind="primary" busy=${busy} disabled=${!ready} onClick=${apply}>${fix.kind === 'draft' ? 'Use this basis and re-check' : fix.kind === 'position' ? 'Record on the position and re-check' : 'Record on the contract and re-check'}<//></div>
+        <${ErrorNote} error=${error} />`}</div><//>`;
 }
 
 function LegRow({ leg, edit, onEdit, onRemove, canRemove, changes }) {
@@ -261,12 +297,12 @@ export function PreviewModal({ preview, onClose, onDone, extra = {}, confirmLabe
     const renum = new Map(keep.map((l, i) => [l.n, i + 1]));
     return keep.map((l) => ({ ...l, ...(edits[l.n] || {}), n: renum.get(l.n), dependsOn: (l.dependsOn || []).filter((d) => renum.has(d)).map((d) => renum.get(d)) }));
   };
-  const recheck = async (more = {}) => {
+  const recheck = async (more = {}, legsNow = null) => {
     setBusy(true); setError(null);
     try {
       // The legs now on screen are the package: financing sized automatically for the first preview
       // is already among them (or was removed on purpose), so it is not sized and added again.
-      const next = await post('/api/strategies/preview', { ...pv.input, ...extra, ...more, financing: null, legs: editedLegs(), clientToken: pv.token });
+      const next = await post('/api/strategies/preview', { ...pv.input, ...extra, ...more, financing: null, legs: legsNow || editedLegs(), clientToken: pv.token });
       setPv(next); setEdits({}); setRemoved([]); setChanges([]); setReviewed(false);
     } catch (err) { setError(err); }
     setBusy(false);
@@ -318,6 +354,9 @@ export function PreviewModal({ preview, onClose, onDone, extra = {}, confirmLabe
       ${needsAck ? html`<${Notice} tone="warn"><b>Protection is already in place.</b> ${prot.prior.map((x) => x.label).join('; ')}. The hedge package adds ${prot.added.map((x) => x.label).join('; ')}. ${prot.explain}
         <div class="row" style="margin-top:6px"><${Button} small busy=${busy} onClick=${() => recheck({ extraProtection: true })}>Add this protection deliberately<//><span class="note">or remove the added hedge legs below and re-check.</span></div><//>` : null}
       <${Checks} checks=${pv.checks.filter((k) => !(needsAck && k.code === 'extra-protection'))} />
+      ${dirty ? null : legs.filter((l) => l.collateral?.basis?.fix).map((l) => html`<${BasisFix} key=${`${pv.generatedAt}-basis-${l.n}`} leg=${l} unitId=${pv.unit?.id}
+        onRecheck=${() => recheck()}
+        onDraft=${(n, basis) => recheck({}, editedLegs().map((x) => (x.n === n && x.contract ? { ...x, contract: { ...x.contract, terms: { ...(x.contract.terms || {}), collateralBasis: basis } } } : x)))} />`)}
       <div class="note">One snapshot: every figure below was priced together at ${fmtTime(pv.generatedAt, { date: false, seconds: true })}. Cash required is the sum of the legs' purchases, fees, margin, collateral and reservations.</div>
       ${pv.confirmation ? html`<div class="note" data-testid="tolerances">Confirming executes these figures only. If a figure has moved by more than this Book's tolerances when you confirm (${tolerancesText(pv.confirmation.tolerances)}), or a term such as a settlement date, quote status, financing rate or borrow availability has changed, nothing is submitted and the changes are shown. The tolerances are set under <a href="#/settings" onClick=${onClose}>Settings</a>.</div>` : null}
       <div class="tablewrap"><table class="ledger legs pv-legs margin">

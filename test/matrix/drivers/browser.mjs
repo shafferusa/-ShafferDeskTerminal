@@ -663,7 +663,9 @@ async function registerInBrowser(ui, family, draft, ctx) {
   if (draft.venueType === 'otc') await ui.option(dlg, 'Traded on', 'OTC').click();
   if (draft.venue) await ui.input(dlg, /^(Listing venue|Venue or platform)/).fill(draft.venue);
   if (draft.venueCountry) await ui.input(dlg, 'Venue country').fill(draft.venueCountry);
-  await ui.input(dlg, 'Trading currency').fill(draft.tradingCcy);
+  // A currency pair's trading currency is its quote currency: the form fills it from the contract terms and disables it.
+  const tradingCcy = ui.input(dlg, 'Trading currency');
+  if (await tradingCcy.isEnabled()) await tradingCcy.fill(draft.tradingCcy);
   if (draft.domicile) await ui.input(dlg, 'Issuer domicile').fill(draft.domicile);
   if (draft.underlyingGeo) await ui.input(dlg, 'Underlying geography').fill(draft.underlyingGeo);
   await family.of(getProduct(draft.productId).family).contractTerms(ui, dlg, draft, ctx);
