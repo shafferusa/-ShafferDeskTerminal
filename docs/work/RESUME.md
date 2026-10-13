@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 45.5% of the pass** (last milestone 2026-10-07T12:14Z, coord: PAUSED on the owner's instruction, Fable at 99 percent; state written to RESUME.md)
+**Completeness: about 45.5% of the pass** (last milestone 2026-10-13T16:04Z, coord: resumed on the owner's new request; wave A starting with Opus workers)
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 
@@ -31,6 +31,23 @@ Stop all background work when the owner's weekly **Fable** usage reaches 98%.
 
 Last known figures: 5:30 PM ET on 2026-10-06, Fable 14% against 10% for all models (r = 1.4), before this pass
 started. The all-models figure was reported as 35% at about 9:57 PM ET.
+
+## RESUMED 2026-10-13 16:10 UTC on the owner's new request (`briefs/OWNER_REQUEST2.txt`)
+
+Finish everything: the remaining 148 products and 28 templates, plus new work: Marketplaces split into
+product-family tabs with correct classification and product-specific columns, a "Trading owner" selector on the
+Strategies page, the eight unfinished browser cases of the failure suite, the whole-interface check and the
+evidence report with four categories (implemented and verified; implemented but unverified; incomplete; blocked by
+an unavailable Shaffer service). The owner chose: **all workers on Opus 5.5** (the coordinator stays on Fable); the
+usage guard below still applies and the owner sends "pause".
+
+Waves (ids as in `tasks/GROUPS.md`; `briefs/BRIEF5.md` is this round's shared brief):
+- A: ui1 (`tasks/UI1-marketplaces.md`), s8 (finish browser level, map every API case to a browser case), l1 then r1
+  (loans, then repo and securities lending), b2, c1 then c2, fix (collateral follow-up v2b and `BUGS.md`).
+- B: b3, b4, m1, o2 then o3, s2.
+- C: fw1, s3, t1, t2, s7.
+- D: s9 (whole interface after all changes), then the coordinator's final run and report.
+`LOG.md` shows how far each got.
 
 ## Light confirmation run on 2026-10-13 (owner: "do not use a lot of usage, just confirm everything works")
 

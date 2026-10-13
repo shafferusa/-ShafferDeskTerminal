@@ -68,3 +68,4 @@
 - 2026-10-07T12:00Z | s8 | +0 | browser cases for ticket refusals, the four recovery actions and cancellations pass
 - 2026-10-07T12:06Z | s8 | +0 | browser cases: repayment refused, failed tab, closed day, confirm-changed, double-click-records pass
 - 2026-10-07T12:14Z | coord | +0 | PAUSED on the owner's instruction, Fable at 99 percent; state written to RESUME.md
+- 2026-10-13T16:04Z | coord | +0 | resumed on the owner's new request; wave A starting with Opus workers
