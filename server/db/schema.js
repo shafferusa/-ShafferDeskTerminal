@@ -572,4 +572,16 @@ ALTER TABLE instruments ADD COLUMN jurisdiction TEXT;
 ALTER TABLE instruments ADD COLUMN routing_basis TEXT;
 `,
   },
+  {
+    id: 9,
+    name: 'failed settlement retries (fin)',
+    sql: `
+-- A failed settlement is tried again only when something has changed: new cash in its currency, or a new business
+-- day. An engine cycle in which nothing changed is not an attempt and is not counted.
+-- last_attempt_at: real attempt time (the Terminal clock). NULL: never attempted, or failed before this column existed.
+ALTER TABLE settlements ADD COLUMN last_attempt_at TEXT;
+-- retry_basis: what the last failed attempt saw (JSON): { date: 'YYYY-MM-DD', available: <cash it could draw> }.
+ALTER TABLE settlements ADD COLUMN retry_basis TEXT;
+`,
+  },
 ];

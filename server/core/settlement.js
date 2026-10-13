@@ -2,13 +2,15 @@
 //
 // A fill books its position on trade date and leaves a receivable or payable. The matching cash
 // only moves on the settlement date. A payment that cannot be covered FAILS (it is not silently
-// funded): it stays on the Failed tab with its reason and is retried on later cycles.
+// funded): it stays on the Failed tab with its reason and is tried again when something has changed: new cash in its
+// currency (more than the last attempt could draw), or a new business day of that currency. An engine cycle in which
+// nothing changed is not an attempt: it is neither counted nor recorded.
 
 import { j, pj } from '../db/db.js';
 import { fmt } from './books.js';
 import { ISO_DATE_RE, money, newId, num } from './util.js';
 import { calendarInfo, FIXED_SETTLEMENT, MAX_SETTLE_LAG, settleDateFor, settlementConvention } from '../products/security.js';
-import { addBusinessDays, businessDaysBetween, closedReason, isBusinessDay, prevBusinessDay } from '../quant/calendar.js';
+import { addBusinessDays, businessDaysBetween, closedReason, CURRENCY_CALENDAR, isBusinessDay, prevBusinessDay } from '../quant/calendar.js';
 
 const DAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const dayName = (iso) => DAY[new Date(`${iso}T00:00:00Z`).getUTCDay()];
@@ -106,6 +108,31 @@ export function createSettlement(app) {
     return id;
   }
 
+  /** The cash a payment can draw now, bucket by bucket as settleOne draws it (the last bucket counts as it stands). */
+  function drawable(row, accounts) {
+    let total = 0;
+    for (let i = 0; i < accounts.length; i++) {
+      const bal = accounts[i] === 'cash.restricted' && i < accounts.length - 1 && row.position_id
+        ? ledger.positionBalance(row.position_id, 'cash.restricted', row.ccy)
+        : ledger.balance(row.unit_id, accounts[i], row.ccy);
+      total += i === accounts.length - 1 ? bal : Math.max(0, bal);
+    }
+    return total;
+  }
+
+  /**
+   * Whether a failed payment is worth attempting again: new cash in its currency since the last attempt (more than it
+   * could draw then), or a business day of the currency later than the last attempt. Rows that failed before the
+   * attempt was recorded are attempted once, which records it.
+   */
+  function retryDue(row, available) {
+    const basis = pj(row.retry_basis, null);
+    if (!basis || typeof basis.available !== 'number' || !basis.date) return true;
+    if (available > basis.available + 0.004) return true;
+    const today = clock.today();
+    return today > basis.date && isBusinessDay(today, CURRENCY_CALENDAR[row.ccy] || row.ccy);
+  }
+
   function settleOne(row) {
     const accounts = pj(row.accounts, ['cash']);
     const base = { bookId: row.book_id, unitId: row.unit_id, instrumentId: row.instrument_id, strategyId: row.strategy_id, orderId: row.order_id, positionId: row.position_id, actor: 'engine' };
@@ -124,6 +151,9 @@ export function createSettlement(app) {
       return true;
     }
     // Payment: draw from the listed cash buckets in order; the last one must cover the remainder.
+    // A failed payment is attempted again only when the cash it can draw has grown, or on a new business day.
+    const available = drawable(row, accounts);
+    if (row.status === 'failed' && !retryDue(row, available)) return false;
     let need = -row.amount;
     const draws = [];
     for (let i = 0; i < accounts.length && need > 0; i++) {
@@ -138,7 +168,7 @@ export function createSettlement(app) {
       if (i === accounts.length - 1 && bal < take - 0.004) {
         const msg = `Insufficient settled ${row.ccy} cash: ${fmt(Math.max(bal, 0), row.ccy)} available, ${fmt(take, row.ccy)} due.`;
         const first = row.status !== 'failed';
-        db.run(`UPDATE settlements SET status = 'failed', attempts = attempts + 1, last_error = ? WHERE id = ?`, msg, row.id);
+        db.run(`UPDATE settlements SET status = 'failed', attempts = attempts + 1, last_error = ?, last_attempt_at = ?, retry_basis = ? WHERE id = ?`, msg, now, j({ date: clock.today(), available: money(available, row.ccy) }), row.id);
         if (first) {
           ledger.post({ ...base, type: 'settlement.failed', summary: `Settlement failed: ${msg}`, data: { settlementId: row.id, fillId: row.fill_id, dueDate: row.due_date, amount: row.amount, ccy: row.ccy } });
           app.alerts.raise({ bookId: row.book_id, unitId: row.unit_id, level: 'error', code: 'settlement.failed', message: `Settlement due ${row.due_date} failed. ${msg}`, refType: 'settlement', refId: row.id });

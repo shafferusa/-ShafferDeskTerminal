@@ -531,7 +531,7 @@ export function createAccounting(app) {
   function settlementView(s, unitName) {
     const inst = s.instrument_id ? instruments.get(s.instrument_id) : null;
     const strat = s.strategy_id ? app.packages.getStrategyRow(s.strategy_id) : null;
-    return { id: s.id, owner: unitName.get(s.unit_id), unitId: s.unit_id, kind: s.kind, instrument: app.valuation.lite(inst), strategy: strat ? { id: strat.id, name: strat.name } : null, dueDate: s.due_date, ccy: s.ccy, amount: s.amount, direction: s.amount > 0 ? 'receive' : 'pay', status: s.status, attempts: s.attempts, error: s.last_error, accounts: pj(s.accounts, ['cash']), createdAt: s.created_at, orderId: s.order_id, fillId: s.fill_id };
+    return { id: s.id, owner: unitName.get(s.unit_id), unitId: s.unit_id, kind: s.kind, instrument: app.valuation.lite(inst), strategy: strat ? { id: strat.id, name: strat.name } : null, dueDate: s.due_date, ccy: s.ccy, amount: s.amount, direction: s.amount > 0 ? 'receive' : 'pay', status: s.status, attempts: s.attempts, lastAttemptAt: s.last_attempt_at || null, error: s.last_error, accounts: pj(s.accounts, ['cash']), createdAt: s.created_at, orderId: s.order_id, fillId: s.fill_id };
   }
 
   function taskView(t, unitName) {

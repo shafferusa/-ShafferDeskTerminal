@@ -670,13 +670,13 @@ function FailedTab({ d, units, multi, owner, setOwner }) {
         { label: 'Strategy instance', render: (o) => html`<${StrategyStatus} status=${o.strategy.status} />${o.resolved ? html`<div class="sub">this leg was dealt with</div>` : null}` },
         { label: '', align: 'r', render: (o) => html`<${Button} small kind=${o.strategy.status === 'attention' && !o.resolved ? 'primary' : ''} onClick=${() => openStrategy(o.strategy.id)}>${o.strategy.status === 'attention' && !o.resolved ? 'Retry, unwind or accept' : 'Open strategy'}<//>` },
       )} empty=${{ title: all.length ? 'None of this kind' : 'No failed or cancelled orders', children: all.length ? 'Choose another outcome above.' : 'Rejected, cancelled and expired legs are listed here with their reasons.' }} /><//>
-    <${Section} title="Failed settlements" note="A settlement fails rather than overdraw cash. It is retried on each engine cycle.">
+    <${Section} title="Failed settlements" note="A settlement fails rather than overdraw cash. It is tried again when new cash arrives in its currency, and otherwise once each business day; a cycle in which nothing changed is not counted as an attempt.">
       <${Table} margin rows=${fails} rowKey=${(s) => s.id} columns=${col(
         OWNER((s) => s.owner),
         { label: 'Instrument', render: (s) => html`<${InstLink} i=${s.instrument} />` },
         { label: 'Strategy instance', render: (s) => html`<${StratLink} s=${s.strategy} />` },
         { label: 'Cash movement', align: 'r', render: (s) => html`<span class="sub">${s.direction === 'receive' ? 'to receive' : 'to pay'}</span> <${Money} value=${s.amount} ccy=${s.ccy} signed />` },
-        { label: 'Was due', render: (s) => s.dueDate }, { label: 'Attempts', align: 'r', render: (s) => s.attempts },
+        { label: 'Was due', render: (s) => s.dueDate }, { label: 'Attempts', align: 'r', render: (s) => html`${s.attempts}${s.lastAttemptAt ? html`<div class="sub">last ${fmtTime(s.lastAttemptAt)}</div>` : null}` },
         { label: 'Reason', cls: 'wrap', render: (s) => html`<span class="loss">${s.error || 'No reason was recorded'}</span>` },
         { label: '', align: 'r', render: (s) => (s.strategy ? html`<${Button} small onClick=${() => openStrategy(s.strategy.id)}>Open strategy<//>` : '') },
       )} empty=${{ children: 'No settlement has failed.' }} /><//>

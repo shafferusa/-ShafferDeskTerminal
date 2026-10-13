@@ -399,3 +399,9 @@ Fixed:
   and structure named. The request is complete once Strategy, holding period and objective are given. The demo fixture
   (server/data/demo-hedge.js) answers with a labelled note and no packages. Tests in test/core/hedge.test.js; long_call now has a
   hedge-request step (templates-a.mjs) passing at engine, API and browser.
+- server/core/settlement.js (s9 open item, failed settlement "Attempts" growing every cycle): a failed payment is attempted again
+  only when the cash it can draw has grown since its last attempt (new cash in that currency) or on a later business day of the
+  currency (CURRENCY_CALENDAR; weekends only for others). Idle cycles are neither counted nor recorded. Migration 9 adds
+  settlements.last_attempt_at and retry_basis ({date, available}); the Failed tab shows attempts with "last <time>" and the reason,
+  and its note states the rule. Test: test/core/settlement-retry.test.js. System API suite 48/48 (refusals:cash-settlement-day passes).
+  Not checked on screen (the Failed tab cell change was verified through the API view and the render code only).

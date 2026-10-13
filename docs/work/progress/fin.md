@@ -8,9 +8,13 @@
   Verified: templates family engine 30/30 and API 30/30 with no step result changed vs $SP/t1b/final/results (842 steps,
   compared by $SP/fin/cmp2.cjs); T:long_call engine/API/browser pass (32 passed, 1 blocked); npm test 810/810.
 
+- Item 2 (failed settlement attempts): server/db/schema.js migration 9 (settlements.last_attempt_at, retry_basis);
+  server/core/settlement.js drawable() + retryDue(): retry only on new cash in the currency or a later business day;
+  server/core/accounting.js settlementView lastAttemptAt; web/views/accounting.js Failed tab (attempts + last time, note).
+  Test test/core/settlement-retry.test.js (fails with the rule disabled). test:system:api 48/48; npm test 811/811.
+
 ## In progress
-- Item 2: failed settlement attempts counted per idle cycle (server/core/settlement.js).
+- (none)
 
 ## Next
-1. Item 2: migration 9 (last_attempt_at, retry_basis), retry rule in settleOne, accounting.js + Failed tab, engine test,
-   npm run test:system:api, npm test; save 0.5.
+- Final report. Not done: screenshot of the Failed tab.

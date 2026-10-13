@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 99.0% of the pass** (last milestone 2026-10-13T23:09Z, fin: hedge requests for option-only templates: primary is the option position (contracts); long_call hedge step passes at engine, API, browser)
+**Completeness: about 99.0% of the pass** (last milestone 2026-10-13T23:15Z, fin: failed settlements retried only on new cash or a new business day; attempts and last attempt time on the Failed tab; npm test 811/811)
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 
