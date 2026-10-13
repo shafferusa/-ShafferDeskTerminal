@@ -1563,12 +1563,12 @@ const cdsSwaption = {
   },
   instruments: {
     kcds: {
-      productId: 'cds_single_name', name: KSTL_CDS, symbol: 'KSTL-CDS-5Y', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD',
+      productId: 'cds_single_name', name: KSTL_CDS, symbol: 'KSTL-CDS-5Y', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 0.01, // upfront per 100 of notional
       terms: { referenceEntity: 'Kestrel Airlines Inc.', coupon: 0.01, effective: '2026-06-22', maturity: '2031-06-20', recovery: 0.4, counterparty: 'Dealer S',
         collateralBasis: { type: 'position', independentAmount: { type: 'pct', pct: 0.02 }, variationMargin: false, threshold: 0, minimumTransfer: 0 } },
     },
     hcds: {
-      productId: 'cds_single_name', name: HLRN_CDS, symbol: 'HLRN-CDS-5Y', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD',
+      productId: 'cds_single_name', name: HLRN_CDS, symbol: 'HLRN-CDS-5Y', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 0.01,
       terms: { referenceEntity: 'Halloran Steel Corp.', coupon: 0.05, effective: '2026-06-22', maturity: '2031-06-20', recovery: 0.4, counterparty: 'Dealer S', collateralBasis: { type: 'uncollateralized' } },
     },
     kswpn: {

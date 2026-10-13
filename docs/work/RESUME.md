@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 80.6% of the pass** (last milestone 2026-10-13T18:44Z, o2: cds_swaption passes at engine, API and browser)
+**Completeness: about 80.6% of the pass** (last milestone 2026-10-13T18:46Z, b3: structured bonds A done: put/convert routed to bonds only (convertible_preferred green), limitations in BUGS.md)
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 
