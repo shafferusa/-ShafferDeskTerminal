@@ -243,3 +243,4 @@
 - 2026-10-13T19:55Z | b4 | +0.2 | credit_linked_note passes at engine, API and browser
 - 2026-10-13T19:56Z | t2 | +0 | Fix: closing legs buy back written options first and the protection waits on them; bear call spread re-verified
 - 2026-10-13T19:58Z | s3 | +0.2 | credit_basket_swap passes at engine, API and browser
+- 2026-10-13T19:58Z | s2 | +0.2 | commodity_swap passes at engine, API and browser (daily averaging on a pricing calendar, net settlement)
