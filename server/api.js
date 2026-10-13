@@ -482,24 +482,23 @@ export function createApi(app) {
     app.engine.emit({ type: 'changed', summary: { lifecycle: body.action } });
     return { ok: true, result: out };
   });
+  // The input an option's expiry item waits for, entered by hand: `amount`, the total settlement amount due to the holder;
+  // or, for a basket or spread option, `value`, the composite's value at expiry, from which the payoff is worked out.
   r.post('/api/tasks/:id/settlement-amount', ({ params, body }) => {
     const t = app.tasks.get(params.id);
     need(t, 'Lifecycle item not found.', { status: 404 });
+    if (body.value !== undefined && body.value !== null && body.value !== '') {
+      need(t.type === 'option.expiry', 'A settlement value is entered on the expiry item of an option.');
+      const inst = instruments.get(t.instrument_id);
+      need(inst && ['basket', 'spread'].includes(inst.terms.optionType), 'A settlement value is entered for a basket or spread option; other options settle against their fixing or a settlement amount.');
+      const value = num(body.value);
+      need(value !== null && (inst.terms.optionType === 'spread' || value > 0), inst.terms.optionType === 'spread' ? 'Enter the spread value at expiry as a number (it can be negative).' : 'Enter the basket value at expiry as a positive number.');
+      app.tasks.setData(t.id, { ...t.data, settlementValue: value, settlementValueAt: app.clock.now().toISOString() });
+      return { ok: true };
+    }
     const amount = num(body.amount);
     need(amount !== null && amount >= 0, 'Enter the total settlement amount due to the option holder (zero if it expired worthless).');
     app.tasks.setData(t.id, { ...t.data, manualAmount: amount });
-    return { ok: true };
-  });
-  // The value a basket or spread option settles against (its composite at expiry), entered by hand; the payoff is worked out from it.
-  r.post('/api/tasks/:id/settlement-value', ({ params, body }) => {
-    const t = app.tasks.get(params.id);
-    need(t, 'Lifecycle item not found.', { status: 404 });
-    need(t.type === 'option.expiry', 'A settlement value is entered on the expiry item of an option.');
-    const inst = instruments.get(t.instrument_id);
-    need(inst && ['basket', 'spread'].includes(inst.terms.optionType), 'A settlement value is entered for a basket or spread option; other options settle against their fixing or a settlement amount.');
-    const value = num(body.value);
-    need(value !== null && (inst.terms.optionType === 'spread' || value > 0), inst.terms.optionType === 'spread' ? 'Enter the spread value at expiry as a number (it can be negative).' : 'Enter the basket value at expiry as a positive number.');
-    app.tasks.setData(t.id, { ...t.data, settlementValue: value, settlementValueAt: app.clock.now().toISOString() });
     return { ok: true };
   });
   r.get('/api/corporate-actions', ({ query }) => ({ items: app.corpactions.list(query.instrumentId).map((c) => ({ ...c, instrument: app.valuation.lite(instruments.get(c.instrument_id)) })) }));

@@ -357,7 +357,7 @@ export async function actThroughClient(t, ctx, step) {
         const task = pend.lifecycle.find((x) => x.positionId === position.positionId && x.type === 'option.expiry');
         if (!task) throw new Error(`"${step.lot}" has no open expiry item to enter a settlement ${step.action === 'settlement_amount' ? 'amount' : 'value'} on.`);
         if (step.action === 'settlement_amount') await t.http.post(`/api/tasks/${task.id}/settlement-amount`, { amount: step.amount });
-        else await t.http.post(`/api/tasks/${task.id}/settlement-value`, { value: step.value });
+        else await t.http.post(`/api/tasks/${task.id}/settlement-amount`, { value: step.value });
         return {};
       }
       case 'quote': await t.fixture('quote', { instrumentId: ctx.inst(step.instrument).id, ...step.quote }); return {};

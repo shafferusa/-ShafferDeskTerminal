@@ -191,7 +191,7 @@ async function onExpiryItem(ui, t, ctx, step, what) {
   const input = row.locator('input').first();
   await input.fill(String(what === 'amount' ? step.amount : step.value));
   await ui.drawn();
-  const path = what === 'amount' ? /^\/api\/tasks\/[^/]+\/settlement-amount$/ : /^\/api\/tasks\/[^/]+\/settlement-value$/;
+  const path = /^\/api\/tasks\/[^/]+\/settlement-amount$/; // the amount, or { value } for a basket or spread option
   const r = await ui.respondsTo('POST', path, () => ui.button(row, what === 'amount' ? 'Save settlement amount' : 'Save settlement value').click());
   if (!r.ok) return { refusal: { message: r.body?.error, status: r.status, where: 'Pending tab, expiry item' } };
   await ui.toast(what === 'amount' ? /Settlement amount saved/ : /Settlement value saved/);

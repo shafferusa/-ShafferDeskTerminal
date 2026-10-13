@@ -209,3 +209,4 @@
 - 2026-10-13T18:44Z | fw | +0 | fw: final state - 8 forwards and 5 touched futures pass E/A/B; npm test 620/623 (3 failures in other areas, in BUGS.md); part 1 point withheld until npm test is green
 - 2026-10-13T18:44Z | o2 | +0.2 | cds_swaption passes at engine, API and browser
 - 2026-10-13T18:46Z | b3 | +0 | structured bonds A done: put/convert routed to bonds only (convertible_preferred green), limitations in BUGS.md
+- 2026-10-13T18:49Z | m1 | +0 | manual family complete: catalog notes, core tests, all 16 re-run together at engine/API/browser

@@ -584,7 +584,7 @@ function TaskValue({ t, onChanged }) {
   const [busy, setBusy] = useState(false);
   const save = async () => {
     setBusy(true);
-    try { await post(`/api/tasks/${t.id}/settlement-value`, { value }); toast('Settlement value saved. The option settles on the next engine cycle.'); bump(); onChanged(); } catch (err) { toastError(err); }
+    try { await post(`/api/tasks/${t.id}/settlement-amount`, { value }); toast('Settlement value saved. The option settles on the next engine cycle.'); bump(); onChanged(); } catch (err) { toastError(err); }
     setBusy(false);
   };
   return html`<div class="row" style="flex-wrap:nowrap;margin-top:4px"><div style="width:120px"><${Num} value=${value} onInput=${setValue} placeholder="value at expiry" /></div>
