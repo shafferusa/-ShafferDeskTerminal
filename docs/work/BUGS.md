@@ -107,3 +107,11 @@ start fixing never asked of the data service; a return or price fixing asked for
     what is due on the effective date and whether the cash is there today; nothing sets it aside, so if it is spent
     the exchange fails visibly on the day and waits (cross_currency_swap, step initial-exchange-unfunded). And the
     shortfall message of a trade that cannot pay its principal calls it "purchases" (generic text in packages.js).
+
+## b2 (2026-10-13): two "Preview close" buttons in the strategy Manage panel break browser close steps
+- Since commit 008a80d the Manage panel of a strategy instance (web/views/strategy-detail.js) has a second "Preview close"
+  button ("Close an exact amount"). `ui.button(drawer, 'Preview close')` then matches two elements (Playwright strict mode)
+  and every browser `close` step with `scope: 'strategy'` fails with "strict mode violation" (found by foreign_market_bond, close).
+- Fixed in the shared driver (test/matrix/drivers/browser.mjs, close path): the button is taken inside the field
+  "Close, share of every position". NOT fixed (other people's drivers, same pattern): test/matrix/drivers/browser/future.mjs:139
+  and test/matrix/drivers/browser/swap.mjs:244 still call `ui.button(drawer, 'Preview close')`; scope them the same way.

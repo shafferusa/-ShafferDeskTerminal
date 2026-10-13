@@ -736,7 +736,8 @@ async function sharedAction(ui, t, ctx, step, family) {
         open = () => ui.button(row, 'Close').click();
       } else {
         await ui.input(drawer, 'Close, share of every position').fill(String(step.percent ?? 100));
-        open = () => ui.button(drawer, 'Preview close').click();
+        // The Manage panel has a second "Preview close" (Close an exact amount): press the one beside the share.
+        open = () => ui.button(ui.field(drawer, 'Close, share of every position'), 'Preview close').click();
       }
       return previewAndConfirm(ui, ctx, open, { expectsRefusal });
     }

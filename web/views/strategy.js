@@ -189,7 +189,7 @@ function LegDialog({ book, unitId, und, catalog, defaultPurpose, onAdd, onClose 
         <${Field} label="Contract name" span=${2}><${Text} value=${draft.name} onInput=${(v) => setDraft({ ...draft, name: v })} placeholder=${product.name.replace(/ \(.*\)$/, '')} /><//>
         <${Field} label="Currency"><${Text} value=${draft.tradingCcy} onInput=${(v) => setDraft({ ...draft, tradingCcy: v.toUpperCase() })} /><//>
         ${type === 'contract' ? html`<${Field} label="Symbol" hint="Optional. Shown in place of the full name"><${Text} value=${draft.symbol || ''} onInput=${(v) => setDraft({ ...draft, symbol: v.toUpperCase() })} /><//>
-          <${Field} label="Primary view" span=${2} hint="Where the contract is listed in Marketplaces"><${Seg} value=${draft.marketView} onChange=${(v) => setDraft({ ...draft, marketView: v })} options=${[{ value: 'US_DERIV', label: 'US Derivatives' }, { value: 'FOREIGN_DERIV', label: 'Foreign Derivatives' }]} /><//>` : null}
+          <${Field} label="Primary view" span=${2} hint="Where the contract sits in the Marketplaces. By convention: its underlying's view, its jurisdiction, else Foreign Derivatives (no US listing). Choosing a view sets it by hand."><${Seg} value=${draft.marketView || ''} onChange=${(v) => setDraft({ ...draft, marketView: v })} options=${[{ value: '', label: 'By convention' }, { value: 'US_DERIV', label: 'US Derivatives' }, { value: 'FOREIGN_DERIV', label: 'Foreign Derivatives' }]} /><//>` : null}
         <${ContractFields} draft=${draft} onChange=${setDraft} />
       </div>
       ${type === 'contract' ? html`<${ConventionFields} draft=${draft} set=${(patch) => setDraft({ ...draft, ...patch })} cals=${cals.data} product=${product} />` : null}

@@ -225,7 +225,7 @@ function RegistryTab({ book, status, create }) {
       ? html`<div><span class="sym">${i.symbol}</span> <span class="sub">${i.id}</span></div><div class="sub clip" style="max-width:175px" title=${i.name}>${i.name}</div>`
       : html`<div class="sym clip" style="max-width:175px" title=${i.name}>${i.name}</div><div class="sub">${i.id}</div>`) },
     { label: 'Product and venue', render: (i) => html`<div class="clip" style="max-width:150px" title=${i.support.productName}>${short(i.support.productName)}</div><div class="sub clip" style="max-width:150px" title=${venue(i)}>${venue(i)}</div>` },
-    { label: 'Market view', title: 'The primary view, then any cross-market tags', render: (i) => html`<div>${VIEW_LABEL[i.marketView]}</div>${i.tags.length ? html`<div class="sub clip" style="max-width:150px" title=${`Cross-market tags: ${i.tags.map((t) => VIEW_LABEL[t] || t).join(', ')}`}>also ${i.tags.map((t) => VIEW_LABEL[t] || t).join(', ')}</div>` : null}` },
+    { label: 'Market view', title: 'The Marketplace and product-family tab the instrument sits in, then what placed it there (listing venue, underlying, jurisdiction, the routing convention, or set by hand)', render: (i) => html`<div>${VIEW_LABEL[i.marketView]}</div>${i.classification?.tabLabel ? html`<div class="sub">${i.classification.tabLabel}</div>` : null}<div class="sub clip" style="max-width:170px" title=${i.classification?.routing?.text || ''}>${i.classification?.routing?.short || ''}</div>` },
     { label: 'Ccy, calendar', title: 'Trading currency (and the settlement currency where it differs), then the settlement calendar. Hover the calendar for how it was chosen. "Weekends only" means no holiday calendar exists for the market.',
       render: (i) => html`<div>${i.tradingCcy}${i.settleCcy && i.settleCcy !== i.tradingCcy ? html` <span class="sub">settles ${i.settleCcy}</span>` : null}</div>${calendar(i)}` },
     // Key terms and the holding share one column, terms on the left and the holding on the right, so a gross
@@ -351,7 +351,9 @@ const fromInst = (i) => ({
   productId: i.productId, family: i.family, name: i.name, symbol: i.symbol || '', marketView: i.marketView, tags: [...(i.tags || [])], issuer: i.issuer || '', domicile: i.domicile || '',
   underlyingGeo: i.underlyingGeo || '', venue: i.venue || '', venueType: i.venueType, venueCountry: i.venueCountry || '', tradingCcy: i.tradingCcy, settleCcy: i.settleCcy && i.settleCcy !== i.tradingCcy ? i.settleCcy : '',
   underlyingId: i.underlyingId || '', multiplier: i.multiplier, terms: JSON.parse(JSON.stringify(i.terms || {})),
-  conventions: conventionsOf(i),
+  conventions: conventionsOf(i), jurisdiction: i.jurisdiction || '',
+  // 'manual': the view was set by hand; 'auto': the listing venue, underlying, jurisdiction or the convention decides.
+  routing: i.classification?.routing?.basis === 'manual' ? 'manual' : 'auto',
 });
 // ---- calendars and settlement convention set on the instrument ----------------------------------------------------
 const NO_CONVENTIONS = { tradingCalendar: '', settlementCalendar: '', paymentCalendar: '', settleLag: null };
@@ -466,7 +468,10 @@ function InstrumentForm({ inst: given, view, preset, onDone, onClose }) {
       const next = { ...base, tags: [], issuer: '', domicile: '', underlyingGeo: '', venue: '', venueCountry: '', settleCcy: '', ...(d ? { name: d.name, symbol: d.symbol, issuer: d.issuer, domicile: d.domicile, underlyingGeo: d.underlyingGeo, venue: d.venue, venueCountry: d.venueCountry, tags: d.tags } : {}) };
       next.name = next.name || '';
       next.symbol = next.symbol || '';
-      next.marketView = viewByVenue(next, p.cls) || (wanted ? wanted.replace(/CASH|DERIV/, p.cls === 'deriv' ? 'DERIV' : 'CASH') : '');
+      // The view is worked out from the facts (listing venue, underlying, jurisdiction, convention) unless set by hand.
+      next.jurisdiction = d?.jurisdiction || '';
+      next.routing = d?.routing === 'manual' ? 'manual' : 'auto';
+      next.marketView = viewByVenue(next, p.cls) || (next.routing === 'manual' && wanted ? wanted.replace(/CASH|DERIV/, p.cls === 'deriv' ? 'DERIV' : 'CASH') : '');
       next.tags = next.tags.filter((t) => t !== next.marketView);
       return next;
     });
@@ -498,25 +503,41 @@ function InstrumentForm({ inst: given, view, preset, onDone, onClose }) {
   };
   const pairCcy = draft && (draft.family === 'fx' || (draft.family === 'forward' && ['fx', 'ndf'].includes(draft.terms.forwardType)));
   const nameError = tried && draft && !draft.name.trim() ? 'Give the instrument a name.' : null;
-  const viewError = tried && draft && !draft.marketView ? 'Choose the primary market view.' : null;
+  // What the routing convention gives these facts (GET /api/instruments/routing); null while it loads.
+  const [route, setRoute] = useState(null);
+  const routeKey = draft ? [draft.productId, draft.venueType, draft.venueCountry, draft.jurisdiction, draft.domicile, draft.underlyingId].join('|') : '';
+  useEffect(() => {
+    if (!draft?.productId) { setRoute(null); return undefined; }
+    let live = true;
+    const t = setTimeout(() => get('/api/instruments/routing', { productId: draft.productId, venueType: draft.venueType, venueCountry: draft.family === 'fx' ? '' : draft.venueCountry, jurisdiction: draft.jurisdiction, domicile: draft.domicile, underlyingId: draft.underlyingId, venue: draft.venue })
+      .then((r) => { if (live) setRoute(r); }, () => { if (live) setRoute(null); }), 150);
+    return () => { live = false; clearTimeout(t); };
+  }, [routeKey]);
+  const autoView = draft && draft.routing !== 'manual' ? route?.view || null : null;
+  const viewMissing = draft && (draft.routing === 'manual' ? !draft.marketView : route && !route.view);
+  const viewError = tried && viewMissing ? 'Nothing decides the market view: enter the venue country or the jurisdiction, or choose the view by hand.' : null;
   const country = draft?.family === 'fx' ? '' : String(draft?.venueCountry || '').trim().toUpperCase();
   const countryError = country && !/^[A-Z]{2}$/.test(country) && (tried || country.length > 2) ? 'Enter a two-letter country code, such as US, GB or JP.' : null;
   const save = async () => {
     setTried(true); setError(null);
-    if (!draft || !draft.name.trim() || !draft.marketView || (country && !/^[A-Z]{2}$/.test(country))) { top.current?.scrollIntoView({ block: 'start' }); return; }
+    const jur = String(draft?.jurisdiction || '').trim().toUpperCase();
+    if (!draft || !draft.name.trim() || viewMissing || (country && !/^[A-Z]{2}$/.test(country)) || (jur && !/^[A-Z]{2}$/.test(jur))) { top.current?.scrollIntoView({ block: 'start' }); return; }
     const conv = conventionsPayload(draft.conventions);
     setBusy(true);
     const d = { ...draft, name: draft.name.trim(), symbol: draft.symbol.trim(), venueCountry: country, tradingCcy: pairCcy ? draft.terms.quote || draft.tradingCcy : draft.tradingCcy, externalIds: externalIds() };
+    // Routing: a view chosen by hand is sent as such; otherwise the server works it out from the facts.
+    const manual = d.routing === 'manual' && !viewByVenue(d, product.cls) && d.marketView !== route?.view;
+    const routing = { jurisdiction: jur || null, ...(manual ? { marketView: d.marketView, routingBasis: 'manual' } : { marketView: undefined, routingBasis: editing ? 'auto' : undefined }) };
     try {
       let out;
       if (editing) {
         // The venue country is a descriptive field: it stays editable after trading, and an empty value clears it.
         // Calendars and the settlement lag are conventions: like the venue country they stay editable after trading (null clears them).
-        const patch = { name: d.name, symbol: d.symbol, marketView: d.marketView, tags: d.tags, issuer: d.issuer.trim(), domicile: d.domicile.trim(), venue: d.venue.trim(), venueCountry: d.venueCountry, underlyingGeo: d.underlyingGeo.trim(), externalIds: d.externalIds, conventions: conv };
+        const patch = { name: d.name, symbol: d.symbol, ...routing, tags: d.tags, issuer: d.issuer.trim(), domicile: d.domicile.trim(), venue: d.venue.trim(), venueCountry: d.venueCountry, underlyingGeo: d.underlyingGeo.trim(), externalIds: d.externalIds, conventions: conv };
         // Once traded, the server accepts descriptive fields only.
         if (!locked) Object.assign(patch, { venueType: d.venueType, underlyingId: d.underlyingId || '', tradingCcy: d.tradingCcy, settleCcy: pairCcy ? undefined : d.settleCcy.trim().toUpperCase(), multiplier: d.multiplier ?? undefined, terms: d.terms });
         out = await put(`/api/instruments/${inst.id}`, patch);
-      } else out = await post('/api/instruments', { ...draftToContract({ ...d, settleCcy: pairCcy ? '' : d.settleCcy }), conventions: conv });
+      } else out = await post('/api/instruments', { ...draftToContract({ ...d, settleCcy: pairCcy ? '' : d.settleCcy }), conventions: conv, ...routing });
       toast(editing ? 'Changes saved.' : `Instrument registered: ${out.symbol || out.name}.`);
       bump(); onDone?.(out); onClose();
     } catch (err) { setError(err); setBusy(false); requestAnimationFrame(() => top.current?.scrollIntoView({ block: 'start' })); }
@@ -565,7 +586,7 @@ function InstrumentForm({ inst: given, view, preset, onDone, onClose }) {
       </div>
       <div><h4 style="margin-bottom:6px">Venue and currency</h4>
         <div class="grid-form" style=${GRID}>
-          <${Field} label="Traded on" hint=${lockHint}><div><${Seg} value=${draft.venueType} onChange=${(v) => setVenue({ venueType: v })} options=${[{ value: 'exchange', label: 'Exchange', disabled: locked }, { value: 'otc', label: 'OTC', disabled: locked }]} /></div><//>
+          <${Field} label="Traded on" hint=${lockHint}><div><${Seg} value=${draft.venueType} onChange=${(v) => setVenue({ venueType: v })} options=${[{ value: 'exchange', label: 'Exchange', disabled: locked }, { value: 'otc', label: 'OTC', disabled: locked }, { value: 'global', label: 'Global', disabled: locked, title: 'A global market or platform with no single listing country (spot FX, crypto)' }]} /></div><//>
           <${Field} label=${draft.venueType === 'exchange' ? 'Listing venue' : 'Venue or platform'} hint="Optional"><${Text} value=${draft.venue} onInput=${(v) => set({ venue: v })} /><//>
           <${Field} label="Venue country" error=${countryError} hint=${countryHint}><${Text} value=${noCountry ? '' : draft.venueCountry} disabled=${noCountry} onInput=${(v) => setVenue({ venueCountry: v.toUpperCase().trim() })} placeholder=${noCountry ? '' : 'US, JP, GB…'} /><//>
           <${Field} label="Trading currency" hint=${locked ? lockHint : pairCcy ? 'The quote currency of the pair' : 'Three-letter code'}><${Text} value=${pairCcy ? draft.terms.quote || '' : draft.tradingCcy} disabled=${locked || pairCcy} onInput=${(v) => set({ tradingCcy: v.toUpperCase() })} /><//>
@@ -576,18 +597,20 @@ function InstrumentForm({ inst: given, view, preset, onDone, onClose }) {
       <${ConventionFields} draft=${{ ...draft, venueCountry: country, tradingCcy: pairCcy ? draft.terms.quote || '' : draft.tradingCcy }} set=${set} cals=${cals} product=${product} saved=${editing ? inst : null} />
       <div><h4 style="margin-bottom:6px">Market view</h4>
         <div class="grid-form" style=${GRID}>
-          <${Field} label=${html`Primary view <span class="muted">(required)</span>`} span=${2} error=${viewError}><div><${Seg} value=${draft.marketView} onChange=${(v) => set({ marketView: v, tags: draft.tags.filter((t) => t !== v) })} options=${pair.map((v) => ({ value: v, label: VIEW_LABEL[v], disabled: Boolean(decided && decided !== v), title: decided && decided !== v ? 'The listing venue decides the view' : undefined }))} /></div><//>
-          <div class="field" style="grid-column:span 3"><span class="lbl">Cross-market tags</span>
-            <div class="row" style="min-height:30px;gap:16px">${Object.keys(VIEW_LABEL).filter((v) => v !== draft.marketView).map((v) => html`<${Check} checked=${draft.tags.includes(v)} onChange=${(on) => set({ tags: on ? [...draft.tags, v] : draft.tags.filter((t) => t !== v) })}>${VIEW_LABEL[v]}<//>`)}</div>
-            <div class="hint">Optional. The instrument also appears in these views; its primary view does not change.</div></div>
-          <${Field} label="Issuer domicile" hint="Country code, such as US or JP. Stored for reference."><${Text} value=${draft.domicile} onInput=${(v) => set({ domicile: v.toUpperCase() })} /><//>
+          <${Field} label="Primary view" span=${3} error=${viewError} hint=${decided ? 'The listing venue decides the view.' : 'By convention unless you choose a view by hand.'}><div><${Seg} value=${decided || (draft.routing === 'manual' ? draft.marketView : 'auto')}
+            onChange=${(v) => (v === 'auto' ? set({ routing: 'auto', marketView: '' }) : set({ routing: 'manual', marketView: v, tags: draft.tags.filter((t) => t !== v) }))}
+            options=${[...(decided ? [] : [{ value: 'auto', label: autoView ? `By convention: ${VIEW_LABEL[autoView]}` : 'By convention', disabled: Boolean(route && !route.view), title: route?.text || route?.reason }]),
+              ...pair.map((v) => ({ value: v, label: VIEW_LABEL[v], disabled: Boolean(decided && decided !== v), title: decided && decided !== v ? 'The listing venue decides the view' : 'Set by hand' }))]} /></div><//>
+          <${Field} label="Jurisdiction" hint="Two-letter country: the governing law of an OTC contract, or the issuer's country. Places an instrument that is not listed."><${Text} value=${draft.jurisdiction || ''} onInput=${(v) => set({ jurisdiction: v.toUpperCase().trim() })} placeholder="US, GB, JP…" /><//>
+          <${Field} label="Issuer domicile" hint="Country code, such as US or JP. Places an unlisted security when no jurisdiction is stated."><${Text} value=${draft.domicile} onInput=${(v) => set({ domicile: v.toUpperCase() })} /><//>
           <${Field} label="Underlying geography" hint="Where the exposure is. Stored for reference."><${Text} value=${draft.underlyingGeo} onInput=${(v) => set({ underlyingGeo: v })} /><//>
         </div>
         <div style="margin-top:8px"><${Notice}>
           ${decided ? html`<b>Placed by its listing venue.</b> Listed on a ${country === 'US' ? 'US' : `non-US (${country})`} venue, so it belongs in ${VIEW_LABEL[decided]}.${draft.domicile && draft.domicile !== country ? ` The issuer's domicile (${draft.domicile}) is stored separately and does not move it.` : ''}`
-            : draft.venueType === 'exchange' ? html`<b>A listed product is placed by its listing venue.</b> Enter the venue country and the view is set from it. An ADR listed in the US is US Based even though its issuer is foreign.`
-              : html`<b>Assign the primary view yourself.</b> An OTC, FX or global product has no listing venue to decide it. Choose the view that holds its main market exposure and add cross-market tags for any other view it belongs in.`}
-          ${' '}Issuer domicile and underlying geography are stored separately and never decide the view. Neither does the currency. ${short(product.name)} is a ${product.cls === 'deriv' ? 'derivative' : 'cash-market'} product, so it sits in ${VIEW_LABEL[pair[0]]} or ${VIEW_LABEL[pair[1]]}.
+            : draft.routing === 'manual' ? html`<b>Set by hand: ${VIEW_LABEL[draft.marketView] || 'choose a view'}.</b> ${route?.view && route.view !== draft.marketView ? `The routing convention would place it in ${VIEW_LABEL[route.view]} (${route.text}).` : route?.view ? 'The routing convention places it there too, so it is stored with the convention as its basis.' : ''}`
+              : route?.view ? html`<b>${route.text}.</b> ${route.basis === 'convention' ? 'It has no US listing and no US jurisdiction. Enter a jurisdiction, or choose a view by hand, to place it elsewhere.' : ''}`
+                : route ? html`<b>Nothing decides the view yet.</b> ${route.reason}` : html`Working out the market view…`}
+          ${' '}Never the price currency: a listed product follows its listing venue's country, a derivative its underlying, an unlisted instrument its jurisdiction (or issuer domicile); global FX, crypto and OTC products with none of these are routed by convention to the Foreign views. ${short(product.name)} is a ${product.cls === 'deriv' ? 'derivative' : 'cash-market'} product, so it sits in ${VIEW_LABEL[pair[0]]} or ${VIEW_LABEL[pair[1]]}.
         <//></div>
       </div>
       <div><h4 style="margin-bottom:6px">Contract terms${locked ? ' (locked)' : ''}</h4>

@@ -18,6 +18,7 @@ import { AppError, isZero, money, need, newId, num, round, uuid } from './util.j
 import { fmtQty } from '../products/common.js';
 import { calendarInfo } from '../products/security.js';
 import { resolveSettlement, TRADING_DAY_KINDS, tradingDay } from './settlement.js';
+import { addDays } from '../quant/dates.js';
 
 const BUY = new Set(['buy', 'buy_to_cover']);
 const ARR_OPEN = new Set(['loan', 'repo_open', 'lend_sec']);
@@ -258,20 +259,31 @@ export function createPackages(app) {
     const connected = app.data.marketConnected();
 
     // ---- refresh what the estimates need ------------------------------------------------------------
-    const insts = new Map(), borrow = new Map(), pairs = new Set();
+    const insts = new Map(), borrow = new Map(), pairs = new Set(), rateCodes = new Set();
+    let rateFrom = addDays(today, -10);
     for (const l of legs) {
       if (!l.inst) continue;
       if (!l.inst.draft) insts.set(l.inst.id, l.inst);
       if (l.inst.underlying_id) { const u = instruments.get(l.inst.underlying_id); if (u) insts.set(u.id, u); }
       if (l.kind === 'borrow_sec') borrow.set(l.inst.id, l.inst);
       if (l.inst.trading_ccy !== rc) pairs.add(`${l.inst.trading_ccy}/${rc}`);
+      // A floating loan or repo: the reference-rate fixings its daily interest needs, from the last day it accrued
+      // (a repayment) or of the last week (a new arrangement). Without them the preview would report a missing fixing.
+      if (l.inst.terms?.rateType === 'floating' && l.inst.terms.referenceRate) {
+        rateCodes.add(l.inst.terms.referenceRate);
+        const from = addDays(l.targetPosition?.data?.accruedThrough || l.inst.terms.startDate || today, -10);
+        if (from < rateFrom) rateFrom = from;
+      }
     }
-    await app.data.refresh({ instruments: [...insts.values()], borrow: [...borrow.values()], pairs: [...pairs], sessions: [...insts.values()] });
+    await app.data.refresh({ instruments: [...insts.values()], borrow: [...borrow.values()], pairs: [...pairs], sessions: [...insts.values()], rateCodes: [...rateCodes], rateRange: { from: rateFrom, to: today } });
 
     const out = [];
     const cashEffect = {}; // ccy -> signed cash the package nets to (excluding restricted proceeds)
     const needs = {}; // ccy -> components
     const collateralCalls = new Map(); // posting unit and currency -> independent amount this package calls for at once
+    // Principal a cross-currency swap pays when the trade settles is counted with purchases, and named apart in a shortfall message.
+    const principalOut = {};
+    const bumpPrincipal = (oc) => { if (oc.amount < 0) { bump(oc.ccy, 'purchases', -oc.amount); principalOut[oc.ccy] = (principalOut[oc.ccy] || 0) - oc.amount; } else bump(oc.ccy, 'proceeds', oc.amount); };
     const bump = (ccy, key, x) => { needs[ccy] = needs[ccy] || { purchases: 0, proceeds: 0, restrictedProceeds: 0, fees: 0, margin: 0, collateral: 0, reserved: 0, financingIn: 0, financingOut: 0 }; needs[ccy][key] += x; };
     let anyUnknownCash = false;
     const payoffLegs = [];
@@ -341,7 +353,7 @@ export function createPackages(app) {
             // The collateral basis the contract states, and what it calls for, do not wait for a price either.
             app.agreements.addToPreview(e0.collateral, { row, leg: l.n, check, bump, calls: collateralCalls });
             // Nor does the principal a cross-currency swap exchanges when the trade settles.
-            if (e0.otherCash?.length) { row.otherCash = e0.otherCash; for (const oc of e0.otherCash) { if (oc.amount < 0) bump(oc.ccy, 'purchases', -oc.amount); else bump(oc.ccy, 'proceeds', oc.amount); } }
+            if (e0.otherCash?.length) { row.otherCash = e0.otherCash; for (const oc of e0.otherCash) bumpPrincipal(oc); }
           } else if (inst.family === 'otcoption') {
             const e0 = plugin.economics(app, { inst, action: l.action, qty: l.qty, price: 0, unit, strategyId: attach?.id || '', tradeDate, settleDate, book });
             if (e0.initialMargin > 0) { row.initialMargin = e0.initialMargin; bump(inst.trading_ccy, 'margin', e0.initialMargin); }
@@ -369,7 +381,7 @@ export function createPackages(app) {
             row.shortCollateral = { topUp: money((s.collateralPct - 1) * econ.cash, ccy), marginHold: money(s.marginPct * econ.cash, ccy), collateralPct: s.collateralPct, marginPct: s.marginPct };
           } else if (econ.cash < 0) bump(ccy, 'purchases', -econ.cash);
           else bump(ccy, 'proceeds', econ.cash);
-          for (const oc of econ.otherCash || []) { if (oc.amount < 0) bump(oc.ccy, 'purchases', -oc.amount); else bump(oc.ccy, 'proceeds', oc.amount); }
+          for (const oc of econ.otherCash || []) bumpPrincipal(oc);
           if (inst.family === 'future' && (inst.terms.initialMargin === null || inst.terms.initialMargin === undefined)) check('warning', 'no-margin', `Leg ${l.n}: no initial margin figure has been supplied for ${inst.symbol || inst.name}, so none will be posted.`, l.n);
         }
         // Position checks that do not need a price.
@@ -524,7 +536,7 @@ export function createPackages(app) {
       };
       cashEffect[ccy] = cash[ccy].netCash;
       if (shortfall > 0.004) {
-        check('error', 'cash', `${unit.name} is short ${fmt(shortfall, ccy)}: the package needs ${fmt(required, ccy)} (purchases ${fmt(n.purchases, ccy)}, fees ${fmt(n.fees, ccy)}, margin and collateral ${fmt(n.margin + n.collateral, ccy)}, reserved ${fmt(n.reserved, ccy)}) and ${fmt(have.availableToTrade + sources, ccy)} is available. Add Treasury funding or a borrowing leg, convert currency, or reduce the size.`);
+        check('error', 'cash', `${unit.name} is short ${fmt(shortfall, ccy)}: the package needs ${fmt(required, ccy)} (purchases ${fmt(money(n.purchases - (principalOut[ccy] || 0), ccy), ccy)}${principalOut[ccy] ? `, principal exchanged when the trade settles ${fmt(money(principalOut[ccy], ccy), ccy)}` : ''}, fees ${fmt(n.fees, ccy)}, margin and collateral ${fmt(n.margin + n.collateral, ccy)}, reserved ${fmt(n.reserved, ccy)}) and ${fmt(have.availableToTrade + sources, ccy)} is available. Add Treasury funding or a borrowing leg, convert currency, or reduce the size.`);
       }
     }
     if (anyUnknownCash) check('warning', 'cash-unknown', 'Cash, margin and collateral requirements cannot be fully computed while a leg has no price.');

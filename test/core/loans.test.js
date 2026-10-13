@@ -90,3 +90,48 @@ test('a secured loan with nothing pledged is refused: it would be an unsecured l
   await assert.rejects(app.packages.preview({ bookId: book.id, unitId: acct.id, template: 'custom', legs: [leg] }), /A secured loan pledges collateral: choose the position to pledge and the quantity\./);
   assert.equal(app.ledger.balance(acct.id, 'loan.liab', 'USD'), 0, 'nothing was borrowed');
 });
+
+test('a floating loan is previewed on the fixing the feed supplies, not reported as having none', async () => {
+  const { app } = makeApp(); // the demo feed publishes SIM-ON (a simulated overnight rate) for every US business day
+  const { book, acct } = makeBook(app);
+  const leg = loanLeg(300_000, { rateType: 'floating', referenceRate: 'SIM-ON', spread: 0.015 });
+  const pv = await app.packages.preview({ bookId: book.id, unitId: acct.id, template: 'custom', legs: [leg] });
+  assert.equal(pv.checks.filter((c) => c.code === 'no-rate').length, 0, 'the fixing was asked for before the preview said there was none');
+  const fixing = pv.legs[0].financing.fixing;
+  assert.equal(typeof fixing, 'number');
+  // One day of interest: principal x (fixing + spread) / 360.
+  assert.equal(pv.legs[0].dailyCost, Math.round(300_000 * (fixing / 100 + 0.015) / 360 * 100) / 100);
+});
+
+test('without a fixing, a floating loan\'s interest payment waits (blocked) and repayment is refused; fixings entered by hand release both', async () => {
+  const { app, clock } = makeApp();
+  const { book, acct } = makeBook(app);
+  const fix = (date, value) => app.data.enterManual({ kind: 'rate', subject: 'TESTFIX', value, forDate: date, units: 'percent p.a.' });
+  fix('2026-03-02', 5); // the only fixing: it covers 2 to 9 March (a fixing is used for at most a week)
+  // 360,000 at TESTFIX flat, open-ended (interest monthly): 360,000 x 0.05 / 360 = 50.00 a day.
+  const s = await trade(app, { bookId: book.id, unitId: acct.id, template: 'custom', legs: [loanLeg(360_000, { rateType: 'floating', referenceRate: 'TESTFIX', spread: 0 })] });
+  const pos = s.positions.find((p) => p.family === 'loan');
+  const accrued = () => 0 - app.ledger.positionBalance(pos.positionId, 'accrued.liab', 'USD') || 0;
+  const task = () => app.tasks.open([acct.id]).find((t) => t.type === 'loan.interest');
+
+  // Wednesday 1 April, 10:00: interest stopped at 10 March (2 to 9 March, 8 days, 400.00); the payment due today waits.
+  await goTo(app, clock, '2026-04-01T14:00:00.000Z');
+  assert.equal(accrued(), 400);
+  assert.equal(task().status, 'blocked');
+  assert.match(task().blocked_reason, /waiting for a TESTFIX fixing: none is available from 2026-03-10/);
+  assert.equal(app.ledger.balance(acct.id, 'cash', 'USD'), 860_000, 'nothing was paid on interest that cannot be worked out');
+  for (const qty of [360_000, 100_000]) {
+    const pv = await app.packages.preview({ bookId: book.id, unitId: acct.id, template: 'custom', attachTo: s.id, legs: [repayLeg(pos, qty)] });
+    assert.equal(pv.blocking, 1, `a repayment of ${qty} is refused`);
+    assert.match(pv.checks.find((c) => c.level === 'error').message, /no TESTFIX fixing from 2026-03-10\. Enter the fixing by hand or set the rate before repaying\./);
+  }
+
+  // The fixings are entered by hand, 4.00% each Monday: 10 to 31 March, 22 days x 40.00 = 880.00. The next cycle pays
+  // 400.00 + 880.00 = 1,280.00.
+  for (const d of ['2026-03-09', '2026-03-16', '2026-03-23', '2026-03-30']) fix(d, 4);
+  await goTo(app, clock, '2026-04-01T15:00:00.000Z');
+  assert.equal(accrued(), 0);
+  assert.equal(app.ledger.balance(acct.id, 'cash', 'USD'), 860_000 - 1_280);
+  assert.equal(task().due_date, '2026-05-01', 'the next payment is scheduled');
+  assert.deepEqual(ledgerImbalance(app), []);
+});

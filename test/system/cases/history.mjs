@@ -11,7 +11,7 @@ import { evening } from '../lib/world.mjs';
 export const area = 'history';
 const both = (fn) => ({ engine: fn, api: fn });
 
-async function aWeek(w) {
+export async function aWeek(w) {
   const L = await openLife(w, 'History');
   for (const t of ['2026-03-02', '2026-03-03', '2026-03-04', '2026-03-05', '2026-03-06']) { await w.clock(`${t}T15:00:00.000Z`); await w.clock(evening(t)); }
   await w.tick();

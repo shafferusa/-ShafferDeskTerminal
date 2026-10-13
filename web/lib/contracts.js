@@ -79,7 +79,10 @@ const F = {
     { path: 'terms.settleDays', label: 'Settlement lag (business days)', type: 'number', hint: 'Leave empty for the Book default' },
   ],
   option: [
-    { path: 'underlyingId', label: 'Underlying', type: 'instrument', families: ['equity', 'fund', 'future', 'spot', 'crypto', 'bond'], span: 2, required: true },
+    { path: 'underlyingId', label: 'Underlying', type: 'instrument', families: ['equity', 'fund', 'future', 'spot', 'crypto', 'bond'], span: 2, hint: 'A registered instrument. For an option on a published index, leave it empty and name the index below.' },
+    // A published index level is not a tradable instrument: it is named, and its settlement value is served like a rate fixing.
+    { path: 'terms.underlyingDescription', label: 'Or a published index', type: 'text', hint: 'Its name, for an index option with no registry underlying', show: (d) => !d.underlyingId },
+    { path: 'terms.fixingRate', label: 'Index level code', type: 'text', hint: 'The settlement value for the expiration date is read under this code, supplied or entered by hand under Data connection, Manual entries. Cash settlement only.', show: (d) => !d.underlyingId },
     { path: 'terms.right', label: 'Type', type: 'select', options: opt([['C', 'Call'], ['P', 'Put']]), required: true },
     { path: 'terms.strike', label: 'Strike', type: 'number', required: true },
     { path: 'terms.expiration', label: 'Expiration', type: 'date', required: true },
@@ -354,7 +357,7 @@ export function ContractFields({ draft, onChange, skip = [] }) {
 
 /** A new draft for a catalog product, with sensible structural defaults (never rates or prices). */
 export function newDraft(product, preset = {}) {
-  const d = { productId: product.id, family: product.family, name: '', symbol: '', marketView: preset.marketView || (product.cls === 'deriv' ? 'US_DERIV' : 'US_CASH'), venueType: ['option', 'future', 'equity', 'fund'].includes(product.family) ? 'exchange' : 'otc', tradingCcy: preset.tradingCcy || 'USD', underlyingId: preset.underlyingId || '', multiplier: null, terms: {}, ...preset };
+  const d = { productId: product.id, family: product.family, name: '', symbol: '', marketView: preset.marketView || '', /* '': the registry works out the view from the facts (catalog.js routing convention) */ venueType: ['option', 'future', 'equity', 'fund'].includes(product.family) ? 'exchange' : 'otc', tradingCcy: preset.tradingCcy || 'USD', underlyingId: preset.underlyingId || '', multiplier: null, terms: {}, ...preset };
   d.terms = { ...(preset.terms || {}) };
   for (const f of F[product.family] || []) if (f.default !== undefined && getPath(d, f.path) === undefined) Object.assign(d, setPath(d, f.path, f.default));
   if (product.family === 'swap' && !d.terms.legs) d.terms.legs = presetLegs(product.id, d.tradingCcy);
@@ -370,7 +373,7 @@ export function newDraft(product, preset = {}) {
 export function draftToContract(d) {
   const terms = JSON.parse(JSON.stringify(d.terms || {}));
   return {
-    productId: d.productId, name: d.name, symbol: d.symbol || undefined, marketView: d.marketView, venueType: d.venueType, venue: d.venue || undefined, venueCountry: d.venueCountry || undefined,
+    productId: d.productId, name: d.name, symbol: d.symbol || undefined, marketView: d.marketView || undefined, venueType: d.venueType, venue: d.venue || undefined, venueCountry: d.venueCountry || undefined,
     issuer: d.issuer || undefined, domicile: d.domicile || undefined, underlyingGeo: d.underlyingGeo || undefined, underlyingId: d.underlyingId || undefined,
     tradingCcy: (d.tradingCcy || '').toUpperCase(), settleCcy: d.settleCcy ? d.settleCcy.toUpperCase() : undefined, multiplier: d.multiplier ?? undefined, tags: d.tags || [], externalIds: d.externalIds || {}, terms,
   };

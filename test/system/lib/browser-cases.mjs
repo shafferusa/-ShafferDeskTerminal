@@ -1616,3 +1616,153 @@ export async function demoNormalScreens(b, c) {
   await pageD.close();
   await b.clean(c, (await b.get('/api/books')).items[0].id);
 }
+
+// ---------------------------------------------------------------------------------------------
+// History survives reference edits made in the interface
+// ---------------------------------------------------------------------------------------------
+
+/** The Full history of the selected Book as displayed (accruals hidden), one entry per event number. */
+async function historyShown(b) {
+  await show(b, '#/accounting/history/book');
+  await b.page.locator('main table tbody tr[id^="ev-"]').first().waitFor();
+  const rows = await b.page.locator('main table tbody tr[id^="ev-"]').evaluateAll((trs) => trs.map((tr) => [tr.id, tr.innerText.replace(/\s+/g, ' ').trim()]));
+  return Object.fromEntries(rows);
+}
+/** Every event row shown before is shown again, word for word; returns the event numbers added. */
+function sameHistoryShown(c, before, after, label) {
+  const changed = Object.keys(before).filter((k) => after[k] !== before[k]);
+  c.eq(changed.map((k) => `${k}: ${before[k].slice(0, 80)} -> ${(after[k] || 'gone').slice(0, 80)}`), [], `${label}: every event row of the Full history reads exactly as before (${Object.keys(before).length} rows)`);
+  return Object.keys(after).filter((k) => !(k in before));
+}
+/** The row of a pending settlement on the Pending trades tab: its due date and amount as displayed. */
+async function pendingSettlementShown(b, accountId) {
+  await show(b, `#/accounting/pending/${accountId}`);
+  const panel = b.ui.section(b.page.locator('main'), 'Executed trades awaiting settlement');
+  await panel.locator('tbody tr').first().waitFor();
+  return (await panel.locator('tbody tr').allInnerTexts()).map(flat);
+}
+/** One assumption row of the Settings page, by its panel and label: its inputs. */
+const assumption = (b, panel, label) => b.ui.section(b.page.locator('main'), panel).locator('tbody tr').filter({ has: b.page.locator('td:first-child > div:first-child', { hasText: exactly(label) }) }).first().locator('input');
+
+/** SB:history:reference-edits. */
+export async function historyEdits(b, c) {
+  const { page, ui } = b;
+  const { aWeek } = await import('../cases/history.mjs');
+  const L = await aWeek(b);
+  await b.clock('2026-03-06T19:00:00.000Z'); // Friday 14:00 New York
+  const late = await b.buy(L.book, L.lfa, 100);
+  c.eq(late.orders[0].fills[0].settleDate, '2026-03-09', 'setup: a purchase made on Friday settles on Monday 9 March');
+  await enter(b, L.book, '#/accounting');
+  await closeHedgePopup(b);
+  const stored = b.history();
+  const shown0 = await historyShown(b);
+  c.note(`the Full history shows ${Object.keys(shown0).length} event rows before the edits`);
+  c.ok(Object.keys(shown0).length >= 10, 'a week of history is on the Full history tab', `${Object.keys(shown0).length} rows`);
+  const pend0 = await pendingSettlementShown(b, L.book.accountId);
+  const latePending = pend0.find((r) => /2026-03-09/.test(r));
+  c.ok(latePending && /5,003\.00/.test(latePending), 'setup: the Pending trades tab shows 5,003.00 (100 x 50.02 + 1.00) due 2026-03-09', pend0.join(' || '));
+  try {
+    // (a) The instrument: renamed, new symbol, venue, issuer and domicile, its own settlement calendar and lag.
+    await show(b, '#/instruments');
+    await page.getByPlaceholder(/Filter by symbol, name, issuer/).fill('LFA');
+    await page.locator('main table tbody tr').filter({ has: page.locator('.sym', { hasText: exactly('LFA') }) }).first().getByRole('button', { name: 'Edit' }).click();
+    let dlg = ui.dialog(/^Edit LFA$/);
+    await dlg.waitFor();
+    await ui.input(dlg, 'Name').fill('LFA Renamed Holdings plc');
+    await ui.input(dlg, 'Symbol').fill('LFAR');
+    await ui.input(dlg, 'Issuer').fill('LFA Renamed Holdings plc');
+    await ui.input(dlg, 'Issuer domicile').fill('IE');
+    await ui.input(dlg, 'Listing venue').fill('NASDAQ');
+    const settleCal = ui.select(dlg, 'Settlement calendar');
+    await settleCal.selectOption({ label: (await settleCal.locator('option').allInnerTexts()).find((x) => x.startsWith('USBOND:')) });
+    await ui.input(dlg, 'Settlement convention').fill('2');
+    let saved = await ui.respondsTo('PUT', /^\/api\/instruments\//, () => ui.button(dlg, 'Save changes').click());
+    c.ok(saved.ok, '(a) the instrument edit is saved', saved.body?.error);
+    await dlg.waitFor({ state: 'hidden' });
+    // The traded call: its contract terms cannot be changed in the form.
+    await show(b, '#/instruments');
+    await page.getByPlaceholder(/Filter by symbol, name, issuer/).fill('LFA 260306C100');
+    await page.locator('main table tbody tr').filter({ hasText: 'LFA 260306C100' }).first().getByRole('button', { name: 'Edit' }).click();
+    dlg = ui.dialog(/^Edit LFA 260306C100$/);
+    await dlg.waitFor();
+    c.match(flat(await dlg.innerText()), /Contract terms are locked\. This instrument has been traded/, '(a) the traded option\'s form says its contract terms are locked');
+    c.eq(await dlg.locator('fieldset[disabled]').count(), 1, '(a) and its contract terms cannot be typed into');
+    await ui.button(dlg, 'Cancel').click();
+    await dlg.waitFor({ state: 'hidden' });
+    await b.tick();
+    b.historyIntact(c, stored, '(a) after the instrument edit');
+    let added = sameHistoryShown(c, shown0, await historyShown(b), '(a) after the instrument edit');
+    c.eq(added, [], '(a) no event was added to the Full history');
+    c.match(Object.values(shown0).join(' '), /\bLFA\b/, '(a) the history named LFA before the edit');
+    c.eq((await pendingSettlementShown(b, L.book.accountId)).find((r) => /5,003\.00/.test(r))?.match(/2026-03-09/)?.[0], '2026-03-09', '(a) the pending 5,003.00 is still due 2026-03-09');
+
+    // (b) The calendar: 3 March (settlements were made that day) and 9 March (the pending date) become holidays.
+    await show(b, '#/settings');
+    const cal = page.locator('main').locator('.panel', { hasText: 'Add an extra holiday' });
+    const calSelect = cal.locator('select').first();
+    await calSelect.selectOption({ label: (await calSelect.locator('option').allInnerTexts()).find((x) => x.startsWith('US:')) });
+    for (const day of ['2026-03-03', '2026-03-09']) {
+      await cal.getByPlaceholder('YYYY-MM-DD').fill(day);
+      const r = await ui.respondsTo('PUT', /\/holidays$/, () => ui.button(cal, 'Add holiday').click());
+      c.ok(r.ok, `(b) ${day} is entered as a US holiday`, r.body?.error);
+      await ui.toast(/Holiday added to US/);
+    }
+    await b.tick();
+    b.historyIntact(c, stored, '(b) after the calendar edit');
+    added = sameHistoryShown(c, shown0, await historyShown(b), '(b) after the calendar edit');
+    c.eq(added, [], '(b) no event was added to the Full history');
+    const pend1 = await pendingSettlementShown(b, L.book.accountId);
+    c.eq(pend1.find((r) => /5,003\.00/.test(r))?.match(/\d{4}-\d{2}-\d{2}/g)?.includes('2026-03-09'), true, '(b) the pending 5,003.00 keeps its date, 2026-03-09, now a holiday');
+
+    // (c) The Book's assumptions, and the refresh timings.
+    await show(b, '#/settings');
+    await assumption(b, 'Fees and commissions', 'Equities').nth(0).fill('0.02');
+    await assumption(b, 'Settlement lags', 'Equities').nth(0).fill('3');
+    await assumption(b, 'Short selling', 'Cash collateral on borrowed securities').nth(0).fill('1.5');
+    await assumption(b, 'Confirmation tolerances', 'Leg price').nth(0).fill('2');
+    await assumption(b, 'Confirmation tolerances', 'Package totals').nth(0).fill('2');
+    const put = await ui.respondsTo('PUT', /^\/api\/books\//, () => ui.button(page.locator('main'), 'Save assumptions').click());
+    c.ok(put.ok, '(c) the Book\'s assumptions are saved', put.body?.error);
+    await show(b, '#/data/refresh');
+    await ui.input(page.locator('main'), 'Prices and quotes').fill('2');
+    await ui.input(page.locator('main'), 'Screen polling').fill('6');
+    const rf = await ui.respondsTo('PUT', /^\/api\/data\/refresh$/, () => ui.button(page.locator('main'), 'Save refresh settings').click());
+    c.ok(rf.ok, '(c) the refresh timings are saved', rf.body?.error);
+    await b.tick();
+    b.historyIntact(c, stored, '(c) after the settings change', { newEvents: ['book.settings'] });
+    added = sameHistoryShown(c, shown0, await historyShown(b), '(c) after the settings change');
+    const after = await historyShown(b);
+    c.eq(added.length, 1, '(c) one event was added to the Full history');
+    c.match(after[added[0]] || '', /settings/i, '(c) and it is the settings change', after[added[0]]);
+    c.eq(b.sql(`SELECT fees FROM fills WHERE order_id = ?`, late.orders[0].id)[0].fees.includes('"amount":1'), true, '(c) the Friday fill keeps its 1.00 commission');
+
+    // What is new uses the new assumptions. The instrument's own lag is taken off again in its form, so the Book's T+3 applies.
+    await show(b, '#/instruments');
+    await page.getByPlaceholder(/Filter by symbol, name, issuer/).fill('LFAR');
+    await page.locator('main table tbody tr').filter({ has: page.locator('.sym', { hasText: exactly('LFAR') }) }).first().getByRole('button', { name: 'Edit' }).click();
+    dlg = ui.dialog(/^Edit LFAR$/);
+    await dlg.waitFor();
+    await ui.select(dlg, 'Settlement calendar').selectOption({ index: 0 });
+    await ui.input(dlg, 'Settlement convention').fill('');
+    saved = await ui.respondsTo('PUT', /^\/api\/instruments\//, () => ui.button(dlg, 'Save changes').click());
+    c.ok(saved.ok, 'the instrument\'s own settlement calendar and lag are taken off', saved.body?.error);
+    await dlg.waitFor({ state: 'hidden' });
+    await show(b, '#/markets/US_CASH');
+    const drawer = await fillTicket(b, { ...L.lfa, symbol: 'LFAR' }, { qty: 100 });
+    const { modal, confirm, pv } = await openPreviewFrom(b, drawer);
+    const legs = flat(await modal.locator('table').first().innerText());
+    // 100 x 0.02 = 2.00 (above the 1.00 minimum). T+3 on the US calendar from Friday 6 March, Monday 9 March being a
+    // holiday now: Tuesday 10 (1), Wednesday 11 (2), Thursday 12 (3).
+    c.match(legs, /fees 2\.00/, 'a purchase previewed after the changes shows the new commission: 100 x 0.02 = 2.00');
+    c.match(legs, /2026-03-12/, 'and settlement on Thursday 12 March (T+3, 9 March a holiday)');
+    c.eq([pv.legs[0].feeTotal, pv.legs[0].settleDate], [2, '2026-03-12'], 'the preview behind the dialog says the same');
+    await confirm.click();
+    await modal.waitFor({ state: 'hidden' });
+    await closeHedgePopup(b);
+    b.historyIntact(c, stored, 'after the new purchase', { anyNew: true });
+    sameHistoryShown(c, shown0, await historyShown(b), 'after the new purchase');
+  } finally {
+    await b.req('PUT', '/api/calendars/US/holidays', { dates: [] });
+  }
+  await b.clean(c, L.book.id);
+}

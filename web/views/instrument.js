@@ -293,8 +293,11 @@ function Overview({ inst, detail, reload }) {
         ['Settlement convention', html`${inst.settlement.configurable ? html`${detail.settlement ? detail.settlement.label : inst.settlement.label} <span class="muted">${inst.settlement.basis === 'instrument' ? 'set on the instrument' : 'from the Book\'s paper-desk assumptions'}</span>` : html`${inst.settlement.label} <span class="muted">fixed by the product</span>`}
           ${detail.settlement ? html`<div class="sub">${detail.trading && !detail.trading.open ? `${detail.trading.reason} That trade settles ${detail.settlement.date}.` : `A trade today (${detail.settlement.tradeDate}) settles ${detail.settlement.date}.`}${inst.settlement.configurable ? 'A date or lag can be stated for one trade on the ticket.' : inst.settlement.reason}</div>` : null}`],
         ['Listing venue country', inst.venueCountry || html`<${Missing} reason="Not recorded. It selects the calendars unless they are set on the instrument." />`],
-        ['Market view', `${VIEW_LABEL[inst.marketView]}${inst.tags.length ? ` (also tagged ${inst.tags.map((t) => VIEW_LABEL[t] || t).join(', ')})` : ''}`],
-        ['Venue', inst.venue ? `${inst.venue} (${inst.venueType === 'otc' ? 'OTC' : 'exchange'})` : inst.venueType === 'otc' ? 'OTC' : null],
+        // ui1: where the instrument sits in the Marketplaces and what placed it there (catalog.js routing convention).
+        ['Market view', html`${VIEW_LABEL[inst.marketView]}${inst.classification?.tabLabel ? `, ${inst.classification.tabLabel}` : ''}
+          ${inst.classification?.routing ? html`<div class="sub">${inst.classification.routing.basisLabel}: ${inst.classification.routing.text}.${inst.classification.routing.basis === 'convention' ? ' No US listing or US jurisdiction is recorded; state a jurisdiction or set the view by hand under Edit.' : ''}</div>` : null}`],
+        ['Jurisdiction', inst.jurisdiction || html`<${Missing} reason="Not stated. For an instrument that is not listed it decides US or Foreign." />`],
+        ['Venue', inst.venue ? `${inst.venue} (${inst.venueType === 'otc' ? 'OTC' : inst.venueType === 'global' ? 'global platform' : 'exchange'})` : inst.venueType === 'otc' ? 'OTC' : inst.venueType === 'global' ? 'Global, no listing venue' : null],
         ['Issuer', inst.issuer], ['Issuer domicile', inst.domicile], ['Underlying geography', inst.underlyingGeo],
         inst.underlying ? ['Underlying', html`<a href="javascript:void 0" onClick=${() => openInstrument(inst.underlying.id)}>${inst.underlying.symbol || inst.underlying.name}</a>`] : null,
         ['Trading currency', inst.tradingCcy], inst.settleCcy !== inst.tradingCcy ? ['Settlement currency', inst.settleCcy] : null,

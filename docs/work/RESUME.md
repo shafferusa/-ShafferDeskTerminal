@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 49.7% of the pass** (last milestone 2026-10-13T16:29Z, c1: tokenized_asset passes at engine, API and browser)
+**Completeness: about 49.9% of the pass** (last milestone 2026-10-13T16:32Z, b2: foreign_market_bond passes at engine, API and browser (shared driver: strategy close button disambiguated))
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 

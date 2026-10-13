@@ -1379,7 +1379,7 @@ const SECURED = { owner: 'account', page: 'account', side: 'borrow_cash', produc
 const securedTicket = (id, o, rest) => {
   const s = loanTicket(id, o, rest);
   // The ticket sends the pledge inside the contract terms: the position chosen in Collateral position and the quantity.
-  s.input.legs[0].contract.terms = { ...o.terms, collateral: [{ positionId: '$pos:shares:hrdg', qty: o.pledge.qty }] };
+  s.input.legs[0].contract.terms = { ...o.terms, collateral: [{ positionId: `$pos:shares:${o.pledge.instrument}`, qty: o.pledge.qty }] };
   return s;
 };
 const EQUITY_FEES = { equity: { perUnit: 0.005, minimum: 1, bps: 0 } };
@@ -1641,4 +1641,267 @@ const securedLoan = {
   ],
 };
 
-export default [unsecuredLoan, termDeposit, certificateOfDeposit, bankDeposit, cashLoan, securedLoan];
+// ---------------------------------------------------------------------------------------------
+// securities_backed_loan
+// ---------------------------------------------------------------------------------------------
+// Treasury borrows against its holding of Brightwater shares at a floating rate, SOFR + 1.50%, open-ended with interest
+// paid monthly. Interest accrues each day at that day's SOFR fixing (a fixing covers the days after it until the next
+// one, for at most a week: the Terminal's rule). The fixings stop after Friday 20 March: from Saturday 28 March there is
+// no fixing within a week, so interest stops accruing, the row says "no fixing since 2026-03-28", and on 1 April the
+// interest payment waits, blocked, with its reason; a repayment is refused for the same reason. The desk enters SOFR for
+// 27 March by hand; the payment is then made, and the loan is repaid in full the next day. The pledged shares are
+// released and part of them sold, settling across Good Friday.
+//
+// Inputs: SOFR fixings (labelled fixture) 4.30% on the business days 2 to 13 March, 4.32% on 16 to 20 March, then none.
+//   300,000 USD at SOFR + 1.50%, ACT/360: at 4.30%, 300,000 x 0.0580 / 360 = 48.333333 a day; at 4.32%, 48.50 a day;
+//   at 4.31% (entered by hand), 300,000 x 0.0581 / 360 = 48.416667 a day.
+//   Days 3 to 15 March use 4.30% (13 days, 628.333333); 16 to 27 March use 4.32% (12 days, 582.00: 23 to 27 March on
+//   the 20 March fixing, which is still within a week). 1,210.333333 to 28 March. Days 28 to 31 March at 4.31%: 4 days,
+//   193.666667. Interest paid 1 April: 1,404.00. Repaid 2 April with one day at 4.31%: 48.42.
+const SBL_TERMS = { loanType: 'secured', rateType: 'floating', referenceRate: 'SOFR', spread: 0.015, dayCount: 'ACT/360', interestPayment: 'maturity', counterparty: 'Ashcombe Private Bank' };
+const SBL = { owner: 'treasury', page: 'treasury', side: 'borrow_cash', productId: 'securities_backed_loan', productLabel: 'Securities-backed loan', ccy: 'USD', principal: 300_000, name: 'Brightwater-backed SOFR loan', as: 'loan', terms: SBL_TERMS };
+const SOFR_FIXINGS = Object.fromEntries([
+  ...['02', '03', '04', '05', '06', '09', '10', '11', '12', '13'].map((d) => [`2026-03-${d}`, 4.30]),
+  ...['16', '17', '18', '19', '20'].map((d) => [`2026-03-${d}`, 4.32]),
+]);
+const SBL_BLOCK = 'Interest payment on Brightwater-backed SOFR loan is waiting for a SOFR fixing: none is available from 2026-03-28, so the interest due cannot be worked out. Enter the fixing by hand (Data connection, Manual entries) or set the rate on the arrangement.';
+
+const securitiesBackedLoan = {
+  productId: 'securities_backed_loan',
+  title: 'Ashcombe Private Bank loan to Treasury against 8,000 Brightwater shares: 300,000 USD at SOFR + 1.50%, open-ended; a missing fixing blocks the interest payment until it is entered by hand',
+  matrix: {
+    ...LOAN_TICKET,
+    requiredFields: [...LOAN_TICKET.requiredFields, 'Collateral position (a long position of the borrower)', 'Quantity to pledge'],
+    automaticInputs: ['interest start date', 'the day\'s reference-rate fixing (fixture; a fixing covers at most a week)', 'daily interest accrual at the end-of-day run', 'interest paid on the first business day of each month', 'the stop of accrual, the flag on the row and the block on the payment when no fixing is available', 'release of the pledged shares on repayment in full'],
+    manualInputs: ['every term of the loan, entered on the ticket (reference rate code and spread)', 'the position pledged and the quantity', 'a missing fixing, entered by hand (Data connection, Manual entries)'],
+    settlement: 'None for the loan; the shares bought and sold settle T+1 on the US calendar (the sale of Thursday 2 April settles Monday 6 April, after Good Friday)',
+    lifecycle: 'Interest accrues daily at the day\'s fixing plus the spread and is paid monthly; without a fixing interest stops, the payment waits (blocked, with its reason) and repayment is refused until the fixing is entered or the rate is set by hand; repayment in full at any time with interest to the day',
+    accounting: 'Borrowed cash is a liability of Treasury; interest is a funding expense; the pledged shares stay on Treasury\'s balance sheet at market value',
+    collateral: 'Named shares pledged: not sellable until the loan is repaid in full, then released',
+  },
+  tradedOn: 'A securities-backed loan is not a registry instrument: it is entered on the Cash loan or deposit ticket of the Treasury page, with the position it pledges, and registers itself when the ticket is confirmed. The shares are a registered common stock.',
+  start: AT_1000('2026-03-02'),
+  book: {
+    name: 'Matrix securities-backed loan', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 1_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 100_000 }] },
+    settings: { fees: EQUITY_FEES, fill: FILL, settlement: { equity: 1 } },
+  },
+  instruments: {
+    bwtu: { productId: 'common_stock', name: 'Brightwater Utilities Corp.', symbol: 'BWTU', marketView: 'US_CASH', venue: 'NYSE', venueType: 'exchange', venueCountry: 'US', issuer: 'Brightwater Utilities Corp.', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', terms: {} },
+  },
+  quotes: { bwtu: { bid: 50.00, ask: 50.02, last: 50.01, bidSize: 20_000, askSize: 20_000 } },
+  rates: { SOFR: { byDate: SOFR_FIXINGS } },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 100_000, availableToTrade: 100_000, availableToWithdraw: 100_000, borrowed: 0, lent: 0 } },
+      treasury: { USD: { settled: 900_000, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 900_000, availableToWithdraw: 900_000, borrowed: 0, lent: 0 } },
+    },
+    positions: [], holdings: {}, pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 100_000, treasury: 900_000, book: 1_000_000 },
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 }, lifecycleFailures: [],
+    alerts: [],
+    pnl: { account: { total: 0 }, treasury: { realized: 0, commissions: 0, unrealized: 0, borrowFunding: 0, total: 0 }, book: { total: 0 } },
+    balance: { treasury: { cash: 900_000, assets: 900_000, liabilities: 0, netAssets: 900_000 }, book: { cash: 1_000_000, assets: 1_000_000, netAssets: 1_000_000 } },
+    oversight: { accountBorrowings: [], treasuryOwn: [] },
+  },
+  steps: [
+    {
+      id: 'treasury-buys-shares', covers: 'collateral', action: 'ticket', ticketOf: 'equity', owner: 'treasury', instrument: 'bwtu', side: 'buy', qty: 10_000, as: 'shares',
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'buy', instrument: 'bwtu', qty: 10_000, estimate: 50.02, model: 'quoted-bid-ask', settleDate: '2026-03-03', cash: -500_200, fees: 50 }] }, // 10,000 x 50.02; 10,000 x 0.005
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 10_000, avgPrice: 50.02 }] },
+        events: [{ type: 'strategy.submitted', owner: 'treasury' }, { type: 'trade.fill', summary: 'Bought 10,000 BWTU @ 50.02 USD', owner: 'treasury', date: '2026-03-02' }],
+        cash: { treasury: { USD: { settled: 900_000, unsettled: -500_250, payable: 500_250, availableToTrade: 399_750, availableToWithdraw: 399_750 } } },
+        positions: [{ instrument: 'bwtu', lot: 'shares', owner: 'treasury', direction: 'long', qty: 10_000, avgCost: 50.02, cost: 500_200, price: 50.01, value: 500_100, unrealized: -100, pledged: 0 }],
+        holdings: { bwtu: { long: 10_000, short: 0, net: 10_000 } },
+        pending: [{ instrument: 'bwtu', lot: 'shares', owner: 'treasury', dueDate: '2026-03-03', amount: -500_250, ccy: 'USD', into: 'cash' }],
+        pnl: { treasury: { realized: 0, commissions: -50, unrealized: -100, borrowFunding: 0, total: -150 }, book: { total: -150 }, account: { total: 0 } },
+        nav: { account: 100_000, treasury: 899_850, book: 999_850 },
+        balance: {
+          treasury: { cash: 900_000, positions: 500_100, payable: 500_250, assets: 1_400_100, liabilities: 500_250, netAssets: 899_850 },
+          book: { cash: 1_000_000, positions: 500_100, payable: 500_250, assets: 1_500_100, liabilities: 500_250, netAssets: 999_850 },
+        },
+      },
+    },
+    {
+      id: 'shares-settle', covers: 'settlement', action: 'clock', to: AT_1000('2026-03-03'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: /^Settlement: paid 500,250\.00 USD/, owner: 'treasury', date: '2026-03-03' }],
+        cash: { treasury: { USD: { settled: 399_750, unsettled: 0, payable: 0, availableToTrade: 399_750, availableToWithdraw: 399_750 } } },
+        pending: [],
+        balance: { treasury: { cash: 399_750, payable: null, assets: 899_850, liabilities: 0 }, book: { cash: 499_750, payable: null, assets: 999_850, liabilities: 0 } },
+      },
+    },
+    securedTicket('borrow-against-shares', { ...SBL, pledge: { instrument: 'bwtu', qty: 8_000 } }, {
+      covers: ['open', 'borrow', 'collateral'],
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: [],
+          legs: [{ kind: 'loan', action: 'borrow_cash', purpose: 'financing', qty: 300_000, cash: 300_000, fees: 0, ccy: 'USD', dailyCost: 48.33, // 300,000 x (4.30% + 1.50%) / 360 = 48.3333
+            financing: { amount: 300_000, rateType: 'floating', rate: null, referenceRate: 'SOFR', spread: 0.015, fixing: 4.30, maturity: null, interestFrom: '2026-03-03' } }],
+          cash: { USD: { financingIn: 300_000, financingOut: 0, required: 0, available: 399_750, shortfall: 0, netCash: 300_000 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'loan', action: 'borrow_cash', instrument: 'loan', status: 'filled', qty: 300_000, filledQty: 300_000 }] },
+        events: [
+          { type: 'strategy.submitted', owner: 'treasury' },
+          { type: 'loan.drawdown', summary: 'Borrowed 300,000.00 USD (secured, SOFR + 1.50%, open-ended)', cash: { USD: 300_000 }, owner: 'treasury', date: '2026-03-03' },
+        ],
+        cash: { treasury: { USD: { settled: 699_750, availableToTrade: 699_750, availableToWithdraw: 699_750, borrowed: 300_000 } } },
+        positions: [
+          { instrument: 'bwtu', lot: 'shares', owner: 'treasury', direction: 'long', qty: 10_000, avgCost: 50.02, cost: 500_200, price: 50.01, value: 500_100, unrealized: -100, pledged: 8_000 },
+          { instrument: 'loan', lot: 'loan', owner: 'treasury', direction: 'borrowed', qty: -300_000, value: 300_000, carrying: -300_000, accrued: 0, provisional: false },
+        ],
+        lifecycle: [{ type: 'loan.interest', instrument: 'loan', dueDate: '2026-04-01', status: 'pending', owner: 'treasury' }], // open-ended: interest monthly, first business day of April
+        borrowings: [{ owner: 'treasury', origin: 'treasury', family: 'loan', type: 'Securities-backed loan', lot: 'loan', principal: 300_000, principalRc: 300_000, ccy: 'USD', rate: null, rateType: 'floating', rateText: 'SOFR + 1.50%', dayCount: 'ACT/360',
+          accrued: 0, costToDate: 0, feesToDate: 0, startDate: '2026-03-03', maturity: null, term: 'open-ended', lender: 'Ashcombe Private Bank', collateral: 'BWTU: 8,000 pledged', schedule: 'Interest paid monthly', nextPayment: '2026-04-01', nextPaymentType: 'loan.interest', blocked: null }],
+        balance: {
+          treasury: { cash: 699_750, positions: 500_100, borrowed: 300_000, assets: 1_199_850, liabilities: 300_000, netAssets: 899_850 },
+          book: { cash: 799_750, positions: 500_100, borrowed: 300_000, assets: 1_299_850, liabilities: 300_000, netAssets: 999_850 },
+        },
+        oversight: { accountBorrowings: [], treasuryOwn: [{ owner: 'treasury', origin: 'treasury', lot: 'loan', principal: 300_000, ccy: 'USD', accrued: 0 }] },
+      },
+    }),
+    {
+      id: 'sell-pledged-shares', covers: ['reduce', 'pledged collateral not sellable'], action: 'ticket', ticketOf: 'equity', owner: 'treasury', instrument: 'bwtu', side: 'sell', qty: 3_000, from: 'shares',
+      status: 'blocked', reason: '8,000 of the 10,000 shares are pledged; only 2,000 can be sold.',
+      expect: { refused: 'only 2,000 of the 10,000 BWTU held is unencumbered; the rest is pledged or out on loan and cannot be sold until it is released' },
+    },
+    {
+      id: 'accrue-first-day', covers: 'interest accrual', action: 'clock', to: AT_1730('2026-03-04'), // 3 March at 4.30% + 1.50%
+      expect: {
+        events: [{ type: 'accrual.interest', summary: 'Interest accrued on Brightwater-backed SOFR loan: 48.33 USD', owner: 'treasury', date: '2026-03-04' }],
+        positions: [{ instrument: 'bwtu', lot: 'shares', qty: 10_000, value: 500_100, pledged: 8_000 }, { instrument: 'loan', lot: 'loan', qty: -300_000, accrued: -48.33 }],
+        borrowings: [{ lot: 'loan', principal: 300_000, accrued: 48.33, costToDate: 48.33 }],
+        pnl: { treasury: { borrowFunding: -48.33, total: -198.33 }, book: { borrowFunding: -48.33, total: -198.33 } },
+        nav: { treasury: 899_801.67, book: 999_801.67 },
+        balance: { treasury: { accruedExpense: 48.33, liabilities: 300_048.33, netAssets: 899_801.67 }, book: { accruedExpense: 48.33, liabilities: 300_048.33, netAssets: 999_801.67 } },
+        oversight: { treasuryOwn: [{ owner: 'treasury', origin: 'treasury', lot: 'loan', principal: 300_000, ccy: 'USD', accrued: 48.33 }] },
+      },
+    },
+    {
+      // To 17 March: 3 to 15 March at 4.30% (13 days, 628.333333) and 16 March at the new fixing, 4.32% (48.50): 676.833333.
+      id: 'accrue-across-a-reset', covers: ['interest accrual', 'floating reset'], action: 'clock', to: AT_1730('2026-03-17'),
+      expect: {
+        events: [{ type: 'accrual.interest', summary: 'Interest accrued on Brightwater-backed SOFR loan: 628.50 USD', owner: 'treasury', date: '2026-03-17' }], // 676.83 - 48.33
+        positions: [{ instrument: 'bwtu', lot: 'shares', qty: 10_000, value: 500_100, pledged: 8_000 }, { instrument: 'loan', lot: 'loan', qty: -300_000, accrued: -676.83 }],
+        borrowings: [{ lot: 'loan', principal: 300_000, accrued: 676.83, costToDate: 676.83 }],
+        pnl: { treasury: { borrowFunding: -676.83, total: -826.83 }, book: { borrowFunding: -676.83, total: -826.83 } },
+        nav: { treasury: 899_173.17, book: 999_173.17 },
+        balance: { treasury: { accruedExpense: 676.83, liabilities: 300_676.83, netAssets: 899_173.17 }, book: { accruedExpense: 676.83, liabilities: 300_676.83, netAssets: 999_173.17 } },
+        oversight: { treasuryOwn: [{ owner: 'treasury', origin: 'treasury', lot: 'loan', principal: 300_000, ccy: 'USD', accrued: 676.83 }] },
+      },
+    },
+    {
+      // To 31 March: interest runs to 28 March only (1,210.333333 -> 1,210.33, +533.50). From 28 March the latest fixing,
+      // 20 March, is more than a week old: accrual stops and the missing fixing is raised.
+      id: 'fixings-stop', covers: ['interest accrual', 'missing fixing'], action: 'clock', to: AT_1730('2026-03-31'),
+      expect: {
+        events: [{ type: 'accrual.interest', summary: 'Interest accrued on Brightwater-backed SOFR loan: 533.50 USD', owner: 'treasury', date: '2026-03-31' }],
+        positions: [{ instrument: 'bwtu', lot: 'shares', qty: 10_000, value: 500_100, pledged: 8_000 }, { instrument: 'loan', lot: 'loan', qty: -300_000, accrued: -1_210.33 }],
+        borrowings: [{ lot: 'loan', principal: 300_000, accrued: 1_210.33, costToDate: 1_210.33, nextPayment: '2026-04-01', blocked: null }],
+        alerts: ['rate.missing'],
+        pnl: { treasury: { borrowFunding: -1_210.33, total: -1_360.33 }, book: { borrowFunding: -1_210.33, total: -1_360.33 } },
+        nav: { treasury: 898_639.67, book: 998_639.67 },
+        balance: { treasury: { accruedExpense: 1_210.33, liabilities: 301_210.33, netAssets: 898_639.67 }, book: { accruedExpense: 1_210.33, liabilities: 301_210.33, netAssets: 998_639.67 } },
+        oversight: { treasuryOwn: [{ owner: 'treasury', origin: 'treasury', lot: 'loan', principal: 300_000, ccy: 'USD', accrued: 1_210.33 }] },
+      },
+    },
+    {
+      // 1 April: the interest payment cannot be worked out. It waits, blocked, with its reason; nothing is paid.
+      id: 'payment-waits-for-the-fixing', covers: ['interest payment', 'missing fixing blocks'], action: 'clock', to: AT_1000('2026-04-01'),
+      expect: {
+        events: [],
+        lifecycle: [{ type: 'loan.interest', instrument: 'loan', dueDate: '2026-04-01', status: 'blocked', owner: 'treasury', reason: SBL_BLOCK }],
+        borrowings: [{ lot: 'loan', principal: 300_000, accrued: 1_210.33, nextPayment: '2026-04-01', blocked: SBL_BLOCK }],
+        cash: { treasury: { USD: { settled: 699_750 } } },
+      },
+    },
+    {
+      id: 'repay-without-the-fixing', covers: ['repayment', 'missing fixing blocks'], action: 'repay', lot: 'loan', owner: 'treasury',
+      status: 'blocked', reason: 'Interest to today cannot be worked out without a fixing; the Terminal does not settle the interest accrued so far as if it were all.',
+      expect: { refused: 'Interest on Brightwater-backed SOFR loan cannot be worked out: no SOFR fixing from 2026-03-28. Enter the fixing by hand or set the rate before repaying.' },
+    },
+    {
+      // The desk enters SOFR for Friday 27 March by hand, 4.31%. It covers 28 to 31 March: 4 x 48.416667 = 193.67; the
+      // waiting payment is made at once: 1,210.333333 + 193.666667 = 1,404.00.
+      id: 'enter-the-fixing-by-hand', covers: ['manual fixing', 'interest payment'], action: 'manual_rate', code: 'SOFR', value: 4.31, date: '2026-03-27', note: 'SOFR for 27 March, entered by hand: the feed has none after 20 March',
+      expect: {
+        events: [
+          { type: 'accrual.interest', summary: 'Interest accrued on Brightwater-backed SOFR loan: 193.67 USD', owner: 'treasury', date: '2026-04-01' },
+          { type: 'interest.payment', summary: 'Interest paid on Brightwater-backed SOFR loan: 1,404.00 USD', cash: { USD: -1_404 }, owner: 'treasury', date: '2026-04-01' },
+        ],
+        cash: { treasury: { USD: { settled: 698_346, availableToTrade: 698_346, availableToWithdraw: 698_346 } } },
+        positions: [{ instrument: 'bwtu', lot: 'shares', qty: 10_000, value: 500_100, pledged: 8_000 }, { instrument: 'loan', lot: 'loan', qty: -300_000, accrued: 0 }],
+        lifecycle: [{ type: 'loan.interest', instrument: 'loan', dueDate: '2026-05-01', status: 'pending', owner: 'treasury' }],
+        borrowings: [{ lot: 'loan', principal: 300_000, accrued: 0, costToDate: 1_404, nextPayment: '2026-05-01', blocked: null }],
+        alerts: [],
+        pnl: { treasury: { borrowFunding: -1_404, total: -1_554 }, book: { borrowFunding: -1_404, total: -1_554 } },
+        nav: { treasury: 898_446, book: 998_446 },
+        balance: { treasury: { cash: 698_346, accruedExpense: null, assets: 1_198_446, liabilities: 300_000, netAssets: 898_446 }, book: { cash: 798_346, accruedExpense: null, assets: 1_298_446, liabilities: 300_000, netAssets: 998_446 } },
+        oversight: { treasuryOwn: [{ owner: 'treasury', origin: 'treasury', lot: 'loan', principal: 300_000, ccy: 'USD', accrued: 0 }] },
+      },
+    },
+    { id: 'thursday-morning', action: 'clock', to: AT_1000('2026-04-02'), expect: {} }, // the 1 April run: interest was settled to 1 April that day
+    {
+      // In full: one day, 1 April, at 4.31% (the 27 March fixing, within a week): 48.416667 -> 48.42.
+      id: 'repay-in-full', covers: ['close', 'repayment', 'collateral released'], action: 'repay', lot: 'loan', owner: 'treasury',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'repay', action: 'repay_cash', purpose: 'financing', instrument: 'loan', qty: 300_000, cash: -300_048.42, ccy: 'USD', financing: { amount: -300_048.42, principal: 300_000, interest: 48.42, full: true, interestThrough: '2026-04-02', rateType: 'floating', referenceRate: 'SOFR', spread: 0.015, maturity: null } }],
+          cash: { USD: { financingOut: 300_048.42, required: 300_048.42, available: 698_346, shortfall: 0, netCash: -300_048.42 } },
+        },
+        result: { status: 'closed', orders: [{ kind: 'repay', action: 'repay_cash', status: 'filled', qty: 300_000, filledQty: 300_000 }] },
+        events: [
+          { type: 'strategy.legs_added', owner: 'treasury' },
+          { type: 'accrual.interest', summary: 'Interest accrued on Brightwater-backed SOFR loan: 48.42 USD', date: '2026-04-02' },
+          { type: 'loan.repayment', summary: 'Repaid 300,000.00 USD of principal on Brightwater-backed SOFR loan (in full)', cash: { USD: -300_000 }, owner: 'treasury', date: '2026-04-02' },
+          { type: 'interest.payment', summary: 'Interest paid on Brightwater-backed SOFR loan: 48.42 USD', cash: { USD: -48.42 }, owner: 'treasury', date: '2026-04-02' },
+        ],
+        cash: { treasury: { USD: { settled: 398_297.58, availableToTrade: 398_297.58, availableToWithdraw: 398_297.58, borrowed: 0 } } },
+        positions: [{ instrument: 'bwtu', lot: 'shares', owner: 'treasury', direction: 'long', qty: 10_000, avgCost: 50.02, cost: 500_200, price: 50.01, value: 500_100, unrealized: -100, pledged: 0 }],
+        lifecycle: [], borrowings: [],
+        pnl: { treasury: { borrowFunding: -1_452.42, total: -1_602.42 }, book: { borrowFunding: -1_452.42, total: -1_602.42 } }, // 1,404.00 + 48.42
+        nav: { treasury: 898_397.58, book: 998_397.58 },
+        balance: {
+          treasury: { cash: 398_297.58, positions: 500_100, borrowed: null, accruedExpense: null, assets: 898_397.58, liabilities: 0, netAssets: 898_397.58 },
+          book: { cash: 498_297.58, positions: 500_100, borrowed: null, accruedExpense: null, assets: 998_397.58, liabilities: 0, netAssets: 998_397.58 },
+        },
+        oversight: { treasuryOwn: [] },
+      },
+    },
+    {
+      // Released, the shares can be sold: 3,000 at the bid. Thursday 2 April + 1 business day: Friday 3 April is Good Friday
+      // (US exchanges and settlement closed), so the sale settles Monday 6 April. Cost out 500,200 x 3/10 = 150,060: realized -60.
+      id: 'sell-released-shares', covers: ['reduce', 'collateral released', 'holiday'], action: 'ticket', ticketOf: 'equity', owner: 'treasury', instrument: 'bwtu', side: 'sell', qty: 3_000, from: 'shares',
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'sell', instrument: 'bwtu', qty: 3_000, estimate: 50.00, settleDate: '2026-04-06', cash: 150_000, fees: 15 }] },
+        result: { orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 3_000, avgPrice: 50.00 }] },
+        events: [{ type: 'strategy.legs_added', owner: 'treasury' }, { type: 'trade.fill', summary: /^Sold 3,000 BWTU @ 50\.00 USD/, owner: 'treasury', date: '2026-04-02' }],
+        cash: { treasury: { USD: { settled: 398_297.58, unsettled: 149_985, receivable: 149_985, availableToTrade: 548_282.58, availableToWithdraw: 398_297.58 } } },
+        positions: [{ instrument: 'bwtu', lot: 'shares', owner: 'treasury', direction: 'long', qty: 7_000, avgCost: 50.02, cost: 350_140, price: 50.01, value: 350_070, unrealized: -70, pledged: 0 }],
+        holdings: { bwtu: { long: 7_000, short: 0, net: 7_000 } },
+        pending: [{ instrument: 'bwtu', lot: 'shares', owner: 'treasury', dueDate: '2026-04-06', amount: 149_985, ccy: 'USD', into: 'cash' }],
+        pnl: { treasury: { realized: -60, commissions: -65, unrealized: -70, borrowFunding: -1_452.42, total: -1_647.42 }, book: { total: -1_647.42 } },
+        nav: { treasury: 898_352.58, book: 998_352.58 },
+        balance: {
+          treasury: { cash: 398_297.58, receivable: 149_985, positions: 350_070, assets: 898_352.58, netAssets: 898_352.58 },
+          book: { cash: 498_297.58, receivable: 149_985, positions: 350_070, assets: 998_352.58, netAssets: 998_352.58 },
+        },
+      },
+    },
+    {
+      id: 'sale-settles-after-good-friday', covers: ['settlement', 'holiday'], action: 'clock', to: AT_1000('2026-04-06'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: /^Settlement: received 149,985\.00 USD/, owner: 'treasury', date: '2026-04-06' }],
+        cash: { treasury: { USD: { settled: 548_282.58, unsettled: 0, receivable: 0, availableToTrade: 548_282.58, availableToWithdraw: 548_282.58, borrowed: 0 } } },
+        pending: [],
+        balance: { treasury: { cash: 548_282.58, receivable: null, assets: 898_352.58 }, book: { cash: 648_282.58, receivable: null, assets: 998_352.58 } },
+      },
+    },
+  ],
+};
+
+export default [unsecuredLoan, termDeposit, certificateOfDeposit, bankDeposit, cashLoan, securedLoan, securitiesBackedLoan];
