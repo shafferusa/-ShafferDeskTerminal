@@ -119,3 +119,4 @@
 - 2026-10-13T17:04Z | r1 | +0 | repo engine fixes: dirty collateral value, partial repurchase refused, fixing blocks, daily cover alert, day count
 - 2026-10-13T17:04Z | c2 | +0.2 | natural_gas passes at engine, API and browser
 - 2026-10-13T17:05Z | fix | +0.5 | D complete: ARCHITECTURE.md and README describe integrity, fixtures, client tokens, collateral routes, tolerances, calendars, conventions, matrix and system suites
+- 2026-10-13T17:05Z | c2 | +0.2 | lng passes at engine, API and browser

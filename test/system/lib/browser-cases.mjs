@@ -2044,3 +2044,188 @@ export async function serviceAway(b, c) {
   b.takePageErrors();
   await b.clean(c, book.id);
 }
+
+// ---------------------------------------------------------------------------------------------
+// Hedge reconnection: the queue and the popup while the service is away, and when it is back
+// ---------------------------------------------------------------------------------------------
+
+/** The hedge review queue on the Strategies page: each request row by id, with its state and text. */
+async function hedgeQueue(b) {
+  await show(b, '#/strategy');
+  await closeHedgePopup(b);
+  const panel = b.page.locator('[data-testid=hedge-queue]');
+  if (!(await panel.count())) return {};
+  const rows = await panel.locator('tbody tr[data-request]').evaluateAll((trs) => trs.map((tr) => [tr.dataset.request, { state: tr.dataset.state, text: tr.innerText.replace(/\s+/g, ' ').trim() }]));
+  return Object.fromEntries(rows);
+}
+/** The queue row's Review / Open / Complete button, pressed: the hedge popup of that request. */
+async function openFromQueue(b, requestId) {
+  await hedgeQueue(b);
+  await b.page.locator(`[data-testid=hedge-queue] tr[data-request="${requestId}"]`).getByRole('button').first().click();
+  const popup = b.page.locator('[data-testid=hedge-popup]');
+  await popup.waitFor();
+  await settle(b);
+  return popup;
+}
+/** Manage panel of a strategy instance's drawer: fill one field, press its preview button, confirm. */
+async function manageStrategy(b, book, strategyId, field, value, button) {
+  const drawer = await openStrategyDrawer(b, book, strategyId);
+  await b.ui.input(drawer, field).fill(String(value));
+  await b.ui.button(drawer, button).click();
+  const modal = b.ui.dialog(/^Preview: /);
+  await modal.waitFor();
+  await modal.getByRole('button', { name: /^Confirm/ }).click();
+  await modal.waitFor({ state: 'hidden' });
+  await b.ui.closeOverlays();
+}
+
+/** SB:hedge:reconnection. The world runs with the engine timer on. */
+export async function hedgeReconnection(b, c) {
+  const { page, ui } = b;
+  const { scriptedPut } = await import('../cases/hedge.mjs');
+  const CTX = { investmentStrategy: { name: 'Core Equity' }, holdingPeriod: { days: 60 }, hedgeObjective: { type: 'downside_protection' } };
+  const QUOTE_DEEP = { bid: 50.00, ask: 50.02, last: 50.00, bidSize: 50_000, askSize: 50_000 };
+  await b.post('/api/demo/hedge-script', { clear: true });
+  const book = await b.book('Hedge reconnection', { capital: 2_000_000, funding: 1_000_000 });
+  const inst = {};
+  for (const sym of ['HGR', 'HSH', 'HCL', 'HUN', 'HIN']) inst[sym] = await b.stock(sym, QUOTE_DEEP);
+
+  // The user switches the demo hedge fixture off on the Data connection page: nothing answers hedge requests.
+  await enter(b, book, '#/data');
+  const sw = page.locator('main').getByText('Answer complete hedge requests with the canned demo packages');
+  if (await sw.locator('xpath=..').locator('input[type=checkbox]').isChecked()) {
+    await sw.click();
+    await ui.toast(/Demo hedge fixture turned off/);
+  }
+  await settle(b);
+  c.match(flat(await page.locator('.topbar').innerText()), /Hedge: demo fixture, off/, 'the top bar says the demo hedge fixture is off');
+  c.eq((await b.get('/api/hedge/service')).reachable, false, 'behind the screen, nothing answers hedge requests');
+
+  // 300 HGR bought from its Marketplace ticket with the context a hedge request needs.
+  const ticket = await fillTicket(b, inst.HGR, { qty: 300 });
+  const strat = ui.field(ticket, 'Investment Strategy');
+  if (await strat.locator('select').count()) await strat.locator('select').selectOption({ index: 1 });
+  else await strat.locator('input').fill('Core Equity');
+  await ui.input(ticket, 'Intended holding period').fill('60');
+  await ui.select(ticket, 'Hedge objective').selectOption({ label: 'Downside protection' });
+  const bought = await openPreviewFrom(b, ticket);
+  await bought.confirm.click();
+  await bought.modal.waitFor({ state: 'hidden' });
+  await b.tick();
+  const popup = page.locator('[data-testid=hedge-popup]');
+  await popup.waitFor({ timeout: 20_000 });
+  c.eq(await popup.getAttribute('aria-label'), 'Hedge for long HGR', 'after the fill the hedge popup opens for the long HGR');
+  c.eq(await popup.getAttribute('data-state'), 'awaiting_connection', 'it says the request awaits the connection');
+  c.match(flat(await popup.innerText()), /It is sent when Shaffer Hedge can be reached, against the exposure as it is then/, 'and that it is sent, against the exposure as it is then, when the service can be reached');
+  c.eq(await popup.getByRole('button', { name: /Execute/ }).count(), 0, 'there is nothing to execute');
+  await closeHedgePopup(b);
+  const grew = (await b.get('/api/strategies', { bookId: book.id })).items.find((x) => x.underlying?.id === inst.HGR.id || /HGR/.test(x.name));
+  const s = { grew: { id: grew.id } };
+  s.shrank = await b.trade({ ...b.ticketInput(book, inst.HSH, 'buy', 400), ...CTX });
+  s.closed = await b.trade({ ...b.ticketInput(book, inst.HCL, 'buy', 200), ...CTX });
+  s.untouched = await b.trade({ ...b.ticketInput(book, inst.HUN, 'buy', 100), ...CTX });
+  s.incomplete = await b.trade(b.ticketInput(book, inst.HIN, 'buy', 100));
+  await b.tick();
+  await closeHedgePopup(b);
+  const reqOf = async (k) => (await b.get('/api/hedge/requests', { bookId: book.id })).items.find((r) => r.strategyId === s[k].id);
+  const ids = {};
+  for (const k of Object.keys(s)) ids[k] = (await reqOf(k)).id;
+
+  let q = await hedgeQueue(b);
+  c.eq(Object.keys(q).sort(), Object.values(ids).sort(), 'the hedge review queue lists five requests, one per position');
+  c.eq(Object.keys(s).map((k) => q[ids[k]]?.state), ['awaiting_connection', 'awaiting_connection', 'awaiting_connection', 'awaiting_connection', 'incomplete'], 'four await the connection, the one without context is incomplete');
+  c.match(q[ids.incomplete]?.text, /Needs .*Not sent/, 'the incomplete row says what it needs and that it was not sent');
+  c.match(q[ids.grew]?.text, /cannot be reached: awaiting connection/, 'the waiting rows say Shaffer Hedge cannot be reached');
+
+  // While the service is away the positions change, from each strategy instance's drawer.
+  await manageStrategy(b, book, s.grew.id, 'Resize, multiple of the current size', 2, 'Preview resize');
+  await manageStrategy(b, book, s.shrank.id, 'Close, share of every position', 75, 'Preview close');
+  await manageStrategy(b, book, s.closed.id, 'Close, share of every position', 100, 'Preview close');
+  await b.tick(); await b.tick();
+  const held = async (k) => (await b.strategy(s[k].id)).positions.filter((p) => p.family === 'equity').reduce((a, p) => a + p.qty, 0);
+  c.eq([await held('grew'), await held('shrank'), await held('closed')], [600, 100, 0], 'HGR doubled to 600, 300 of HSH sold (100 left), HCL closed');
+  q = await hedgeQueue(b);
+  c.eq(Object.keys(q).sort(), Object.values(ids).sort(), 'while waiting the queue still lists the same five requests');
+  c.eq((await b.get('/api/demo/hedge-script')).used ?? 0, 0, 'nothing was sent meanwhile');
+  const beforeBooks = await b.books(book.id);
+  const ordersOf = () => Object.fromEntries(Object.entries(s).map(([k, x]) => [k, b.sql('SELECT COUNT(*) AS n FROM orders WHERE strategy_id = ?', x.id)[0].n]));
+  const orders0 = ordersOf();
+
+  // The service comes back (a scripted stand-in for Shaffer Hedge, labelled a test fixture).
+  await b.post('/api/demo/hedge-script', { responses: [{ packages: [scriptedPut(inst.HGR)] }], repeat: true });
+  await b.tick(); await b.tick();
+  q = await hedgeQueue(b);
+  c.eq([q[ids.grew]?.state, q[ids.shrank]?.state, q[ids.untouched]?.state], ['recommendation_ready', 'recommendation_ready', 'recommendation_ready'], 'reconnected: HGR, HSH and HUN show a recommendation ready');
+  c.match(q[ids.grew]?.text, /Long 600 HGR/, 'HGR\'s row is for the current 600');
+  c.match(q[ids.shrank]?.text, /Long 100 HSH/, 'HSH\'s row is for the current 100');
+  c.match(q[ids.grew]?.text, /test fixture, not Shaffer Hedge.*current/, 'labelled as a test fixture, not Shaffer Hedge, and current');
+  c.eq(q[ids.closed], undefined, 'HCL\'s request has left the queue');
+  c.eq(q[ids.incomplete]?.state, 'incomplete', 'HIN\'s is still incomplete');
+  const cl = await reqOf('closed');
+  c.eq([cl.state, cl.response ?? null], ['closed', null], 'behind the screen HCL\'s request is closed and was never answered');
+  c.match(cl.message, /position this request was for was closed/, 'with the reason');
+  c.eq((await b.get('/api/demo/hedge-script')).used, 3, 'exactly three requests reached the service');
+  c.eq(b.sql('SELECT strategy_id, COUNT(*) AS n FROM hedge_requests WHERE book_id = ? GROUP BY strategy_id HAVING COUNT(*) > 1', book.id), [], 'no position has two requests');
+  // The popup shows the current exposure, and receiving the recommendation executed nothing.
+  let pop = await openFromQueue(b, ids.grew);
+  c.eq(await pop.getAttribute('data-state'), 'recommendation_ready', 'HGR\'s popup, opened from the queue: recommendation ready');
+  const sent = flat(await ui.section(pop, 'What was sent').innerText());
+  c.match(sent, /Long 600/, 'what was sent is the current exposure: long 600');
+  c.match(flat(await ui.section(pop, 'Packages').innerText()), /Scripted protective put.*test fixture/, 'the package is listed, labelled test fixture');
+  await ui.closeOverlays();
+  const afterBooks = await b.books(book.id);
+  b.sameBooks(c, beforeBooks, afterBooks, 'the reconnection');
+  c.eq([afterBooks.counts.orders, afterBooks.counts.fills, afterBooks.counts.entries, afterBooks.counts.positions], [beforeBooks.counts.orders, beforeBooks.counts.fills, beforeBooks.counts.entries, beforeBooks.counts.positions], 'no order, fill, ledger entry or position was added by receiving it');
+  c.eq(ordersOf(), orders0, 'each strategy instance has the orders it had');
+  await show(b, `#/accounting/positions/${book.accountId}`);
+  c.eq(await ui.section(page.locator('main'), 'Positions').locator('tbody tr').filter({ hasText: /\bP\b|Put/ }).count(), 0, 'the Accounting positions screen shows no put');
+
+  // Again: a refresh, timer cycles, the service away and back: nothing more.
+  await b.post('/api/hedge/refresh');
+  await b.tick(); await b.tick();
+  await b.post('/api/demo/hedge-script', { clear: true });
+  await b.tick();
+  pop = await openFromQueue(b, ids.grew);
+  c.match(flat(await pop.locator('[data-testid=hedge-status]').innerText()), /recommendation ready.*Shaffer Hedge cannot be reached/, 'service away again: the popup keeps the recommendation and says the service cannot be reached now');
+  await ui.closeOverlays();
+  await b.post('/api/demo/hedge-script', { responses: [{ packages: [scriptedPut(inst.HGR)] }], repeat: true });
+  await b.tick(); await sleep(2_500); // the engine timer cycles by itself meanwhile
+  q = await hedgeQueue(b);
+  c.eq(Object.keys(q).sort(), [ids.grew, ids.shrank, ids.untouched, ids.incomplete].sort(), 'after a refresh, cycles and the service away and back: the same four open requests');
+  const b2 = await b.books(book.id);
+  c.eq([b2.counts.orders, b2.counts.fills, b2.counts.entries], [beforeBooks.counts.orders, beforeBooks.counts.fills, beforeBooks.counts.entries], 'and still nothing executed');
+
+  // HGR is reduced after its recommendation arrived: stale, refreshed in place, then executed only by the user.
+  await manageStrategy(b, book, s.grew.id, 'Close, share of every position', 50, 'Preview close');
+  await b.tick(); await b.tick();
+  pop = await openFromQueue(b, ids.grew);
+  c.match(flat(await pop.innerText()), /This recommendation is stale\./, 'HGR reduced to 300: the popup says the recommendation is stale');
+  c.eq(await pop.getByRole('button', { name: /^Execute/ }).isDisabled(), true, 'Execute now cannot be pressed on a stale recommendation');
+  await pop.getByRole('button', { name: 'Refresh against current exposure' }).first().click();
+  await pop.locator('.hedge-status', { hasText: 'current' }).first().waitFor({ timeout: 20_000 }).catch(() => {});
+  await settle(b);
+  c.match(flat(await ui.section(pop, 'What was sent').innerText()), /Long 300/, 'refreshed: the request is now for the 300 held');
+  c.eq((await reqOf('grew')).id, ids.grew, 'refreshed in place: the same request');
+  // The option leg has no quote: the desk states its fill price on the leg, then executes (double-clicked).
+  const legPrice = pop.locator('[data-testid=leg-price]').first();
+  await legPrice.getByPlaceholder('Fill price').fill('1.10');
+  await legPrice.getByRole('button', { name: 'Use this fill price' }).click();
+  await settle(b);
+  const ack = pop.getByText(/^I have read the/);
+  if (await ack.count()) await ack.click();
+  const execute = pop.getByRole('button', { name: 'Execute now' });
+  await execute.and(page.locator(':enabled')).waitFor();
+  c.eq(b.sql(`SELECT COUNT(*) AS n FROM orders WHERE book_id = ? AND json_extract(data, '$.hedgeLinkId') IS NOT NULL`, book.id)[0].n, 0, 'until Execute now is pressed there is no hedge order');
+  const posts = watchRequests(page, 'POST', /^\/api\/strategies$/);
+  await execute.dblclick();
+  await popup.waitFor({ state: 'hidden', timeout: 20_000 });
+  posts.stop();
+  await b.tick();
+  const hedgeOrders = b.sql(`SELECT json_extract(data, '$.hedgeLinkId') AS link FROM orders WHERE book_id = ? AND json_extract(data, '$.hedgeLinkId') IS NOT NULL`, book.id);
+  c.eq(hedgeOrders.map((o) => o.link), [ids.grew], 'Execute now, double-clicked, created one hedge order, carrying the request id');
+  c.note(`Execute now double-clicked: ${posts.seen.length} request${posts.seen.length === 1 ? '' : 's'} left the page`);
+  c.ok(['executing', 'executed'].includes((await reqOf('grew')).state), 'the request is now executing or executed', (await reqOf('grew')).state);
+  await closeHedgePopup(b);
+  b.takePageErrors();
+  await b.clean(c, book.id);
+}

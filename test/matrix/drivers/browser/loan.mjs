@@ -539,7 +539,8 @@ export async function screens(ui, ctx, t, { expected, state }) {
     if ((r.noFixing || null) !== noFix) api(`${at}: ${r.noFixing ? `shows "no fixing since ${r.noFixing}"` : 'shows no missing-fixing flag'}; the API has ${noFix ? `no fixing since ${noFix}` : 'every fixing'}`);
     if (Boolean(b.schedule.next?.blocked) !== r.blocked) api(`${at}: the next payment is ${r.blocked ? '' : 'not '}shown as blocked; the API says ${b.schedule.next?.blocked ? 'blocked' : 'not blocked'}`);
     if (r.schedule !== b.schedule.interest) api(`${at}: payment schedule shows "${r.schedule}", the API has "${b.schedule.interest}"`);
-    if (b.family === 'loan' && !/Set rate\s+Repay/.test(r.buttons)) api(`${at}: the row does not offer Set rate and Repay`);
+    const offers = { loan: /Set rate\s+Repay/, repo: /Set rate\s+Repurchase/, secloan: /Return/ }[b.family];
+    if (offers && !offers.test(r.buttons)) api(`${at}: the row does not offer ${b.family === 'secloan' ? 'Return' : `Set rate and ${b.family === 'repo' ? 'Repurchase' : 'Repay'}`}`);
   };
   for (const b of tre.borrowings.direct) checkRecord(b, own, 'Treasury\'s own borrowings', acct);
   for (const b of tre.borrowings.accountOriginated) checkRecord(b, acct, 'Account-originated borrowings', own);
@@ -568,7 +569,8 @@ export async function screens(ui, ctx, t, { expected, state }) {
   // Cash lent and deposits: one row per arrangement, with its owner, principal and accrued interest receivable.
   const lendTable = tableOf(tables, 'Lending, deposits and securities lent');
   const lendRows = (lendTable?.rows || []).map((r) => ({ id: /POS-[0-9A-F]+/.exec(r.cells[col(lendTable, 'Arrangement')])?.[0], name: lines(r.cells[col(lendTable, 'Arrangement')])[0], owner: r.cells[col(lendTable, 'Owner')].trim(), principal: shown(r.cells[col(lendTable, 'Principal or quantity')]), terms: r.cells[col(lendTable, 'Terms')].replace(/\s+/g, ' '), accrued: shown(lines(r.cells[col(lendTable, 'Accrued')])[0]), buttons: r.cells[r.cells.length - 1].replace(/\s+/g, ' ') }));
-  const lent = tre.arrangements.filter((a) => a.family === 'loan' && a.qty > 0);
+  // Cash lent, deposits and reverse repos (a principal); securities lent are checked by quantity below.
+  const lent = tre.arrangements.filter((a) => ['loan', 'repo'].includes(a.family) && a.qty > 0);
   for (const a of lent) {
     const r = lendRows.find((x) => x.id === a.positionId);
     if (!r) { api(`${a.name} (${a.positionId}) is not in the lending table`); continue; }
@@ -577,7 +579,15 @@ export async function screens(ui, ctx, t, { expected, state }) {
     if (r.owner !== (a.owner.kind === 'treasury' ? 'Treasury' : a.owner.name)) api(`${at}: owner shows "${r.owner}"`);
     num(api, `${at} principal`, a.qty, r.principal);
     num(api, `${at} accrued`, a.accrued, r.accrued);
-    if (!/Set rate\s+Withdraw/.test(r.buttons)) api(`${at}: the row does not offer Set rate and Withdraw`);
+    if (!(a.family === 'repo' ? /Set rate\s+Terminate/ : /Set rate\s+Withdraw/).test(r.buttons)) api(`${at}: the row does not offer Set rate and ${a.family === 'repo' ? 'Terminate' : 'Withdraw'}`);
+  }
+  for (const a of tre.arrangements.filter((x) => x.family === 'secloan' && x.qty < 0)) {
+    const r = lendRows.find((x) => x.id === a.positionId);
+    if (!r) { api(`${a.name} (${a.positionId}) is not in the lending table`); continue; }
+    rowOf.set(a.positionId, r);
+    num(api, `lending table, ${a.name} quantity`, Math.abs(a.qty), r.principal);
+    num(api, `lending table, ${a.name} accrued`, a.accrued, r.accrued);
+    if (!/Take back/.test(r.buttons)) api(`lending table, ${a.name}: the row does not offer Take back`);
   }
   if (lendRows.length !== tre.arrangements.filter((a) => (a.family === 'secloan' ? a.qty < 0 : a.qty > 0)).length) api(`the lending table lists ${lendRows.length} rows; the API has ${tre.arrangements.filter((a) => (a.family === 'secloan' ? a.qty < 0 : a.qty > 0)).length}`);
 
