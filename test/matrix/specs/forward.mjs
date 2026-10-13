@@ -25,6 +25,7 @@
 //     spendable) when above the threshold; a transfer smaller than the minimum transfer amount is not made.
 //   - Early termination is recorded on the position at the amount agreed with the counterparty, realized,
 //     settled on the date stated (two business days if none is stated); its collateral is returned.
+//   - A settlement amount or a delivery due on the day it is booked settles in the same engine cycle.
 //   - Settlement on the value date (or the fixing date): a deliverable FX forward exchanges both currency
 //     amounts if the paying currency is there in settled cash, and fails visibly otherwise (retried each
 //     cycle); a non-deliverable forward pays quantity x (fixing - dealt) in the settlement currency against
@@ -1057,26 +1058,18 @@ const commodityForward = {
       expect: {
         events: [
           { type: 'forward.settlement', summary: 'Forward fixed at 9,512.50 against 9,450.00: receivable 15,625.00 USD on 2026-07-15', owner: 'account', date: '2026-07-15' },
+          { type: 'settlement.receive', summary: 'received 15,625.00 USD into settled cash', cash: { USD: 15_625 }, owner: 'account', date: '2026-07-15' },
           { type: 'forward.collateral', summary: '118,125.00 USD (independent amount, the position ended)', cash: { USD: 118_125 }, owner: 'account' },
         ],
-        cash: { account: { USD: cashOf(500_000, { unsettled: 15_625, trade: 515_625, withdraw: 500_000 }) } }, // 381,750 + 118,125
+        cash: { account: { USD: cashOf(515_500, { margin: 0 }) } }, // 381,750 + 15,625 + 118,125
         positions: [],
         holdings: { main: null },
-        pending: [{ instrument: 'main', lot: 'fwd', owner: 'account', dueDate: '2026-07-15', amount: 15_625, ccy: 'USD', into: 'cash' }],
+        pending: [],
         lifecycle: [],
         pnl: { account: { realized: 15_625, commissions: -125, unrealized: 0, total: 15_500 } },
         nav: { account: 515_500, book: 1_015_500 },
-        balance: { account: { cash: 500_000, margin: null, positions: null, receivable: 15_625, assets: 515_625, liabilities: 0, netAssets: 515_625 } },
+        balance: { account: { cash: 515_500, margin: null, positions: null, receivable: null, assets: 515_500, liabilities: 0, netAssets: 515_500 } },
         otc: [],
-      },
-    },
-    {
-      id: 'settlement-received', covers: 'settlement', action: 'cycle',
-      expect: {
-        events: [{ type: 'settlement.receive', summary: 'received 15,625.00 USD into settled cash', cash: { USD: 15_625 }, owner: 'account', date: '2026-07-15' }],
-        cash: { account: { USD: cashOf(515_500 + 125) } },
-        pending: [],
-        balance: { account: { cash: 515_625, receivable: null, assets: 515_625 } },
       },
     },
   ],
