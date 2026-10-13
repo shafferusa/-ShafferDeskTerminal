@@ -2129,27 +2129,28 @@ const nonAgencyMbs = {
       },
     },
     {
-      // Friday 6 April. End of day 5 Apr: March's coupon (due 25 April) 3,071,480.85 x 4.75% / 12 = 12,157.95, plus 4 days of April
-      // on the March factor 1,621.06: 13,779.01. 2,431.59 more.
+      // Friday 6 April. End of day 5 Apr: March's coupon (due 25 April) 3,071,480.85 x 4.75% / 12 = 12,157.9450, plus 4 days of
+      // April on the March factor 1,621.0594: 13,779.0044, rounded once: 13,779.00. 2,431.58 more.
       id: 'remittance-day', covers: 'accrual', action: 'clock', to: EDT('2029-04-06'),
       expect: {
-        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on HPMT-24-2-B1: 2,431.59 USD' }],
-        positions: [{ instrument: 'main', lot: 'lot', qty: 4_500_000, accrued: 13_779.01 }],
-        pnl: { account: { couponInterest: 10_401.80, total: 2_581.04 } },
-        nav: { account: 4_002_581.04, book: 5_002_581.04 },
-        balance: { account: { accruedIncome: 13_779.01, assets: 4_002_581.04, netAssets: 4_002_581.04 } },
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on HPMT-24-2-B1: 2,431.58 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 4_500_000, accrued: 13_779 }],
+        pnl: { account: { couponInterest: 10_401.79, total: 2_581.03 } },
+        nav: { account: 4_002_581.03, book: 5_002_581.03 },
+        balance: { account: { accruedIncome: 13_779, assets: 4_002_581.03, netAssets: 4_002_581.03 } },
       },
     },
     {
       // The realized loss allocated to Class B-1, recorded by hand from the remittance report: factor 0.6825513 to 0.6804313 from
       // 1 April. 4,500,000 x 0.00212 = 9,540 of principal written off, no payment. Cost out 2,841,119.79 x 0.00212 / 0.6825513
       // = 8,824.50: realized loss. April's 4 days of interest on the principal written off are cancelled: on 3,061,940.85 they
-      // are 1,616.02 instead of 1,621.06, 5.04 down. March's coupon keeps the March factor.
+      // are 1,616.0244 instead of 1,621.0594; with March's coupon (on the March factor) 12,157.9450 the balance is 13,773.97,
+      // 5.03 down.
       id: 'loss-allocated', covers: 'loss allocation (by hand)', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'writedown', newFactor: 0.6804313, kind: 'loss', effective: '2029-04-01' },
       expect: {
         events: [
           { type: 'bond.loss', summary: 'Realized loss allocated by hand to HPMT-24-2-B1: factor 0.6825513 to 0.6804313 from 2029-04-01, 9,540 of principal written off with no payment (4,500,000 original face); cost 8,824.50 USD written off as realized loss', owner: 'account', date: '2029-04-06' },
-          { type: 'accrual.coupon', summary: 'Accrued interest cancelled with the principal written off on HPMT-24-2-B1: 5.04 USD' },
+          { type: 'accrual.coupon', summary: 'Accrued interest cancelled with the principal written off on HPMT-24-2-B1: 5.03 USD' },
         ],
         positions: [{ instrument: 'main', lot: 'lot', qty: 4_500_000, cost: 2_832_295.29, avgCost: 92.5, price: 92.25, value: 2_824_640.43, unrealized: -7_654.86, accrued: 13_773.97 }], // 3,061,940.85 x 92.25 / 100 = 2,824,640.434
         pnl: { account: { realized: -8_824.50, couponInterest: 10_396.76, unrealized: -7_654.86, total: -6_224.65 } },
@@ -2161,20 +2162,21 @@ const nonAgencyMbs = {
       // The paydown, also from 1 April: 0.6804313 to 0.6741078, principal 4,500,000 x 0.0063235 = 28,455.75 receivable on 25 April.
       // Scheduled 0.0013892 of original face (0.6804313 - 0.6790421), prepaid 0.0049343 (SMM 0.0049343 / 0.6790421 = 0.7267%).
       // Cost out 2,832,295.29 x 0.0063235 / 0.6804313 = 26,321.57: realized +2,134.18 (principal returned at par, bought at 92.50).
-      // April's 4 days on 3,033,485.10: 1,600.95 instead of 1,616.02, 15.01 down... restated: 13,758.96.
+      // April's 4 days on 3,033,485.10: 1,601.0060 instead of 1,616.0244; with March's coupon 12,157.9450 the balance is
+      // 13,758.9511 -> 13,758.95, 15.02 down.
       id: 'factor-and-paydown', covers: ['paydown (by hand)', 'prepayment (by hand)'], action: 'instrument_lifecycle', instrument: 'main',
       body: { action: 'paydown', newFactor: 0.6741078, effective: '2029-04-01', payDate: '2029-04-25', scheduledFactor: 0.6790421 },
       expect: {
         events: [
           { type: 'bond.paydown', summary: 'Principal paydown on HPMT-24-2-B1: factor 0.6804313 to 0.6741078 from 2029-04-01; scheduled principal 0.0013892, prepaid 0.0049343 of original face (SMM 0.7267%), 28,455.75 USD receivable on 2029-04-25', owner: 'account', date: '2029-04-06' },
-          { type: 'accrual.coupon', summary: 'Accrued interest restated on the new factor of HPMT-24-2-B1, down: 15.01 USD' },
+          { type: 'accrual.coupon', summary: 'Accrued interest restated on the new factor of HPMT-24-2-B1, down: 15.02 USD' },
         ],
         cash: { account: { USD: { settled: 1_155_360.95, unsettled: 28_455.75, availableToTrade: 1_183_816.70 } } },
-        positions: [{ instrument: 'main', lot: 'lot', qty: 4_500_000, cost: 2_805_973.72, avgCost: 92.5, price: 92.25, value: 2_798_390, unrealized: -7_583.72, accrued: 13_758.96 }], // 3,033,485.10 x 92.25 / 100 = 2,798,390.005
+        positions: [{ instrument: 'main', lot: 'lot', qty: 4_500_000, cost: 2_805_973.72, avgCost: 92.5, price: 92.25, value: 2_798_390, unrealized: -7_583.72, accrued: 13_758.95 }], // 3,033,485.10 x 92.25 / 100 = 2,798,390.005
         pending: [{ instrument: 'main', owner: 'account', dueDate: '2029-04-25', amount: 28_455.75, ccy: 'USD', into: 'cash' }],
-        pnl: { account: { realized: -6_690.32, couponInterest: 10_381.75, unrealized: -7_583.72, total: -4_034.34 } },
-        nav: { account: 3_995_965.66, book: 4_995_965.66 },
-        balance: { account: { receivable: 28_455.75, accruedIncome: 13_758.96, positions: 2_798_390, assets: 3_995_965.66, netAssets: 3_995_965.66 } },
+        pnl: { account: { realized: -6_690.32, couponInterest: 10_381.74, unrealized: -7_583.72, total: -4_034.35 } },
+        nav: { account: 3_995_965.65, book: 4_995_965.65 },
+        balance: { account: { receivable: 28_455.75, accruedIncome: 13_758.95, positions: 2_798_390, assets: 3_995_965.65, netAssets: 3_995_965.65 } },
       },
     },
     {
@@ -2187,21 +2189,21 @@ const nonAgencyMbs = {
         result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 1_500_000, avgPrice: 92 }] },
         events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: /^Sold 1,500,000 HPMT-24-2-B1 @ 92\.00 USD \(realized [-−]5,055\.81 USD\)$/ }],
         cash: { account: { USD: { settled: 1_155_360.95, unsettled: 959_878.75, availableToTrade: 2_115_239.70 } } }, // 28,455.75 + 931,423.00
-        positions: [{ instrument: 'main', lot: 'lot', qty: 3_000_000, cost: 1_870_649.15, avgCost: 92.5, price: 92.25, value: 1_865_593.34, unrealized: -5_055.81, accrued: 12_558.21 }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 3_000_000, cost: 1_870_649.15, avgCost: 92.5, price: 92.25, value: 1_865_593.34, unrealized: -5_055.81, accrued: 12_558.20 }],
         holdings: { main: { long: 3_000_000, short: 0, net: 3_000_000 } },
         lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2029-04-25', status: 'pending' }, { type: 'bond.coupon', instrument: 'main', dueDate: '2029-05-25', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2054-06-25', status: 'pending' }],
         pending: [
           { instrument: 'main', owner: 'account', dueDate: '2029-04-10', amount: 931_423, ccy: 'USD', into: 'cash' },
           { instrument: 'main', owner: 'account', dueDate: '2029-04-25', amount: 28_455.75, ccy: 'USD', into: 'cash' },
         ],
-        pnl: { account: { realized: -11_746.13, commissions: -188.56, unrealized: -5_055.81, total: -6_608.75 } },
-        nav: { account: 3_993_391.25, book: 4_993_391.25 },
-        balance: { account: { receivable: 959_878.75, accruedIncome: 12_558.21, positions: 1_865_593.34, assets: 3_993_391.25, netAssets: 3_993_391.25 } },
+        pnl: { account: { realized: -11_746.13, commissions: -188.56, unrealized: -5_055.81, total: -6_608.76 } },
+        nav: { account: 3_993_391.24, book: 4_993_391.24 },
+        balance: { account: { receivable: 959_878.75, accruedIncome: 12_558.20, positions: 1_865_593.34, assets: 3_993_391.24, netAssets: 3_993_391.24 } },
       },
     },
     {
       // Tuesday 10 April. End of day 9 Apr: March's coupon on the 4,500,000 held at the record date 12,157.95, plus 8 days of April
-      // on 3,033,485.10 (the sale settles today) 3,202.01, less the 9 days sold 1,200.75: 14,159.21. 1,601.00 more.
+      // on 3,033,485.10 (the sale settles today) 3,202.0121, less the 9 days sold 1,200.7545: 14,159.2026 -> 14,159.20. 1,601.00 more.
       id: 'settle-reduce', covers: ['settlement', 'accrual'], action: 'clock', to: EDT('2029-04-10'),
       expect: {
         events: [
@@ -2209,21 +2211,24 @@ const nonAgencyMbs = {
           { type: 'accrual.coupon', summary: 'Interest accrued on HPMT-24-2-B1: 1,601.00 USD' },
         ],
         cash: { account: { USD: { settled: 2_086_783.95, unsettled: 28_455.75, availableToTrade: 2_115_239.70 } } },
-        positions: [{ instrument: 'main', lot: 'lot', qty: 3_000_000, accrued: 14_159.21 }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 3_000_000, accrued: 14_159.20 }],
         pending: [{ instrument: 'main', owner: 'account', dueDate: '2029-04-25', amount: 28_455.75, ccy: 'USD', into: 'cash' }],
-        pnl: { account: { couponInterest: 11_982.75, total: -5_007.75 } },
-        nav: { account: 3_994_992.25, book: 4_994_992.25 },
-        balance: { account: { cash: 2_086_783.95, receivable: 28_455.75, accruedIncome: 14_159.21, assets: 3_994_992.25, netAssets: 3_994_992.25 } },
+        pnl: { account: { couponInterest: 11_982.74, total: -5_007.76 } },
+        nav: { account: 3_994_992.24, book: 4_994_992.24 },
+        balance: { account: { cash: 2_086_783.95, receivable: 28_455.75, accruedIncome: 14_159.20, assets: 3_994_992.24, netAssets: 3_994_992.24 } },
       },
     },
     {
       // Wednesday 25 April: the April principal 28,455.75 arrives, and March's coupon on the 4,500,000 held at the March record date
-      // on the March factor: 12,157.95. End of day 24 Apr: 2,022,323.40 x 4.75% x 23/360 = 6,137.19; 4,135.93 more.
+      // on the March factor: 12,157.9450 paid as 12,157.95. After it the balance is 14,159.20 - 12,157.95 = 2,001.25, against
+      // April's interest to 9 Apr worked whole, 3,202.0121 - 1,200.7545 = 2,001.2576 -> 2,001.26: the cent the coupon was rounded
+      // up by comes back as income (0.01). End of day 24 Apr: 2,022,323.40 x 4.75% x 23/360 = 6,137.19; 4,135.93 more.
       id: 'coupon-and-principal', covers: ['coupon', 'paydown (by hand)', 'settlement'], action: 'clock', to: EDT('2029-04-25'),
       expect: {
         events: [
           { type: 'settlement.receive', summary: 'received 28,455.75 USD into settled cash', cash: { USD: 28_455.75 }, date: '2029-04-25' },
           { type: 'bond.coupon', summary: 'Coupon received on 4,500,000 HPMT-24-2-B1 (factor 0.6825513: current face 3,071,480.85): 12,157.95 USD', cash: { USD: 12_157.95 }, owner: 'account', date: '2029-04-25' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on HPMT-24-2-B1: 0.01 USD' },
           { type: 'accrual.coupon', summary: 'Interest accrued on HPMT-24-2-B1: 4,135.93 USD' },
         ],
         cash: { account: { USD: { settled: 2_127_397.65, unsettled: 0, availableToTrade: 2_127_397.65 } } },

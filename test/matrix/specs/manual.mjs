@@ -1512,7 +1512,7 @@ const varianceSwap = {
       // +210,000 is 110,000 beyond the threshold: 110,000 received from the counterparty, held as restricted cash and owed back.
       id: 'variation-margin-received', covers: 'variation margin', action: 'clock', to: nyEod('2026-06-15'),
       expect: {
-        events: [{ type: 'collateral.variation', summary: 'Variation margin under position-level terms: 110,000.00 USD received. Netting set of 1 position marked at 210,000.00 USD; threshold 100,000.00 USD.', cash: { USD: 110_000 }, owner: 'account' }],
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under position-level terms: 110,000.00 USD received. Netting set of 1 position marked at 210,000.00 USD; threshold 100,000.00 USD.', owner: 'account' }], // restricted cash, not settled cash: no cash effect in the history
         cash: { account: { USD: { settled: 2_060_000, restricted: 110_000, availableToTrade: 2_060_000 } } },
         otc: [{ instrument: 'main', vmPosted: 0, vmHeld: 110_000, vmExposure: 210_000, vmStatus: 'ok' }],
         balance: { account: { restricted: 110_000, collateralReceived: 110_000, assets: 2_380_000, liabilities: 110_000, netAssets: 2_270_000 } },
@@ -1535,7 +1535,7 @@ const varianceSwap = {
       expect: {
         events: [
           { type: 'manual.settlement', summary: 'Final settlement of VS-SPX-JUN26 entered by hand: realised volatility 26.50, strike 20.00: variance notional 1,250.00 (50,000.00 USD / (2 x 20.00)) x (26.50² - 20.00²), x 0.6 held = 226,687.50 USD received 2026-06-24', owner: 'account', date: '2026-06-22' },
-          { type: 'collateral.variation', summary: 'Variation margin under position-level terms: 110,000.00 USD returned to the counterparty. The last position of the netting set ended.', cash: { USD: -110_000 } },
+          { type: 'collateral.variation', summary: 'Variation margin under position-level terms: 110,000.00 USD returned to the counterparty. The last position of the netting set ended.' },
         ],
         cash: { account: { USD: { settled: 2_060_000, unsettled: 226_687.5, restricted: 0, availableToTrade: 2_286_687.5 } } },
         positions: [],

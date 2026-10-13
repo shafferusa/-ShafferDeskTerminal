@@ -610,6 +610,8 @@ export const repo = {
     need(!isZero(pos.qty), 'This repo is closed.');
     need(!isBsb(inst), `${REPO_LABEL[inst.product_id]} is two outright trades in one security with the forward price fixed at inception: there is no collateral to top up, return or substitute. Close it and enter a new one to change the securities.`);
     need(['pledge', 'release', 'substitute'].includes(change), 'Choose the collateral change: more collateral (a margin call), a return of excess collateral, or a substitution.');
+    // A special repo is done for the security it names: that security is the point of the trade and is not substituted.
+    need(!(change === 'substitute' && t.collateralType === 'special'), 'The collateral of a special repo is the security it names: it cannot be substituted. To change the security, repurchase the repo and enter a new one.');
     const q = num(qty);
     need(q > 0, 'Enter the quantity of collateral as a positive number.');
     const borrowed = pos.qty < 0;

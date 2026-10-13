@@ -128,6 +128,11 @@ async function collateral(ui, t, ctx, step) {
   await btn.click();
   const dlg = ui.dialog(/^Collateral on /);
   await dlg.waitFor();
+  const offered = await texts(ui.select(dlg, 'Change').locator('option'));
+  if (!offered.includes(CHANGE[b.change])) {
+    await ui.button(dlg, 'Cancel').click();
+    return { refusal: { message: `The Change list of the Collateral dialog offers only: ${offered.join(', ')}. "${CHANGE[b.change]}" is not offered.`, where: 'Collateral dialog, Change' } };
+  }
   await ui.select(dlg, 'Change').selectOption({ label: CHANGE[b.change] });
   await ui.drawn();
   if (b.change === 'substitute' && p.qty < 0) {

@@ -1733,4 +1733,214 @@ const digitalOption = {
   ],
 };
 
-export default [otcOption, bondOption, fxOption, commodityOption, cryptoOption, digitalOption];
+// ---------------------------------------------------------------------------------------------
+// interest_rate_option
+// ---------------------------------------------------------------------------------------------
+// Two single-period interest-rate options on 3-month CME Term SOFR (fixing code TSFR3M), notional 25,000,000, dealt
+// with Dealer H. Each fixes on Monday 15 June 2026 for the period 17 June to 15 September 2026 (90 days, ACT/360) and
+// pays in arrears on 15 September. Strike and fixing are in percent a year; the multiplier is the period's day-count
+// fraction over 100, 90 / 360 / 100 = 0.0025, so a quote of 0.12 (percent for the period) costs 25,000,000 x 0.12 x
+// 0.0025 = 7,500, and a fixing 0.35 above the strike pays 25,000,000 x 0.35 x 0.0025 = 21,875.
+//   - a call on the rate (a caplet) struck at 4.00%, bought; position-level terms: variation margin over a 10,000
+//     threshold; the dealer posts collateral against it.
+//   - a put on the rate (a floorlet) struck at 3.50%, written; position-level terms: a fixed independent amount of 15,000,
+//     variation margin with no threshold (minimum transfer 500).
+// The 15 June fixing has not been supplied when the options expire: both expiry items wait, visibly, until it is entered
+// by hand (Data connection, Manual entries, Reference or funding rate): 4.35%. The caplet then pays 21,875 on 15
+// September (after Independence Day and Labor Day); the floorlet lapses. Convexity and the discounting of an in-arrears
+// payment are not modelled (catalog note): the amount is paid, undiscounted, on its payment date.
+const CAPLET = 'SOFR 3M caplet 4.00%, fixing 15 Jun 2026, paid 15 Sep 2026 (Dealer H)';
+const FLOORLET = 'SOFR 3M floorlet 3.50%, fixing 15 Jun 2026, paid 15 Sep 2026 (Dealer H)';
+const RATE_OPTION_CONVENTIONS = { tradingCalendar: 'USD', settlementCalendar: 'USD', paymentCalendar: 'USD' };
+const interestRateOption = {
+  productId: 'interest_rate_option',
+  title: 'Term SOFR caplet 4.00% bought and floorlet 3.50% written on 25,000,000: fixing entered by hand, paid in arrears',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields.filter((f) => !f.startsWith('Underlying instrument')), 'Fixing rate code (TSFR3M)', 'Underlying reference', 'Multiplier = day-count fraction / 100 (0.0025 for 90/360)', 'Cash settlement paid on (the period end)'],
+    automaticInputs: ['premium settlement date, T+2 on the US dollar calendar', 'commission per unit of notional from the Book fee schedule', 'independent amount and variation margin from the position-level terms', 'expiry item settled against the TSFR3M fixing for the expiration date', 'cash settlement paid on the contract\'s payment date'],
+    manualInputs: ['premium in percent for the period (stated fill price)', 'marks in percent for the period, entered by hand (Manual entry)', 'the TSFR3M fixing for 15 June, entered by hand (Data connection, Manual entries, Reference or funding rate) when it was not supplied'],
+    settlement: 'Premium and commission T+2 on the US dollar calendar; the caplet\'s payoff paid on the stated payment date, 15 September 2026, in arrears',
+    lifecycle: 'Expiry items on 15 June blocked until the fixing exists; then the caplet is cash-settled (notional x (fixing - strike) x 90/360) and the floorlet lapses; nothing scheduled afterwards',
+    accounting: 'Premium = notional x quote x day-count fraction / 100; average premium; payoff realized at expiry and paid on the payment date; commission expensed; marks by hand drive unrealized P&L. Convexity and discounting of the in-arrears payment are not modelled',
+    collateral: 'Caplet (bought): position-level terms, variation margin over a 10,000 threshold, received from the dealer and returned at expiry. Floorlet (written): fixed independent amount 15,000 and variation margin with no threshold, posted and returned at expiry',
+  },
+  start: at('2026-03-02'),
+  settlementCheck: { lag: 2, holidays: [] },
+  book: {
+    name: 'Matrix interest-rate option', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 2_000_000 }],
+    account: { name: 'Rates', funding: [{ ccy: 'USD', amount: 500_000 }] },
+    settings: { fees: { otcoption: { perUnit: 0.000004, minimum: 0, bps: 0 } }, fill: FILL, settlement: { otcoption: 2 } }, // 4.00 per million of notional
+  },
+  instruments: {
+    caplet: {
+      productId: 'interest_rate_option', name: CAPLET, symbol: 'TSFR-CPL400-SEP26', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 0.0025, conventions: RATE_OPTION_CONVENTIONS,
+      terms: { right: 'C', strike: 4.00, expiration: '2026-06-15', fixingRate: 'TSFR3M', underlyingDescription: '3-month CME Term SOFR, period 17 Jun to 15 Sep 2026 (90 days, ACT/360)', optionType: 'vanilla', exercise: 'european', settlement: 'cash', paymentDate: '2026-09-15', counterparty: 'Dealer H',
+        collateralBasis: { type: 'position', independentAmount: { type: 'none' }, variationMargin: true, threshold: 10_000, minimumTransfer: 1_000 } },
+    },
+    floorlet: {
+      productId: 'interest_rate_option', name: FLOORLET, symbol: 'TSFR-FLT350-SEP26', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 0.0025, conventions: RATE_OPTION_CONVENTIONS,
+      terms: { right: 'P', strike: 3.50, expiration: '2026-06-15', fixingRate: 'TSFR3M', underlyingDescription: '3-month CME Term SOFR, period 17 Jun to 15 Sep 2026 (90 days, ACT/360)', optionType: 'vanilla', exercise: 'european', settlement: 'cash', paymentDate: '2026-09-15', counterparty: 'Dealer H',
+        collateralBasis: { type: 'position', independentAmount: { type: 'fixed', amount: 15_000 }, variationMargin: true, threshold: 0, minimumTransfer: 500 } },
+    },
+  },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 500_000, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 500_000, availableToWithdraw: 500_000 } },
+      treasury: { USD: { settled: 1_500_000 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [], otc: [], alerts: [],
+    nav: { account: 500_000, treasury: 1_500_000, book: 2_000_000 },
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+  },
+  steps: [
+    otcTicket({
+      id: 'buy-caplet', covers: ['open', 'collateral'], instrument: 'caplet', side: 'buy', qty: 25_000_000, premium: 0.12, as: 'caplets',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'caplet', qty: 25_000_000, estimate: 0.12, model: 'stated-price', settleDate: '2026-03-04', calendar: 'USD',
+            cash: -7_500, fees: 100, notional: 25_000_000 }], // 25,000,000 x 0.12 x 0.0025; 25,000,000 x 0.000004
+          cash: { USD: { purchases: 7_500, fees: 100, margin: 0, required: 7_600, available: 500_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 25_000_000, avgPrice: 0.12 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 25,000,000 TSFR-CPL400-SEP26 @ 0.12 USD', owner: 'account', date: '2026-03-02' }],
+        cash: { account: { USD: { settled: 500_000, unsettled: -7_600, availableToTrade: 492_400, availableToWithdraw: 492_400 } } },
+        positions: [{ instrument: 'caplet', lot: 'caplets', owner: 'account', direction: 'long', qty: 25_000_000, avgCost: 0.12, cost: 7_500, price: null, value: null, unrealized: null, provisional: true, notional: 25_000_000, margin: 0 }],
+        holdings: { caplet: { long: 25_000_000, short: 0, net: 25_000_000 } },
+        pending: [{ instrument: 'caplet', owner: 'account', dueDate: '2026-03-04', amount: -7_600, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'option.expiry', instrument: 'caplet', dueDate: '2026-06-15', status: 'pending' }],
+        otc: [{ instrument: 'caplet', lot: 'caplets', qty: 25_000_000, basis: 'position', mark: null, iaRequired: 0, iaPosted: 0, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: -100, unrealized: 0, total: -100 } },
+        nav: { account: 499_900, book: 1_999_900 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 500_000, payable: 7_600, positions: 7_500, assets: 507_500, liabilities: 7_600, netAssets: 499_900 } },
+      },
+    }),
+    { id: 'half-an-hour-later', action: 'clock', to: at('2026-03-02', '15:30'), expect: {} },
+    otcTicket({
+      // Written: a fixed independent amount of 15,000, posted at the fill. Premium 25,000,000 x 0.05 x 0.0025 = 3,125.
+      id: 'write-floorlet', covers: ['write', 'collateral'], instrument: 'floorlet', side: 'sell', qty: 25_000_000, premium: 0.05, as: 'floorlets',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'floorlet', qty: 25_000_000, estimate: 0.05, model: 'stated-price', settleDate: '2026-03-04', calendar: 'USD', cash: 3_125, fees: 100, notional: 25_000_000 }],
+          cash: { USD: { proceeds: 3_125, fees: 100, margin: 15_000, required: 15_100, available: 492_400, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 25_000_000, avgPrice: 0.05 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Sold 25,000,000 TSFR-FLT350-SEP26 @ 0.05 USD', owner: 'account' },
+          { type: 'otcoption.collateral', summary: `Collateral posted on ${FLOORLET} under its position-level terms: 15,000.00 USD (independent amount, fixed amount for the position)`, cash: { USD: -15_000 } },
+        ],
+        cash: { account: { USD: { settled: 485_000, unsettled: -4_575, margin: 15_000, availableToTrade: 480_425, availableToWithdraw: 477_400 } } }, // -7,600 + 3,025; 485,000 - 7,600
+        positions: [
+          { instrument: 'caplet', lot: 'caplets', qty: 25_000_000 },
+          { instrument: 'floorlet', lot: 'floorlets', owner: 'account', direction: 'short', qty: -25_000_000, avgCost: 0.05, cost: -3_125, price: null, value: null, unrealized: null, provisional: true, notional: 25_000_000, margin: 15_000 },
+        ],
+        holdings: { floorlet: { long: 0, short: 25_000_000, net: -25_000_000 } },
+        pending: [
+          { instrument: 'caplet', owner: 'account', dueDate: '2026-03-04', amount: -7_600, ccy: 'USD', into: 'cash' },
+          { instrument: 'floorlet', owner: 'account', dueDate: '2026-03-04', amount: 3_025, ccy: 'USD', into: 'cash' },
+        ],
+        lifecycle: [{ type: 'option.expiry', instrument: 'caplet', dueDate: '2026-06-15', status: 'pending' }, { type: 'option.expiry', instrument: 'floorlet', dueDate: '2026-06-15', status: 'pending' }],
+        otc: [{ instrument: 'caplet' }, { instrument: 'floorlet', lot: 'floorlets', qty: -25_000_000, basis: 'position', iaRequired: 15_000, iaPosted: 15_000, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { commissions: -200, total: -200 } },
+        nav: { account: 499_800, book: 1_999_800 }, // 485,000 + 15,000 + 3,025 - 7,600 + 7,500 - 3,125
+        balance: { account: { cash: 485_000, margin: 15_000, receivable: 3_025, payable: 7_600, positions: 4_375, assets: 507_400, liabilities: 7_600, netAssets: 499_800 } },
+      },
+    }),
+    {
+      id: 'mark-caplet', covers: 'manual mark', action: 'manual_price', instrument: 'caplet', value: 0.30, note: 'Dealer H mark, percent for the period, by hand',
+      expect: {
+        positions: [{ instrument: 'caplet', lot: 'caplets', price: 0.3, value: 18_750, unrealized: 11_250, provisional: false }, { instrument: 'floorlet', lot: 'floorlets' }], // 25,000,000 x 0.30 x 0.0025; - 7,500
+        otc: [{ instrument: 'caplet', mark: 0.3, markValue: 18_750 }, { instrument: 'floorlet' }],
+        pnl: { account: { unrealized: 11_250, total: 11_050 } },
+        nav: { account: 511_050, book: 2_011_050 },
+        balance: { account: { positions: 15_625, assets: 518_650, netAssets: 511_050 } }, // 18,750 - 3,125
+      },
+    },
+    {
+      id: 'mark-floorlet', covers: 'manual mark', action: 'manual_price', instrument: 'floorlet', value: 0.02, note: 'Dealer H mark, percent for the period, by hand',
+      expect: {
+        positions: [{ instrument: 'caplet', lot: 'caplets' }, { instrument: 'floorlet', lot: 'floorlets', price: 0.02, value: -1_250, unrealized: 1_875, provisional: false }], // -25,000,000 x 0.02 x 0.0025; + 3,125
+        otc: [{ instrument: 'caplet' }, { instrument: 'floorlet', mark: 0.02, markValue: -1_250 }],
+        pnl: { account: { unrealized: 13_125, total: 12_925 } },
+        nav: { account: 512_925, book: 2_012_925 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 17_500, assets: 520_525, netAssets: 512_925 } },
+      },
+    },
+    {
+      // Caplet at +18,750: 8,750 beyond its 10,000 threshold, posted by Dealer H. Floorlet at -1,250, no threshold: 1,250 posted.
+      id: 'variation-margin-both-ways', covers: 'variation margin', action: 'clock', to: eod('2026-03-02'),
+      expect: {
+        events: [
+          { type: 'collateral.variation', summary: 'Variation margin under position-level terms: 8,750.00 USD received. Netting set of 1 position marked at 18,750.00 USD; threshold 10,000.00 USD.', owner: 'account' },
+          { type: 'collateral.variation', summary: 'Variation margin under position-level terms: 1,250.00 USD posted. Netting set of 1 position marked at -1,250.00 USD; threshold 0.00 USD.', cash: { USD: -1_250 }, owner: 'account' },
+        ],
+        cash: { account: { USD: { settled: 483_750, restricted: 8_750, margin: 16_250, availableToTrade: 479_175, availableToWithdraw: 476_150 } } },
+        otc: [{ instrument: 'caplet', vmHeld: 8_750, vmExposure: 18_750, vmStatus: 'ok' }, { instrument: 'floorlet', vmPosted: 1_250, vmExposure: -1_250, vmStatus: 'ok' }],
+        balance: { account: { cash: 483_750, restricted: 8_750, margin: 16_250, collateralReceived: 8_750, assets: 529_275, liabilities: 16_350, netAssets: 512_925 } },
+      },
+    },
+    {
+      id: 'settle-premiums', covers: 'settlement', action: 'clock', to: at('2026-03-04'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 3,025.00 USD into settled cash', cash: { USD: 3_025 } },
+          { type: 'settlement.pay', summary: 'paid 7,600.00 USD from settled cash', cash: { USD: -7_600 } },
+        ],
+        cash: { account: { USD: { settled: 479_175, unsettled: 0, availableToTrade: 479_175, availableToWithdraw: 479_175 } } },
+        pending: [],
+        balance: { account: { cash: 479_175, receivable: null, payable: null, assets: 521_675, liabilities: 8_750 } },
+      },
+    },
+    {
+      // Fixing day, after the close: no TSFR3M fixing for 15 June has been supplied. Both expiry items wait, visibly.
+      id: 'expiry-awaits-fixing', covers: ['expiry', 'missing fixing'], action: 'clock', to: eod('2026-06-15'),
+      expect: {
+        events: [],
+        lifecycle: [
+          { type: 'option.expiry', instrument: 'caplet', dueDate: '2026-06-15', status: 'blocked', reason: /^Awaiting the 2026-06-15 fixing for rate TSFR3M/ },
+          { type: 'option.expiry', instrument: 'floorlet', dueDate: '2026-06-15', status: 'blocked', reason: /^Awaiting the 2026-06-15 fixing for rate TSFR3M/ },
+        ],
+      },
+    },
+    {
+      // 4.35% entered by hand. Caplet: 4.35 - 4.00 = 0.35 points: 25,000,000 x 0.35 x 0.0025 = 21,875, paid 15 September;
+      // realized 21,875 - 7,500 = 14,375; the 8,750 Dealer H posted goes back. Floorlet: 4.35 is above 3.50: it lapses,
+      // 3,125 realized; the 15,000 independent amount and the 1,250 of variation margin come back.
+      id: 'fixing-entered-by-hand', covers: ['manual fixing', 'expiry', 'cash settlement', 'lapse', 'collateral'], action: 'manual_rate', code: 'TSFR3M', value: 4.35, date: '2026-06-15', note: 'CME Term SOFR 3M published fixing, entered by hand',
+      expect: {
+        events: [
+          { type: 'option.cash_settled', summary: 'Exercised (cash settlement): 25,000,000 TSFR-CPL400-SEP26 at 0.35 percentage points over the 4.00% strike (fixing 4.35%), paid on 2026-09-15', owner: 'account', date: '2026-06-15' },
+          { type: 'collateral.variation', summary: 'Variation margin under position-level terms: 8,750.00 USD returned to the counterparty. The last position of the netting set ended.', owner: 'account' },
+          { type: 'option.expired', summary: 'Expired worthless: 25,000,000 TSFR-FLT350-SEP26 (fixing 4.35%)', owner: 'account', date: '2026-06-15' },
+          { type: 'otcoption.collateral', summary: `Collateral returned on ${FLOORLET} under its position-level terms: 15,000.00 USD (independent amount, the position ended)`, cash: { USD: 15_000 } },
+          { type: 'collateral.variation', summary: 'Variation margin under position-level terms: 1,250.00 USD returned to us. The last position of the netting set ended.', cash: { USD: 1_250 } },
+        ],
+        cash: { account: { USD: { settled: 495_425, restricted: 0, margin: 0, unsettled: 21_875, availableToTrade: 517_300, availableToWithdraw: 495_425 } } }, // 479,175 + 15,000 + 1,250
+        positions: [], holdings: { caplet: null, floorlet: null }, otc: [], lifecycle: [],
+        pending: [{ instrument: 'caplet', owner: 'account', dueDate: '2026-09-15', amount: 21_875, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: 17_500, unrealized: 0, total: 17_300 } }, // 14,375 + 3,125; - 200
+        nav: { account: 517_300, book: 2_017_300 },
+        balance: { account: { cash: 495_425, receivable: 21_875, restricted: null, collateralReceived: null, margin: null, positions: null, assets: 517_300, liabilities: 0, netAssets: 517_300 } },
+      },
+    },
+    {
+      // Paid in arrears at the end of the interest period, after Independence Day (3 July observed) and Labor Day (7 September).
+      id: 'paid-at-period-end', covers: ['settlement', 'holiday'], action: 'clock', to: at('2026-09-15'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 21,875.00 USD into settled cash', cash: { USD: 21_875 }, date: '2026-09-15' }],
+        cash: { account: { USD: { settled: 517_300, unsettled: 0, availableToTrade: 517_300, availableToWithdraw: 517_300 } } },
+        pending: [],
+        balance: { account: { cash: 517_300, receivable: null } },
+      },
+    },
+  ],
+};
+
+export default [otcOption, bondOption, fxOption, commodityOption, cryptoOption, digitalOption, interestRateOption];

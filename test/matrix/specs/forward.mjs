@@ -915,4 +915,168 @@ const bondForward = {
   ],
 };
 
-export default [equityForward, bondForward, fxForward, ndf, fra];
+// ---------------------------------------------------------------------------------------------
+// commodity_forward
+// ---------------------------------------------------------------------------------------------
+// A cash-settled copper forward in its own units: the Account buys 250 tonnes of copper cathode (LME grade A)
+// forward from a metals dealer at 9,450.00 USD a tonne for value Wednesday 15 July 2026. Quantity is tonnes,
+// price USD a tonne (taken from the registered copper instrument the contract refers to). Settled in cash on
+// the value date against the copper close of that day: 250 x (fixing - 9,450.00), received if positive. A
+// missing fixing blocks the settlement visibly until it is supplied.
+// Collateral: position-level terms, independent amount 5% of the notional, variation margin with a threshold
+// of 10,000 USD and a minimum transfer of 5,000 USD; the Account posts when the contract is worth less than
+// minus the threshold, by the amount beyond it.
+// Held across Independence Day (observed Friday 3 July 2026). Commission 0.50 USD a tonne, paid on the value date.
+const commodityForward = {
+  productId: 'commodity_forward',
+  title: 'Copper forward: 250 tonnes bought at 9,450 USD a tonne, cash-settled against the 15 July 2026 close, variation margin posted and returned',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: ['Kind of forward (Forward on an asset)', 'Underlying (the copper instrument)', 'Settlement (Cash against a fixing)', 'Value date', 'Counterparty', 'Collateral basis and its terms', 'Account', 'Action (Buy)', 'Tonnes', 'State a fill price (USD a tonne)'],
+    automaticInputs: ['forward mark (quote fixture standing in for a dealer indication)', 'the fixing: copper close on the value date (close fixture standing in for Shaffer MarketData)', 'independent amount and variation margin from the position-level terms', 'commission from the Book fee schedule'],
+    manualInputs: ['dealt forward price (stated fill price)'],
+    settlement: 'No cash at entry other than the independent amount; on the value date 250 x (fixing - dealt) in cash, waiting visibly while the fixing is missing; commission paid on the value date',
+    lifecycle: 'Daily variation margin on the mark (automatic); cash settlement against the fixing (automatic)',
+    accounting: 'Nil cost; value = tonnes x (mark - dealt); the settlement amount is realized',
+    collateral: 'Position-level terms: independent amount 5% of notional; variation margin, threshold 10,000 USD, minimum transfer 5,000 USD, posted by the Account and returned; everything returned when the contract settles',
+  },
+  start: AM('2026-06-01'),
+  settlementCheck: { lag: 2, holidays: ['2026-07-03'] },
+  book: {
+    name: 'Matrix commodity forward', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 1_000_000 }],
+    account: { name: 'Metals', funding: [{ ccy: 'USD', amount: 500_000 }] },
+    settings: { fees: { forward: { perUnit: 0.50, minimum: 0, bps: 0 }, spot: { perUnit: 0, minimum: 0, bps: 0 } }, fill: FILL, settlement: { spot: 2 } },
+  },
+  instruments: {
+    copper: { productId: 'industrial_metal', name: 'Copper cathode, LME grade A', symbol: 'CU-CATH', marketView: 'US_CASH', venue: 'Prairie Metals Trading (OTC)', venueType: 'otc', venueCountry: 'US', issuer: 'Prairie Metals Trading LLC', domicile: 'US', underlyingGeo: 'Global', tradingCcy: 'USD', terms: { quantityUnit: 'tonnes', priceUnits: 'USD per tonne' } },
+    main: {
+      productId: 'commodity_forward', name: 'Copper forward, value 15 July 2026', symbol: 'CU-F0715', marketView: 'US_DERIV', venueType: 'otc', jurisdiction: 'US', tradingCcy: 'USD', underlying: 'copper',
+      terms: { forwardType: 'asset', settlement: 'cash', valueDate: '2026-07-15', counterparty: 'Prairie Metals Trading LLC',
+        collateralBasis: { type: 'position', independentAmount: { type: 'pct', pct: 0.05 }, variationMargin: true, threshold: 10_000, minimumTransfer: 5_000 } },
+    },
+  },
+  quotes: {
+    copper: { bid: 9_440, ask: 9_460, last: 9_450, bidSize: 10_000, askSize: 10_000 },
+    main: { bid: 9_445, ask: 9_455, last: 9_450, bidSize: 10_000, askSize: 10_000 },
+  },
+  expectAtStart: {
+    ...NO_STATE,
+    cash: { account: { USD: cashOf(500_000) }, treasury: { USD: cashOf(500_000) } },
+    positions: [], otc: [],
+    nav: { account: 500_000, treasury: 500_000, book: 1_000_000 },
+  },
+  steps: [
+    {
+      // Notional 250 x 9,450 = 2,362,500.00; independent amount 5% = 118,125.00; commission 250 x 0.50 = 125.00 on the value date.
+      id: 'buy-forward', covers: ['open', 'collateral'], action: 'ticket', instrument: 'main', side: 'buy', qty: 250, as: 'fwd', settlementCheck: false, order: { statedPrice: 9_450 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 250, estimate: 9_450, model: 'stated-price', settleDate: '2026-07-15', fees: 125 }],
+          cash: { USD: { purchases: 0, fees: 125, margin: 118_125, required: 118_250, available: 500_000, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 250, avgPrice: 9_450 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Bought forward 250 CU-F0715 @ 9,450.00 for 2026-07-15', owner: 'account', date: '2026-06-01' },
+          { type: 'forward.collateral', summary: '118,125.00 USD (independent amount, 5.00% of 2,362,500.00 USD notional)', cash: { USD: -118_125 }, owner: 'account' },
+        ],
+        cash: { account: { USD: cashOf(381_875, { unsettled: -125, margin: 118_125 }) } },
+        positions: [{ instrument: 'main', lot: 'fwd', owner: 'account', direction: 'long', qty: 250, avgCost: 9_450, cost: 0, price: 9_450, value: 0, unrealized: 0, notional: 2_362_500, margin: 118_125 }],
+        holdings: { main: { long: 250, short: 0, net: 250 } },
+        pending: [{ instrument: 'main', lot: 'fwd', owner: 'account', dueDate: '2026-07-15', amount: -125, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'forward.maturity', instrument: 'main', dueDate: '2026-07-15', status: 'pending' }],
+        pnl: { account: { realized: 0, commissions: -125, unrealized: 0, total: -125 } },
+        nav: { account: 499_875, book: 999_875 },
+        balance: { account: { cash: 381_875, margin: 118_125, payable: 125, assets: 500_000, liabilities: 125, netAssets: 499_875 } },
+        otc: [{ instrument: 'main', lot: 'fwd', owner: 'account', qty: 250, basis: 'position', agreement: null, flagged: false, mark: 9_450, markValue: 0, iaRequired: 118_125, iaPosted: 118_125, iaCcy: 'USD', iaStatus: 'ok', postedBy: 'account', vmPosted: 0, vmHeld: 0, vmStatus: 'not_valued_yet' }],
+      },
+    },
+    {
+      // The forward's indication falls to 9,300.00: 250 x (9,300 - 9,450) = -37,500.00.
+      id: 'mark-down', covers: 'mark', action: 'quote', instrument: 'main', quote: { bid: 9_295, ask: 9_305, last: 9_300, bidSize: 10_000, askSize: 10_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'fwd', owner: 'account', direction: 'long', qty: 250, avgCost: 9_450, cost: 0, price: 9_300, value: -37_500, unrealized: -37_500, notional: 2_362_500, margin: 118_125 }],
+        pnl: { account: { unrealized: -37_500, total: -37_625 } },
+        nav: { account: 462_375, book: 962_375 },
+        balance: { account: { positions: -37_500, assets: 462_500, netAssets: 462_375 } },
+        otc: [{ instrument: 'main', lot: 'fwd', owner: 'account', qty: 250, basis: 'position', agreement: null, flagged: false, mark: 9_300, markValue: -37_500, iaRequired: 118_125, iaPosted: 118_125, iaCcy: 'USD', iaStatus: 'ok', postedBy: 'account', vmPosted: 0, vmHeld: 0, vmStatus: 'not_valued_yet' }],
+      },
+    },
+    {
+      // End of day: worth -37,500.00, beyond the threshold of 10,000 by 27,500.00, not below the minimum transfer: the
+      // Account posts 27,500.00 from settled cash.
+      id: 'variation-posted', covers: ['variation margin', 'collateral'], action: 'clock', to: EOD('2026-06-01'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: '27,500.00 USD posted', cash: { USD: -27_500 }, owner: 'account', date: '2026-06-01' }],
+        cash: { account: { USD: cashOf(354_375, { unsettled: -125, margin: 145_625 }) } }, // 381,875 - 27,500; 118,125 + 27,500
+        balance: { account: { cash: 354_375, margin: 145_625 } },
+        otc: [{ instrument: 'main', lot: 'fwd', owner: 'account', qty: 250, basis: 'position', agreement: null, flagged: false, mark: 9_300, markValue: -37_500, iaRequired: 118_125, iaPosted: 118_125, iaCcy: 'USD', iaStatus: 'ok', postedBy: 'account', vmPosted: 27_500, vmHeld: 0, vmExposure: -37_500, vmStatus: 'ok' }],
+      },
+    },
+    { id: 'tuesday', action: 'clock', to: AM('2026-06-02'), expect: {} },
+    {
+      // Back to 9,420.00: 250 x (9,420 - 9,450) = -7,500.00, within the threshold.
+      id: 'mark-up', covers: 'mark', action: 'quote', instrument: 'main', quote: { bid: 9_415, ask: 9_425, last: 9_420, bidSize: 10_000, askSize: 10_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'fwd', owner: 'account', direction: 'long', qty: 250, avgCost: 9_450, cost: 0, price: 9_420, value: -7_500, unrealized: -7_500, notional: 2_362_500, margin: 118_125 }], // the position's own margin is its independent amount; the variation margin belongs to its netting set
+        pnl: { account: { unrealized: -7_500, total: -7_625 } },
+        nav: { account: 492_375, book: 992_375 },
+        balance: { account: { positions: -7_500, assets: 492_500, netAssets: 492_375 } },
+        otc: [{ instrument: 'main', lot: 'fwd', owner: 'account', qty: 250, basis: 'position', agreement: null, flagged: false, mark: 9_420, markValue: -7_500, iaRequired: 118_125, iaPosted: 118_125, iaCcy: 'USD', iaStatus: 'ok', postedBy: 'account', vmPosted: 27_500, vmHeld: 0, vmExposure: -37_500, vmStatus: 'ok' }],
+      },
+    },
+    {
+      // Nothing is required within the threshold: the 27,500.00 posted comes back (not below the minimum transfer).
+      id: 'variation-returned', covers: ['variation margin', 'collateral'], action: 'clock', to: EOD('2026-06-02'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: '27,500.00 USD returned', cash: { USD: 27_500 }, owner: 'account', date: '2026-06-02' }],
+        cash: { account: { USD: cashOf(381_875, { unsettled: -125, margin: 118_125 }) } },
+        balance: { account: { cash: 381_875, margin: 118_125 } },
+        otc: [{ instrument: 'main', lot: 'fwd', owner: 'account', qty: 250, basis: 'position', agreement: null, flagged: false, mark: 9_420, markValue: -7_500, iaRequired: 118_125, iaPosted: 118_125, iaCcy: 'USD', iaStatus: 'ok', postedBy: 'account', vmPosted: 0, vmHeld: 0, vmExposure: -7_500, vmStatus: 'ok' }],
+      },
+    },
+    {
+      // Wednesday 15 July, the value date (over Independence Day). Commission 125.00 paid. No copper close for the day
+      // has been supplied: the settlement waits, visibly.
+      id: 'value-date-no-fixing', covers: ['fixing', 'holiday'], action: 'clock', to: AM('2026-07-15'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 125.00 USD from settled cash', cash: { USD: -125 }, owner: 'account', date: '2026-07-15' }],
+        cash: { account: { USD: cashOf(381_750, { margin: 118_125 }) } },
+        pending: [],
+        lifecycle: [{ type: 'forward.maturity', instrument: 'main', dueDate: '2026-07-15', status: 'blocked' }],
+        balance: { account: { cash: 381_750, payable: null, assets: 492_375, liabilities: 0 } },
+      },
+    },
+    { id: 'value-date-evening', action: 'clock', to: EOD('2026-07-15'), expect: {} }, // a close exists from 16:00 of its day
+    {
+      // The copper close of 15 July arrives: 9,512.50. 250 x (9,512.50 - 9,450) = 15,625.00 received on the value date;
+      // the independent amount 118,125.00 comes back. By hand, the whole scenario: 15,625 - 125 = 15,500.00.
+      id: 'fixing-arrives', covers: ['fixing', 'cash settlement', 'collateral'], action: 'close_price', instrument: 'copper', date: '2026-07-15', value: 9_512.50,
+      expect: {
+        events: [
+          { type: 'forward.settlement', summary: 'Forward fixed at 9,512.50 against 9,450.00: receivable 15,625.00 USD on 2026-07-15', owner: 'account', date: '2026-07-15' },
+          { type: 'forward.collateral', summary: '118,125.00 USD (independent amount, the position ended)', cash: { USD: 118_125 }, owner: 'account' },
+        ],
+        cash: { account: { USD: cashOf(500_000, { unsettled: 15_625, trade: 515_625, withdraw: 500_000 }) } }, // 381,750 + 118,125
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', lot: 'fwd', owner: 'account', dueDate: '2026-07-15', amount: 15_625, ccy: 'USD', into: 'cash' }],
+        lifecycle: [],
+        pnl: { account: { realized: 15_625, commissions: -125, unrealized: 0, total: 15_500 } },
+        nav: { account: 515_500, book: 1_015_500 },
+        balance: { account: { cash: 500_000, margin: null, positions: null, receivable: 15_625, assets: 515_625, liabilities: 0, netAssets: 515_625 } },
+        otc: [],
+      },
+    },
+    {
+      id: 'settlement-received', covers: 'settlement', action: 'cycle',
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 15,625.00 USD into settled cash', cash: { USD: 15_625 }, owner: 'account', date: '2026-07-15' }],
+        cash: { account: { USD: cashOf(515_500 + 125) } },
+        pending: [],
+        balance: { account: { cash: 515_625, receivable: null, assets: 515_625 } },
+      },
+    },
+  ],
+};
+
+export default [equityForward, bondForward, fxForward, ndf, commodityForward, fra];
