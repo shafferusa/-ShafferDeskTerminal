@@ -203,3 +203,4 @@
 - 2026-10-13T18:34Z | r1 | +0.2 | securities_lending passes at engine, API and browser
 - 2026-10-13T18:34Z | o2 | +0.2 | spread_option passes at engine, API and browser
 - 2026-10-13T18:37Z | o2 | +0.2 | quanto_option passes at engine, API and browser
+- 2026-10-13T18:38Z | r1 | +0.2 | stock_loan passes at engine, API and browser
