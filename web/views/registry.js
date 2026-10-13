@@ -711,6 +711,14 @@ function LifecycleAdmin({ inst, onChanged }) {
       text: r === 0 ? `${t.seniorTranche} is retired, recorded by hand. ${name} receives principal from now on: record its own factor as a paydown. No cash moves now; every holder gets a history line.`
         : `${t.seniorTranche} has ${fmtNum(r, 0)} outstanding (was ${fmtNum(t.seniorRemaining, 0)}), recorded by hand. ${name} still receives no principal: its paydowns stay refused until ${t.seniorTranche} is retired. No cash moves; every holder gets a history line.` };
   };
+  // b4: a recovery distribution on defaulted debt (interim: return of capital; final: closes the claim).
+  const recovery = () => {
+    const pc = v.rcPercent, fin = v.rcFinal === 'final';
+    if (!isNum(pc) || pc <= 0 || pc > 200) return { invalid: 'Enter the distribution in % of principal outstanding (cash per 100), above 0.' };
+    return { action: 'recovery', body: { percent: pc, final: fin }, confirm: 'Record recovery distribution', done: 'Recovery distribution recorded.',
+      text: fin ? `The final recovery of ${name}, recorded by hand: every holder, in every Book, receives ${fmtNum(pc, 2)} per 100 of principal in cash now and the claim closes; what is left of each position's cost is realized.`
+        : `An interim recovery distribution on ${name}, recorded by hand: every holder, in every Book, receives ${fmtNum(pc, 2)} per 100 of principal in cash now. It is a return of capital: it lowers each position's cost, and only an amount above the cost is a realized gain. The claim stays open.` };
+  };
   // b4: a repricing amendment of a floating-rate loan (new spread from today's interest period, optional soft-call premium).
   const reprice = () => {
     const sp = v.rpSpread, pr = v.rpPremium ?? 0;
@@ -769,6 +777,10 @@ function LifecycleAdmin({ inst, onChanged }) {
       <${Field} label="Kind of write-down"><${Select} value=${v.wdKind || wdDefault(inst)} onChange=${(x) => { setV({ ...v, wdKind: x }); setStep(null); }} options=${[{ value: 'writedown', label: 'Trigger event: write-down' }, { value: 'loss', label: 'Realized loss allocated' }, ...(inst.productId === 'catastrophe_bond' ? [{ value: 'trigger', label: 'Covered event: principal loss, collateral released' }] : [])]} /><//>
       <${Field} label="Write-down effective from" hint="Today if empty; for a monthly pool, the first day of the period"><${Text} type="date" value=${v.wdFrom || ''} onInput=${(x) => { setV({ ...v, wdFrom: x }); setStep(null); }} /><//>
       ${button('Review write-down', writeDown)}</div>` : null}
+    ${inst.family === 'bond' && t.couponSuspended && !t.recoveredOn && !t.creditEvent ? html`<div class="grid-form" style=${GRID}>
+      <${Field} label="Recovery distribution (per 100)" hint="Cash per 100 of principal, from the plan or the liquidator. In default only."><${Num} value=${v.rcPercent ?? null} onInput=${(x) => { setV({ ...v, rcPercent: x }); setStep(null); }} /><//>
+      <${Field} label="Distribution"><${Select} value=${v.rcFinal || 'interim'} onChange=${(x) => { setV({ ...v, rcFinal: x }); setStep(null); }} options=${[{ value: 'interim', label: 'Interim (return of capital)' }, { value: 'final', label: 'Final (closes the claim)' }]} /><//>
+      ${button('Review recovery distribution', recovery)}</div>` : null}
     ${inst.family === 'bond' && t.couponType === 'float' && t.tradingDocs ? html`<div class="grid-form" style=${GRID}>
       <${Field} label="New spread (decimal)" hint=${`Repricing amendment. Current spread ${pct(t.spread || 0, 3)} over ${t.referenceRate}.`}><${Num} value=${v.rpSpread ?? null} onInput=${(x) => { setV({ ...v, rpSpread: x }); setStep(null); }} /><//>
       <${Field} label="Repricing premium (% of principal)" hint="1 for a 101 soft call; 0 if none"><${Num} value=${v.rpPremium ?? null} onInput=${(x) => { setV({ ...v, rpPremium: x }); setStep(null); }} /><//>

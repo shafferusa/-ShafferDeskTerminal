@@ -258,4 +258,191 @@ const dividendSwap = {
   ],
 };
 
-export default [dividendSwap];
+// ---------------------------------------------------------------------------------------------
+// cms_spread_swap
+// ---------------------------------------------------------------------------------------------
+// One-year USD constant-maturity spread swap on 20,000,000: receive the 10-year CMS rate less the 2-year CMS rate plus
+// 0.10% quarterly ACT/360, pay 0.75% fixed quarterly ACT/360; both CMS fixings are of the period start (USD calendar).
+// The CMS rates are supplied as fixings (rate fixtures standing in for Shaffer MarketData); one is missing and is entered
+// by hand. Position-level terms: independent amount 1% of notional, no variation margin. Commission 10.00 per million.
+//   period 15 April to 15 July (91 days): spread 4.35% - 3.80% + 0.10% = 0.65%: 20,000,000 x 0.65% x 91/360 = 32,861.11
+//     received; fixed 20,000,000 x 0.75% x 91/360 = 37,916.67 paid
+//   period 15 July to 15 October (92 days): fixed 38,333.33 paid; the 2-year fixing of 15 July is missing: the spread
+//     payment waits; entered by hand as 3.70%: 4.50% - 3.70% + 0.10% = 0.90%: 20,000,000 x 0.90% x 92/360 = 46,000.00
+//   terminated on Mon 16 November at 0.20: 40,000.00 received; settles Wed 18 November
+const CMSS_NAME = 'USD CMS 10Y-2Y spread +0.10% v 0.75% 15 Apr 2027';
+const cmsSpreadSwap = {
+  productId: 'cms_spread_swap',
+  title: 'CMS spread swap: receive CMS10Y - CMS2Y + 0.10% against 0.75% fixed, a missing 2-year fixing entered by hand, terminated',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'spread leg: Index (the 10-year CMS rate code), Minus index (the 2-year CMS rate code), Spread'],
+    automaticInputs: ['payment schedule from the contract terms and the USD calendar', 'both CMS fixings of each period start (rate fixtures standing in for Shaffer MarketData)', 'settlement date T+2', 'commission from the Book fee schedule', 'independent amount from the position-level terms'],
+    manualInputs: ['upfront and termination amounts (stated fill prices)', 'marks entered by hand', 'a CMS fixing the data service has not supplied, entered by hand'],
+    settlement: 'Upfront and termination amounts and commission T+2 on the USD calendar; legs paid on their payment dates',
+    lifecycle: 'Spread and fixed payments each quarter; the spread payment waits visibly for a missing 2-year fixing (named) and is made once it is entered by hand; termination at a stated amount; nothing scheduled afterwards',
+    accounting: 'Carried at the mark less the upfront; leg payments and the termination result realized; commission expensed',
+    collateral: 'Position-level terms: independent amount 1% of notional posted at entry, returned on termination; no variation margin',
+  },
+  start: at('2026-04-13'),
+  settlementCheck: { lag: 2, holidays: [] },
+  book: {
+    name: 'Matrix CMS spread swap', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 3_000_000 }],
+    account: { name: 'Curve', funding: [{ ccy: 'USD', amount: 1_000_000 }] },
+    settings: { fees: { swap: { perUnit: 0.00001, minimum: 0, bps: 0 } }, fill: FILL, settlement: { swap: 2 } },
+  },
+  instruments: {
+    main: {
+      productId: 'cms_spread_swap', name: CMSS_NAME, symbol: 'CMSS-10-2-0427', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { tradingCalendar: 'USD', settlementCalendar: 'USD', paymentCalendar: 'USD' },
+      terms: {
+        effective: '2026-04-15', maturity: '2027-04-15', counterparty: 'Dealer C',
+        collateralBasis: { type: 'position', independentAmount: { type: 'pct', pct: 0.01 }, variationMargin: false },
+        legs: [
+          { side: 'pay', type: 'fixed', ccy: 'USD', rate: 0.0075, months: 3, dayCount: 'ACT/360' },
+          { side: 'receive', type: 'float', ccy: 'USD', index: 'USDCMS10Y', index2: 'USDCMS2Y', spread: 0.001, months: 3, dayCount: 'ACT/360' },
+        ],
+      },
+    },
+  },
+  rates: { USDCMS10Y: { byDate: { '2026-04-15': 4.35, '2026-07-15': 4.50 } }, USDCMS2Y: { byDate: { '2026-04-15': 3.80 } } },
+  expectAtStart: usdStart(1_000_000, 2_000_000),
+  steps: [
+    {
+      id: 'open', covers: ['open', 'collateral'], action: 'ticket', instrument: 'main', side: 'buy', qty: 20_000_000, as: 'cmss', order: { statedPrice: 0 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 20_000_000, estimate: 0, model: 'stated-price', settleDate: '2026-04-15', calendar: 'USD', cash: 0, fees: 200 }], // 20,000,000 x 0.00001
+          cash: { USD: { fees: 200, margin: 200_000, shortfall: 0 } }, // 1% x 20,000,000
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 20_000_000, avgPrice: 0 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Entered as written: 20,000,000 notional of CMSS-10-2-0427 at 0.00 per 100 notional', owner: 'account', date: '2026-04-13' },
+          { type: 'swap.collateral', summary: `Collateral posted on ${CMSS_NAME} under its position-level terms: 200,000.00 USD (independent amount, 1.00% of 20,000,000.00 USD notional)`, cash: { USD: -200_000 } },
+        ],
+        cash: { account: { USD: { settled: 800_000, unsettled: -200, margin: 200_000, availableToTrade: 799_800, availableToWithdraw: 799_800 } } },
+        positions: [{ instrument: 'main', lot: 'cmss', owner: 'account', direction: 'as written', qty: 20_000_000, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, notional: 20_000_000, margin: 200_000 }],
+        holdings: { main: { long: 20_000_000, short: 0, net: 20_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-04-15', amount: -200, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-07-15', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-07-15', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-04-15', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', lot: 'cmss', owner: 'account', qty: 20_000_000, basis: 'position', iaRequired: 200_000, iaPosted: 200_000, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: -200, unrealized: 0, total: -200 } },
+        nav: { account: 999_800, book: 2_999_800 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 800_000, margin: 200_000, payable: 200, positions: null, assets: 1_000_000, liabilities: 200, netAssets: 999_800 } },
+      },
+    },
+    {
+      id: 'mark-at-par', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 0, note: 'Dealer C mark, by hand',
+      expect: { positions: [{ instrument: 'main', lot: 'cmss', price: 0, value: 0, unrealized: 0, provisional: false }], otc: [{ instrument: 'main', mark: 0, markValue: 0 }], provisional: { account: false, book: false } },
+    },
+    {
+      id: 'settle-commission', covers: 'settlement', action: 'clock', to: at('2026-04-15'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 200.00 USD from settled cash', cash: { USD: -200 } }],
+        cash: { account: { USD: { settled: 799_800, unsettled: 0, availableToTrade: 799_800, availableToWithdraw: 799_800 } } },
+        pending: [],
+        balance: { account: { cash: 799_800, payable: null, assets: 999_800, liabilities: 0 } },
+      },
+    },
+    {
+      // Both legs, Wed 15 July: fixed 37,916.67 paid; spread (4.35% - 3.80% + 0.10%) x 20,000,000 x 91/360 = 32,861.11 received.
+      id: 'first-quarter', covers: ['fixed payment', 'CMS spread payment'], action: 'clock', to: at('2026-07-15'),
+      expect: {
+        events: [
+          { type: 'swap.payment', summary: `Swap payment on ${CMSS_NAME}, leg A (fixed), period 2026-04-15 to 2026-07-15: 37,916.67 USD`, cash: { USD: -37_916.67 }, date: '2026-07-15' },
+          { type: 'swap.payment', summary: `Swap receipt on ${CMSS_NAME}, leg B (float), period 2026-04-15 to 2026-07-15: 32,861.11 USD`, cash: { USD: 32_861.11 }, date: '2026-07-15' },
+        ],
+        cash: { account: { USD: { settled: 794_744.44, availableToTrade: 794_744.44, availableToWithdraw: 794_744.44 } } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-10-15', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-10-15', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-04-15', status: 'pending' },
+        ],
+        pnl: { account: { realized: -5_055.56, total: -5_255.56 } },
+        nav: { account: 994_744.44, book: 2_994_744.44 },
+        balance: { account: { cash: 794_744.44, assets: 994_744.44, netAssets: 994_744.44 } },
+      },
+    },
+    {
+      // Thu 15 October: the fixed leg pays 20,000,000 x 0.75% x 92/360 = 38,333.33; the spread leg needs the 2-year fixing of 15 July.
+      id: 'second-quarter-spread-waits', covers: ['fixed payment', 'missing fixing'], action: 'clock', to: at('2026-10-15'),
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Swap payment on ${CMSS_NAME}, leg A (fixed), period 2026-07-15 to 2026-10-15: 38,333.33 USD`, cash: { USD: -38_333.33 } }],
+        cash: { account: { USD: { settled: 756_411.11, availableToTrade: 756_411.11, availableToWithdraw: 756_411.11 } } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-10-15', status: 'blocked', reason: /Awaiting the USDCMS2Y fixing for 2026-07-15/ },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-01-15', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-04-15', status: 'pending' },
+        ],
+        pnl: { account: { realized: -43_388.89, total: -43_588.89 } },
+        nav: { account: 956_411.11, book: 2_956_411.11 },
+        balance: { account: { cash: 756_411.11, assets: 956_411.11, netAssets: 956_411.11 } },
+      },
+    },
+    {
+      // Entered by hand: 3.70% for 15 July. (4.50% - 3.70% + 0.10%) x 20,000,000 x 92/360 = 46,000.00 received.
+      id: 'two-year-fixing-by-hand', covers: ['missing fixing', 'CMS spread payment'], action: 'manual_rate', code: 'USDCMS2Y', value: 3.70, date: '2026-07-15', note: 'Published 2-year CMS fixing, entered by hand',
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Swap receipt on ${CMSS_NAME}, leg B (float), period 2026-07-15 to 2026-10-15: 46,000.00 USD`, cash: { USD: 46_000 } }],
+        cash: { account: { USD: { settled: 802_411.11, availableToTrade: 802_411.11, availableToWithdraw: 802_411.11 } } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-01-15', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-01-15', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2027-04-15', status: 'pending' },
+        ],
+        pnl: { account: { realized: 2_611.11, total: 2_411.11 } },
+        nav: { account: 1_002_411.11, book: 3_002_411.11 },
+        balance: { account: { cash: 802_411.11, assets: 1_002_411.11, netAssets: 1_002_411.11 } },
+      },
+    },
+    { id: 'mid-november', action: 'clock', to: at('2026-11-16'), expect: {} },
+    {
+      id: 'mark-before-termination', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 0.20, note: 'Dealer C mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'cmss', price: 0.2, value: 40_000, unrealized: 40_000 }],
+        otc: [{ instrument: 'main', mark: 0.2, markValue: 40_000 }],
+        pnl: { account: { unrealized: 40_000, total: 42_411.11 } },
+        nav: { account: 1_042_411.11, book: 3_042_411.11 },
+        balance: { account: { positions: 40_000, assets: 1_042_411.11, netAssets: 1_042_411.11 } },
+      },
+    },
+    {
+      id: 'terminate', covers: ['close', 'full termination', 'collateral'], action: 'close', lot: 'cmss', scope: 'position', percent: 100, order: { statedPrice: 0.20 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'main', qty: 20_000_000, estimate: 0.2, model: 'stated-price', settleDate: '2026-11-18', cash: 40_000, fees: 200 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 20_000_000, avgPrice: 0.2 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Terminated: 20,000,000 notional of CMSS-10-2-0427 at 0.20 per 100 notional (realized 40,000.00 USD)' },
+          { type: 'swap.collateral', summary: `Collateral returned on ${CMSS_NAME} under its position-level terms: 200,000.00 USD (independent amount, the position ended)`, cash: { USD: 200_000 } },
+        ],
+        cash: { account: { USD: { settled: 1_002_411.11, unsettled: 39_800, margin: 0, availableToTrade: 1_042_211.11, availableToWithdraw: 1_002_411.11 } } },
+        positions: [], holdings: { main: null }, lifecycle: [], otc: [],
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-11-18', amount: 39_800, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: 42_611.11, commissions: -400, unrealized: 0, total: 42_211.11 } },
+        nav: { account: 1_042_211.11, book: 3_042_211.11 },
+        balance: { account: { cash: 1_002_411.11, margin: null, positions: null, receivable: 39_800, assets: 1_042_211.11, liabilities: 0, netAssets: 1_042_211.11 } },
+      },
+    },
+    {
+      // 1,000,000 - 200 - 37,916.67 + 32,861.11 - 38,333.33 + 46,000 + 39,800 = 1,042,211.11.
+      id: 'settle-termination', covers: ['settlement', 'close'], action: 'clock', to: at('2026-11-18'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 39,800.00 USD into settled cash', cash: { USD: 39_800 } }],
+        cash: { account: { USD: { settled: 1_042_211.11, unsettled: 0, availableToTrade: 1_042_211.11, availableToWithdraw: 1_042_211.11 } } },
+        pending: [], lifecycle: [], otc: [], alerts: [],
+        balance: { account: { cash: 1_042_211.11, receivable: null } },
+      },
+    },
+  ],
+};
+
+export default [dividendSwap, cmsSpreadSwap];

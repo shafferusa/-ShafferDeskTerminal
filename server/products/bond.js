@@ -356,6 +356,7 @@ export const bond = {
     if (t.paymentDelayDays) rows.push(['Payment delay', `${t.paymentDelayDays} days after each accrual period ends`]);
     if (t.guarantor) rows.push(['Guarantor', `${t.guarantor} (principal and interest guaranteed; no loss allocation)`]);
     if (t.poolCharacteristics) rows.push(['Pool characteristics', `${t.poolCharacteristics} (stated at registration)`]);
+    if (t.recoveries?.length) rows.push(['Recovery distributions', `${t.recoveries.map((r) => `${r.date}: ${fmtPx(r.percent)} per 100${r.final ? ' (final)' : ''}`).join('; ')} (recorded by hand)`]);
     if (t.repricings?.length) rows.push(['Repricings', t.repricings.map((r) => `${r.from}: spread ${(r.prior * 100).toFixed(3)}% to ${(r.spread * 100).toFixed(3)}%${r.premium ? ` (premium ${fmtPx(r.premium)}%)` : ''}`).join('; ')]);
     if (t.tradingDocs) rows.push(['Trading documentation', t.tradingDocs === 'par' ? 'Par (assignment): delayed compensation to the buyer for the days a trade settles after the standard date' : 'Distressed (assignment): no delayed compensation']);
     if (t.collateralAccount) rows.push(['Collateral account', `${t.collateralAccount}${t.issueSize ? `; holds the outstanding principal, ${fmtQty(money(t.issueSize * (t.factor ?? 1), inst.trading_ccy))} of the ${fmtQty(t.issueSize)} issued` : ''}${t.collateralReleased ? `; released to the sponsor so far ${fmtQty(t.collateralReleased)}` : ''}`]);
@@ -391,6 +392,7 @@ export const bond = {
     if (inst.terms?.couponType === 'float' && settleDate && !inst.terms.couponSuspended && bond.accruedAmount(inst, 1, settleDate) === null) {
       return { code: 'no_fixing', message: `${inst.symbol || inst.name} has no ${inst.terms.referenceRate} fixing for its current coupon period, so the accrued interest of this trade cannot be computed. Supply or enter the fixing (Data connection, Manual entries) first.` };
     }
+    if (inst.terms?.recoveredOn) return { code: 'recovered', message: `${inst.symbol || inst.name}: the final recovery was distributed on ${inst.terms.recoveredOn} and the claim closed; it can no longer be traded.` };
     // b4: a credit-linked note after its reference entity's credit event: principal was settled at the recovery.
     if (inst.terms?.creditEvent) return { code: 'credit_event', message: `${inst.symbol || inst.name}: a credit event of ${inst.terms.referenceEntity} was recorded on ${inst.terms.creditEvent.date}; the notes were settled at the recovery (${fmtPx(inst.terms.creditEvent.recovery * 100)}% of par) and can no longer be traded.` };
     // Called in full by the issuer (recorded by hand): nothing is outstanding to trade.
@@ -716,6 +718,7 @@ export const bond = {
     if (action === 'credit_event') return bond.creditEvent(app, { inst, recovery: body.recovery, settleDate: body.settleDate, note: body.note });
     if (action === 'observation') return bond.recordObservation(app, { inst, date: body.date, level: body.level, note: body.note });
     if (action === 'reprice') return bond.reprice(app, { inst, spread: body.spread, premium: body.premium, note: body.note });
+    if (action === 'recovery') return bond.recovery(app, { inst, percent: body.percent, final: body.final, note: body.note });
     throw new AppError(`Unknown debt-security event "${action}".`);
   },
   /** Position-level events recorded by hand (POST /api/positions/:id/lifecycle). */
@@ -959,6 +962,49 @@ export const bond = {
    *   scheduledFactor   optional: the factor after the scheduled amortisation only. The history then says how much of the
    *                     principal was scheduled and how much was prepaid (and the single monthly mortality, SMM).
    */
+  /**
+   * A recovery distribution on defaulted debt, recorded by hand (b4): under a plan of reorganisation or a liquidation, holders
+   * receive `percent` per 100 of principal outstanding in cash, now. The rule the Terminal applies, for every holder in every
+   * Book: an interim distribution returns capital first (cost recovery): it lowers the position's cost, and only what exceeds the
+   * cost is a realized gain; the claim stays open. The final distribution closes the position at that price and the remaining
+   * cost is realized (a loss, usually). The instrument must be in default (coupons suspended by hand) first.
+   */
+  recovery(app, { inst, percent, final, note }) {
+    const name = inst.symbol || inst.name;
+    need(inst.terms.couponSuspended, `${name} is not in default: record the default first (coupon suspension). A recovery distribution is paid on defaulted debt.`);
+    need(!inst.terms.recoveredOn, `The final recovery of ${name} was recorded on ${inst.terms.recoveredOn}; nothing is outstanding.`);
+    const pct = num(percent);
+    need(pct !== null && pct > 0 && pct <= 200, 'Enter the distribution in % of principal outstanding (cash per 100), above 0.');
+    const isFinal = final === true || final === 'true' || final === 'final';
+    const today = app.clock.today();
+    const ccy = inst.trading_ccy;
+    const scale = scaleOn(inst, today);
+    const eventIds = [];
+    const prior = inst.terms.recoveries || [];
+    app.instruments.update(inst.id, { terms: { ...inst.terms, recoveries: [...prior, { date: today, percent: pct, final: isFinal }], ...(isFinal ? { recoveredOn: today } : {}) } }, { system: true });
+    const fresh = app.instruments.get(inst.id);
+    for (const p of app.positions.heldAround(inst.id)) {
+      if (isZero(p.qty)) continue;
+      const book = app.books.getBook(p.book_id), unit = app.books.getUnit(p.unit_id);
+      if (isFinal) {
+        const r = redeem(app, { book, unit, inst: fresh, pos: p, price: pct, face: Math.abs(p.qty), date: today, type: 'bond.recovery', actor: 'user', label: `Final recovery distribution recorded by hand${note ? ` (${note})` : ''}: the claim is settled and closed` });
+        eventIds.push(r.eventId);
+        bond.onPositionChange(app, { book, unit, inst: fresh, pos: app.positions.get(p.id) });
+        continue;
+      }
+      const cash = money((p.qty * scale * pct) / 100, ccy);
+      const costOut = p.qty > 0 ? Math.min(p.cost, cash) : Math.max(p.cost, cash);
+      const gain = money(cash - costOut, ccy);
+      eventIds.push(app.ledger.post({
+        bookId: book.id, unitId: unit.id, type: 'bond.recovery', instrumentId: inst.id, strategyId: p.strategy_id, positionId: p.id, actor: 'user',
+        summary: `Interim recovery distribution recorded by hand on ${name}${note ? ` (${note})` : ''}: ${fmtPx(pct)} per 100 of principal on ${fmtQty(Math.abs(p.qty))}: ${fmt(Math.abs(cash), ccy)} ${cash >= 0 ? 'received' : 'paid'}, a return of capital that lowers the cost${gain ? `; ${fmt(Math.abs(gain), ccy)} above the cost realized` : ''}; the claim stays open`,
+        data: { percent: pct, cash, costOut, gain, final: false, manual: true },
+        entries: [{ account: 'cash', ccy, amount: cash, positionId: p.id }, { account: 'pos', ccy, amount: -costOut, positionId: p.id }, { account: 'pnl.realized', ccy, amount: -gain, positionId: p.id }],
+      }));
+      app.positions.change(p, { dCost: -costOut });
+    }
+    return { percent: pct, final: isFinal, eventIds };
+  },
   /**
    * A draw on a delayed-draw loan, recorded by hand by the lender (b4): the borrower draws `amount` of the lender's undrawn
    * commitment and the lender funds it at par, in cash, now. The principal joins the interest period that starts today, so a draw

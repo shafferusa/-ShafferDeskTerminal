@@ -4467,4 +4467,390 @@ const syntheticLong = {
   ],
 };
 
-export default [bearCall, longStraddle, longStrangle, ironCondor, ironButterfly, longButterfly, longCalendar, longDiagonal, syntheticLong];
+// =====================================================================================================================
+// synthetic_short
+// =====================================================================================================================
+// Dunmore 200 Index options (Cboe, European, cash-settled at 100 x the index), 20 March 2026 100 strike: buy the put and
+// sell the call, 2 each. Nothing covers the written call: it reserves 20% of the index value of its units (2 x 100 x
+// 100 x 20% = 4,000), and the package's maximum loss is unbounded.
+//   synthetic  refused short of cash, then Treasury funding of 2,982.60; the put fills 1 of 2 on its first cycle. The
+//              index fixes at 92: the put is settled in cash (8 per unit) and the call lapses, on the same day.
+//   retry / accept / unwind  1 each when the call has no fresh quote.
+const SYNS_PAGE = (contracts, financing) => ({ template: 'Synthetic Short', underlying: 'index', expiration: '2026-03-20', strikes: { Strike: 100 }, contracts, ...(financing ? { financing } : {}) });
+const synsInput = (contracts, financing) => templateInput('synthetic_short', { underlyingId: '$inst:index', options: { expiration: '2026-03-20', strikes: { middle: 100 }, contracts }, financing });
+const dmxOption = (right) => ({
+  productId: 'index_option', name: `DMX 20 March 2026 100 ${right === 'C' ? 'call' : 'put'}`, symbol: `DMX260320${right}100`, marketView: 'US_DERIV', venue: 'Cboe Options Exchange', venueType: 'exchange', venueCountry: 'US', underlyingGeo: 'US', tradingCcy: 'USD', underlying: 'index', multiplier: 100,
+  terms: { right, strike: 100, expiration: '2026-03-20', exercise: 'european', settlement: 'cash', deliverable: { units: 100 } },
+});
+const synsOne = (as) => ({ action: 'package', as, instrument: 'index', input: synsInput(1, null), strategyPage: SYNS_PAGE(1, null) });
+const syntheticShort = {
+  template: 'synthetic_short',
+  title: 'Synthetic short on the Dunmore 200 Index (Cboe, cash-settled): buy the 20 March 2026 100 put, sell the 100 call',
+  matrix: {
+    ...OPTION_TEMPLATE_MATRIX,
+    settlement: 'Premium of each leg T+1 on the US calendar; Treasury funding moves at once; cash settlement of the put T+1 after expiry',
+    lifecycle: 'The put and the call settle on the same day from the index fixing for 20 March 2026 (92: the put is settled in cash, the call lapses and its reserve is released); a failed leg leaves the instance needing attention: Retry, Unwind or Accept; Close buys the call back before the put is sold',
+    accounting: 'Net credit received; commission expensed; premium realized on buy-back, sale, cash settlement and lapse',
+    collateral: 'The written call is uncovered: 20% of the index value of its units is reserved (4,000 for 2), marked at each end of day, released at expiry; maximum loss unbounded',
+  },
+  start: MAR(2),
+  settlementCheck: { lag: 1, holidays: [] },
+  book: book('Templates synthetic short'),
+  instruments: {
+    index: { productId: 'etf', name: 'Dunmore 200 Index (reference level)', symbol: 'DMX', marketView: 'US_CASH', venue: 'Dunmore Indices', venueType: 'exchange', venueCountry: 'US', issuer: 'Dunmore Indices LLC', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', terms: {} },
+    p100: dmxOption('P'),
+    c100: dmxOption('C'),
+  },
+  quotes: {
+    index: { bid: 99.99, ask: 100.01, last: 100, bidSize: 1000, askSize: 1000 },
+    p100: { bid: 3.90, ask: 4.00, last: 3.95, bidSize: 20, askSize: 1 }, // one contract displayed at the ask
+    c100: { bid: 4.10, ask: 4.20, last: 4.15, bidSize: 20, askSize: 20 },
+  },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 1_000, unsettled: 0, reserved: 0, availableToTrade: 1_000, availableToWithdraw: 1_000 } },
+      treasury: { USD: { settled: 999_000, unsettled: 0, reserved: 0, availableToTrade: 999_000, availableToWithdraw: 999_000 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 1_000, treasury: 999_000, book: 1_000_000 },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+  },
+  steps: [
+    {
+      // 800 for the puts (2 x 4.00 x 100), 2.60 commission, 4,000 reserved for the uncovered calls, against 820 (2 x 4.10 x 100) and 1,000.
+      id: 'open-short-of-cash', covers: 'financing', action: 'package', as: 'refused', instrument: 'index',
+      input: synsInput(2, null), strategyPage: SYNS_PAGE(2, null),
+      status: 'blocked', reason: 'The Account cannot secure the written call: the preview is blocked until financing is chosen.',
+      expect: {
+        refused: 'Alpha is short 2,982.60 USD',
+        preview: {
+          blocking: 1, errors: ['cash'],
+          legs: [
+            { kind: 'trade', action: 'buy', instrument: 'p100', qty: 2, estimate: 4.00, settleDate: '2026-03-03', cash: -800, fees: 1.30, dependsOn: [] },
+            { kind: 'trade', action: 'sell', instrument: 'c100', qty: 2, estimate: 4.10, settleDate: '2026-03-03', cash: 820, fees: 1.30, dependsOn: [] },
+          ],
+          cash: { USD: { purchases: 800, proceeds: 820, fees: 2.60, reserved: 4_000, required: 4_802.60, available: 1_000, shortfall: 2_982.60 } },
+        },
+      },
+    },
+    {
+      id: 'open', covers: ['open', 'financing', 'partial fill', 'dependency'], action: 'package', as: 'synthetic', instrument: 'index',
+      input: synsInput(2, { mode: 'treasury' }), strategyPage: SYNS_PAGE(2, { mode: 'treasury' }),
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: ['naked-call', 'unbounded'],
+          legs: [
+            { kind: 'funding', purpose: 'financing', qty: 2_982.60, cash: 2_982.60, dependsOn: [] },
+            { kind: 'trade', action: 'buy', instrument: 'p100', qty: 2, estimate: 4.00, model: 'quoted-bid-ask', settleDate: '2026-03-03', cash: -800, fees: 1.30, dependsOn: [1] },
+            { kind: 'trade', action: 'sell', instrument: 'c100', qty: 2, estimate: 4.10, settleDate: '2026-03-03', cash: 820, fees: 1.30, dependsOn: [1] },
+          ],
+          cash: { USD: { purchases: 800, proceeds: 820, fees: 2.60, reserved: 4_000, financingIn: 2_982.60, required: 4_802.60, available: 1_000, shortfall: 0, netCash: 3_000 } },
+          netPremium: { amount: -20, ccy: 'USD', type: 'credit', complete: true },
+          optionRequirement: [{ ccy: 'USD', amount: 4_000, finite: 0, naked: 4_000, uncoveredCallUnits: 200 }], // 200 x 100 x 20%
+        },
+        result: {
+          status: 'partial',
+          orders: [
+            { kind: 'funding', status: 'filled', filledQty: 2_982.60 },
+            { action: 'buy', instrument: 'p100', status: 'partial', filledQty: 1, avgPrice: 4.00 },
+            { action: 'sell', instrument: 'c100', status: 'filled', filledQty: 2, avgPrice: 4.10 },
+          ],
+        },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'transfer.funding', summary: 'Treasury funding: 2,982.60 USD from Treasury to Alpha' },
+          { type: 'trade.fill', summary: 'Bought 1 DMX260320P100 @ 4.00 USD', date: '2026-03-02' },
+          { type: 'trade.fill', summary: 'Sold 2 DMX260320C100 @ 4.10 USD' },
+          { type: 'trade.fill', summary: 'Bought 1 DMX260320P100 @ 4.00 USD' },
+        ],
+        cash: {
+          // owed 400.65 x 2; owed to it 818.70; reserved 4,000
+          account: { USD: { settled: 3_982.60, unsettled: 17.40, reserved: 4_000, availableToTrade: 0, availableToWithdraw: -818.70 } },
+          treasury: { USD: { settled: 996_017.40, unsettled: 0, availableToTrade: 996_017.40, availableToWithdraw: 996_017.40 } },
+        },
+        positions: [
+          { instrument: 'c100', lot: 'synthetic', owner: 'account', direction: 'short', qty: -2, avgCost: 4.10, cost: -820, price: 4.15, value: -830, unrealized: -10 },
+          { instrument: 'p100', lot: 'synthetic', owner: 'account', direction: 'long', qty: 2, avgCost: 4.00, cost: 800, price: 3.95, value: 790, unrealized: -10 },
+        ],
+        holdings: { c100: { long: 0, short: 2, net: -2 }, p100: { long: 2, short: 0, net: 2 } },
+        pending: [
+          { instrument: 'c100', lot: 'synthetic', dueDate: '2026-03-03', amount: 818.70, into: 'cash' },
+          { instrument: 'p100', lot: 'synthetic', dueDate: '2026-03-03', amount: -400.65, into: 'cash' },
+          { instrument: 'p100', lot: 'synthetic', dueDate: '2026-03-03', amount: -400.65, into: 'cash' },
+        ],
+        lifecycle: [
+          { type: 'option.expiry', instrument: 'c100', dueDate: '2026-03-20', status: 'pending' },
+          { type: 'option.expiry', instrument: 'p100', dueDate: '2026-03-20', status: 'pending' },
+        ],
+        pnl: {
+          account: { realized: 0, commissions: -2.60, fees: 0, unrealized: -20, total: -22.60 },
+          book: { realized: 0, commissions: -2.60, unrealized: -20, total: -22.60 },
+          treasury: { total: 0 },
+        },
+        nav: { account: 3_960, treasury: 996_017.40, book: 999_977.40 },
+        balance: {
+          account: { cash: 3_982.60, receivable: 818.70, payable: 801.30, positions: -40, assets: 4_761.30, liabilities: 801.30, netAssets: 3_960 },
+          treasury: { cash: 996_017.40, assets: 996_017.40, liabilities: 0, netAssets: 996_017.40 },
+          book: { cash: 1_000_000, receivable: 818.70, payable: 801.30, positions: -40, assets: 1_000_778.70, liabilities: 801.30, netAssets: 999_977.40 },
+        },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: MAR(3),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 818.70 USD into settled cash', date: '2026-03-03' },
+          { type: 'settlement.pay', summary: 'paid 400.65 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 400.65 USD from settled cash' },
+        ],
+        cash: { account: { USD: { settled: 4_000, unsettled: 0, availableToTrade: 0, availableToWithdraw: 0 } } },
+        pending: [],
+        balance: { account: { cash: 4_000, receivable: null, payable: null, assets: 3_960, liabilities: 0 }, book: { cash: 1_000_017.40, receivable: null, payable: null, assets: 999_977.40, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'fund-account', covers: 'internal funding', action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 10_000,
+      expect: {
+        events: [{ type: 'transfer.funding', summary: 'Treasury funding: 10,000.00 USD from Treasury to Alpha' }],
+        cash: { account: { USD: { settled: 14_000, availableToTrade: 10_000, availableToWithdraw: 10_000 } }, treasury: { USD: { settled: 986_017.40, availableToTrade: 986_017.40, availableToWithdraw: 986_017.40 } } },
+        nav: { account: 13_960, treasury: 986_017.40 },
+        balance: { account: { cash: 14_000, assets: 13_960, netAssets: 13_960 }, treasury: { cash: 986_017.40, assets: 986_017.40, netAssets: 986_017.40 } },
+      },
+    },
+    { id: 'c100-quote-stops', action: 'quote', instrument: 'c100', quote: { bid: 4.10, ask: 4.20, last: 4.15, bidSize: 20, askSize: 20, asOf: MAR(3, '09:50') }, expect: {} },
+    {
+      ...synsOne('retry'), id: 'open-retry', covers: ['open', 'failed leg'],
+      expect: {
+        preview: {
+          blocking: 0, warnings: ['not-executable', 'naked-call', 'unbounded'],
+          legs: [
+            { kind: 'trade', action: 'buy', instrument: 'p100', qty: 1, estimate: 4.00, settleDate: '2026-03-04', cash: -400, fees: 0.65, dependsOn: [] },
+            { kind: 'trade', action: 'sell', instrument: 'c100', qty: 1, estimate: null, reference: 4.15, executable: false, settleDate: '2026-03-04', cash: 415, fees: 0.65, dependsOn: [] },
+          ],
+          cash: { USD: { purchases: 400, proceeds: 415, fees: 1.30, reserved: 2_000, required: 2_401.30, available: 10_000, shortfall: 0 } },
+        },
+        result: { status: 'partial', orders: [{ instrument: 'p100', status: 'filled', filledQty: 1, avgPrice: 4.00 }, { instrument: 'c100', status: 'working', filledQty: 0 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1 DMX260320P100 @ 4.00 USD', date: '2026-03-03' }],
+        cash: { account: { USD: { settled: 14_000, unsettled: -400.65, reserved: 4_000, availableToTrade: 9_599.35, availableToWithdraw: 9_599.35 } } },
+        positions: [
+          { instrument: 'c100', lot: 'synthetic', value: -830 },
+          { instrument: 'p100', lot: 'retry', owner: 'account', direction: 'long', qty: 1, avgCost: 4.00, cost: 400, price: 3.95, value: 395, unrealized: -5 },
+          { instrument: 'p100', lot: 'synthetic', value: 790 },
+        ],
+        holdings: { p100: { long: 3, short: 0, net: 3 } },
+        pending: [{ instrument: 'p100', lot: 'retry', dueDate: '2026-03-04', amount: -400.65 }],
+        openOrders: [{ instrument: 'c100', kind: 'trade', action: 'sell', status: 'working', qty: 1, filledQty: 0 }],
+        lifecycle: [{ instrument: 'c100' }, { instrument: 'p100' }, { instrument: 'p100' }],
+        pnl: { account: { commissions: -3.25, unrealized: -25, total: -28.25 }, book: { commissions: -3.25, unrealized: -25, total: -28.25 } },
+        nav: { account: 13_954.35, book: 999_971.75 },
+        balance: {
+          account: { cash: 14_000, payable: 400.65, positions: 355, assets: 14_355, liabilities: 400.65, netAssets: 13_954.35 },
+          book: { cash: 1_000_017.40, payable: 400.65, positions: 355, assets: 1_000_372.40, liabilities: 400.65, netAssets: 999_971.75 },
+        },
+      },
+    },
+    {
+      ...synsOne('accept'), id: 'open-accept', covers: ['open', 'failed leg'],
+      expect: {
+        preview: { blocking: 0, legs: [{ instrument: 'p100', qty: 1 }, { instrument: 'c100', qty: 1, estimate: null }], cash: { USD: { required: 2_401.30, available: 9_599.35, shortfall: 0 } } },
+        result: { status: 'partial', orders: [{ instrument: 'p100', status: 'filled' }, { instrument: 'c100', status: 'working' }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1 DMX260320P100 @ 4.00 USD' }],
+        cash: { account: { USD: { settled: 14_000, unsettled: -801.30, availableToTrade: 9_198.70, availableToWithdraw: 9_198.70 } } },
+        positions: [{ instrument: 'c100', lot: 'synthetic' }, { instrument: 'p100', lot: 'accept', value: 395 }, { instrument: 'p100', lot: 'retry' }, { instrument: 'p100', lot: 'synthetic' }],
+        holdings: { p100: { long: 4, short: 0, net: 4 } },
+        pending: [{ lot: 'accept', amount: -400.65 }, { lot: 'retry', amount: -400.65 }],
+        openOrders: [{ instrument: 'c100', status: 'working' }, { instrument: 'c100', status: 'working' }],
+        lifecycle: [{ instrument: 'c100' }, { instrument: 'p100' }, { instrument: 'p100' }, { instrument: 'p100' }],
+        pnl: { account: { commissions: -3.90, unrealized: -30, total: -33.90 }, book: { commissions: -3.90, unrealized: -30, total: -33.90 } },
+        nav: { account: 13_948.70, book: 999_966.10 },
+        balance: {
+          account: { cash: 14_000, payable: 801.30, positions: 750, assets: 14_750, liabilities: 801.30, netAssets: 13_948.70 },
+          book: { cash: 1_000_017.40, payable: 801.30, positions: 750, assets: 1_000_767.40, liabilities: 801.30, netAssets: 999_966.10 },
+        },
+      },
+    },
+    {
+      ...synsOne('unwind'), id: 'open-unwind', covers: ['open', 'failed leg'],
+      expect: {
+        preview: { blocking: 0, legs: [{ instrument: 'p100', qty: 1 }, { instrument: 'c100', qty: 1, estimate: null }], cash: { USD: { required: 2_401.30, available: 9_198.70, shortfall: 0 } } },
+        result: { status: 'partial', orders: [{ instrument: 'p100', status: 'filled' }, { instrument: 'c100', status: 'working' }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1 DMX260320P100 @ 4.00 USD' }],
+        cash: { account: { USD: { settled: 14_000, unsettled: -1_201.95, availableToTrade: 8_798.05, availableToWithdraw: 8_798.05 } } },
+        positions: [{ instrument: 'c100', lot: 'synthetic' }, { instrument: 'p100', lot: 'accept' }, { instrument: 'p100', lot: 'retry' }, { instrument: 'p100', lot: 'synthetic' }, { instrument: 'p100', lot: 'unwind', value: 395 }],
+        holdings: { p100: { long: 5, short: 0, net: 5 } },
+        pending: [{ lot: 'accept' }, { lot: 'retry' }, { lot: 'unwind', amount: -400.65 }],
+        openOrders: [{ instrument: 'c100', status: 'working' }, { instrument: 'c100', status: 'working' }, { instrument: 'c100', status: 'working' }],
+        lifecycle: [{ instrument: 'c100' }, { instrument: 'p100' }, { instrument: 'p100' }, { instrument: 'p100' }, { instrument: 'p100' }],
+        pnl: { account: { commissions: -4.55, unrealized: -35, total: -39.55 }, book: { commissions: -4.55, unrealized: -35, total: -39.55 } },
+        nav: { account: 13_943.05, book: 999_960.45 },
+        balance: {
+          account: { cash: 14_000, payable: 1_201.95, positions: 1_145, assets: 15_145, liabilities: 1_201.95, netAssets: 13_943.05 },
+          book: { cash: 1_000_017.40, payable: 1_201.95, positions: 1_145, assets: 1_001_162.40, liabilities: 1_201.95, netAssets: 999_960.45 },
+        },
+      },
+    },
+    {
+      id: 'call-legs-expire', covers: ['failed leg', 'settlement'], action: 'clock', to: MAR(4),
+      expect: {
+        events: [
+          { type: 'settlement.pay', summary: 'paid 400.65 USD from settled cash', date: '2026-03-04' },
+          { type: 'settlement.pay', summary: 'paid 400.65 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 400.65 USD from settled cash' },
+          { type: 'order.expired', summary: 'Leg 2 expired: sell 1 DMX260320C100. Day order did not fill before the end of the business day' },
+          { type: 'order.expired', summary: 'Leg 2 expired: sell 1 DMX260320C100. Day order did not fill before the end of the business day' },
+          { type: 'order.expired', summary: 'Leg 2 expired: sell 1 DMX260320C100. Day order did not fill before the end of the business day' },
+        ],
+        cash: { account: { USD: { settled: 12_798.05, unsettled: 0, availableToTrade: 8_798.05, availableToWithdraw: 8_798.05 } } },
+        pending: [], openOrders: [],
+        failed: { orders: 3 },
+        alerts: ['strategy.attention', 'strategy.attention', 'strategy.attention'],
+        balance: { account: { cash: 12_798.05, payable: null, assets: 13_943.05, liabilities: 0 }, book: { cash: 998_815.45, payable: null, assets: 999_960.45, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'c100-quote-day3', action: 'quote', instrument: 'c100', quote: { bid: 3.90, ask: 4.00, last: 3.95, bidSize: 20, askSize: 20 },
+      expect: {
+        positions: [{ instrument: 'c100', lot: 'synthetic', price: 3.95, value: -790, unrealized: 30 }, { instrument: 'p100', lot: 'accept' }, { instrument: 'p100', lot: 'retry' }, { instrument: 'p100', lot: 'synthetic' }, { instrument: 'p100', lot: 'unwind' }],
+        pnl: { account: { unrealized: 5, total: 0.45 }, book: { unrealized: 5, total: 0.45 } },
+        nav: { account: 13_983.05, book: 1_000_000.45 },
+        balance: { account: { positions: 1_185, assets: 13_983.05, netAssets: 13_983.05 }, book: { positions: 1_185, assets: 1_000_000.45, netAssets: 1_000_000.45 } },
+      },
+    },
+    {
+      // Retry sells the call at 3.90 (389.35 after commission); uncovered, it reserves 100 x 100 x 20% = 2,000.
+      id: 'retry', covers: ['retry', 'failed leg'], action: 'recover', how: 'retry', lot: 'retry',
+      expect: {
+        preview: { blocking: 0, errors: [], intent: 'retry', legs: [{ kind: 'trade', action: 'sell', instrument: 'c100', qty: 1, estimate: 3.90, settleDate: '2026-03-05', cash: 390, fees: 0.65 }], cash: { USD: { proceeds: 390, fees: 0.65, reserved: 2_000, required: 2_000.65, available: 8_798.05, shortfall: 0 } }, optionRequirement: [{ ccy: 'USD', amount: 2_000, finite: 0, naked: 2_000, uncoveredCallUnits: 100 }] },
+        result: { status: 'open', complete: true, orders: [{ action: 'sell', instrument: 'c100', status: 'filled', filledQty: 1, avgPrice: 3.90 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 1 DMX260320C100 @ 3.90 USD', date: '2026-03-04' }],
+        cash: { account: { USD: { settled: 12_798.05, unsettled: 389.35, reserved: 6_000, availableToTrade: 7_187.40, availableToWithdraw: 6_798.05 } } },
+        positions: [
+          { instrument: 'c100', lot: 'retry', owner: 'account', direction: 'short', qty: -1, avgCost: 3.90, cost: -390, price: 3.95, value: -395, unrealized: -5 }, { instrument: 'c100', lot: 'synthetic', value: -790 },
+          { instrument: 'p100', lot: 'accept' }, { instrument: 'p100', lot: 'retry' }, { instrument: 'p100', lot: 'synthetic' }, { instrument: 'p100', lot: 'unwind' },
+        ],
+        holdings: { c100: { long: 0, short: 3, net: -3 } },
+        pending: [{ instrument: 'c100', lot: 'retry', dueDate: '2026-03-05', amount: 389.35 }],
+        lifecycle: [{ instrument: 'c100' }, { instrument: 'c100' }, { instrument: 'p100' }, { instrument: 'p100' }, { instrument: 'p100' }, { instrument: 'p100' }],
+        alerts: ['strategy.attention', 'strategy.attention'],
+        pnl: { account: { commissions: -5.20, unrealized: 0, total: -5.20 }, book: { commissions: -5.20, unrealized: 0, total: -5.20 } },
+        nav: { account: 13_977.40, book: 999_994.80 },
+        balance: {
+          account: { cash: 12_798.05, receivable: 389.35, positions: 790, assets: 13_977.40, liabilities: 0, netAssets: 13_977.40 },
+          book: { cash: 998_815.45, receivable: 389.35, positions: 790, assets: 999_994.80, netAssets: 999_994.80 },
+        },
+      },
+    },
+    {
+      id: 'accept', covers: ['accept', 'failed leg'], action: 'strategy_action', lot: 'accept', how: 'accept',
+      expect: { events: [{ type: 'strategy.accepted', summary: 'accepted as it stands with 1 leg unexecuted. The position no longer matches its template.' }], alerts: ['strategy.attention'] },
+    },
+    {
+      id: 'unwind', covers: ['unwind', 'close'], action: 'recover', how: 'unwind', lot: 'unwind',
+      expect: {
+        preview: { blocking: 0, errors: [], intent: 'unwind', legs: [{ kind: 'trade', action: 'sell', instrument: 'p100', qty: 1, estimate: 3.90, settleDate: '2026-03-05', cash: 390, fees: 0.65, dependsOn: [] }] },
+        result: { status: 'closed', orders: [{ action: 'sell', instrument: 'p100', status: 'filled', filledQty: 1, avgPrice: 3.90 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 1 DMX260320P100 @ 3.90 USD (realized -10.00 USD)' }],
+        cash: { account: { USD: { settled: 12_798.05, unsettled: 778.70, availableToTrade: 7_576.75, availableToWithdraw: 6_798.05 } } },
+        positions: [
+          { instrument: 'c100', lot: 'retry' }, { instrument: 'c100', lot: 'synthetic' },
+          { instrument: 'p100', lot: 'accept' }, { instrument: 'p100', lot: 'retry' }, { instrument: 'p100', lot: 'synthetic' },
+        ],
+        holdings: { p100: { long: 4, short: 0, net: 4 } },
+        pending: [{ instrument: 'c100', lot: 'retry', amount: 389.35 }, { instrument: 'p100', lot: 'unwind', dueDate: '2026-03-05', amount: 389.35 }],
+        lifecycle: [{ instrument: 'c100' }, { instrument: 'c100' }, { instrument: 'p100' }, { instrument: 'p100' }, { instrument: 'p100' }],
+        alerts: [],
+        pnl: { account: { realized: -10, commissions: -5.85, unrealized: 5, total: -10.85 }, book: { realized: -10, commissions: -5.85, unrealized: 5, total: -10.85 } },
+        nav: { account: 13_971.75, book: 999_989.15 },
+        balance: {
+          account: { cash: 12_798.05, receivable: 778.70, positions: 395, assets: 13_971.75, liabilities: 0, netAssets: 13_971.75 },
+          book: { cash: 998_815.45, receivable: 778.70, positions: 395, assets: 999_989.15, netAssets: 999_989.15 },
+        },
+      },
+    },
+    {
+      id: 'settle-recovery', covers: 'settlement', action: 'clock', to: MAR(5),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 389.35 USD into settled cash', date: '2026-03-05' }, { type: 'settlement.receive', summary: 'received 389.35 USD into settled cash' }],
+        cash: { account: { USD: { settled: 13_576.75, unsettled: 0, availableToTrade: 7_576.75, availableToWithdraw: 7_576.75 } } },
+        pending: [],
+        balance: { account: { cash: 13_576.75, receivable: null, assets: 13_971.75 }, book: { cash: 999_594.15, receivable: null, assets: 999_989.15 } },
+      },
+    },
+    {
+      // Close "retry": the written call is bought back first at 4.00, then the put is sold at 3.90. -10 each.
+      id: 'close-retry', covers: ['close', 'dependency'], action: 'close', lot: 'retry', instrument: 'p100', scope: 'strategy', percent: 100,
+      expect: {
+        preview: {
+          blocking: 0, errors: [], intent: 'close',
+          legs: [
+            { kind: 'trade', action: 'buy', instrument: 'c100', qty: 1, estimate: 4.00, settleDate: '2026-03-06', cash: -400, fees: 0.65, dependsOn: [] },
+            { kind: 'trade', action: 'sell', instrument: 'p100', qty: 1, estimate: 3.90, settleDate: '2026-03-06', cash: 390, fees: 0.65, dependsOn: [1] },
+          ],
+          cash: { USD: { purchases: 400, proceeds: 390, fees: 1.30, reserved: 0, required: 401.30, available: 7_576.75, shortfall: 0 } },
+        },
+        result: { status: 'closed', orders: [{ instrument: 'c100', status: 'filled' }, { instrument: 'p100', status: 'filled' }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Bought 1 DMX260320C100 @ 4.00 USD (realized -10.00 USD)' },
+          { type: 'trade.fill', summary: 'Sold 1 DMX260320P100 @ 3.90 USD (realized -10.00 USD)' },
+        ],
+        cash: { account: { USD: { settled: 13_576.75, unsettled: -11.30, reserved: 4_000, availableToTrade: 9_565.45, availableToWithdraw: 9_176.10 } } },
+        positions: [{ instrument: 'c100', lot: 'synthetic', value: -790 }, { instrument: 'p100', lot: 'accept', value: 395 }, { instrument: 'p100', lot: 'synthetic', value: 790 }],
+        holdings: { c100: { long: 0, short: 2, net: -2 }, p100: { long: 3, short: 0, net: 3 } },
+        pending: [{ instrument: 'c100', lot: 'retry', dueDate: '2026-03-06', amount: -400.65 }, { instrument: 'p100', lot: 'retry', dueDate: '2026-03-06', amount: 389.35 }],
+        lifecycle: [{ instrument: 'c100' }, { instrument: 'p100' }, { instrument: 'p100' }],
+        pnl: { account: { realized: -30, commissions: -7.15, unrealized: 15, total: -22.15 }, book: { realized: -30, commissions: -7.15, unrealized: 15, total: -22.15 } },
+        nav: { account: 13_960.45, book: 999_977.85 },
+        balance: {
+          account: { cash: 13_576.75, receivable: 389.35, payable: 400.65, positions: 395, assets: 14_361.10, liabilities: 400.65, netAssets: 13_960.45 },
+          book: { cash: 999_594.15, receivable: 389.35, payable: 400.65, positions: 395, assets: 1_000_378.50, liabilities: 400.65, netAssets: 999_977.85 },
+        },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: MAR(6),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 389.35 USD into settled cash', date: '2026-03-06' }, { type: 'settlement.pay', summary: 'paid 400.65 USD from settled cash' }],
+        cash: { account: { USD: { settled: 13_565.45, unsettled: 0, availableToTrade: 9_565.45, availableToWithdraw: 9_565.45 } } },
+        pending: [],
+        balance: { account: { cash: 13_565.45, receivable: null, payable: null, assets: 13_960.45, liabilities: 0 }, book: { cash: 999_582.85, receivable: null, payable: null, assets: 999_977.85, liabilities: 0 } },
+      },
+    },
+    { id: 'expiry-fixing', action: 'close_price', instrument: 'index', date: '2026-03-20', value: 92, expect: {} },
+    {
+      // The index fixes at 92. The puts are settled in cash: 8 x 100 a contract (1,600 for "synthetic", realized 800; 800
+      // for "accept", realized 400); the written calls lapse (+820), their reserve released. Realized -30 + 800 + 820 + 400.
+      id: 'expiry', covers: ['expiry', 'cash settlement', 'reserve release'], action: 'clock', to: MAR(20, '17:30'),
+      expect: {
+        events: [
+          { type: 'option.cash_settled', summary: /^Exercised \(cash settlement\): 2 DMX260320P100 at 8(\.00)? per unit/, date: '2026-03-20' },
+          { type: 'option.expired', summary: 'Expired worthless: 2 DMX260320C100 (fixing 92)', date: '2026-03-20' },
+          { type: 'option.cash_settled', summary: /^Exercised \(cash settlement\): 1 DMX260320P100 at 8(\.00)? per unit/ },
+        ],
+        cash: { account: { USD: { settled: 13_565.45, unsettled: 2_400, reserved: 0, availableToTrade: 15_965.45, availableToWithdraw: 13_565.45 } } },
+        positions: [],
+        holdings: { c100: null, p100: null },
+        pending: [{ instrument: 'p100', lot: 'accept', dueDate: '2026-03-23', amount: 800, into: 'cash' }, { instrument: 'p100', lot: 'synthetic', dueDate: '2026-03-23', amount: 1_600, into: 'cash' }],
+        lifecycle: [],
+        pnl: { account: { realized: 1_990, commissions: -7.15, unrealized: 0, total: 1_982.85 }, book: { realized: 1_990, commissions: -7.15, unrealized: 0, total: 1_982.85 } },
+        nav: { account: 15_965.45, book: 1_001_982.85 }, // 1,000 + 2,982.60 + 10,000 + 1,982.85
+        balance: {
+          account: { cash: 13_565.45, receivable: 2_400, positions: null, assets: 15_965.45, liabilities: 0, netAssets: 15_965.45 },
+          book: { cash: 999_582.85, receivable: 2_400, positions: null, assets: 1_001_982.85, liabilities: 0, netAssets: 1_001_982.85 },
+        },
+      },
+    },
+    {
+      id: 'cash-settlement', covers: 'settlement', action: 'clock', to: MAR(23),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 1,600.00 USD into settled cash', date: '2026-03-23' }, { type: 'settlement.receive', summary: 'received 800.00 USD into settled cash' }],
+        cash: { account: { USD: { settled: 15_965.45, unsettled: 0, availableToTrade: 15_965.45, availableToWithdraw: 15_965.45 } } },
+        pending: [],
+        balance: { account: { cash: 15_965.45, receivable: null, assets: 15_965.45 }, book: { cash: 1_001_982.85, receivable: null, assets: 1_001_982.85 } },
+      },
+    },
+  ],
+};
+
+export default [bearCall, longStraddle, longStrangle, ironCondor, ironButterfly, longButterfly, longCalendar, longDiagonal, syntheticLong, syntheticShort];

@@ -266,3 +266,4 @@
 - 2026-10-13T20:22Z | t2 | +0.2 | synthetic_long passes at engine, API and browser
 - 2026-10-13T20:23Z | b4 | +0.2 | private_credit passes at engine, API and browser
 - 2026-10-13T20:24Z | s3 | +0.2 | dividend_swap passes at engine, API and browser
+- 2026-10-13T20:26Z | t2 | +0.2 | synthetic_short passes at engine, API and browser
