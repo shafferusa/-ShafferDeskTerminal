@@ -36,6 +36,14 @@ import { fmt } from './books.js';
 import { AppError, CCY_RE, isZero, money, need, newId, num } from './util.js';
 
 export const OTC_FAMILIES = ['swap', 'cds', 'forward', 'otcoption'];
+/**
+ * Products of the manual family that are OTC contracts with a counterparty (m1): they state a collateral basis and
+ * take part in collateral exactly like the families above. Their marks are entered by hand (products/manual.js).
+ */
+export const MANUAL_OTC_PRODUCTS = ['collateral_swap', 'freight_contract', 'credit_spread_forward', 'credit_spread_option', 'variance_swap', 'volatility_swap', 'correlation_swap',
+  'dispersion_swap', 'recovery_swap', 'weather_derivative'];
+/** Whether an instrument is an OTC contract whose collateral follows a stated basis. */
+export const isOtcContract = (inst) => Boolean(inst) && (OTC_FAMILIES.includes(inst.family) || (inst.family === 'manual' && MANUAL_OTC_PRODUCTS.includes(inst.product_id)));
 
 export const AGREEMENT_KINDS = {
   bilateral: 'Bilateral (CSA-style)',
@@ -413,7 +421,7 @@ export function createAgreements(app) {
    *   external        { unitId, ccy, amount } when the posting unit or currency differs
    */
   function tradeRequirement({ book, unit, inst, action, qty, price, strategyId, cashOut = 0 }) {
-    const out = { applicable: OTC_FAMILIES.includes(inst.family), initialMargin: 0, external: null, checks: [], notes: [], basis: null, independent: null, variation: null, blocking: null };
+    const out = { applicable: isOtcContract(inst), initialMargin: 0, external: null, checks: [], notes: [], basis: null, independent: null, variation: null, blocking: null };
     if (!out.applicable || !unit) return out;
     const bookId = book?.id || unit.book_id;
     const pos = inst.draft ? null : positions.find(unit.id, inst.id, strategyId || '');
@@ -561,7 +569,7 @@ export function createAgreements(app) {
    */
   function trueUpIndependent(pos, { reason = 'position change' } = {}) {
     const inst = instruments.get(pos.instrument_id);
-    if (!inst || !OTC_FAMILIES.includes(inst.family)) return null;
+    if (!inst || !isOtcContract(inst)) return null;
     const key = `IA:${pos.id}`;
     const eff = effective(basisOf(pos, inst), inst, pos.unit_id);
     const closed = isZero(pos.qty);
@@ -642,7 +650,7 @@ export function createAgreements(app) {
   const vmBalance = (key, holderUnitId, ccy) => vmBalances(key).find((b) => b.holderUnitId === holderUnitId && b.ccy === ccy)?.amount || 0;
 
   function openOtcPositions(bookId) {
-    return db.all(`SELECT p.id FROM positions p JOIN instruments i ON i.id = p.instrument_id WHERE p.book_id = ? AND ABS(p.qty) > 1e-9 AND i.family IN (${OTC_FAMILIES.map(() => '?').join(',')}) ORDER BY p.opened_at, p.id`, bookId, ...OTC_FAMILIES)
+    return db.all(`SELECT p.id FROM positions p JOIN instruments i ON i.id = p.instrument_id WHERE p.book_id = ? AND ABS(p.qty) > 1e-9 AND (i.family IN (${OTC_FAMILIES.map(() => '?').join(',')}) OR (i.family = 'manual' AND i.product_id IN (${MANUAL_OTC_PRODUCTS.map(() => '?').join(',')}))) ORDER BY p.opened_at, p.id`, bookId, ...OTC_FAMILIES, ...MANUAL_OTC_PRODUCTS)
       .map((r) => positions.get(r.id));
   }
 
@@ -862,7 +870,7 @@ export function createAgreements(app) {
     let pos = positions.get(stale.id);
     if (!pos) return;
     const inst = instruments.get(pos.instrument_id);
-    if (!OTC_FAMILIES.includes(inst.family)) return;
+    if (!isOtcContract(inst)) return;
     // The basis is fixed on the position when it opens, so later edits elsewhere cannot change it unseen.
     if (!isZero(pos.qty) && !pos.data.collateralBasis) {
       const b = contractBasis(inst);
@@ -963,7 +971,7 @@ export function createAgreements(app) {
     const pos = positions.get(positionId);
     need(pos, 'Position not found.', { status: 404 });
     const inst = instruments.get(pos.instrument_id);
-    need(OTC_FAMILIES.includes(inst.family), 'Collateral terms apply to swaps, credit default swaps, forwards and OTC options.');
+    need(isOtcContract(inst), 'Collateral terms apply to swaps, credit default swaps, forwards, OTC options and the OTC contracts valued by hand.');
     need(!isZero(pos.qty), 'This position is closed.');
     need(!basisOf(pos, inst), 'This position already has its collateral basis on record. It stays as recorded for the life of the position.', { status: 409 });
     const errors = [];

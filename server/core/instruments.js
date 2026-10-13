@@ -114,7 +114,7 @@ export function createInstruments(app) {
     const view = MARKET_VIEWS[route.view];
     need(view.cls === product.cls, `${product.name} is a ${product.cls === 'cash' ? 'cash-market' : 'derivative'} product, so it belongs in ${product.cls === 'cash' ? 'US Based or Foreign Based' : 'US Derivatives or Foreign Derivatives'}.`);
     const norm = plugin.normalize(app, {
-      terms: draft.terms || {}, multiplier: draft.multiplier ?? existing?.multiplier, underlying_id: draft.underlyingId || null,
+      product_id: product.id, terms: draft.terms || {}, multiplier: draft.multiplier ?? existing?.multiplier, underlying_id: draft.underlyingId || null,
       trading_ccy: draft.tradingCcy, settle_ccy: draft.settleCcy, productId: product.id,
     });
     const tradingCcy = String(norm.tradingCcy || draft.tradingCcy || '').toUpperCase();
@@ -279,7 +279,7 @@ export function createInstruments(app) {
       underlyingId: inst.underlying_id, underlying: und ? { id: und.id, symbol: und.symbol, name: und.name, family: und.family } : null, underlyingGeo: inst.underlying_geo,
       tradingCcy: inst.trading_ccy, settleCcy: inst.settle_ccy, multiplier: inst.multiplier, terms: inst.terms, externalIds: inst.external_ids, refSource: inst.ref_source,
       support: support(inst), qtyLabel: (plugin.qtyLabelFor ? plugin.qtyLabelFor(inst) : null) || plugin.qtyLabel || fam.qty, priceUnits: plugin.priceUnits ? plugin.priceUnits(inst) : fam.price,
-      actions: plugin.actions(inst), actionLabels: plugin.actionLabels || null, kind: plugin.kind, arrangement: ARRANGEMENT_FAMILIES.has(inst.family),
+      actions: plugin.actions(inst), actionLabels: (plugin.actionLabelsFor ? plugin.actionLabelsFor(inst) : null) || plugin.actionLabels || null, kind: plugin.kind, arrangement: ARRANGEMENT_FAMILIES.has(inst.family),
       details: plugin.describe ? plugin.describe(inst, app) : [], qtyStep: plugin.qtyStep ? plugin.qtyStep(inst) : 1, locked: inUse(inst.id),
       jurisdiction: inst.jurisdiction || null, classification: classify(inst, und),
       createdAt: inst.created_at, updatedAt: inst.updated_at,

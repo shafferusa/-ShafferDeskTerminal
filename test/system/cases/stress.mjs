@@ -315,8 +315,9 @@ export default [
         c.eq((await w.books(book.id)).counts.orders, 1, 'and one order');
         await w.clean(c, book.id);
       }),
-      browser: 'a restart is an operation on the server process; the product matrix restarts every scenario at browser level and reads the screens again, and SB:stress:connection-loss covers the browser across a restart',
+      browser: async (b, c) => b.cases.restartScreens(b, c),
     },
+    expectedBrowser: 'From the Marketplace ticket the user buys 1,000 BRS with a limit of 49.00, until cancelled, while the ask is 50.02, and confirms. At each stage the server process is stopped and started again and the page reloaded: the Pending tab lists the same orders and trades, each once; the cash balances, the holding and every row of the Full history read word for word as before, with no row added; every stored row is unchanged and the integrity read is clean. Stage 1, working: listed under Open orders, 1,000 at 49.00; a cycle after the restart fills nothing. Stage 2, the ask falls to 49.00 with 300 displayed and a cycle runs: listed as partly filled, 300 of 1,000, 700 remaining; after the restart three cycles fill 300, 300 and 100. Stage 3, filled and unsettled: four fills await settlement and 49,005.00 is payable (1,000 x 49.00 + 5.00 commission). Stage 4, Tuesday: settled cash 450,995.00 (500,000.00 - 49,005.00) and 1,000 BRS held; a cycle after the restart pays nothing again. In the end one order, four fill events and four settlement payments.',
   },
 
   // ---------------------------------------------------------------------------------------------------
@@ -630,8 +631,9 @@ export default [
         c.note(`state found after the kill, over ${TRIALS} trials: nothing stored ${seen.nothing}, some legs filled ${seen.partly}, all legs filled ${seen.all}`);
         c.ok(seen.nothing + seen.partly > 0, 'at least one kill landed before the package was complete', JSON.stringify(seen));
       },
-      browser: 'a killed server seen from the browser is SB:stress:connection-loss',
+      browser: async (b, c) => b.cases.interruptedConfirmation(b, c),
     },
+    expectedBrowser: 'The interrupted confirmation as the user experiences it. From the Marketplace ticket a purchase of 100 shares at the ask 50.02 is previewed and Confirm pressed, and the server process is killed (SIGKILL) while the confirmation is on its way: (a) before the server receives it; (b) after the server has stored it, before its answer reaches the page. In both, the preview dialog stays open and says the server is not reachable, so it is not known whether this was recorded, and that sending it again unchanged is safe; the page says by itself that it cannot reach the server. After the server is started again the database holds nothing of (a) and the trade of (b) once, and the integrity read is clean. The user presses Confirm again in the same dialog: it is answered ((b) as a duplicate of what was stored) and in each case there is in the end one strategy instance, one order and one fill of 100 at 50.02; the Account owes 10,006.00 (2 x (5,002.00 + 1.00 commission)). (Which legs of a twelve-leg package survive a kill at each moment of the confirmation is the API case.)',
   },
 
   // ---------------------------------------------------------------------------------------------------
@@ -678,7 +680,7 @@ export default [
         c.note(`events booked before each kill: ${found.join(', ')}`);
         c.ok(new Set(found).size > 1, 'the kills landed at different points of the cycle', found.join(', '));
       },
-      browser: 'a killed server seen from the browser is SB:stress:connection-loss',
+      browser: 'killing the server process during an engine cycle is not something done in the interface, and an engine cycle has no screen of its own; what the user sees of a server killed and started again (the page says it cannot reach the server, recovers without a reload, nothing is submitted twice) is SB:stress:connection-loss and SB:stress:kill-mid-confirmation, and the screens after a catch-up across server stops are SB:nodup:catch-up',
     },
   },
 

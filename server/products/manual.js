@@ -303,6 +303,13 @@ const nextDealingDate = (date, terms, cal) => onOrBefore(periodEndOf(addDays(per
 // ---- the plugin ---------------------------------------------------------------------------------------------------
 export function manualPlugin(base, { standardSettleDate, paymentCalendarFor }) {
   const label = (inst) => inst.symbol || inst.name;
+  const priceUnitsOf = (inst) => inst.terms?.priceUnits || PRICE_UNITS[kindOf(inst)] || (OTC_KINDS.has(kindOf(inst)) ? `mark per ${unitWord(inst)}, signed` : 'per unit');
+  const collateralNotional = (app, inst, { qtyAfter }) => {
+    const t = inst.terms || {};
+    const per = { collateral_swap: t.feeNotional, freight: t.contractRate, spread_forward: t.notional, spread_option: t.notional, variance: t.vegaNotional, volatility: t.vegaNotional,
+      correlation: (t.notionalPerPoint || 0) * 100, dispersion: (t.notionalPerPoint || 0) * 100, recovery: t.notional, weather: t.cap }[kindOf(inst)];
+    return per ? money(Math.abs(qtyAfter) * per, inst.trading_ccy) : null;
+  };
 
   function manualOf(pos) { return { ...(pos.data.manual || {}) }; }
   const setManual = (app, pos, patch) => app.positions.setData(app.positions.get(pos.id), { manual: { ...manualOf(app.positions.get(pos.id)), ...patch } });
@@ -369,7 +376,7 @@ export function manualPlugin(base, { standardSettleDate, paymentCalendarFor }) {
   /** Store a valuation as a manual price observation of the instrument, as of its valuation date. */
   function storeValuation(app, inst, { perUnit, date, source, kind = 'valuation' }) {
     return app.data.enterManual({
-      kind: 'price', subject: inst.id, value: perUnit, currency: inst.trading_ccy, units: base.priceUnits(inst), asOf: `${date}T12:00:00.000Z`, forDate: date,
+      kind: 'price', subject: inst.id, value: perUnit, currency: inst.trading_ccy, units: priceUnitsOf(inst), asOf: `${date}T12:00:00.000Z`, forDate: date,
       note: source, extra: { valuationSource: source, valuationDate: date, enteredAs: kind }, assumptions: [`Valuation date ${date}; source: ${source}.`],
     });
   }
@@ -408,7 +415,7 @@ export function manualPlugin(base, { standardSettleDate, paymentCalendarFor }) {
       const perUnit = perUnitKind ? v : v / (pos.qty * inst.multiplier);
       const obs = storeValuation(app, inst, { perUnit, date, source });
       const ccy = inst.trading_ccy;
-      const what = perUnitKind ? `${fmtPx(v)} ${base.priceUnits(inst)}` : `${fmt(v, ccy)} for the ${fmtQty(pos.qty)} held${!isZero(pos.qty - 1) ? ` (${fmtPx(round(perUnit, 6))} ${base.priceUnits(inst)})` : ''}`;
+      const what = perUnitKind ? `${fmtPx(v)} ${priceUnitsOf(inst)}` : `${fmt(v, ccy)} for the ${fmtQty(pos.qty)} held${!isZero(pos.qty - 1) ? ` (${fmtPx(round(perUnit, 6))} ${priceUnitsOf(inst)})` : ''}`;
       const eventId = post(app, { book, unit, inst, pos, type: 'manual.valuation', summary: `Valuation of ${label(inst)} entered by hand: ${what}, as of ${date}, source: ${source}. A manual input, not a market quote`, data: { value: v, perUnit, valuationDate: date, source, observationId: obs.id } });
       return { eventId, observationId: obs.id };
     },
@@ -726,7 +733,7 @@ export function manualPlugin(base, { standardSettleDate, paymentCalendarFor }) {
       return rows;
     },
     qtyLabelFor: (inst) => QTY_LABEL[kindOf(inst)] || (kindOf(inst) === 'freight' ? `Quantity (${inst.terms?.quantityUnit || 'units'})` : OTC_KINDS.has(kindOf(inst)) ? 'Contracts (1 = the contract as registered)' : 'Units'),
-    priceUnits: (inst) => inst.terms?.priceUnits || PRICE_UNITS[kindOf(inst)] || (OTC_KINDS.has(kindOf(inst)) ? `mark per ${unitWord(inst)}, signed` : 'per unit'),
+    priceUnits: priceUnitsOf,
     actionLabelsFor: (inst) => ACTION_LABELS[kindOf(inst)] || (OTC_KINDS.has(kindOf(inst)) ? { buy: 'Enter the contract', sell: 'Terminate (agreed amount)' } : null),
     direction: directionOf,
     /** A hedge fund interest leaves only by notice; a contract cannot be entered after it ends. */
@@ -737,12 +744,7 @@ export function manualPlugin(base, { standardSettleDate, paymentCalendarFor }) {
       if (OTC_KINDS.has(k) && action === 'buy' && end && tradeDate > end) return { code: 'expired', message: `${label(inst)} ended on ${end}; it cannot be entered.` };
       return null;
     },
-    collateralNotional(app, inst, { qtyAfter }) {
-      const t = inst.terms || {};
-      const per = { collateral_swap: t.feeNotional, freight: t.contractRate, spread_forward: t.notional, spread_option: t.notional, variance: t.vegaNotional, volatility: t.vegaNotional,
-        correlation: (t.notionalPerPoint || 0) * 100, dispersion: (t.notionalPerPoint || 0) * 100, recovery: t.notional, weather: t.cap }[kindOf(inst)];
-      return per ? money(Math.abs(qtyAfter) * per, inst.trading_ccy) : null;
-    },
+    collateralNotional,
     economics(app, args) {
       const out = base.economics(app, args);
       const { inst } = args;
@@ -750,7 +752,7 @@ export function manualPlugin(base, { standardSettleDate, paymentCalendarFor }) {
       const buy = args.action === 'buy';
       const upfront = args.qty * args.price * inst.multiplier;
       const coll = app.agreements.tradeRequirement({ book: args.book, unit: args.unit, inst, action: args.action, qty: args.qty, price: args.price, strategyId: args.strategyId, cashOut: Math.max(0, buy ? upfront : -upfront) });
-      return { ...out, notional: this.collateralNotional(app, inst, { qtyAfter: args.qty }), initialMargin: coll.initialMargin, collateral: coll, notes: [...(out.notes || []), formulaText(inst), ...coll.notes] };
+      return { ...out, notional: collateralNotional(app, inst, { qtyAfter: args.qty }), initialMargin: coll.initialMargin, collateral: coll, notes: [...(out.notes || []), formulaText(inst), ...coll.notes] };
     },
     fill(app, c) {
       const before = app.positions.find(c.unit.id, c.inst.id, c.strategyId || '');

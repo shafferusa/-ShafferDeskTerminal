@@ -7,6 +7,7 @@ import { addDays } from '../quant/dates.js';
 import { partsInTz } from '../core/clock.js';
 import { num } from '../core/util.js';
 import { bookSecurityFill, valueSecurity } from './common.js';
+import { manualPlugin } from './manual.js';
 
 // ---- calendars -----------------------------------------------------------------------------------------
 //
@@ -305,4 +306,5 @@ export const spot = {
   qtyStep: (inst) => (num(inst.terms?.lotSize) > 0 ? num(inst.terms.lotSize) : spotBase.qtyStep(inst)),
 };
 export const crypto = makeSecurityPlugin('crypto', { label: 'Digital asset', qtyLabel: 'Units', priceUnits: 'per unit', shortable: false });
-export const manual = makeSecurityPlugin('manual', { label: 'Manually valued holding', qtyLabel: 'Units', priceUnits: 'per unit', shortable: false });
+// Manually valued holdings and contracts: the security-like booking above plus each product's manual workflow (products/manual.js).
+export const manual = manualPlugin(makeSecurityPlugin('manual', { label: 'Manually valued holding', qtyLabel: 'Units', priceUnits: 'per unit', shortable: false }), { standardSettleDate, paymentCalendarFor });

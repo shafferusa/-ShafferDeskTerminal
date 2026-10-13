@@ -240,7 +240,7 @@ by hand (always labelled as manual), or exercised in the isolated demo environme
 | Treasury future | Future | Full lifecycle | Market quote | Closed out in cash at final settlement; delivery is not simulated. |
 | Short-term interest-rate future | Future | Full lifecycle | Market quote |  |
 | FX future | Future | Full lifecycle | Market quote | Closed out in cash at final settlement; currency delivery is not simulated. |
-| Commodity future | Future | Full lifecycle | Market quote | Closed out in cash at final settlement; physical delivery is not simulated. |
+| Commodity future | Future | Full lifecycle | Market quote | Daily variation margin. A physically delivered contract with its deliverable set as Underlying is delivered on paper (simulated) at final settlement, or earlier on a short's delivery notice inside the delivery window: goods received or given up at the invoice amount. Cash-settled contracts, or physical ones without a deliverable, are closed out in cash. |
 | Volatility future | Future | Full lifecycle | Market quote |  |
 | Dividend future | Future | Full lifecycle | Market quote |  |
 | Cryptocurrency future | Future | Full lifecycle | Market quote |  |
@@ -363,6 +363,7 @@ the payment calendars of both currencies and must also be a US dollar banking da
 | CA | Toronto markets and Canadian dollar payments | Venues in CA; CAD payments |
 | WEEKEND | Weekends only: no holiday calendar for this market | Any venue country or currency with no calendar in this table |
 | ALLDAYS | Every calendar day (24/7 markets) | Digital assets |
+| FX | Global FX market (Monday to Friday, around the clock) |  |
 
 Payment calendar by currency: USD uses USD, EUR uses TARGET, GBP uses UK, JPY uses JP, CAD uses CA.
 
@@ -375,12 +376,19 @@ holidays for a market on the fallback, are entered by hand under **Settings > Ma
 
 Each of the four Marketplaces (US Based, US Derivatives, Foreign Based, Foreign Derivatives) is split into
 product-family tabs: the eight cash tabs in US Based and Foreign Based, the six derivative tabs in the two
-Derivatives views. Every product has exactly one tab (checked by `test/core/marketplaces.test.js`). Which of
-the two views of its class an instrument sits in is decided per instrument, from its listing venue's country, its
-underlying, its jurisdiction, or the routing convention for global FX, crypto and OTC products (they have no US
-listing and are routed to the Foreign views unless a US jurisdiction is stated or the view is set by hand); never
-from its price currency. Deposits, loans, repo and securities loans are arranged on the Treasury and Account pages;
-their tab lists them for reference.
+Derivatives views. Every product has exactly one tab (checked by `test/core/marketplaces.test.js`, which also
+places a US-listed and a foreign-listed instrument of every product in one tab of one view). Which of the two views
+of its class an instrument sits in is decided per instrument, never from its price currency:
+
+1. Listed: by the listing venue's country (US venue: a US view; any other country: a Foreign view).
+2. Financing (deposits, loans, repo, securities loans): arranged on the Treasury and Account pages, never a
+   Marketplace row; the Money Market and Deposits tab lists them for reference and links there.
+3. A derivative with a registered underlying follows the underlying's view.
+4. Not listed: its stated jurisdiction (an OTC contract's governing law), or an issued security's issuer domicile.
+5. **Routing convention:** global FX, crypto and OTC products with none of the above have no US listing and no US
+   jurisdiction, so they are routed to Foreign Based / Foreign Derivatives. A US view is kept for a positive US
+   connection and never implies a US listing that does not exist.
+6. Set by hand: any instrument that is not listed can be placed in the other view by hand; the row says so.
 
 | Tab | Views | Products |
 |---|---|---|

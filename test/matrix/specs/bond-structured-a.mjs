@@ -254,21 +254,21 @@ const tips = {
       },
     },
     {
-      // Monday 28 December, after the holiday. End of day 24 Dec: 900,000 x 1.00910 x 0.1875% x 162/184 = 1,499.2539 on the
-      // face settled, the sale settling later; plus nothing for the sale (its interest to 28 Dec is already off the books).
-      // On the books 1,459.15: 40.10 more.
+      // Monday 28 December, after the holiday. End of day 24 Dec: the sale settles on 28 Dec, so on 24 Dec all 1,500,000 is
+      // still settled face: 1,500,000 x 1.00910 x 0.1875% x 162/184 = 2,498.7564, less the interest sold to 28 Dec,
+      // 1,024.1817: 1,474.5747. On the books 1,459.15: 15.42 more (the 600,000 sold earns until its sale settles).
       id: 'settle-after-christmas', covers: ['settlement', 'market holiday'], action: 'clock', to: EST('2026-12-28'),
       expect: {
         events: [
           { type: 'settlement.receive', summary: 'received 607,059.34 USD into settled cash', cash: { USD: 607_059.34 }, date: '2026-12-28' },
-          { type: 'accrual.coupon', summary: 'Interest accrued on TII-0.375-JAN27: 40.10 USD' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on TII-0.375-JAN27: 15.42 USD' },
         ],
         cash: { account: { USD: { settled: 1_097_378.30, unsettled: 0, availableToTrade: 1_097_378.30 } } },
-        positions: [{ instrument: 'main', lot: 'lot', qty: 900_000, accrued: 1_499.25 }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 900_000, accrued: 1_474.57 }],
         pending: [],
-        pnl: { account: { couponInterest: 3_263, total: 8_117.64 } },
-        nav: { account: 2_008_117.64, book: 3_008_117.64 },
-        balance: { account: { cash: 1_097_378.30, receivable: null, accruedIncome: 1_499.25, assets: 2_008_117.64, netAssets: 2_008_117.64 } },
+        pnl: { account: { couponInterest: 3_238.32, total: 8_092.96 } }, // 3,222.90 + 15.42
+        nav: { account: 2_008_092.96, book: 3_008_092.96 },
+        balance: { account: { cash: 1_097_378.30, receivable: null, accruedIncome: 1_474.57, assets: 2_008_092.96, netAssets: 2_008_092.96 } },
       },
     },
     {
@@ -277,10 +277,10 @@ const tips = {
       expect: { refused: 'Enter the index ratio as a positive number' },
     },
     {
-      // Tuesday 12 January 2027. End of day 11 Jan: 900,000 x 1.00910 x 0.1875% x 180/184 = 1,665.8376; 166.59 more.
+      // Tuesday 12 January 2027. End of day 11 Jan: 900,000 x 1.00910 x 0.1875% x 180/184 = 1,665.8376; 191.27 more.
       id: 'january', covers: 'accrual', action: 'clock', to: EST('2027-01-12'),
       expect: {
-        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on TII-0.375-JAN27: 166.59 USD' }],
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on TII-0.375-JAN27: 191.27 USD' }],
         positions: [{ instrument: 'main', lot: 'lot', qty: 900_000, accrued: 1_665.84 }],
         pnl: { account: { couponInterest: 3_429.59, total: 8_284.23 } },
         nav: { account: 2_008_284.23, book: 3_008_284.23 },

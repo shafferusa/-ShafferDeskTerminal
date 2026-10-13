@@ -78,7 +78,7 @@ export default [
         await checkLife(w, c, L, 'catch-up with restarts');
         sameLife(c, ref, await lifeDigest(w, L), 'catch-up with restarts');
       }),
-      browser: 'stopping and starting the server process is not something done in the interface (the server side is SE/SA:stress:restart-stages); what the user then sees, the screens after downtime across two server stops and after restarts at each stage of a trade, is SB:nodup:catch-up',
+      browser: 'stopping and starting the server process is not something done in the interface (the server side is SE/SA:stress:restart-stages); what the user then sees, the screens after downtime across two server stops and after restarts at each stage of a trade, is SB:nodup:catch-up and SB:stress:restart-stages',
     },
   },
   {

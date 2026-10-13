@@ -435,9 +435,10 @@ const equityIndexFuture = {
 // A single-stock future: 100 shares a contract, quoted in USD a share, minimum move 0.01 (1.00 USD a
 // contract), physically delivered: at expiry the long receives 100 shares a contract against payment
 // of the final settlement price. Initial margin 1,500 USD a contract (20% of a 75.00 share).
-// The Terminal does not simulate the delivery: it closes the contract in cash at the final settlement
-// price and says so. The delivery itself is then recorded by hand, as a purchase of the shares at that
-// price on the stock's own ticket. The final settlement price is also entered by hand here: the
+// The deliverable stock is registered and set as the contract's Underlying, so the Terminal simulates the
+// delivery on paper: at final settlement the contracts close at the final settlement price and the long
+// receives 100 shares a contract at that price, the invoice owed on the stock's own settlement date (T+1),
+// both entries labelled simulated. The final settlement price is entered by hand here: the
 // contract stops quoting on its last day, the lifecycle item waits for the price, and nothing is
 // guessed in the meantime (the position is unpriced and the net asset value provisional).
 // Commission: 0.75 USD a contract, at least 5.00 USD an order. Shares are delivered free of commission.
@@ -446,10 +447,10 @@ const equityFuture = {
   title: 'Calloway Freight Lines single-stock future (100 shares, physical delivery), March 2026',
   matrix: {
     ...FUTURES_TICKET,
-    requiredFields: ['Account', 'Action (Buy / Sell)', 'Contracts', 'for the delivery recorded by hand: the stock ticket with "State a fill price"'],
-    manualInputs: ['final settlement price, entered by hand on the contract (Overview, "Enter a price by hand", closing price for the last trading day)', 'physical delivery: purchase of 100 shares a contract at the final settlement price, on the stock ticket with a stated fill price'],
-    settlement: 'No purchase cash; initial margin 1,500 USD a contract; daily variation margin; at expiry closed out in cash at the final settlement price (physical delivery is not simulated); the shares delivered by hand settle T+1 like any stock purchase',
-    lifecycle: 'Daily variation margin (automatic); final settlement waits, visibly blocked, until a final settlement price exists, then closes the contract in cash (automatic) and states that delivery is not simulated; delivery by hand',
+    requiredFields: ['Account', 'Action (Buy / Sell)', 'Contracts', 'registration: Underlying (the deliverable stock), Settlement Physical delivery'],
+    manualInputs: ['final settlement price, entered by hand on the contract (Overview, "Enter a price by hand", closing price for the last trading day)'],
+    settlement: 'No purchase cash; initial margin 1,500 USD a contract; daily variation margin; at expiry the contracts close at the final settlement price and 100 shares a contract are delivered (simulated, paper entry) at that price; the invoice settles T+1 like any stock purchase',
+    lifecycle: 'Daily variation margin (automatic); final settlement waits, visibly blocked, until a final settlement price exists, then closes the contracts and simulates the delivery of the shares (automatic, labelled simulated)',
     accounting: 'Nil cost; variation margin and closes are realized P&L; commission 0.75 USD a contract with a 5.00 USD minimum an order; without a price the position is unpriced and the net asset value provisional; delivered shares carried at the final settlement price',
     collateral: 'Initial margin per contract, posted in cash, released on reduction, close and final settlement',
   },
@@ -638,60 +639,49 @@ const equityFuture = {
       // The next engine cycle closes the contract in cash: (74.25 - 74.60) x 300 = -105.00; margin 4,500 released; no fee.
       id: 'final-price-by-hand', covers: ['final settlement', 'manual price', 'expiry', 'margin release'], action: 'manual_price', instrument: 'main', value: 74.25, forDate: '2026-03-20', note: 'Final settlement price: closing price of CWFL on 20 March 2026',
       expect: {
-        events: [{ type: 'future.final_settlement', summary: 'Final settlement: 3 CWFH6 closed in cash at 74.25 (physical delivery is not simulated)', cash: { USD: 4_395 }, owner: 'account', date: '2026-03-20' }],
-        cash: { account: { USD: usd(101_197.50, 0) } },
-        positions: [],
-        holdings: { main: null },
+        // The contracts close at 74.25 and 3 x 100 = 300 shares are delivered at 74.25: invoice 300 x 74.25 = 22,275.00,
+        // owed T+1 = Monday 23 March. The shares are worth what they cost: nothing gained or lost on delivery.
+        events: [
+          { type: 'future.final_settlement', summary: 'Final settlement: 3 CWFH6 closed at 74.25 for simulated physical delivery', cash: { USD: 4_395 }, owner: 'account', date: '2026-03-20' },
+          { type: 'future.delivery', summary: 'Simulated delivery (paper entry, no goods move): received 300 CWFL on 3 CWFH6 at 74.25; invoice 22,275.00 USD payable 2026-03-23', owner: 'account', date: '2026-03-20' },
+        ],
+        cash: { account: { USD: { settled: 101_197.50, unsettled: -22_275, margin: 0, availableToTrade: 78_922.50, availableToWithdraw: 78_922.50 } } }, // the 22,275 owed is neither spendable nor withdrawable
+        positions: [{ instrument: 'common', lot: 'long', owner: 'account', direction: 'long', qty: 300, avgCost: 74.25, cost: 22_275, price: 74.25, value: 22_275, unrealized: 0 }],
+        holdings: { main: null, common: { long: 300, short: 0, net: 300 } },
+        pending: [{ instrument: 'common', lot: 'long', owner: 'account', dueDate: '2026-03-23', amount: -22_275, ccy: 'USD', into: 'cash' }],
         lifecycle: [],
         provisional: { account: false, book: false },
         pnl: { account: { realized: 1_220, unrealized: 0, total: 1_197.50, complete: true } }, // 1,325 - 105
         nav: { account: 101_197.50, book: 1_001_197.50 },
-        balance: { account: { cash: 101_197.50, margin: null, positions: null, assets: 101_197.50, netAssets: 101_197.50 } },
-      },
-    },
-    { id: 'monday', action: 'clock', to: AM('2026-03-23'), expect: {} },
-    {
-      id: 'trade-after-expiry', covers: 'expired contract', action: 'ticket', instrument: 'main', side: 'sell', qty: 1,
-      status: 'blocked', reason: 'The contract\'s last trading day was 20 March 2026.',
-      expect: { refused: 'CWFH6 expired on 2026-03-20' },
-    },
-    {
-      // The contract called for delivery of 3 x 100 shares against 300 x 74.25 = 22,275.00. The Terminal closed it in
-      // cash, so the delivery is recorded by hand: the shares are bought on the stock ticket at the final settlement price.
-      id: 'delivery-by-hand', covers: 'physical delivery', action: 'ticket', ticketOf: 'equity', instrument: 'common', side: 'buy', qty: 300, as: 'delivered', order: { statedPrice: 74.25 }, settlementCheck: false,
-      expect: {
-        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'common', qty: 300, estimate: 74.25, model: 'stated-price', settleDate: '2026-03-24', cash: -22_275, fees: 0 }], // 300 x 74.25; T+1
-          cash: { USD: { purchases: 22_275, fees: 0, required: 22_275, available: 101_197.50, shortfall: 0 } } },
-        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 300, avgPrice: 74.25, fills: [{ qty: 300, price: 74.25, model: 'stated-price' }] }] },
-        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 300 CWFL @ 74.25 USD', cash: {}, owner: 'account', date: '2026-03-23' }],
-        cash: { account: { USD: { settled: 101_197.50, unsettled: -22_275, margin: 0, availableToTrade: 78_922.50, availableToWithdraw: 78_922.50 } } }, // the 22,275 owed tomorrow is neither spendable nor withdrawable
-        positions: [{ instrument: 'common', lot: 'delivered', owner: 'account', direction: 'long', qty: 300, avgCost: 74.25, cost: 22_275, price: 74.25, value: 22_275, unrealized: 0 }],
-        holdings: { common: { long: 300, short: 0, net: 300 } },
-        pending: [{ instrument: 'common', owner: 'account', dueDate: '2026-03-24', amount: -22_275, ccy: 'USD', into: 'cash' }],
-        nav: { account: 101_197.50, book: 1_001_197.50 }, // bought at their value: nothing gained or lost
-        balance: { account: { cash: 101_197.50, positions: 22_275, payable: 22_275, assets: 123_472.50, liabilities: 22_275, netAssets: 101_197.50 } },
+        balance: { account: { cash: 101_197.50, margin: null, positions: 22_275, payable: 22_275, assets: 123_472.50, liabilities: 22_275, netAssets: 101_197.50 } },
       },
     },
     {
-      id: 'delivery-settles', covers: 'settlement', action: 'clock', to: AM('2026-03-24'),
+      id: 'monday', covers: 'settlement', action: 'clock', to: AM('2026-03-23'),
       expect: {
-        events: [{ type: 'settlement.pay', summary: 'paid 22,275.00 USD from settled cash', cash: { USD: -22_275 }, date: '2026-03-24' }],
-        cash: { account: { USD: usd(78_922.50, 0) } },
+        events: [{ type: 'settlement.pay', summary: 'paid 22,275.00 USD from settled cash', cash: { USD: -22_275 }, date: '2026-03-23' }],
+        cash: { account: { USD: usd(78_922.50, 0) } }, // 101,197.50 - 22,275
         pending: [],
         balance: { account: { cash: 78_922.50, payable: null, assets: 101_197.50, liabilities: 0 } },
       },
     },
     {
+      id: 'trade-after-expiry', covers: 'expired contract', action: 'ticket', instrument: 'main', side: 'sell', qty: 1,
+      status: 'blocked', reason: 'The contract\'s last trading day was 20 March 2026.',
+      expect: { refused: 'CWFH6 expired on 2026-03-20' },
+    },
+    { id: 'tuesday-after-expiry', action: 'clock', to: AM('2026-03-24'), expect: {} },
+    {
       id: 'stock-up', action: 'quote', instrument: 'common', quote: { bid: 74.40, ask: 74.44, last: 74.42, bidSize: 5000, askSize: 5000 },
       expect: {
-        positions: [{ instrument: 'common', lot: 'delivered', qty: 300, cost: 22_275, price: 74.42, value: 22_326, unrealized: 51 }], // 300 x 74.42
+        positions: [{ instrument: 'common', lot: 'long', qty: 300, cost: 22_275, price: 74.42, value: 22_326, unrealized: 51 }], // 300 x 74.42
         pnl: { account: { unrealized: 51, total: 1_248.50 } },
         nav: { account: 101_248.50, book: 1_001_248.50 },
         balance: { account: { positions: 22_326, assets: 101_248.50, netAssets: 101_248.50 } },
       },
     },
     {
-      id: 'sell-delivered-shares', covers: 'close', action: 'ticket', ticketOf: 'equity', instrument: 'common', side: 'sell', qty: 300, from: 'delivered', settlementCheck: false,
+      id: 'sell-delivered-shares', covers: 'close', action: 'ticket', ticketOf: 'equity', instrument: 'common', side: 'sell', qty: 300, from: 'long', settlementCheck: false,
       expect: {
         preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'common', qty: 300, estimate: 74.40, model: 'quoted-bid-ask', settleDate: '2026-03-25', cash: 22_320, fees: 0 }] }, // 300 x 74.40 (the bid)
         result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 300, avgPrice: 74.40 }] },

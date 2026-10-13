@@ -108,14 +108,29 @@ Options; Futures; Forwards; Swaps; Credit Derivatives; Structured and Other Deri
 derivative views. `TAB_LISTS` gives every catalog product exactly one tab (tested; printed in
 `docs/COVERAGE.md`). Derivative rows also carry an underlying asset class (`PRODUCT_ASSET`, or the
 underlying's family for generic and exotic options) for the tab's filter. The tab is in the URL
-(`#/markets/<view>/<tab>`). Each tab has its own columns; Current market price, Fair price and
-Gap % sit together on all of them. Watchlists filter within a tab or across families and never
-replace the tabs. Deposits, loans, repo and securities loans are arrangements of one Book: they are
-arranged on the Treasury and Account pages, and the Money Market and Deposits tab links there. The
-instrument page of a stock, fund or bond has a Financing panel: Repo this holding, Lend, Finance this
-position and Reverse repo against it open the Treasury / Account `ArrangementDialog` with the trading
-owner and the instrument filled in (`preset`); Borrow this security turns the ticket to Sell short,
-because a securities borrow is always a leg of a short sale. No new engine path is involved.
+(`#/markets/<view>/<tab>`), so Back and reload restore it; `/find/<text>` after it opens a search and
+`/show/<instrument id>` picks a row out (the instrument page's Market view and the registry link there).
+A view opened without a tab shows the tab last used in it (kept in the browser), else its first
+family with instruments. Tabs show their counts; an empty tab says what belongs there and how to add
+one. A search looks through every tab of the view (one table per family, each titled with its tab)
+and also lists the matches in the other three Marketplaces with their view and tab, linked there.
+Each tab has its own columns; Current market price, Fair price and Gap % sit together on all of them.
+Watchlists are a separate control: they filter within a tab or show the list across families, and
+never replace the tabs.
+
+**Financing links.** Deposits, loans, repo and securities loans are arrangements of one Book: they
+are arranged on the Treasury and Account pages, and the Money Market and Deposits tab links there
+(they are never Marketplace rows). The instrument page of a stock, fund or bond has a Financing
+panel: Repo this holding, Lend this holding, Finance this position (a securities-backed loan pledging
+it) and Reverse repo against it open the Treasury / Account `ArrangementDialog` with the trading owner,
+the instrument and the holding filled in (`preset: { instrumentId, productId, positionId }`); Borrow
+this security turns the ticket to Sell short, because a securities borrow is always a leg of a short
+sale. Every holding row (the ticket's positions and the Positions tab, which lists every owner's
+holdings) has Repo, Lend and Finance for that holding and its owner. A link that does not apply is
+disabled with its reason: no long holding, everything pledged or on loan, a short (covered by its
+borrow), a product that cannot be sold short, or a product that is not financed this way (derivatives
+fund premium, margin and collateral from cash; other cash products are bought with cash or a loan).
+No new engine path is involved: the dialog previews and confirms as it does on those pages.
 
 **Trading owner.** Tickets and the Strategies page ask for a Trading owner: the Book's Accounts, and
 apart from them Treasury, labelled "Treasury (the Book's own balance sheet)". The owner in use is the
@@ -130,7 +145,10 @@ metadata, never from its price currency (`conventionRoute` in `catalog.js`, appl
    country a Foreign one. An ADR of a Swiss issuer listed in New York is US Based; a USD-quoted
    stock listed in Tokyo is Foreign Based. A listed product cannot be moved by hand.
 2. *Financing*: loans, deposits, repo and securities loans are held on the Treasury and Account
-   pages and never appear as Marketplace rows.
+   pages and never appear as Marketplace rows. Their view is kept as a record only: a stated
+   jurisdiction, else a view the caller states, else the view of the security lent or taken as
+   collateral, else the convention (Foreign). The Treasury dialogs no longer send a view worked out
+   from the currency.
 3. *Underlying*: a derivative with a registered underlying follows the underlying's view.
 4. *Jurisdiction*: an unlisted instrument with a stated jurisdiction (the governing law of an OTC
    contract), or an issued security with an issuer domicile, follows that country.

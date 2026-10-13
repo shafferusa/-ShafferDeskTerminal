@@ -2269,7 +2269,7 @@ export async function restartScreens(b, c) {
   c.eq(pv.blocking, 0, 'the limit buy of 1,000 at 49.00 previews without a block');
   await confirm.click();
   await modal.waitFor({ state: 'hidden' });
-  const order = () => b.sql('SELECT status, filled_qty FROM orders WHERE book_id = ?', book.id);
+  const order = () => b.sql('SELECT status, filled_qty FROM orders WHERE book_id = ?', book.id).map((r) => ({ ...r }));
   const screens = async () => ({
     pending: await panelRows(b, `#/accounting/pending/${book.accountId}`, ['Open orders', 'Partly filled', 'Executed trades awaiting settlement']),
     cash: flat(await (async () => { await show(b, `#/accounting/positions/${book.accountId}`); return b.ui.section(page.locator('main'), 'Cash and financing balances').innerText(); })()),
@@ -2295,7 +2295,7 @@ export async function restartScreens(b, c) {
 
   // Stage 1: working (ask 50.02, limit 49.00).
   let s = await restartHere('working');
-  c.match((s.pending['Open orders'] || []).join(' | '), /BRS.*1,000.*49\.00/, 'stage 1: the Pending tab lists the order under Open orders: 1,000 at 49.00');
+  c.match((s.pending['Open orders'] || []).join(' | '), /Buy 1,000 BRS.*Limit at 49\.00, until cancelled working/, 'stage 1: the Pending tab lists the order under Open orders: buy 1,000 BRS, limit 49.00, until cancelled, working');
   await b.tick();
   c.eq(order(), [{ status: 'working', filled_qty: 0 }], 'after the restart and a cycle it is still working, unfilled');
 
@@ -2305,7 +2305,7 @@ export async function restartScreens(b, c) {
   s = await restartHere('partly filled');
   c.match((s.pending['Partly filled'] || []).join(' | '), /300 of 1,000.*700/, 'stage 2: the Pending tab lists it as partly filled: 300 of 1,000, 700 remaining');
   await b.tick(); await b.tick(); await b.tick();
-  c.eq(b.sql('SELECT qty FROM fills f JOIN orders o ON o.id = f.order_id WHERE o.book_id = ? ORDER BY f.id', book.id).map((f) => f.qty), [300, 300, 300, 100], 'after the restart the remainder fills: 300, 300, 100');
+  c.eq(b.sql('SELECT f.qty FROM fills f JOIN orders o ON o.id = f.order_id WHERE o.book_id = ? ORDER BY f.id', book.id).map((f) => f.qty), [300, 300, 300, 100], 'after the restart the remainder fills: 300, 300, 100');
 
   // Stage 3: filled, unsettled. 1,000 x 49.00 = 49,000.00 plus commission 1,000 x 0.005 = 5.00.
   s = await restartHere('filled, unsettled');

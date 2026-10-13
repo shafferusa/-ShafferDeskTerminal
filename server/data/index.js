@@ -15,6 +15,7 @@
 import { DEFAULT_CONNECTION, DEFAULT_REFRESH } from '../config.js';
 import { dateInTz } from '../core/clock.js';
 import { AppError, num } from '../core/util.js';
+import { MANUAL_OTC_PRODUCTS } from '../core/agreements.js';
 import { j, pj } from '../db/db.js';
 import { createDemoMarketPort } from './demo.js';
 import { DEMO_INVESTMENT_STRATEGIES } from './demo-hedge.js';
@@ -203,14 +204,16 @@ export function createDataAdapter({ db, config, clock }) {
   });
 
   /** Store a user-entered observation. Earlier entries are kept and marked superseded. */
-  function enterManual({ kind = 'price', subject, value, bid, ask, bidSize, askSize, currency, units, asOf, forDate, note, extra }) {
+  function enterManual({ kind = 'price', subject, value, bid, ask, bidSize, askSize, currency, units, asOf, forDate, note, extra, assumptions }) {
     if (!MANUAL_KINDS.has(kind)) throw new AppError(`Unsupported manual observation kind "${kind}".`);
     if (!subject) throw new AppError('A manual observation needs a subject (instrument, currency pair or rate code).');
     const v = num(value), b = num(bid), a = num(ask);
     if (v === null && (b === null || a === null) && kind !== 'borrow') throw new AppError('Enter a value, or both a bid and an ask.');
     if (b !== null && a !== null && b > a) throw new AppError('Bid cannot be above ask.');
     // A swap is marked at its net present value and a CDS at its upfront: either can be against us, so it can be negative.
-    const signedMark = kind === 'price' && ['swap', 'cds'].includes(resolveInstrument(subject)?.family);
+    const subjectInst = kind === 'price' ? resolveInstrument(subject) : null;
+    // An OTC contract valued by hand (a variance swap, a freight contract) is marked at its value to us, which can be negative too (m1).
+    const signedMark = kind === 'price' && (['swap', 'cds'].includes(subjectInst?.family) || (subjectInst?.family === 'manual' && MANUAL_OTC_PRODUCTS.includes(subjectInst.product_id)));
     if (kind !== 'rate' && kind !== 'borrow' && !signedMark && [v, b, a].some((x) => x !== null && x < 0)) throw new AppError('Prices cannot be negative.');
     const nowIso = clock.now().toISOString();
     const value2 = v !== null ? v : b !== null && a !== null ? (b + a) / 2 : null;
@@ -219,7 +222,7 @@ export function createDataAdapter({ db, config, clock }) {
         `INSERT INTO observations (kind, subject, value, bid, ask, bid_size, ask_size, currency, units, source, provider_id, status, as_of, for_date, received_at, origin, note, data)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual', 'manual', ?, ?, ?, 'manual-entry', ?, ?)`,
         kind, subject, value2, b, a, num(bidSize), num(askSize), currency || null, units || null, MANUAL_SOURCE,
-        asOf || nowIso, forDate || null, nowIso, note || null, j({ assumptions: ['Manually entered. Not a market quote.'], extra: extra || {} }),
+        asOf || nowIso, forDate || null, nowIso, note || null, j({ assumptions: ['Manually entered. Not a market quote.', ...(Array.isArray(assumptions) ? assumptions.map(String) : [])], extra: extra || {} }),
       );
       const id = Number(res.lastInsertRowid);
       db.run(
@@ -362,6 +365,20 @@ export function createDataAdapter({ db, config, clock }) {
 
   /** True when a live (non-manual) price feed exists. */
   const marketConnected = () => ['connected', 'demo'].includes(market.state().connection);
+  /**
+   * A valuation entered by hand for an instrument that states how long one stays current (`terms.valuationMaxAgeDays`,
+   * the holdings valued by hand: products/manual.js) is stale once its valuation date is older than that. A stale value
+   * still values the position, flagged, and makes the net asset value provisional (core/valuation.js).
+   */
+  function manualAge(p) {
+    if (!p || p.status !== 'manual' || p.kind !== 'price') return p;
+    const max = Number(resolveInstrument(p.subject)?.terms?.valuationMaxAgeDays);
+    if (!(max > 0)) return p;
+    const valued = p.forDate || String(p.asOf || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(valued)) return p;
+    const age = Math.round((Date.parse(`${clock.today()}T00:00:00Z`) - Date.parse(`${valued}T00:00:00Z`)) / 86400000);
+    return { ...p, valuationDate: valued, valuationAgeDays: age, staleAfterDays: max, freshness: age > max ? 'stale' : 'manual' };
+  }
 
   return {
     market, analytics,
@@ -369,7 +386,7 @@ export function createDataAdapter({ db, config, clock }) {
     getConnection, getRefresh, saveConnection, saveRefresh,
     refresh, price, closeFor, fx, rate, borrowInfo, session,
     enterManual, latestManual, recordUsed, getObservation,
-    present: (obs) => withFreshness(obs, clock.ms(), getRefresh().freshness),
+    present: (obs) => manualAge(withFreshness(obs, clock.ms(), getRefresh().freshness)),
     describe, marketConnected,
     getSetting, setSetting,
     _cache: cache,
