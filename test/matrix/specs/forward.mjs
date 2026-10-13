@@ -1034,6 +1034,9 @@ const commodityForward = {
         otc: [{ instrument: 'main', lot: 'fwd', owner: 'account', qty: 250, basis: 'position', agreement: null, flagged: false, mark: 9_420, markValue: -7_500, iaRequired: 118_125, iaPosted: 118_125, iaCcy: 'USD', iaStatus: 'ok', postedBy: 'account', vmPosted: 0, vmHeld: 0, vmExposure: -7_500, vmStatus: 'ok' }],
       },
     },
+    // The copper quote stops (no market data for it any more): nothing stands in for the day's close, which only the
+    // fixing can supply. (While a quote stands, the Terminal takes its last price as the day's close.)
+    { id: 'copper-quote-stops', action: 'quote', instrument: 'copper', quote: { clear: true }, expect: {} },
     {
       // Wednesday 15 July, the value date (over Independence Day). Commission 125.00 paid. No copper close for the day
       // has been supplied: the settlement waits, visibly.

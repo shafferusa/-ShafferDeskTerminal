@@ -1695,4 +1695,158 @@ const gcRepo = {
   ],
 };
 
-export default [repo, reverseRepo, overnightRepo, termRepo, openRepo, bilateralRepo, tripartyRepo, gcRepo];
+// ---------------------------------------------------------------------------------------------
+// special_repo
+// ---------------------------------------------------------------------------------------------
+// A special repo: Treasury holds 5,000,000 face of the on-the-run ten-year note, which the market wants and lends cash
+// against at a special rate far below general collateral (1.25% against about 4.30% for GC). Treasury repos it for a week at
+// that rate. The trade is done for that security: a substitution is refused. Repurchased on the end date.
+//
+// General versus special in the Terminal: the collateral type is recorded as a term (Special); the special rate is the rate
+// entered on the ticket (nothing derives it); a special repo's collateral cannot be substituted, a GC repo's can (by hand).
+// Nothing else is simulated differently.
+//
+// Inputs: T-4.25-FEB36, 4.25% ACT/ACT, coupons 15 Feb / 15 Aug (period 181 days; 5,000,000 face accrues 106,250 / 181 a day),
+// quoted 100.44 / 100.50, last 100.47 (fixture); no commission; T+1. Repo 5,000,000 at 1.25% ACT/360, 2 to 9 June 2026,
+// haircut 1%.
+//   Bought 1 June, settles 2 June: 5,025,000.00 plus 107 days accrued, 62,810.77 = 5,087,810.77.
+//   Collateral 2 June: 5,023,500.00 plus 62,810.77 = 5,086,310.77; less 1%: 5,035,447.66.
+//   Interest: 5,000,000 x 0.0125 / 360 = 173.61 a day; 7 days 1,215.28.
+const OTR = { productId: 'treasury_note', name: 'US Treasury Note 4.25% 15-Feb-2036', symbol: 'T-4.25-FEB36', marketView: 'US_CASH', venueType: 'otc', issuer: 'United States Treasury', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+  terms: { couponType: 'fixed', couponRate: 0.0425, frequency: 2, maturity: '2036-02-15', issueDate: '2026-02-15', dayCount: 'ACT/ACT', redemption: 100, minDenomination: 100 } };
+const SPREPO = { owner: 'treasury', side: 'repo', productId: 'special_repo', productLabel: 'Special-collateral repo', ccy: 'USD', principal: 5_000_000, name: 'Ellery special repo', collateral: { instrument: 'otr', lot: 'otr' }, as: 'sprepo',
+  terms: { collateralInstrumentId: '$inst:otr', collateralQty: 5_000_000, haircut: 0.01, rateType: 'fixed', rate: 0.0125, dayCount: 'ACT/360', term: 'term', endDate: '2026-06-09', style: 'classic', collateralType: 'special', triparty: false, counterparty: 'Ellery Capital' } };
+const OTR_POS = { instrument: 'otr', lot: 'otr', owner: 'treasury', direction: 'long', qty: 5_000_000, avgCost: 100.50, cost: 5_025_000, price: 100.47, value: 5_023_500, unrealized: -1_500 };
+const SP_POS = { instrument: 'sprepo', lot: 'sprepo', owner: 'treasury', direction: 'repo (cash borrowed)', qty: -5_000_000, value: 5_000_000, carrying: -5_000_000, collateralHeld: null };
+const OTR_LIFE = [{ type: 'bond.coupon', instrument: 'otr', dueDate: '2026-08-17', status: 'pending', owner: 'treasury' }, { type: 'bond.maturity', instrument: 'otr', dueDate: '2036-02-15', status: 'pending', owner: 'treasury' }];
+const SPECIAL_REFUSAL = 'The collateral of a special repo is the security it names: it cannot be substituted. To change the security, repurchase the repo and enter a new one.';
+
+const specialRepo = {
+  productId: 'special_repo',
+  title: 'Special repo of 5,000,000 on-the-run ten-year US Treasury notes by Treasury at a special rate of 1.25%: substitution refused, repurchased on the end date',
+  matrix: {
+    ...REPO_TICKET,
+    automaticInputs: ['the notes\' dirty value and the cash they support after the haircut', 'repo interest accrued daily at the special rate', 'repurchase on the end date', 'the daily check of the cover'],
+    manualInputs: ['every term, entered on the ticket: collateral type Special and the special rate (the Terminal does not derive a special rate)'],
+    settlement: 'None for the repo: cash received when confirmed and paid back on the end date. The notes bought settle T+1',
+    lifecycle: 'Interest accrues daily at the special rate; repurchased automatically on the end date',
+    accounting: 'Cash borrowed is a liability of Treasury; repo interest at the special rate is a funding expense; the notes stay on Treasury\'s balance sheet',
+    collateral: 'The named security, pledged: not sellable; a substitution is refused (a special repo is done for that security; a GC repo\'s collateral can be substituted by hand); released on repurchase',
+  },
+  tradedOn: 'A special repo is not a registry instrument: it is entered on the Repo or reverse repo ticket of the Treasury page (collateral type Special) and registers itself when the ticket is confirmed. The collateral is a registered US Treasury note.',
+  start: AT_1000('2026-06-01'), // Monday 1 June 2026, 10:00 New York
+  settlementCheck: { lag: 1, holidays: [] },
+  book: {
+    name: 'Matrix special repo', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 6_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 200_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0 } }, fill: FILL, settlement: { bond: 1 } },
+  },
+  instruments: { otr: OTR },
+  quotes: { otr: { bid: 100.44, ask: 100.50, last: 100.47, bidSize: 50_000_000, askSize: 50_000_000 } },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 200_000, availableToTrade: 200_000, borrowed: 0 } },
+      treasury: { USD: { settled: 5_800_000, unsettled: 0, payable: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 5_800_000, availableToWithdraw: 5_800_000, borrowed: 0, lent: 0 } },
+    },
+    positions: [], holdings: {}, pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 200_000, treasury: 5_800_000, book: 6_000_000 },
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+    pnl: { account: { total: 0 }, treasury: { couponInterest: 0, borrowFunding: 0, unrealized: 0, total: 0 }, book: { total: 0 } },
+    balance: {
+      account: { cash: 200_000, assets: 200_000, netAssets: 200_000 },
+      treasury: { cash: 5_800_000, assets: 5_800_000, liabilities: 0, netAssets: 5_800_000 },
+      book: { cash: 6_000_000, assets: 6_000_000, liabilities: 0, netAssets: 6_000_000 },
+    },
+    oversight: { accountBorrowings: [], treasuryOwn: [] },
+  },
+  steps: [
+    {
+      id: 'buy-the-notes', covers: 'collateral', action: 'ticket', ticketOf: 'bond', instrument: 'otr', owner: 'treasury', side: 'buy', qty: 5_000_000, as: 'otr',
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'buy', instrument: 'otr', qty: 5_000_000, estimate: 100.50, settleDate: '2026-06-02', gross: 5_025_000, accrued: 62_810.77, cash: -5_087_810.77, fees: 0 }] },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 5_000_000, avgPrice: 100.50 }] },
+        events: [{ type: 'strategy.submitted', owner: 'treasury' }, { type: 'trade.fill', summary: 'Bought 5,000,000 T-4.25-FEB36 @ 100.50 USD', owner: 'treasury', date: '2026-06-01' }],
+        cash: { treasury: { USD: { settled: 5_800_000, unsettled: -5_087_810.77, payable: 5_087_810.77, availableToTrade: 712_189.23, availableToWithdraw: 712_189.23 } } },
+        positions: [{ ...OTR_POS, accrued: 62_810.77, pledged: 0 }],
+        holdings: { otr: { long: 5_000_000, short: 0, net: 5_000_000 } },
+        pending: [{ instrument: 'otr', lot: 'otr', owner: 'treasury', dueDate: '2026-06-02', amount: -5_087_810.77, ccy: 'USD', into: 'cash' }],
+        lifecycle: OTR_LIFE,
+        pnl: { treasury: { unrealized: -1_500, total: -1_500 }, book: { total: -1_500 } },
+        nav: { treasury: 5_798_500, book: 5_998_500 },
+        balance: {
+          treasury: { cash: 5_800_000, positions: 5_023_500, accruedIncome: 62_810.77, payable: 5_087_810.77, assets: 10_886_310.77, liabilities: 5_087_810.77, netAssets: 5_798_500 },
+          book: { cash: 6_000_000, positions: 5_023_500, accruedIncome: 62_810.77, payable: 5_087_810.77, assets: 11_086_310.77, liabilities: 5_087_810.77, netAssets: 5_998_500 },
+        },
+      },
+    },
+    {
+      id: 'notes-settle', covers: 'settlement', action: 'clock', to: AT_1000('2026-06-02'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: /^Settlement: paid 5,087,810\.77 USD/, cash: { USD: -5_087_810.77 }, owner: 'treasury', date: '2026-06-02' }],
+        cash: { treasury: { USD: { settled: 712_189.23, unsettled: 0, payable: 0, availableToTrade: 712_189.23, availableToWithdraw: 712_189.23 } } },
+        pending: [],
+        balance: { treasury: { cash: 712_189.23, payable: null, assets: 5_798_500, liabilities: 0 }, book: { cash: 912_189.23, payable: null, assets: 5_998_500, liabilities: 0 } },
+      },
+    },
+    repoTicket('repo-at-the-special-rate', SPREPO, {
+      covers: ['open', 'borrow', 'special collateral', 'collateral'],
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'repo_open', action: 'repo', purpose: 'financing', qty: 5_000_000, cash: 5_000_000, fees: 0, ccy: 'USD', dailyCost: 173.61,
+            financing: { amount: 5_000_000, rateType: 'fixed', rate: 0.0125, maturity: '2026-06-09', interestFrom: '2026-06-02',
+              collateral: { qty: 5_000_000, clean: 5_023_500, accrued: 62_810.77, worth: 5_086_310.77, haircutAmount: 50_863.11, buffer: 0, supports: 5_035_447.66 }, forward: null } }],
+          cash: { USD: { financingIn: 5_000_000, financingOut: 0, required: 0, available: 712_189.23, shortfall: 0, netCash: 5_000_000 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'repo_open', action: 'repo', instrument: 'sprepo', status: 'filled', qty: 5_000_000, filledQty: 5_000_000 }] },
+        events: [
+          { type: 'strategy.submitted', owner: 'treasury' },
+          { type: 'repo.open', summary: 'Repo: received 5,000,000.00 USD against 5,000,000 T-4.25-FEB36 at 1.250% fixed to 2026-06-09', cash: { USD: 5_000_000 }, owner: 'treasury', date: '2026-06-02' },
+        ],
+        cash: { treasury: { USD: { settled: 5_712_189.23, availableToTrade: 5_712_189.23, availableToWithdraw: 5_712_189.23, borrowed: 5_000_000 } } },
+        positions: [{ ...OTR_POS, accrued: 62_810.77, pledged: 5_000_000 }, { ...SP_POS, accrued: 0 }],
+        lifecycle: [{ type: 'repo.end', instrument: 'sprepo', dueDate: '2026-06-09', status: 'pending', owner: 'treasury' }, ...OTR_LIFE],
+        borrowings: [{ owner: 'treasury', origin: 'treasury', family: 'repo', type: 'Repo (cash borrowed against securities)', lot: 'sprepo', principal: 5_000_000, principalRc: 5_000_000, ccy: 'USD', rate: 0.0125, rateType: 'fixed', rateText: '1.250% fixed', dayCount: 'ACT/360',
+          accrued: 0, costToDate: 0, feesToDate: 0, startDate: '2026-06-02', maturity: '2026-06-09', term: 'term', lender: 'Ellery Capital', collateral: 'T-4.25-FEB36: 5,000,000 pledged, haircut 1.00%', schedule: 'Interest paid at repurchase', nextPayment: '2026-06-09', nextPaymentType: 'repo.end', blocked: null, structure: 'Classic repo, bilateral' }],
+        balance: {
+          treasury: { cash: 5_712_189.23, borrowed: 5_000_000, assets: 10_798_500, liabilities: 5_000_000, netAssets: 5_798_500 },
+          book: { cash: 5_912_189.23, borrowed: 5_000_000, assets: 10_998_500, liabilities: 5_000_000, netAssets: 5_998_500 },
+        },
+        oversight: { accountBorrowings: [], treasuryOwn: [{ owner: 'treasury', origin: 'treasury', lot: 'sprepo', principal: 5_000_000, ccy: 'USD', accrued: 0 }] },
+      },
+    }),
+    {
+      id: 'substitution-refused', covers: ['substitution'], action: 'lifecycle', lot: 'sprepo', instrument: 'sprepo', body: { action: 'collateral', change: 'substitute', qty: 5_000_000 },
+      status: 'unsupported', reason: 'A special repo is done for the security it names; the counterparty lent cash cheaply to get that security.',
+      expect: { refused: { engine: SPECIAL_REFUSAL, api: SPECIAL_REFUSAL, browser: 'The Change list of the Collateral dialog offers only: More collateral (margin call), Return of excess collateral. "Substitution" is not offered.' } },
+    },
+    {
+      // Tuesday 9 June: repurchased with 7 days at 1.25%, 1,215.28. The run of 8 June then accrues the notes to 113 days:
+      // 106,250 x 113 / 181 = 66,332.87 (+3,522.10).
+      id: 'repurchased-on-the-end-date', covers: ['maturity', 'close', 'repurchase', 'collateral released'], action: 'clock', to: AT_1000('2026-06-09'),
+      expect: {
+        events: [
+          { type: 'accrual.interest', summary: 'Repo interest accrued on Ellery special repo: 1,215.28 USD', owner: 'treasury', date: '2026-06-09' },
+          { type: 'interest.payment', summary: 'Repo interest paid on Ellery special repo: 1,215.28 USD', cash: { USD: -1_215.28 }, owner: 'treasury', date: '2026-06-09' },
+          { type: 'repo.close', summary: 'Repo repurchase: paid 5,000,000.00 USD principal (interest 1,215.28 USD); collateral released', cash: { USD: -5_000_000 }, owner: 'treasury', date: '2026-06-09' },
+          { type: 'accrual.coupon', summary: /^Interest accrued on T-4\.25-FEB36: 3,522\.10 USD$/, owner: 'treasury', date: '2026-06-09' },
+        ],
+        cash: { treasury: { USD: { settled: 710_973.95, availableToTrade: 710_973.95, availableToWithdraw: 710_973.95, borrowed: 0 } } }, // 5,712,189.23 - 5,001,215.28
+        positions: [{ ...OTR_POS, accrued: 66_332.87, pledged: 0 }],
+        lifecycle: OTR_LIFE, borrowings: [],
+        pnl: { treasury: { couponInterest: 3_522.10, borrowFunding: -1_215.28, unrealized: -1_500, total: 806.82 }, book: { total: 806.82 } },
+        nav: { treasury: 5_800_806.82, book: 6_000_806.82 },
+        balance: {
+          treasury: { cash: 710_973.95, accruedIncome: 66_332.87, borrowed: null, accruedExpense: null, assets: 5_800_806.82, liabilities: 0, netAssets: 5_800_806.82 },
+          book: { cash: 910_973.95, accruedIncome: 66_332.87, borrowed: null, accruedExpense: null, assets: 6_000_806.82, liabilities: 0, netAssets: 6_000_806.82 },
+        },
+        oversight: { treasuryOwn: [] },
+      },
+    },
+  ],
+};
+
+export default [repo, reverseRepo, overnightRepo, termRepo, openRepo, bilateralRepo, tripartyRepo, gcRepo, specialRepo];

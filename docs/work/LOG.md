@@ -173,3 +173,4 @@
 - 2026-10-13T18:12Z | fw | +0.2 | fw: bond_forward passes at engine, API and browser (delivery with accrued interest on the value date)
 - 2026-10-13T18:12Z | r1 | +0.2 | gc_repo passes at engine, API and browser
 - 2026-10-13T18:13Z | m1 | +0.2 | variance_swap passes at engine, API and browser (VM on hand marks, settlement from realised vol)
+- 2026-10-13T18:14Z | b3 | +0.2 | non_agency_mbs passes at engine, API and browser

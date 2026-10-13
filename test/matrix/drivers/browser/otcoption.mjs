@@ -9,10 +9,11 @@
 // premium agreed with the dealer as "State a fill price").
 //
 // Exports (see ./equity.mjs for the contract of a family driver):
-//   contractTerms   registry form: Primary view, Underlying instrument or Fixing rate code, Type, Strike,
-//                   Expiration, Payoff (with Digital payout, Barrier and Barrier level), Exercise style
-//                   (with Bermudan exercise dates), Settlement, Multiplier, Deliverable units, Counterparty,
-//                   Collateral terms, Other collateral terms
+//   contractTerms   registry form: Primary view and calendars, Underlying instrument or Fixing rate code, Type,
+//                   Strike, Expiration, Payoff (with Underlying reference, Digital payout, Barrier, Barrier
+//                   level and Rebate, Averaging dates, Lookback strike, Fixed conversion rate), Exercise style
+//                   (with Bermudan exercise dates), Settlement, Cash settlement paid on, Multiplier,
+//                   Deliverable units, Counterparty, Collateral terms, Other collateral terms
 //   ticket          the instrument drawer's ticket
 //   actions         agreement, close / resize at a stated amount, owner_screens, manual_rate: the swap
 //                   driver's paths (the same screens); lifecycle: Exercise (with an entry price when a
@@ -106,7 +107,11 @@ export async function contractTerms(ui, dialog, draft, ctx) {
   await ui.input(dialog, /^\s*Expiration\b/).fill(t.expiration);
   await ui.select(dialog, /^\s*Payoff\b/).selectOption(t.optionType || 'vanilla');
   await ui.drawn();
+  if (t.underlyingDescription) await ui.input(dialog, /^\s*Underlying reference/).fill(t.underlyingDescription);
   if (t.payout !== undefined && t.payout !== null) await ui.input(dialog, /^\s*Digital payout per unit/).fill(String(t.payout));
+  if (t.averagingDates) await ui.input(dialog, /^\s*Averaging dates/).fill([].concat(t.averagingDates).join(', '));
+  if (t.lookbackType) await ui.select(dialog, /^\s*Lookback strike/).selectOption(t.lookbackType);
+  if (t.quantoRate !== undefined && t.quantoRate !== null) await ui.input(dialog, /^\s*Fixed conversion rate \(quanto\)/).fill(String(t.quantoRate));
   if (t.barrier) {
     await ui.select(dialog, /^\s*Barrier\s*$/).selectOption(t.barrier.type);
     await ui.input(dialog, /^\s*Barrier level/).fill(String(t.barrier.level));
@@ -117,6 +122,7 @@ export async function contractTerms(ui, dialog, draft, ctx) {
   if (t.exercise === 'bermudan') await ui.input(dialog, /^\s*Bermudan exercise dates/).fill([].concat(t.exerciseDates || []).join(', '));
   await ui.select(dialog, /^\s*Settlement\s*$/).selectOption(t.settlement || 'cash');
   await ui.drawn();
+  if (t.paymentDate) await ui.input(dialog, /^\s*Cash settlement paid on/).fill(t.paymentDate);
   if (draft.multiplier !== undefined && draft.multiplier !== null) await ui.input(dialog, /^\s*Multiplier\b/).fill(String(draft.multiplier));
   if (t.deliverable?.units !== undefined && t.deliverable.units !== null) await ui.input(dialog, /^\s*Deliverable units per unit of quantity/).fill(String(t.deliverable.units));
   if (t.counterparty) await ui.input(dialog, /^\s*Counterparty/).fill(t.counterparty);
