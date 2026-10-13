@@ -254,6 +254,7 @@ function requestProblems(sent, want) {
     financing: x.financing?.mode || 'none', loanRate: x.financing?.rate ?? null, borrowFee: x.borrow?.feeRate ?? null,
     investmentStrategy: x.investmentStrategy?.id || x.investmentStrategy?.name || null, holdingDays: x.holdingPeriod?.days ?? null, objective: x.hedgeObjective?.type || null,
     // t2: the futures contracts and, for the custom builder, every leg (kind, side, quantity, instrument or option, purpose, runs after).
+    ...(want.hedgeRequestId ? { hedgeRequest: x.hedgeRequestId ? 'sent with the package' : 'not sent' } : {}),
     ...(want.futures ? { futures: JSON.stringify([x.futures?.instrumentId || null, x.futures?.farInstrumentId || null, x.futures?.contracts ?? null]) } : {}),
     ...(want.template === 'custom' ? { legs: JSON.stringify((x.legs || []).map((l) => [l.kind || 'trade', l.action, l.qty, l.instrumentId || null, l.option ? `${l.option.right}${l.option.strike}@${l.option.expiration}` : null, l.purpose || 'primary', (l.dependsOn || []).join('+')])) } : {}),
   });
@@ -491,7 +492,8 @@ export const actions = {
     const form = pop.locator('[data-testid=hedge-complete-form]').first();
     const f = ui.field(form, 'Investment Strategy');
     await f.locator('select, input:enabled').first().waitFor();
-    if (await f.locator('select').count()) await f.locator('select').selectOption(step.investmentStrategy); else await f.locator('input').fill(step.investmentStrategy);
+    const isRef = typeof step.investmentStrategy === 'string' ? { id: step.investmentStrategy, name: step.investmentStrategy } : step.investmentStrategy;
+    if (await f.locator('select').count()) await f.locator('select').selectOption(isRef.id); else await f.locator('input').fill(isRef.name);
     await ui.input(form, 'Intended holding period').fill(String(step.holdingDays));
     await ui.select(form, 'Hedge objective').selectOption(step.objective);
     await ui.button(form, 'Save request').click();
@@ -556,7 +558,11 @@ export const actions = {
     const view = await hedgeCheckView(t, ctx, step.lot);
     const problems = [];
     await ui.reloadAt('#/strategy');
-    const rows = await ui.page.locator('[data-testid=hedge-queue] tbody tr[data-request]').evaluateAll((trs) => trs.map((tr) => tr.dataset.state));
+    // The queue is fetched after the page is drawn: wait for its rows (or, when none is expected, for the instances list below it).
+    await ui.section(ui.page.locator('main'), /^Strategy instances/).waitFor().catch(() => {});
+    const read = () => ui.page.locator('[data-testid=hedge-queue] tbody tr[data-request]').evaluateAll((trs) => trs.map((tr) => tr.dataset.state));
+    let rows = await read();
+    for (let i = 0; i < 40 && rows.length !== view.queue.length; i++) { await ui.page.waitForTimeout(150); rows = await read(); }
     if (rows.length !== view.queue.length) problems.push(`Hedge review queue: the page lists ${rows.length} request(s), the API ${view.queue.length}.`);
     else view.queue.forEach((q, i) => { if (rows[i] !== q.state) problems.push(`Hedge review queue: row ${i + 1} shows "${rows[i]}", the API "${q.state}".`); });
     return { result: view, problems };

@@ -291,3 +291,4 @@
 - 2026-10-13T21:05Z | s2 | +0 | s2 finished: 13 other swaps pass at engine, API and browser; core tests, BUGS.md section, final checks
 - 2026-10-13T21:10Z | t1 | +0.2 | T:long_collar template passes at engine, API and browser
 - 2026-10-13T21:13Z | t2 | +0 | Terminal fix: Strategy-page hedge request linked to its confirmed package (hedge.linkToStrategy)
+- 2026-10-13T21:18Z | t2 | +0.2 | trading path 1 (strategy package with protection) passes at engine, API and browser

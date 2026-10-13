@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 98.2% of the pass** (last milestone 2026-10-13T21:13Z, t2: Terminal fix: Strategy-page hedge request linked to its confirmed package (hedge.linkToStrategy))
+**Completeness: about 98.4% of the pass** (last milestone 2026-10-13T21:18Z, t2: trading path 1 (strategy package with protection) passes at engine, API and browser)
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 

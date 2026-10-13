@@ -6781,4 +6781,391 @@ const customTemplate = {
   ],
 };
 
-export default [bearCall, longStraddle, longStrangle, ironCondor, ironButterfly, longButterfly, longCalendar, longDiagonal, syntheticLong, syntheticShort, pairsTrade, futuresHedge, futuresCalendar, customTemplate];
+// =====================================================================================================================
+// Trading path 1: a Strategy package with its protection included
+// =====================================================================================================================
+// A long collar on Halden Marine (1,000 shares, 10 bought 48 puts, 10 written 52 calls, 20 March 2026) from the
+// Strategies page, with the hedge context filled in: the Investment Strategy chosen by its listed ID (DEMO-IS-002,
+// Core Equity, from the labelled demo list), 30 days, downside protection. The hedge request goes out by itself once
+// the instrument and the amount are set, with the template's puts as proposed protection; the labelled demo fixture
+// (standing in for Shaffer Hedge) answers that nothing further is proposed because the position is covered. The
+// package is confirmed without a hedge package and carries the request's id: the request is then on the strategy
+// instance and in the hedge review queue, and the position shows its protection (template). Closed: the written calls
+// are bought back first, then the shares and the puts are sold; the request is closed with the position.
+const HDM_OPT = (right, strike) => equityOption('HDM', `HDM260320${right}${strike}`, right, strike, '2026-03-20');
+const P1_CONTEXT = { investmentStrategy: { id: 'DEMO-IS-002', name: 'Core Equity', resolved: true, source: 'Demo fixture, not Analytics Lab', version: 'demo-1' }, holdingPeriod: { days: 30 }, hedgeObjective: { type: 'downside_protection' } };
+const p1Input = (extra = {}) => ({ template: 'long_collar', underlyingId: '$inst:stock', origin: 'strategy_page', ...P1_CONTEXT, mode: 'new', quantity: 1000, hedgeRatio: 1, options: { expiration: '2026-03-20', strikes: { put: 48, call: 52 }, contracts: null }, borrow: null, orderType: 'market', limitPrice: null, stopPrice: null, tif: 'day', financing: null, ...extra });
+const P1_PAGE = { investmentStrategy: 'DEMO-IS-002', holdingDays: 30, objective: 'Downside protection', template: 'Long Collar', underlying: 'stock', quantity: 1000, expiration: '2026-03-20', strikes: { 'Put strike': 48, 'Call strike': 52 } };
+const P1_NOTE = 'Nothing further is proposed for price risk: the position is already protected (10 puts in the template). The demo fixture does not layer a second hedge on top.';
+const pathStrategyPackage = {
+  template: 'long_collar', path: 'strategy-protection',
+  title: 'Trading path 1: long collar from the Strategies page with its protection included, the hedge request answered by the demo fixture, shown on the position and in the queue',
+  matrix: {
+    ticket: 'Strategies page: Trading owner and intent (Investment Strategy by its listed ID, Intended holding period, Hedge objective), Execution template (Long Collar), Ticker, Quantity, Option contracts (expiration, put and call strikes); the Hedge panel (request sent automatically, the answer shown); the package preview and one confirmation; the Hedge review queue on the same page; the strategy instance for Close',
+    requiredFields: ['Trading owner', 'Execution template', 'Ticker or instrument', 'Quantity', 'Expiration', 'Put strike', 'Call strike', 'for the hedge request: Investment Strategy, holding period, objective'],
+    automaticInputs: ['the hedge request with the package and its protection as context, sent once owner, instrument and amount are set', 'the answer of the labelled demo fixture standing in for Shaffer Hedge', 'bid, ask, last of the shares and both options (quote fixtures)', 'commissions from the Book fee schedule'],
+    manualInputs: ['the Investment Strategy chosen by its ID from the labelled demo list', 'holding period and objective', 'Close'],
+    settlement: 'Shares and premiums T+1 on the US calendar',
+    lifecycle: 'The hedge request is linked to the strategy instance by its id when the package is confirmed; it stays in the review queue while the position is open and is closed with the position',
+    accounting: 'Shares at average cost; bought puts at premium paid; written calls at premium received; commissions expensed; realized on close',
+    collateral: 'None reserved: the written calls are covered by the shares of the same instance',
+  },
+  start: MAR(2),
+  settlementCheck: { lag: 1, holidays: [] },
+  book: book('Path strategy package with protection', { funding: [{ ccy: 'USD', amount: 60_000 }] }),
+  instruments: { stock: stockDraft('Halden Marine Corp.', 'HDM'), p48: HDM_OPT('P', 48), c52: HDM_OPT('C', 52) },
+  quotes: {
+    stock: { bid: 49.98, ask: 50.02, last: 50.00, bidSize: 10000, askSize: 10000 },
+    p48: { bid: 0.90, ask: 1.00, last: 0.95, bidSize: 100, askSize: 100 },
+    c52: { bid: 0.80, ask: 0.90, last: 0.85, bidSize: 100, askSize: 100 },
+  },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 60_000, unsettled: 0, reserved: 0, availableToTrade: 60_000, availableToWithdraw: 60_000 } },
+      treasury: { USD: { settled: 940_000, unsettled: 0, reserved: 0, availableToTrade: 940_000, availableToWithdraw: 940_000 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 60_000, treasury: 940_000, book: 1_000_000 },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+  },
+  steps: [
+    {
+      // The request carries the template's 10 puts as proposed protection (a written call is not protection); the demo
+      // fixture proposes nothing on top. Nothing is traded.
+      id: 'hedge-request', covers: ['hedge request', 'template protection', 'investment strategy by id'], action: 'hedge_request',
+      input: p1Input(), strategyPage: P1_PAGE,
+      expect: {
+        result: {
+          state: 'recommendation_ready', complete: true, missing: [], source: { kind: 'demo-fixture', label: 'Demo fixture, not Shaffer Hedge' }, packages: [], recommendedId: null, note: P1_NOTE,
+          investmentStrategy: { id: 'DEMO-IS-002', name: 'Core Equity', resolved: true }, holdingDays: 30, objective: 'downside_protection', scope: 'trade',
+          primary: { instrument: 'stock', direction: 'long', quantity: 1000, status: 'proposed' },
+          // Both option legs of the template go as proposed protection (the written call with its side, sell, as for t1's covered call).
+          proposedProtection: [{ action: 'buy', quantity: 10, right: 'P', strike: 48 }, { action: 'sell', quantity: 10, right: 'C', strike: 52 }], linkedProtection: [], hedgesHeld: [],
+        },
+        positions: [], openOrders: [], pending: [],
+      },
+    },
+    {
+      // 1,000 shares at 50.02 (50,020, commission 5.00); 10 puts at 1.00 (1,000, 6.50); 10 calls written at 0.80 (800,
+      // 6.50). Required 50,020 + 1,000 - 800 + 18 = 50,238 net, 51,038 before the call's premium. The calls are covered by
+      // the shares: nothing reserved.
+      id: 'open', covers: ['open', 'protection included', 'hedge request linked'], action: 'package', as: 'collar', instrument: 'stock',
+      input: p1Input({ hedgeRequestId: '$hedge:last' }), strategyPage: P1_PAGE,
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [
+            { kind: 'trade', action: 'buy', purpose: 'primary', instrument: 'stock', qty: 1000, estimate: 50.02, settleDate: '2026-03-03', cash: -50_020, fees: 5, dependsOn: [] },
+            { kind: 'trade', action: 'buy', purpose: 'hedge', instrument: 'p48', qty: 10, estimate: 1.00, settleDate: '2026-03-03', cash: -1_000, fees: 6.50, dependsOn: [1] },
+            { kind: 'trade', action: 'sell', purpose: 'hedge', instrument: 'c52', qty: 10, estimate: 0.80, settleDate: '2026-03-03', cash: 800, fees: 6.50, dependsOn: [1] },
+          ],
+          cash: { USD: { purchases: 51_020, proceeds: 800, fees: 18, reserved: 0, required: 51_038, available: 60_000, shortfall: 0 } },
+          optionRequirement: [{ ccy: 'USD', amount: 0, finite: 0, naked: 0, uncoveredCallUnits: 0, coveredCallUnits: 1000, coveredPutUnits: 0 }],
+        },
+        result: { status: 'open', orders: [{ instrument: 'stock', status: 'filled', filledQty: 1000, avgPrice: 50.02 }, { instrument: 'p48', status: 'filled', filledQty: 10, avgPrice: 1.00 }, { instrument: 'c52', status: 'filled', filledQty: 10, avgPrice: 0.80 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Bought 1,000 HDM @ 50.02 USD', date: '2026-03-02' },
+          { type: 'trade.fill', summary: 'Bought 10 HDM260320P48 @ 1.00 USD' },
+          { type: 'trade.fill', summary: 'Sold 10 HDM260320C52 @ 0.80 USD' },
+        ],
+        cash: { account: { USD: { settled: 60_000, unsettled: -50_238, reserved: 0, availableToTrade: 9_762, availableToWithdraw: 8_968.50 } } },
+        positions: [
+          { instrument: 'c52', lot: 'collar', owner: 'account', direction: 'short', qty: -10, avgCost: 0.80, cost: -800, price: 0.85, value: -850, unrealized: -50 },
+          { instrument: 'p48', lot: 'collar', owner: 'account', direction: 'long', qty: 10, avgCost: 1, cost: 1_000, price: 0.95, value: 950, unrealized: -50 },
+          { instrument: 'stock', lot: 'collar', owner: 'account', direction: 'long', qty: 1000, avgCost: 50.02, cost: 50_020, price: 50, value: 50_000, unrealized: -20 },
+        ],
+        holdings: { c52: { long: 0, short: 10, net: -10 }, p48: { long: 10, short: 0, net: 10 }, stock: { long: 1000, short: 0, net: 1000 } },
+        pending: [
+          { instrument: 'c52', lot: 'collar', dueDate: '2026-03-03', amount: 793.50, into: 'cash' },
+          { instrument: 'p48', lot: 'collar', dueDate: '2026-03-03', amount: -1_006.50, into: 'cash' },
+          { instrument: 'stock', lot: 'collar', dueDate: '2026-03-03', amount: -50_025, into: 'cash' },
+        ],
+        lifecycle: [{ type: 'option.expiry', instrument: 'c52', dueDate: '2026-03-20', status: 'pending' }, { type: 'option.expiry', instrument: 'p48', dueDate: '2026-03-20', status: 'pending' }],
+        pnl: { account: { realized: 0, commissions: -18, unrealized: -120, total: -138 }, book: { realized: 0, commissions: -18, unrealized: -120, total: -138 }, treasury: { total: 0 } },
+        nav: { account: 59_862, treasury: 940_000, book: 999_862 },
+        balance: {
+          account: { cash: 60_000, receivable: 793.50, payable: 51_031.50, positions: 50_100, assets: 110_893.50, liabilities: 51_031.50, netAssets: 59_862 },
+          book: { cash: 1_000_000, receivable: 793.50, payable: 51_031.50, positions: 50_100, assets: 1_050_893.50, liabilities: 51_031.50, netAssets: 999_862 },
+        },
+      },
+    },
+    {
+      // The request is on the strategy instance and in the queue, current; the shares are protected 1,000 of 1,000 units
+      // by the template's puts; the option legs are the template's protection of leg 1.
+      id: 'queue-and-position', covers: ['hedge review queue', 'position protection', 'shared identifiers'], action: 'hedge_check', lot: 'collar',
+      expect: {
+        result: {
+          requests: [{ state: 'recommendation_ready', trigger: 'strategy_page', packages: 0, selectedPackage: null, source: 'demo-fixture' }],
+          queue: [{ lot: 'collar', state: 'recommendation_ready', trigger: 'strategy_page', packages: 0, message: P1_NOTE, primary: { direction: 'long', quantity: 1000, symbol: 'HDM' } }],
+          protection: [{ position: 'Long 1,000 HDM', exposureUnits: 1000, protectedUnits: 1000, remainingUnits: 0, linked: [{ hedge: 'Long 10 HDM260320P48', units: 1000, basis: 'template', request: null }] }],
+          legs: [{ legNo: 2, purpose: 'hedge', request: null, protectsLegs: [1], fundsLegs: [] }, { legNo: 3, purpose: 'hedge', request: null, protectsLegs: [1], fundsLegs: [] }],
+        },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: MAR(3),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 793.50 USD into settled cash', date: '2026-03-03' },
+          { type: 'settlement.pay', summary: 'paid 50,025.00 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 1,006.50 USD from settled cash' },
+        ],
+        cash: { account: { USD: { settled: 9_762, unsettled: 0, availableToTrade: 9_762, availableToWithdraw: 9_762 } } },
+        pending: [],
+        balance: {
+          account: { cash: 9_762, receivable: null, payable: null, assets: 59_862, liabilities: 0, netAssets: 59_862 },
+          book: { cash: 949_762, receivable: null, payable: null, assets: 999_862, liabilities: 0, netAssets: 999_862 },
+        },
+      },
+    },
+    {
+      // The calls are bought back first at 0.90 (realized (0.80 - 0.90) x 1,000 = -100); the shares (49.98: -40) and the
+      // puts (0.90: -100) are sold after them. Commission 6.50 + 5.00 + 6.50.
+      id: 'close', covers: ['close', 'package closure'], action: 'close', lot: 'collar', instrument: 'stock', scope: 'strategy', percent: 100,
+      expect: {
+        preview: {
+          blocking: 0, errors: [], intent: 'close',
+          legs: [
+            { kind: 'trade', action: 'buy', instrument: 'c52', qty: 10, estimate: 0.90, settleDate: '2026-03-04', cash: -900, fees: 6.50, dependsOn: [] },
+            { kind: 'trade', action: 'sell', instrument: 'stock', qty: 1000, estimate: 49.98, settleDate: '2026-03-04', cash: 49_980, fees: 5, dependsOn: [1] },
+            { kind: 'trade', action: 'sell', instrument: 'p48', qty: 10, estimate: 0.90, settleDate: '2026-03-04', cash: 900, fees: 6.50, dependsOn: [1] },
+          ],
+        },
+        result: { status: 'closed', orders: [{ instrument: 'c52', status: 'filled' }, { instrument: 'stock', status: 'filled' }, { instrument: 'p48', status: 'filled' }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Bought 10 HDM260320C52 @ 0.90 USD (realized -100.00 USD)' },
+          { type: 'trade.fill', summary: 'Sold 1,000 HDM @ 49.98 USD (realized -40.00 USD)' },
+          { type: 'trade.fill', summary: 'Sold 10 HDM260320P48 @ 0.90 USD (realized -100.00 USD)' },
+        ],
+        cash: { account: { USD: { settled: 9_762, unsettled: 49_962, availableToTrade: 59_724, availableToWithdraw: 8_855.50 } } },
+        positions: [],
+        holdings: { c52: null, p48: null, stock: null },
+        pending: [
+          { instrument: 'c52', lot: 'collar', dueDate: '2026-03-04', amount: -906.50, into: 'cash' },
+          { instrument: 'p48', lot: 'collar', dueDate: '2026-03-04', amount: 893.50, into: 'cash' },
+          { instrument: 'stock', lot: 'collar', dueDate: '2026-03-04', amount: 49_975, into: 'cash' },
+        ],
+        lifecycle: [],
+        pnl: { account: { realized: -240, commissions: -36, unrealized: 0, total: -276 }, book: { realized: -240, commissions: -36, unrealized: 0, total: -276 } },
+        nav: { account: 59_724, book: 999_724 },
+        balance: {
+          account: { cash: 9_762, receivable: 50_868.50, payable: 906.50, positions: null, assets: 60_630.50, liabilities: 906.50, netAssets: 59_724 },
+          book: { cash: 949_762, receivable: 50_868.50, payable: 906.50, positions: null, assets: 1_000_630.50, liabilities: 906.50, netAssets: 999_724 },
+        },
+      },
+    },
+    {
+      // The position is gone: the request is closed with it and leaves the queue.
+      id: 'queue-after-close', covers: ['hedge review queue', 'request closed with the position'], action: 'hedge_check', lot: 'collar',
+      // The closing legs of the options (4: calls bought back, 6: puts sold) keep their purpose, hedge, beside the sale of the shares (5).
+      expect: { result: { requests: [{ state: 'closed', trigger: 'strategy_page', packages: 0 }], queue: [], protection: [], legs: [{ legNo: 2, purpose: 'hedge', protectsLegs: [1] }, { legNo: 3, purpose: 'hedge', protectsLegs: [1] }, { legNo: 4, purpose: 'hedge', protectsLegs: [5] }, { legNo: 6, purpose: 'hedge', protectsLegs: [5] }] } },
+    },
+    {
+      // Nothing left: 60,000 - 276.
+      id: 'settle-final', covers: 'settlement', action: 'clock', to: MAR(4),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 49,975.00 USD into settled cash', date: '2026-03-04' },
+          { type: 'settlement.receive', summary: 'received 893.50 USD into settled cash' },
+          { type: 'settlement.pay', summary: 'paid 906.50 USD from settled cash' },
+        ],
+        cash: { account: { USD: { settled: 59_724, unsettled: 0, availableToTrade: 59_724, availableToWithdraw: 59_724 } } },
+        pending: [],
+        balance: { account: { cash: 59_724, receivable: null, payable: null, assets: 59_724, liabilities: 0 }, book: { cash: 999_724, receivable: null, payable: null, assets: 999_724, liabilities: 0 } },
+      },
+    },
+  ],
+};
+
+// =====================================================================================================================
+// Trading path 2: a direct Marketplace trade, then the Hedge popup and Execute now
+// =====================================================================================================================
+// 1,000 Kerrville Aerospace shares bought from the Marketplace ticket with no hedge context. The hedge request is
+// made by itself after the fill and its popup opens; the request is incomplete. It is completed in the popup
+// (Investment Strategy by its listed ID, 30 days, downside protection) and sent: the scripted hedge service, labelled
+// "Test fixture (scripted, not Shaffer Hedge)", recommends 10 bought 45 puts. Receiving the recommendation executes
+// nothing. The package is priced from one quote snapshot; the put's quote then moves (fixture) before Execute now:
+// Execute now is refused with what changed (was / now) and nothing is submitted; the new figures are checked and
+// executed. The put leg is added to the position's strategy instance, carries the request's id, and protects the
+// 1,000 shares. Closed: nothing left.
+const KRV_PUT = { underlyingId: '$inst:stock', expiration: '2026-03-20', strike: 45, right: 'P', multiplier: 100, deliverableUnits: 100, exercise: 'american', settlement: 'physical' };
+const pathMarketplaceHedge = {
+  template: 'long', path: 'marketplace-hedge',
+  title: 'Trading path 2: a direct Marketplace purchase, the Hedge popup completed, the scripted recommendation executed with Execute now after a refused confirmation',
+  matrix: {
+    ticket: 'Marketplace instrument drawer, Trade tab (Account, Buy, Quantity), the trade preview; then the Hedge popup (opens after the fill; Complete the request: Investment Strategy, Intended holding period, Hedge objective, Save request), the recommended package with its legs priced, Execute now (and after a refusal: I have checked the new figures, Execute the new figures); the Hedge review queue on the Strategies page; the strategy instance for Close',
+    requiredFields: ['Account', 'Buy', 'Quantity', 'for the hedge request: Investment Strategy, holding period, objective'],
+    automaticInputs: ['the post-trade hedge request, made after the fill', 'the recommendation of the scripted hedge service (labelled test fixture, standing in for Shaffer Hedge)', 'bid, ask, last of the shares and the put (quote fixtures); the put quote moved by the fixture between display and Execute now', 'commissions from the Book fee schedule'],
+    manualInputs: ['the request\'s context, completed in the popup', 'Execute now; after the refusal, the check of the new figures and Execute the new figures', 'Close'],
+    settlement: 'Shares and premium T+1 on the US calendar',
+    lifecycle: 'Post-trade request (incomplete) -> completed and sent -> recommendation ready (nothing traded) -> Execute now refused when a leg moved beyond tolerance (nothing submitted) -> executed on the new figures -> request executed, hedge leg linked to the position and to the request',
+    accounting: 'Shares at average cost; the put at premium paid, a hedge leg of the same strategy instance; commissions expensed; realized on close',
+    collateral: 'None',
+  },
+  start: MAR(2),
+  settlementCheck: { lag: 1, holidays: [] },
+  book: book('Path marketplace trade and hedge popup', { funding: [{ ccy: 'USD', amount: 100_000 }] }),
+  instruments: { stock: stockDraft('Kerrville Aerospace Inc.', 'KRV'), p45: equityOption('KRV', 'KRV260320P45', 'P', 45, '2026-03-20') },
+  quotes: {
+    stock: { bid: 49.98, ask: 50.02, last: 50.00, bidSize: 10000, askSize: 10000 },
+    p45: { bid: 0.90, ask: 1.00, last: 0.95, bidSize: 50, askSize: 50 },
+  },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 100_000, unsettled: 0, reserved: 0, availableToTrade: 100_000, availableToWithdraw: 100_000 } },
+      treasury: { USD: { settled: 900_000, unsettled: 0, reserved: 0, availableToTrade: 900_000, availableToWithdraw: 900_000 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 100_000, treasury: 900_000, book: 1_000_000 },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+  },
+  steps: [
+    // The scripted hedge service (a labelled test fixture) will answer one complete request with one package.
+    { id: 'hedge-script', action: 'hedge_script', script: { responses: [{ packages: [{ id: 'scripted-put', label: 'Scripted protective put', recommended: true, legs: [{ role: 'hedge', hedgeFamily: 'Options', kind: 'trade', action: 'buy', quantity: 10, option: KRV_PUT }] }] }] }, expect: {} },
+    {
+      // 1,000 shares at the ask 50.02 = 50,020, commission 5.00.
+      id: 'buy', covers: ['marketplace trade'], action: 'ticket', ticketOf: 'equity', instrument: 'stock', side: 'buy', qty: 1000, as: 'core',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'stock', qty: 1000, estimate: 50.02, settleDate: '2026-03-03', cash: -50_020, fees: 5 }] },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 1000, avgPrice: 50.02 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1,000 KRV @ 50.02 USD', date: '2026-03-02' }],
+        cash: { account: { USD: { settled: 100_000, unsettled: -50_025, availableToTrade: 49_975, availableToWithdraw: 49_975 } } },
+        positions: [{ instrument: 'stock', lot: 'core', owner: 'account', direction: 'long', qty: 1000, avgCost: 50.02, cost: 50_020, price: 50, value: 50_000, unrealized: -20 }],
+        holdings: { stock: { long: 1000, short: 0, net: 1000 } },
+        pending: [{ instrument: 'stock', lot: 'core', dueDate: '2026-03-03', amount: -50_025, into: 'cash' }],
+        pnl: { account: { realized: 0, commissions: -5, unrealized: -20, total: -25 }, book: { realized: 0, commissions: -5, unrealized: -20, total: -25 }, treasury: { total: 0 } },
+        nav: { account: 99_975, treasury: 900_000, book: 999_975 },
+        balance: {
+          account: { cash: 100_000, payable: 50_025, positions: 50_000, assets: 150_000, liabilities: 50_025, netAssets: 99_975 },
+          book: { cash: 1_000_000, payable: 50_025, positions: 50_000, assets: 1_050_000, liabilities: 50_025, netAssets: 999_975 },
+        },
+      },
+    },
+    {
+      // The request made after the fill was incomplete (no context on the ticket); completed and saved, it is sent and the
+      // scripted service answers. Receiving the recommendation executes nothing: no order, no fill, nothing pending.
+      id: 'complete-request', covers: ['hedge popup', 'complete the request', 'recommendation never executes'], action: 'hedge_complete', lot: 'core',
+      investmentStrategy: P1_CONTEXT.investmentStrategy, holdingDays: 30, objective: 'downside_protection', // as the popup's Strategy picker sends a listed Strategy
+      expect: {
+        result: {
+          state: 'recommendation_ready', complete: true, missing: [], source: { kind: 'test-fixture', label: 'Test fixture (scripted, not Shaffer Hedge)' }, packages: ['scripted-put'], recommendedId: 'scripted-put',
+          investmentStrategy: { id: 'DEMO-IS-002', name: 'Core Equity', resolved: true }, holdingDays: 30, objective: 'downside_protection', scope: 'trade',
+          primary: { instrument: 'stock', direction: 'long', quantity: 1000, status: 'filled' }, proposedProtection: [], linkedProtection: [], hedgesHeld: [],
+        },
+        events: [],
+        openOrders: [],
+        positions: [{ instrument: 'stock', lot: 'core', qty: 1000 }],
+        pending: [{ instrument: 'stock', lot: 'core', amount: -50_025 }],
+      },
+    },
+    {
+      // Displayed: 10 puts at 1.00 = 1,000, commission 6.50, 1,006.50 required. The put's quote moves to 1.10 / 1.20 before
+      // Execute now: refused, nothing submitted (leg 1 estimated fill 1.00 -> 1.20, +20%; required 1,006.50 -> 1,206.50,
+      // +19.87%; tolerance 0.5%). The new figures are checked and executed: 10 at 1.20 = 1,200, commission 6.50.
+      id: 'execute-now', covers: ['execute now', 'refused after a quote move', 'was / now', 're-confirmed', 'one quote snapshot'], action: 'hedge_execute', lot: 'core', instrument: 'p45',
+      moveQuote: { instrument: 'p45', quote: { bid: 1.10, ask: 1.20, last: 1.15, bidSize: 50, askSize: 50 } }, reconfirm: true,
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', purpose: 'hedge', instrument: 'p45', qty: 10, estimate: 1.20, settleDate: '2026-03-03', cash: -1_200, fees: 6.50, dependsOn: [] }],
+          cash: { USD: { purchases: 1_200, fees: 6.50, required: 1_206.50, available: 49_975, shortfall: 0 } },
+        },
+        result: {
+          status: 'open', orders: [{ kind: 'trade', action: 'buy', instrument: 'p45', status: 'filled', qty: 10, filledQty: 10, avgPrice: 1.20 }],
+          firstAttempt: {
+            refused: /^Terms changed on leg 1 and on the package totals since this package was displayed\. leg 1 Buy 10 KRV260320P45: estimated fill is now 1\.20, was 1\.00 \(\+20%, tolerance 0\.5%\); Package, USD: cash required is now 1,206\.50 USD, was 1,006\.50 USD \(\+19\.87%, tolerance 0\.5%\);.* Nothing was submitted\./,
+            code: 'preview_changed',
+            changes: [{ leg: 1, field: 'price', was: 1, now: 1.2 }, { leg: 1, field: 'cash', was: -1_000, now: -1_200 }],
+          },
+        },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Bought 10 KRV260320P45 @ 1.20 USD', date: '2026-03-02' }],
+        cash: { account: { USD: { settled: 100_000, unsettled: -51_231.50, availableToTrade: 48_768.50, availableToWithdraw: 48_768.50 } } },
+        positions: [
+          { instrument: 'p45', lot: 'core', owner: 'account', direction: 'long', qty: 10, avgCost: 1.20, cost: 1_200, price: 1.15, value: 1_150, unrealized: -50 },
+          { instrument: 'stock', lot: 'core', value: 50_000 },
+        ],
+        holdings: { p45: { long: 10, short: 0, net: 10 } },
+        pending: [{ instrument: 'p45', lot: 'core', dueDate: '2026-03-03', amount: -1_206.50, into: 'cash' }, { instrument: 'stock', lot: 'core', amount: -50_025 }],
+        lifecycle: [{ type: 'option.expiry', instrument: 'p45', dueDate: '2026-03-20', status: 'pending' }],
+        pnl: { account: { commissions: -11.50, unrealized: -70, total: -81.50 }, book: { commissions: -11.50, unrealized: -70, total: -81.50 } },
+        nav: { account: 99_918.50, book: 999_918.50 },
+        balance: {
+          account: { cash: 100_000, payable: 51_231.50, positions: 51_150, assets: 151_150, liabilities: 51_231.50, netAssets: 99_918.50 },
+          book: { cash: 1_000_000, payable: 51_231.50, positions: 51_150, assets: 1_051_150, liabilities: 51_231.50, netAssets: 999_918.50 },
+        },
+      },
+    },
+    {
+      // The request is executed (out of the queue); the put leg carries its id; the shares are protected 1,000 of 1,000
+      // units by an explicit link from the request.
+      id: 'protection-shown', covers: ['hedge legs linked to the primary and the request', 'protection on the position'], action: 'hedge_check', lot: 'core',
+      expect: {
+        result: {
+          requests: [{ state: 'executed', trigger: 'post_trade', packages: 1, selectedPackage: 'scripted-put', source: 'test-fixture' }],
+          queue: [],
+          protection: [{ position: 'Long 1,000 KRV', exposureUnits: 1000, protectedUnits: 1000, remainingUnits: 0, linked: [{ hedge: 'Long 10 KRV260320P45', units: 1000, basis: 'explicit_link', request: 'this instance' }] }],
+          legs: [{ legNo: 2, purpose: 'hedge', request: 'this instance', fundsLegs: [] }],
+        },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: MAR(3),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 50,025.00 USD from settled cash', date: '2026-03-03' }, { type: 'settlement.pay', summary: 'paid 1,206.50 USD from settled cash' }],
+        cash: { account: { USD: { settled: 48_768.50, unsettled: 0, availableToTrade: 48_768.50, availableToWithdraw: 48_768.50 } } },
+        pending: [],
+        balance: {
+          account: { cash: 48_768.50, payable: null, assets: 99_918.50, liabilities: 0, netAssets: 99_918.50 },
+          book: { cash: 948_768.50, payable: null, assets: 999_918.50, liabilities: 0, netAssets: 999_918.50 },
+        },
+      },
+    },
+    {
+      // Shares sold at 49.98 (realized -40, commission 5.00); puts sold at the bid 1.10 (realized (1.10 - 1.20) x 1,000 =
+      // -100, commission 6.50).
+      id: 'close', covers: ['close', 'package closure'], action: 'close', lot: 'core', instrument: 'stock', scope: 'strategy', percent: 100,
+      expect: {
+        preview: {
+          blocking: 0, errors: [], intent: 'close',
+          legs: [
+            { kind: 'trade', action: 'sell', instrument: 'stock', qty: 1000, estimate: 49.98, settleDate: '2026-03-04', cash: 49_980, fees: 5 },
+            { kind: 'trade', action: 'sell', instrument: 'p45', qty: 10, estimate: 1.10, settleDate: '2026-03-04', cash: 1_100, fees: 6.50 },
+          ],
+        },
+        result: { status: 'closed', orders: [{ instrument: 'stock', status: 'filled' }, { instrument: 'p45', status: 'filled' }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 1,000 KRV @ 49.98 USD (realized -40.00 USD)' },
+          { type: 'trade.fill', summary: 'Sold 10 KRV260320P45 @ 1.10 USD (realized -100.00 USD)' },
+        ],
+        cash: { account: { USD: { settled: 48_768.50, unsettled: 51_068.50, availableToTrade: 99_837, availableToWithdraw: 48_768.50 } } },
+        positions: [],
+        holdings: { p45: null, stock: null },
+        pending: [{ instrument: 'p45', lot: 'core', dueDate: '2026-03-04', amount: 1_093.50, into: 'cash' }, { instrument: 'stock', lot: 'core', dueDate: '2026-03-04', amount: 49_975, into: 'cash' }],
+        lifecycle: [],
+        pnl: { account: { realized: -140, commissions: -23, unrealized: 0, total: -163 }, book: { realized: -140, commissions: -23, unrealized: 0, total: -163 } },
+        nav: { account: 99_837, book: 999_837 },
+        balance: {
+          account: { cash: 48_768.50, receivable: 51_068.50, positions: null, assets: 99_837, liabilities: 0, netAssets: 99_837 },
+          book: { cash: 948_768.50, receivable: 51_068.50, positions: null, assets: 999_837, liabilities: 0, netAssets: 999_837 },
+        },
+      },
+    },
+    {
+      // Nothing left: 100,000 - 163.
+      id: 'settle-final', covers: 'settlement', action: 'clock', to: MAR(4),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 49,975.00 USD into settled cash', date: '2026-03-04' }, { type: 'settlement.receive', summary: 'received 1,093.50 USD into settled cash' }],
+        cash: { account: { USD: { settled: 99_837, unsettled: 0, availableToTrade: 99_837, availableToWithdraw: 99_837 } } },
+        pending: [],
+        balance: { account: { cash: 99_837, receivable: null, assets: 99_837 }, book: { cash: 999_837, receivable: null, assets: 999_837 } },
+      },
+    },
+  ],
+};
+
+export default [bearCall, longStraddle, longStrangle, ironCondor, ironButterfly, longButterfly, longCalendar, longDiagonal, syntheticLong, syntheticShort, pairsTrade, futuresHedge, futuresCalendar, customTemplate, pathStrategyPackage, pathMarketplaceHedge];

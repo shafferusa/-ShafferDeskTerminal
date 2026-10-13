@@ -150,6 +150,8 @@ function resolveRefs(x, ctx) {
     if (x.startsWith('$inst:')) return ctx.inst(x.slice(6)).id;
     if (x.startsWith('$unit:')) return ctx.unitId(x.slice(6));
     if (x.startsWith('$lot:')) return ctx.lot(x.slice(5)).strategyId;
+    // t2: the hedge request the last hedge_request step made (the Strategies page sends its id with the package).
+    if (x === '$hedge:last') { if (!ctx.lastHedgeRequest) throw new Error('Step refers to $hedge:last, but no hedge_request step came before it.'); return ctx.lastHedgeRequest.id; }
     if (x.startsWith('$agreement:')) {
       const a = ctx.agreements.get(x.slice(11));
       if (!a) throw new Error(`Step refers to the agreement "${x.slice(11)}", which no earlier step recorded (use an \`agreement\` step with \`as\`).`);
@@ -528,7 +530,7 @@ export async function actThroughClient(t, ctx, step) {
         // t2: the Hedge popup's "Complete the request" form (Investment Strategy by its listed ID, holding period,
         // objective), saved: the request is sent and the answer comes back. Nothing is traded.
         const r = await hedgeRequestOfLot(t, ctx, step.lot);
-        const after = await t.http.post(`/api/hedge/requests/${r.id}/complete`, { investmentStrategy: { id: step.investmentStrategy }, holdingPeriod: { days: step.holdingDays }, objective: { type: step.objective }, scope: { type: step.scope || 'trade' } });
+        const after = await t.http.post(`/api/hedge/requests/${r.id}/complete`, { investmentStrategy: typeof step.investmentStrategy === 'string' ? { id: step.investmentStrategy } : step.investmentStrategy, holdingPeriod: { days: step.holdingDays }, objective: { type: step.objective }, scope: { type: step.scope || 'trade' } });
         return { result: hedgeRequestView(after, ctx) };
       }
       case 'hedge_check':
