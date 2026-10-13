@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 47.1% of the pass** (last milestone 2026-10-13T16:25Z, c1: cryptocurrency passes at engine, API and browser)
+**Completeness: about 47.7% of the pass** (last milestone 2026-10-13T16:25Z, s8: s8: browser cases SB:isolation:book-routes and no-netting pass; Strategy attach cross-Book leak and Book-switch prompt race fixed)
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 
