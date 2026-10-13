@@ -2099,4 +2099,69 @@ const protectiveCall = {
   ],
 };
 
-export default [longTemplate, shortTemplate, protectivePut, protectiveCall];
+// ---------------------------------------------------------------------------------------------
+// covered_call
+// ---------------------------------------------------------------------------------------------
+const cc = (qty, strike, extra = {}) => pageInput('covered_call', { quantity: qty, options: { expiration: '2026-03-20', strikes: { call: strike }, contracts: null }, ...extra });
+const ccPage = (qty, strike, extra = {}) => ({ template: 'Covered Call', underlying: 'main', quantity: qty, expiration: '2026-03-20', strikes: { 'Call strike': strike }, ...extra });
+
+const coveredCall = {
+  template: 'covered_call',
+  title: 'Covered call on Kestrel Logistics: shares bought and calls written as one package, new and existing holding, partial fills, assignment, roll',
+  matrix: { ...TEMPLATE_MATRIX },
+  start: MAR(2),
+  settlementCheck: { lag: 1, holidays: [] },
+  book: book('Matrix template covered call'),
+  instruments: { main: STOCK, call52: option('C', 52), call50: option('C', 50), call52apr: option('C', 52, '2026-04-17') },
+  quotes: {
+    main: { bid: 49.95, ask: 50.05, last: 50.00, bidSize: 300, askSize: 300 },
+    call52: { bid: 0.90, ask: 1.00, last: 0.95, bidSize: 3, askSize: 3 },
+    call50: { bid: 1.80, ask: 1.90, last: 1.85, bidSize: 100, askSize: 100 },
+    call52apr: { bid: 1.60, ask: 1.70, last: 1.65, bidSize: 100, askSize: 100 },
+  },
+  expectAtStart: startState(),
+  steps: [
+    { id: 'hedge-request', covers: ['hedge request', 'template protection'], action: 'hedge_request', input: cc(1000, 52, CONTEXT), strategyPage: { ...PAGE_CONTEXT, ...ccPage(1000, 52) }, expect: {} },
+    { id: 'open-partial', covers: ['open', 'partial fill', 'dependent leg scaled'], action: 'package', as: 'core', instrument: 'main', input: cc(1000, 52), strategyPage: ccPage(1000, 52), expect: {} },
+    { id: 'cancel-remainder', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'core', expect: {} },
+    { id: 'retry', covers: ['retry'], action: 'recover', how: 'retry', lot: 'core', expect: {} },
+    { id: 'limit-never-reached', covers: ['failed dependent leg'], action: 'package', as: 'limited', instrument: 'main', input: cc(200, 50), strategyPage: ccPage(200, 50), editLegs: { 2: { orderType: 'limit', limitPrice: 2.5 } }, expect: {} },
+    { id: 'cancel-limited', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'limited', expect: {} },
+    { id: 'unwind', covers: ['unwind'], action: 'recover', how: 'unwind', lot: 'limited', expect: {} },
+    { id: 'kept-limit', covers: ['failed dependent leg'], action: 'package', as: 'kept', instrument: 'main', input: cc(100, 50), strategyPage: ccPage(100, 50), editLegs: { 2: { orderType: 'limit', limitPrice: 2.5 } }, expect: {} },
+    { id: 'cancel-kept', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'kept', expect: {} },
+    { id: 'accept-kept', covers: ['accept as it stands'], action: 'strategy_action', how: 'accept', lot: 'kept', expect: {} },
+    {
+      id: 'existing-holding', covers: ['existing holding', 'open'], action: 'package', as: 'wrapped', instrument: 'main',
+      input: { template: 'covered_call', underlyingId: '$inst:main', origin: 'strategy_page', ...NO_CONTEXT, mode: 'existing', existingPositionId: '$pos:kept:main', quantity: 100, hedgeRatio: 1, options: { expiration: '2026-03-20', strikes: { call: 50 }, contracts: null }, borrow: null, orderType: 'market', limitPrice: null, stopPrice: null, tif: 'day', financing: null },
+      strategyPage: { template: 'Covered Call', underlying: 'main', mode: 'existing', existing: { lot: 'kept', instrument: 'main' }, expiration: '2026-03-20', strikes: { 'Call strike': 50 } },
+      expect: {},
+    },
+    { id: 'kept-after-link', covers: ['existing holding'], action: 'strategy_check', lot: 'kept', expect: {} },
+    { id: 'deep-book', action: 'quote', instrument: 'main', quote: { bid: 49.95, ask: 50.05, last: 50.00, bidSize: 10000, askSize: 10000 }, expect: {} },
+    { id: 'deep-book-call', action: 'quote', instrument: 'call52', quote: { bid: 0.90, ask: 1.00, last: 0.95, bidSize: 100, askSize: 100 }, expect: {} },
+    { id: 'resize-up', covers: ['resize', 'increase'], action: 'resize', lot: 'core', factor: 1.2, expect: {} },
+    { id: 'roll', covers: ['roll'], action: 'roll', lot: 'core', newExpiration: '2026-04-17', expect: {} },
+    { id: 'next-day', covers: ['settlement'], action: 'clock', to: MAR(3), expect: {} },
+    { id: 'sweep-to-treasury', covers: ['transfer'], action: 'transfer', from: 'account', to: 'treasury', ccy: 'USD', amount: 120_000, expect: {} },
+    { id: 'cash-short-not-financed', covers: ['financing: not financed'], action: 'package', instrument: 'main', input: cc(400, 52), strategyPage: ccPage(400, 52), status: 'blocked', reason: 'x', expect: { refused: 'short' } },
+    { id: 'funded-from-treasury', covers: ['financing: Treasury funding'], action: 'package', as: 'funded', instrument: 'main', input: cc(400, 52, { financing: { mode: 'treasury' } }), strategyPage: ccPage(400, 52, { financing: { mode: 'treasury' } }), expect: {} },
+    { id: 'funded-by-loan', covers: ['financing: borrow'], action: 'package', as: 'levered', instrument: 'main', contractAs: 'loan', input: cc(200, 52, { financing: { mode: 'loan', rateType: 'fixed', rate: 0.06 } }), strategyPage: ccPage(200, 52, { financing: { mode: 'loan', rate: 0.06 } }), expect: {} },
+    { id: 'settle-financed', covers: ['settlement'], action: 'clock', to: MAR(4), expect: {} },
+    { id: 'treasury-top-up', covers: ['transfer'], action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 50_000, expect: {} },
+    { id: 'close-levered', covers: ['close', 'repay'], action: 'close', lot: 'levered', scope: 'strategy', expect: {} },
+    { id: 'settle-close-levered', covers: ['settlement'], action: 'clock', to: MAR(5), expect: {} },
+    { id: 'expiry-close', action: 'close_price', instrument: 'main', date: '2026-03-20', value: 51, expect: {} },
+    { id: 'expiry-quote', action: 'quote', instrument: 'main', quote: { bid: 50.95, ask: 51.05, last: 51.00, bidSize: 10000, askSize: 10000 }, expect: {} },
+    { id: 'expiry', covers: ['expiry', 'assignment', 'lapse'], action: 'clock', to: MAR(20, '17:30'), expect: {} },
+    { id: 'after-expiry-wrapped', covers: ['package state after expiry'], action: 'strategy_check', lot: 'wrapped', expect: {} },
+    { id: 'settle-expiry', covers: ['settlement'], action: 'clock', to: MAR(23), expect: {} },
+    { id: 'close-share', covers: ['reduce', 'close share'], action: 'close', lot: 'core', scope: 'strategy', percent: 50, expect: {} },
+    { id: 'close-exact', covers: ['reduce', 'close exact amount'], action: 'close', lot: 'core', instrument: 'main', qty: 200, expect: {} },
+    { id: 'close-all', covers: ['close'], action: 'close', lot: 'core', scope: 'strategy', expect: {} },
+    { id: 'close-funded', covers: ['close'], action: 'close', lot: 'funded', scope: 'strategy', expect: {} },
+    { id: 'settle-closes', covers: ['settlement'], action: 'clock', to: MAR(24), expect: {} },
+  ],
+};
+
+export default [longTemplate, shortTemplate, protectivePut, protectiveCall, coveredCall];

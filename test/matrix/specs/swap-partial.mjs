@@ -777,4 +777,215 @@ const quantoSwap = {
   ],
 };
 
-export default [dividendSwap, cmsSpreadSwap, nonDeliverableSwap, quantoSwap];
+// ---------------------------------------------------------------------------------------------
+// callable_swap
+// ---------------------------------------------------------------------------------------------
+// Three-year USD swap callable by us: pay 4.10% fixed annual 30/360, receive 3-month Term SOFR quarterly ACT/360, on
+// 15,000,000 from Wed 20 May 2026 to Sun 20 May 2029 (paid Mon 21 May). The party entering it as written may end it at no
+// cost on 22 February 2027, 20 August 2027 or 22 February 2028; on exercise the amount each leg has accrued since its last
+// payment is settled. Position-level terms: variation margin with no threshold and a 25,000 minimum transfer. Commission
+// 20.00 per million; T+2 (USD).
+//   float receipts: 20 May to 20 August (92 days) at 4.25%: 162,916.67; 20 August to 20 November (92) at 4.10%:
+//     157,166.67; 20 November to 20 February (92, paid Mon 22 February) at 3.90%: 149,500.00
+//   mark -0.80 on 20 August: -120,000.00: 120,000.00 posted at the end of the day
+//   exercise on Fri 20 November refused (not a call date); on Mon 22 February 2027 the counterparty cannot exercise (the
+//     call is ours); our exercise settles the fixed leg 20 May 2026 to 22 February 2027 (30/360: 272 days):
+//     15,000,000 x 4.10% x 272/360 = 464,666.67 paid, and the float leg 20 to 22 February (2 days) at the 3.70% fixing of
+//     19 February: 15,000,000 x 3.70% x 2/360 = 3,083.33 received; the swap ends at 0.00 and the 120,000.00 comes back
+//   cash: 2,000,000 - 300 + 162,916.67 + 157,166.67 + 149,500 - 464,666.67 + 3,083.33 = 2,007,700.00
+const CS_NAME = 'USD 4.10% v TSFR3M callable swap 20 May 2029';
+const callableSwap = {
+  productId: 'callable_swap',
+  title: 'Callable swap: pay fixed against Term SOFR with a Bermudan right to cancel held by us, exercised by hand on a call date',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'Exercise dates (the call dates)', 'Right held by (the side entered as written, or the opposite side)'],
+    automaticInputs: ['payment schedule from the contract terms and the USD calendar', 'Term SOFR fixings (rate fixtures standing in for Shaffer MarketData)', 'the amounts accrued on each leg at exercise', 'settlement date T+2', 'commission from the Book fee schedule', 'variation margin from the position-level terms'],
+    manualInputs: ['upfront (stated fill price)', 'marks entered by hand', 'the exercise of the call, recorded by hand on the position on a call date (Lifecycle, "Call exercised")'],
+    settlement: 'Upfront and commission T+2 on the USD calendar; legs paid on their payment dates; the accrued amounts settled on the exercise date',
+    lifecycle: 'Quarterly floating receipts; an exercise on a date that is not a call date refused; the counterparty\'s exercise refused (the call is ours); our exercise on a call date settles the accrued amounts and ends the swap at no cost; nothing scheduled afterwards',
+    accounting: 'Carried at the mark less the upfront; leg payments and the accrued amounts settled at exercise realized; commission expensed',
+    collateral: 'Position-level terms: variation margin at end of day against the mark, no threshold, 25,000 minimum transfer; returned when the swap ends',
+  },
+  start: at('2026-05-18'),
+  settlementCheck: { lag: 2, holidays: [] },
+  book: {
+    name: 'Matrix callable swap', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 4_000_000 }],
+    account: { name: 'Rates', funding: [{ ccy: 'USD', amount: 2_000_000 }] },
+    settings: { fees: { swap: { perUnit: 0.00002, minimum: 0, bps: 0 } }, fill: FILL, settlement: { swap: 2 } },
+  },
+  instruments: {
+    main: {
+      productId: 'callable_swap', name: CS_NAME, symbol: 'CALL-410-0529', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { tradingCalendar: 'USD', settlementCalendar: 'USD', paymentCalendar: 'USD' },
+      terms: {
+        effective: '2026-05-20', maturity: '2029-05-20', counterparty: 'Dealer K',
+        collateralBasis: { type: 'position', independentAmount: { type: 'none' }, variationMargin: true, threshold: 0, minimumTransfer: 25_000 },
+        callRight: { kind: 'call', by: 'written', dates: '2027-02-22; 2027-08-20; 2028-02-22' },
+        legs: [
+          { side: 'pay', type: 'fixed', ccy: 'USD', rate: 0.041, months: 12, dayCount: '30/360' },
+          { side: 'receive', type: 'float', ccy: 'USD', index: 'TSFR3M', months: 3, dayCount: 'ACT/360' },
+        ],
+      },
+    },
+  },
+  rates: { TSFR3M: { byDate: { '2026-05-20': 4.25, '2026-08-20': 4.10, '2026-11-20': 3.90, '2027-02-19': 3.70 } } },
+  expectAtStart: usdStart(2_000_000, 2_000_000),
+  steps: [
+    {
+      id: 'open', covers: ['open'], action: 'ticket', instrument: 'main', side: 'buy', qty: 15_000_000, as: 'cs', order: { statedPrice: 0 },
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 15_000_000, estimate: 0, model: 'stated-price', settleDate: '2026-05-20', calendar: 'USD', cash: 0, fees: 300 }], // 15,000,000 x 0.00002
+          cash: { USD: { fees: 300, margin: 0, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 15_000_000, avgPrice: 0 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Entered as written: 15,000,000 notional of CALL-410-0529 at 0.00 per 100 notional', owner: 'account', date: '2026-05-18' }],
+        cash: { account: { USD: { unsettled: -300, availableToTrade: 1_999_700, availableToWithdraw: 1_999_700 } } },
+        positions: [{ instrument: 'main', lot: 'cs', owner: 'account', direction: 'as written', qty: 15_000_000, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, notional: 15_000_000 }],
+        holdings: { main: { long: 15_000_000, short: 0, net: 15_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-05-20', amount: -300, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-08-20', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-05-20', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2029-05-21', status: 'pending' },
+        ],
+        otc: [{ instrument: 'main', lot: 'cs', owner: 'account', qty: 15_000_000, basis: 'position', mark: null, iaPosted: 0, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: -300, unrealized: 0, total: -300 } },
+        nav: { account: 1_999_700, book: 3_999_700 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 2_000_000, payable: 300, positions: null, assets: 2_000_000, liabilities: 300, netAssets: 1_999_700 } },
+      },
+    },
+    {
+      id: 'mark-at-par', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 0, note: 'Dealer K mark, by hand',
+      expect: { positions: [{ instrument: 'main', lot: 'cs', price: 0, value: 0, unrealized: 0, provisional: false }], otc: [{ instrument: 'main', mark: 0, markValue: 0 }], provisional: { account: false, book: false } },
+    },
+    {
+      id: 'settle-commission', covers: 'settlement', action: 'clock', to: at('2026-05-20'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 300.00 USD from settled cash', cash: { USD: -300 } }],
+        cash: { account: { USD: { settled: 1_999_700, unsettled: 0, availableToTrade: 1_999_700, availableToWithdraw: 1_999_700 } } },
+        pending: [],
+        balance: { account: { cash: 1_999_700, payable: null, assets: 1_999_700, liabilities: 0 } },
+      },
+    },
+    {
+      // 15,000,000 x 4.25% x 92/360 = 162,916.67 received; the fixed leg pays once a year.
+      id: 'first-quarter', covers: 'floating payment', action: 'clock', to: at('2026-08-20'),
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Swap receipt on ${CS_NAME}, leg B (float), period 2026-05-20 to 2026-08-20: 162,916.67 USD`, cash: { USD: 162_916.67 }, date: '2026-08-20' }],
+        cash: { account: { USD: { settled: 2_162_616.67, availableToTrade: 2_162_616.67, availableToWithdraw: 2_162_616.67 } } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2026-11-20', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-05-20', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2029-05-21', status: 'pending' },
+        ],
+        pnl: { account: { realized: 162_916.67, total: 162_616.67 } },
+        nav: { account: 2_162_616.67, book: 4_162_616.67 },
+        balance: { account: { cash: 2_162_616.67, assets: 2_162_616.67, netAssets: 2_162_616.67 } },
+      },
+    },
+    {
+      // 15,000,000 x -0.80 / 100 = -120,000.00.
+      id: 'mark-lower', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: -0.80, note: 'Dealer K mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'cs', price: -0.8, value: -120_000, unrealized: -120_000 }],
+        otc: [{ instrument: 'main', mark: -0.8, markValue: -120_000 }],
+        pnl: { account: { unrealized: -120_000, total: 42_616.67 } },
+        nav: { account: 2_042_616.67, book: 4_042_616.67 },
+        balance: { account: { positions: -120_000, assets: 2_042_616.67, netAssets: 2_042_616.67 } },
+      },
+    },
+    {
+      // No threshold: the whole 120,000 is called, above the 25,000 minimum transfer.
+      id: 'variation-margin-posted', covers: 'variation margin', action: 'clock', to: eod('2026-08-20'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under position-level terms: 120,000.00 USD posted. Netting set of 1 position marked at -120,000.00 USD; threshold 0.00 USD.', cash: { USD: -120_000 }, owner: 'account' }],
+        cash: { account: { USD: { settled: 2_042_616.67, margin: 120_000, availableToTrade: 2_042_616.67, availableToWithdraw: 2_042_616.67 } } },
+        otc: [{ instrument: 'main', vmPosted: 120_000, vmExposure: -120_000, vmStatus: 'ok' }],
+        nav: { account: 2_042_616.67 },
+        balance: { account: { cash: 2_042_616.67, margin: 120_000, assets: 2_042_616.67, netAssets: 2_042_616.67 } },
+      },
+    },
+    {
+      // 15,000,000 x 4.10% x 92/360 = 157,166.67.
+      id: 'second-quarter', covers: 'floating payment', action: 'clock', to: at('2026-11-20'),
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Swap receipt on ${CS_NAME}, leg B (float), period 2026-08-20 to 2026-11-20: 157,166.67 USD`, cash: { USD: 157_166.67 } }],
+        cash: { account: { USD: { settled: 2_199_783.34, availableToTrade: 2_199_783.34, availableToWithdraw: 2_199_783.34 } } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-02-22', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-05-20', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2029-05-21', status: 'pending' },
+        ],
+        pnl: { account: { realized: 320_083.34, total: 199_783.34 } },
+        nav: { account: 2_199_783.34, book: 4_199_783.34 },
+        balance: { account: { cash: 2_199_783.34, assets: 2_199_783.34, netAssets: 2_199_783.34 } },
+      },
+    },
+    {
+      id: 'exercise-off-date-refused', covers: ['call exercise', 'refusal'], action: 'lifecycle', lot: 'cs', body: { action: 'call_exercise', by: 'us' },
+      status: 'blocked', reason: 'A Bermudan call: exercise is allowed on the call dates only, and 20 November 2026 is not one.',
+      expect: { refused: 'CALL-410-0529 can be called only on its call dates (2027-02-22, 2027-08-20, 2028-02-22); today is 2026-11-20.' },
+    },
+    {
+      // 20 November to 20 February is 92 days (the period ends on the 20th; paid Monday 22nd): 15,000,000 x 3.90% x 92/360.
+      id: 'third-quarter', covers: 'floating payment', action: 'clock', to: at('2027-02-22'),
+      expect: {
+        events: [{ type: 'swap.payment', summary: `Swap receipt on ${CS_NAME}, leg B (float), period 2026-11-20 to 2027-02-20: 149,500.00 USD`, cash: { USD: 149_500 } }],
+        cash: { account: { USD: { settled: 2_349_283.34, availableToTrade: 2_349_283.34, availableToWithdraw: 2_349_283.34 } } },
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-05-20', status: 'pending' },
+          { type: 'swap.payment', instrument: 'main', dueDate: '2027-05-20', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'main', dueDate: '2029-05-21', status: 'pending' },
+        ],
+        pnl: { account: { realized: 469_583.34, total: 349_283.34 } },
+        nav: { account: 2_349_283.34, book: 4_349_283.34 },
+        balance: { account: { cash: 2_349_283.34, assets: 2_349_283.34, netAssets: 2_349_283.34 } },
+      },
+    },
+    {
+      id: 'mark-before-exercise', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: -0.50, note: 'Dealer K mark, by hand',
+      expect: {
+        positions: [{ instrument: 'main', lot: 'cs', price: -0.5, value: -75_000, unrealized: -75_000 }],
+        otc: [{ instrument: 'main', mark: -0.5, markValue: -75_000, vmPosted: 120_000 }],
+        pnl: { account: { unrealized: -75_000, total: 394_283.34 } },
+        nav: { account: 2_394_283.34, book: 4_394_283.34 },
+        balance: { account: { positions: -75_000, assets: 2_394_283.34, netAssets: 2_394_283.34 } },
+      },
+    },
+    {
+      id: 'counterparty-exercise-refused', covers: ['call exercise', 'refusal'], action: 'lifecycle', lot: 'cs', body: { action: 'call_exercise', by: 'counterparty' },
+      status: 'blocked', reason: 'The call belongs to the side entered as written (this position): the counterparty holds no right to end the swap.',
+      expect: { refused: 'The call on CALL-410-0529 belongs to this position: the counterparty cannot exercise it. Record our own exercise instead.' },
+    },
+    {
+      // Fixed 464,666.67 paid, float 3,083.33 received (see the header); the swap ends at 0.00 against a cost of 0.00; the
+      // 120,000.00 posted comes back at once. Realized 162,916.67 + 157,166.67 + 149,500 - 464,666.67 + 3,083.33 = 8,000.00.
+      // Cash 1,999,700 + 8,000 = 2,007,700.00.
+      id: 'call-exercised', covers: ['call exercise', 'close', 'collateral'], action: 'lifecycle', lot: 'cs', body: { action: 'call_exercise', by: 'us' },
+      expect: {
+        events: [
+          { type: 'swap.exercise', summary: `Call of CALL-410-0529 exercised by us on 2027-02-22, recorded by hand: accrued amounts settled, leg A (fixed) 2026-05-20 to 2027-02-22 paid 464,666.67 USD; leg B (float) 2027-02-20 to 2027-02-22 received 3,083.33 USD`, cash: { USD: -461_583.34 } },
+          { type: 'swap.terminated', summary: 'Terminated on the exercise of the call by us: 15,000,000 notional of CALL-410-0529 at 0.00 per 100 notional' },
+          { type: 'collateral.variation', summary: 'Variation margin under position-level terms: 120,000.00 USD returned to us. The last position of the netting set ended.', cash: { USD: 120_000 } },
+        ],
+        cash: { account: { USD: { settled: 2_007_700, margin: 0, unsettled: 0, availableToTrade: 2_007_700, availableToWithdraw: 2_007_700 } } },
+        positions: [], holdings: { main: null }, pending: [], lifecycle: [], otc: [],
+        pnl: { account: { realized: 8_000, commissions: -300, unrealized: 0, total: 7_700 } },
+        nav: { account: 2_007_700, book: 4_007_700 },
+        balance: { account: { cash: 2_007_700, margin: null, positions: null, assets: 2_007_700, liabilities: 0, netAssets: 2_007_700 } },
+      },
+    },
+    {
+      // Nothing is left to happen: no payment, no collateral, no alert.
+      id: 'after-the-exercise', covers: 'close', action: 'clock', to: eod('2027-05-20'),
+      expect: { events: [], cash: { account: { USD: { settled: 2_007_700 } } }, positions: [], pending: [], lifecycle: [], otc: [], alerts: [] },
+    },
+  ],
+};
+
+export default [dividendSwap, cmsSpreadSwap, nonDeliverableSwap, quantoSwap, callableSwap];

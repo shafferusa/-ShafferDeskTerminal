@@ -93,14 +93,14 @@ const ROWS = [
   ['agency_mbs', 'Agency MBS', 'Securitised debt', 'bond', 'cash', P, 'Principal paydowns (pool factor) are recorded by hand.'],
   ['non_agency_mbs', 'Non-agency MBS', 'Securitised debt', 'bond', 'cash', P, 'Principal paydowns and losses are recorded by hand.'],
   ['tba_mortgage', 'TBA mortgage contract', 'Securitised debt', 'forward', 'deriv', P, 'Booked as a forward on the pass-through coupon. The pool the seller allocates is recorded by hand on the position before settlement (checked for good delivery) and delivered on paper (simulated) on the settlement date.'],
-  ['specified_pool', 'Mortgage specified pool', 'Securitised debt', 'bond', 'cash', P, 'Principal paydowns (pool factor) are recorded by hand.'],
-  ['abs', 'Asset-backed security', 'Securitised debt', 'bond', 'cash', P, 'Principal paydowns are recorded by hand.'],
-  ['cmo', 'Collateralised mortgage obligation (CMO)', 'Securitised debt', 'bond', 'cash', P, 'Tranche paydowns are recorded by hand.'],
-  ['clo', 'Collateralised loan obligation (CLO)', 'Securitised debt', 'bond', 'cash', P, 'Tranche paydowns are recorded by hand; floating coupons need fixings.'],
-  ['cdo', 'Collateralised debt obligation (CDO)', 'Securitised debt', 'bond', 'cash', P, 'Tranche paydowns and losses are recorded by hand.'],
-  ['credit_linked_note', 'Credit-linked note', 'Securitised debt', 'bond', 'cash', P, 'Credit events are recorded by hand.'],
-  ['structured_note', 'Structured note', 'Securitised debt', 'bond', 'cash', P, 'Coupons follow the stated schedule; payoff-linked amounts are recorded by hand.'],
-  ['catastrophe_bond', 'Catastrophe bond', 'Insurance-linked', 'bond', 'cash', P, 'Trigger events and principal losses are recorded by hand.'],
+  ['specified_pool', 'Mortgage specified pool', 'Securitised debt', 'bond', 'cash', P, 'Registered with its stated pool characteristics (required). Coupons after the payment delay are automatic; the monthly factor and paydown (scheduled and prepaid) are recorded by hand; a loss allocation is refused for a guaranteed pool.'],
+  ['abs', 'Asset-backed security', 'Securitised debt', 'bond', 'cash', P, 'Coupons net of a stated servicing fee are automatic (gross, fee and net in the history); the factor and principal paydowns from the servicer report are recorded by hand.'],
+  ['cmo', 'Collateralised mortgage obligation (CMO)', 'Securitised debt', 'bond', 'cash', P, 'A sequential class receives no principal while its senior class is outstanding: the senior balance and the tranche factor are recorded by hand from each remittance report; coupons are automatic.'],
+  ['clo', 'Collateralised loan obligation (CLO)', 'Securitised debt', 'bond', 'cash', P, 'Floating coupons on current face need fixings (a missing fixing blocks visibly); a coupon paid in kind (deferrable class), paydowns and loss allocations are recorded by hand.'],
+  ['cdo', 'Collateralised debt obligation (CDO)', 'Securitised debt', 'bond', 'cash', P, 'Floating coupons on current face need fixings (a missing fixing blocks visibly); paydowns, loss allocations and, for a deferrable class, coupons paid in kind are recorded by hand.'],
+  ['credit_linked_note', 'Credit-linked note', 'Securitised debt', 'bond', 'cash', P, 'Registered with its reference entity. Coupons are automatic; the credit event is recorded by hand with the auction recovery: the coupon ends (accrued forfeited) and principal settles at the recovery.'],
+  ['structured_note', 'Structured note', 'Securitised debt', 'bond', 'cash', P, 'Contingent coupons and the principal at maturity (protected, or against a barrier) are worked out from observations of the linked underlying, each recorded by hand; a coupon or redemption waits visibly for its observation. Other payoff-linked amounts are recorded as manual cash flows.'],
+  ['catastrophe_bond', 'Catastrophe bond', 'Insurance-linked', 'bond', 'cash', P, 'Registered with its collateral account. Coupons (collateral return plus spread, fixings needed) are automatic; a covered event and its principal loss are recorded by hand, releasing collateral to the sponsor.'],
   ['insurance_linked_security', 'Insurance-linked security', 'Insurance-linked', 'manual', 'cash', M, 'Entered by hand: coupons, valuations in % of face with date and source, loss events writing face down, and the redemption at maturity (the maturity waits for it).'],
 
   // ---- Money market ----
@@ -113,12 +113,12 @@ const ROWS = [
   ['term_deposit', 'Term deposit', 'Money market', 'loan', 'cash', F, ''],
 
   // ---- Loans and private credit ----
-  ['syndicated_loan', 'Syndicated loan', 'Loans and credit', 'bond', 'cash', P, 'Held at a % of par price with floating coupons (fixings needed); amortisation and prepayments are recorded by hand.'],
-  ['leveraged_loan', 'Leveraged loan', 'Loans and credit', 'bond', 'cash', P, 'Amortisation and prepayments are recorded by hand.'],
+  ['syndicated_loan', 'Syndicated loan', 'Loans and credit', 'bond', 'cash', P, 'Held at a % of par price, traded by assignment (no short sale) on par or distressed documentation; delayed compensation after T+7 and floating coupons (fixings needed) are automatic; amortisation, prepayments, draws, repricings and fees are recorded by hand.'],
+  ['leveraged_loan', 'Leveraged loan', 'Loans and credit', 'bond', 'cash', P, 'Traded by assignment (no short sale), floating coupons with fixings, delayed compensation on late par settlement; amortisation, prepayments and a repricing (new spread, soft-call premium) are recorded by hand.'],
   ['revolving_credit_facility', 'Revolving credit facility', 'Loans and credit', 'loan', 'cash', P, 'Each drawing is a loan; commitment fees are recorded by hand.'],
-  ['private_credit', 'Private credit', 'Loans and credit', 'bond', 'cash', P, 'Valuation is manual; amortisation and prepayments are recorded by hand.'],
-  ['distressed_debt', 'Distressed debt', 'Loans and credit', 'bond', 'cash', P, 'Coupons can be suspended by hand; restructurings are recorded by hand.'],
-  ['loan_participation', 'Loan participation', 'Loans and credit', 'bond', 'cash', P, 'Amortisation and prepayments are recorded by hand.'],
+  ['private_credit', 'Private credit', 'Loans and credit', 'bond', 'cash', P, 'Valuation is manual (stated fill prices, marks by hand); a fixed PIK component is capitalised automatically; draws on the delayed-draw commitment, commitment fees, amortisation and repayments are recorded by hand.'],
+  ['distressed_debt', 'Distressed debt', 'Loans and credit', 'bond', 'cash', P, 'The default is recorded by hand (non-accrual, trades flat, coupon dates listed unpaid); interim and final recovery distributions are recorded by hand; distributions in new securities are recorded as a sale and a purchase.'],
+  ['loan_participation', 'Loan participation', 'Loans and credit', 'bond', 'cash', P, 'Registered with its grantor and the grantor\'s face; coupons are passed through as the participation\'s share after the payment delay; amortisation and prepayments are recorded by hand.'],
 
   // ---- Cash, FX and funding ----
   ['currency', 'USD and foreign currency balances', 'Cash and FX', 'cash', 'cash', F, 'Held as ledger cash by currency in Treasury and each Account.'],
