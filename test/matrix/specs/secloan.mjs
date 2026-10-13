@@ -767,4 +767,211 @@ const stockLoan = {
   ],
 };
 
-export default [securitiesBorrowing, securitiesLending, stockLoan];
+// ---------------------------------------------------------------------------------------------
+// bond_loan
+// ---------------------------------------------------------------------------------------------
+// Treasury lends 2,000,000 face of a corporate bond to Quarry Lane Capital under a bond loan. A bond loan's cash collateral is
+// worked out on the bonds' dirty value (clean price plus the interest accrued to the day) at 102%, so it moves every day as
+// interest accrues, and drops when the coupon is paid; the fee (0.25% a year) accrues on the clean market value. Treasury
+// keeps the bonds' coupon: paid on the coupon date on the face lent too (by the borrower, as a manufactured payment). The bonds
+// on loan cannot be sold. Treasury recalls them after the coupon; the collateral goes back with the fee to date.
+//
+// Inputs: ASHG-4.5-OCT30, 4.50% 30/360, coupons 15 Apr / 15 Oct, quoted 98.90 / 99.00, last 98.95 (fixture); no commission;
+// T+1. Bond loan 2,000,000 face, collateral 102% of dirty value, fee 0.25% a year.
+//   Clean value 2,000,000 x 98.95 / 100 = 1,979,000.00. Accrued (30/360 from 15 October): 172 days on 7 April = 43,000.00;
+//   173 days on 8 April = 43,250.00; 179 days on 14 April = 44,750.00; after the coupon, 0 on 15 April and 250.00 on 16 April.
+//   Collateral 1.02 x (1,979,000 + accrued): 2,062,440.00; 2,062,695.00; 2,064,225.00; 2,018,580.00; 2,018,835.00.
+//   Fee: 1,979,000 x 0.0025 / 360 = 13.743056 a day.
+const ASHG = { productId: 'corporate_bond', name: 'Ashgrove Paper 4.50% Notes 15-Oct-2030', symbol: 'ASHG-4.5-OCT30', marketView: 'US_CASH', venueType: 'otc', issuer: 'Ashgrove Paper', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+  terms: { couponType: 'fixed', couponRate: 0.045, frequency: 2, maturity: '2030-10-15', issueDate: '2023-10-15', dayCount: '30/360', redemption: 100, minDenomination: 1_000, seniority: 'Senior unsecured' } };
+const BLOAN = { owner: 'treasury', productId: 'bond_loan', productLabel: 'Bond loan', ccy: 'USD', qty: 2_000_000, name: 'Quarry Lane bond loan of ASHG', position: { instrument: 'bond', lot: 'bonds' }, as: 'bloan',
+  terms: { feeRate: 0.0025, collateralPct: 1.02, recallable: true, counterparty: 'Quarry Lane Capital' } };
+const ABONDS = { instrument: 'bond', lot: 'bonds', owner: 'treasury', direction: 'long', qty: 2_000_000, avgCost: 99.00, cost: 1_980_000, price: 98.95, value: 1_979_000, unrealized: -1_000 };
+const BLENT = { instrument: 'bloan', lot: 'bloan', owner: 'treasury', direction: 'securities lent', product: 'bond_loan', qty: -2_000_000, value: 1_979_000 };
+const ASHG_MAT = { type: 'bond.maturity', instrument: 'bond', dueDate: '2030-10-15', status: 'pending', owner: 'treasury' };
+const BL_FEE = { type: 'secloan.fee', instrument: 'bloan', dueDate: '2026-05-01', status: 'pending', owner: 'treasury' };
+
+const bondLoan = {
+  productId: 'bond_loan',
+  title: 'Bond loan by Treasury of 2,000,000 Ashgrove Paper 4.5% notes: cash collateral at 102% of dirty value marked daily, fee on clean value, coupon kept by the lender, recalled',
+  matrix: {
+    ...LEND_TICKET,
+    automaticInputs: ['the cash collateral at 102% of the dirty value (price fixture plus accrued interest from the registered coupon terms)', 'the daily re-mark of the collateral as interest accrues and after the coupon', 'the daily fee accrual on the clean market value', 'the coupon on the bonds lent, paid to the lender', 'the collateral returned and the fee to date received on the recall'],
+    manualInputs: ['every term, entered on the ticket (product Bond loan)', 'the recall (Take back)'],
+    settlement: 'None for the loan: collateral received, marked and returned in restricted cash; the bonds bought settle T+1',
+    lifecycle: 'Fee accrues daily on clean value; collateral marked daily on dirty value; the coupon is paid to the lender (manufactured on the face lent); fee received monthly and on return; recall by hand',
+    accounting: 'The bonds lent stay Treasury\'s holding at market value with their accrued coupon (on loan, not sellable); the collateral is restricted cash with a matching liability; the fee is lending income; the coupon is coupon income',
+    collateral: 'Cash 102% of dirty value (a bond loan\'s convention), restricted and owed back; it rises as interest accrues, falls when the coupon is paid, and is returned on the recall',
+  },
+  tradedOn: 'A bond loan is not a registry instrument: it is entered on the Lend a security ticket of the Treasury page from a bond position held, and registers itself when the ticket is confirmed. The bonds are a registered corporate bond.',
+  start: AT_1000('2026-04-06'), // Monday 6 April 2026, 10:00 New York
+  settlementCheck: { lag: 1, holidays: [] },
+  book: {
+    name: 'Matrix bond loan', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 2_500_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 100_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0 } }, fill: FILL, settlement: { bond: 1 } },
+  },
+  instruments: { bond: ASHG },
+  quotes: { bond: { bid: 98.90, ask: 99.00, last: 98.95, bidSize: 10_000_000, askSize: 10_000_000 } },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 100_000, availableToTrade: 100_000 } },
+      treasury: { USD: { settled: 2_400_000, unsettled: 0, payable: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 2_400_000, availableToWithdraw: 2_400_000, borrowed: 0, lent: 0 } },
+    },
+    positions: [], holdings: {}, pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 100_000, treasury: 2_400_000, book: 2_500_000 },
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+    pnl: { account: { total: 0 }, treasury: { couponInterest: 0, lendingIncome: 0, unrealized: 0, total: 0 }, book: { total: 0 } },
+    balance: {
+      account: { cash: 100_000, assets: 100_000, netAssets: 100_000 },
+      treasury: { cash: 2_400_000, assets: 2_400_000, liabilities: 0, netAssets: 2_400_000 },
+      book: { netAssets: 2_500_000 },
+    },
+    oversight: { accountBorrowings: [], treasuryOwn: [] },
+  },
+  steps: [
+    {
+      id: 'buy-the-bonds', covers: 'collateral', action: 'ticket', ticketOf: 'bond', instrument: 'bond', owner: 'treasury', side: 'buy', qty: 2_000_000, as: 'bonds',
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'buy', instrument: 'bond', qty: 2_000_000, estimate: 99.00, settleDate: '2026-04-07', gross: 1_980_000, accrued: 43_000, cash: -2_023_000, fees: 0 }] },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 2_000_000, avgPrice: 99.00 }] },
+        events: [{ type: 'strategy.submitted', owner: 'treasury' }, { type: 'trade.fill', summary: 'Bought 2,000,000 ASHG-4.5-OCT30 @ 99.00 USD', owner: 'treasury', date: '2026-04-06' }],
+        cash: { treasury: { USD: { settled: 2_400_000, unsettled: -2_023_000, payable: 2_023_000, availableToTrade: 377_000, availableToWithdraw: 377_000 } } },
+        positions: [{ ...ABONDS, accrued: 43_000, onLoan: 0 }],
+        holdings: { bond: { long: 2_000_000, short: 0, net: 2_000_000 } },
+        pending: [{ instrument: 'bond', lot: 'bonds', owner: 'treasury', dueDate: '2026-04-07', amount: -2_023_000, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'bond', dueDate: '2026-04-15', status: 'pending', owner: 'treasury' }, ASHG_MAT],
+        pnl: { treasury: { unrealized: -1_000, total: -1_000 }, book: { total: -1_000 } },
+        nav: { treasury: 2_399_000, book: 2_499_000 },
+        balance: {
+          treasury: { cash: 2_400_000, positions: 1_979_000, accruedIncome: 43_000, payable: 2_023_000, assets: 4_422_000, liabilities: 2_023_000, netAssets: 2_399_000 },
+          book: { netAssets: 2_499_000 },
+        },
+      },
+    },
+    {
+      id: 'bonds-settle', covers: 'settlement', action: 'clock', to: AT_1000('2026-04-07'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: /^Settlement: paid 2,023,000\.00 USD/, cash: { USD: -2_023_000 }, owner: 'treasury', date: '2026-04-07' }],
+        cash: { treasury: { USD: { settled: 377_000, unsettled: 0, payable: 0, availableToTrade: 377_000, availableToWithdraw: 377_000 } } },
+        pending: [],
+        balance: { treasury: { cash: 377_000, payable: null, assets: 2_399_000, liabilities: 0 } },
+      },
+    },
+    lendTicket('lend-the-bonds', BLOAN, {
+      covers: ['open', 'lend', 'cash collateral', 'dirty value'],
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'lend_sec', action: 'lend_sec', purpose: 'financing', qty: 2_000_000, ccy: 'USD', lending: { collateralCash: 2_062_440, value: 2_022_000 } }] }, // 1.02 x (1,979,000 + 43,000)
+        result: { status: 'open', orders: [{ kind: 'lend_sec', action: 'lend_sec', instrument: 'bloan', status: 'filled', qty: 2_000_000, filledQty: 2_000_000 }] },
+        events: [
+          { type: 'strategy.submitted', owner: 'treasury' },
+          { type: 'secloan.lend', summary: 'Lent 2,000,000 ASHG-4.5-OCT30 at a fee of 0.250% p.a.; received 2,062,440.00 USD cash collateral', owner: 'treasury', date: '2026-04-07' },
+        ],
+        cash: { treasury: { USD: { settled: 377_000, restricted: 2_062_440, availableToTrade: 377_000, availableToWithdraw: 377_000 } } },
+        positions: [{ ...ABONDS, accrued: 43_000, onLoan: 2_000_000 }, { ...BLENT, accrued: 0, collateralCash: 2_062_440 }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'bond', dueDate: '2026-04-15', status: 'pending', owner: 'treasury' }, BL_FEE, ASHG_MAT],
+        balance: {
+          treasury: { restricted: 2_062_440, collateralReceived: 2_062_440, assets: 4_461_440, liabilities: 2_062_440, netAssets: 2_399_000 },
+          book: { netAssets: 2_499_000 },
+        },
+      },
+    }),
+    {
+      id: 'sell-bonds-on-loan', covers: ['reduce', 'securities on loan not sellable'], action: 'ticket', ticketOf: 'bond', instrument: 'bond', owner: 'treasury', side: 'sell', qty: 1_000_000, from: 'bonds',
+      status: 'blocked', reason: 'All 2,000,000 face is out on loan.',
+      expect: { refused: 'only 0 of the 2,000,000 ASHG-4.5-OCT30 held is unencumbered; the rest is pledged or out on loan and cannot be sold until it is released' },
+    },
+    {
+      // The run of Wednesday 8 April: the bonds accrue a day (173 days, 43,250.00, +250.00); the fee one day on clean value, 13.74;
+      // the collateral is marked to 1.02 x (1,979,000 + 43,250) = 2,062,695.00: 255.00 more received.
+      id: 'collateral-follows-the-accrued-interest', covers: ['lending fee', 'collateral mark', 'dirty value'], action: 'clock', to: AT_1730('2026-04-08'),
+      expect: {
+        events: [
+          { type: 'accrual.coupon', summary: /^Interest accrued on ASHG-4\.5-OCT30: 250\.00 USD$/, owner: 'treasury', date: '2026-04-08' },
+          { type: 'accrual.fee', summary: 'Lending fee accrued on 2,000,000 ASHG-4.5-OCT30: 13.74 USD', owner: 'treasury', date: '2026-04-08' },
+          { type: 'collateral.mark', summary: 'Collateral on securities lent marked to market: received 255.00 USD', owner: 'treasury', date: '2026-04-08' },
+        ],
+        cash: { treasury: { USD: { restricted: 2_062_695 } } },
+        positions: [{ ...ABONDS, accrued: 43_250, onLoan: 2_000_000 }, { ...BLENT, accrued: 13.74, collateralCash: 2_062_695 }],
+        pnl: { treasury: { couponInterest: 250, lendingIncome: 13.74, total: -736.26 }, book: { total: -736.26 } },
+        nav: { treasury: 2_399_263.74, book: 2_499_263.74 },
+        balance: {
+          treasury: { restricted: 2_062_695, accruedIncome: 43_263.74, collateralReceived: 2_062_695, assets: 4_461_958.74, liabilities: 2_062_695, netAssets: 2_399_263.74 },
+          book: { netAssets: 2_499_263.74 },
+        },
+      },
+    },
+    {
+      // Wednesday 15 April, the coupon date: 2,000,000 x 4.5% / 2 = 45,000.00 paid to Treasury (the face lent included: the
+      // borrower's manufactured payment), 1,750.00 of it earned since the last run. The run of 14 April: six days' fee (82.46;
+      // 96.20 in all) and the collateral marked to 1.02 x (1,979,000 + 44,750) = 2,064,225.00 (1,530.00 more).
+      id: 'coupon-paid-to-the-lender', covers: ['manufactured payment', 'lending fee', 'collateral mark'], action: 'clock', to: AT_1000('2026-04-15'),
+      expect: {
+        events: [
+          { type: 'bond.coupon', summary: 'Coupon received on 2,000,000 ASHG-4.5-OCT30: 45,000.00 USD', cash: { USD: 45_000 }, owner: 'treasury', date: '2026-04-15' },
+          { type: 'accrual.coupon', summary: /^Interest accrued on ASHG-4\.5-OCT30: 1,750\.00 USD$/, owner: 'treasury', date: '2026-04-15' },
+          { type: 'accrual.fee', summary: 'Lending fee accrued on 2,000,000 ASHG-4.5-OCT30: 82.46 USD', owner: 'treasury', date: '2026-04-15' },
+          { type: 'collateral.mark', summary: 'Collateral on securities lent marked to market: received 1,530.00 USD', owner: 'treasury', date: '2026-04-15' },
+        ],
+        cash: { treasury: { USD: { settled: 422_000, restricted: 2_064_225, availableToTrade: 422_000, availableToWithdraw: 422_000 } } },
+        positions: [{ ...ABONDS, accrued: 0, onLoan: 2_000_000 }, { ...BLENT, accrued: 96.20, collateralCash: 2_064_225 }],
+        lifecycle: [BL_FEE, { type: 'bond.coupon', instrument: 'bond', dueDate: '2026-10-15', status: 'pending', owner: 'treasury' }, ASHG_MAT],
+        pnl: { treasury: { couponInterest: 2_000, lendingIncome: 96.20, total: 1_096.20 }, book: { total: 1_096.20 } },
+        nav: { treasury: 2_401_096.20, book: 2_501_096.20 },
+        balance: {
+          treasury: { cash: 422_000, restricted: 2_064_225, accruedIncome: 96.20, collateralReceived: 2_064_225, assets: 4_465_321.20, liabilities: 2_064_225, netAssets: 2_401_096.20 },
+          book: { netAssets: 2_501_096.20 },
+        },
+      },
+    },
+    {
+      // The run of 15 April: a day's fee (13.74; 109.94) and, the coupon paid, nothing accrued: the collateral falls to
+      // 1.02 x 1,979,000 = 2,018,580.00, 45,645.00 returned to the borrower.
+      id: 'collateral-falls-after-the-coupon', covers: ['collateral mark', 'dirty value'], action: 'clock', to: AT_1000('2026-04-16'),
+      expect: {
+        events: [
+          { type: 'accrual.fee', summary: 'Lending fee accrued on 2,000,000 ASHG-4.5-OCT30: 13.74 USD', owner: 'treasury', date: '2026-04-16' },
+          { type: 'collateral.mark', summary: 'Collateral on securities lent marked to market: returned 45,645.00 USD', owner: 'treasury', date: '2026-04-16' },
+        ],
+        cash: { treasury: { USD: { restricted: 2_018_580 } } },
+        positions: [{ ...ABONDS, accrued: 0, onLoan: 2_000_000 }, { ...BLENT, accrued: 109.94, collateralCash: 2_018_580 }],
+        pnl: { treasury: { lendingIncome: 109.94, total: 1_109.94 }, book: { total: 1_109.94 } },
+        nav: { treasury: 2_401_109.94, book: 2_501_109.94 },
+        balance: {
+          treasury: { restricted: 2_018_580, accruedIncome: 109.94, collateralReceived: 2_018_580, assets: 4_419_689.94, liabilities: 2_018_580, netAssets: 2_401_109.94 },
+          book: { netAssets: 2_501_109.94 },
+        },
+      },
+    },
+    {
+      // Recalled: the fee is brought to today (13.743056 more; 123.6875 -> 123.69, +13.75) and the collateral to today's dirty value
+      // (1.02 x (1,979,000 + 250) = 2,018,835.00, 255.00 more); all of it goes back, and the fee, 123.69, is received.
+      id: 'recall-the-bonds', covers: ['recall', 'close', 'full return'], action: 'repay', lot: 'bloan',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'recall_sec', action: 'recall_sec', purpose: 'financing', instrument: 'bloan', qty: 2_000_000, ccy: 'USD' }] },
+        result: { status: 'closed', orders: [{ kind: 'recall_sec', action: 'recall_sec', status: 'filled', qty: 2_000_000, filledQty: 2_000_000 }] },
+        events: [
+          { type: 'strategy.legs_added', owner: 'treasury' },
+          { type: 'accrual.fee', summary: 'Lending fee accrued on 2,000,000 ASHG-4.5-OCT30: 13.75 USD', owner: 'treasury', date: '2026-04-16' },
+          { type: 'collateral.mark', summary: 'Collateral on securities lent marked to market: received 255.00 USD', owner: 'treasury', date: '2026-04-16' },
+          { type: 'secloan.recall', summary: 'Took back 2,000,000 ASHG-4.5-OCT30 from loan; returned 2,018,835.00 USD cash collateral', owner: 'treasury', date: '2026-04-16' },
+          { type: 'interest.payment', summary: 'Lending fee received on Quarry Lane bond loan of ASHG: 123.69 USD', cash: { USD: 123.69 }, owner: 'treasury', date: '2026-04-16' },
+        ],
+        cash: { treasury: { USD: { settled: 422_123.69, restricted: 0, availableToTrade: 422_123.69, availableToWithdraw: 422_123.69 } } },
+        positions: [{ ...ABONDS, accrued: 0, onLoan: 0 }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'bond', dueDate: '2026-10-15', status: 'pending', owner: 'treasury' }, ASHG_MAT],
+        pnl: { treasury: { couponInterest: 2_000, lendingIncome: 123.69, unrealized: -1_000, total: 1_123.69 }, book: { total: 1_123.69 } },
+        nav: { treasury: 2_401_123.69, book: 2_501_123.69 },
+        balance: {
+          treasury: { cash: 422_123.69, restricted: null, accruedIncome: null, collateralReceived: null, assets: 2_401_123.69, liabilities: 0, netAssets: 2_401_123.69 },
+          book: { netAssets: 2_501_123.69 },
+        },
+      },
+    },
+  ],
+};
+
+export default [securitiesBorrowing, securitiesLending, stockLoan, bondLoan];

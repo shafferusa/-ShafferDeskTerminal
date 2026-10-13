@@ -1272,4 +1272,253 @@ const quantoOption = {
   ],
 };
 
-export default [barrierOption, asianOption, lookbackOption, basketOption, spreadOption, quantoOption];
+// ---------------------------------------------------------------------------------------------
+// compound_option
+// ---------------------------------------------------------------------------------------------
+// Two compound options on an OTC option, all dealt with Dealer R. The underlying option is a registered European call on
+// Brava Vision (BRVX, NASDAQ) struck at 100, expiring 18 December 2026, cash-settled, uncollateralized. The compound
+// options expire Wednesday 17 June 2026 against the underlying option's mark for that date, which the Terminal does not
+// compute: it is entered by hand (8.20 a unit). Strikes are premiums per unit of the underlying option.
+//   - a call on the call, struck at 6.00, physical, bought on 20,000 units; position-level terms: variation margin over
+//     10,000. Early exercise is refused (European). At expiry it is in the money (8.20 > 6.00): it is exercised into the
+//     underlying option, 20,000 units bought at 6.00 (a simulated delivery, T+2 across Juneteenth), which then lives with
+//     its own expiry and basis, and is terminated the next day at a stated 8.00.
+//   - a put on the call, struck at 9.00, cash-settled, written on 20,000 units; position-level terms: a fixed independent
+//     amount of 20,000. At expiry it costs 9.00 - 8.20 = 0.80 a unit, 16,000.
+const BRVX = 'Brava Vision Inc.';
+const UOPT = 'BRVX 100 call, 18 Dec 2026, European, cash (Dealer R)';
+const CCALL = 'Call on BRVX-C100-DEC26, strike 6.00, 17 Jun 2026, European, physical (Dealer R)';
+const CPUT = 'Put on BRVX-C100-DEC26, strike 9.00, 17 Jun 2026, European, cash (Dealer R)';
+const compoundOption = {
+  productId: 'compound_option',
+  title: 'Compound options on a BRVX OTC call: call-on-call bought and exercised into the call at expiry (then terminated); put-on-call written, cash-settled',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'Underlying instrument: the registered option the compound option delivers', 'Payoff: Compound', 'Strike: premium per unit of the underlying option'],
+    automaticInputs: ['premium settlement date, T+2 on the US calendar; the underlying option bought on exercise also settles T+2', 'commission per unit from the Book fee schedule', 'variation margin and independent amount from the position-level terms', 'expiry item settled against the underlying option\'s mark for the expiration date: physical exercise into the option, or cash'],
+    manualInputs: ['premium agreed with the dealer (stated fill price)', 'marks entered by hand (Manual entry)', 'the underlying option\'s mark for the expiration date, entered by hand (instrument drawer, Overview, "Closing price or fixing for date")', 'early exercise of a European compound option, refused', 'termination of the underlying option at a stated amount per unit'],
+    settlement: 'Premium and commission T+2 on the US calendar; the underlying option bought at the strike T+2 (Monday 22 June, after Juneteenth); the put\'s cash settlement T+1',
+    lifecycle: 'Early exercise refused (European); at expiry both items wait for the underlying option\'s mark; once entered the call is exercised into the underlying option (which schedules its own expiry) and the put is cash-settled; the underlying option is terminated; nothing scheduled afterwards',
+    accounting: 'Premium per unit x units; premium realized on exercise and settlement; the underlying option carried at the strike paid for it, then at its mark; commission expensed; marks by hand drive unrealized P&L',
+    collateral: 'Call on call (bought): position-level terms, variation margin over 10,000, received from the dealer and returned on exercise. Put on call (written): fixed independent amount 20,000, returned at settlement. The underlying option: its own basis, uncollateralized (explicit paper assumption)',
+  },
+  start: at('2026-03-02'),
+  settlementCheck: { lag: 2, holidays: ['2026-06-19'] }, // Juneteenth
+  book: {
+    name: 'Matrix compound option', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 2_000_000 }],
+    account: { name: 'Exotics', funding: [{ ccy: 'USD', amount: 600_000 }] },
+    settings: { fees: { otcoption: { perUnit: 0.01, minimum: 0, bps: 0 }, equity: NO_FEE }, fill: FILL, settlement: { otcoption: 2, equity: 1 } },
+  },
+  instruments: {
+    stock: { productId: 'common_stock', name: BRVX, symbol: 'BRVX', marketView: 'US_CASH', venue: 'NASDAQ', venueType: 'exchange', venueCountry: 'US', issuer: BRVX, domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', terms: {} },
+    uopt: {
+      productId: 'otc_option', name: UOPT, symbol: 'BRVX-C100-DEC26', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', underlying: 'stock', multiplier: 1,
+      terms: { right: 'C', strike: 100, expiration: '2026-12-18', optionType: 'vanilla', exercise: 'european', settlement: 'cash', counterparty: 'Dealer R', collateralBasis: { type: 'uncollateralized' } },
+    },
+    ccall: {
+      productId: 'compound_option', name: CCALL, symbol: 'BRVX-CC600-JUN26', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', underlying: 'uopt', multiplier: 1,
+      terms: { right: 'C', strike: 6, expiration: '2026-06-17', optionType: 'compound', exercise: 'european', settlement: 'physical', counterparty: 'Dealer R',
+        collateralBasis: { type: 'position', independentAmount: { type: 'none' }, variationMargin: true, threshold: 10_000, minimumTransfer: 1_000 } },
+    },
+    cput: {
+      productId: 'compound_option', name: CPUT, symbol: 'BRVX-CP900-JUN26', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', underlying: 'uopt', multiplier: 1,
+      terms: { right: 'P', strike: 9, expiration: '2026-06-17', optionType: 'compound', exercise: 'european', settlement: 'cash', counterparty: 'Dealer R',
+        collateralBasis: { type: 'position', independentAmount: { type: 'fixed', amount: 20_000 }, variationMargin: false, threshold: 0, minimumTransfer: 0 } },
+    },
+  },
+  quotes: { stock: { bid: 99.98, ask: 100.02, last: 100, bidSize: 100_000, askSize: 100_000 } },
+  expectAtStart: usdStart(600_000, 1_400_000),
+  steps: [
+    otcTicket({
+      id: 'buy-call-on-call', covers: 'open', instrument: 'ccall', side: 'buy', qty: 20_000, premium: 1.50, as: 'ccalls',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'ccall', qty: 20_000, estimate: 1.5, model: 'stated-price', settleDate: '2026-03-04', calendar: 'US', cash: -30_000, fees: 200, notional: 120_000 }], // 20,000 x 1.50; 20,000 x 0.01; 20,000 x 6.00 (no price of the underlying option: at the strike)
+          cash: { USD: { purchases: 30_000, fees: 200, margin: 0, required: 30_200, available: 600_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 20_000, avgPrice: 1.5 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 20,000 BRVX-CC600-JUN26 @ 1.50 USD', owner: 'account', date: '2026-03-02' }],
+        cash: { account: { USD: { settled: 600_000, unsettled: -30_200, availableToTrade: 569_800, availableToWithdraw: 569_800 } } },
+        positions: [{ instrument: 'ccall', lot: 'ccalls', owner: 'account', direction: 'long', qty: 20_000, avgCost: 1.5, cost: 30_000, price: null, value: null, unrealized: null, provisional: true, notional: null, margin: 0 }],
+        holdings: { ccall: { long: 20_000, short: 0, net: 20_000 } },
+        pending: [{ instrument: 'ccall', owner: 'account', dueDate: '2026-03-04', amount: -30_200, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'option.expiry', instrument: 'ccall', dueDate: '2026-06-17', status: 'pending' }],
+        otc: [{ instrument: 'ccall', lot: 'ccalls', qty: 20_000, basis: 'position', mark: null, iaRequired: 0, iaPosted: 0, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: -200, unrealized: 0, total: -200 } },
+        nav: { account: 599_800, book: 1_999_800 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 600_000, payable: 30_200, positions: 30_000, assets: 630_000, liabilities: 30_200, netAssets: 599_800 } },
+      },
+    }),
+    { id: 'half-an-hour-later', action: 'clock', to: at('2026-03-02', '15:30'), expect: {} },
+    otcTicket({
+      id: 'write-put-on-call', covers: ['write', 'collateral'], instrument: 'cput', side: 'sell', qty: 20_000, premium: 0.90, as: 'cputs',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'cput', qty: 20_000, estimate: 0.9, model: 'stated-price', settleDate: '2026-03-04', calendar: 'US', cash: 18_000, fees: 200, notional: 180_000 }], // 20,000 x 9.00 at the strike
+          cash: { USD: { proceeds: 18_000, fees: 200, margin: 20_000, required: 20_200, available: 569_800, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 20_000, avgPrice: 0.9 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Sold 20,000 BRVX-CP900-JUN26 @ 0.90 USD', owner: 'account' },
+          { type: 'otcoption.collateral', summary: `Collateral posted on ${CPUT} under its position-level terms: 20,000.00 USD (independent amount, fixed amount for the position)`, cash: { USD: -20_000 } },
+        ],
+        cash: { account: { USD: { settled: 580_000, unsettled: -12_400, margin: 20_000, availableToTrade: 567_600, availableToWithdraw: 549_800 } } }, // -30,200 + 17,800; 580,000 - 30,200
+        positions: [
+          { instrument: 'ccall', lot: 'ccalls', qty: 20_000 },
+          { instrument: 'cput', lot: 'cputs', owner: 'account', direction: 'short', qty: -20_000, avgCost: 0.9, cost: -18_000, price: null, value: null, unrealized: null, provisional: true, notional: null, margin: 20_000 },
+        ],
+        holdings: { cput: { long: 0, short: 20_000, net: -20_000 } },
+        pending: [
+          { instrument: 'ccall', owner: 'account', dueDate: '2026-03-04', amount: -30_200, ccy: 'USD', into: 'cash' },
+          { instrument: 'cput', owner: 'account', dueDate: '2026-03-04', amount: 17_800, ccy: 'USD', into: 'cash' },
+        ],
+        lifecycle: [{ type: 'option.expiry', instrument: 'ccall', dueDate: '2026-06-17', status: 'pending' }, { type: 'option.expiry', instrument: 'cput', dueDate: '2026-06-17', status: 'pending' }],
+        otc: [{ instrument: 'ccall' }, { instrument: 'cput', lot: 'cputs', qty: -20_000, basis: 'position', iaRequired: 20_000, iaPosted: 20_000, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { commissions: -400, total: -400 } },
+        nav: { account: 599_600, book: 1_999_600 }, // 580,000 + 20,000 + 17,800 - 30,200 + 30,000 - 18,000
+        balance: { account: { cash: 580_000, margin: 20_000, receivable: 17_800, payable: 30_200, positions: 12_000, assets: 629_800, liabilities: 30_200, netAssets: 599_600 } },
+      },
+    }),
+    {
+      id: 'mark-call-on-call', covers: 'manual mark', action: 'manual_price', instrument: 'ccall', value: 2.20, note: 'Dealer R mark, by hand',
+      expect: {
+        positions: [{ instrument: 'ccall', lot: 'ccalls', price: 2.2, value: 44_000, unrealized: 14_000, provisional: false }, { instrument: 'cput', lot: 'cputs' }],
+        otc: [{ instrument: 'ccall', mark: 2.2, markValue: 44_000 }, { instrument: 'cput' }],
+        pnl: { account: { unrealized: 14_000, total: 13_600 } },
+        nav: { account: 613_600, book: 2_013_600 },
+        balance: { account: { positions: 26_000, assets: 643_800, netAssets: 613_600 } }, // 44,000 - 18,000
+      },
+    },
+    {
+      id: 'mark-put-on-call', covers: 'manual mark', action: 'manual_price', instrument: 'cput', value: 1.40, note: 'Dealer R mark, by hand',
+      expect: {
+        positions: [{ instrument: 'ccall', lot: 'ccalls' }, { instrument: 'cput', lot: 'cputs', price: 1.4, value: -28_000, unrealized: -10_000, provisional: false }],
+        otc: [{ instrument: 'ccall' }, { instrument: 'cput', mark: 1.4, markValue: -28_000 }],
+        pnl: { account: { unrealized: 4_000, total: 3_600 } },
+        nav: { account: 603_600, book: 2_003_600 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 16_000, assets: 633_800, netAssets: 603_600 } },
+      },
+    },
+    {
+      // Call on call marked at 44,000: 34,000 beyond its 10,000 threshold, posted by Dealer R.
+      id: 'variation-margin-received', covers: 'variation margin', action: 'clock', to: eod('2026-03-02'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under position-level terms: 34,000.00 USD received. Netting set of 1 position marked at 44,000.00 USD; threshold 10,000.00 USD.', owner: 'account' }],
+        cash: { account: { USD: { restricted: 34_000 } } },
+        otc: [{ instrument: 'ccall', vmHeld: 34_000, vmExposure: 44_000, vmStatus: 'ok' }, { instrument: 'cput' }],
+        balance: { account: { restricted: 34_000, collateralReceived: 34_000, assets: 667_800, liabilities: 64_200, netAssets: 603_600 } },
+      },
+    },
+    {
+      id: 'settle-premiums', covers: 'settlement', action: 'clock', to: at('2026-03-04'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 17,800.00 USD into settled cash', cash: { USD: 17_800 } },
+          { type: 'settlement.pay', summary: 'paid 30,200.00 USD from settled cash', cash: { USD: -30_200 } },
+        ],
+        cash: { account: { USD: { settled: 567_600, unsettled: 0, availableToTrade: 567_600, availableToWithdraw: 567_600 } } },
+        pending: [],
+        balance: { account: { cash: 567_600, receivable: null, payable: null, assets: 637_600, liabilities: 34_000 } }, // 567,600 + 34,000 + 20,000 + 16,000
+      },
+    },
+    {
+      id: 'early-exercise-refused', covers: 'exercise style', action: 'lifecycle', lot: 'ccalls', body: { action: 'exercise', contracts: 20_000 },
+      status: 'blocked', reason: 'The compound option is European: it is exercised at expiration only.',
+      expect: { refused: 'This option is European: it can only be exercised at expiration.' },
+    },
+    {
+      // Expiration, after the close: both items wait for the underlying option's mark for 17 June.
+      id: 'expiry-awaits-underlying-mark', covers: 'expiry', action: 'clock', to: eod('2026-06-17'),
+      expect: {
+        events: [],
+        lifecycle: [
+          { type: 'option.expiry', instrument: 'ccall', dueDate: '2026-06-17', status: 'blocked', reason: /^Awaiting the 2026-06-17 fixing for BRVX-C100-DEC26/ },
+          { type: 'option.expiry', instrument: 'cput', dueDate: '2026-06-17', status: 'blocked', reason: /^Awaiting the 2026-06-17 fixing for BRVX-C100-DEC26/ },
+        ],
+      },
+    },
+    {
+      // The underlying option's mark for 17 June, entered by hand: 8.20. Call on call: 8.20 > 6.00, exercised into the
+      // option: it closes at zero (30,000 realized) and 20,000 units of BRVX-C100-DEC26 are bought at 6.00, 120,000, T+2
+      // (Monday 22 June: Juneteenth is closed); the 34,000 Dealer R posted goes back. Put on call: 9.00 - 8.20 = 0.80 a
+      // unit, 16,000 paid T+1; realized 18,000 - 16,000; the 20,000 comes back. The underlying option is now carried at its
+      // mark, 8.20: 164,000.
+      id: 'underlying-mark-by-hand', covers: ['expiry', 'exercise into the underlying option', 'cash settlement', 'collateral'], action: 'manual_price', instrument: 'uopt', value: 8.20, forDate: '2026-06-17', note: 'Dealer R mark of the underlying option for 17 June, by hand',
+      expect: {
+        events: [
+          { type: 'option.exercised', summary: 'Exercised: 20,000 BRVX-CC600-JUN26 at strike 6', owner: 'account', date: '2026-06-17' },
+          { type: 'option.delivery', summary: /^Simulated delivery: received 20,000 BRVX-C100-DEC26 at strike 6 on exercise of BRVX-CC600-JUN26/, owner: 'account' },
+          { type: 'collateral.variation', summary: 'Variation margin under position-level terms: 34,000.00 USD returned to the counterparty. The last position of the netting set ended.', owner: 'account' },
+          { type: 'option.cash_settled', summary: 'Assigned (cash settlement): 20,000 BRVX-CP900-JUN26 at 0.80 USD per unit (fixing 8.20)', owner: 'account', date: '2026-06-17' },
+          { type: 'otcoption.collateral', summary: `Collateral returned on ${CPUT} under its position-level terms: 20,000.00 USD (independent amount, the position ended)`, cash: { USD: 20_000 } },
+        ],
+        cash: { account: { USD: { settled: 587_600, restricted: 0, margin: 0, unsettled: -136_000, availableToTrade: 451_600, availableToWithdraw: 451_600 } } }, // 567,600 + 20,000; -120,000 - 16,000
+        positions: [{ instrument: 'uopt', lot: 'ccalls', owner: 'account', direction: 'long', qty: 20_000, avgCost: 6, cost: 120_000, price: 8.2, value: 164_000, unrealized: 44_000, provisional: false, priceSource: 'Manual entry', notional: 2_000_000, margin: 0 }], // 20,000 x 100 (BRVX last)
+        holdings: { ccall: null, cput: null, uopt: { long: 20_000, short: 0, net: 20_000 } },
+        pending: [
+          { instrument: 'cput', owner: 'account', dueDate: '2026-06-18', amount: -16_000, ccy: 'USD', into: 'cash' },
+          { instrument: 'uopt', owner: 'account', dueDate: '2026-06-22', amount: -120_000, ccy: 'USD', into: 'cash' },
+        ],
+        lifecycle: [{ type: 'option.expiry', instrument: 'uopt', dueDate: '2026-12-18', status: 'pending' }],
+        otc: [{ instrument: 'uopt', lot: 'ccalls', qty: 20_000, basis: 'uncollateralized', mark: 8.2, markValue: 164_000, iaPosted: 0, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: -28_000, unrealized: 44_000, total: 15_600 } }, // -30,000 + 2,000; - 400
+        nav: { account: 615_600, book: 2_015_600 }, // 587,600 - 136,000 + 164,000
+        balance: { account: { cash: 587_600, margin: null, restricted: null, collateralReceived: null, payable: 136_000, positions: 164_000, assets: 751_600, liabilities: 136_000, netAssets: 615_600 } },
+      },
+    },
+    {
+      id: 'pay-put-settlement', covers: 'settlement', action: 'clock', to: at('2026-06-18'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 16,000.00 USD from settled cash', cash: { USD: -16_000 } }],
+        cash: { account: { USD: { settled: 571_600, unsettled: -120_000, availableToTrade: 451_600, availableToWithdraw: 451_600 } } },
+        pending: [{ instrument: 'uopt', owner: 'account', dueDate: '2026-06-22', amount: -120_000, ccy: 'USD', into: 'cash' }],
+        balance: { account: { cash: 571_600, payable: 120_000, assets: 735_600, liabilities: 120_000 } },
+      },
+    },
+    {
+      // The underlying option terminated with Dealer R at 8.00 a unit: 160,000 less 200, T+2 (Tuesday 23 June, across
+      // Juneteenth). Realized 160,000 - 120,000. Its December expiry is no longer scheduled.
+      id: 'terminate-underlying-option', covers: ['termination at a stated amount', 'close'], action: 'close', lot: 'ccalls', instrument: 'uopt', scope: 'strategy', percent: 100, order: { statedPrice: 8.00 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'uopt', qty: 20_000, estimate: 8, model: 'stated-price', settleDate: '2026-06-23', cash: 160_000, fees: 200 }] },
+        result: { orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 20_000, avgPrice: 8 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 20,000 BRVX-C100-DEC26 @ 8.00 USD (realized 40,000.00 USD)' }],
+        cash: { account: { USD: { unsettled: 39_800, availableToTrade: 611_400, availableToWithdraw: 451_600 } } }, // -120,000 + 159,800
+        positions: [], holdings: { uopt: null }, otc: [], lifecycle: [],
+        pending: [
+          { instrument: 'uopt', owner: 'account', dueDate: '2026-06-22', amount: -120_000, ccy: 'USD', into: 'cash' },
+          { instrument: 'uopt', owner: 'account', dueDate: '2026-06-23', amount: 159_800, ccy: 'USD', into: 'cash' },
+        ],
+        pnl: { account: { realized: 12_000, commissions: -600, unrealized: 0, total: 11_400 } },
+        nav: { account: 611_400, book: 2_011_400 }, // 571,600 - 120,000 + 159,800
+        balance: { account: { receivable: 159_800, positions: null, assets: 731_400, liabilities: 120_000, netAssets: 611_400 } },
+      },
+    },
+    {
+      id: 'pay-for-underlying-option', covers: ['settlement', 'holiday'], action: 'clock', to: at('2026-06-22'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 120,000.00 USD from settled cash', cash: { USD: -120_000 } }],
+        cash: { account: { USD: { settled: 451_600, unsettled: 159_800, availableToTrade: 611_400, availableToWithdraw: 451_600 } } },
+        pending: [{ instrument: 'uopt', owner: 'account', dueDate: '2026-06-23', amount: 159_800, ccy: 'USD', into: 'cash' }],
+        balance: { account: { cash: 451_600, payable: null, assets: 611_400, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'receive-termination', covers: 'settlement', action: 'clock', to: at('2026-06-23'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 159,800.00 USD into settled cash', cash: { USD: 159_800 } }],
+        cash: { account: { USD: { settled: 611_400, unsettled: 0, availableToTrade: 611_400, availableToWithdraw: 611_400 } } },
+        pending: [],
+        balance: { account: { cash: 611_400, receivable: null } },
+      },
+    },
+  ],
+};
+
+export default [barrierOption, asianOption, lookbackOption, basketOption, spreadOption, quantoOption, compoundOption];
