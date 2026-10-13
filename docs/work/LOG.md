@@ -75,3 +75,4 @@
 - 2026-10-13T16:19Z | c1 | +0.2 | mutual_fund passes at engine, API and browser (fund forward pricing at the next NAV built)
 - 2026-10-13T16:21Z | c1 | +0.2 | money_market_fund passes at engine, API and browser
 - 2026-10-13T16:23Z | b2 | +0.2 | eurobond passes at engine, API and browser
+- 2026-10-13T16:23Z | l1 | +0.2 | secured_loan passes at engine, API and browser
