@@ -1893,13 +1893,13 @@ const protectiveCall = {
         borrowings: [{ owner: 'account', family: 'loan', lot: 'levered', principal: 1_701.5, rate: 0.06, accrued: 0 }, secBorrow('core', 1000, 50_000, 5, 61_200), secBorrow('core', 200, 10_000, 1, 61_200), secBorrow('funded', 1000, 50_000, 2.5, 51_000), secBorrow('levered', 100, 5_000, 0, 5_100), secBorrow('wrapped', 100, 5_000, 0.5, 5_100)],
         oversight: { accountBorrowings: [oversee('core', 5), oversee('core', 1), oversee('funded', 2.5), oversee('levered', 0, 1_701.5), oversee('levered', 0), oversee('wrapped', 0.5)] },
         pnl: { account: { borrowFunding: -9, total: -297 }, book: { borrowFunding: -9, total: -297 } },
-        nav: { account: 39_899.25, book: 999_702.75 },
-        balance: { account: { cash: 36_000, restricted: 122_400, receivable: null, payable: null, accruedExpense: 9, assets: 41_610, liabilities: 1_710.5, netAssets: 39_899.25 }, book: { cash: 995_803.5, restricted: 122_400, receivable: null, payable: null, accruedExpense: 9, assets: 1_001_413.5, liabilities: 1_710.5, netAssets: 999_702.75 } },
+        nav: { account: 39_899.5, book: 999_703 },
+        balance: { account: { cash: 36_000, restricted: 122_400, receivable: null, payable: null, accruedExpense: 9, assets: 41_610, liabilities: 1_710.5, netAssets: 39_899.5 }, book: { cash: 995_803.5, restricted: 122_400, receivable: null, payable: null, accruedExpense: 9, assets: 1_001_413.5, liabilities: 1_710.5, netAssets: 999_703 } },
       },
     },
     {
       id: 'treasury-top-up', covers: ['transfer'], action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 100_000,
-      expect: { events: [{ type: 'transfer.funding', summary: 'Treasury funding: 100,000.00 USD from Treasury to Alpha' }], cash: { account: { USD: { settled: 136_000, availableToTrade: 100_000, availableToWithdraw: 100_000 } }, treasury: { USD: { settled: 859_803.5, availableToTrade: 859_803.5 } } }, nav: { account: 139_899.25, treasury: 859_803.5 }, balance: { account: { cash: 136_000, assets: 141_610, netAssets: 139_899.25 }, treasury: { cash: 859_803.5, assets: 859_803.5, netAssets: 859_803.5 } }, oversight: { accounts: { account: { fundingReceived: 140_196.5 } } } },
+      expect: { events: [{ type: 'transfer.funding', summary: 'Treasury funding: 100,000.00 USD from Treasury to Alpha' }], cash: { account: { USD: { settled: 136_000, availableToTrade: 100_000, availableToWithdraw: 100_000 } }, treasury: { USD: { settled: 859_803.5, availableToTrade: 859_803.5 } } }, nav: { account: 139_899.5, treasury: 859_803.5 }, balance: { account: { cash: 136_000, assets: 141_610, netAssets: 139_899.5 }, treasury: { cash: 859_803.5, assets: 859_803.5, netAssets: 859_803.5 } }, oversight: { accounts: { account: { fundingReceived: 140_196.5 } } } },
     },
     {
       // Close 'levered': cover 100 at the 50.10 ask (realized -10; 5,011 paid from its restricted collateral), sell its
