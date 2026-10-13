@@ -871,7 +871,8 @@ const bondLoan = {
           { type: 'secloan.lend', summary: 'Lent 2,000,000 ASHG-4.5-OCT30 at a fee of 0.250% p.a.; received 2,062,440.00 USD cash collateral', owner: 'treasury', date: '2026-04-07' },
         ],
         cash: { treasury: { USD: { settled: 377_000, restricted: 2_062_440, availableToTrade: 377_000, availableToWithdraw: 377_000 } } },
-        positions: [{ ...ABONDS, accrued: 43_000, onLoan: 2_000_000 }, { ...BLENT, accrued: 0, collateralCash: 2_062_440 }],
+        positions: [ // sorted by instrument key: bloan, bond
+          { ...BLENT, accrued: 0, collateralCash: 2_062_440 }, { ...ABONDS, accrued: 43_000, onLoan: 2_000_000 }],
         lifecycle: [{ type: 'bond.coupon', instrument: 'bond', dueDate: '2026-04-15', status: 'pending', owner: 'treasury' }, BL_FEE, ASHG_MAT],
         balance: {
           treasury: { restricted: 2_062_440, collateralReceived: 2_062_440, assets: 4_461_440, liabilities: 2_062_440, netAssets: 2_399_000 },
@@ -895,7 +896,7 @@ const bondLoan = {
           { type: 'collateral.mark', summary: 'Collateral on securities lent marked to market: received 255.00 USD', owner: 'treasury', date: '2026-04-08' },
         ],
         cash: { treasury: { USD: { restricted: 2_062_695 } } },
-        positions: [{ ...ABONDS, accrued: 43_250, onLoan: 2_000_000 }, { ...BLENT, accrued: 13.74, collateralCash: 2_062_695 }],
+        positions: [{ ...BLENT, accrued: 13.74, collateralCash: 2_062_695 }, { ...ABONDS, accrued: 43_250, onLoan: 2_000_000 }],
         pnl: { treasury: { couponInterest: 250, lendingIncome: 13.74, total: -736.26 }, book: { total: -736.26 } },
         nav: { treasury: 2_399_263.74, book: 2_499_263.74 },
         balance: {
@@ -917,7 +918,7 @@ const bondLoan = {
           { type: 'collateral.mark', summary: 'Collateral on securities lent marked to market: received 1,530.00 USD', owner: 'treasury', date: '2026-04-15' },
         ],
         cash: { treasury: { USD: { settled: 422_000, restricted: 2_064_225, availableToTrade: 422_000, availableToWithdraw: 422_000 } } },
-        positions: [{ ...ABONDS, accrued: 0, onLoan: 2_000_000 }, { ...BLENT, accrued: 96.20, collateralCash: 2_064_225 }],
+        positions: [{ ...BLENT, accrued: 96.20, collateralCash: 2_064_225 }, { ...ABONDS, accrued: 0, onLoan: 2_000_000 }],
         lifecycle: [BL_FEE, { type: 'bond.coupon', instrument: 'bond', dueDate: '2026-10-15', status: 'pending', owner: 'treasury' }, ASHG_MAT],
         pnl: { treasury: { couponInterest: 2_000, lendingIncome: 96.20, total: 1_096.20 }, book: { total: 1_096.20 } },
         nav: { treasury: 2_401_096.20, book: 2_501_096.20 },
@@ -937,7 +938,7 @@ const bondLoan = {
           { type: 'collateral.mark', summary: 'Collateral on securities lent marked to market: returned 45,645.00 USD', owner: 'treasury', date: '2026-04-16' },
         ],
         cash: { treasury: { USD: { restricted: 2_018_580 } } },
-        positions: [{ ...ABONDS, accrued: 0, onLoan: 2_000_000 }, { ...BLENT, accrued: 109.94, collateralCash: 2_018_580 }],
+        positions: [{ ...BLENT, accrued: 109.94, collateralCash: 2_018_580 }, { ...ABONDS, accrued: 0, onLoan: 2_000_000 }],
         pnl: { treasury: { lendingIncome: 109.94, total: 1_109.94 }, book: { total: 1_109.94 } },
         nav: { treasury: 2_401_109.94, book: 2_501_109.94 },
         balance: {

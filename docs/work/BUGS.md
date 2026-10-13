@@ -184,3 +184,8 @@ start fixing never asked of the data service; a return or price fixing asked for
   The forwards spec avoids it: FRA reductions there use early termination at a stated amount. Reproduce: buy an FRA,
   sell part of it from the strategy instance, then supply the fixing: the settlement of the closed part equals the
   undiscounted figure.
+
+- (fw, 2026-10-13 ~19:00 UTC) `npm test`: system cases SE:isolation:book-routes and SE:stress:repeated-requests fail
+  because a new route `POST /api/tasks/:id/settlement-value` (server/api.js, basket / spread option settlement value by
+  hand; OTC options work, test/matrix/drivers/browser/otcoption.mjs) is not classified in either system case's route
+  list (test/system). The route's owner should add it to both lists with its repeat-safety rule.
