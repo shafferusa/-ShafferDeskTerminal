@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 72.8% of the pass** (last milestone 2026-10-13T18:06Z, ui1: Marketplace item 4: final screen checks (336 screens, every view and tab, demo/normal, light/dark, 1440/1024/390) with fixes: card rows on narrow panels, market price, fair price and gap adjacent)
+**Completeness: about 73.0% of the pass** (last milestone 2026-10-13T18:08Z, m1: insurance_linked_security passes at engine, API and browser (coupons, loss event, maturity))
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 

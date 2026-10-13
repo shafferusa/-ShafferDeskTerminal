@@ -1917,6 +1917,9 @@ const agencyMbs = {
         positions: [{ instrument: 'main', lot: 'lot', owner: 'treasury', qty: 15_000_000, cost: 13_725_127.21, avgCost: 100.5, price: 100.4375,
           value: 13_716_591.69, unrealized: -8_535.52, accrued: 88_390.04 }], // 13,656,843 x 100.4375 / 100; 95,344.91 - 6,954.87
         holdings: { main: { long: 15_000_000, short: 0, net: 15_000_000 } },
+        // The trade (re)schedules the position's next coupon: 1 January (December's interest, paid 25 January 2029). November's,
+        // paid on 26 December, is still to come: both are listed.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2028-12-26', status: 'pending' }, { type: 'bond.coupon', instrument: 'main', dueDate: '2029-01-25', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2054-10-26', status: 'pending' }],
         pending: [
           { instrument: 'main', owner: 'treasury', dueDate: '2028-12-11', amount: 4_576_192.69, ccy: 'USD', into: 'cash' },
           { instrument: 'main', owner: 'treasury', dueDate: '2028-12-26', amount: 165_518, ccy: 'USD', into: 'cash' },
@@ -1927,24 +1930,78 @@ const agencyMbs = {
       },
     },
     {
-      // Monday 11 Dec. End of day Friday 8 Dec: November's coupon on the whole 20,000,000 (held at the record date) 84,217.11, plus
-      // 7 days of December on 18,209,124 (the sale settles on the 11th) 19,474.37, less the 10 days sold 6,954.87: 96,736.61?
-      // Worked to the cent: 84,217.11 + 19,474.37 - 6,954.87 = 96,736.61 before rounding the parts; whole: 84,217.11 +
-      // (18,209,124 x 5.5% x 7/360 = 19,474.3632) - (6,954.8738) = 96,736.60 -> on the books 88,390.04: 8,346.56 more.
+      // Monday 11 Dec. End of day Friday 8 Dec: November's coupon on the whole 20,000,000 (held at the record date), 84,217.11;
+      // plus 7 days of December on 18,209,124 (the sale settles on the 11th, so all of it is still settled face), 19,473.6465;
+      // less the 10 days of interest sold, 6,954.8738: 96,735.88. On the books 88,390.04: 8,345.84 more.
       id: 'settle-reduce', covers: ['settlement', 'accrual'], action: 'clock', to: EST('2028-12-11'),
       expect: {
         events: [
           { type: 'settlement.receive', summary: 'received 4,576,192.69 USD into settled cash', cash: { USD: 4_576_192.69 }, owner: 'treasury' },
-          { type: 'accrual.coupon', summary: 'Interest accrued on FN-5.5-BX1234: 8,346.56 USD', owner: 'treasury' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on FN-5.5-BX1234: 8,345.84 USD', owner: 'treasury' },
         ],
         cash: { treasury: { USD: { settled: 10_075_528.98, unsettled: 165_518, availableToTrade: 10_241_046.98 } } },
-        positions: [{ instrument: 'main', lot: 'lot', owner: 'treasury', qty: 15_000_000, accrued: 96_736.60 }],
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'treasury', qty: 15_000_000, accrued: 96_735.88 }],
         pending: [{ instrument: 'main', owner: 'treasury', dueDate: '2028-12-26', amount: 165_518, ccy: 'USD', into: 'cash' }],
-        pnl: { book: { couponInterest: 70_004.63, total: 54_375.27 } },
-        nav: { treasury: 24_055_375.27, book: 25_055_375.27 },
-        balance: { book: { cash: 11_075_528.98, receivable: 165_518, accruedIncome: 96_736.60, assets: 25_055_375.27, netAssets: 25_055_375.27 } },
+        pnl: { book: { couponInterest: 70_003.91, total: 54_374.55 } },
+        nav: { treasury: 24_054_374.55, book: 25_054_374.55 },
+        balance: { book: { cash: 11_075_528.98, receivable: 165_518, accruedIncome: 96_735.88, assets: 25_054_374.55, netAssets: 25_054_374.55 } },
       },
     },
+    {
+      // Tuesday 26 December (the 25th is Christmas). The principal of the paydown arrives: 165,518.00. November's coupon is paid on
+      // the 20,000,000 held at the November record date, on the November factor: 18,374,642 x 5.5% / 12 = 84,217.11. After it the
+      // accrued balance is December's interest to 8 Dec (12,518.77), as it should be. End of day Friday 22 Dec: 15,000,000 x
+      // 0.9104562 = 13,656,843 x 5.5% x 21/360 = 43,815.70; 31,296.93 more.
+      id: 'coupon-and-principal-after-christmas', covers: ['coupon', 'paydown (by hand)', 'settlement', 'market holiday'], action: 'clock', to: EST('2028-12-26'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 165,518.00 USD into settled cash', cash: { USD: 165_518 }, owner: 'treasury', date: '2028-12-26' },
+          { type: 'bond.coupon', summary: 'Coupon received on 20,000,000 FN-5.5-BX1234 (factor 0.9187321: current face 18,374,642): 84,217.11 USD', cash: { USD: 84_217.11 }, owner: 'treasury', date: '2028-12-26' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on FN-5.5-BX1234: 31,296.93 USD', owner: 'treasury' },
+        ],
+        cash: { treasury: { USD: { settled: 10_325_264.09, unsettled: 0, availableToTrade: 10_325_264.09 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'treasury', qty: 15_000_000, accrued: 43_815.70 }],
+        pending: [],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2029-01-25', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2054-10-26', status: 'pending' }],
+        pnl: { book: { couponInterest: 101_300.84, total: 85_671.48 } },
+        nav: { treasury: 24_085_671.48, book: 25_085_671.48 },
+        balance: { book: { cash: 11_325_264.09, receivable: null, accruedIncome: 43_815.70, assets: 25_085_671.48, netAssets: 25_085_671.48 } },
+      },
+    },
+    {
+      // Sold for settlement on Friday 29 December, before the 31 December record date: the January coupon and paydown will go to
+      // the buyer. 13,656,843 x 100.375 / 100 = 13,708,056.16; accrued 28 days 58,420.94 (14,605.24 more than the 43,815.70 on
+      // the books); commission 342.70. Realized 13,708,056.16 - 13,725,127.21 = -17,071.05.
+      id: 'close', covers: 'close', action: 'close', lot: 'lot', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 15_000_000, estimate: 100.375, settleDate: '2028-12-29', notional: 13_656_843,
+          gross: 13_708_056.16, accrued: 58_420.94, cash: 13_766_477.10, fees: 342.7 }] }, // 13,656,843 x 5.5% x 28/360 = 58,420.939; 0.25 bp = 342.701
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 15_000_000, avgPrice: 100.375 }] },
+        events: [
+          { type: 'strategy.legs_added', owner: 'treasury' },
+          { type: 'trade.fill', summary: /^Sold 15,000,000 FN-5\.5-BX1234 @ 100\.375 USD \(realized [-−]17,071\.05 USD\)$/, owner: 'treasury' },
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of FN-5.5-BX1234: 14,605.24 USD', owner: 'treasury' },
+        ],
+        cash: { treasury: { USD: { settled: 10_325_264.09, unsettled: 13_766_134.40, availableToTrade: 24_091_398.49 } } },
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', owner: 'treasury', dueDate: '2028-12-29', amount: 13_766_134.40, ccy: 'USD', into: 'cash' }],
+        lifecycle: [],
+        pnl: { book: { realized: -23_589, couponInterest: 115_906.08, commissions: -918.59, unrealized: 0, total: 91_398.49 } },
+        nav: { treasury: 24_091_398.49, book: 25_091_398.49 },
+        balance: { book: { cash: 11_325_264.09, receivable: 13_766_134.40, positions: null, accruedIncome: null, assets: 25_091_398.49, liabilities: 0, netAssets: 25_091_398.49 } },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: EST('2028-12-29'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 13,766,134.40 USD into settled cash', cash: { USD: 13_766_134.40 }, owner: 'treasury' }],
+        cash: { treasury: { USD: { settled: 24_091_398.49, unsettled: 0, availableToTrade: 24_091_398.49 } }, account: usdCash(1_000_000) },
+        pending: [],
+        balance: { book: { cash: 25_091_398.49, receivable: null, assets: 25_091_398.49, liabilities: 0 } },
+      },
+    },
+    { id: 'treasury-screens-at-end', covers: 'close', action: 'owner_screens', owner: 'treasury', expect: {} },
   ],
 };
 

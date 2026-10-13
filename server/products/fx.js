@@ -378,7 +378,10 @@ function settleForwardTask(app, task, { book, unit, inst, pos }) {
       // Units of the underlying delivered: quantity x the forward's value per unit of price, over the underlying's own
       // (a bond forward on 1,000,000 face with multiplier 0.01 delivers 1,000,000 face of a bond whose multiplier is 0.01).
       const units = qty8(Math.abs(q) * inst.multiplier / (und.multiplier || 1));
-      const settleDate = plugin.settleDate(app, und, t.valueDate, book);
+      // Delivery against payment on the forward's value date itself (the date the contract settles), not a further
+      // settlement lag of the underlying counted from it; later only if the delivery is made late.
+      const today = app.clock.today();
+      const settleDate = t.valueDate > today ? t.valueDate : today;
       const label = (n) => `Simulated forward delivery (paper entry, no goods or securities move): ${q > 0 ? 'received' : 'delivered'} ${fmtQty(n)} ${und.symbol || und.name} at ${fmtPx(k)} on ${inst.symbol || inst.name}`;
       const base = { book, unit, inst: und, price: k, fees: [], tradeDate: t.valueDate, settleDate, actor: 'engine', eventType: 'forward.delivery', data: { fromForward: inst.id, simulated: true } };
       let firstEvent = null;

@@ -617,7 +617,7 @@ const fra = {
 // Holdings (NYSE) bought at 50.10, and sells them forward to a dealer at 52.40 for value Friday 17 April 2026
 // (held across Good Friday, 3 April). On the value date the shares are delivered at the dealt price: a
 // simulated delivery (no securities move), booked as a sale of the shares the Account holds at 52.40,
-// settling T+1 like any sale of the stock. The forward's own value before then is quantity x (mark - dealt)
+// delivery against payment on the value date itself. The forward's own value before then is quantity x (mark - dealt)
 // on the dealer's indication for the forward.
 // Collateral: position-level terms, a fixed independent amount of 20,000 USD, no variation margin.
 // Commission: shares 0.005 USD a share (at least 1.00 an order); the forward 0.01 USD a share, paid on the value date.
@@ -629,7 +629,7 @@ const equityForward = {
     requiredFields: ['Kind of forward (Forward on an asset)', 'Underlying (the stock)', 'Settlement (Physical delivery)', 'Multiplier (shares per unit)', 'Value date', 'Counterparty', 'Collateral basis and its terms', 'Account', 'Action (Sell)', 'quantity (shares)', 'State a fill price'],
     automaticInputs: ['stock bid and ask (quote fixture)', 'forward mark (quote fixture standing in for a dealer indication)', 'commission from the Book fee schedule', 'independent amount from the position-level terms'],
     manualInputs: ['dealt forward price (stated fill price)'],
-    settlement: 'No cash at entry other than the independent amount; on the value date the shares held are delivered at the dealt price (simulated, labelled), the proceeds settling T+1; forward commission paid on the value date',
+    settlement: 'No cash at entry other than the independent amount; on the value date the shares held are delivered at the dealt price (simulated, labelled), delivery against payment that day; forward commission paid on the value date',
     lifecycle: 'Physical delivery on the value date (automatic), from the shares the Account holds; without them the delivery waits visibly (engine test)',
     accounting: 'Nil cost; forward value = quantity x (mark - dealt); the delivery is a sale of the shares at the dealt price, realizing against their cost',
     collateral: 'Position-level terms: fixed independent amount 20,000 USD posted at entry and returned at delivery; no variation margin',
@@ -744,7 +744,8 @@ const equityForward = {
     },
     {
       // Value date. The forward commission (100.00) is paid. The 10,000 shares held are delivered at 52.40 (simulated):
-      // 524,000.00 receivable T+1 (Monday 20 April); realized on the shares (52.40 - 50.10) x 10,000 = 23,000.00.
+      // 524,000.00 received on the value date itself (delivery against payment); realized on the shares
+      // (52.40 - 50.10) x 10,000 = 23,000.00.
       // The forward ends at its dealt price (nothing realized on it); its independent amount 20,000.00 comes back.
       // By hand, the whole scenario: 23,000 - 50 - 100 = 22,850.00.
       id: 'value-date-delivery', covers: ['physical delivery', 'settlement', 'collateral'], action: 'clock', to: AM('2026-04-17'),
@@ -752,26 +753,18 @@ const equityForward = {
         events: [
           { type: 'settlement.pay', summary: 'paid 100.00 USD from settled cash', cash: { USD: -100 }, owner: 'account', date: '2026-04-17' },
           { type: 'forward.delivery', summary: 'Simulated forward delivery (paper entry, no goods or securities move): delivered 10,000 RWIH at 52.40 on RWIH-F0417', owner: 'account', date: '2026-04-17' },
+          { type: 'settlement.receive', summary: 'received 524,000.00 USD into settled cash', cash: { USD: 524_000 }, owner: 'account', date: '2026-04-17' },
           { type: 'forward.collateral', summary: '20,000.00 USD (independent amount, the position ended)', cash: { USD: 20_000 }, owner: 'account' },
         ],
-        cash: { account: { USD: cashOf(498_850, { unsettled: 524_000, trade: 1_022_850, withdraw: 498_850 }) } },
+        cash: { account: { USD: cashOf(1_022_850) } }, // 478,950 - 100 + 20,000 + 524,000
         positions: [],
         holdings: { main: null, stock: null },
-        pending: [{ instrument: 'stock', lot: 'shares', owner: 'account', dueDate: '2026-04-20', amount: 524_000, ccy: 'USD', into: 'cash' }],
+        pending: [],
         lifecycle: [],
         pnl: { account: { realized: 23_000, commissions: -150, unrealized: 0, total: 22_850 } },
         nav: { account: 1_022_850, book: 2_022_850 },
-        balance: { account: { cash: 498_850, margin: null, positions: null, receivable: 524_000, payable: null, assets: 1_022_850, liabilities: 0, netAssets: 1_022_850 } },
+        balance: { account: { cash: 1_022_850, margin: null, positions: null, receivable: null, payable: null, assets: 1_022_850, liabilities: 0, netAssets: 1_022_850 } },
         otc: [],
-      },
-    },
-    {
-      id: 'proceeds-settle', covers: 'settlement', action: 'clock', to: AM('2026-04-20'),
-      expect: {
-        events: [{ type: 'settlement.receive', summary: 'received 524,000.00 USD into settled cash', cash: { USD: 524_000 }, owner: 'account', date: '2026-04-20' }],
-        cash: { account: { USD: cashOf(1_022_850) } },
-        pending: [],
-        balance: { account: { cash: 1_022_850, receivable: null, assets: 1_022_850 } },
       },
     },
   ],

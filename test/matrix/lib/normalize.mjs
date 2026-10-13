@@ -108,6 +108,8 @@ export async function observeState(t, ctx) {
       origin: b.originatedBy, principalRc: b.principalRc ?? null, costToDateRc: b.interestToDateRc ?? null, feesToDate: b.feesToDate ?? null, lender: b.lender ?? null,
       rateType: b.rate?.type ?? null, rateText: b.rate?.text ?? null, dayCount: b.rate?.dayCount ?? null, startDate: b.startDate ?? null, maturity: b.maturity ?? null, term: b.term ?? null,
       collateral: b.collateral?.description ?? null, schedule: b.schedule?.interest ?? null, nextPaymentType: b.schedule?.next?.type ?? null, blocked: b.schedule?.next?.blocked ?? null,
+      // r1: a repo's structure as its contract reads (classic or buy/sell-back; bilateral or tri-party) and its tri-party agent.
+      structure: (b.terms || []).find((x) => x[0] === 'Structure')?.[1] ?? null, agent: (b.terms || []).find((x) => x[0] === 'Tri-party agent')?.[1] ?? null,
     })).sort(byKeys('instrument', 'lot')),
     failed: { orders: failed.orders.length, settlements: failed.settlementFailures.length, lifecycle: failed.lifecycleFailures.length },
     // Lifecycle items that failed (a payment the owner could not fund, for example), with the reason shown on the Failed tab. They are retried each cycle.

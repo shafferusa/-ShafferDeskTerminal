@@ -1105,7 +1105,7 @@ const BI_LIFE = [
   { type: 'bond.maturity', instrument: 'kestrel', dueDate: '2031-07-15', status: 'pending', owner: 'account' },
 ];
 const BR_RECORD = { owner: 'account', origin: 'account', family: 'repo', type: 'Repo (cash borrowed against securities)', lot: 'brepo', principal: 975_000, principalRc: 975_000, ccy: 'USD', rate: 0.0425, rateType: 'fixed', rateText: '4.250% fixed', dayCount: 'ACT/360',
-  feesToDate: 0, startDate: '2026-03-10', maturity: '2026-03-24', term: 'term', lender: 'Pemberton Bank', schedule: 'Interest paid at repurchase', blocked: null };
+  feesToDate: 0, startDate: '2026-03-10', maturity: '2026-03-24', term: 'term', lender: 'Pemberton Bank', schedule: 'Interest paid at repurchase', blocked: null, structure: 'Classic repo, bilateral', agent: null };
 
 const bilateralRepo = {
   productId: 'bilateral_repo',
@@ -1350,7 +1350,8 @@ const HPOS = { instrument: 'halv', lot: 'halv', owner: 'treasury', direction: 'l
 const TP_POS = { instrument: 'tprepo', lot: 'tprepo', owner: 'treasury', direction: 'repo (cash borrowed)', qty: -2_400_000, value: 2_400_000, carrying: -2_400_000, collateralHeld: null };
 const HALV_LIFE = [{ type: 'bond.coupon', instrument: 'halv', dueDate: '2026-06-01', status: 'pending', owner: 'treasury' }, { type: 'bond.maturity', instrument: 'halv', dueDate: '2033-12-01', status: 'pending', owner: 'treasury' }];
 const TP_RECORD = { owner: 'treasury', origin: 'treasury', family: 'repo', type: 'Repo (cash borrowed against securities)', lot: 'tprepo', principal: 2_400_000, principalRc: 2_400_000, ccy: 'USD', rate: 0.0405, rateType: 'fixed', rateText: '4.050% fixed', dayCount: 'ACT/360',
-  accrued: 0, costToDate: 0, feesToDate: 0, startDate: '2026-04-14', maturity: '2026-04-21', term: 'term', lender: 'Halberd Liquidity Fund', schedule: 'Interest paid at repurchase', nextPayment: '2026-04-21', nextPaymentType: 'repo.end', blocked: null };
+  accrued: 0, costToDate: 0, feesToDate: 0, startDate: '2026-04-14', maturity: '2026-04-21', term: 'term', lender: 'Halberd Liquidity Fund', schedule: 'Interest paid at repurchase', nextPayment: '2026-04-21', nextPaymentType: 'repo.end', blocked: null,
+  structure: 'Classic repo, tri-party', agent: 'Northbridge Collateral Services' }; // the only difference from a bilateral repo: the agent, as a term
 
 const tripartyRepo = {
   productId: 'triparty_repo',

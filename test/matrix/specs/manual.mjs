@@ -1208,7 +1208,13 @@ const insuranceLinked = {
         balance: { account: { positions: 5_005_000, assets: 6_123_750, netAssets: 6_123_750 } },
       },
     },
-    { id: 'q2-coupon-date', action: 'clock', to: '2026-07-01T14:00:00.000Z', expect: {} },
+    {
+      id: 'q2-coupon-date', covers: 'valuation', action: 'clock', to: '2026-07-01T14:00:00.000Z',
+      expect: {
+        positions: [{ ...ILS_POS, qty: 5_000_000, cost: 5_000_000, value: 5_005_000, freshness: 'stale', manual: ilsM({ coupons: 118_750, valuation: { date: '2026-04-30', source: 'Broker indication, Thornbury Re Capital (bid side)', stale: true } }) }],
+        provisional: { account: true, book: true },
+      },
+    },
     {
       // Wednesday 1 July: the 30 April indication is 62 days old (stale) when the second coupon arrives.
       id: 'coupon-q2', covers: 'coupon', action: 'lifecycle', lot: 'note', body: { action: 'income', kind: 'coupon', amount: 118_750, note: 'Quarterly coupon' },
@@ -1266,7 +1272,14 @@ const insuranceLinked = {
       status: 'blocked', reason: 'The note matures on 31 December 2026; it cannot be redeemed before.',
       expect: { refused: 'SHRE26A matures on 2026-12-31' },
     },
-    { id: 'residual-mark-date', action: 'clock', to: '2026-11-16T15:00:00.000Z', expect: {} },
+    {
+      // Monday 16 November: the 25 September indication is 52 days old.
+      id: 'residual-mark-date', covers: 'valuation', action: 'clock', to: '2026-11-16T15:00:00.000Z',
+      expect: {
+        positions: [{ ...ILS_POS, qty: 3_500_000, cost: 3_500_000, value: 2_520_000, freshness: 'stale', manual: ilsM({ faceLost: 1_500_000, coupons: 356_250, valuation: { date: '2026-09-25', source: 'Broker indication after Hurricane Delphine landfall', stale: true } }) }],
+        provisional: { account: true, book: true },
+      },
+    },
     {
       id: 'valuation-residual', covers: 'valuation', action: 'lifecycle', lot: 'note', body: { action: 'valuation', value: 98.5, asOf: '2026-11-13', source: 'Broker indication, residual exposure after the loss notice' },
       expect: {
@@ -1274,6 +1287,7 @@ const insuranceLinked = {
         positions: [{ ...ILS_POS, qty: 3_500_000, cost: 3_500_000, price: 98.5, value: 3_447_500, unrealized: -52_500, freshness: 'manual', manual: ilsM({ faceLost: 1_500_000, coupons: 356_250, valuation: { date: '2026-11-13', source: 'Broker indication, residual exposure after the loss notice', stale: false } }) }],
         pnl: { account: { unrealized: -52_500, total: -1_196_250 } },
         nav: { account: 4_803_750, book: 6_803_750 },
+        provisional: { account: false, book: false },
         balance: { account: { positions: 3_447_500, assets: 4_803_750, netAssets: 4_803_750 } },
       },
     },
