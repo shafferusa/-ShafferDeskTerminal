@@ -22,9 +22,11 @@ Results/tmp: SDT_MATRIX_RESULTS=$SP/t1b/results SDT_MATRIX_TMP=$SP/t1b/tmp. Prob
 
 - T:bull_call_spread passes engine, API, browser (30 passed, 1 blocked). Fix: packages.js growLegs (written option waits for added bought option of same right) and rollLegs (spread: buy-backs first, cover sale after, new written after new bought). Test 4 in templates-t1b.test.js.
 
+- T:bear_put_spread passes engine, API, browser (29 passed, 1 blocked). Index puts cash-settled, legs net at expiry.
+
 ## In progress
-- bear_put_spread next.
+- bull_put_spread next.
 
 ## Next
-1. bear_put_spread, bull_put_spread: each engine -> API -> browser -> save 0.2
+1. bull_put_spread: each engine -> API -> browser -> save 0.2
 3. Fix audit failures (add leg actions; futures_hedge settlementCheck), full family run at 3 levels, npm test green, save 0.5
