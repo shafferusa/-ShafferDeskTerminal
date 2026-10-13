@@ -2014,8 +2014,8 @@ export async function serviceAway(b, c) {
   c.eq(await button.evaluate((x) => [x.disabled, x.textContent.trim()]), [true, 'Working…'], 'no answer: while it waits the Test connection button reads "Working…" and cannot be pressed again');
   const answered = await testing;
   c.ok(answered.body?.result?.reachable === false && /aborted due to timeout/.test(answered.body?.result?.detail), 'no answer: behind the page the test reports the address unreachable after its timeout', JSON.stringify(answered.body).slice(0, 400));
-  const verdict = panel.locator('.notice').filter({ hasText: /could not be reached/ }).first();
-  await verdict.waitFor();
+  const verdict = panel.locator('.notice').filter({ hasText: /could not be reached.*aborted due to timeout/ }).first();
+  await verdict.waitFor(); // this test's own verdict: step 1's said the connection was refused ("fetch failed")
   const waited = Date.now() - t0;
   c.ok(waited >= 1_000 && waited < 4_000, 'the page gives the verdict after the 1.5 second timeout, not later', `${waited} ms`);
   c.match(flat(await verdict.innerText()), /The address could not be reached/, 'and says the address could not be reached');

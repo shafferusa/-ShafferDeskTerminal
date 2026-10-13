@@ -182,6 +182,7 @@ const F = {
     { path: 'terms.rate', label: 'Rate (decimal a year)', type: 'number', hint: 'Not assumed for you', show: (d) => d.terms.rateType !== 'floating', required: true },
     { path: 'terms.referenceRate', label: 'Reference rate code', type: 'text', show: (d) => d.terms.rateType === 'floating' },
     { path: 'terms.spread', label: 'Spread (decimal)', type: 'number', show: (d) => d.terms.rateType === 'floating' },
+    { path: 'terms.dayCount', label: 'Day count', type: 'select', options: opt(['ACT/360', 'ACT/365']), default: 'ACT/360', hint: 'Money-market basis: ACT/360 for dollars and euros, ACT/365 for sterling' },
     { path: 'terms.term', label: 'Term', type: 'select', default: 'term', options: opt([['overnight', 'Overnight'], ['term', 'Term'], ['open', 'Open']]) },
     { path: 'terms.endDate', label: 'End date', type: 'date', show: (d) => d.terms.term === 'term' },
     { path: 'terms.style', label: 'Structure', type: 'select', default: 'classic', options: opt([['classic', 'Classic repo'], ['buy_sell_back', 'Buy/sell-back']]) },
