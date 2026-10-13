@@ -370,3 +370,31 @@ Any other market or currency has no calendar and falls back to weekends only (th
 The fallback is never silent: the instrument states it, and every trade preview that works out a
 date on it carries a warning. Rule-based calendars cannot know one-off closures; those, and local
 holidays for a market on the fallback, are entered by hand under **Settings > Market calendars**.
+
+## Marketplace product-family tabs
+
+Each of the four Marketplaces (US Based, US Derivatives, Foreign Based, Foreign Derivatives) is split into
+product-family tabs: the eight cash tabs in US Based and Foreign Based, the six derivative tabs in the two
+Derivatives views. Every product has exactly one tab (checked by `test/core/marketplaces.test.js`). Which of
+the two views of its class an instrument sits in is decided per instrument, from its listing venue's country, its
+underlying, its jurisdiction, or the routing convention for global FX, crypto and OTC products (they have no US
+listing and are routed to the Foreign views unless a US jurisdiction is stated or the view is set by hand); never
+from its price currency. Deposits, loans, repo and securities loans are arranged on the Treasury and Account pages;
+their tab lists them for reference.
+
+| Tab | Views | Products |
+|---|---|---|
+| Equities | US Based, Foreign Based | Common stock (domestic and foreign), Preferred stock, American depositary receipt (ADR), Global depositary receipt (GDR), REIT, Warrant, Subscription right, Convertible security (preferred), Short sale |
+| Funds and ETFs | US Based, Foreign Based | Exchange-traded fund (ETF), Exchange-traded note (ETN), Mutual fund, Closed-end fund, Hedge fund interest |
+| Bonds and Credit | US Based, Foreign Based | US Treasury bill, US Treasury note, US Treasury bond, US TIPS, US Treasury STRIPS, Foreign government bill, Foreign government bond, Foreign inflation-linked bond, Emerging-market local-currency debt, Emerging-market hard-currency debt, Agency debt, Supranational bond, Municipal bond (domestic and foreign), Sovereign sukuk, Corporate bond (domestic and foreign), Investment-grade bond, High-yield bond, Eurobond, Foreign-market bond (Yankee, Samurai, Bulldog …), Corporate sukuk, Floating-rate note, Zero-coupon bond, Callable bond, Puttable bond, Convertible bond, Exchangeable bond, Perpetual bond, Subordinated debt, Contingent convertible bond (CoCo), Covered bond, Mortgage-backed security, Residential MBS, Commercial MBS, Agency MBS, Non-agency MBS, Mortgage specified pool, Asset-backed security, Collateralised mortgage obligation (CMO), Collateralised loan obligation (CLO), Collateralised debt obligation (CDO), Credit-linked note, Structured note, Catastrophe bond, Syndicated loan, Leveraged loan, Private credit, Distressed debt, Loan participation |
+| Money Market and Deposits | US Based, Foreign Based | Commercial paper, Asset-backed commercial paper, Bankers' acceptance, Money-market fund, Certificate of deposit, Bank deposit, Term deposit, Cash borrowing and lending (USD or foreign currency), Secured loan, Unsecured loan, Margin loan, Securities-backed loan, Revolving credit facility, Repo, Reverse repo, Overnight repo, Term repo, Open repo, Bilateral repo, Tri-party repo, General-collateral repo, Special-collateral repo, Buy/sell-back, Sell/buy-back, Securities borrowing, Securities lending, Stock loan, Bond loan, Securities collateral swap |
+| FX and Currencies | US Based, Foreign Based | USD and foreign currency balances, Spot FX / currency pair |
+| Commodities | US Based, Foreign Based | Physical / spot commodity, Precious metal, Industrial metal, Crude oil, Refined petroleum product, Natural gas, LNG, Coal, Electricity, Agricultural commodity, Livestock, Emissions allowance, Carbon credit, Renewable energy certificate |
+| Crypto and Digital Assets | US Based, Foreign Based | Cryptocurrency, Stablecoin, Tokenized asset |
+| Alternatives and Other | US Based, Foreign Based | Private equity interest, Venture capital interest, Infrastructure investment, Direct real estate, Insurance-linked security |
+| Options | US Derivatives, Foreign Derivatives | Listed option, Equity call / put, ETF option, Index option, Option on a future, OTC option, Bond option, Interest-rate option, FX option, Commodity option, Cryptocurrency option, Swaption, Interest-rate cap, Interest-rate floor, Interest-rate collar, Digital option, Barrier option, Asian option, Lookback option, Basket option, Spread option, Quanto option, Compound option |
+| Futures | US Derivatives, Foreign Derivatives | Equity (single-stock) future, Equity-index future, Government-bond future, Treasury future, Short-term interest-rate future, FX future, Commodity future, Volatility future, Dividend future, Cryptocurrency future, Perpetual future |
+| Forwards | US Derivatives, Foreign Derivatives | Equity forward, Bond forward, FX forward, Non-deliverable forward, Commodity forward, Forward-rate agreement, FX swap, TBA mortgage contract |
+| Swaps | US Derivatives, Foreign Derivatives | Interest-rate swap, Overnight-index swap, Interest-rate basis swap, Cross-currency swap, Cross-currency basis swap, Non-deliverable swap, Zero-coupon inflation swap, Year-on-year inflation swap, Constant-maturity swap, Constant-maturity spread swap, Forward-starting swap, Amortizing swap, Accreting swap, Callable swap, Puttable swap, Quanto swap, Asset swap, Equity swap, Equity-index swap, Equity-basket swap, Equity total-return swap, Bond total-return swap, Loan total-return swap, Index total-return swap, Commodity swap, Commodity basis swap, Commodity-index swap, Energy swap, Electricity swap, Freight swap, Dividend swap, Variance swap, Volatility swap, Correlation swap, Dispersion swap |
+| Credit Derivatives | US Derivatives, Foreign Derivatives | Single-name credit-default swap, Sovereign credit-default swap, Credit-index swap, Credit-basket swap, Credit-index tranche swap, Loan credit-default swap, Asset-backed credit-default swap, Recovery swap, Credit-default swaption, Credit-spread forward, Credit-spread option |
+| Structured and Other Derivatives | US Derivatives, Foreign Derivatives | Freight contract, Weather derivative |

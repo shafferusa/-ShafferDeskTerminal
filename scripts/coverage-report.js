@@ -5,7 +5,7 @@
 // calendars, read from server/quant/calendar.js.
 //   npm run coverage
 import { writeFileSync } from 'node:fs';
-import { catalogSummary } from '../server/core/catalog.js';
+import { MARKET_TABS, TAB_LISTS, catalogSummary } from '../server/core/catalog.js';
 import { CALENDARS, COUNTRY_CALENDAR, CURRENCY_CALENDAR } from '../server/quant/calendar.js';
 
 const LEVEL = { full: 'Full lifecycle', partial: 'Partly manual', manual: 'Manual inputs', planned: 'Not implemented' };
@@ -89,6 +89,24 @@ Any other market or currency has no calendar and falls back to weekends only (th
 The fallback is never silent: the instrument states it, and every trade preview that works out a
 date on it carries a warning. Rule-based calendars cannot know one-off closures; those, and local
 holidays for a market on the fallback, are entered by hand under **Settings > Market calendars**.
+`;
+
+// ---- Marketplace product-family tabs (ui1): every product's one place, from catalog.js MARKET_TABS / TAB_LISTS.
+md += `
+## Marketplace product-family tabs
+
+Each of the four Marketplaces (US Based, US Derivatives, Foreign Based, Foreign Derivatives) is split into
+product-family tabs: the eight cash tabs in US Based and Foreign Based, the six derivative tabs in the two
+Derivatives views. Every product has exactly one tab (checked by \`test/core/marketplaces.test.js\`). Which of
+the two views of its class an instrument sits in is decided per instrument, from its listing venue's country, its
+underlying, its jurisdiction, or the routing convention for global FX, crypto and OTC products (they have no US
+listing and are routed to the Foreign views unless a US jurisdiction is stated or the view is set by hand); never
+from its price currency. Deposits, loans, repo and securities loans are arranged on the Treasury and Account pages;
+their tab lists them for reference.
+
+| Tab | Views | Products |
+|---|---|---|
+${MARKET_TABS.map((t) => `| ${t.label} | ${t.cls === 'cash' ? 'US Based, Foreign Based' : 'US Derivatives, Foreign Derivatives'} | ${TAB_LISTS[t.id].map((id) => esc(products.find((p) => p.id === id)?.name || id)).join(', ')} |`).join('\n')}
 `;
 writeFileSync(new URL('../docs/COVERAGE.md', import.meta.url), md);
 console.log(`docs/COVERAGE.md written: ${total} products. Lifecycle: ${counts.full} full, ${counts.partial} partly manual, ${counts.manual} manual inputs. Pricing: ${Object.keys(pricing).map((id) => `${pricing[id]} ${basisName(id).toLowerCase()}`).join(', ')}.`);

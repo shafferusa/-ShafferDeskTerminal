@@ -124,7 +124,7 @@ function BasisFix({ leg, unitId, onDraft, onRecheck }) {
   const where = { draft: `Chosen here, it is written into the terms of this new contract and the package is checked again.`,
     position: `${name} is held in a position opened before a basis was required. Chosen here, the basis is recorded on that position for the rest of its life, then the package is checked again.`,
     contract: `${name} is a registered contract that has not been traded yet. Chosen here, the basis is recorded on the contract, then the package is checked again.` };
-  return html`<${Notice} tone="err"><div data-testid="basis-fix" data-fix=${fix.kind}><b>Leg ${leg.n}: ${name} has no collateral basis.</b> Choose one of three: a collateral agreement of this Book, position-level terms, or "Uncollateralized (paper assumption)". Nothing is assumed from the product.
+  return html`<${Notice} tone="err"><div data-testid="basis-fix" data-fix=${fix.kind}><b>Leg ${leg.n}: choose the collateral basis of ${name}.</b>
     ${fix.kind === 'locked' ? html`<div style="margin-top:4px">${name} has been traded, so its contract terms are locked and no basis can be added to it. Register a new contract that states a basis (from the instrument registry, or as a new contract on this package), or add to an existing position whose basis is on record. A position held in it without a basis can have its basis recorded under <a href="#/treasury/collateral">Treasury, Collateral</a>.</div>`
       : html`<div style="margin-top:4px">${where[fix.kind]}</div>
         <div class="grid-form" style="margin-top:6px"><${CollateralBasisFields} value=${basis} onChange=${(b) => { setError(null); setBasis(b); }} ccy=${leg.currency} unitId=${unitId} /></div>

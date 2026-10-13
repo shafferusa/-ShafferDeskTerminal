@@ -200,6 +200,10 @@ export const loan = {
     const out = [];
     const ccy = inst.trading_ccy;
     if (qty > Math.abs(pos.qty) + 0.004) out.push(`Outstanding principal is ${fmt(Math.abs(pos.qty), ccy)}; cannot repay ${fmt(qty, ccy)}.`);
+    // Without a fixing the interest to today cannot be worked out: a repayment in full would settle too little, and a part
+    // repayment would leave the days without a fixing to be charged later on the reduced principal.
+    const missing = inst.terms.rateType === 'floating' ? accruePrincipal(app, { inst, pos, date: app.clock.today() }).rateMissing : null;
+    if (missing) out.push(`Interest on ${inst.name} cannot be worked out: no ${inst.terms.referenceRate} fixing from ${missing}. Enter the fixing by hand or set the rate before repaying.`);
     if (pos.qty < 0) {
       const full = qty >= Math.abs(pos.qty) - 0.004;
       const interest = full ? accruePrincipal(app, { inst, pos, date: app.clock.today() }).accrued : 0;
@@ -267,12 +271,15 @@ export const loan = {
     const today = app.clock.today();
     if (task.type === 'loan.interest') {
       const p = trueUpInterest(app, { book, unit, inst, pos, date: today });
+      if (p.data.rateMissing) return { blocked: waitingForFixing(inst, p.data.rateMissing, 'Interest payment') };
       const r = settleInterest(app, { book, unit, inst, pos: p });
       if (!r.ok) return fundingFailure(app, { book, unit, inst, pos, amount: r.amount, what: 'Interest payment' });
       app.tasks.schedule({ bookId: book.id, unitId: unit.id, positionId: pos.id, instrumentId: inst.id, strategyId: pos.strategy_id, type: 'loan.interest', dueDate: firstBusinessDayNextMonth(today, paymentCalendarFor(inst)) });
       return { done: true, eventId: r.eventId };
     }
     if (task.type === 'loan.maturity') {
+      const p = trueUpInterest(app, { book, unit, inst, pos, date: today });
+      if (p.data.rateMissing) return { blocked: waitingForFixing(inst, p.data.rateMissing, 'Repayment at maturity') };
       const problems = loan.checkClose(app, { unit, inst, pos, qty: Math.abs(pos.qty) });
       if (problems.length) return fundingFailure(app, { book, unit, inst, pos, what: 'Repayment at maturity', detail: problems[0] });
       // A maturity reached for the first time after its date (the Terminal was not running that day) is settled as of
@@ -286,6 +293,12 @@ export const loan = {
     return { failed: `Unknown task ${task.type}` };
   },
 };
+
+/**
+ * A payment or repayment of a floating arrangement whose interest cannot be worked out: a fixing is missing. It waits,
+ * visibly, until the fixing is entered or the rate is set by hand; it is never settled on the interest accrued so far.
+ */
+const waitingForFixing = (inst, missing, what) => `${what} on ${inst.name} is waiting for a ${inst.terms.referenceRate} fixing: none is available from ${missing}, so the interest due cannot be worked out. Enter the fixing by hand (Data connection, Manual entries) or set the rate on the arrangement.`;
 
 function fundingFailure(app, { book, unit, inst, pos, amount, what, detail }) {
   const msg = detail || `${what} of ${fmt(amount, inst.trading_ccy)} on ${inst.name} could not be paid: insufficient settled ${inst.trading_ccy} cash in ${unit.name}.`;

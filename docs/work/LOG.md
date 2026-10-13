@@ -77,3 +77,4 @@
 - 2026-10-13T16:23Z | b2 | +0.2 | eurobond passes at engine, API and browser
 - 2026-10-13T16:23Z | l1 | +0.2 | secured_loan passes at engine, API and browser
 - 2026-10-13T16:23Z | fix | +0 | collateral follow-up: stale-mark calls, collateral on Accounting rows, borrow collateral, no-basis fix in preview, swap pay/receive labels
+- 2026-10-13T16:25Z | c1 | +0.2 | cryptocurrency passes at engine, API and browser

@@ -97,9 +97,48 @@ level (`full`, `partial`, `manual`) and a note; `docs/COVERAGE.md` is generated 
 ### Market views
 
 `US_CASH` (US Based), `US_DERIV` (US Derivatives), `FOREIGN_CASH` (Foreign Based), `FOREIGN_DERIV`
-(Foreign Derivatives). A listed product is placed by its listing venue. Issuer domicile and
-underlying geography are stored separately. OTC, FX and global products need an explicit primary
-view and may carry cross-market tags. Views are filters, not accounting Books.
+(Foreign Derivatives). Views are filters, not accounting Books. A product's class (`cls` in the
+catalog) decides the pair: cash products sit in US Based or Foreign Based, derivatives in the two
+Derivatives views.
+
+**Product-family tabs.** Inside each view the Marketplace is split into tabs (`MARKET_TABS` in
+`catalog.js`): Equities; Funds and ETFs; Bonds and Credit; Money Market and Deposits; FX and
+Currencies; Commodities; Crypto and Digital Assets; Alternatives and Other in the cash views, and
+Options; Futures; Forwards; Swaps; Credit Derivatives; Structured and Other Derivatives in the
+derivative views. `TAB_LISTS` gives every catalog product exactly one tab (tested; printed in
+`docs/COVERAGE.md`). Derivative rows also carry an underlying asset class (`PRODUCT_ASSET`, or the
+underlying's family for generic and exotic options) for the tab's filter. The tab is in the URL
+(`#/markets/<view>/<tab>`). Each tab has its own columns; Current market price, Fair price and
+Gap % sit together on all of them. Watchlists filter within a tab or across families and never
+replace the tabs. Deposits, loans, repo and securities loans are arrangements of one Book: they are
+arranged on the Treasury and Account pages, and the Money Market and Deposits tab links there.
+
+**Marketplace routing.** Which of the two views an instrument sits in is decided from explicit
+metadata, never from its price currency (`conventionRoute` in `catalog.js`, applied by
+`instruments.js` on every create and edit):
+
+1. *Listed*: exchange-listed with a listing-venue country. A US venue gives a US view, any other
+   country a Foreign one. An ADR of a Swiss issuer listed in New York is US Based; a USD-quoted
+   stock listed in Tokyo is Foreign Based. A listed product cannot be moved by hand.
+2. *Financing*: loans, deposits, repo and securities loans are held on the Treasury and Account
+   pages and never appear as Marketplace rows.
+3. *Underlying*: a derivative with a registered underlying follows the underlying's view.
+4. *Jurisdiction*: an unlisted instrument with a stated jurisdiction (the governing law of an OTC
+   contract), or an issued security with an issuer domicile, follows that country.
+5. *Convention*: global FX, crypto, and OTC products with none of the above have no US listing and
+   no US jurisdiction. **They are routed by convention to Foreign Based / Foreign Derivatives.** A
+   US view is kept for instruments with a positive US connection, so it never implies a US listing
+   that does not exist. A USD interest-rate swap with no jurisdiction stated is therefore in Foreign
+   Derivatives until its jurisdiction (US) is entered or it is moved by hand.
+6. *Set by hand*: any instrument that is not listed can be placed in the other view by hand (the
+   registration form, or an explicit `marketView` that differs from the convention).
+
+An exchange-listed product with no venue country and nothing else to decide it must have its view
+chosen by hand. The basis is stored (`instruments.routing_basis`, with `jurisdiction`, migration 8)
+and returned as `classification.routing` (`basis`, `short`, `text`); the Marketplace row and the
+instrument page show it. `GET /api/instruments/routing` tells the registration form what the
+convention gives a draft. Rows stored before migration 8 are read against the convention: a view
+that agrees shows the convention's basis, one that differs shows as set by hand.
 
 ## Books, Treasury, Accounts and the ledger
 

@@ -244,6 +244,7 @@ export default [
       }),
       browser: async (bz, c) => bz.cases.noNetting(bz, c),
     },
+    expectedBrowser: 'The same two Books, read on their screens. Iso A\'s US Based Marketplace says ISO is held "Long 200" (hover: Aardvark alone) and its Holdings by instrument row says Long 200 with no short, net or 100; Iso B\'s say "Short 100" (hover: Bison alone) with no long, net or 200. A deposit of 10,000.00 recorded in Iso A\'s Deposit dialog raises the net asset value in Iso A\'s Accounting header by exactly 10,000.00 and leaves Iso B\'s as it was; the Books page has one row per Book, each with its own figure, and no total. A cash dividend of 0.25 (ex Wednesday 4 March, paid Friday 6 March) is recorded by hand in the ISO drawer; each swap is marked at -5 and the week passes. Iso A\'s Full history then has one Dividend event of +50.00 USD owned by Aardvark and no compensation; Iso B\'s has one Dividend compensation event of -25.00 USD owned by Bison and no dividend; nothing net (25.00) appears in either. Each Book\'s Treasury collateral screen shows its 5,000.00 of variation margin, and neither Book\'s history or collateral screen carries an id or name of the other. Stored: one dividend of 50.00 in Iso A, one compensation of 25.00 in Iso B, one 5,000.00 movement per Book under its own agreement; both integrity checks clean.',
   },
   {
     id: 'normal-mode-refusals',

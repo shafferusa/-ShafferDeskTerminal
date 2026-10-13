@@ -203,7 +203,9 @@ export function fmtMoney(x, ccy, opts = {}) {
 export function fmtQty(x) {
   if (!isNum(x)) return DASH;
   const a = Math.abs(x);
-  const s = a.toLocaleString('en-US', { maximumFractionDigits: a >= 1000 ? 2 : 6 });
+  // As many decimals as the quantity carries, up to 8: digital assets trade to 1e-8 of a unit, and a holding shown
+  // rounded (2.623457 for 2.62345678, or 1,250.12 for 1,250.12345678) would not be the quantity held.
+  const s = a.toLocaleString('en-US', { maximumFractionDigits: 8 });
   return x < 0 ? `−${s}` : s;
 }
 /** A price: at least two decimals, and as many more as it carries (up to 3 above 10, 4 above 1, 6 below), so an FX rate keeps its pips. */
