@@ -229,4 +229,163 @@ const repo = {
   ],
 };
 
-export default [repo];
+// ---------------------------------------------------------------------------------------------
+// reverse_repo
+// ---------------------------------------------------------------------------------------------
+// Treasury lends cash for two weeks against 5,000,000 face of a US Treasury note delivered by Tidemark Securities. The
+// cash lent is limited by the notes' dirty value less a 2% haircut (asking for more is refused). The notes are held, not
+// owned: they are never a position, a holding or an asset of Treasury, and are listed as collateral received. The notes
+// fall and the daily check flags the cover short; Treasury calls for more and records the 120,000 face delivered (the
+// flag clears); they recover and 90,000 face goes back (a return that would leave the cover short is refused). On the
+// end date the cash comes back with 14 days of interest and the notes are returned.
+//
+// Inputs: T-3.75-AUG30, 3.75% ACT/ACT, coupons 15 February / 15 August (period 15 Feb to 15 Aug 2026: 181 days; a full
+// coupon is 1.875 per 100), quoted 99.20 / 99.30, last 99.25 (fixture). Reverse repo 4,850,000 at 4.30% ACT/360,
+// 2 March to 16 March 2026.
+//   Notes on 2 March: clean 5,000,000 x 99.25 / 100 = 4,962,500.00; accrued 15 days: 1.875 x 15 / 181 x 50,000 = 7,769.34;
+//   worth 4,970,269.34; less 2%: 4,870,863.9532 -> 4,870,863.95, the most that can be lent.
+//   Interest: 4,850,000 x 0.043 / 360 = 579.305556 a day; 14 days 8,110.2778 -> 8,110.28.
+const NOTE = { productId: 'treasury_note', name: 'US Treasury Note 3.75% 15-Aug-2030', symbol: 'T-3.75-AUG30', marketView: 'US_CASH', venueType: 'otc', issuer: 'United States Treasury', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+  terms: { couponType: 'fixed', couponRate: 0.0375, frequency: 2, maturity: '2030-08-15', issueDate: '2025-08-15', dayCount: 'ACT/ACT', redemption: 100, minDenomination: 100 } };
+const RREPO_TERMS = { collateralInstrumentId: '$inst:note', collateralQty: 5_000_000, haircut: 0.02, rateType: 'fixed', rate: 0.043, dayCount: 'ACT/360', term: 'term', endDate: '2026-03-16', style: 'classic', collateralType: 'gc', triparty: false, counterparty: 'Tidemark Securities' };
+const RREPO = { owner: 'treasury', side: 'reverse_repo', productId: 'reverse_repo', productLabel: 'Reverse repo', ccy: 'USD', principal: 4_850_000, name: 'Tidemark reverse repo', as: 'rrepo', terms: RREPO_TERMS };
+const RR_POS = { instrument: 'rrepo', lot: 'rrepo', owner: 'treasury', direction: 'reverse repo (cash lent)', qty: 4_850_000, value: 4_850_000, carrying: 4_850_000, provisional: false };
+
+const reverseRepo = {
+  productId: 'reverse_repo',
+  title: 'Two-week reverse repo by Treasury against 5,000,000 US Treasury 3.75% notes: cash capped at dirty value less 2%, collateral held not owned, margin call and return of excess by hand, terminated on the end date',
+  matrix: {
+    ...REPO_TICKET,
+    automaticInputs: ['the collateral\'s dirty value on the start date (price fixture plus accrued interest from the registered coupon terms)', 'the most cash it supports after the haircut (more is refused)', 'repo interest income accrued daily at the end-of-day run', 'the daily check of the cover (flagged when short, cleared when restored)', 'termination on the end date: principal and interest received, the collateral returned'],
+    manualInputs: ['every term of the reverse repo, entered on the ticket', 'the cash lent', 'a margin call met (collateral delivered) and a return of excess collateral, recorded with Collateral on the reverse repo\'s row'],
+    settlement: 'None: the cash leaves settled cash on the day the ticket is confirmed and comes back on the end date',
+    lifecycle: 'Interest accrues daily; the cover is checked daily; collateral delivered or returned is recorded by hand; terminated automatically on the end date',
+    accounting: 'Cash lent is an asset of Treasury; repo interest is income ("Coupon and interest income"); the collateral received is held, not owned: never a position, a holding or a balance-sheet asset, listed as collateral received',
+    collateral: 'Securities received, valued dirty; cover = value less 2% haircut against principal plus interest; a shortfall is flagged daily; a margin call and a return of excess are recorded by hand, the return refused when it would leave the cover short',
+  },
+  tradedOn: 'A reverse repo is not a registry instrument: it is entered on the Repo or reverse repo ticket of the Treasury page and registers itself when the ticket is confirmed. The collateral is a registered US Treasury note.',
+  start: AT_1000('2026-03-02'), // Monday 2 March 2026, 10:00 New York
+  book: {
+    name: 'Matrix reverse repo', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 6_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 100_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0 } }, fill: FILL, settlement: { bond: 1 } },
+  },
+  instruments: { note: NOTE },
+  quotes: { note: { bid: 99.20, ask: 99.30, last: 99.25, bidSize: 50_000_000, askSize: 50_000_000 } },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 100_000, availableToTrade: 100_000, availableToWithdraw: 100_000, borrowed: 0, lent: 0 } },
+      treasury: { USD: { settled: 5_900_000, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 5_900_000, availableToWithdraw: 5_900_000, borrowed: 0, lent: 0 } },
+    },
+    positions: [], holdings: {}, pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 100_000, treasury: 5_900_000, book: 6_000_000 },
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+    pnl: { account: { total: 0 }, treasury: { couponInterest: 0, borrowFunding: 0, total: 0 }, book: { couponInterest: 0, total: 0 } },
+    balance: {
+      account: { cash: 100_000, assets: 100_000, liabilities: 0, netAssets: 100_000 },
+      treasury: { cash: 5_900_000, assets: 5_900_000, liabilities: 0, netAssets: 5_900_000 },
+      book: { cash: 6_000_000, assets: 6_000_000, liabilities: 0, netAssets: 6_000_000 },
+    },
+    oversight: { accountBorrowings: [], treasuryOwn: [] },
+  },
+  steps: [
+    repoTicket('lend-more-than-the-collateral-supports', { ...RREPO, as: undefined, principal: 4_900_000 }, {
+      covers: ['open', 'haircut'], status: 'blocked', reason: 'The notes delivered are worth 4,970,269.34 dirty; after the 2% haircut they support 4,870,863.95 of cash lent.',
+      expect: { refused: 'The collateral received supports at most 4,870,863.95 USD: 5,000,000 T-3.75-AUG30 is worth 4,970,269.34 USD (4,962,500.00 USD clean plus 7,769.34 USD accrued interest) and the haircut is 2.00%; 4,900,000.00 USD requested.' },
+    }),
+    repoTicket('lend-the-cash', RREPO, {
+      covers: ['open', 'lend', 'haircut', 'collateral received'],
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'repo_open', action: 'reverse_repo', purpose: 'financing', qty: 4_850_000, cash: -4_850_000, fees: 0, ccy: 'USD', dailyCost: 579.31, // 4,850,000 x 0.043 / 360
+            financing: { amount: -4_850_000, rateType: 'fixed', rate: 0.043, maturity: '2026-03-16', interestFrom: '2026-03-02',
+              // the reconciliation: worth 4,970,269.34, haircut 4,970,269.34 - 4,870,863.95 = 99,405.39, no buffer
+              collateral: { qty: 5_000_000, clean: 4_962_500, accrued: 7_769.34, worth: 4_970_269.34, haircutAmount: 99_405.39, buffer: 0, supports: 4_870_863.95 }, forward: null } }],
+          cash: { USD: { financingIn: 0, financingOut: 4_850_000, required: 4_850_000, available: 5_900_000, shortfall: 0, netCash: -4_850_000 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'repo_open', action: 'reverse_repo', instrument: 'rrepo', status: 'filled', qty: 4_850_000, filledQty: 4_850_000 }] },
+        events: [
+          { type: 'strategy.submitted', owner: 'treasury' },
+          { type: 'repo.reverse_open', summary: 'Reverse repo: paid 4,850,000.00 USD against 5,000,000 T-3.75-AUG30 at 4.300% fixed to 2026-03-16', cash: { USD: -4_850_000 }, owner: 'treasury', date: '2026-03-02' },
+        ],
+        cash: { treasury: { USD: { settled: 1_050_000, availableToTrade: 1_050_000, availableToWithdraw: 1_050_000, lent: 4_850_000, borrowed: 0 } } },
+        // The notes are held, not owned: no position, no holding, nothing on the balance sheet.
+        positions: [{ ...RR_POS, accrued: 0, collateralHeld: { instrument: 'note', qty: 5_000_000 } }],
+        holdings: {},
+        lifecycle: [{ type: 'repo.end', instrument: 'rrepo', dueDate: '2026-03-16', status: 'pending', owner: 'treasury' }],
+        balance: {
+          treasury: { cash: 1_050_000, lent: 4_850_000, positions: null, assets: 5_900_000, liabilities: 0, netAssets: 5_900_000 },
+          book: { cash: 1_150_000, lent: 4_850_000, positions: null, assets: 6_000_000, liabilities: 0, netAssets: 6_000_000 },
+        },
+      },
+    }),
+    { id: 'notes-fall', covers: 'collateral value falls', action: 'quote', instrument: 'note', quote: { bid: 96.95, ask: 97.05, last: 97.00, bidSize: 50_000_000, askSize: 50_000_000 }, expect: { events: [] } },
+    {
+      // The run of 3 March: a day's interest, 579.31; the cover: 5,000,000 x 97.00 / 100 = 4,850,000.00 plus 16 days accrued
+      // (1.875 x 16 / 181 x 50,000 = 8,287.29) = 4,858,287.29, less 2% = 4,761,121.54, against 4,850,579.31 owed: 89,457.77 short.
+      id: 'cover-short-at-the-end-of-day', covers: ['interest accrual', 'daily cover check'], action: 'clock', to: AT_1730('2026-03-03'),
+      expect: {
+        events: [{ type: 'accrual.interest', summary: 'Repo interest accrued on Tidemark reverse repo: 579.31 USD', owner: 'treasury', date: '2026-03-03' }],
+        positions: [{ ...RR_POS, accrued: 579.31, collateralHeld: { instrument: 'note', qty: 5_000_000 } }],
+        alerts: ['repo.margin'],
+        pnl: { treasury: { couponInterest: 579.31, total: 579.31 }, book: { couponInterest: 579.31, total: 579.31 } },
+        nav: { treasury: 5_900_579.31, book: 6_000_579.31 },
+        balance: { treasury: { accruedIncome: 579.31, assets: 5_900_579.31, netAssets: 5_900_579.31 }, book: { accruedIncome: 579.31, assets: 6_000_579.31, netAssets: 6_000_579.31 } },
+      },
+    },
+    {
+      // Tidemark delivers 120,000 face more: 5,120,000 x 97.00 / 100 = 4,966,400.00 plus 8,486.19 accrued = 4,974,886.19, less 2% =
+      // 4,875,388.47 against 4,850,579.31 owed. The flag clears at once. Nothing is posted: the notes are not Treasury's.
+      id: 'margin-call-met', covers: ['margin call', 'collateral'], action: 'lifecycle', lot: 'rrepo', instrument: 'rrepo', body: { action: 'collateral', change: 'pledge', qty: 120_000 },
+      expect: {
+        events: [{ type: 'repo.collateral', summary: 'Margin call on Tidemark reverse repo: received 120,000 more T-3.75-AUG30 from the counterparty (now 5,120,000 T-3.75-AUG30 held, worth 4,974,886.19 USD: cover 4,875,388.47 USD against 4,850,579.31 USD owed)', owner: 'treasury', date: '2026-03-03', cash: {} }],
+        positions: [{ ...RR_POS, accrued: 579.31, collateralHeld: { instrument: 'note', qty: 5_120_000 } }],
+        holdings: {},
+        alerts: [],
+      },
+    },
+    { id: 'notes-recover', covers: 'collateral value rises', action: 'quote', instrument: 'note', quote: { bid: 99.45, ask: 99.55, last: 99.50, bidSize: 50_000_000, askSize: 50_000_000 }, expect: { events: [] } },
+    { id: 'wednesday-morning', action: 'clock', to: AT_1000('2026-03-04'), expect: { events: [] } },
+    {
+      // Returning 400,000 would leave 4,720,000 x 99.50 / 100 = 4,696,400.00 plus 17 days accrued (1.875 x 17 / 181 x 47,200 =
+      // 8,312.15) = 4,704,712.15, less 2% = 4,610,617.91 against 4,850,579.31 owed: 239,961.40 short. Refused.
+      id: 'return-too-much', covers: ['return of excess collateral'], action: 'lifecycle', lot: 'rrepo', instrument: 'rrepo', body: { action: 'collateral', change: 'release', qty: 400_000 },
+      status: 'blocked', reason: 'The cover after the return would be short of what Tidemark owes.',
+      expect: { refused: 'After the return the cover would be 239,961.40 USD short: 4,720,000 T-3.75-AUG30 is worth 4,704,712.15 USD (4,696,400.00 USD clean plus 8,312.15 USD accrued interest) and the haircut is 2.00%, so it covers 4,610,617.91 USD against 4,850,579.31 USD owed with repo interest.' },
+    },
+    {
+      // 90,000 goes back: 5,030,000 x 99.50 / 100 = 5,004,850.00 plus 8,858.08 accrued = 5,013,708.08, less 2% = 4,913,433.92.
+      id: 'return-excess', covers: ['return of excess collateral', 'collateral'], action: 'lifecycle', lot: 'rrepo', instrument: 'rrepo', body: { action: 'collateral', change: 'release', qty: 90_000 },
+      expect: {
+        events: [{ type: 'repo.collateral', summary: 'Excess collateral returned to the counterparty on Tidemark reverse repo: 90,000 T-3.75-AUG30 (now 5,030,000 T-3.75-AUG30 held, worth 5,013,708.08 USD: cover 4,913,433.92 USD against 4,850,579.31 USD owed)', owner: 'treasury', date: '2026-03-04', cash: {} }],
+        positions: [{ ...RR_POS, accrued: 579.31, collateralHeld: { instrument: 'note', qty: 5_030_000 } }],
+      },
+    },
+    {
+      // Monday 16 March, the end date: interest to today, 14 days, 8,110.28 (+7,530.97), is received with the principal and the
+      // notes go back to Tidemark.
+      id: 'terminated-on-the-end-date', covers: ['maturity', 'close', 'termination', 'collateral returned'], action: 'clock', to: AT_1000('2026-03-16'),
+      expect: {
+        events: [
+          { type: 'accrual.interest', summary: 'Repo interest accrued on Tidemark reverse repo: 7,530.97 USD', owner: 'treasury', date: '2026-03-16' },
+          { type: 'interest.payment', summary: 'Repo interest received on Tidemark reverse repo: 8,110.28 USD', cash: { USD: 8_110.28 }, owner: 'treasury', date: '2026-03-16' },
+          { type: 'repo.reverse_close', summary: 'Reverse repo matured: received 4,850,000.00 USD principal (interest 8,110.28 USD); collateral returned', cash: { USD: 4_850_000 }, owner: 'treasury', date: '2026-03-16' },
+        ],
+        cash: { treasury: { USD: { settled: 5_908_110.28, availableToTrade: 5_908_110.28, availableToWithdraw: 5_908_110.28, lent: 0 } } }, // 1,050,000 + 4,850,000 + 8,110.28
+        positions: [], holdings: {}, lifecycle: [], alerts: [],
+        pnl: { treasury: { couponInterest: 8_110.28, total: 8_110.28 }, book: { couponInterest: 8_110.28, total: 8_110.28 } },
+        nav: { treasury: 5_908_110.28, book: 6_008_110.28 },
+        balance: {
+          treasury: { cash: 5_908_110.28, lent: null, accruedIncome: null, assets: 5_908_110.28, liabilities: 0, netAssets: 5_908_110.28 },
+          book: { cash: 6_008_110.28, lent: null, accruedIncome: null, assets: 6_008_110.28, liabilities: 0, netAssets: 6_008_110.28 },
+        },
+      },
+    },
+  ],
+};
+
+export default [repo, reverseRepo];

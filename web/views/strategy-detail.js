@@ -12,6 +12,7 @@ import { bump, currentBook, fmtMoney, fmtNum, fmtPrice, fmtQty, fmtTime, get, is
 import { Button, Check, Drawer, Empty, ErrorNote, Field, KV, Missing, Modal, Money, Notice, Num, OrderStatus, Panel, Pill, Price, Prov, PURPOSE_LABEL, Select, StrategyStatus, Table, Text } from '../lib/ui.js';
 import { openInstrument, openPreviewAction } from './instrument.js';
 import { openHedgeFor, openHedgeRequest, ProtectionDetail, SourceFacts, StatePill, StrategyRef } from './hedge.js';
+import { ManualEventDialog, manualEventLabel, manualEvents, manualLines } from '../lib/manual.js';
 
 const NOTIONAL_FAMILIES = ['future', 'forward', 'swap', 'cds'];
 const FINANCING_FAMILIES = ['loan', 'repo', 'secloan'];
@@ -152,6 +153,8 @@ function lifecycleFor(p, terms) {
   if (p.family === 'bond') a.push('redeem');
   if (p.family === 'future' && terms && !terms.perpetual) a.push('deliver');
   if (p.family === 'secloan' && p.qty > 0) a.push('recall');
+  // A holding or contract valued by hand: its manual workflow (m1, web/lib/manual.js).
+  if (p.family === 'manual') a.push(...manualEvents(p.instrument.productId));
   // A cash loan or facility drawing can carry a fee or other cash flow the engine does not generate (a commitment fee).
   if (!FINANCING_FAMILIES.includes(p.family) || p.family === 'loan') a.push('cashflow');
   return a;
@@ -202,9 +205,10 @@ function Positions({ s, rc, after }) {
   const optionIds = s.positions.filter((p) => ['option', 'otcoption', 'future'].includes(p.family)).map((p) => p.instrument.id);
   const terms = useLive(async () => Object.fromEntries(await Promise.all(optionIds.map(async (id) => [id, (await get(`/api/instruments/${id}`)).terms]))), [optionIds.join(',')], { interval: false });
   const [pick, setPick] = useState(0); // remounts the action menus so they return to their placeholder
-  const act = (p, action) => { setPick((n) => n + 1); openOverlay((close) => html`<${LifecycleDialog} p=${p} action=${action} terms=${terms.data?.[p.instrument.id]} onClose=${close} onDone=${after} />`); };
+  const act = (p, action) => { setPick((n) => n + 1); openOverlay((close) => (p.family === 'manual' && !LIFECYCLE[action] ? html`<${ManualEventDialog} p=${p} action=${action} onClose=${close} onDone=${after} />` : html`<${LifecycleDialog} p=${p} action=${action} terms=${terms.data?.[p.instrument.id]} onClose=${close} onDone=${after} />`)); };
   const closeable = s.actions.includes('close');
   const extra = (p) => [
+    ...(p.family === 'manual' ? manualLines(p) : []),
     p.restrictedCash ? `restricted cash ${fmtMoney(p.restrictedCash, p.ccy)}` : null, p.pledgedQty ? `pledged ${fmtQty(p.pledgedQty)}` : null, p.onLoanQty ? `on loan ${fmtQty(p.onLoanQty)}` : null,
     p.accrued ? `accrued ${fmtMoney(p.accrued, p.ccy, { sign: true })}` : null, p.recall ? html`<span class="loss">recalled ${fmtQty(p.recall.qty)}, due back ${p.recall.dueDate}</span>` : null,
     p.data?.barrierHit ? `barrier event recorded ${fmtTime(p.data.barrierHitAt)}` : null,
@@ -220,7 +224,7 @@ function Positions({ s, rc, after }) {
       { label: 'Unrealized', align: 'r', render: (p) => (p.ledgerCarried ? '' : html`<${Money} value=${p.unrealized} ccy=${p.ccy} signed bare reason=${p.missingReason} />
         ${p.ccy !== rc && !p.missing ? html`<div class="sub"><${Money} value=${p.unrealizedRc} ccy=${rc} signed reason=${`No FX rate from ${p.ccy} to ${rc}`} /></div>` : null}`) },
       { label: '', align: 'r', render: (p) => { const acts = lifecycleFor(p, terms.data?.[p.instrument.id]); return html`<div class="row" style="flex-wrap:nowrap;justify-content:flex-end;gap:6px">
-        ${acts.length ? html`<div key=${pick} style="width:104px" title="Record a lifecycle event on this position"><${Select} value="" placeholder="Lifecycle" onChange=${(v) => v && act(p, v)} options=${acts.map((a) => ({ value: a, label: LIFECYCLE[a].title }))} /></div>` : null}
+        ${acts.length ? html`<div key=${pick} style="width:104px" title="Record a lifecycle event on this position"><${Select} value="" placeholder="Lifecycle" onChange=${(v) => v && act(p, v)} options=${acts.map((a) => ({ value: a, label: LIFECYCLE[a]?.title || manualEventLabel(p.instrument.productId, a) }))} /></div>` : null}
         ${closeable ? html`<${Button} small onClick=${() => openPreviewAction(s.id, 'close', { positionIds: [p.positionId] }, { onDone: after })}>Close<//>` : null}</div>`; } },
     ]} empty=${{ title: 'No open positions', children: s.status === 'closed' ? 'This strategy instance is closed. Its legs and history remain below.' : s.status === 'failed' ? 'No leg executed, so nothing is held.' : 'Positions appear once a leg fills.' }} />
   <//>`;

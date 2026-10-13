@@ -47,7 +47,25 @@ for (const spec of specs) {
           checked++;
           continue;
         }
-        if (leg.kind === 'repay' && typeof leg.cash === 'number' && typeof leg.financing?.principal === 'number') {
+        // r1: a repo leg moves its cash principal (received on a repo, paid on a reverse repo); its reconciliation is the
+        // collateral's value (clean plus accrued) less the contract's haircut and buffer, each to the cent.
+        if (leg.kind === 'repo_open' && typeof leg.qty === 'number' && typeof leg.cash === 'number') {
+          assert.ok(['repo', 'reverse_repo'].includes(leg.action), `${spec.productId}:${step.id}: a repo leg states its action (repo or reverse_repo)`);
+          assert.equal(leg.cash, leg.action === 'repo' ? leg.qty : -leg.qty, `${spec.productId}:${step.id}: the cash of a repo leg is its principal`);
+          const c = leg.financing?.collateral;
+          if (c) {
+            const terms = (step.input?.legs || []).find((l) => l.kind === 'repo_open')?.contract?.terms || {};
+            const ccy = leg.ccy || 'USD';
+            assert.equal(c.worth, money(c.clean + c.accrued, ccy), `${spec.productId}:${step.id}: the collateral is worth its clean value plus its accrued interest`);
+            const after = money(c.worth * (1 - (terms.haircut || 0)), ccy);
+            assert.equal(c.haircutAmount, money(c.worth - after, ccy), `${spec.productId}:${step.id}: the haircut is ${terms.haircut} of the collateral's value`);
+            assert.equal(c.supports, money(after - (terms.buffer || 0), ccy), `${spec.productId}:${step.id}: the cash supported is the value less the haircut less the buffer`);
+            assert.ok(leg.qty <= c.supports + 0.004, `${spec.productId}:${step.id}: the cash principal is within what the collateral supports`);
+          }
+          checked++;
+          continue;
+        }
+        if ((leg.kind === 'repay' || leg.kind === 'repo_close') && typeof leg.cash === 'number' && typeof leg.financing?.principal === 'number') {
           assert.equal(Math.abs(leg.cash), money(leg.financing.principal + (leg.financing.interest || 0), leg.ccy || 'USD'), `${spec.productId}:${step.id}: the cash of a repayment is its principal plus the interest settled with it`);
           checked++;
           continue;

@@ -5,6 +5,7 @@
 import { html, useEffect, useRef, useState } from '../vendor/preact-htm.js';
 import { currentBook, fmtQty, get, isNum, unitLabel, useStore } from './core.js';
 import { Button, Check, Field, Holdings, Num, Select, Text } from './ui.js';
+import { MANUAL_FIELDS } from './manual.js';
 
 const DAY_COUNTS = ['ACT/360', 'ACT/365', 'ACT/ACT', '30/360', '30E/360'].map((d) => ({ value: d, label: d }));
 const yes = () => true;
@@ -239,7 +240,9 @@ const F = {
     { path: 'terms.collateral', label: 'Other collateral terms', type: 'text', span: 2, hint: 'Free text. Recorded, not simulated.' },
   ],
 };
-for (const f of ['equity', 'fund', 'spot', 'crypto', 'manual']) F[f] = F.security;
+for (const f of ['equity', 'fund', 'spot', 'crypto']) F[f] = F.security;
+// Holdings and contracts valued by hand: each product's own terms (m1, web/lib/manual.js).
+F.manual = MANUAL_FIELDS;
 export const FAMILY_FIELDS = F;
 
 const LEG_TYPES = opt([['fixed', 'Fixed rate'], ['float', 'Floating rate'], ['ois', 'Compounded overnight rate'], ['return', 'Return on a reference asset'], ['price', 'Price of a reference asset'], ['cap', 'Cap'], ['floor', 'Floor']]);

@@ -39,7 +39,7 @@ export const family = 'bond';
 /** 10:00 in New York on a date in Eastern Standard Time (UTC-5): November to early March. */
 const EST = (d) => `${d}T15:00:00.000Z`;
 /** 10:00 in New York on a date in Eastern Daylight Time (UTC-4): mid-March to the end of October. */
-const EDT = (d) => `${d}T14:00:00.000Z`; // eslint-disable-line no-unused-vars
+const EDT = (d) => `${d}T14:00:00.000Z`;
 
 /** Fill assumptions every scenario states in full (a quote with a bid and an ask fills at them). */
 const FILL = { halfSpreadBps: { bond: 3 }, slippageBps: 0, participation: 1, maxQuoteAgeSec: 120, allowEndOfDayFills: false, maxPreviewDriftPct: 0.5 };
@@ -334,4 +334,290 @@ const tips = {
   ],
 };
 
-export default [tips];
+// ---------------------------------------------------------------------------------------------
+// foreign_inflation_linked
+// ---------------------------------------------------------------------------------------------
+// A UK index-linked gilt (3-month-lag design): 0.75% real coupon on 22 May and 22 November, ACT/ACT, T+1 on the London
+// calendar (London Stock Exchange listing, venue country GB), in sterling, in a Book that reports in US dollars. Its own
+// conventions against a US TIPS: the index is UK RPI and there is NO deflation floor (the principal repaid is face x index
+// ratio, whatever it is), and a fall in the ratio is recorded like a rise. Ratios entered by hand: 1.43872 at registration,
+// 1.44510 on 2 November 2027, 1.44105 on 1 December 2027 (a small fall: negative accretion).
+//   - The 22 November coupon is paid on face x ratio of the 1,500,000 settled before it.
+//   - 700,000 is sold on Friday 24 December 2027 (New York closed for Christmas, London open): T+1 skips the weekend and
+//     the two English bank holidays of Monday 27 and Tuesday 28 December, and settles Wednesday 29 December.
+//   - The rest is closed on 29 December for settlement on 30 December.
+// Not modelled: the gilt ex-dividend period (seven business days before a coupon); no trade here settles inside it.
+//
+// Coupon periods: 22 May to 22 Nov 2027 is 184 days, 22 Nov 2027 to 22 May 2028 is 182 (2028 is a leap year). A full
+// real coupon is 0.375 per 100 of adjusted principal. Days from 22 May: to 2 Nov 164, to 3 Nov 165. From 22 Nov: to 30 Nov 8,
+// to 1 Dec 9, to 23 Dec 31, to 28 Dec 36, to 29 Dec 37, to 30 Dec 38. GBP/USD 1.27 throughout (fixture). Reporting-currency
+// rule (as in bond-corporate.mjs): balances at the current rate; income, commission and realized P&L posting by posting at
+// the rate when booked; FX effects are what the balance-sheet accounts are worth at the current rate less what they were
+// booked at (here only cents of rounding). Commission: 1 basis point of clean principal.
+const foreignInflationLinked = {
+  productId: 'foreign_inflation_linked',
+  title: 'UK 0.75% index-linked gilt 2033 in sterling, reported in dollars: RPI index ratios recorded by hand (up and down, no deflation floor), coupon on adjusted principal, sale over the English Christmas bank holidays, close',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount'],
+    manualInputs: ['Registration: Index ratio (required; no inflation index feed), Deflation floor left off (UK index-linked gilts have none)', 'Index ratio recorded by hand on the instrument form (Edit, Lifecycle events recorded by hand)'],
+    settlement: 'T+1 on the London calendar (venue country GB); principal = face x index ratio x clean price; English bank holidays skipped; New York holiday does not stop a London trade; ex-dividend period not modelled',
+    lifecycle: 'Daily accrual on the adjusted principal (New York end of day); index ratio changes book inflation accretion (positive or negative) and true up accrued; coupon on face x ratio; no floor at maturity',
+    accounting: 'Sterling position, cost including accretion, accrued, coupon, sale proceeds; US dollar figures at the current rate for balances and unrealized P&L, at the booking rate for income, commission and realized P&L',
+    collateral: 'None for a long position',
+  },
+  start: EDT('2027-11-01'), // Monday (New York is on daylight time until 7 November 2027)
+  settlementCheck: { lag: 1, holidays: ['2027-12-27', '2027-12-28'] }, // English bank holidays for Christmas and Boxing Day
+  book: {
+    name: 'Matrix index-linked gilt', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 1_000_000 }, { ccy: 'GBP', amount: 3_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'GBP', amount: 2_500_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 1 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  fx: { 'GBP/USD': 1.27 },
+  instruments: {
+    main: { productId: 'foreign_inflation_linked', name: 'United Kingdom 0.75% Index-linked Treasury Gilt 22-Nov-2033', symbol: 'UKTI-0.75-33', marketView: 'FOREIGN_CASH', venueType: 'exchange', venue: 'London Stock Exchange', venueCountry: 'GB', issuer: 'HM Treasury (UK Debt Management Office)', domicile: 'GB', underlyingGeo: 'GB', tradingCcy: 'GBP', multiplier: 0.01,
+      terms: { couponType: 'fixed', couponRate: 0.0075, frequency: 2, maturity: '2033-11-22', issueDate: '2013-11-22', dayCount: 'ACT/ACT', redemption: 100, indexRatio: 1.43872, inflationFloor: false } },
+  },
+  quotes: { main: { bid: 98.3, ask: 98.4, last: 98.35, bidSize: 10_000_000, askSize: 10_000_000 } }, // real clean prices
+  expectAtStart: {
+    ...startState(3_175_000, 1_635_000), // 2,500,000 GBP x 1.27; 1,000,000 USD + 500,000 GBP x 1.27
+    cash: { account: { GBP: idle(2_500_000) }, treasury: { USD: idle(1_000_000), GBP: idle(500_000) } },
+  },
+  steps: [
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 1_000_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 1_000_000, estimate: 98.4, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2027-11-02', calendar: 'UK',
+            notional: 1_438_720, // 1,000,000 x 1.43872
+            gross: 1_415_700.48, // 1,438,720 x 98.40 / 100
+            accrued: 4_808.77, // 1,438,720 x 0.375% x 164/184 = 4,808.7652
+            cash: -1_420_509.25, fees: 141.57 }], // 1 bp of 1,415,700.48
+          cash: { GBP: { purchases: 1_420_509.25, fees: 141.57, required: 1_420_650.82, available: 2_500_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 1_000_000, avgPrice: 98.4, fills: [{ qty: 1_000_000, price: 98.4, model: 'quoted-bid-ask', settleDate: '2027-11-02', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1,000,000 UKTI-0.75-33 @ 98.40 GBP', owner: 'account', date: '2027-11-01' }],
+        cash: { account: { GBP: { settled: 2_500_000, unsettled: -1_420_650.82, availableToTrade: 1_079_349.18 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 1_000_000, avgCost: 98.4, cost: 1_415_700.48, price: 98.35,
+          value: 1_414_981.12, // 1,438,720 x 98.35 / 100
+          unrealized: -719.36, accrued: 4_808.77, priceSource: 'Test fixture' }],
+        holdings: { main: { long: 1_000_000, short: 0, net: 1_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2027-11-02', amount: -1_420_650.82, ccy: 'GBP', into: 'cash' }],
+        // 22 Nov 2027 is a Monday; 22 Nov 2033 a Tuesday.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2027-11-22', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2033-11-22', status: 'pending' }],
+        // Dollars at 1.27: commission 141.57 x 1.27 = 179.79; unrealized -719.36 x 1.27 = -913.59.
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -179.79, fees: 0, borrowFunding: 0, unrealized: -913.59, fx: 0, total: -1_093.38 } },
+        nav: { account: 3_173_906.62, book: 4_808_906.62 }, // (2,500,000 - 1,420,650.82 + 1,414,981.12 + 4,808.77) x 1.27
+        balance: { account: { cash: 3_175_000, accruedIncome: 6_107.14, positions: 1_797_026.02, payable: 1_804_226.54, assets: 4_978_133.16, liabilities: 1_804_226.54, netAssets: 3_173_906.62,
+          local: { GBP: { cash: 2_500_000, accruedIncome: 4_808.77, positions: 1_414_981.12, payable: 1_420_650.82 } } } },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EDT('2027-11-02'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 1,420,650.82 GBP from settled cash', cash: { GBP: -1_420_650.82 }, date: '2027-11-02' }],
+        cash: { account: { GBP: { settled: 1_079_349.18, unsettled: 0, availableToTrade: 1_079_349.18 } } },
+        pending: [],
+        balance: { account: { cash: 1_370_773.46, payable: null, assets: 3_173_906.62, liabilities: 0, local: { GBP: { cash: 1_079_349.18, payable: null } } } }, // 1,079,349.18 x 1.27
+      },
+    },
+    {
+      // RPI index ratio for 2 November recorded by hand: 1.43872 to 1.44510. Accretion 1,000,000 x 0.00638 = 6,380.00 sterling
+      // (8,102.60 dollars): cost 1,415,700.48 + 6,380 = 1,422,080.48. Accrued to today on the new ratio: 1,445,100 x 0.375% x
+      // 164/184 = 4,830.0897; 21.32 more (27.08 dollars). FX effects -0.01: rounding of the translated postings (cash
+      // 1,370,773.46 against 1,370,773.4586, position cost 1,806,042.21 against 1,806,042.2096, accrued 6,134.22 against 6,134.2143).
+      id: 'index-ratio-up', covers: 'index ratio (by hand)', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'index_ratio', ratio: 1.4451, asOf: '2027-11-02' },
+      expect: {
+        events: [
+          { type: 'bond.index_ratio', summary: 'Index ratio of UKTI-0.75-33 recorded by hand: 1.43872 to 1.44510 (as of 2027-11-02). Principal of 1,000,000 face up 6,380.00 GBP: inflation accretion earned', owner: 'account', date: '2027-11-02' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on UKTI-0.75-33: 21.32 GBP' },
+        ],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_000_000, cost: 1_422_080.48, avgCost: 98.407064, // 1,422,080.48 / 14,451
+          price: 98.35, value: 1_421_255.85, unrealized: -824.63, accrued: 4_830.09 }], // 1,445,100 x 98.35 / 100 = 1,421,255.85
+        pnl: { account: { couponInterest: 8_129.68, unrealized: -1_047.28, fx: -0.01, total: 6_902.60 } }, // 8,102.60 + 27.08; -824.63 x 1.27
+        nav: { account: 3_181_902.60, book: 4_816_902.60 }, // (1,079,349.18 + 1,421,255.85 + 4,830.09) x 1.27
+        balance: { account: { accruedIncome: 6_134.21, positions: 1_804_994.93, assets: 3_181_902.60, netAssets: 3_181_902.60, local: { GBP: { accruedIncome: 4_830.09, positions: 1_421_255.85 } } } },
+      },
+    },
+    {
+      id: 'increase', covers: 'increase', action: 'resize', lot: 'lot', factor: 1.5, // 1,000,000 -> 1,500,000
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', qty: 500_000, estimate: 98.4, settleDate: '2027-11-03', calendar: 'UK',
+          notional: 722_550, // 500,000 x 1.44510
+          gross: 710_989.20, // 722,550 x 98.40 / 100
+          accrued: 2_429.77, // 722,550 x 0.375% x 165/184 = 2,429.7724
+          cash: -713_418.97, fees: 71.1 }], // 1 bp of 710,989.20
+          cash: { GBP: { purchases: 713_418.97, fees: 71.1, required: 713_490.07, available: 1_079_349.18, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 500_000, avgPrice: 98.4 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Bought 500,000 UKTI-0.75-33 @ 98.40 GBP' }],
+        cash: { account: { GBP: { settled: 1_079_349.18, unsettled: -713_490.07, availableToTrade: 365_859.11 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_500_000, cost: 2_133_069.68, // 1,422,080.48 + 710,989.20
+          avgCost: 98.404709, // 2,133,069.68 / 21,676.5
+          price: 98.35, value: 2_131_883.78, unrealized: -1_185.90, accrued: 7_259.86 }], // 2,167,650 x 98.35 / 100; 4,830.09 + 2,429.77
+        holdings: { main: { long: 1_500_000, short: 0, net: 1_500_000 } },
+        pending: [{ instrument: 'main', dueDate: '2027-11-03', amount: -713_490.07, ccy: 'GBP', into: 'cash' }],
+        pnl: { account: { commissions: -270.09, unrealized: -1_506.09, fx: 0, total: 6_353.50 } }, // 179.79 + 71.10 x 1.27 (90.30); -1,185.90 x 1.27
+        nav: { account: 3_181_353.49, book: 4_816_353.49 },
+        balance: { account: { cash: 1_370_773.46, accruedIncome: 9_220.02, positions: 2_707_492.40, payable: 906_132.39, assets: 4_087_485.88, liabilities: 906_132.39, netAssets: 3_181_353.49,
+          local: { GBP: { cash: 1_079_349.18, accruedIncome: 7_259.86, positions: 2_131_883.78, payable: 713_490.07 } } } },
+      },
+    },
+    {
+      id: 'settle-increase', covers: 'settlement', action: 'clock', to: EDT('2027-11-03'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 713,490.07 GBP from settled cash', cash: { GBP: -713_490.07 } }],
+        cash: { account: { GBP: { settled: 365_859.11, unsettled: 0, availableToTrade: 365_859.11 } } },
+        pending: [],
+        balance: { account: { cash: 464_641.07, payable: null, assets: 3_181_353.49, liabilities: 0, local: { GBP: { cash: 365_859.11, payable: null } } } },
+      },
+    },
+    {
+      // Monday 22 November: coupon on face x ratio of the 1,500,000 settled before it: 2,167,650 x 0.375% = 8,128.6875 ->
+      // 8,128.69 sterling. On the books 7,259.86 (to 2 and 3 Nov): the coupon exceeds it by 868.83, the interest since then
+      // (1,103.41 dollars).
+      id: 'coupon', covers: 'coupon', action: 'clock', to: EST('2027-11-22'),
+      expect: {
+        events: [
+          { type: 'bond.coupon', summary: 'Coupon received on 1,500,000 UKTI-0.75-33 (index ratio 1.44510: adjusted principal 2,167,650.00 GBP): 8,128.69 GBP', cash: { GBP: 8_128.69 }, owner: 'account', date: '2027-11-22' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on UKTI-0.75-33: 868.83 GBP' },
+        ],
+        cash: { account: { GBP: { settled: 373_987.80, availableToTrade: 373_987.80 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_500_000, accrued: 0 }],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2028-05-22', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2033-11-22', status: 'pending' }],
+        pnl: { account: { couponInterest: 9_233.09, total: 7_456.91 } }, // 8,129.68 + 868.83 x 1.27 (1,103.41)
+        nav: { account: 3_182_456.91, book: 4_817_456.91 }, // (373,987.80 + 2,131,883.78) x 1.27
+        balance: { account: { cash: 474_964.51, accruedIncome: null, assets: 3_182_456.91, netAssets: 3_182_456.91, local: { GBP: { cash: 373_987.80, accruedIncome: null } } } },
+      },
+    },
+    {
+      // End of day 30 Nov: 2,167,650 x 0.375% x 8/182 = 357.3049 (453.77 dollars).
+      id: 'december', covers: 'accrual', action: 'clock', to: EST('2027-12-01'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on UKTI-0.75-33: 357.30 GBP' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_500_000, accrued: 357.3 }],
+        pnl: { account: { couponInterest: 9_686.86, total: 7_910.68 } },
+        nav: { account: 3_182_910.68, book: 4_817_910.68 },
+        balance: { account: { accruedIncome: 453.77, assets: 3_182_910.68, netAssets: 3_182_910.68, local: { GBP: { accruedIncome: 357.3 } } } },
+      },
+    },
+    {
+      // The ratio falls: 1.44510 to 1.44105 (no floor applies to a gilt, now or at maturity). Accretion 1,500,000 x -0.00405 =
+      // -6,075.00 sterling (-7,715.25 dollars): cost 2,133,069.68 - 6,075 = 2,126,994.68. Accrued to today, 9 days, on the new
+      // ratio: 2,161,575 x 0.375% x 9/182 = 400.8417; 43.54 more (55.30 dollars): a day of interest less the fall on 8 days.
+      id: 'index-ratio-down', covers: 'index ratio (by hand)', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'index_ratio', ratio: 1.44105, asOf: '2027-12-01' },
+      expect: {
+        events: [
+          { type: 'bond.index_ratio', summary: 'Index ratio of UKTI-0.75-33 recorded by hand: 1.44510 to 1.44105 (as of 2027-12-01). Principal of 1,500,000 face down 6,075.00 GBP: inflation accretion lost', owner: 'account', date: '2027-12-01' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on UKTI-0.75-33: 43.54 GBP' },
+        ],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_500_000, cost: 2_126_994.68, avgCost: 98.400226, // 2,126,994.68 / 21,615.75
+          price: 98.35, value: 2_125_909.01, unrealized: -1_085.67, accrued: 400.84 }], // 2,161,575 x 98.35 / 100 = 2,125,909.0125
+        pnl: { account: { couponInterest: 2_026.91, unrealized: -1_378.80, total: 378.02 } }, // 9,686.86 - 7,715.25 + 55.30
+        nav: { account: 3_175_378.02, book: 4_810_378.02 },
+        balance: { account: { accruedIncome: 509.07, positions: 2_699_904.44, assets: 3_175_378.02, netAssets: 3_175_378.02, local: { GBP: { accruedIncome: 400.84, positions: 2_125_909.01 } } } },
+      },
+    },
+    {
+      id: 'quote-up', action: 'quote', instrument: 'main', quote: { bid: 99.1, ask: 99.2, last: 99.15, bidSize: 10_000_000, askSize: 10_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_500_000, price: 99.15, value: 2_143_201.61, unrealized: 16_206.93 }], // 2,161,575 x 99.15 / 100 = 2,143,201.6125
+        pnl: { account: { unrealized: 20_582.80, total: 22_339.62 } }, // 16,206.93 x 1.27
+        nav: { account: 3_197_339.62, book: 4_832_339.62 },
+        balance: { account: { positions: 2_721_866.04, assets: 3_197_339.62, netAssets: 3_197_339.62, local: { GBP: { positions: 2_143_201.61 } } } },
+      },
+    },
+    {
+      // Friday 24 December: New York is closed (Christmas observed), London is open. End of day 23 Dec: 2,161,575 x 0.375% x
+      // 31/182 = 1,380.6797; 979.84 more (1,244.40 dollars). FX effects -0.01 (rounding, as above).
+      id: 'christmas-eve', covers: 'accrual', action: 'clock', to: EST('2027-12-24'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on UKTI-0.75-33: 979.84 GBP' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_500_000, accrued: 1_380.68 }],
+        pnl: { account: { couponInterest: 3_271.31, fx: -0.01, total: 23_584.01 } },
+        nav: { account: 3_198_584.01, book: 4_833_584.01 },
+        balance: { account: { accruedIncome: 1_753.46, assets: 3_198_584.01, netAssets: 3_198_584.01, local: { GBP: { accruedIncome: 1_380.68 } } } },
+      },
+    },
+    {
+      // Sold on 24 December: T+1 skips Saturday, Sunday and the bank holidays of 27 and 28 December: settles Wednesday 29 December.
+      // Cost out at the average: 2,126,994.68 x 7/15 = 992,597.52; realized 999,656.39 - 992,597.52 = 7,058.87 sterling (8,964.76 dollars).
+      id: 'reduce-over-uk-holidays', covers: ['reduce', 'market holiday'], action: 'ticket', instrument: 'main', side: 'sell', qty: 700_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 700_000, estimate: 99.1, settleDate: '2027-12-29', calendar: 'UK',
+          notional: 1_008_735, // 700,000 x 1.44105
+          gross: 999_656.39, // 1,008,735 x 99.10 / 100 = 999,656.385
+          accrued: 769.02, // 1,008,735 x 0.375% x 37/182 = 769.0221
+          cash: 1_000_425.41, fees: 99.97 }] }, // 1 bp of 999,656.39
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 700_000, avgPrice: 99.1 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 700,000 UKTI-0.75-33 @ 99.10 GBP (realized 7,058.87 GBP)', date: '2027-12-24' }],
+        cash: { account: { GBP: { settled: 373_987.80, unsettled: 1_000_325.44, availableToTrade: 1_374_313.24 } } }, // 1,000,425.41 - 99.97
+        positions: [{ instrument: 'main', lot: 'lot', qty: 800_000, cost: 1_134_397.16, avgCost: 98.400226, // 2,126,994.68 - 992,597.52; / 11,528.4
+          price: 99.15, value: 1_143_040.86, unrealized: 8_643.70, accrued: 611.66 }], // 1,152,840 x 99.15 / 100; 1,380.68 - 769.02
+        holdings: { main: { long: 800_000, short: 0, net: 800_000 } },
+        pending: [{ instrument: 'main', dueDate: '2027-12-29', amount: 1_000_325.44, ccy: 'GBP', into: 'cash' }],
+        pnl: { account: { realized: 8_964.76, commissions: -397.05, unrealized: 10_977.50, fx: 0, total: 22_816.52 } }, // 270.09 + 99.97 x 1.27 (126.96); 8,643.70 x 1.27
+        nav: { account: 3_197_816.52, book: 4_832_816.52 },
+        balance: { account: { cash: 474_964.51, receivable: 1_270_413.31, accruedIncome: 776.81, positions: 1_451_661.89, assets: 3_197_816.52, liabilities: 0, netAssets: 3_197_816.52,
+          local: { GBP: { receivable: 1_000_325.44, accruedIncome: 611.66, positions: 1_143_040.86 } } } },
+      },
+    },
+    {
+      // Wednesday 29 December. End of day 28 Dec (New York open; London closed): the sale settles on the 29th, so all 1,500,000
+      // is still settled face: 2,161,575 x 0.375% x 36/182 = 1,603.4127, less the interest sold to 29 Dec, 769.0221: 834.3406.
+      // On the books 611.66: 222.68 more (282.80 dollars).
+      id: 'settle-reduce', covers: ['settlement', 'market holiday'], action: 'clock', to: EST('2027-12-29'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 1,000,325.44 GBP into settled cash', cash: { GBP: 1_000_325.44 }, date: '2027-12-29' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on UKTI-0.75-33: 222.68 GBP' },
+        ],
+        cash: { account: { GBP: { settled: 1_374_313.24, unsettled: 0, availableToTrade: 1_374_313.24 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 800_000, accrued: 834.34 }],
+        pending: [],
+        pnl: { account: { couponInterest: 3_554.11, fx: 0, total: 23_099.32 } },
+        nav: { account: 3_198_099.32, book: 4_833_099.32 },
+        balance: { account: { cash: 1_745_377.81, receivable: null, accruedIncome: 1_059.61, assets: 3_198_099.32, netAssets: 3_198_099.32, local: { GBP: { cash: 1_374_313.24, receivable: null, accruedIncome: 834.34 } } } },
+      },
+    },
+    {
+      // Closed for settlement on Thursday 30 December. Realized 1,142,464.44 - 1,134,397.16 = 8,067.28 sterling (10,245.45 dollars).
+      // Interest sold 902.64 against 834.34 on the books: 68.30 more income (86.74 dollars).
+      id: 'close', covers: 'close', action: 'close', lot: 'lot', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 800_000, estimate: 99.1, settleDate: '2027-12-30', calendar: 'UK',
+          notional: 1_152_840, // 800,000 x 1.44105
+          gross: 1_142_464.44, // 1,152,840 x 99.10 / 100
+          accrued: 902.64, // 1,152,840 x 0.375% x 38/182 = 902.6407
+          cash: 1_143_367.08, fees: 114.25 }] }, // 1 bp of 1,142,464.44
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 800_000, avgPrice: 99.1 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Sold 800,000 UKTI-0.75-33 @ 99.10 GBP (realized 8,067.28 GBP)' },
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of UKTI-0.75-33: 68.30 GBP' },
+        ],
+        cash: { account: { GBP: { settled: 1_374_313.24, unsettled: 1_143_252.83, availableToTrade: 2_517_566.07 } } }, // 1,143,367.08 - 114.25
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', dueDate: '2027-12-30', amount: 1_143_252.83, ccy: 'GBP', into: 'cash' }],
+        lifecycle: [],
+        pnl: { account: { realized: 19_210.21, couponInterest: 3_640.85, commissions: -542.15, unrealized: 0, fx: 0, total: 22_308.91 } }, // 8,964.76 + 10,245.45; + 86.74; + 114.25 x 1.27 (145.10)
+        nav: { account: 3_197_308.91, book: 4_832_308.91 }, // 2,517,566.07 x 1.27 = 3,197,308.9089
+        balance: { account: { cash: 1_745_377.81, receivable: 1_451_931.09, positions: null, accruedIncome: null, assets: 3_197_308.91, liabilities: 0, netAssets: 3_197_308.91,
+          local: { GBP: { receivable: 1_143_252.83, positions: null, accruedIncome: null } } } },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: EST('2027-12-30'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 1,143,252.83 GBP into settled cash', cash: { GBP: 1_143_252.83 } }],
+        cash: { account: { GBP: { settled: 2_517_566.07, unsettled: 0, availableToTrade: 2_517_566.07 } }, treasury: { USD: { settled: 1_000_000 }, GBP: { settled: 500_000 } } },
+        pending: [],
+        balance: { account: { cash: 3_197_308.91, receivable: null, assets: 3_197_308.91, liabilities: 0, local: { GBP: { cash: 2_517_566.07, receivable: null } } } },
+      },
+    },
+  ],
+};
+
+export default [tips, foreignInflationLinked];

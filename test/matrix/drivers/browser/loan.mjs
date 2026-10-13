@@ -258,7 +258,7 @@ export async function ticket(ui, t, ctx, step) {
 // ---------------------------------------------------------------------------------------------
 
 /** Every financing leg of the preview must display its own figures: cash, rate, daily interest, principal and interest of a repayment. */
-async function financingOnScreen(ui, modal, pv) {
+export async function financingOnScreen(ui, modal, pv) {
   const out = [];
   const rows = await modal.locator('table.pv-legs tbody tr:not(.group)').evaluateAll((trs) => trs.map((tr) => Object.fromEntries([...tr.children].filter((td) => td.dataset.label).map((td) => [td.dataset.label, td.innerText.trim()]))));
   const money = (x) => Math.abs(x).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -289,7 +289,7 @@ async function financingOnScreen(ui, modal, pv) {
 // ---------------------------------------------------------------------------------------------
 
 /** The open loan, deposit or repo position of a lot (or of an instrument key), from the API. */
-async function arrangementOf(t, ctx, { lot, instrument }) {
+export async function arrangementOf(t, ctx, { lot, instrument }) {
   const all = (await t.accounting(ctx.bookId, 'positions', { scope: 'book' })).positions.filter((p) => ['loan', 'repo'].includes(p.family));
   const p = instrument && ctx.instruments[instrument] ? all.find((x) => x.instrument.id === ctx.instruments[instrument].id) : all.find((x) => x.strategyId === ctx.lot(lot).strategyId);
   if (!p) throw new Error(`No open loan or deposit for ${instrument ? `instrument "${instrument}"` : `"${lot}"`}.`);
@@ -301,7 +301,7 @@ async function arrangementOf(t, ctx, { lot, instrument }) {
  * A borrowing is on its owner's page (Account: "Borrowings of this Account"; Treasury: "Treasury's own borrowings");
  * cash lent or on deposit is in Treasury's "Lending, deposits and securities lent" table, whoever owns it.
  */
-async function arrangementRow(ui, ctx, p) {
+export async function arrangementRow(ui, ctx, p) {
   const { page } = ui;
   await ui.closeOverlays();
   const borrowed = p.qty < 0;
@@ -326,7 +326,7 @@ export async function openTicket(ui, t, ctx, step, tools, open) {
   const opened = await open();
   if (opened.refusal) return opened;
   let raw = null;
-  const out = await tools.previewAndConfirm(ui, ctx, opened.preview, { expectsRefusal: tools.expectsRefusal, inspect: async (modal, pv) => { raw = pv; return financingOnScreen(ui, modal, pv); } });
+  const out = await tools.previewAndConfirm(ui, ctx, opened.preview, { expectsRefusal: tools.expectsRefusal, inspect: async (modal, pv) => { raw = pv; return (tools.inspect || ((md, p) => financingOnScreen(ui, md, p)))(modal, pv); } });
   if (out.strategy) {
     if (step.as && !ctx.lots.has(step.as)) ctx.nameLot(step.as, out.strategy.id, step.instrument);
     await learnContracts(t, ctx, step, raw, out.strategy);

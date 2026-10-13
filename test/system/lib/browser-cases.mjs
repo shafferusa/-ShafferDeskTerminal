@@ -2279,8 +2279,10 @@ export async function restartScreens(b, c) {
   /** Stop and start the server, reload the page: every screen reads as before, nothing stored changed, nothing added. */
   const restartHere = async (stage) => {
     const fp = b.fingerprint();
+    const hrA = JSON.stringify(b.sql('SELECT * FROM hedge_requests'));
     const before = await screens();
     const hr0 = JSON.stringify(b.sql('SELECT * FROM hedge_requests'));
+    { const a0 = JSON.parse(hrA)[0] || {}, a1 = JSON.parse(hr0)[0] || {}; const d = Object.keys({ ...a0, ...a1 }).filter((k) => !['request', 'response'].includes(k) && a0[k] !== a1[k]); if (d.length) c.note(`DIAG2 while reading the screens before the restart, hedge_requests changed: ${d.map((k) => `${k}: ${String(a0[k]).slice(0, 200)} -> ${String(a1[k]).slice(0, 200)}`).join(' ; ')}`); }
     await b.restart();
     await page.reload();
     await page.locator('.shell .topbar').waitFor();
@@ -2289,7 +2291,7 @@ export async function restartScreens(b, c) {
     c.eq(after.cash, before.cash, `restart at "${stage}": the cash balances read as before`);
     c.eq(after.holding, before.holding, `restart at "${stage}": the holding reads as before`);
     c.eq(sameHistoryShown(c, before.history, after.history, `restart at "${stage}"`), [], `restart at "${stage}": no row was added to the Full history`);
-    if (!b.sameStored(c, fp, b.fingerprint(), `restart at "${stage}": every stored row is as it was`)) c.fail(`DIAG hedge_requests before ${hr0} after ${JSON.stringify(b.sql('SELECT * FROM hedge_requests'))}`);
+    if (!b.sameStored(c, fp, b.fingerprint(), `restart at "${stage}": every stored row is as it was`)) { const a0 = JSON.parse(hr0)[0] || {}, a1 = b.sql('SELECT * FROM hedge_requests')[0] || {}; c.fail(`DIAG hedge_requests changed columns: ${Object.keys({ ...a0, ...a1 }).filter((k) => !['request', 'response'].includes(k) && a0[k] !== a1[k]).map((k) => `${k}: ${String(a0[k]).slice(0, 300)} -> ${String(a1[k]).slice(0, 300)}`).join(' ; ')}`); }
     await b.clean(c, book.id, `restart at "${stage}"`);
     return after;
   };
@@ -2378,4 +2380,242 @@ export async function interruptedConfirmation(b, c) {
   // 2 x (5,002.00 + 1.00 commission) = 10,006.00 owed, once each.
   c.near((await b.cash(book.id, book.accountId)).payable, 10_006, 'the Account owes 10,006.00: each purchase once');
   b.takePageErrors().forEach((e) => { if (!/ERR_|Failed to fetch|NetworkError|not reachable/i.test(e)) c.fail(`browser console error: ${e}`); });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Duplicate clicks on the remaining confirming buttons: Treasury, reference data, agreements
+// ---------------------------------------------------------------------------------------------
+
+/** Double-click `button`, wait for `until`, and return how many requests matching (method, path) left the page. */
+async function dblclickCounting(b, button, method, path, until) {
+  const sent = watchRequests(b.page, method, path);
+  await button.dblclick();
+  await until();
+  await settle(b);
+  sent.stop();
+  return sent.seen.length;
+}
+/** A Treasury arrangement dialog (New loan or deposit, Lend a security) opened from the Borrowings page. */
+async function openArrangement(b, button, title) {
+  const { page, ui } = b;
+  await ui.closeOverlays();
+  await ui.reloadAt('#/treasury/borrowings');
+  await ui.button(page.locator('main'), button).click();
+  const dlg = ui.dialog(title);
+  await dlg.waitFor();
+  return dlg;
+}
+/** Press the arrangement dialog's preview button; returns the preview dialog and the preview answer. */
+async function previewArrangement(b, dlg, button) {
+  const asked = await answerTo(b, 'POST', /^\/api\/strategies\/preview$/, () => b.ui.button(dlg, button).click());
+  if (!asked.ok) throw new Error(`${button}: the preview was refused: ${asked.body?.error}`);
+  const modal = b.ui.dialog(/^Preview: /);
+  await modal.waitFor();
+  return { modal, pv: asked.body };
+}
+
+/** SB:stress:double-click-treasury. Record withdrawal, and the Confirm of a borrowing, a repo and a securities loan. */
+export async function doubleClickTreasury(b, c) {
+  const { page, ui } = b;
+  const book = await b.book('Browser double click treasury', { capital: 3_000_000 });
+  const bond = await b.instrument(NOTE);
+  await b.fixture('quote', { instrumentId: bond.id, bid: 99.98, ask: 100.00, last: 100.00, bidSize: 5e6, askSize: 5e6 });
+  const lent = await b.stock('DTL', QUOTE);
+  await b.trade({ bookId: book.id, unitId: book.treasuryId, template: 'custom', legs: [{ kind: 'trade', action: 'buy', instrumentId: bond.id, qty: 1_000_000 }] });
+  await b.trade({ bookId: book.id, unitId: book.treasuryId, template: 'custom', legs: [{ kind: 'trade', action: 'buy', instrumentId: lent.id, qty: 1_000 }] });
+  await b.clock(TUE);
+  await enter(b, book, '#/treasury');
+  await closeHedgePopup(b);
+  const ev = (like) => b.sql('SELECT COUNT(*) AS n FROM events WHERE book_id = ? AND type LIKE ?', book.id, like)[0].n;
+  const strategies = () => b.sql('SELECT COUNT(*) AS n FROM strategies WHERE book_id = ?', book.id)[0].n;
+  const tcash = async () => (await b.cash(book.id, book.treasuryId)).settled;
+
+  // 1. Record withdrawal: 30,000.00 out of Treasury.
+  let cash0 = await tcash();
+  let n0 = ev('capital.withdrawal');
+  let dlg = await openCapital(b, { type: 'withdrawal', amount: 30_000 });
+  let sent = await dblclickCounting(b, ui.button(dlg, 'Record withdrawal'), 'POST', /\/capital$/, async () => { await dlg.waitFor({ state: 'hidden' }); await ui.toast(/Withdrawal recorded/); });
+  c.eq(sent, 1, 'Record withdrawal double-clicked: one request left the page');
+  c.eq(ev('capital.withdrawal') - n0, 1, 'one withdrawal is recorded');
+  c.near(await tcash() - cash0, -30_000, 'Treasury cash fell by 30,000.00, once');
+
+  // 2. A cash loan borrowed by Treasury: 100,000.00 at 5%, maturing 1 April; Confirm double-clicked.
+  cash0 = await tcash();
+  let s0 = strategies();
+  dlg = await openArrangement(b, 'New loan or deposit', 'Cash loan or deposit');
+  await ui.select(dlg, 'Borrower').selectOption({ label: 'Treasury' });
+  await ui.input(dlg, 'Principal').fill('100000');
+  await ui.input(dlg, 'Rate (decimal a year)').fill('0.05');
+  await ui.input(dlg, 'Maturity').fill('2026-04-01');
+  let p = await previewArrangement(b, dlg, 'Preview loan');
+  c.eq(p.pv.blocking, 0, 'the loan previews without a block');
+  sent = await dblclickCounting(b, p.modal.getByRole('button', { name: /^Confirm/ }), 'POST', /^\/api\/strategies$/, () => p.modal.waitFor({ state: 'hidden' }));
+  await b.tick();
+  c.ok(sent >= 1 && sent <= 2, 'the loan\'s confirmation was sent', `${sent} requests`);
+  c.note(`loan Confirm double-clicked: ${sent} request${sent === 1 ? '' : 's'} left the page`);
+  c.eq(strategies() - s0, 1, 'one borrowing is recorded (one strategy instance)');
+  c.near(-(await b.balance(book.id, book.treasuryId, 'loan.liab')), 100_000, 'Treasury owes 100,000.00, once');
+  c.near(await tcash() - cash0, 100_000, 'Treasury cash rose by 100,000.00, once');
+
+  // 3. A repo of the note: 900,000.00 against 1,000,000 face at a 2% haircut; Confirm double-clicked.
+  cash0 = await tcash();
+  s0 = strategies();
+  const r = await previewRepo(b, { cash: 900_000, face: 1_000_000 });
+  c.ok(r.modal, 'the repo previews', r.refusal);
+  if (r.modal) {
+    sent = await dblclickCounting(b, r.modal.getByRole('button', { name: /^Confirm/ }), 'POST', /^\/api\/strategies$/, () => r.modal.waitFor({ state: 'hidden' }));
+    await b.tick();
+    c.note(`repo Confirm double-clicked: ${sent} request${sent === 1 ? '' : 's'} left the page`);
+    c.eq(strategies() - s0, 1, 'one repo is recorded');
+    c.near(await tcash() - cash0, 900_000, 'Treasury cash rose by 900,000.00, once');
+    const pledged = (await b.get(`/api/books/${book.id}/accounting/positions`, { scope: book.treasuryId })).positions.find((x) => x.instrument.id === bond.id);
+    c.eq(pledged?.pledgedQty, 1_000_000, 'the note is pledged once: 1,000,000 face');
+  }
+
+  // 4. Lend 500 DTL: Confirm double-clicked.
+  s0 = strategies();
+  dlg = await openArrangement(b, 'Lend a security', 'Lend a security');
+  await ui.select(dlg, 'Lender').selectOption({ label: 'Treasury' });
+  const picker = ui.field(dlg, 'Position to lend').locator('select').first();
+  await picker.locator('option', { hasText: 'DTL' }).first().waitFor({ state: 'attached' });
+  await picker.selectOption({ label: (await picker.locator('option').allInnerTexts()).map((x) => x.trim()).find((x) => x.startsWith('DTL')) });
+  await ui.drawn();
+  await ui.input(dlg, 'Quantity to lend').fill('500');
+  await ui.input(dlg, 'Fee (decimal a year)').fill('0.01');
+  p = await previewArrangement(b, dlg, 'Preview securities loan');
+  c.eq(p.pv.blocking, 0, 'the securities loan previews without a block');
+  sent = await dblclickCounting(b, p.modal.getByRole('button', { name: /^Confirm/ }), 'POST', /^\/api\/strategies$/, () => p.modal.waitFor({ state: 'hidden' }));
+  await b.tick();
+  c.note(`securities loan Confirm double-clicked: ${sent} request${sent === 1 ? '' : 's'} left the page`);
+  c.eq(strategies() - s0, 1, 'one securities loan is recorded');
+  const onLoan = (await b.get(`/api/books/${book.id}/accounting/positions`, { scope: book.treasuryId })).positions.find((x) => x.instrument.id === lent.id);
+  c.eq([onLoan?.qty, onLoan?.onLoanQty], [1_000, 500], '500 of the 1,000 DTL are on loan, once');
+  await closeHedgePopup(b);
+  await b.clean(c, book.id);
+}
+
+/** SB:stress:double-click-reference. Register instrument, Save price, Save assumptions and Save request, each double-clicked. */
+export async function doubleClickReference(b, c) {
+  const { page, ui } = b;
+  const book = await b.book('Browser double click reference');
+  await enter(b, book, '#/instruments');
+  const count = (sql, ...p) => b.sql(sql, ...p)[0].n;
+
+  // 1. Register instrument.
+  await ui.button(page.locator('main'), 'New instrument').first().click();
+  let dlg = ui.dialog('New instrument');
+  await ui.select(dlg, 'Product type').selectOption('common_stock');
+  await ui.drawn();
+  await ui.input(dlg, 'Name').fill('Double Click Works Inc.');
+  await ui.input(dlg, 'Symbol').fill('DCW');
+  await ui.input(dlg, 'Venue country').fill('US');
+  let sent = await dblclickCounting(b, ui.button(dlg, 'Register instrument'), 'POST', /^\/api\/instruments$/, async () => { await dlg.waitFor({ state: 'hidden' }); await ui.toast(/Instrument registered/); });
+  c.eq(sent, 1, 'Register instrument double-clicked: one request left the page');
+  c.eq(count(`SELECT COUNT(*) AS n FROM instruments WHERE symbol = 'DCW'`), 1, 'one instrument DCW is registered');
+
+  // 2. Save price (Data connection, Manual entries): 12.50 for DCW.
+  await show(b, '#/data/manual');
+  const px = ui.section(page.locator('main'), 'Instrument price');
+  await px.locator('input[type=search]').fill('DCW');
+  await px.locator('.picklist button.pick', { hasText: 'DCW' }).first().click();
+  await ui.input(px, 'Price').fill('12.5');
+  const obs0 = count(`SELECT COUNT(*) AS n FROM observations WHERE origin = 'manual-entry'`);
+  sent = await dblclickCounting(b, ui.button(px, 'Save price'), 'POST', /^\/api\/observations$/, () => ui.toast(/Price saved/));
+  c.eq(sent, 1, 'Save price double-clicked: one request left the page');
+  c.eq(count(`SELECT COUNT(*) AS n FROM observations WHERE origin = 'manual-entry'`) - obs0, 1, 'one manual price is on file');
+
+  // 3. Save assumptions (Settings): the equity commission changed to 0.01.
+  await show(b, '#/settings');
+  await assumption(b, 'Fees and commissions', 'Equities').nth(0).fill('0.01');
+  const set0 = count(`SELECT COUNT(*) AS n FROM events WHERE book_id = ? AND type = 'book.settings'`, book.id);
+  sent = await dblclickCounting(b, ui.button(page.locator('main'), 'Save assumptions'), 'PUT', /^\/api\/books\/[^/]+$/, () => ui.button(page.locator('main'), 'Save assumptions').and(page.locator(':disabled')).waitFor());
+  c.eq(sent, 1, 'Save assumptions double-clicked: one request left the page');
+  c.eq(count(`SELECT COUNT(*) AS n FROM events WHERE book_id = ? AND type = 'book.settings'`, book.id) - set0, 1, 'one settings change is recorded');
+
+  // 4. Save request: a hedge request made without its context (incomplete), completed in the hedge popup.
+  const inst = await b.stock('DCH', QUOTE);
+  const held = await b.buy(book, inst, 100);
+  await b.tick();
+  const reqs = async () => (await b.get('/api/hedge/requests', { bookId: book.id })).items.filter((x) => x.strategyId === held.id);
+  let rq = await reqs();
+  c.eq(rq.map((x) => x.state), ['incomplete'], 'setup: the purchase made without a context has one incomplete hedge request');
+  if (rq.length === 1) {
+    const popup = await openFromQueue(b, rq[0].id);
+    const form = popup.locator('[data-testid=hedge-complete-form]').first();
+    const strat = ui.field(form, 'Investment Strategy');
+    if (await strat.locator('select').count()) await strat.locator('select').selectOption({ index: 1 });
+    else await strat.locator('input').fill('Core Equity');
+    await ui.input(form, 'Intended holding period (days)').fill('60');
+    await ui.select(form, 'Hedge objective').selectOption({ label: 'Downside protection' });
+    const ordersBefore = (await b.books(book.id)).counts.orders;
+    sent = await dblclickCounting(b, ui.button(form, 'Save request'), 'POST', /\/complete$/, () => ui.toast(/Request saved/));
+    c.eq(sent, 1, 'Save request double-clicked: one request left the page');
+    rq = await reqs();
+    c.eq(rq.length, 1, 'there is still one hedge request for the position');
+    c.ok(rq[0] && rq[0].state !== 'incomplete', 'and it is complete now', rq[0]?.state);
+    await b.tick();
+    c.eq((await b.books(book.id)).counts.orders, ordersBefore, 'saving (and any recommendation that came back) executed nothing');
+    await ui.closeOverlays().catch(() => {});
+  }
+  await closeHedgePopup(b);
+  await b.clean(c, book.id);
+}
+
+/** SB:stress:double-click-agreements. Record agreement, Close agreement and Retry failed calls, each double-clicked. */
+export async function doubleClickAgreements(b, c) {
+  const { page, ui } = b;
+  const book = await b.book('Browser double click agreements', { funding: 100_000 });
+  const beta = (await b.post(`/api/books/${book.id}/accounts`, { name: 'Beta' })).id;
+  await b.post(`/api/books/${book.id}/transfers`, { fromUnitId: book.treasuryId, toUnitId: beta, ccy: 'USD', amount: 30_000 });
+  // Beta: a swap under an agreement with variation margin, marked at -5 per 100 on 1,000,000 = -50,000.00.
+  await b.fixture('rate', { code: 'TEST-3M', value: 4.0 });
+  const agr = await b.post(`/api/books/${book.id}/agreements`, { name: 'CSA Dealer A', counterparty: 'Dealer A', kind: 'bilateral', unitIds: [beta], terms: { variationMargin: true } });
+  const swap = await b.trade({ bookId: book.id, unitId: beta, template: 'custom', legs: [{ kind: 'trade', action: 'buy', qty: 1_000_000, statedPrice: 0, contract: { productId: 'interest_rate_swap', name: 'IRS double click', marketView: 'US_DERIV', venueType: 'otc', tradingCcy: 'USD', terms: { effective: '2026-03-02', maturity: '2027-03-02', counterparty: 'Dealer A', collateralBasis: { type: 'agreement', agreementId: agr.id }, legs: [
+    { id: 'A', side: 'pay', type: 'fixed', ccy: 'USD', rate: 0.04, months: 6, dayCount: '30/360' },
+    { id: 'B', side: 'receive', type: 'float', ccy: 'USD', index: 'TEST-3M', spread: 0, months: 3, dayCount: 'ACT/360' }] } } }] });
+  await b.post('/api/observations', { kind: 'price', subject: swap.positions[0].instrument.id, value: -5, units: 'per 100 notional' });
+  await b.clock(evening('2026-03-02')); // the end-of-day pass calls 50,000.00 from Beta, which has 30,000.00: the call fails
+  await enter(b, book, '#/treasury/collateral');
+  await closeHedgePopup(b);
+  const count = (sql, ...p) => b.sql(sql, ...p)[0].n;
+
+  // 1. Record agreement.
+  const desk = page.locator('.coll-desk');
+  await desk.waitFor();
+  await ui.button(page.locator('main'), 'New agreement').first().click();
+  let dlg = ui.dialog('New collateral agreement');
+  await dlg.waitFor();
+  await ui.input(dlg, 'Agreement name').fill('CSA Dealer B');
+  await ui.input(dlg, 'Counterparty').fill('Dealer B');
+  await ui.field(dlg, 'Covers').getByText('Alpha', { exact: true }).first().click();
+  const a0 = count('SELECT COUNT(*) AS n FROM agreements WHERE book_id = ?', book.id);
+  let sent = await dblclickCounting(b, ui.button(dlg, 'Record agreement'), 'POST', /\/agreements$/, () => dlg.waitFor({ state: 'hidden' }));
+  c.eq(sent, 1, 'Record agreement double-clicked: one request left the page');
+  c.eq(count('SELECT COUNT(*) AS n FROM agreements WHERE book_id = ?', book.id) - a0, 1, 'one agreement is recorded');
+  c.eq(await page.locator('.toasts .toast.err').count(), 0, 'no error is shown');
+
+  // 2. Close agreement (the new one: nothing is open under it).
+  const row = page.locator('main tr').filter({ hasText: 'CSA Dealer B' }).first();
+  await row.waitFor();
+  const closes0 = count(`SELECT COUNT(*) AS n FROM events WHERE book_id = ? AND type = 'collateral.agreement' AND json_extract(data, '$.action') = 'closed'`, book.id);
+  sent = await dblclickCounting(b, ui.button(row, 'Close agreement'), 'POST', /\/agreements\/[^/]+\/close$/, () => ui.toast(/Agreement closed/));
+  c.eq(sent, 1, 'Close agreement double-clicked: one request left the page');
+  c.eq(count(`SELECT COUNT(*) AS n FROM agreements WHERE book_id = ? AND name = 'CSA Dealer B' AND status = 'closed'`, book.id), 1, 'the agreement is closed');
+  c.eq(count(`SELECT COUNT(*) AS n FROM events WHERE book_id = ? AND type = 'collateral.agreement' AND json_extract(data, '$.action') = 'closed'`, book.id) - closes0, 1, 'one closing is recorded');
+  c.eq(await page.locator('.toasts .toast.err').count(), 0, 'no error is shown');
+
+  // 3. Retry failed calls, once Beta has the cash (100,000.00 more, recorded behind the screen).
+  c.near((await b.cash(book.id, beta)).margin, 0, 'setup: the 50,000.00 call failed, nothing was posted');
+  await b.post(`/api/books/${book.id}/transfers`, { fromUnitId: book.treasuryId, toUnitId: beta, ccy: 'USD', amount: 100_000 });
+  await ui.reloadAt('#/treasury/collateral');
+  const retry = page.getByRole('button', { name: 'Retry failed calls' });
+  await retry.waitFor();
+  const mv0 = count(`SELECT COUNT(*) AS n FROM collateral_movements WHERE book_id = ? AND kind = 'variation'`, book.id);
+  sent = await dblclickCounting(b, retry, 'POST', /\/collateral\/retry$/, () => ui.toast(/failed call delivered/));
+  c.eq(sent, 1, 'Retry failed calls double-clicked: one request left the page');
+  c.eq(count(`SELECT COUNT(*) AS n FROM collateral_movements WHERE book_id = ? AND kind = 'variation'`, book.id) - mv0, 1, 'one variation-margin movement');
+  c.near((await b.cash(book.id, beta)).margin, 50_000, 'Beta has posted 50,000.00, once');
+  await b.tick();
+  c.near((await b.cash(book.id, beta)).margin, 50_000, 'a cycle after it posts nothing more');
+  await b.clean(c, book.id);
 }

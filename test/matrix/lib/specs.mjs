@@ -40,7 +40,9 @@ export function validateSpec(spec, file) {
   }
   // A product is tested with an instrument of exactly that product. Where no such instrument can exist (the contract
   // is entered on a ticket, or the product is a transaction rather than an instrument), the spec says so in `tradedOn`.
-  if (!spec.template && !Object.values(spec.instruments).some((d) => d.productId === spec.productId) && !(typeof spec.tradedOn === 'string' && spec.tradedOn.length > 20)) bad(`no instrument is registered as ${spec.productId}. Register one, or state in \`tradedOn\` why this product has no registry instrument of its own.`);
+  // A contract that names a collateral agreement recorded by an earlier step is registered by a `register_instrument` step.
+  const registeredByStep = (spec.steps || []).some((st) => st.action === 'register_instrument' && st.draft?.productId === spec.productId && !st.status);
+  if (!spec.template && !registeredByStep && !Object.values(spec.instruments).some((d) => d.productId === spec.productId) && !(typeof spec.tradedOn === 'string' && spec.tradedOn.length > 20)) bad(`no instrument is registered as ${spec.productId}. Register one, or state in \`tradedOn\` why this product has no registry instrument of its own.`);
   if (!Array.isArray(spec.steps) || !spec.steps.length) bad('needs steps.');
   const seen = new Set();
   for (const st of spec.steps) {

@@ -702,4 +702,221 @@ const bondOption = {
   ],
 };
 
-export default [otcOption, bondOption];
+// ---------------------------------------------------------------------------------------------
+// fx_option
+// ---------------------------------------------------------------------------------------------
+// A European EUR call / JPY put on 1,000,000 EUR struck at 165.00 JPY per EUR, expiring Wednesday 3 June 2026, physical
+// delivery (both currencies exchanged on the spot value date), bought by the Account from Dealer D. The premium is
+// stated in the premium currency, JPY per EUR of notional: 2.40 x 1,000,000 = 2,400,000 JPY. Collateral: a CSA with
+// Dealer D in US dollars (base and collateral currency USD; variation margin, no threshold, minimum transfer 10,000),
+// so the JPY mark is converted to USD for every call. The Book reports in USD; every reporting figure below is the JPY
+// amount at the USD/JPY fixture of 150 (EUR/USD 1.08, then 1.12 from 2 June: EUR/JPY 162.00, then 168.00).
+//
+// Early exercise is refused (European). At expiry the pair closes at 168.00: in the money, so the call is exercised
+// automatically, which means paying 165,000,000 JPY for 1,000,000 EUR. The Account does not hold that much yen: the
+// exchange is not made and the expiry item fails visibly; once Treasury transfers the yen it goes through on the next
+// cycle, labelled as a simulated currency exchange, and settles on Friday 5 June (T+2 on the TARGET2 and Tokyo
+// calendars). The option's 20,000 USD of intrinsic value arrives as currency: 1,000,000 EUR worth 1,120,000 USD for
+// 165,000,000 JPY worth 1,100,000 USD.
+const FX_PAIR = 'EUR/JPY spot';
+const FX_CALL_NAME = 'EUR call / JPY put 165.00, 3 Jun 2026, European, physical (Dealer D)';
+const fxOption = {
+  productId: 'fx_option',
+  title: 'EUR call / JPY put 165.00 on 1,000,000 EUR, premium in JPY, European, physical: exchanged at expiry once the yen is funded',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'Trading currency = the premium currency (JPY); quantity = the base-currency notional (EUR)'],
+    automaticInputs: ['EUR/JPY rate (pair quote fixture standing in for Shaffer MarketData) for the notional', 'USD/JPY and EUR/USD rates (FX fixtures) for every reporting-currency figure and for the variation margin in USD', 'premium settlement date, T+2 on the TARGET2 and Tokyo calendars', 'commission per EUR of notional (in JPY) from the Book fee schedule', 'variation margin from the CSA terms, the JPY mark converted to USD', 'expiry item settled against the EUR/JPY close for the expiration date (close fixture: the stated settlement price)', 'spot value date of the currency exchange on the TARGET2 and Tokyo calendars'],
+    manualInputs: ['premium agreed with the dealer in JPY per EUR (stated fill price)', 'marks in JPY per EUR, entered by hand (Manual entry)', 'early exercise of a European option, refused', 'yen moved from Treasury to fund the exchange (Transfer cash)'],
+    settlement: 'Premium in JPY T+2 on TARGET2 + Tokyo; on exercise 1,000,000 EUR is received and 165,000,000 JPY paid on the spot value date (T+2), only when the yen is held',
+    lifecycle: 'Early exercise refused (European); expiry item on 3 June: in the money, automatic physical exercise; the exchange fails visibly while the Account lacks the yen and is retried each cycle; it goes through once funded; nothing scheduled afterwards',
+    accounting: 'Premium in JPY on the EUR notional, realized on exercise; the exchange at the strike books EUR and JPY at their USD rates, the difference (the intrinsic value) reported as currency P&L; commission expensed in JPY; all reporting figures in USD at the FX fixtures',
+    collateral: 'Agreement "CSA Dealer D" in USD: no independent amount for a bought option; variation margin on the JPY mark converted to USD, threshold 0, minimum transfer 10,000; received as restricted USD with a liability; part returned on a lower mark, the rest when the option is exercised',
+  },
+  start: at('2026-03-02'),
+  settlementCheck: { lag: 2, holidays: [] }, // TARGET2 and Tokyo: no holiday between 2 and 4 March 2026
+  book: {
+    name: 'Matrix FX option', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 1_000_000 }, { ccy: 'JPY', amount: 210_000_000 }],
+    account: { name: 'Macro', funding: [{ ccy: 'USD', amount: 200_000 }, { ccy: 'JPY', amount: 15_000_000 }] },
+    settings: { fees: { otcoption: { perUnit: 0.03, minimum: 0, bps: 0 }, fx: NO_FEE }, fill: FILL, settlement: { otcoption: 2, fx: 2 } }, // 0.03 JPY per EUR of notional
+  },
+  fx: { 'USD/JPY': 150, 'EUR/USD': 1.08 },
+  instruments: {
+    pair: { productId: 'fx_spot', name: FX_PAIR, symbol: 'EURJPY', marketView: 'FOREIGN_CASH', venueType: 'otc', tradingCcy: 'JPY', terms: { base: 'EUR', quote: 'JPY', settleDays: 2 } },
+  },
+  quotes: { pair: { bid: 161.98, ask: 162.02, last: 162, bidSize: 50_000_000, askSize: 50_000_000 } },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 200_000, restricted: 0, margin: 0, availableToTrade: 200_000 }, JPY: { settled: 15_000_000, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 15_000_000, availableToWithdraw: 15_000_000 } },
+      treasury: { USD: { settled: 800_000 }, JPY: { settled: 195_000_000 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [], otc: [], alerts: [],
+    nav: { account: 300_000, treasury: 2_100_000, book: 2_400_000 }, // 200,000 + 15,000,000 / 150; 800,000 + 195,000,000 / 150
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+  },
+  steps: [
+    {
+      id: 'agreement', covers: 'collateral', action: 'agreement', as: 'csa',
+      agreement: { name: 'CSA Dealer D', counterparty: 'Dealer D', kind: 'bilateral', baseCcy: 'USD', postingCcy: 'USD', independentAmount: { type: 'pct', pct: 0.05 }, variationMargin: true, threshold: 0, minimumTransfer: 10_000 },
+      expect: { events: [{ type: 'collateral.agreement', summary: 'Collateral agreement recorded: CSA Dealer D with Dealer D (Bilateral (CSA-style))', owner: 'treasury' }] },
+    },
+    {
+      id: 'register-call', action: 'register_instrument', as: 'call',
+      draft: {
+        productId: 'fx_option', name: FX_CALL_NAME, symbol: 'EURJPY-C165-JUN26', marketView: 'FOREIGN_DERIV', venueType: 'otc', tradingCcy: 'JPY', underlying: 'pair', multiplier: 1,
+        conventions: { settlementCalendar: 'TARGET+JP', paymentCalendar: 'TARGET+JP' },
+        terms: { right: 'C', strike: 165, expiration: '2026-06-03', optionType: 'vanilla', exercise: 'european', settlement: 'physical', counterparty: 'Dealer D', collateralBasis: { type: 'agreement', agreementId: '$agreement:csa' } },
+      },
+      expect: {},
+    },
+    otcTicket({
+      id: 'buy-call', covers: ['open', 'collateral'], instrument: 'call', side: 'buy', qty: 1_000_000, premium: 2.40, as: 'calls',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'call', qty: 1_000_000, estimate: 2.4, model: 'stated-price', settleDate: '2026-03-04', calendar: 'TARGET+JP',
+            cash: -2_400_000, // 1,000,000 EUR x 2.40 JPY
+            fees: 30_000, // 1,000,000 x 0.03 JPY
+            notional: 162_000_000 }], // 1,000,000 x 162.00 JPY
+          cash: { JPY: { purchases: 2_400_000, fees: 30_000, margin: 0, required: 2_430_000, available: 15_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 1_000_000, avgPrice: 2.4, fills: [{ qty: 1_000_000, price: 2.4, model: 'stated-price', settleDate: '2026-03-04' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1,000,000 EURJPY-C165-JUN26 @ 2.40 JPY', owner: 'account', date: '2026-03-02' }],
+        cash: { account: { JPY: { settled: 15_000_000, unsettled: -2_430_000, availableToTrade: 12_570_000, availableToWithdraw: 12_570_000 } } },
+        positions: [{ instrument: 'call', lot: 'calls', owner: 'account', direction: 'long', qty: 1_000_000, avgCost: 2.4, cost: 2_400_000, price: null, value: null, unrealized: null, provisional: true, notional: 162_000_000, margin: 0 }],
+        holdings: { call: { long: 1_000_000, short: 0, net: 1_000_000 } },
+        pending: [{ instrument: 'call', owner: 'account', dueDate: '2026-03-04', amount: -2_430_000, ccy: 'JPY', into: 'cash' }],
+        lifecycle: [{ type: 'option.expiry', instrument: 'call', dueDate: '2026-06-03', status: 'pending' }],
+        otc: [{ instrument: 'call', lot: 'calls', owner: 'account', qty: 1_000_000, basis: 'agreement', agreement: 'CSA Dealer D', mark: null, iaRequired: 0, iaPosted: 0, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: -200, fx: 0, unrealized: 0, total: -200 }, book: { commissions: -200, total: -200 } }, // 30,000 JPY / 150
+        nav: { account: 299_800, book: 2_399_800 }, // 200,000 + (15,000,000 - 2,430,000 + 2,400,000 at cost) / 150
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 300_000, payable: 16_200, positions: 16_000, assets: 316_000, liabilities: 16_200, netAssets: 299_800, local: { JPY: { cash: 15_000_000, payable: 2_430_000, positions: 2_400_000 } } } },
+      },
+    }),
+    {
+      id: 'mark-call', covers: 'manual mark', action: 'manual_price', instrument: 'call', value: 4.50, note: 'Dealer D mark, JPY per EUR, by hand',
+      expect: {
+        positions: [{ instrument: 'call', lot: 'calls', price: 4.5, value: 4_500_000, unrealized: 2_100_000, provisional: false, priceSource: 'Manual entry' }], // 1,000,000 x 4.50; - 2,400,000
+        otc: [{ instrument: 'call', mark: 4.5, markValue: 4_500_000 }],
+        pnl: { account: { unrealized: 14_000, total: 13_800 }, book: { unrealized: 14_000, total: 13_800 } }, // 2,100,000 / 150
+        nav: { account: 313_800, book: 2_413_800 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 30_000, assets: 330_000, netAssets: 313_800, local: { JPY: { positions: 4_500_000 } } } }, // 4,500,000 / 150
+      },
+    },
+    {
+      // The mark, 4,500,000 JPY, is 30,000 USD at 150: no threshold, so Dealer D posts 30,000 USD (restricted, owed back).
+      id: 'variation-margin-received', covers: 'variation margin', action: 'clock', to: eod('2026-03-02'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under "CSA Dealer D" (Dealer D): 30,000.00 USD received. Netting set of 1 position marked at 30,000.00 USD; threshold 0.00 USD.', owner: 'account', date: '2026-03-02' }],
+        cash: { account: { USD: { settled: 200_000, restricted: 30_000, availableToTrade: 200_000 } } },
+        otc: [{ instrument: 'call', vmHeld: 30_000, vmPosted: 0, vmExposure: 30_000, vmCcy: 'USD', vmStatus: 'ok' }],
+        balance: { account: { cash: 300_000, restricted: 30_000, collateralReceived: 30_000, assets: 360_000, liabilities: 46_200, netAssets: 313_800 } },
+      },
+    },
+    {
+      id: 'settle-premium', covers: 'settlement', action: 'clock', to: at('2026-03-04'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 2,430,000 JPY from settled cash', cash: { JPY: -2_430_000 } }],
+        cash: { account: { JPY: { settled: 12_570_000, unsettled: 0, availableToTrade: 12_570_000, availableToWithdraw: 12_570_000 } } },
+        pending: [],
+        balance: { account: { cash: 283_800, payable: null, assets: 343_800, liabilities: 30_000, local: { JPY: { cash: 12_570_000, payable: null } } } }, // 200,000 + 12,570,000 / 150
+      },
+    },
+    {
+      id: 'early-exercise-refused', covers: 'exercise style', action: 'lifecycle', lot: 'calls', body: { action: 'exercise', contracts: 1_000_000 },
+      status: 'blocked', reason: 'A European option is exercised at expiration only.',
+      expect: { refused: 'This option is European: it can only be exercised at expiration.' },
+    },
+    // Held across Golden Week (29 April, 3 to 6 May: Tokyo holidays) and 1 May (a TARGET2 closing day).
+    { id: 'after-golden-week', covers: 'holiday', action: 'clock', to: at('2026-05-07'), expect: {} },
+    { id: 'tuesday-2-june', action: 'clock', to: at('2026-06-02'), expect: {} },
+    {
+      id: 'euro-rises', action: 'fx_rate', pair: 'EUR/USD', rate: 1.12,
+      expect: {}, // nothing held in EUR yet
+    },
+    {
+      id: 'pair-rises', action: 'quote', instrument: 'pair', quote: { bid: 167.98, ask: 168.02, last: 168, bidSize: 50_000_000, askSize: 50_000_000 },
+      expect: { positions: [{ instrument: 'call', lot: 'calls', notional: 168_000_000 }] }, // 1,000,000 x 168.00
+    },
+    {
+      id: 'mark-call-intrinsic', covers: 'manual mark', action: 'manual_price', instrument: 'call', value: 3.00, note: 'Dealer D mark, JPY per EUR, by hand',
+      expect: {
+        positions: [{ instrument: 'call', lot: 'calls', price: 3, value: 3_000_000, unrealized: 600_000 }], // 1,000,000 x 3.00; - 2,400,000
+        otc: [{ instrument: 'call', mark: 3, markValue: 3_000_000 }],
+        pnl: { account: { unrealized: 4_000, total: 3_800 }, book: { unrealized: 4_000, total: 3_800 } }, // 600,000 / 150
+        nav: { account: 303_800, book: 2_403_800 },
+        balance: { account: { positions: 20_000, assets: 333_800, netAssets: 303_800, local: { JPY: { positions: 3_000_000 } } } },
+      },
+    },
+    {
+      // Marked at 20,000 USD; 30,000 is held: 10,000 goes back to Dealer D (not below the 10,000 minimum transfer).
+      id: 'variation-margin-returned', covers: 'variation margin', action: 'clock', to: eod('2026-06-02'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under "CSA Dealer D" (Dealer D): 10,000.00 USD returned to the counterparty. Netting set of 1 position marked at 20,000.00 USD; threshold 0.00 USD.', owner: 'account' }],
+        cash: { account: { USD: { restricted: 20_000 } } },
+        otc: [{ instrument: 'call', vmHeld: 20_000, vmExposure: 20_000 }],
+        balance: { account: { restricted: 20_000, collateralReceived: 20_000, assets: 323_800, liabilities: 20_000 } },
+      },
+    },
+    { id: 'settlement-price-known-later', action: 'close_price', instrument: 'pair', date: '2026-06-03', value: 168, expect: {} },
+    {
+      // In the money (168.00 > 165.00): the call is exercised automatically, which needs 165,000,000 JPY. The Account
+      // holds 12,570,000 JPY: nothing is exchanged and the item fails, visibly, to be retried each cycle.
+      id: 'exercise-unfunded', covers: ['expiry', 'physical settlement', 'funding'], action: 'clock', to: eod('2026-06-03'),
+      expect: {
+        events: [],
+        // Listed with the failures (Accounting, Failed tab), with the reason, not among the pending items.
+        lifecycle: [],
+        lifecycleFailures: [{ type: 'option.expiry', instrument: 'call', dueDate: '2026-06-03', status: 'failed', reason: /needs 165,000,000 JPY to deliver against 1,000,000\.00 EUR, and Macro has 12,570,000 JPY of JPY available/ }],
+        failed: { lifecycle: 1 },
+      },
+    },
+    {
+      // Treasury moves 165,000,000 JPY (1,100,000 USD) to the Account; on the next cycle the exercise goes through: the call
+      // closes at zero (its 2,400,000 JPY premium, 16,000 USD, is realized) and the currencies are exchanged at the strike
+      // for value Friday 5 June. The 20,000 USD Dealer D posted against the call goes back.
+      id: 'fund-yen-then-exchange', covers: ['funding', 'physical settlement', 'collateral'], action: 'transfer', from: 'treasury', to: 'account', ccy: 'JPY', amount: 165_000_000,
+      expect: {
+        events: [
+          { type: 'transfer.funding', summary: 'Treasury funding: 165,000,000 JPY from Treasury to Macro' },
+          { type: 'option.exercised', summary: 'Exercised: 1,000,000 EURJPY-C165-JUN26 at strike 165', owner: 'account', date: '2026-06-03' },
+          { type: 'option.delivery', summary: 'Simulated currency exchange on exercise of EURJPY-C165-JUN26: bought 1,000,000.00 EUR against 165,000,000 JPY at strike 165, value 2026-06-05', owner: 'account' },
+          { type: 'collateral.variation', summary: 'Variation margin under "CSA Dealer D" (Dealer D): 20,000.00 USD returned to the counterparty. The last position of the netting set ended.', owner: 'account' },
+        ],
+        cash: {
+          account: { USD: { restricted: 0 }, JPY: { settled: 177_570_000, unsettled: -165_000_000, availableToTrade: 12_570_000, availableToWithdraw: 12_570_000 }, EUR: { settled: 0, unsettled: 1_000_000, availableToTrade: 1_000_000, availableToWithdraw: 0 } },
+          treasury: { JPY: { settled: 30_000_000 } },
+        },
+        positions: [], holdings: { call: null }, otc: [], lifecycle: [], lifecycleFailures: [], failed: { lifecycle: 0 },
+        pending: [
+          { owner: 'account', dueDate: '2026-06-05', amount: -165_000_000, ccy: 'JPY', into: 'cash' },
+          { owner: 'account', dueDate: '2026-06-05', amount: 1_000_000, ccy: 'EUR', into: 'cash' },
+        ],
+        // Realized -16,000 (premium); currency +20,000: 1,000,000 EUR at 1.12 = 1,120,000 for 165,000,000 JPY at 150 = 1,100,000.
+        pnl: { account: { realized: -16_000, fx: 20_000, unrealized: 0, total: 3_800 }, book: { realized: -16_000, fx: 20_000, unrealized: 0, total: 3_800 } },
+        nav: { account: 1_403_800, treasury: 1_000_000, book: 2_403_800 }, // 200,000 + (177,570,000 - 165,000,000) / 150 + 1,000,000 x 1.12; 800,000 + 30,000,000 / 150
+        balance: { account: { cash: 1_383_800, receivable: 1_120_000, payable: 1_100_000, positions: null, restricted: null, collateralReceived: null, assets: 2_503_800, liabilities: 1_100_000, netAssets: 1_403_800, // 200,000 + 177,570,000 / 150
+          local: { JPY: { cash: 177_570_000, payable: 165_000_000, positions: null }, EUR: { receivable: 1_000_000 } } } },
+      },
+    },
+    {
+      id: 'value-date', covers: 'settlement', action: 'clock', to: at('2026-06-05'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 1,000,000.00 EUR into settled cash', cash: { EUR: 1_000_000 } },
+          { type: 'settlement.pay', summary: 'paid 165,000,000 JPY from settled cash', cash: { JPY: -165_000_000 } },
+        ],
+        cash: { account: { JPY: { settled: 12_570_000, unsettled: 0, availableToTrade: 12_570_000, availableToWithdraw: 12_570_000 }, EUR: { settled: 1_000_000, unsettled: 0, availableToTrade: 1_000_000, availableToWithdraw: 1_000_000 } } },
+        pending: [],
+        balance: { account: { cash: 1_403_800, receivable: null, payable: null, assets: 1_403_800, liabilities: 0, // 200,000 + 83,800 + 1,120,000
+          local: { JPY: { cash: 12_570_000, payable: null }, EUR: { cash: 1_000_000, receivable: null } } } },
+      },
+    },
+  ],
+};
+
+export default [otcOption, bondOption, fxOption];

@@ -135,3 +135,4 @@
 - 2026-10-13T17:31Z | fw | +0 | fw: futures simulated physical delivery in the engine (repairs future.mjs captured half-edited in f3c20ac); commodity_future passes E/A/B
 - 2026-10-13T17:34Z | o2 | +0.2 | bond_option passes at engine, API and browser
 - 2026-10-13T17:35Z | b3 | +0.2 | tips passes at engine, API and browser
+- 2026-10-13T17:40Z | b3 | +0.2 | foreign_inflation_linked passes at engine, API and browser

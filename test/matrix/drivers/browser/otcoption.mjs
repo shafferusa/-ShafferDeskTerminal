@@ -74,10 +74,30 @@ async function fillCollateral(ui, scope, basis, ctx) {
   }
 }
 
+/** Calendars and settlement lag of the instrument (registry form only): 'JP' or a joint calendar such as 'JP+TARGET'. */
+async function fillConventions(ui, dialog, c) {
+  if (!c) return;
+  for (const [key, label] of [['tradingCalendar', 'Trading calendar'], ['settlementCalendar', 'Settlement calendar'], ['paymentCalendar', 'Payment calendar']]) {
+    if (!c[key]) continue;
+    const select = ui.select(dialog, label);
+    if (String(c[key]).includes('+')) {
+      await select.selectOption('+');
+      await ui.field(dialog, label).locator('input').fill(c[key]);
+    } else {
+      await select.locator(`option[value="${c[key]}"]`).waitFor({ state: 'attached' });
+      await select.selectOption(c[key]);
+    }
+  }
+  if (c.settleLag !== undefined && c.settleLag !== null) await ui.input(dialog, 'Settlement convention: lag in business days').fill(String(c.settleLag));
+}
+
 /** The OTC option fields of the registration form. A spec states them on the draft: `underlying`, `multiplier`, `terms`. */
 export async function contractTerms(ui, dialog, draft, ctx) {
   const view = ui.field(dialog, /^\s*Primary view/);
-  if (await view.count()) await ui.option(dialog, /^\s*Primary view/, VIEW[draft.marketView]).click();
+  if (await view.count()) {
+    await ui.option(dialog, /^\s*Primary view/, VIEW[draft.marketView]).click();
+    await fillConventions(ui, dialog, draft.conventions);
+  }
   const t = draft.terms || {};
   if (draft.underlying) await pickInstrument(ui, dialog, /^\s*Underlying instrument/, ctx.inst(draft.underlying));
   if (t.fixingRate) await ui.input(dialog, /^\s*Fixing rate code/).fill(t.fixingRate);
