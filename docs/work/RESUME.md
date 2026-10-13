@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 98.0% of the pass** (last milestone 2026-10-13T21:03Z, s3: s3 wrap-up: regression tests, catalog notes, BUGS.md, npm test)
+**Completeness: about 98.0% of the pass** (last milestone 2026-10-13T21:05Z, s2: s2 finished: 13 other swaps pass at engine, API and browser; core tests, BUGS.md section, final checks)
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 
