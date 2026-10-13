@@ -106,3 +106,4 @@
 - 2026-10-13T16:57Z | s8 | +0.3 | s8: browser case SB:nodup:catch-up passes; screens stuck on Loading after a server outage fixed
 - 2026-10-13T16:58Z | b2 | +0.2 | commercial_paper passes at engine, API and browser
 - 2026-10-13T16:59Z | fix | +1 | A complete: collateral follow-up (stale-mark calls, collateral on Accounting rows, borrow collateral, narrow collateral screens, no-basis fix from templates and Add legs)
+- 2026-10-13T16:59Z | fix | +1 | B complete: every BUGS.md finding fixed, stated as a convention, or explained (except ui1's two)
