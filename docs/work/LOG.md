@@ -93,3 +93,4 @@
 - 2026-10-13T16:42Z | ui1 | +1 | Classification from explicit metadata: routing convention stored and shown on rows, instrument page and registration form
 - 2026-10-13T16:43Z | c1 | +0.2 | fx_spot passes at engine, API and browser (FX pairs now trade on the Mon-Fri FX calendar)
 - 2026-10-13T16:44Z | b2 | +0.2 | floating_rate_note passes at engine, API and browser (late fixings now taken, coupon income at a missing reset, no-fixing trades refused)
+- 2026-10-13T16:46Z | b2 | +0.2 | zero_coupon_bond passes at engine, API and browser

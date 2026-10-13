@@ -1848,9 +1848,16 @@ export async function catchUpScreens(b, c) {
   await b.t.kill();
   await page.locator('.offline-bar').waitFor({ timeout: 30_000 });
   c.match(flat(await page.locator('.offline-bar').innerText()), /server is not reachable/, 'with the server stopped the page says it cannot reach it');
+  // Meanwhile the user opens a screen whose code the page has not loaded yet: it says so, rather than "Loading…".
+  await page.locator('.rail a', { hasText: 'Data connection' }).click();
+  await page.locator('main .notice.err', { hasText: 'This screen could not be loaded' }).waitFor();
+  c.match(flat(await page.locator('main').innerText()), /could not be loaded.*reloads by itself when the server is back/, 'a screen opened while the server is away says it could not be loaded and will reload when the server is back');
   await b.t.start();
   await page.locator('.offline-bar').waitFor({ state: 'hidden', timeout: 30_000 });
+  await page.locator('main h1', { hasText: 'Data connection' }).waitFor({ timeout: 30_000 });
+  c.ok(true, 'the server back, that screen loads by itself');
   b.takePageErrors();
+  await show(b, '#/accounting');
   // Back, the user moves the demo clock on with the demo band: two weeks and a day, Tuesday 17 March.
   await pressClock(b, '+1 week', /Mar 09, 2026/);
   await pressClock(b, '+1 week', /Mar 16, 2026/);

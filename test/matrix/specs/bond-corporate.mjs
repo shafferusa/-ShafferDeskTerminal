@@ -1381,4 +1381,146 @@ const floatingRateNote = {
   ],
 };
 
-export default [corporateBondIg, highYieldBond, eurobond, foreignMarketBond, corporateSukuk, floatingRateNote];
+// ---------------------------------------------------------------------------------------------
+// zero_coupon_bond
+// ---------------------------------------------------------------------------------------------
+// A corporate zero-coupon note, issued in 2021 at a deep discount and now a few weeks from maturity: no coupon,
+// no accrued interest, bought below par and redeemed at par. T+1 on the US bond calendar, pieces of 1,000.
+// Its maturity date, Thursday 26 November 2026, is Thanksgiving: the redemption is paid on Friday 27 November.
+//   - Bought on Monday 2 November at 99.60.
+//   - 800,000 sold on Tuesday 10 November: T+1 would be Veterans Day, so it settles on Thursday 12 November.
+//   - On Wednesday 25 November a purchase would settle on Friday 27 November, after the maturity date: refused.
+//   - The 1,200,000 left is redeemed at 100.
+// The discount is price gain: unrealized while held, realized at the sale and at redemption. The Terminal does
+// not accrete the discount into interest income (nothing is booked between trades), so coupon income stays zero.
+// Commission: 1 basis point of clean principal (none on the redemption).
+const zeroCouponBond = {
+  productId: 'zero_coupon_bond',
+  title: 'Halvorsen Pharma zero-coupon notes due 26 November 2026: bought at a discount, part sold over Veterans Day, the rest redeemed at par after Thanksgiving',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount (a multiple of 1,000)'],
+    automaticInputs: ['bid, ask, last in % of par (quote fixture standing in for Shaffer MarketData)', 'fill price and fill model', 'settlement date from the instrument convention and settlement calendar', 'commission from the Book fee schedule'],
+    manualInputs: ['none'],
+    settlement: 'T+1 on the US bond calendar; Veterans Day is skipped; a trade must settle before the maturity date, so a purchase the day before Thanksgiving (settling after maturity) is refused',
+    lifecycle: 'No coupon and no accrual; redemption at par on the maturity date, moved to the next business day after Thanksgiving, automatic',
+    accounting: 'Clean cost at average; no accrued interest; the discount is unrealized P&L while held and realized P&L at sale and redemption (no accretion into interest income)',
+    collateral: 'None for a long position',
+  },
+  start: EST('2026-11-02'), // Monday
+  settlementCheck: { lag: 1, holidays: ['2026-11-11', '2026-11-26'] }, // Veterans Day, Thanksgiving
+  book: {
+    name: 'Matrix zero-coupon bond', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 3_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 2_500_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 1 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'zero_coupon_bond', name: 'Halvorsen Pharma Inc Zero Coupon Notes 26-Nov-2026', symbol: 'HALV-ZERO-NOV26', marketView: 'US_CASH', venueType: 'otc', issuer: 'Halvorsen Pharma Inc', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      terms: { couponType: 'zero', maturity: '2026-11-26', issueDate: '2021-11-26', dayCount: 'ACT/ACT', redemption: 100, minDenomination: 1_000, seniority: 'Senior unsecured' } },
+  },
+  quotes: { main: { bid: 99.55, ask: 99.6, last: 99.575, bidSize: 10_000_000, askSize: 10_000_000 } },
+  expectAtStart: { ...startState(2_500_000, 500_000), cash: { account: usdCash(2_500_000), treasury: usdCash(500_000) } },
+  steps: [
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 2_000_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 2_000_000, estimate: 99.6, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2026-11-03', calendar: 'USBOND',
+            gross: 1_992_000, // 2,000,000 x 99.60 / 100
+            accrued: 0, cash: -1_992_000, fees: 199.20 }], // 1 bp of 1,992,000
+          cash: { USD: { purchases: 1_992_000, fees: 199.20, required: 1_992_199.20, available: 2_500_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 2_000_000, avgPrice: 99.6, fills: [{ qty: 2_000_000, price: 99.6, model: 'quoted-bid-ask', settleDate: '2026-11-03', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 2,000,000 HALV-ZERO-NOV26 @ 99.60 USD', owner: 'account', date: '2026-11-02' }],
+        cash: { account: { USD: { settled: 2_500_000, unsettled: -1_992_199.20, availableToTrade: 507_800.80 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 2_000_000, avgCost: 99.6, cost: 1_992_000, price: 99.575,
+          value: 1_991_500, unrealized: -500, accrued: 0, priceSource: 'Test fixture' }], // 2,000,000 x 99.575%
+        holdings: { main: { long: 2_000_000, short: 0, net: 2_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2026-11-03', amount: -1_992_199.20, ccy: 'USD', into: 'cash' }],
+        // No coupon. Maturity 26 Nov 2026 is Thanksgiving: redemption due Friday 27 November.
+        lifecycle: [{ type: 'bond.maturity', instrument: 'main', dueDate: '2026-11-27', status: 'pending' }],
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -199.20, fees: 0, borrowFunding: 0, unrealized: -500, total: -699.20 } },
+        nav: { account: 2_499_300.80, book: 2_999_300.80 },
+        balance: { account: { cash: 2_500_000, positions: 1_991_500, payable: 1_992_199.20, assets: 4_491_500, liabilities: 1_992_199.20, netAssets: 2_499_300.80 } },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EST('2026-11-03'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 1,992,199.20 USD from settled cash', cash: { USD: -1_992_199.20 }, date: '2026-11-03' }],
+        cash: { account: { USD: { settled: 507_800.80, unsettled: 0, availableToTrade: 507_800.80 } } },
+        pending: [],
+        balance: { account: { cash: 507_800.80, payable: null, assets: 2_499_300.80, liabilities: 0 } },
+      },
+    },
+    // A week passes: a zero has nothing to accrue, so nothing is booked.
+    { id: 'week-on', covers: 'accrual', action: 'clock', to: EST('2026-11-10'), expect: { events: [] } },
+    {
+      id: 'quote-pull-to-par', action: 'quote', instrument: 'main', quote: { bid: 99.78, ask: 99.83, last: 99.805, bidSize: 10_000_000, askSize: 10_000_000 },
+      expect: {
+        positions: [{ instrument: 'main', lot: 'lot', qty: 2_000_000, price: 99.805, value: 1_996_100, unrealized: 4_100 }], // 2,000,000 x 99.805% - 1,992,000
+        pnl: { account: { unrealized: 4_100, total: 3_900.80 } },
+        nav: { account: 2_503_900.80, book: 3_003_900.80 },
+        balance: { account: { positions: 1_996_100, assets: 2_503_900.80, netAssets: 2_503_900.80 } },
+      },
+    },
+    {
+      // Tuesday 10 Nov: T+1 would be Wednesday 11 Nov, Veterans Day: the sale settles Thursday 12 Nov.
+      id: 'reduce', covers: ['reduce', 'market holiday'], action: 'ticket', instrument: 'main', side: 'sell', qty: 800_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 800_000, estimate: 99.78, settleDate: '2026-11-12', calendar: 'USBOND',
+          gross: 798_240, // 800,000 x 99.78 / 100
+          accrued: 0, cash: 798_240, fees: 79.82 }] }, // 1 bp of 798,240 = 79.824
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 800_000, avgPrice: 99.78 }] },
+        // Realized: 798,240 - 800,000 x 99.60% = 798,240 - 796,800 = 1,440: the discount earned on the part sold.
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 800,000 HALV-ZERO-NOV26 @ 99.78 USD (realized 1,440.00 USD)' }],
+        cash: { account: { USD: { settled: 507_800.80, unsettled: 798_160.18, availableToTrade: 1_305_960.98 } } }, // 798,240 - 79.82
+        positions: [{ instrument: 'main', lot: 'lot', qty: 1_200_000, cost: 1_195_200, avgCost: 99.6, price: 99.805, value: 1_197_660, unrealized: 2_460 }], // 1,200,000 x 99.805%
+        holdings: { main: { long: 1_200_000, short: 0, net: 1_200_000 } },
+        pending: [{ instrument: 'main', dueDate: '2026-11-12', amount: 798_160.18, into: 'cash' }],
+        pnl: { account: { realized: 1_440, commissions: -279.02, unrealized: 2_460, total: 3_620.98 } }, // 199.20 + 79.82
+        nav: { account: 2_503_620.98, book: 3_003_620.98 },
+        balance: { account: { cash: 507_800.80, receivable: 798_160.18, positions: 1_197_660, assets: 2_503_620.98, liabilities: 0, netAssets: 2_503_620.98 } },
+      },
+    },
+    {
+      id: 'settle-reduce', covers: ['settlement', 'market holiday'], action: 'clock', to: EST('2026-11-12'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 798,160.18 USD into settled cash', cash: { USD: 798_160.18 } }],
+        cash: { account: { USD: { settled: 1_305_960.98, unsettled: 0, availableToTrade: 1_305_960.98 } } },
+        pending: [],
+        balance: { account: { cash: 1_305_960.98, receivable: null, assets: 2_503_620.98 } },
+      },
+    },
+    { id: 'thanksgiving-eve', action: 'clock', to: EST('2026-11-25'), expect: { events: [] } },
+    {
+      // Wednesday 25 Nov: T+1 skips Thanksgiving and lands on Friday 27 Nov, after the 26 Nov maturity date.
+      id: 'buy-settling-after-maturity', covers: 'maturity', action: 'ticket', instrument: 'main', side: 'buy', qty: 100_000,
+      status: 'blocked', reason: 'A debt security trades only for settlement before its maturity date; this purchase would settle after it is redeemed.',
+      expect: { refused: 'matures on 2026-11-26; this trade would settle on 2026-11-27, after it is redeemed' },
+    },
+    {
+      // Friday 27 Nov: redeemed at par. Realized 1,200,000 - 1,195,200 = 4,800.
+      id: 'maturity', covers: ['maturity', 'close', 'market holiday'], action: 'clock', to: EST('2026-11-27'),
+      expect: {
+        events: [
+          { type: 'bond.redemption', summary: 'Redeemed at maturity: 1,200,000 HALV-ZERO-NOV26 at 100.00% of par', owner: 'account' },
+          { type: 'settlement.receive', summary: 'received 1,200,000.00 USD into settled cash', cash: { USD: 1_200_000 } },
+        ],
+        cash: { account: { USD: { settled: 2_505_960.98, unsettled: 0, availableToTrade: 2_505_960.98 } }, treasury: { USD: { settled: 500_000 } } },
+        positions: [],
+        holdings: { main: null },
+        pending: [],
+        lifecycle: [],
+        // Discount earned in all: 1,440 + 4,800 = 6,240, all realized; commissions 279.02.
+        pnl: { account: { realized: 6_240, couponInterest: 0, commissions: -279.02, unrealized: 0, total: 5_960.98 } },
+        nav: { account: 2_505_960.98, book: 3_005_960.98 },
+        balance: { account: { cash: 2_505_960.98, positions: null, assets: 2_505_960.98, liabilities: 0, netAssets: 2_505_960.98 } },
+      },
+    },
+  ],
+};
+
+export default [corporateBondIg, highYieldBond, eurobond, foreignMarketBond, corporateSukuk, floatingRateNote, zeroCouponBond];

@@ -126,7 +126,7 @@ function emptyFor(t, { instruments, filtered, inTab, wl, q, marketAwaiting, view
   const how = t.id === 'money' ? ' Commercial paper and bankers\' acceptances are registered with New instrument; deposits, loans, repo and securities lending are arranged on the Treasury and Account pages (below).'
     : t.id === 'fx' ? ' Register a currency pair with New instrument (product Spot FX). Currency balances are ledger cash on the Treasury and Account pages.'
       : marketAwaiting ? ' Reference data arrives with the Shaffer MarketData connection; until then register one with New instrument.' : ' Register one with New instrument.';
-  return { title: `No ${t.label.toLowerCase()} in ${VIEW_LABEL[view]} yet`, children: `This tab holds: ${t.holds}${how}` };
+  return { title: `Nothing in ${t.label} in ${VIEW_LABEL[view]} yet`, children: `What belongs here is described above.${how}` };
 }
 
 // ---- cells -----------------------------------------------------------------------------------------------------------

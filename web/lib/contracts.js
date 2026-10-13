@@ -77,6 +77,9 @@ const F = {
     { path: 'terms.lotSize', label: 'Lot size', type: 'number', hint: 'Optional' },
     { path: 'multiplier', label: 'Multiplier', type: 'number', hint: 'Value per unit of price. Usually 1.', show: (d) => ['manual', 'spot'].includes(d.family) },
     { path: 'terms.settleDays', label: 'Settlement lag (business days)', type: 'number', hint: 'Leave empty for the Book default' },
+    // A spot asset is held and quoted in its market's own units; the multiplier converts when they differ.
+    { path: 'terms.quantityUnit', label: 'Quantity unit', type: 'text', hint: 'Troy ounces, tonnes, barrels, MMBtu, MWh, bushels, allowances…', show: (d) => d.family === 'spot' },
+    { path: 'terms.priceUnits', label: 'Quoted in', type: 'text', hint: 'The unit of its price: USD per troy ounce, EUR per tonne. With a different quantity unit, set the multiplier to price units per quantity unit.', show: (d) => d.family === 'spot' },
   ],
   option: [
     { path: 'underlyingId', label: 'Underlying', type: 'instrument', families: ['equity', 'fund', 'future', 'spot', 'crypto', 'bond'], span: 2, hint: 'A registered instrument. For an option on a published index, leave it empty and name the index below.' },

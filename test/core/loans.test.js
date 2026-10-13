@@ -135,3 +135,15 @@ test('without a fixing, a floating loan\'s interest payment waits (blocked) and 
   assert.equal(task().due_date, '2026-05-01', 'the next payment is scheduled');
   assert.deepEqual(ledgerImbalance(app), []);
 });
+
+test('a product that exists on one side only is refused on the other: no lending under a facility, no borrowing a deposit', async () => {
+  const { app } = makeApp();
+  const { book, acct } = makeBook(app);
+  const leg = (productId, action, loanType) => ({ ...loanLeg(10_000, { rate: 0.05, maturity: '2026-06-01', loanType }), action, contract: { ...loanLeg(10_000, {}).contract, productId, terms: { loanType, rateType: 'fixed', rate: 0.05, dayCount: 'ACT/360', maturity: '2026-06-01' } } });
+  const errors = async (l) => (await app.packages.preview({ bookId: book.id, unitId: acct.id, template: 'custom', legs: [l] })).checks.filter((c) => c.level === 'error').map((c) => c.message);
+  assert.match((await errors(leg('revolving_credit_facility', 'lend_cash', 'facility'))).join(' '), /A margin loan or a credit facility drawing is borrowed, not lent\./);
+  assert.match((await errors(leg('margin_loan', 'lend_cash', 'margin'))).join(' '), /borrowed, not lent/);
+  assert.match((await errors(leg('term_deposit', 'borrow_cash', 'deposit'))).join(' '), /A deposit or certificate of deposit is placed \(lent\), not borrowed\./);
+  assert.deepEqual(await errors(leg('revolving_credit_facility', 'borrow_cash', 'facility')), [], 'the side the product exists on is accepted');
+  assert.deepEqual(await errors(leg('term_deposit', 'lend_cash', 'deposit')), []);
+});

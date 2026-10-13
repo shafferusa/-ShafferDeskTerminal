@@ -2165,4 +2165,231 @@ const marginLoan = {
   ],
 };
 
-export default [unsecuredLoan, termDeposit, certificateOfDeposit, bankDeposit, cashLoan, securedLoan, securitiesBackedLoan, marginLoan];
+// ---------------------------------------------------------------------------------------------
+// revolving_credit_facility
+// ---------------------------------------------------------------------------------------------
+// A 1,000,000 USD revolving facility of an Account with Northbridge Capital (catalog: partial). The Terminal keeps each
+// drawing as its own loan; the facility itself (its limit, and the commitment fee on the undrawn amount) is not
+// simulated: the desk tracks the limit and records the commitment fee by hand, as a fee on a drawing (manual cash flow).
+// Drawing 1 (400,000) is part repaid after two weeks and the 150,000 redrawn the same day as drawing 2, a second record.
+// Each drawing is repaid with its interest on its own maturity date. A facility drawing is borrowed only: lending under
+// it is refused.
+//
+// Inputs: drawings at 6.30% fixed, ACT/360, interest at maturity; commitment fee 0.40% a year on the undrawn amount.
+//   Drawing 1: 400,000 x 0.063 / 360 = 70.00 a day, 2 to 16 March (14 days): 980.00; then 250,000: 43.75 a day,
+//   16 March to 2 April (17 days): 743.75. Repaid 2 April: 250,000 + 1,723.75.
+//   Drawing 2: 150,000: 26.25 a day, 16 March to 16 April (31 days): 813.75.
+//   Commitment fee for March (2 March to 1 April, 30 days): 400,000 drawn throughout (400,000, then 250,000 + 150,000),
+//   so 600,000 undrawn: 600,000 x 0.004 x 30 / 360 = 200.00.
+const RCF_TERMS = (maturity) => ({ loanType: 'facility', rateType: 'fixed', rate: 0.063, dayCount: 'ACT/360', maturity, interestPayment: 'maturity', counterparty: 'Northbridge Capital' });
+const DRAW1 = { owner: 'account', page: 'account', side: 'borrow_cash', productId: 'revolving_credit_facility', productLabel: 'Revolving credit facility', ccy: 'USD', principal: 400_000, name: 'Northbridge revolver, drawing 1', as: 'draw1', terms: RCF_TERMS('2026-04-02') };
+const DRAW2 = { ...DRAW1, principal: 150_000, name: 'Northbridge revolver, drawing 2', as: 'draw2', terms: RCF_TERMS('2026-04-16') };
+const RCF_REGISTER = { owner: 'account', origin: 'account', family: 'loan', type: 'Credit facility drawing', ccy: 'USD', rate: 0.063, rateType: 'fixed', rateText: '6.300% fixed', dayCount: 'ACT/360', term: 'term', lender: 'Northbridge Capital', collateral: 'None (unsecured)', schedule: 'Interest paid at maturity', nextPaymentType: 'loan.maturity', blocked: null };
+
+const revolvingCreditFacility = {
+  productId: 'revolving_credit_facility',
+  title: 'Northbridge Capital 1,000,000 USD revolving facility of an Account: two drawings at 6.30%, a part repayment and a redraw, the commitment fee recorded by hand',
+  matrix: {
+    ...LOAN_TICKET,
+    automaticInputs: ['interest start date of each drawing', 'daily interest accrual on each drawing at the end-of-day run', 'repayment of each drawing with its interest at its maturity'],
+    manualInputs: ['every term of each drawing, entered on the ticket', 'the amount of a part repayment, entered in the preview', 'the commitment fee on the undrawn amount, worked out by the desk and recorded by hand as a fee on a drawing (strategy instance, position Lifecycle: Manual cash flow)', 'the facility limit: tracked by the desk, not by the Terminal'],
+    settlement: 'None: each drawing is settled cash at once; repayments leave settled cash at once',
+    lifecycle: 'Each drawing is its own loan: interest accrues daily and is paid with the principal at its maturity; part repayment at any time; a redraw is a new drawing (a new record). The facility limit and the commitment fee are not simulated (catalog: partial)',
+    accounting: 'Each drawing is a liability of the Account; interest is a funding expense; the commitment fee is a fee, shown on the drawing it was recorded on (fees to date)',
+    collateral: 'None (unsecured)',
+  },
+  tradedOn: 'A facility drawing is not a registry instrument: each drawing is entered on the Cash loan or deposit ticket (from the Account page, "Borrow cash", product Revolving credit facility) and registers itself when the ticket is confirmed.',
+  start: AT_1000('2026-03-02'),
+  book: {
+    name: 'Matrix revolving credit facility', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 1_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 100_000 }] },
+    settings: { fees: {}, fill: FILL, settlement: {} },
+  },
+  instruments: {},
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 100_000, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 100_000, availableToWithdraw: 100_000, borrowed: 0, lent: 0 } },
+      treasury: { USD: { settled: 900_000, availableToTrade: 900_000, availableToWithdraw: 900_000, borrowed: 0 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 100_000, treasury: 900_000, book: 1_000_000 },
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+    pnl: { account: { borrowFunding: 0, fees: 0, total: 0 }, book: { total: 0 } },
+    balance: { account: { cash: 100_000, assets: 100_000, liabilities: 0, netAssets: 100_000 }, book: { cash: 1_000_000, netAssets: 1_000_000 } },
+    oversight: { accountBorrowings: [], treasuryOwn: [] },
+  },
+  steps: [
+    loanTicket('draw-400000', DRAW1, {
+      covers: ['open', 'borrow', 'drawing'],
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'loan', action: 'borrow_cash', purpose: 'financing', qty: 400_000, cash: 400_000, fees: 0, ccy: 'USD', dailyCost: 70, // 400,000 x 0.063 / 360
+            financing: { amount: 400_000, rateType: 'fixed', rate: 0.063, maturity: '2026-04-02', interestFrom: '2026-03-02' } }],
+          cash: { USD: { financingIn: 400_000, required: 0, available: 100_000, shortfall: 0, netCash: 400_000 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'loan', action: 'borrow_cash', instrument: 'draw1', status: 'filled', qty: 400_000, filledQty: 400_000 }] },
+        events: [
+          { type: 'strategy.submitted', owner: 'account' },
+          { type: 'loan.drawdown', summary: 'Borrowed 400,000.00 USD (facility, 6.300% fixed, due 2026-04-02)', cash: { USD: 400_000 }, owner: 'account', date: '2026-03-02' },
+        ],
+        cash: { account: { USD: { settled: 500_000, availableToTrade: 500_000, availableToWithdraw: 500_000, borrowed: 400_000 } } },
+        positions: [{ instrument: 'draw1', lot: 'draw1', owner: 'account', direction: 'borrowed', qty: -400_000, value: 400_000, carrying: -400_000, accrued: 0, provisional: false }],
+        lifecycle: [{ type: 'loan.maturity', instrument: 'draw1', dueDate: '2026-04-02', status: 'pending', owner: 'account' }],
+        borrowings: [{ ...RCF_REGISTER, lot: 'draw1', principal: 400_000, principalRc: 400_000, accrued: 0, costToDate: 0, feesToDate: 0, startDate: '2026-03-02', maturity: '2026-04-02', nextPayment: '2026-04-02' }],
+        balance: {
+          account: { cash: 500_000, borrowed: 400_000, assets: 500_000, liabilities: 400_000, netAssets: 100_000 },
+          book: { cash: 1_400_000, borrowed: 400_000, assets: 1_400_000, liabilities: 400_000, netAssets: 1_000_000 },
+        },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'draw1', principal: 400_000, ccy: 'USD', accrued: 0 }], accounts: { account: { cashBorrowed: 400_000, fundingReceived: 100_000 } } },
+      },
+    }),
+    loanTicket('lend-under-a-facility', { ...DRAW1, side: 'lend_cash', as: undefined, name: 'Northbridge revolver, lent' }, {
+      covers: 'lend', status: 'unsupported', reason: 'A credit facility drawing is borrowed; the ticket offers no lending under it, and the engine refuses one.',
+      expect: { refused: { engine: 'A margin loan or a credit facility drawing is borrowed, not lent.', api: 'A margin loan or a credit facility drawing is borrowed, not lent.', browser: /^The Product list of the lending side offers only: .*"Revolving credit facility" is not offered\.$/ } },
+    }),
+    {
+      id: 'two-weeks-on', covers: 'interest accrual', action: 'clock', to: AT_1000('2026-03-16'), // the run of 13 March: 11 days, 770.00
+      expect: {
+        events: [{ type: 'accrual.interest', summary: 'Interest accrued on Northbridge revolver, drawing 1: 770.00 USD', owner: 'account', date: '2026-03-16' }],
+        positions: [{ instrument: 'draw1', lot: 'draw1', qty: -400_000, accrued: -770 }],
+        borrowings: [{ ...RCF_REGISTER, lot: 'draw1', principal: 400_000, principalRc: 400_000, accrued: 770, costToDate: 770, feesToDate: 0, startDate: '2026-03-02', maturity: '2026-04-02', nextPayment: '2026-04-02' }],
+        pnl: { account: { borrowFunding: -770, total: -770 }, book: { total: -770 } },
+        nav: { account: 99_230, book: 999_230 },
+        balance: { account: { accruedExpense: 770, liabilities: 400_770, netAssets: 99_230 }, book: { accruedExpense: 770, liabilities: 400_770, netAssets: 999_230 } },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'draw1', principal: 400_000, ccy: 'USD', accrued: 770 }] },
+      },
+    },
+    {
+      id: 'repay-150000', covers: ['reduce', 'repayment'], action: 'repay', lot: 'draw1', amount: 150_000, // interest first to today on 400,000: 14 days, 980.00 (+210.00)
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'repay', action: 'repay_cash', purpose: 'financing', instrument: 'draw1', qty: 150_000, cash: -150_000, ccy: 'USD', financing: { amount: -150_000, principal: 150_000, interest: 0, full: false, rate: 0.063, maturity: '2026-04-02' } }],
+          cash: { USD: { financingOut: 150_000, required: 150_000, available: 500_000, shortfall: 0, netCash: -150_000 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'repay', action: 'repay_cash', status: 'filled', qty: 150_000, filledQty: 150_000 }] },
+        events: [
+          { type: 'strategy.legs_added', owner: 'account' },
+          { type: 'accrual.interest', summary: 'Interest accrued on Northbridge revolver, drawing 1: 210.00 USD', date: '2026-03-16' },
+          { type: 'loan.repayment', summary: 'Repaid 150,000.00 USD of principal on Northbridge revolver, drawing 1', cash: { USD: -150_000 }, owner: 'account', date: '2026-03-16' },
+        ],
+        cash: { account: { USD: { settled: 350_000, availableToTrade: 350_000, availableToWithdraw: 350_000, borrowed: 250_000 } } },
+        positions: [{ instrument: 'draw1', lot: 'draw1', owner: 'account', direction: 'borrowed', qty: -250_000, value: 250_000, carrying: -250_000, accrued: -980, provisional: false }],
+        borrowings: [{ ...RCF_REGISTER, lot: 'draw1', principal: 250_000, principalRc: 250_000, accrued: 980, costToDate: 980, feesToDate: 0, startDate: '2026-03-02', maturity: '2026-04-02', nextPayment: '2026-04-02' }],
+        pnl: { account: { borrowFunding: -980, total: -980 }, book: { total: -980 } },
+        nav: { account: 99_020, book: 999_020 },
+        balance: { account: { cash: 350_000, borrowed: 250_000, accruedExpense: 980, assets: 350_000, liabilities: 250_980, netAssets: 99_020 }, book: { cash: 1_250_000, borrowed: 250_000, accruedExpense: 980, assets: 1_250_000, liabilities: 250_980, netAssets: 999_020 } },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'draw1', principal: 250_000, ccy: 'USD', accrued: 980 }], accounts: { account: { cashBorrowed: 250_000, fundingReceived: 100_000 } } },
+      },
+    },
+    loanTicket('redraw-150000', DRAW2, {
+      covers: ['increase', 'borrow', 'drawing'],
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'loan', action: 'borrow_cash', purpose: 'financing', qty: 150_000, cash: 150_000, ccy: 'USD', dailyCost: 26.25, // 150,000 x 0.063 / 360
+            financing: { amount: 150_000, rateType: 'fixed', rate: 0.063, maturity: '2026-04-16', interestFrom: '2026-03-16' } }],
+          cash: { USD: { financingIn: 150_000, required: 0, available: 350_000, shortfall: 0, netCash: 150_000 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'loan', action: 'borrow_cash', instrument: 'draw2', status: 'filled', qty: 150_000, filledQty: 150_000 }] },
+        events: [
+          { type: 'strategy.submitted', owner: 'account' },
+          { type: 'loan.drawdown', summary: 'Borrowed 150,000.00 USD (facility, 6.300% fixed, due 2026-04-16)', cash: { USD: 150_000 }, owner: 'account', date: '2026-03-16' },
+        ],
+        cash: { account: { USD: { settled: 500_000, availableToTrade: 500_000, availableToWithdraw: 500_000, borrowed: 400_000 } } },
+        positions: [
+          { instrument: 'draw1', lot: 'draw1', owner: 'account', direction: 'borrowed', qty: -250_000, value: 250_000, carrying: -250_000, accrued: -980, provisional: false },
+          { instrument: 'draw2', lot: 'draw2', owner: 'account', direction: 'borrowed', qty: -150_000, value: 150_000, carrying: -150_000, accrued: 0, provisional: false },
+        ],
+        lifecycle: [{ type: 'loan.maturity', instrument: 'draw1', dueDate: '2026-04-02', status: 'pending', owner: 'account' }, { type: 'loan.maturity', instrument: 'draw2', dueDate: '2026-04-16', status: 'pending', owner: 'account' }],
+        borrowings: [
+          { ...RCF_REGISTER, lot: 'draw1', principal: 250_000, principalRc: 250_000, accrued: 980, costToDate: 980, feesToDate: 0, startDate: '2026-03-02', maturity: '2026-04-02', nextPayment: '2026-04-02' },
+          { ...RCF_REGISTER, lot: 'draw2', principal: 150_000, principalRc: 150_000, accrued: 0, costToDate: 0, feesToDate: 0, startDate: '2026-03-16', maturity: '2026-04-16', nextPayment: '2026-04-16' },
+        ],
+        balance: { account: { cash: 500_000, borrowed: 400_000, assets: 500_000, liabilities: 400_980, netAssets: 99_020 }, book: { cash: 1_400_000, borrowed: 400_000, assets: 1_400_000, liabilities: 400_980, netAssets: 999_020 } },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'draw1', principal: 250_000, ccy: 'USD', accrued: 980 }, { owner: 'account', origin: 'account', lot: 'draw2', principal: 150_000, ccy: 'USD', accrued: 0 }], accounts: { account: { cashBorrowed: 400_000, fundingReceived: 100_000 } } },
+      },
+    }),
+    {
+      // The run of 31 March: drawing 1, 15 more days at 43.75 (656.25; 1,636.25 in all); drawing 2, 15 days at 26.25 (393.75).
+      id: 'end-of-march', covers: 'interest accrual', action: 'clock', to: AT_1000('2026-04-01'),
+      expect: {
+        events: [
+          { type: 'accrual.interest', summary: 'Interest accrued on Northbridge revolver, drawing 1: 656.25 USD', owner: 'account', date: '2026-04-01' },
+          { type: 'accrual.interest', summary: 'Interest accrued on Northbridge revolver, drawing 2: 393.75 USD', owner: 'account', date: '2026-04-01' },
+        ],
+        positions: [{ instrument: 'draw1', lot: 'draw1', qty: -250_000, accrued: -1_636.25 }, { instrument: 'draw2', lot: 'draw2', qty: -150_000, accrued: -393.75 }],
+        borrowings: [
+          { ...RCF_REGISTER, lot: 'draw1', principal: 250_000, principalRc: 250_000, accrued: 1_636.25, costToDate: 1_636.25, feesToDate: 0, startDate: '2026-03-02', maturity: '2026-04-02', nextPayment: '2026-04-02' },
+          { ...RCF_REGISTER, lot: 'draw2', principal: 150_000, principalRc: 150_000, accrued: 393.75, costToDate: 393.75, feesToDate: 0, startDate: '2026-03-16', maturity: '2026-04-16', nextPayment: '2026-04-16' },
+        ],
+        pnl: { account: { borrowFunding: -2_030, total: -2_030 }, book: { total: -2_030 } },
+        nav: { account: 97_970, book: 997_970 },
+        balance: { account: { accruedExpense: 2_030, liabilities: 402_030, netAssets: 97_970 }, book: { accruedExpense: 2_030, liabilities: 402_030, netAssets: 997_970 } },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'draw1', principal: 250_000, ccy: 'USD', accrued: 1_636.25 }, { owner: 'account', origin: 'account', lot: 'draw2', principal: 150_000, ccy: 'USD', accrued: 393.75 }] },
+      },
+    },
+    {
+      // The commitment fee for March, worked out by the desk (600,000 undrawn x 0.40% x 30 / 360 = 200.00), paid and recorded by hand.
+      id: 'commitment-fee-by-hand', covers: ['fee', 'commitment fee'], action: 'cashflow', lot: 'draw1', instrument: 'draw1', category: 'fee', amount: -200, note: 'Commitment fee for March: 0.40% a year on 600,000 undrawn, 30 days',
+      expect: {
+        events: [{ type: 'manual.cashflow', summary: 'Manual fee on Northbridge revolver, drawing 1: paid 200.00 USD. Commitment fee for March: 0.40% a year on 600,000 undrawn, 30 days', cash: { USD: -200 }, owner: 'account', date: '2026-04-01' }],
+        cash: { account: { USD: { settled: 499_800, availableToTrade: 499_800, availableToWithdraw: 499_800 } } },
+        borrowings: [
+          { ...RCF_REGISTER, lot: 'draw1', principal: 250_000, principalRc: 250_000, accrued: 1_636.25, costToDate: 1_636.25, feesToDate: 200, startDate: '2026-03-02', maturity: '2026-04-02', nextPayment: '2026-04-02' },
+          { ...RCF_REGISTER, lot: 'draw2', principal: 150_000, principalRc: 150_000, accrued: 393.75, costToDate: 393.75, feesToDate: 0, startDate: '2026-03-16', maturity: '2026-04-16', nextPayment: '2026-04-16' },
+        ],
+        pnl: { account: { borrowFunding: -2_030, fees: -200, total: -2_230 }, book: { total: -2_230 } },
+        nav: { account: 97_770, book: 997_770 },
+        balance: { account: { cash: 499_800, assets: 499_800, netAssets: 97_770 }, book: { cash: 1_399_800, assets: 1_399_800, netAssets: 997_770 } },
+      },
+    },
+    {
+      // Thursday 2 April: drawing 1 matures. Interest to its date: 1,723.75 (+87.50), repaid with the 250,000. The run of
+      // 1 April then adds a day on drawing 2 (26.25; 420.00 in all).
+      id: 'drawing-1-matures', covers: ['maturity', 'close'], action: 'clock', to: AT_1000('2026-04-02'),
+      expect: {
+        events: [
+          { type: 'accrual.interest', summary: 'Interest accrued on Northbridge revolver, drawing 1: 87.50 USD', owner: 'account', date: '2026-04-02' },
+          { type: 'loan.repayment', summary: 'Repaid 250,000.00 USD of principal on Northbridge revolver, drawing 1 (in full)', cash: { USD: -250_000 }, owner: 'account', date: '2026-04-02' },
+          { type: 'interest.payment', summary: 'Interest paid on Northbridge revolver, drawing 1: 1,723.75 USD', cash: { USD: -1_723.75 }, owner: 'account', date: '2026-04-02' },
+          { type: 'accrual.interest', summary: 'Interest accrued on Northbridge revolver, drawing 2: 26.25 USD', owner: 'account', date: '2026-04-02' },
+        ],
+        cash: { account: { USD: { settled: 248_076.25, availableToTrade: 248_076.25, availableToWithdraw: 248_076.25, borrowed: 150_000 } } },
+        positions: [{ instrument: 'draw2', lot: 'draw2', owner: 'account', direction: 'borrowed', qty: -150_000, value: 150_000, carrying: -150_000, accrued: -420, provisional: false }],
+        lifecycle: [{ type: 'loan.maturity', instrument: 'draw2', dueDate: '2026-04-16', status: 'pending', owner: 'account' }],
+        borrowings: [{ ...RCF_REGISTER, lot: 'draw2', principal: 150_000, principalRc: 150_000, accrued: 420, costToDate: 420, feesToDate: 0, startDate: '2026-03-16', maturity: '2026-04-16', nextPayment: '2026-04-16' }],
+        pnl: { account: { borrowFunding: -2_143.75, fees: -200, total: -2_343.75 }, book: { total: -2_343.75 } }, // 1,723.75 + 420.00
+        nav: { account: 97_656.25, book: 997_656.25 },
+        balance: { account: { cash: 248_076.25, borrowed: 150_000, accruedExpense: 420, assets: 248_076.25, liabilities: 150_420, netAssets: 97_656.25 }, book: { cash: 1_148_076.25, borrowed: 150_000, accruedExpense: 420, assets: 1_148_076.25, liabilities: 150_420, netAssets: 997_656.25 } },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'draw2', principal: 150_000, ccy: 'USD', accrued: 420 }], accounts: { account: { cashBorrowed: 150_000, fundingReceived: 100_000 } } },
+      },
+    },
+    {
+      // Thursday 16 April: drawing 2 matures with 31 days of interest, 813.75 (+393.75).
+      id: 'drawing-2-matures', covers: ['maturity', 'close'], action: 'clock', to: AT_1000('2026-04-16'),
+      expect: {
+        events: [
+          { type: 'accrual.interest', summary: 'Interest accrued on Northbridge revolver, drawing 2: 393.75 USD', owner: 'account', date: '2026-04-16' },
+          { type: 'loan.repayment', summary: 'Repaid 150,000.00 USD of principal on Northbridge revolver, drawing 2 (in full)', cash: { USD: -150_000 }, owner: 'account', date: '2026-04-16' },
+          { type: 'interest.payment', summary: 'Interest paid on Northbridge revolver, drawing 2: 813.75 USD', cash: { USD: -813.75 }, owner: 'account', date: '2026-04-16' },
+        ],
+        cash: { account: { USD: { settled: 97_262.50, availableToTrade: 97_262.50, availableToWithdraw: 97_262.50, borrowed: 0, lent: 0 } } },
+        positions: [], lifecycle: [], borrowings: [],
+        pnl: { account: { borrowFunding: -2_537.50, fees: -200, total: -2_737.50 }, book: { borrowFunding: -2_537.50, fees: -200, total: -2_737.50 } }, // 1,723.75 + 813.75 + the 200.00 fee
+        nav: { account: 97_262.50, treasury: 900_000, book: 997_262.50 },
+        balance: {
+          account: { cash: 97_262.50, borrowed: null, accruedExpense: null, assets: 97_262.50, liabilities: 0, netAssets: 97_262.50 },
+          book: { cash: 997_262.50, borrowed: null, accruedExpense: null, assets: 997_262.50, liabilities: 0, netAssets: 997_262.50, internal: 0, capital: 1_000_000 },
+        },
+        oversight: { accountBorrowings: [], accounts: { account: { cashBorrowed: 0, fundingReceived: 100_000 } } },
+      },
+    },
+  ],
+};
+
+export default [unsecuredLoan, termDeposit, certificateOfDeposit, bankDeposit, cashLoan, securedLoan, securitiesBackedLoan, marginLoan, revolvingCreditFacility];

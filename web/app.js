@@ -27,6 +27,9 @@ const setFlag = (k, v) => { try { localStorage.setItem(k, v ? '1' : '0'); } catc
 
 // True while the post-trade hedge prompt is being fetched and opened, so two reloads cannot open two popups.
 let promptOpening = false;
+// Set when the code of a screen or of the hedge popup could not be fetched. The browser keeps that failure for the
+// life of the page, so the screen could never load again; when the server is back the page is reloaded once.
+let codeMissing = false;
 
 function Conn({ label, state }) {
   if (!state) return null;
@@ -129,9 +132,24 @@ function Shell() {
   useEffect(() => {
     let live = true;
     setView(null);
-    ROUTES[route.page]().then((m) => { if (live) setView(() => m.default); }, (err) => toastError(err));
+    ROUTES[route.page]().then((m) => { if (live) setView(() => m.default); }, (err) => {
+      codeMissing = true;
+      // Not "Loading…" for good: say what happened.
+      if (live) setView(() => () => html`<div class="notice err">This screen could not be loaded: ${err.message}. ${getState().offline ? 'The page reloads by itself when the server is back.' : 'Reload the page to try again.'}</div>`);
+      toastError(err);
+    });
     return () => { live = false; };
   }, [route.page]);
+  // The server is back after an outage during which some code could not be fetched: reload, unless a dialog is in use.
+  const [wasOffline, setWasOffline] = useState(false);
+  useEffect(() => {
+    if (offline) { setWasOffline(true); return; }
+    if (!wasOffline) return;
+    setWasOffline(false);
+    if (!codeMissing) return;
+    if (document.querySelector('.modal')) toast('Part of the Terminal could not be loaded while the server was away. Reload the page to load it again.', 'warn', 15000);
+    else location.reload();
+  }, [offline]);
   useEffect(() => {
     if (!bookId) return;
     // An answer that arrives after the user switched Book belongs to the Book left behind: it is dropped.
@@ -147,8 +165,9 @@ function Shell() {
     get('/api/hedge/prompts', { bookId }).then(async (r) => {
       const h = r.items[0];
       if (h && !document.querySelector('.modal') && stillHere()) {
+        // The popup's code first: a prompt is marked seen only once it can really be shown.
+        const { HedgePopup } = await import('./views/hedge.js').catch((err) => { codeMissing = true; throw err; });
         await post(`/api/hedge/requests/${h.id}/seen`);
-        const { HedgePopup } = await import('./views/hedge.js');
         openOverlay((close) => html`<${HedgePopup} request=${h} onClose=${close} />`);
       }
     }).catch(() => {}).finally(() => {

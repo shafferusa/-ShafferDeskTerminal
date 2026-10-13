@@ -273,6 +273,36 @@ export const fund = {
   /** The close a working fund order needs from the data service: the NAV of its dealing date. */
   navNeeds: (inst, placedAt) => [{ instrument: inst, date: fundDealingDate(inst, placedAt) }],
 };
-export const spot = makeSecurityPlugin('spot', { label: 'Spot asset', qtyLabel: 'Units', priceUnits: 'per unit', shortable: false });
+// ---- spot assets: their own units --------------------------------------------------------------------------
+//
+// A spot asset is held and quoted in the units of its market: troy ounces, tonnes, barrels, MMBtu, MWh, bushels,
+// pounds, allowances or certificates. `terms.quantityUnit` names the unit of quantity (the ticket's quantity field
+// is labelled with it) and `terms.priceUnits` the unit of the price ("USD per troy ounce"). When the two differ (a
+// kilobar quoted per troy ounce, live cattle held in pounds and quoted per hundredweight) the multiplier converts:
+// value = quantity x price x multiplier, where the multiplier is price units per quantity unit (32.1507466 troy
+// ounces in a kilogram; 0.01 hundredweight in a pound). `terms.lotSize`, when set, is the smallest tradable
+// quantity: an allowance or a certificate is indivisible, so whole lots only.
+const spotBase = makeSecurityPlugin('spot', { label: 'Spot asset', qtyLabel: 'Units', priceUnits: 'per unit', shortable: false });
+const unitText = (x) => (typeof x === 'string' && x.trim() ? x.trim().slice(0, 60) : null);
+export const spot = {
+  ...spotBase,
+  normalize(app, draft) {
+    const out = spotBase.normalize(app, draft);
+    for (const k of ['quantityUnit', 'priceUnits']) {
+      const v = unitText(out.terms[k]);
+      if (v) out.terms[k] = v; else delete out.terms[k];
+    }
+    return out;
+  },
+  describe(inst) {
+    const rows = spotBase.describe(inst);
+    if (inst.terms.quantityUnit) rows.unshift(['Quantity unit', inst.terms.quantityUnit]);
+    if (inst.terms.priceUnits) rows.splice(inst.terms.quantityUnit ? 1 : 0, 0, ['Quoted in', inst.terms.priceUnits]);
+    return rows;
+  },
+  /** The quantity field's label: the asset's own unit ("Troy ounces"), else "Units". */
+  qtyLabelFor: (inst) => (inst.terms?.quantityUnit ? inst.terms.quantityUnit[0].toUpperCase() + inst.terms.quantityUnit.slice(1) : 'Units'),
+  qtyStep: (inst) => (num(inst.terms?.lotSize) > 0 ? num(inst.terms.lotSize) : spotBase.qtyStep(inst)),
+};
 export const crypto = makeSecurityPlugin('crypto', { label: 'Digital asset', qtyLabel: 'Units', priceUnits: 'per unit', shortable: false });
 export const manual = makeSecurityPlugin('manual', { label: 'Manually valued holding', qtyLabel: 'Units', priceUnits: 'per unit', shortable: false });
