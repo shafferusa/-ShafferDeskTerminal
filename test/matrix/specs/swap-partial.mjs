@@ -129,7 +129,7 @@ const dividendSwap = {
     },
     {
       id: 'mark-at-par', covers: 'manual mark', action: 'manual_price', instrument: 'main', value: 0, note: 'Dealer D mark per 100 shares, by hand',
-      expect: { positions: [{ instrument: 'main', lot: 'divs', price: 0, value: 0, unrealized: 0, provisional: false }], otc: [{ instrument: 'main', mark: 0, markValue: 0 }], provisional: { account: false, book: false }, balance: { account: { positions: 0 } } },
+      expect: { positions: [{ instrument: 'main', lot: 'divs', price: 0, value: 0, unrealized: 0, provisional: false }], otc: [{ instrument: 'main', mark: 0, markValue: 0 }], provisional: { account: false, book: false }, balance: { account: { positions: null } } }, // a zero line is not shown
     },
     {
       id: 'settle-commission', covers: 'settlement', action: 'clock', to: at('2026-04-01'),
