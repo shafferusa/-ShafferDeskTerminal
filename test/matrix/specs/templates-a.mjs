@@ -1091,4 +1091,39 @@ const shortTemplate = {
   ],
 };
 
-export default [longTemplate, shortTemplate];
+
+// ---------------------------------------------------------------------------------------------
+// protective_put
+// ---------------------------------------------------------------------------------------------
+const protectivePut = {
+  template: 'protective_put',
+  title: 'Protective put on Kestrel Logistics: shares and puts as one package, new and existing holding, partial fills, expiry, roll',
+  matrix: {
+    ...TEMPLATE_MATRIX,
+    ticket: 'Strategies page (Protective Put / Long + Put Cover): Trading owner and intent, Instrument and template, Underlying position (new or existing), Option contracts, Order and funding, Hedge panel; then the package preview',
+    manualInputs: ['option expiration and put strike (no option chain is supplied for the fictional stock)', 'limit price of the put leg, changed in the preview'],
+    settlement: 'Shares and premium T+1 on the US calendar; shares delivered on exercise settle T+1 at the strike',
+    lifecycle: 'Put waits for the shares and is scaled to what filled; expiry in the money exercises the put against the shares held (simulated delivery); out of the money lapses; roll to a later expiry; resize; close by share, exact amount, in full',
+    accounting: 'Shares at average cost; put premium as an option position; premium realized at exercise or lapse; commissions expensed',
+    collateral: 'None (a bought put reserves nothing)',
+  },
+  start: MAR(2),
+  settlementCheck: { lag: 1, holidays: [] },
+  book: book('Matrix template protective put'),
+  instruments: { main: STOCK, put48: option('P', 48), put50: option('P', 50), put48apr: option('P', 48, '2026-04-17') },
+  quotes: {
+    main: { bid: 49.95, ask: 50.05, last: 50.00, bidSize: 300, askSize: 300 },
+    put48: { bid: 0.90, ask: 1.00, last: 0.95, bidSize: 3, askSize: 3 },
+    put50: { bid: 1.80, ask: 1.90, last: 1.85, bidSize: 100, askSize: 100 },
+    put48apr: { bid: 1.60, ask: 1.70, last: 1.65, bidSize: 100, askSize: 100 },
+  },
+  expectAtStart: startState(),
+  steps: [
+    { id: 'hedge-request', covers: ['hedge request', 'template protection'], action: 'hedge_request', input: pageInput('protective_put', { quantity: 1000, options: { expiration: '2026-03-20', strikes: { put: 48 }, contracts: null }, ...CONTEXT }), strategyPage: { ...PAGE_CONTEXT, template: 'Protective Put / Long + Put Cover', underlying: 'main', quantity: 1000, expiration: '2026-03-20', strikes: { 'Put strike': 48 } }, expect: { result: {} } },
+    { id: 'open-partial', covers: ['open', 'partial fill', 'dependent leg scaled'], action: 'package', as: 'core', instrument: 'main', input: pageInput('protective_put', { quantity: 1000, options: { expiration: '2026-03-20', strikes: { put: 48 }, contracts: null } }), strategyPage: { template: 'Protective Put / Long + Put Cover', underlying: 'main', quantity: 1000, expiration: '2026-03-20', strikes: { 'Put strike': 48 } }, expect: {} },
+    { id: 'cancel-remainder', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'core', expect: {} },
+    { id: 'retry', covers: ['retry'], action: 'recover', how: 'retry', lot: 'core', expect: {} },
+  ],
+};
+
+export default [longTemplate, shortTemplate, protectivePut];

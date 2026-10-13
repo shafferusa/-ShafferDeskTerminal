@@ -241,3 +241,4 @@
 - 2026-10-13T19:54Z | s3 | +0.2 | cds_index passes at engine, API and browser
 - 2026-10-13T19:55Z | s7 | +1.5 | s7: docs/ACCOUNTING-VERIFICATION.md worked ledger, hand figures beside the Terminal's at 11 checkpoints
 - 2026-10-13T19:55Z | b4 | +0.2 | credit_linked_note passes at engine, API and browser
+- 2026-10-13T19:56Z | t2 | +0 | Fix: closing legs buy back written options first and the protection waits on them; bear call spread re-verified

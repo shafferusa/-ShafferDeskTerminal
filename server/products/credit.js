@@ -172,7 +172,9 @@ const accrualDays = (inst, from, to, inclusive) => diffDays(from, to) + (inclusi
 
 /** Where a new position's premium starts: its trade date (bespoke), or the start of the period of its step-in date (standard). */
 export function premiumStart(inst, tradeDate) {
-  return inst.terms.convention === 'standard' ? periodOf(inst, addDays(tradeDate, 1)).start : tradeDate;
+  if (inst.terms.convention === 'standard') return periodOf(inst, addDays(tradeDate, 1)).start;
+  // Bespoke: from the trade date, but never before protection starts (a trade dealt before the effective date).
+  return tradeDate > inst.terms.effective ? tradeDate : inst.terms.effective;
 }
 
 /**
