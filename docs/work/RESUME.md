@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 63.6% of the pass** (last milestone 2026-10-13T17:28Z, o2: otc_option passes at engine, API and browser)
+**Completeness: about 64.6% of the pass** (last milestone 2026-10-13T17:28Z, s8: level mapping enforced (lib/mapping.mjs, loadCases) and printed in test/system/README.md and the System behaviour section of scripts/test-matrix.js; end-of-case integrity sweep)
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 

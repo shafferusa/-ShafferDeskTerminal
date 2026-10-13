@@ -214,6 +214,16 @@ if (tplRows.length) {
   for (const t of tplRows) for (const r of t.rows) md += `| \`${t.id}\` | ${esc(r.action)} | ${r.steps.map((s) => `\`${s}\``).join(' ')} | ${levels.map((l) => rowCell(r[l])).join(' | ')} | ${esc(r.notes.join(' '))} |\n`;
 }
 
+// ---- System behaviour (s8): the failure, recovery and isolation suite, test/system. Its own results files
+// (system-<level>.json); each case, what it proves, and per level its test id and status or the reason it does not run there.
+{
+  const { AREAS, loadCases, readSystemResults } = await import('../test/system/lib/kit.mjs');
+  const { mappingMarkdown } = await import('../test/system/lib/mapping.mjs');
+  const sysCases = await loadCases();
+  const sysResults = Object.fromEntries(levels.map((l) => [l, readSystemResults(l)]));
+  md += `\n## System behaviour\n\nThe failure, recovery and isolation suite (\`test/system\`, README there): refusals and blocks, execution under stress, no duplicates, history that survives, Book isolation, hedge reconnection. Test ids \`SE:\`, \`SA:\`, \`SB:<area>:<case>\`; statuses come only from \`system-engine.json\`, \`system-api.json\` and \`system-browser.json\`.\n\n${mappingMarkdown(sysCases, sysResults, { heading: '###', areas: AREAS })}`;
+}
+
 writeFileSync(new URL('../docs/TEST-MATRIX.md', import.meta.url), md);
 writeFileSync(new URL('../docs/test-matrix.json', import.meta.url), `${JSON.stringify(data, null, 1)}\n`);
 console.log(`docs/TEST-MATRIX.md and docs/test-matrix.json written: ${S.products.catalog} products (${S.products.specified} specified), ${S.templates.catalog} templates (${S.templates.specified} specified).`);

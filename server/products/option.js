@@ -49,13 +49,13 @@ function normalizeOption(app, draft, listed) {
     multiplier = multiplier > 0 ? multiplier : 1;
     // Units of the underlying INSTRUMENT that one unit of quantity delivers on physical exercise: the amount that moves
     // by the same value for one unit of price. The multiplier converts the premium (and the strike) into money; the
-    // underlying's own multiplier does the same for it, and a bond's price is per 100 of face. So an option on 1 share
-    // (multiplier 1) delivers 1 share, a bond option on 1 of face (premium per 100, multiplier 0.01) delivers 1 of face,
-    // and an option on 1 barrel delivers 1/1,000 of a 1,000-barrel future. A stated figure overrides this.
+    // underlying's own multiplier does the same for it. So an option on 1 share (multiplier 1) delivers 1 share, a bond
+    // option on 1 of face (premium per 100 of face, multiplier 0.01, like the bond's own) delivers 1 of face, and an
+    // option on 1 barrel delivers 1/1,000 of a 1,000-barrel future. A stated figure overrides this.
     const und = draft.underlying_id ? app.instruments.get(draft.underlying_id) : null;
     const stated = num(t.deliverable?.units);
     if (stated !== null && !(stated > 0)) errors.push('Deliverable units per unit of quantity must be positive.');
-    t.deliverable = { units: stated ?? (und ? multiplier / ((und.multiplier || 1) * (und.family === 'bond' ? 0.01 : 1)) : multiplier), cash: 0 };
+    t.deliverable = { units: stated ?? (und ? multiplier / (und.multiplier || 1) : multiplier), cash: 0 };
     if (t.optionType === 'digital') {
       t.payout = num(t.payout);
       if (!(t.payout > 0)) errors.push('A digital option needs its fixed payout per unit.');

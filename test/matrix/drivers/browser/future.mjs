@@ -47,6 +47,12 @@ export async function contractTerms(ui, dialog, draft, ctx) {
   if (t.initialMargin !== undefined && t.initialMargin !== null) await ui.input(dialog, 'Initial margin per contract').fill(String(t.initialMargin));
   if (t.settlement) await ui.select(dialog, only('Settlement')).selectOption(t.settlement);
   if (t.priceUnits) await ui.input(dialog, 'Quoted in').fill(t.priceUnits);
+  // Delivery terms of a physically delivered contract (shown once Settlement is Physical delivery).
+  const d = t.delivery || {};
+  if (d.units !== undefined && d.units !== null) await ui.input(dialog, 'Deliverable units per contract').fill(String(d.units));
+  if (d.firstNotice) await ui.input(dialog, 'First notice day').fill(d.firstNotice);
+  if (d.grade) await ui.input(dialog, 'Deliverable grade').fill(d.grade);
+  if (d.location) await ui.input(dialog, 'Delivery location').fill(d.location);
   const c = draft.conventions || {};
   if (c.tradingCalendar) await chooseCalendar(ui, dialog, 'Trading calendar', c.tradingCalendar);
   if (c.settlementCalendar) await chooseCalendar(ui, dialog, 'Settlement calendar', c.settlementCalendar);
@@ -103,6 +109,50 @@ async function openStrategyOf(ui, ctx, strategyId, owner) {
 }
 
 export const actions = {
+  /**
+   * A delivery notice on a futures position: the position's Lifecycle menu, "Delivery notice", the number of contracts,
+   * then "Give delivery notice". A refusal is the dialog's own message (the Terminal's reason); a position that is no
+   * longer listed on the strategy instance (closed) offers no menu at all, which is what the screen shows.
+   */
+  async lifecycle(ui, t, ctx, step, tools) {
+    if (step.body?.action !== 'deliver') return undefined;
+    const lot = ctx.lot(step.lot);
+    const inst = ctx.inst(step.instrument || lot.instrument);
+    const sym = inst.symbol || inst.name;
+    const drawer = await openStrategyOf(ui, ctx, lot.strategyId, step.owner);
+    const panel = ui.section(drawer, 'Positions');
+    await panel.waitFor();
+    const row = tools.positionRow(drawer, inst);
+    if (!await row.count()) {
+      const listed = (await panel.locator('tbody tr .sym').allInnerTexts()).map((x) => x.trim()).filter(Boolean);
+      return { refusal: { message: `The strategy instance lists no open ${sym} position (positions listed: ${listed.join(', ') || 'none'}), so no delivery notice can be given on it.`, where: 'strategy instance, Positions' } };
+    }
+    const menu = row.locator('select').first();
+    // The contract terms load after the row: the menu item appears once they have.
+    try { await menu.locator('option', { hasText: /^Delivery notice$/ }).waitFor({ state: 'attached', timeout: 8000 }); } catch {
+      const offered = (await menu.locator('option').allInnerTexts()).map((x) => x.trim()).filter((x) => x && x !== 'Lifecycle');
+      return { refusal: { message: `The Lifecycle menu of this position offers only: ${offered.join(', ') || 'nothing'}. "Delivery notice" is not offered.`, where: 'strategy instance, position Lifecycle menu' } };
+    }
+    await menu.selectOption({ label: 'Delivery notice' });
+    const dlg = ui.dialog(/^Delivery notice/);
+    await dlg.waitFor();
+    // The dialog states the contract's settlement terms before anything is sent.
+    const terms = (await dlg.locator('.notice').first().innerText()).replace(/\s+/g, ' ');
+    if (!/^Settlement terms: /.test(terms)) throw new Error(`The delivery notice dialog does not state the contract's settlement terms ("${terms}").`);
+    if (step.body.contracts !== undefined && step.body.contracts !== null) await ui.input(dlg, 'Contracts to deliver').fill(String(step.body.contracts));
+    const r = await ui.respondsTo('POST', /^\/api\/positions\/[^/]+\/lifecycle$/, () => ui.button(dlg, 'Give delivery notice').click());
+    if (!r.ok) {
+      const msg = r.body?.error || 'no message';
+      await dlg.locator('.notice.err', { hasText: msg.slice(0, 60) }).first().waitFor();
+      const shown = (await dlg.locator('.notice.err').first().innerText()).replace(/\s+/g, ' ').trim();
+      await ui.button(dlg, 'Cancel').click();
+      await dlg.waitFor({ state: 'hidden' });
+      return { refusal: { message: shown, status: r.status, where: 'delivery notice dialog' } };
+    }
+    await dlg.waitFor({ state: 'hidden' });
+    return {};
+  },
+
   /** Roll: the strategy instance's Roll dialog, the contract month to roll into, then the preview of the two-leg package. */
   async roll(ui, t, ctx, step, tools) {
     const lot = ctx.lot(step.lot);
