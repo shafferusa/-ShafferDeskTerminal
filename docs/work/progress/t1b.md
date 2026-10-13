@@ -10,10 +10,15 @@ Results/tmp: SDT_MATRIX_RESULTS=$SP/t1b/results SDT_MATRIX_TMP=$SP/t1b/tmp. Prob
     long_collar, short_collar (templates-a, t1's, now mine): step limit-never-reached preview legs lack `action`.
   - matrix spec audit: futures_hedge (templates-b, t2's): a futures leg settles same day, audit expects T+1.
 
+- Spec audit repaired (templates-a leg actions; templates-b futures_hedge settlementCheck false on 4 steps): specs.test.js 231/231.
+- T:cash_secured_put passes engine, API, browser (33 passed, 1 blocked). No hedge-request step (hedge.js gap, BUGS.md).
+- Terminal fixes: orders.js option sale check counts the strategy's exercise_cash reservation (marginRequirement helper);
+  packages.js trimExerciseReserve (called from recomputeHolds, cancel_working, expireDayOrders) cuts the reservation to what written
+  puts need; needsCash includes reserve legs. Tests: test/core/templates-t1b.test.js (3). test/core 283+3 pass.
+
 ## In progress
-- cash_secured_put expectations (templates-a.mjs, end of file; steps listed with empty expect).
+- long_call next.
 
 ## Next
-1. cash_secured_put engine -> API -> browser -> save 0.2
-2. long_call, long_put, bull_call_spread, bear_put_spread, bull_put_spread: each engine -> API -> browser -> save 0.2
+1. long_call, long_put, bull_call_spread, bear_put_spread, bull_put_spread: each engine -> API -> browser -> save 0.2
 3. Fix audit failures (add leg actions; futures_hedge settlementCheck), full family run at 3 levels, npm test green, save 0.5

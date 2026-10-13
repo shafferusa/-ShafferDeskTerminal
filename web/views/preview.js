@@ -180,9 +180,9 @@ function LegRow({ leg, edit, onEdit, onRemove, canRemove, changes }) {
     <td class="wrap fillcell" data-label="Estimated fill">
       ${leg.kind === 'trade' ? html`
         <div>${isNum(p?.estimate) ? html`<span class="price"><span class="v">${fmtPriceUnits(p.estimate, pu)}</span></span>` : html`<span class="missing" title=${p?.reason || ''}>no executable price</span>`}
-          ${p?.observation ? html` <${Prov} obs=${p.observation} />` : null}</div>
+          ${p?.observation ? html` <${Prov} obs=${p.observation} />` : isNum(p?.estimate) && isNum(leg.statedPrice) ? html` <span class="prov manual" title="A fill price stated by you, recorded as a manual input">stated</span>` : null}</div>
         <${Was} changes=${changes} field="price" />
-        <div class="sub">${p?.label}${isNum(p?.reference) && p?.reference !== p?.estimate ? `, reference ${fmtPriceUnits(p.reference, pu)}` : ''}</div>
+        <div class="sub">${isNum(p?.estimate) || !/^no executable price$/i.test(p?.label || '') ? p?.label : ''}${isNum(p?.reference) && p?.reference !== p?.estimate ? `, reference ${fmtPriceUnits(p.reference, pu)}` : ''}</div>
         ${p?.note ? html`<div class="sub">${p.note}</div>` : null}
         ${p && !p.executable && p.reason ? html`<div class="sub" style="color:var(--amber)">${p.reason}</div>` : null}
         ${leg.indicative ? html`<div class="sub">Indicative terms: ${fmtPriceUnits(leg.indicative.value, pu)} (${leg.indicative.status}, ${leg.indicative.source}). Not an executable quote.
@@ -231,6 +231,7 @@ function LegRow({ leg, edit, onEdit, onRemove, canRemove, changes }) {
       ${held > 0 ? html`<div class="sub">margin ${fmtMoney(held, heldCcy)}</div>` : null}
       ${held < 0 ? html`<div class="sub" data-testid="released">${leg.instrument?.family === 'future' ? 'margin released' : 'collateral returned'} ${fmtMoney(-held, heldCcy)}</div>
         <div class="sub">${leg.instrument?.family === 'future' ? 'Initial margin held for the contracts this leg closes comes back to free cash.' : 'The independent amount held for the part of the position this leg closes comes back to free cash.'}</div>` : null}
+      ${leg.collateral?.basis?.label ? html`<div class="sub wrap" data-testid="collateral-basis">collateral: ${leg.collateral.basis.type === 'agreement' ? `under ${leg.collateral.basis.label}` : String(leg.collateral.basis.label).replace(/^./, (c) => c.toLowerCase())}</div>` : null}
       ${leg.shortCollateral ? html`<div class="sub">collateral top-up ${fmtMoney(leg.shortCollateral.topUp, leg.currency)}</div><div class="sub">margin hold ${fmtMoney(leg.shortCollateral.marginHold, leg.currency)}</div>` : null}
       <${Was} changes=${changes} field="notional" /><${Was} changes=${changes} field="margin" /><${Was} changes=${changes} field="collateral.topUp" /><${Was} changes=${changes} field="agreement.independent" />
     </td>
@@ -240,11 +241,12 @@ function LegRow({ leg, edit, onEdit, onRemove, canRemove, changes }) {
 
 function CashTable({ cash }) {
   const rows = Object.values(cash || {});
-  if (!rows.length) return html`<p class="note">No cash moves at trade for this package.</p>`;
-  const line = (label, key, opts = {}) => rows.some((r) => r[key]) ? html`<tr><td>${label}</td>${rows.map((r) => html`<td class="r">${r[key] ? fmtMoney(opts.neg ? -r[key] : r[key], r.ccy, { sign: opts.sign }) : ''}</td>`)}</tr>` : null;
+  if (!rows.length) return html`<p class="note" style="padding:8px 12px">No cash moves at trade for this package.</p>`;
+  // Fees and margin are always stated, zero included, so the preview never leaves the reader to infer them.
+  const line = (label, key, opts = {}) => rows.some((r) => r[key]) || opts.always ? html`<tr><td>${label}</td>${rows.map((r) => html`<td class="r">${r[key] ? fmtMoney(opts.neg ? -r[key] : r[key], r.ccy, { sign: opts.sign }) : opts.always ? html`<span class="muted">${fmtMoney(0, r.ccy)}</span>` : ''}</td>`)}</tr>` : null;
   return html`<table class="ledger"><thead><tr><th></th>${rows.map((r) => html`<th class="r">${r.ccy}</th>`)}</tr></thead><tbody>
     ${line('Purchases', 'purchases')}${line('Sale proceeds', 'proceeds')}${line('Short-sale proceeds (restricted)', 'restrictedProceeds')}
-    ${line('Fees and commissions', 'fees')}${line('Margin', 'margin')}${line('Collateral top-up', 'collateral')}${line('Reserved against short options', 'reserved')}
+    ${line('Fees and commissions', 'fees', { always: true })}${line('Margin', 'margin', { always: true })}${line('Collateral top-up', 'collateral')}${line('Reserved against short options', 'reserved')}
     ${line('Financing received', 'financingIn')}${line('Financing paid out', 'financingOut')}${line('Paid from the short\'s restricted collateral', 'coverCollateral')}
     <tr><td class="strong">Cash required</td>${rows.map((r) => html`<td class="r strong">${fmtMoney(r.required, r.ccy)}</td>`)}</tr>
     <tr><td>Available to trade now</td>${rows.map((r) => html`<td class="r">${fmtMoney(r.available, r.ccy)}</td>`)}</tr>
@@ -395,4 +397,4 @@ export async function openPreview(input, { openOverlay, toastError, onDone, extr
   }
 }
 // `Changes` draws a refusal's change list (err.details.changes) as was / now; other dialogs that confirm a preview can reuse it.
-export { Table, Changes };
+export { Table, Changes, tolerancesText };

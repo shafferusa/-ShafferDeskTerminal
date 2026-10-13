@@ -110,7 +110,8 @@ export function createOrders(app) {
       db.tx(() => setStatus(o, 'expired', 'Day order did not fill before the end of the business day'));
       touched.add(o.strategy_id);
     }
-    for (const s of touched) app.packages.refreshStrategy(s);
+    // t1b: an expired put sale releases the exercise cash its cash-secured put no longer needs.
+    for (const s of touched) { if (app.packages.trimExerciseReserve) db.tx(() => app.packages.trimExerciseReserve(s)); app.packages.refreshStrategy(s); }
     return rows.length;
   }
 
@@ -337,7 +338,12 @@ export function createOrders(app) {
       if (cashNow.availableToTrade < need - 0.004) return reject(o, `Insufficient ${ccy} cash to collateralise the short: ${fmt(need, ccy)} needed beyond the sale proceeds (${((s.collateralPct - 1) * 100).toFixed(0)}% collateral top-up plus ${(s.marginPct * 100).toFixed(0)}% margin), ${fmt(cashNow.availableToTrade, ccy)} available.`);
     }
     if (inst.family === 'option' && o.action === 'sell') {
-      const extra = marginIncrease(o, inst, -qty, book);
+      // t1b: exercise cash already set aside in this strategy instance (a cash-secured put's reservation leg) secures the
+      // written put: it is out of free cash already, and recomputeHolds counts it against the requirement. Only what the
+      // requirement needs beyond it is new; without this the put was refused for want of the cash its own reservation holds.
+      const secured = ledger.listHolds([unit.id]).filter((h) => h.ref_type === 'strategy' && h.ref_id === o.strategy_id && h.kind === 'exercise_cash' && h.ccy === ccy).reduce((a, h) => a + h.amount, 0);
+      const req = marginRequirement(o, inst, -qty, book);
+      const extra = Math.max(0, round(Math.max(0, req.after - secured) - Math.max(0, req.before - secured), 2));
       const after = cashNow.availableToTrade + qty * price * inst.multiplier - feeTotal;
       if (extra > after + 0.004) return reject(o, `Insufficient ${ccy} cash to secure the short option: ${fmt(extra, ccy)} must be reserved, ${fmt(Math.max(after, 0), ccy)} is available after the premium.`);
     }
@@ -368,13 +374,19 @@ export function createOrders(app) {
 
   /** Extra option margin a strategy would need if `dq` of `inst` were added to it. */
   function marginIncrease(o, inst, dq, book) {
+    const { before, after } = marginRequirement(o, inst, dq, book);
+    return Math.max(0, round(after - before, 2));
+  }
+
+  /** The strategy instance's short-option requirement before and after a change of `dq` in `inst`. */
+  function marginRequirement(o, inst, dq, book) {
     const bucket = positions.list({ unitIds: [o.unit_id], strategyId: o.strategy_id }).map((p) => ({ inst: app.instruments.get(p.instrument_id), qty: p.qty, id: p.id }));
     const before = optionRequirement(app, bucket, book.settings.margin).reduce((a, r) => a + r.amount, 0);
     const hyp = bucket.map((p) => ({ ...p }));
     const hit = hyp.find((p) => p.inst.id === inst.id);
     if (hit) hit.qty += dq; else hyp.push({ inst, qty: dq });
     const after = optionRequirement(app, hyp, book.settings.margin).reduce((a, r) => a + r.amount, 0);
-    return Math.max(0, round(after - before, 2));
+    return { before, after };
   }
 
   function afterPositionChange({ book, unit, inst, plugin, o, position }) {

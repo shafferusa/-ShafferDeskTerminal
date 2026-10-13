@@ -653,3 +653,17 @@ table.ledger td.acts { white-space: normal; }
 /* A field spanning two columns in a form that has room for one created an implicit, near-zero-width second column
    (the swap leg panels at 390 px wide): there it spans the columns that exist instead. */
 @media (max-width: 520px) { .grid-form .span-2 { grid-column: 1 / -1; } }
+
+/* ---- interface check (s9) ---- */
+/* Hedge review queue: below 1100 px each request becomes one block (position, then labelled facts, then its button),
+   so the state and the Complete / Review button are on screen without scrolling the table sideways. */
+@media (max-width: 1100px) {
+  table.ledger.hq-table thead { display: none; }
+  table.ledger.hq-table, table.ledger.hq-table tbody { display: block; width: 100%; }
+  table.ledger.hq-table tr { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 6px 16px; padding: 8px 12px; border-bottom: 1px solid var(--rule); border-left: 2px solid var(--margin-rule); }
+  table.ledger.hq-table td { display: block; border: 0; padding: 0; height: auto; white-space: normal; text-align: left; min-width: 0 !important; overflow-wrap: anywhere; background: transparent; }
+  table.ledger.hq-table td.hq-head, table.ledger.hq-table td.hq-act { grid-column: 1 / -1; }
+  table.ledger.hq-table td[data-label]::before { content: attr(data-label); display: block; font-size: 11.5px; color: var(--muted); font-family: var(--head); }
+  table.ledger.hq-table td:empty { display: none; }
+  table.ledger.hq-table .pill { white-space: nowrap; }
+}

@@ -103,7 +103,7 @@ function HoldingsPanel({ d }) {
   const held = d.holdings.map((h) => ({ ...h, units: h.owners.map((o) => ({ name: o.name, long: o.long, short: o.short, net: o.net, qty: o.net })) }));
   return html`<${Panel} title="Holdings by instrument" note="Gross: long, short and net kept apart" flush>
     <${Table} rows=${held} rowKey=${(h) => h.instrument.id} columns=${[
-      { label: 'Instrument', render: (h) => html`<div class="sym">${inst(h.instrument)}</div><div class="sub clip" style="max-width:190px">${h.instrument.symbol ? h.instrument.name : ''}</div>` },
+      { label: 'Instrument', render: (h) => html`<div class="sym">${inst(h.instrument)}</div><div class="sub clip" style="max-width:190px" title=${h.instrument.name}>${h.instrument.symbol ? h.instrument.name : ''}</div>` },
       { label: 'Held, by owner', render: (h) => html`<${Holdings} h=${h} detail label="Held" />` },
     ]} empty=${{ title: 'This Account holds no instruments', children: html`Buy or sell short from a <a href="#/markets/US_CASH">Marketplace</a>, or build a package on the <a href="#/strategy">Strategies</a> page. This Account is already selected there.` }} />
     ${held.length ? html`<div class="small muted" style="padding:8px 12px">Long and short are separate positions. The net is shown beside them and never in place of the long holding.</div>` : null}<//>`;

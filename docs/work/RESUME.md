@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 99.0% of the pass** (last milestone 2026-10-13T21:32Z, fx: historical-FX regression test (test/core/historical-fx.test.js) passes in npm test; fails 170 checks on the reverted fix)
+**Completeness: about 99.0% of the pass** (last milestone 2026-10-13T21:48Z, t1b: T:cash_secured_put passes at engine, API and browser (fixes: put secured by its reservation; reservation released as puts close))
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 

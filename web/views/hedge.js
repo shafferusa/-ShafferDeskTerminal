@@ -18,7 +18,7 @@ import { html, useEffect, useRef, useState } from '../vendor/preact-htm.js';
 import { bump, fmtMoney, fmtNum, fmtPrice, fmtQty, fmtTime, get, isNum, openOverlay, post, toast, toastError, useLive } from '../lib/core.js';
 import { Awaiting, Button, Check, Checks, Empty, ErrorNote, Field, KV, Missing, Money, Notice, Num, Pill, Prov, Select, Text } from '../lib/ui.js';
 import { CollateralBasisFields } from '../lib/contracts.js';
-import { Changes, expectedOf, PreviewModal } from './preview.js';
+import { Changes, expectedOf, PreviewModal, tolerancesText } from './preview.js';
 
 export const OBJECTIVES = [
   { value: 'downside_protection', label: 'Downside protection' }, { value: 'upside_protection_short', label: 'Upside protection for shorts' },
@@ -289,6 +289,7 @@ function LegCard({ leg, done, changed, unitId, onCollateral, onStatedPrice }) {
         ${cb?.needsChoice || (ia && !isNum(ia.delta)) ? html`<${Missing} reason=${cb?.needsChoice ? 'No usable collateral basis has been chosen for this contract' : ia.reason || 'Cannot be worked out yet'} />` : isNum(collateral) && collateral ? fmtMoney(collateral, ia?.ccy || leg.currency) : none}<//>
       <${F} k="Financing requirement" sub=${fin && isNum(fin.rate) ? `rate ${fmtNum(fin.rate * 100, 3)}% ${fin.rateType || ''}${fin.maturity ? `, to ${fin.maturity}` : ''}` : leg.borrowInfo ? `${leg.borrowInfo.source || 'borrow'}${isNum(leg.borrowInfo.dailyCost) ? `, about ${fmtMoney(leg.borrowInfo.dailyCost, leg.currency)} a day` : ''}` : isNum(leg.dailyCost) ? `about ${fmtMoney(leg.dailyCost, leg.currency)} a day` : ''}>
         ${fin && isNum(fin.amount) ? fmtMoney(Math.abs(fin.amount), fin.ccy || leg.currency) : leg.borrowInfo ? `${fmtQty(leg.borrowInfo.needed)} to borrow` : none}<//>
+      <${F} k="Settles" sub=${leg.settlement ? `${leg.settlement.label || ''}${leg.settlement.calendarId ? ` on ${leg.settlement.calendarId}` : ''}${leg.calendar?.flag ? `, ${leg.calendar.flag === 'weekends-only' ? 'weekends-only calendar' : 'approximate calendar'}` : ''}${leg.trading && !leg.trading.open ? `; market closed today on ${leg.trading.calendarId}, matched ${leg.trading.tradeDate}` : ''}` : ''}>${leg.settleDate || none}<//>
       <${F} k="Notional" sub=${fwdBase ? `the ${fwdBase} amount; its value in ${leg.currency} needs a rate` : ''}>${isNum(leg.notional) ? fmtMoney(leg.notional, fwdBase || leg.currency) : none}<//>
     </div>
     <${LegCollateral} leg=${leg} c=${cb} unitId=${unitId} onChoose=${onCollateral} />
@@ -367,6 +368,7 @@ export function PackageDetail({ pkg, pv, loading, error, onRefresh, onAcknowledg
       <div class="hlegs" data-testid="hedge-legs">${pv.legs.map((l) => html`<${LegCard} key=${l.n} leg=${l} done=${pv.hedge?.completion?.legs.find((x) => x.n === l.n)} unitId=${pv.unitId}
         changed=${changes.some((c) => c.scope === 'leg' && c.n === l.n)} onCollateral=${onCollateral} onStatedPrice=${onStatedPrice} />`)}</div>
       <${CostTable} pv=${pv} />
+      ${pv.confirmation ? html`<div class="note" data-testid="hedge-tolerances">Execute now confirms these figures only. If a figure has moved by more than this Book's tolerances (${tolerancesText(pv.confirmation.tolerances)}), or a term such as a settlement date, quote status, financing rate or borrow availability has changed, nothing is submitted and the changes are shown. The tolerances are set under Settings.</div>` : null}
       ${est.length ? html`<div class="note">Estimate that came with the recommendation${c.basis ? ` (${c.basis})` : ''}: ${est.map(([k, v]) => `${k} ${fmtMoney(v, c.currency)}`).join(', ')}. It was made when the package was proposed and is for comparison only: the figures above are the ones a confirmation would use.</div>` : null}
       ${prot?.needsAcknowledgement && !prot.acknowledged && onAcknowledge ? html`<${Notice} tone="warn"><b>Protection is already in place.</b> ${prot.prior.map((x) => x.label).join('; ')}. ${prot.explain}
         <div style="margin-top:6px"><${Button} small onClick=${onAcknowledge}>Add this protection deliberately<//></div><//>` : null}
@@ -647,20 +649,20 @@ export function HedgeQueue({ book, compact }) {
   return html`<section class="panel" data-testid="hedge-queue"><header><h3>Hedge review queue</h3><span class="note">Nothing here is traded until you confirm it</span><span class="grow"></span>
       <span class="note">${svc?.fixture ? html`<span class="pill warn" title="Fixture data standing in for the service">${svc.kind === 'demo-fixture' ? 'demo fixture answering' : 'test fixture answering'}</span> ` : null}Analytics Lab: ${d.analytics === 'connected' ? 'connected' : 'awaiting'}</span>
       ${waiting ? html`<${Button} small busy=${busy} onClick=${refresh}>Ask again now<//>` : null}</header>
-    <div class="body flush"><div class="tablewrap"><table class="ledger margin"><thead><tr><th>Position</th><th>Held in</th><th>State</th><th>Source and freshness</th><th>Asked</th><th></th></tr></thead><tbody>
+    <div class="body flush"><div class="tablewrap"><table class="ledger margin hq-table"><thead><tr><th>Position</th><th>Held in</th><th>State</th><th>Source and freshness</th><th>Asked</th><th></th></tr></thead><tbody>
       ${d.items.map((x) => html`<tr key=${x.id} data-request=${x.id} data-state=${x.state}>
-        <td class="wrap"><div class="strong">${x.primary ? `${x.primary.direction === 'short' ? 'Short' : 'Long'} ${fmtQty(x.primary.quantity)} ${x.primary.symbol || x.primary.name}` : `Scope: ${SCOPE_LABEL[x.scope.type] || x.scope.type}`}</div>
+        <td class="wrap hq-head"><div class="strong">${x.primary ? `${x.primary.direction === 'short' ? 'Short' : 'Long'} ${fmtQty(x.primary.quantity)} ${x.primary.symbol || x.primary.name}` : `Scope: ${SCOPE_LABEL[x.scope.type] || x.scope.type}`}</div>
           ${x.strategy ? html`<div class="sub"><a href="javascript:void 0" onClick=${() => openStrategy(x.strategy.id)}>${x.strategy.name}</a></div>` : null}
           <div class="sub">Investment Strategy: <${StrategyRef} s=${x.investmentStrategy} missing="Not set" /></div></td>
-        <td>${x.owner || book.name}</td>
-        <td class="wrap" style="min-width:210px"><${StatePill} r=${x} />
+        <td data-label="Held in">${x.owner || book.name}</td>
+        <td class="wrap" data-label="State" style="min-width:210px"><${StatePill} r=${x} />
           ${x.state === 'incomplete' ? html`<div class="sub">Needs ${x.missing.join(', ')}. Not sent.</div>` : null}
           ${x.state === 'recommendation_ready' ? html`<div class="sub">${plural(x.packages, 'package')}${x.packages ? '' : `. ${x.message || ''}`}${x.refreshedAt ? ', refreshed on current exposure' : ''}</div>` : null}
           ${x.state === 'error' ? html`<div class="sub">${x.message}</div>` : null}
           ${['incomplete', 'awaiting_connection', 'ready_for_analysis'].includes(x.state) ? html`<div class="sub">${connectionWords(x.connection)}</div>` : null}</td>
-        <td class="wrap" style="min-width:220px">${x.source ? html`<${SourceFacts} r=${x} stacked />${x.freshness?.status === 'stale' ? html`<div class="sub">${x.freshness.changes.join(' ')}</div>` : null}` : html`<span class="muted">No recommendation yet</span>`}</td>
-        <td class="nowrap">${fmtTime(x.createdAt)}</td>
-        <td class="r"><${Button} small onClick=${() => openHedgeRequest(x.id)}>${x.state === 'incomplete' ? 'Complete' : x.state === 'recommendation_ready' ? 'Review' : 'Open'}<//></td></tr>`)}
+        <td class="wrap" data-label="Source and freshness" style="min-width:220px">${x.source ? html`<${SourceFacts} r=${x} stacked />${x.freshness?.status === 'stale' ? html`<div class="sub">${x.freshness.changes.join(' ')}</div>` : null}` : html`<span class="muted">No recommendation yet</span>`}</td>
+        <td class="nowrap" data-label="Asked">${fmtTime(x.createdAt)}</td>
+        <td class="r hq-act"><${Button} small onClick=${() => openHedgeRequest(x.id)}>${x.state === 'incomplete' ? 'Complete' : x.state === 'recommendation_ready' ? 'Review' : 'Open'}<//></td></tr>`)}
       ${d.reviews.map((x) => html`<tr key=${`rv-${x.strategy.id}`}>
         <td class="wrap"><div class="strong"><a href="javascript:void 0" onClick=${() => openStrategy(x.strategy.id)}>${x.strategy.name}</a></div><div class="sub">${x.reason}</div></td>
         <td>${x.owner}</td><td><${Pill} tone="warn">exposure changed<//></td><td></td><td class="nowrap">${fmtTime(x.since)}</td>

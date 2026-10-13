@@ -348,3 +348,22 @@ Limitations established by s3 (stated in the specs' matrix metadata and the cata
 - Quanto legs: no quanto convexity adjustment (fixed conversion only).
 - Bespoke CDS terminations are all-in (no separate accrued); an ABS CDS reimbursement does not adjust premium separately.
 - CDS fill summaries keep "Bought/Sold" wording (another scenario depends on it).
+
+## t1b (templates-a repair, 2026-10-13)
+Fixed:
+- The specs.test.js audit failures listed above (protective_put ... short_collar: preview legs stated without `action`; futures_hedge:
+  futures legs settling on the trade date audited against T+1) are fixed: actions added to the expectations (from the sign of the
+  hand-worked cash), and `settlementCheck: false` on the four futures_hedge steps whose futures legs settle same day.
+- server/core/orders.js (option sale check): a cash-secured put's written put was rejected ("Insufficient USD cash to secure the short
+  option: 19,200.00 USD must be reserved, 358.00 USD is available") when the Account held exactly the exercise cash, because the check
+  ignored the reservation its own reservation leg had just made. Found by T:cash_secured_put funded-from-treasury.
+- server/core/packages.js (recomputeHolds / trimExerciseReserve): the exercise cash of a cash-secured put stayed at the full amount after
+  the put sale ended part-filled (cancelled, expired, accepted) or puts were partly bought back (15,000 held for 2 puts needing 10,000).
+  Now cut to what the written puts need once no put sale works. Found by T:cash_secured_put cancel-remainder / cancel-kept / close-share.
+- server/core/packages.js (needsCash): a reservation leg did not wait for the Treasury funding or loan leg sized for it.
+Open (t1b, not fixed, outside templates.js/packages.js):
+- server/core/hedge.js request(): for option-only templates (cash_secured_put, long_call, long_put, vertical spreads) the Strategies
+  page's hedge request carries no amount (primary quantity is taken only from a share quantity or a leg on the underlying itself), so it
+  stays "incomplete: amount" although contracts are entered. Right: the exposure is contracts x deliverable on the underlying, long for
+  a bought call or written put, short for a bought put or written call. Repro: Strategies page, Cash-Secured Put, any contracts; the Hedge
+  panel shows "incomplete". The option-only template specs therefore have no hedge-request step.

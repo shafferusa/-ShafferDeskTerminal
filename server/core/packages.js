@@ -234,7 +234,8 @@ export function createPackages(app) {
     return result;
   }
 
-  const needsCash = (l) => l.kind === 'trade' && (BUY.has(l.action) || l.action === 'sell_short' || l.action === 'sell');
+  // t1b: a cash reservation (cash-secured put) also waits for the funding or borrowing that pays for it.
+  const needsCash = (l) => (l.kind === 'trade' && (BUY.has(l.action) || l.action === 'sell_short' || l.action === 'sell')) || l.kind === 'reserve';
 
   function sanitizeInput(input) {
     // appendHedge is a one-time instruction: once the hedge legs are in the package they travel
@@ -994,11 +995,36 @@ export function createPackages(app) {
   // Strategy state
   // =============================================================================================
 
+  /**
+   * t1b: once no put sale of the instance is working, the exercise cash it reserves is never more than its written options
+   * require: a put sale that ended part-filled (cancelled, expired, accepted as it stands), or written puts partly bought
+   * back, release what of the reservation no put needs any more. While a put sale still works, the whole reservation
+   * stays for it; with no written put left, recomputeHolds releases it all. Touches the exercise-cash holds only.
+   */
+  function trimExerciseReserve(strategyId) {
+    const s = strategyId ? getStrategyRow(strategyId) : null;
+    if (!s) return;
+    const held = ledger.listHolds([s.unit_id]).filter((h) => h.ref_type === 'strategy' && h.ref_id === strategyId && h.kind === 'exercise_cash');
+    if (!held.length) return;
+    const bucket = positions.list({ unitIds: [s.unit_id], strategyId }).filter((p) => !isZero(p.qty)).map((p) => ({ inst: instruments.get(p.instrument_id), qty: p.qty, id: p.id }));
+    const shortPuts = bucket.some((p) => p.inst.family === 'option' && p.inst.terms.right === 'P' && p.qty < 0);
+    const putSaleWorking = app.orders.active(strategyId).some((o) => o.kind === 'trade' && o.action === 'sell' && instruments.get(o.instrument_id)?.terms?.right === 'P');
+    if (!shortPuts || putSaleWorking) return;
+    const need = {};
+    for (const r of optionRequirement(app, bucket, books.getBook(s.book_id).settings.margin)) need[r.ccy] = (need[r.ccy] || 0) + r.amount;
+    const have = {};
+    for (const h of held) have[h.ccy] = (have[h.ccy] || 0) + h.amount;
+    if (!Object.keys(have).some((ccy) => have[ccy] > money(need[ccy] || 0, ccy) + 0.004)) return;
+    ledger.releaseHolds({ refType: 'strategy', refId: strategyId, kind: 'exercise_cash' });
+    for (const ccy of Object.keys(have)) ledger.placeHold({ bookId: s.book_id, unitId: s.unit_id, ccy, amount: money(Math.min(have[ccy], need[ccy] || 0), ccy), kind: 'exercise_cash', refType: 'strategy', refId: strategyId, note: 'Cash reserved for put exercise' });
+  }
+
   /** Recompute the holds a strategy's positions require (short options, short stock margin). */
   function recomputeHolds(strategyId) {
     if (!strategyId) return;
     const s = getStrategyRow(strategyId);
     if (!s) return;
+    trimExerciseReserve(strategyId);
     const book = books.getBook(s.book_id);
     const all = positions.list({ unitIds: [s.unit_id], strategyId, includeClosed: true });
     const bucket = all.filter((p) => !isZero(p.qty)).map((p) => ({ inst: instruments.get(p.instrument_id), qty: p.qty, id: p.id }));
@@ -1350,7 +1376,7 @@ export function createPackages(app) {
     if (action === 'cancel_working') {
       const act = app.orders.active(strategyId);
       need(act.length, 'There are no working legs to cancel.');
-      db.tx(() => { for (const o of act) app.orders.setStatus(o, 'cancelled', 'Cancelled by user'); });
+      db.tx(() => { for (const o of act) app.orders.setStatus(o, 'cancelled', 'Cancelled by user'); trimExerciseReserve(strategyId); });
       refreshStrategy(strategyId);
       return strategyView(strategyId);
     }
@@ -1395,6 +1421,6 @@ export function createPackages(app) {
   return {
     templates: () => TEMPLATES,
     preview, submit, runMatching, previewAction, applyAction, resolveDeadLegs,
-    getStrategyRow, requireStrategy, refreshStrategy, recomputeHolds, strategyView, listStrategies, orderView, closingLegs, forceBuyIn,
+    getStrategyRow, requireStrategy, refreshStrategy, recomputeHolds, trimExerciseReserve, strategyView, listStrategies, orderView, closingLegs, forceBuyIn,
   };
 }

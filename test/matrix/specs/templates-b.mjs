@@ -5505,6 +5505,9 @@ const futuresHedge = {
       // Treasury funding 5,047.50 first; the shares are linked; the futures sell 6 at 50.10 (margin 6,000, commission
       // 13.50), then 4 on the next cycle (4,000 and 9.00).
       id: 'hedge', covers: ['open', 'financing', 'existing position', 'initial margin', 'partial fill'], action: 'package', as: 'hedge', instrument: 'stock',
+      // (t1b) The futures leg posts margin on the trade date (settleDate 2 March, stated in the leg), not on the shares' T+1:
+      // the spec audit's standing lag does not apply to this step.
+      settlementCheck: false,
       input: fhInput({ mode: 'treasury' }), strategyPage: FH_PAGE({ mode: 'treasury' }),
       expect: {
         preview: {
@@ -5701,6 +5704,7 @@ const futuresHedge = {
     {
       // Retry sells the future at 49.85: margin 1,000 and commission 2.25 from settled cash.
       id: 'retry', covers: ['retry', 'failed leg'], action: 'recover', how: 'retry', lot: 'retry',
+      settlementCheck: false, // (t1b) futures legs settle on the trade date, not on the standing T+1 of the shares
       expect: {
         preview: { blocking: 0, errors: [], intent: 'retry', legs: [{ kind: 'trade', action: 'sell', instrument: 'fut', qty: 1, estimate: 49.85, settleDate: '2026-03-04', notional: 4_985, initialMargin: 1_000, fees: 2.25 }], cash: { USD: { fees: 2.25, margin: 1_000, required: 1_002.25, available: 10_191, shortfall: 0 } } },
         result: { status: 'open', complete: true, orders: [{ action: 'sell', instrument: 'fut', status: 'filled', filledQty: 1, avgPrice: 49.85 }] },
@@ -5772,6 +5776,7 @@ const futuresHedge = {
       // Close "retry": 100 shares sold at 49.98 (realized -4), the future bought back at 49.87 (realized (49.70 - 49.87)
       // x 100 = -17), its margin released: 1,000 - 17 - 2.25 = 980.75 back in settled cash at once.
       id: 'close-retry', covers: ['close', 'margin release'], action: 'close', lot: 'retry', instrument: 'stock', scope: 'strategy', percent: 100,
+      settlementCheck: false, // (t1b) futures legs settle on the trade date, not on the standing T+1 of the shares
       expect: {
         preview: {
           blocking: 0, errors: [], intent: 'close',
@@ -5838,6 +5843,7 @@ const futuresHedge = {
       // 50.02) = -540), 10 futures bought back at 49.40 (realized (49.80 - 49.40) x 1,000 = 400; margin 10,000 released:
       // 10,000 + 400 - 22.50 = 10,377.50 at once).
       id: 'close-hedge', covers: ['close', 'margin release'], action: 'close', lot: 'hedge', instrument: 'stock', scope: 'strategy', percent: 100,
+      settlementCheck: false, // (t1b) futures legs settle on the trade date, not on the standing T+1 of the shares
       expect: {
         preview: {
           blocking: 0, errors: [], intent: 'close',
