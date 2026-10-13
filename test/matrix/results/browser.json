@@ -13494,9 +13494,9 @@
   "B:interest_rate_swap:setup": {
    "status": "passed",
    "message": "",
-   "ms": 4234,
-   "commit": "fe6e5ae+changes",
-   "at": "2026-10-13T16:43:11.367Z",
+   "ms": 4561,
+   "commit": "7f6c7ac",
+   "at": "2026-10-13T16:43:56.985Z",
    "product": "interest_rate_swap",
    "template": null,
    "family": "swap",
@@ -13506,9 +13506,9 @@
   "B:interest_rate_swap:too-large": {
    "status": "blocked",
    "message": "The independent amount must be posted from free settled cash when the position opens; it is not there. Terminal: \"Leg 1: The independent amount of 2,400,000.00 USD on IRS-TSFR-0327 cannot be posted: Rates has 2,000,000.00 USD of settled USD cash free. Fund it first, or reduce the size. | Blocks submission. Rates is short 403,000.00 USD: the package needs 2,403,000.00 USD (purchases 0.00 USD, fees 3,000.00 USD, margin and collateral 2,400,000.00 USD, reserved 0.00 USD) and 2,000,000.00 USD is available. Add Treasury funding or a borrowing leg, convert currency, or reduce the size.\"",
-   "ms": 1381,
-   "commit": "fe6e5ae+changes",
-   "at": "2026-10-13T16:43:11.367Z",
+   "ms": 1491,
+   "commit": "7f6c7ac",
+   "at": "2026-10-13T16:43:56.985Z",
    "product": "interest_rate_swap",
    "template": null,
    "family": "swap",
@@ -13518,11 +13518,11 @@
    ]
   },
   "B:interest_rate_swap:open": {
-   "status": "failed",
-   "message": "screen vs API: position IRS-TSFR-0327 10000000 margin posted is 200000 in the API but is not on the screen",
-   "ms": 1704,
-   "commit": "fe6e5ae+changes",
-   "at": "2026-10-13T16:43:11.367Z",
+   "status": "passed",
+   "message": "",
+   "ms": 1832,
+   "commit": "7f6c7ac",
+   "at": "2026-10-13T16:43:56.985Z",
    "product": "interest_rate_swap",
    "template": null,
    "family": "swap",
@@ -13530,6 +13530,275 @@
    "covers": [
     "open",
     "collateral"
+   ]
+  },
+  "B:interest_rate_swap:no-mark-no-call": {
+   "status": "passed",
+   "message": "",
+   "ms": 772,
+   "commit": "7f6c7ac",
+   "at": "2026-10-13T16:43:56.985Z",
+   "product": "interest_rate_swap",
+   "template": null,
+   "family": "swap",
+   "step": "no-mark-no-call",
+   "covers": [
+    "variation margin"
+   ]
+  },
+  "B:interest_rate_swap:mark-negative": {
+   "status": "passed",
+   "message": "",
+   "ms": 1145,
+   "commit": "7f6c7ac",
+   "at": "2026-10-13T16:43:56.985Z",
+   "product": "interest_rate_swap",
+   "template": null,
+   "family": "swap",
+   "step": "mark-negative",
+   "covers": [
+    "manual mark"
+   ]
+  },
+  "B:interest_rate_swap:variation-margin-call": {
+   "status": "passed",
+   "message": "",
+   "ms": 634,
+   "commit": "7f6c7ac",
+   "at": "2026-10-13T16:43:56.985Z",
+   "product": "interest_rate_swap",
+   "template": null,
+   "family": "swap",
+   "step": "variation-margin-call",
+   "covers": [
+    "variation margin"
+   ]
+  },
+  "B:interest_rate_swap:settle-commission": {
+   "status": "passed",
+   "message": "",
+   "ms": 649,
+   "commit": "7f6c7ac",
+   "at": "2026-10-13T16:43:56.985Z",
+   "product": "interest_rate_swap",
+   "template": null,
+   "family": "swap",
+   "step": "settle-commission",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:interest_rate_swap:mark-a-little-lower": {
+   "status": "passed",
+   "message": "",
+   "ms": 1116,
+   "commit": "7f6c7ac",
+   "at": "2026-10-13T16:43:56.985Z",
+   "product": "interest_rate_swap",
+   "template": null,
+   "family": "swap",
+   "step": "mark-a-little-lower",
+   "covers": []
+  },
+  "B:interest_rate_swap:below-minimum-transfer": {
+   "status": "passed",
+   "message": "",
+   "ms": 701,
+   "commit": "7f6c7ac",
+   "at": "2026-10-13T16:43:56.985Z",
+   "product": "interest_rate_swap",
+   "template": null,
+   "family": "swap",
+   "step": "below-minimum-transfer",
+   "covers": [
+    "variation margin"
+   ]
+  },
+  "B:interest_rate_swap:friday-morning": {
+   "status": "passed",
+   "message": "",
+   "ms": 649,
+   "commit": "7f6c7ac",
+   "at": "2026-10-13T16:43:56.985Z",
+   "product": "interest_rate_swap",
+   "template": null,
+   "family": "swap",
+   "step": "friday-morning",
+   "covers": []
+  },
+  "B:interest_rate_swap:mark-recovers": {
+   "status": "passed",
+   "message": "",
+   "ms": 1217,
+   "commit": "7f6c7ac",
+   "at": "2026-10-13T16:43:56.985Z",
+   "product": "interest_rate_swap",
+   "template": null,
+   "family": "swap",
+   "step": "mark-recovers",
+   "covers": []
+  },
+  "B:interest_rate_swap:variation-margin-returned": {
+   "status": "passed",
+   "message": "",
+   "ms": 600,
+   "commit": "7f6c7ac",
+   "at": "2026-10-13T16:43:56.985Z",
+   "product": "interest_rate_swap",
+   "template": null,
+   "family": "swap",
+   "step": "variation-margin-returned",
+   "covers": [
+    "variation margin"
+   ]
+  },
+  "B:interest_rate_swap:monday-morning": {
+   "status": "passed",
+   "message": "",
+   "ms": 667,
+   "commit": "7f6c7ac",
+   "at": "2026-10-13T16:43:56.985Z",
+   "product": "interest_rate_swap",
+   "template": null,
+   "family": "swap",
+   "step": "monday-morning",
+   "covers": []
+  },
+  "B:interest_rate_swap:increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 1317,
+   "commit": "7f6c7ac",
+   "at": "2026-10-13T16:43:56.985Z",
+   "product": "interest_rate_swap",
+   "template": null,
+   "family": "swap",
+   "step": "increase",
+   "covers": [
+    "increase",
+    "collateral"
+   ]
+  },
+  "B:interest_rate_swap:settle-increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 666,
+   "commit": "7f6c7ac",
+   "at": "2026-10-13T16:43:56.985Z",
+   "product": "interest_rate_swap",
+   "template": null,
+   "family": "swap",
+   "step": "settle-increase",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:interest_rate_swap:mark-high": {
+   "status": "passed",
+   "message": "",
+   "ms": 1333,
+   "commit": "7f6c7ac",
+   "at": "2026-10-13T16:43:56.985Z",
+   "product": "interest_rate_swap",
+   "template": null,
+   "family": "swap",
+   "step": "mark-high",
+   "covers": []
+  },
+  "B:interest_rate_swap:variation-margin-received": {
+   "status": "passed",
+   "message": "",
+   "ms": 686,
+   "commit": "7f6c7ac",
+   "at": "2026-10-13T16:43:56.985Z",
+   "product": "interest_rate_swap",
+   "template": null,
+   "family": "swap",
+   "step": "variation-margin-received",
+   "covers": [
+    "variation margin"
+   ]
+  },
+  "B:interest_rate_swap:spend-collateral-received": {
+   "status": "blocked",
+   "message": "Cash collateral received from the counterparty is restricted: it is owed back and cannot be spent or moved. Terminal: \"Rates has 1,689,625.00 USD of settled USD available; 1,700,000.00 USD requested.\"",
+   "ms": 1114,
+   "commit": "7f6c7ac",
+   "at": "2026-10-13T16:43:56.985Z",
+   "product": "interest_rate_swap",
+   "template": null,
+   "family": "swap",
+   "step": "spend-collateral-received",
+   "covers": [
+    "variation margin"
+   ]
+  },
+  "B:interest_rate_swap:thursday-morning": {
+   "status": "passed",
+   "message": "",
+   "ms": 617,
+   "commit": "7f6c7ac",
+   "at": "2026-10-13T16:43:56.985Z",
+   "product": "interest_rate_swap",
+   "template": null,
+   "family": "swap",
+   "step": "thursday-morning",
+   "covers": []
+  },
+  "B:interest_rate_swap:mark-falls-back": {
+   "status": "passed",
+   "message": "",
+   "ms": 1385,
+   "commit": "7f6c7ac",
+   "at": "2026-10-13T16:43:56.985Z",
+   "product": "interest_rate_swap",
+   "template": null,
+   "family": "swap",
+   "step": "mark-falls-back",
+   "covers": []
+  },
+  "B:interest_rate_swap:collateral-given-back": {
+   "status": "passed",
+   "message": "",
+   "ms": 648,
+   "commit": "7f6c7ac",
+   "at": "2026-10-13T16:43:56.985Z",
+   "product": "interest_rate_swap",
+   "template": null,
+   "family": "swap",
+   "step": "collateral-given-back",
+   "covers": [
+    "variation margin"
+   ]
+  },
+  "B:interest_rate_swap:first-floating-payment": {
+   "status": "passed",
+   "message": "",
+   "ms": 769,
+   "commit": "7f6c7ac",
+   "at": "2026-10-13T16:43:56.985Z",
+   "product": "interest_rate_swap",
+   "template": null,
+   "family": "swap",
+   "step": "first-floating-payment",
+   "covers": [
+    "floating payment"
+   ]
+  },
+  "B:interest_rate_swap:fixed-paid-floating-blocked": {
+   "status": "failed",
+   "message": "screen vs API: history event #25 (swap.payment) is not in the audit trail",
+   "ms": 736,
+   "commit": "7f6c7ac",
+   "at": "2026-10-13T16:43:56.985Z",
+   "product": "interest_rate_swap",
+   "template": null,
+   "family": "swap",
+   "step": "fixed-paid-floating-blocked",
+   "covers": [
+    "fixed payment",
+    "missing fixing",
+    "payment across a holiday"
    ]
   }
  },
@@ -14390,15 +14659,15 @@
    }
   },
   "interest_rate_swap": {
-   "at": "2026-10-13T16:43:11.367Z",
-   "commit": "fe6e5ae+changes",
-   "ms": 7320,
+   "at": "2026-10-13T16:43:56.985Z",
+   "commit": "7f6c7ac",
+   "ms": 25306,
    "family": "swap",
    "steps": 34,
-   "ran": 3,
-   "passed": 1,
+   "ran": 23,
+   "passed": 20,
    "failed": 1,
-   "blocked": 1,
+   "blocked": 2,
    "unsupported": 0,
    "environment": {
     "node": "v22.22.0",
@@ -14618,5 +14887,5 @@
    }
   }
  },
- "updatedAt": "2026-10-13T16:43:11.367Z"
+ "updatedAt": "2026-10-13T16:43:56.985Z"
 }
