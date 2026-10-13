@@ -187,7 +187,7 @@ export function settleOption(app, { book, unit, inst, pos, S, date, contracts, m
     const und = inst.family === 'otcoption' && inst.underlying_id ? app.instruments.get(inst.underlying_id) : null;
     const per = inst.family !== 'otcoption' ? `${money(perUnit, inst.trading_ccy)} per unit`
       : rateOption(inst) ? `${fmtPx(perUnit)} percentage points ${t.right === 'C' ? 'over' : 'under'} the ${fmtPx(t.strike)}% strike${fixingText}, paid on ${settleDate}`
-      : `${fmtPx(perUnit)} ${inst.trading_ccy} per ${und?.family === 'bond' ? '100 of face' : 'unit'}${manualAmount !== undefined && manualAmount !== null ? ' (settlement amount entered by hand)' : !active ? ' (barrier rebate)' : fixingText}`;
+      : `${fmtPx(perUnit)} ${inst.trading_ccy} per ${und?.family === 'bond' ? '100 of face' : ['swap', 'cds'].includes(und?.family) ? '100 of notional' : 'unit'}${manualAmount !== undefined && manualAmount !== null ? ' (settlement amount entered by hand)' : !active ? ' (barrier rebate)' : fixingText}`;
     const r = bookSecurityFill(app, { ...base, action: closeAction, price: perUnit, settleDate, eventType: 'option.cash_settled', summary: `${long ? 'Exercised' : 'Assigned'} (cash settlement): ${label} at ${per}`, data: { fixing: S ?? null, fixingObsId: obsId, perUnit, ...(manualAmount !== undefined && manualAmount !== null ? { manualAmount } : {}), ...(computed ? { computed } : {}) } }, { unitCost: perUnit * inst.multiplier });
     return { outcome: 'cash_settled', eventId: r.eventId, realized: r.realized };
   }
@@ -252,6 +252,8 @@ export function settleOption(app, { book, unit, inst, pos, S, date, contracts, m
 
 /** An OTC option on a rate fixing (no underlying instrument): quantity is a notional amount, strike and fixing are percent. */
 const rateOption = (inst) => inst.family === 'otcoption' && Boolean(inst.terms.fixingRate) && !inst.underlying_id;
+/** Quantity is a notional amount: an option on a rate fixing, or a swaption on a swap or a credit default swap. */
+const notionalIsQty = (inst) => rateOption(inst) || (inst.family === 'otcoption' && ['swap', 'cds'].includes(inst.terms.underlyingFamily));
 
 /**
  * Whether the holder may exercise today: an American option any day up to expiration, a European one at expiration
@@ -339,7 +341,7 @@ function makeOptionPlugin(family, listed) {
      * strike x multiplier, in the trading currency). Only the writer of an option has an obligation to secure: the
      * buyer has paid the premium and owes nothing more, so a long position calls for no independent amount.
      */
-    collateralNotional: (app, inst, { qtyAfter }) => (qtyAfter >= 0 ? 0 : rateOption(inst) ? Math.abs(qtyAfter) : Math.abs(qtyAfter) * inst.terms.strike * inst.multiplier * (inst.terms.quantoRate || 1)),
+    collateralNotional: (app, inst, { qtyAfter }) => (qtyAfter >= 0 ? 0 : notionalIsQty(inst) ? Math.abs(qtyAfter) : Math.abs(qtyAfter) * inst.terms.strike * inst.multiplier * (inst.terms.quantoRate || 1)),
     qtyStep: () => (listed ? 1 : 1e-6),
     settleDate: (app, inst, tradeDate, book) => standardSettleDate(inst, tradeDate, book),
     economics(app, { inst, action, qty, price, unit, strategyId, book }) {
@@ -354,9 +356,9 @@ function makeOptionPlugin(family, listed) {
         // Notional is the value of the deliverable, which is not the premium paid.
         // (OTC: quantity x multiplier x price, the multiplier turning the underlying's price into money as it does the premium.)
         // A quanto's underlying is priced in another currency: its notional is converted at the contract's fixed rate.
-        // An option on a rate fixing is dealt on a notional amount: the quantity itself.
-        notional: listed ? qty * underlyingUnits(app, inst) * (undPx !== null ? undPx : inst.terms.strike) : rateOption(inst) ? qty : qty * inst.multiplier * (undPx !== null ? undPx : inst.terms.strike) * (inst.terms.quantoRate || 1),
-        notionalBasis: rateOption(inst) ? 'notional amount of the rate option' : undPx !== null ? 'underlying price' : 'strike (no underlying price available)',
+        // An option on a rate fixing, or on a swap or a credit default swap, is dealt on a notional amount: the quantity itself.
+        notional: listed ? qty * underlyingUnits(app, inst) * (undPx !== null ? undPx : inst.terms.strike) : notionalIsQty(inst) ? qty : qty * inst.multiplier * (undPx !== null ? undPx : inst.terms.strike) * (inst.terms.quantoRate || 1),
+        notionalBasis: notionalIsQty(inst) ? 'notional amount of the option' : undPx !== null ? 'underlying price' : 'strike (no underlying price available)',
         exposure: null, initialMargin: coll ? coll.initialMargin : 0, ...(coll ? { collateral: coll } : {}), notes: coll ? [...coll.notes] : [],
       };
     },
@@ -367,7 +369,7 @@ function makeOptionPlugin(family, listed) {
       const v = valueSecurity(inst, pos, obs, mark);
       const und = inst.underlying_id ? app.data.price(inst.underlying_id) : null;
       const px = und?.value ?? null;
-      v.notional = !listed && rateOption(inst) ? Math.abs(pos.qty) : px !== null ? money(Math.abs(pos.qty) * (listed ? underlyingUnits(app, inst) : inst.multiplier * (inst.terms.quantoRate || 1)) * px, inst.trading_ccy) : null;
+      v.notional = !listed && notionalIsQty(inst) ? Math.abs(pos.qty) : px !== null ? money(Math.abs(pos.qty) * (listed ? underlyingUnits(app, inst) : inst.multiplier * (inst.terms.quantoRate || 1)) * px, inst.trading_ccy) : null;
       v.exposure = null;
       return v;
     },

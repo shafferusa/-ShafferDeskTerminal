@@ -1561,4 +1561,162 @@ const varianceSwap = {
   ],
 };
 
-export default [privateEquity, ventureCapital, hedgeFund, infrastructure, directRealEstate, insuranceLinked, varianceSwap];
+// ---------------------------------------------------------------------------------------------
+// volatility_swap
+// ---------------------------------------------------------------------------------------------
+// A EURO STOXX 50 volatility swap paid in US dollars. The first contract registered states no collateral terms: entering
+// it is refused (the basis is mandatory). A paper CSA with the dealer is recorded in the Book (fixed independent amount
+// 50,000 a position, daily variation margin, no threshold, 10,000 minimum transfer), a second contract under it is entered,
+// marked by hand, margined, and settled from the realised volatility entered by hand: the vol buyer pays as realised
+// volatility came in under the strike. Both independent amount and variation margin come back when the contract ends.
+const VOL_POS = { instrument: 'contract', lot: 'swap', owner: 'account', direction: 'volatility buyer' };
+const VOL_TERMS = { underlyingIndex: 'EURO STOXX 50 index, daily closes, 252 days a year', strikeVol: 22, vegaNotional: 100_000, side: 'long', expiry: '2026-09-18', valuationMaxAgeDays: 5, counterparty: 'Moreau Bank' };
+const volatilitySwap = {
+  productId: 'volatility_swap',
+  title: 'EURO STOXX 50 volatility swap, strike 22, vega notional 100,000 USD: refused without collateral terms, then under a paper CSA, marks and margin by hand, settlement from realised volatility',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: ['Trading owner', 'Action (Enter the contract)', 'Contracts', 'State a fill price', 'Strike, vega notional, side, expiry (registration)', 'Collateral basis (registration, required): an agreement of the Book'],
+    manualInputs: ['the paper CSA (Treasury, Collateral)', 'marks (value to us, date, source)', 'realised volatility at expiry'],
+    settlement: 'Entry T+2 on the USD payment calendar; final settlement T+2 after the realised volatility is entered (21 September 2026, paid 23 September)',
+    lifecycle: 'A contract with no collateral basis cannot be entered (refused); expiry waits, visibly, for the realised volatility entered by hand',
+    accounting: 'Zero cost at entry; valued at the mark entered by hand; final settlement = vega notional x (realised vol - strike), realized',
+    collateral: 'Agreement: fixed independent amount 50,000 posted at entry and returned at the end; variation margin on the marks (threshold 0, minimum transfer 10,000)',
+  },
+  start: ny('2026-05-04'),
+  settlementCheck: { lag: 2, holidays: [] },
+  book: { name: 'Matrix volatility swap', reportingCcy: 'USD', capital: [{ ccy: 'USD', amount: 2_500_000 }], account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 1_500_000 }] }, settings: SETTINGS },
+  instruments: {
+    main: { productId: 'volatility_swap', name: 'EURO STOXX 50 volatility swap, strike 22, September 2026 (no collateral terms)', symbol: 'VOLS-SX5E-NOCSA', marketView: 'FOREIGN_DERIV', venueType: 'otc', jurisdiction: 'GB', underlyingGeo: 'Euro area', tradingCcy: 'USD', terms: { ...VOL_TERMS } },
+  },
+  expectAtStart: SIMPLE_START(1_500_000, 1_000_000),
+  steps: [
+    {
+      id: 'enter-without-collateral-terms', covers: ['open', 'collateral'], action: 'ticket', instrument: 'main', side: 'buy', qty: 1, as: 'refused', order: { statedPrice: 0 },
+      status: 'blocked', reason: 'The contract states no collateral basis; the Terminal requires one (an agreement, position-level terms, or uncollateralized) for an OTC contract.',
+      expect: { refused: 'states no collateral terms' },
+    },
+    {
+      id: 'agreement', covers: 'collateral', action: 'agreement', as: 'csa',
+      agreement: { name: 'CSA Moreau Bank', counterparty: 'Moreau Bank', kind: 'bilateral', independentAmount: { type: 'fixed', amount: 50_000 }, variationMargin: true, threshold: 0, minimumTransfer: 10_000 },
+      expect: { events: [{ type: 'collateral.agreement', summary: 'Collateral agreement recorded: CSA Moreau Bank with Moreau Bank (Bilateral (CSA-style))', owner: 'treasury' }] },
+    },
+    {
+      id: 'register-contract', action: 'register_instrument', as: 'contract',
+      draft: { productId: 'volatility_swap', name: 'EURO STOXX 50 volatility swap, strike 22, September 2026 (CSA Moreau Bank)', symbol: 'VOLS-SX5E-CSA', marketView: 'FOREIGN_DERIV', venueType: 'otc', jurisdiction: 'GB', underlyingGeo: 'Euro area', tradingCcy: 'USD',
+        terms: { ...VOL_TERMS, collateralBasis: { type: 'agreement', agreementId: '$agreement:csa' } } },
+      expect: {},
+    },
+    {
+      // Zero upfront; the agreement's fixed independent amount, 50,000, is posted from settled cash at the fill.
+      id: 'enter', covers: ['open', 'collateral'], action: 'ticket', instrument: 'contract', side: 'buy', qty: 1, as: 'swap', order: { statedPrice: 0 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'contract', qty: 1, estimate: 0, model: 'stated-price', settleDate: '2026-05-06', calendar: 'USD', cash: 0, fees: 0, notional: 100_000 }],
+          cash: { USD: { purchases: 0, fees: 0, margin: 50_000, required: 50_000, available: 1_500_000, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 1, avgPrice: 0 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Bought 1 VOLS-SX5E-CSA @ 0.00 USD', owner: 'account', date: '2026-05-04' },
+          { type: 'manual.collateral', summary: 'Collateral posted on EURO STOXX 50 volatility swap, strike 22, September 2026 (CSA Moreau Bank) under "CSA Moreau Bank" (Moreau Bank): 50,000.00 USD (independent amount, fixed amount for the position)', cash: { USD: -50_000 }, owner: 'account' },
+        ],
+        cash: { account: { USD: { settled: 1_450_000, margin: 50_000, availableToTrade: 1_450_000 } } },
+        positions: [{ ...VOL_POS, qty: 1, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, margin: 50_000, manual: { kind: 'volatility', endDate: '2026-09-18', valuation: null } }],
+        holdings: { contract: { long: 1, short: 0, net: 1 } },
+        pending: [],
+        lifecycle: [{ type: 'manual.settlement', instrument: 'contract', dueDate: '2026-09-18', status: 'pending', owner: 'account' }],
+        otc: [{ instrument: 'contract', lot: 'swap', owner: 'account', qty: 1, basis: 'agreement', agreement: 'CSA Moreau Bank', mark: null, iaRequired: 50_000, iaPosted: 50_000, vmPosted: 0, vmHeld: 0, vmStatus: 'not_valued_yet' }],
+        pnl: { account: { realized: 0, fees: 0 } },
+        nav: { account: 1_500_000, book: 2_500_000 }, // collateral posted stays the Account's own asset
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 1_450_000, margin: 50_000, assets: 1_500_000, liabilities: 0, netAssets: 1_500_000 } },
+      },
+    },
+    { id: 'tuesday', covers: 'variation margin', action: 'clock', to: ny('2026-05-05'), expect: { otc: [{ instrument: 'contract', vmStatus: 'cannot_value', vmPosted: 0 }], alerts: ['collateral.unvalued'] } }, // the 4 May pass had no mark
+    {
+      id: 'mark-against-us', covers: 'valuation', action: 'lifecycle', lot: 'swap', instrument: 'contract', body: { action: 'valuation', value: -120_000, asOf: '2026-05-05', source: 'Dealer mark, Moreau Bank' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of VOLS-SX5E-CSA entered by hand: -120,000.00 USD for the 1 held, as of 2026-05-05, source: Dealer mark, Moreau Bank. A manual input, not a market quote' }],
+        positions: [{ ...VOL_POS, qty: 1, cost: 0, price: -120_000, value: -120_000, unrealized: -120_000, provisional: false, freshness: 'manual', margin: 50_000 }],
+        otc: [{ instrument: 'contract', mark: -120_000, markValue: -120_000 }],
+        pnl: { account: { unrealized: -120_000, total: -120_000 } },
+        nav: { account: 1_380_000, book: 2_380_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: -120_000, assets: 1_380_000, netAssets: 1_380_000 } },
+      },
+    },
+    {
+      id: 'variation-margin-posted', covers: 'variation margin', action: 'clock', to: nyEod('2026-05-05'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under "CSA Moreau Bank" (Moreau Bank): 120,000.00 USD posted. Netting set of 1 position marked at -120,000.00 USD; threshold 0.00 USD.', cash: { USD: -120_000 }, owner: 'account' }],
+        cash: { account: { USD: { settled: 1_330_000, margin: 170_000, availableToTrade: 1_330_000 } } },
+        otc: [{ instrument: 'contract', vmPosted: 120_000, vmHeld: 0, vmExposure: -120_000, vmStatus: 'ok' }],
+        alerts: [],
+        balance: { account: { cash: 1_330_000, margin: 170_000 } },
+      },
+    },
+    { id: 'friday', action: 'clock', to: ny('2026-05-08'), expect: {} },
+    {
+      id: 'mark-better', covers: 'valuation', action: 'lifecycle', lot: 'swap', instrument: 'contract', body: { action: 'valuation', value: -40_000, asOf: '2026-05-08', source: 'Dealer mark, Moreau Bank' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of VOLS-SX5E-CSA entered by hand: -40,000.00 USD for the 1 held, as of 2026-05-08, source: Dealer mark, Moreau Bank. A manual input, not a market quote' }],
+        positions: [{ ...VOL_POS, qty: 1, price: -40_000, value: -40_000, unrealized: -40_000, margin: 50_000 }],
+        otc: [{ instrument: 'contract', mark: -40_000, markValue: -40_000 }],
+        pnl: { account: { unrealized: -40_000, total: -40_000 } },
+        nav: { account: 1_460_000, book: 2_460_000 },
+        balance: { account: { positions: -40_000, assets: 1_460_000, netAssets: 1_460_000 } },
+      },
+    },
+    {
+      // 40,000 is now required against the 120,000 posted: 80,000 comes back.
+      id: 'variation-margin-returned', covers: 'variation margin', action: 'clock', to: nyEod('2026-05-08'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under "CSA Moreau Bank" (Moreau Bank): 80,000.00 USD returned to us. Netting set of 1 position marked at -40,000.00 USD; threshold 0.00 USD.', cash: { USD: 80_000 } }],
+        cash: { account: { USD: { settled: 1_410_000, margin: 90_000, availableToTrade: 1_410_000 } } },
+        otc: [{ instrument: 'contract', vmPosted: 40_000, vmExposure: -40_000, vmStatus: 'ok' }],
+        balance: { account: { cash: 1_410_000, margin: 90_000 } },
+      },
+    },
+    {
+      // Monday 21 September 2026: the expiry (18 September) waits for the realised volatility; the 8 May mark is long stale.
+      id: 'expiry-waits', covers: 'settlement', action: 'clock', to: ny('2026-09-21'),
+      expect: {
+        lifecycle: [{ type: 'manual.settlement', instrument: 'contract', dueDate: '2026-09-18', status: 'blocked', owner: 'account', reason: /^Waiting for the realised value, entered by hand \(Lifecycle, Final settlement\)\. Settlement = vega notional x \(realised volatility - 22\.00\)/ }],
+        positions: [{ ...VOL_POS, qty: 1, value: -40_000, freshness: 'stale', margin: 50_000 }],
+        provisional: { account: true, book: true },
+      },
+    },
+    {
+      // Realised 18.40 against 22: 100,000 x (18.40 - 22.00) = -360,000, paid by us T+2 (23 September). The contract ends: the
+      // 50,000 independent amount and the 40,000 of variation margin come back.
+      id: 'final-settlement', covers: 'close', action: 'lifecycle', lot: 'swap', instrument: 'contract', body: { action: 'settle', realised: 18.4 },
+      expect: {
+        events: [
+          { type: 'manual.settlement', summary: 'Final settlement of VOLS-SX5E-CSA entered by hand: realised volatility 18.40, strike 22.00: 100,000.00 USD x (18.40 - 22.00) = -360,000.00 USD paid 2026-09-23', owner: 'account', date: '2026-09-21' },
+          { type: 'manual.collateral', summary: 'Collateral returned on EURO STOXX 50 volatility swap, strike 22, September 2026 (CSA Moreau Bank) under "CSA Moreau Bank" (Moreau Bank): 50,000.00 USD (independent amount, the position ended)', cash: { USD: 50_000 } },
+          { type: 'collateral.variation', summary: 'Variation margin under "CSA Moreau Bank" (Moreau Bank): 40,000.00 USD returned to us. The last position of the netting set ended.', cash: { USD: 40_000 } },
+        ],
+        cash: { account: { USD: { settled: 1_500_000, unsettled: -360_000, margin: 0, availableToTrade: 1_140_000 } } },
+        positions: [],
+        holdings: { contract: null },
+        pending: [{ instrument: 'contract', lot: 'swap', owner: 'account', dueDate: '2026-09-23', amount: -360_000, ccy: 'USD', into: 'cash' }],
+        lifecycle: [],
+        otc: [],
+        pnl: { account: { realized: -360_000, unrealized: 0, total: -360_000 } },
+        nav: { account: 1_140_000, book: 2_140_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { cash: 1_500_000, margin: null, positions: null, payable: 360_000, assets: 1_500_000, liabilities: 360_000, netAssets: 1_140_000 } },
+      },
+    },
+    {
+      id: 'settlement-paid', covers: 'settlement', action: 'clock', to: ny('2026-09-23'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 360,000.00 USD from settled cash', cash: { USD: -360_000 }, date: '2026-09-23' }],
+        cash: { account: { USD: { settled: 1_140_000, unsettled: 0, availableToTrade: 1_140_000 } } },
+        pending: [],
+        balance: { account: { cash: 1_140_000, payable: null, assets: 1_140_000, liabilities: 0, netAssets: 1_140_000 } },
+      },
+    },
+  ],
+};
+
+export default [privateEquity, ventureCapital, hedgeFund, infrastructure, directRealEstate, insuranceLinked, varianceSwap, volatilitySwap];
