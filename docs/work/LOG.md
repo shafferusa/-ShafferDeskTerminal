@@ -210,3 +210,4 @@
 - 2026-10-13T18:44Z | o2 | +0.2 | cds_swaption passes at engine, API and browser
 - 2026-10-13T18:46Z | b3 | +0 | structured bonds A done: put/convert routed to bonds only (convertible_preferred green), limitations in BUGS.md
 - 2026-10-13T18:49Z | m1 | +0 | manual family complete: catalog notes, core tests, all 16 re-run together at engine/API/browser
+- 2026-10-13T18:49Z | o2 | +0 | settlement value folded into the settlement-amount route (system suite classification stays complete); CDS spec multiplier for the audit

@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 80.6% of the pass** (last milestone 2026-10-13T18:49Z, m1: manual family complete: catalog notes, core tests, all 16 re-run together at engine/API/browser)
+**Completeness: about 80.6% of the pass** (last milestone 2026-10-13T18:49Z, o2: settlement value folded into the settlement-amount route (system suite classification stays complete); CDS spec multiplier for the audit)
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 
