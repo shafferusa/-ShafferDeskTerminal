@@ -291,7 +291,33 @@ async function positionForm(ui, ctx, step, { positionRow }) {
   return {};
 }
 
+/** The kinds of manual cash flow, as the dialog names them (web/views/strategy-detail.js, CASHFLOW). */
+const CASHFLOW_LABEL = { dividend: 'Dividend', coupon: 'Coupon', interest: 'Interest income', return_of_capital: 'Return of capital (lowers cost)', capital_call: 'Capital call (raises cost)', fee: 'Fee', commission: 'Commission', realized: 'Realized P&L', borrow: 'Securities-borrow cost', funding: 'Funding expense', lending: 'Securities-lending income' };
+
 export const actions = {
+  /**
+   * A manual cash flow on a debt security's position (added by b4): the shared path, with a wait for the Lifecycle menu to be
+   * drawn with its entries (the menu is drawn again once the instrument's terms have loaded; reading it in between once missed
+   * an entry under load). Option text is read with textContent, which does not depend on the closed select being laid out.
+   */
+  async cashflow(ui, t, ctx, step, { positionRow }) {
+    const lot = ctx.lot(step.lot);
+    const drawer = await ui.openStrategy(ctx, lot.strategyId);
+    const row = positionRow(drawer, ctx.inst(step.instrument || lot.instrument));
+    const menu = row.locator('select').first();
+    await menu.locator('option', { hasText: 'Manual cash flow' }).first().waitFor({ state: 'attached', timeout: 8000 }).catch(() => {});
+    const offered = (await menu.locator('option').allTextContents()).map((x) => x.trim()).filter((x) => x && x !== 'Lifecycle');
+    if (!offered.includes('Manual cash flow')) return { refusal: { message: `The Lifecycle menu of this position offers only: ${offered.join(', ') || 'nothing'}. "Manual cash flow" is not offered.`, where: 'strategy instance, position Lifecycle menu' } };
+    await menu.selectOption({ label: 'Manual cash flow' });
+    const dlg = ui.dialog(/^Manual cash flow/);
+    await ui.select(dlg, 'Kind of cash flow').selectOption({ label: CASHFLOW_LABEL[step.category] });
+    await ui.input(dlg, 'Amount').fill(String(step.amount));
+    if (step.note) await ui.input(dlg, 'Note').fill(step.note);
+    const r = await ui.respondsTo('POST', /^\/api\/positions\/[^/]+\/lifecycle$/, () => ui.button(dlg, 'Record cash flow').click());
+    if (!r.ok) { await dlg.locator('.notice.err', { hasText: r.body?.error || 'no message' }).first().waitFor(); return { refusal: { message: r.body?.error, status: r.status, where: 'dialog message' } }; }
+    await dlg.waitFor({ state: 'hidden' });
+    return {};
+  },
   /**
    * An early redemption recorded by hand from the position's Lifecycle menu. Any other lifecycle event is handed
    * back to the shared path (which records manual cash flows and names what it does not do yet).

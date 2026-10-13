@@ -23,7 +23,8 @@ export function createTasks(app) {
     return id;
   }
 
-  const due = (today) => db.all(`SELECT * FROM tasks WHERE status IN ('pending','blocked','failed') AND due_date <= ? ORDER BY due_date, created_at`, today).map(parse);
+  // Ties (tasks created at the same instant, as under a frozen clock) are taken in the order they were created, never by their random id (s2).
+  const due = (today) => db.all(`SELECT * FROM tasks WHERE status IN ('pending','blocked','failed') AND due_date <= ? ORDER BY due_date, created_at, rowid`, today).map(parse);
   const done = (id, eventId) => db.run(`UPDATE tasks SET status = 'done', done_at = ?, event_id = ?, blocked_reason = NULL, needs = '[]' WHERE id = ?`, clock.now().toISOString(), eventId || null, id);
   const block = (id, reason, needs) => db.run(`UPDATE tasks SET status = 'blocked', blocked_reason = ?, needs = ? WHERE id = ?`, reason, j(needs || []), id);
   const failTask = (id, reason) => db.run(`UPDATE tasks SET status = 'failed', blocked_reason = ? WHERE id = ?`, reason, id);

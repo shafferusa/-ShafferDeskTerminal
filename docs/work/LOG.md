@@ -282,3 +282,4 @@
 - 2026-10-13T20:45Z | t1 | +0.2 | T:covered_call template passes at engine, API and browser
 - 2026-10-13T20:45Z | t2 | +0.2 | futures_hedge passes at engine, API and browser
 - 2026-10-13T20:50Z | s3 | +0.2 | loan_trs passes at engine, API and browser
+- 2026-10-13T20:51Z | t2 | +0.2 | futures_calendar passes at engine, API and browser

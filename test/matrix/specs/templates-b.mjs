@@ -5896,4 +5896,449 @@ const futuresHedge = {
   ],
 };
 
-export default [bearCall, longStraddle, longStrangle, ironCondor, ironButterfly, longButterfly, longCalendar, longDiagonal, syntheticLong, syntheticShort, pairsTrade, futuresHedge];
+// =====================================================================================================================
+// futures_calendar
+// =====================================================================================================================
+// Calder 200 Index futures (10 USD a point, tick 0.25, initial margin 2,000 USD a contract, cash-settled): buy the
+// March 2026 contract (last day Friday 20 March) and sell the June 2026 contract (last day Thursday 18 June; 19 June
+// is the Juneteenth holiday), 5 of each. Week of Monday 16 March 2026. No spread credit is assumed: each leg posts its
+// own initial margin.
+//   cal     refused short of cash, then Treasury funding: March buys 5, June sells 3 (3 displayed at the bid) and 2 on
+//           the next cycle. Daily variation margin on both legs; the March contract is held to its final settlement
+//           (3,996.40, the special opening quotation) and the June contract remains open across it, then is bought
+//           back: nothing left.
+//   retry / accept / unwind  1 of each month when the June contract has no fresh quote: the June legs expire unfilled
+//           at the end of the day; Retry sells June once its quote is back, Accept keeps the March contract alone (held
+//           to final settlement), Unwind sells the March contract.
+const C2 = (symbol, month, expiration) => ({
+  productId: 'equity_index_future', name: `Calder 200 Index future, ${month}`, symbol, marketView: 'US_DERIV', venue: 'CME', venueType: 'exchange', venueCountry: 'US',
+  underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 10,
+  terms: { root: 'C2', expiration, tickSize: 0.25, initialMargin: 2_000, settlement: 'cash', priceUnits: 'index points' },
+});
+const FC_PAGE = (contracts, financing) => ({ template: 'Futures Calendar Spread', futures: { buy: 'near', sell: 'far', contracts }, ...(financing ? { financing } : {}) });
+const fcInput = (contracts, financing) => templateInput('futures_calendar', { futures: { instrumentId: '$inst:near', farInstrumentId: '$inst:far', contracts }, financing });
+const fcOne = (as) => ({ action: 'package', as, instrument: 'near', input: fcInput(1, null), strategyPage: FC_PAGE(1, null) });
+const FC_NEAR_BLOCKED = { type: 'future.expiry', instrument: 'near', dueDate: '2026-03-20', status: 'blocked', reason: /^Awaiting the final settlement price for C2H6 \(2026-03-20\)/ };
+const futuresCalendar = {
+  template: 'futures_calendar',
+  title: 'Futures calendar spread: Calder 200 Index futures, buy March and sell June 2026 (cash-settled), across the March expiry',
+  matrix: {
+    ticket: 'Strategies page: Trading owner, Execution template (Futures Calendar Spread), Futures contracts (Contract month to buy, Contract month to sell, Contracts), Financing; the package preview and one confirmation. Retry, Unwind, Accept and Close on the strategy instance',
+    requiredFields: ['Trading owner', 'Execution template', 'Contract month to buy', 'Contract month to sell', 'Contracts'],
+    automaticInputs: ['bid, ask, last and displayed size of both contract months (quote fixtures)', 'daily settlement prices (close fixtures)', 'initial margin from the contract terms', 'commission per contract from the Book fee schedule', 'Treasury funding sized to the shortfall'],
+    manualInputs: ['the final settlement price of the March contract (close price for its last day)', 'Retry, Unwind or Accept as it stands after the June leg fails', 'Close of the remaining June leg'],
+    settlement: 'No purchase cash; initial margin posted on the trade date for each leg; variation margin in cash at each end-of-day pass; the March contract closes in cash at the final settlement price on its last day and its margin is released; Treasury funding at once',
+    lifecycle: 'Daily variation margin on both months (automatic); the March final settlement waits, visibly blocked, for its price, then closes the near leg in cash while the June leg stays open; a failed June leg leaves the instance needing attention: Retry, Unwind or Accept; Close buys the June contracts back',
+    accounting: 'Nil cost; open trade equity since the last settlement; variation margin, final settlement and closes realized; commissions expensed (none on final settlement)',
+    collateral: 'Initial margin 2,000 USD a contract on each leg, not spendable, released on final settlement and on close',
+  },
+  start: MAR(16),
+  settlementCheck: { lag: 0, holidays: [] },
+  book: book('Templates futures calendar', { funding: [{ ccy: 'USD', amount: 15_000 }] }),
+  instruments: { near: C2('C2H6', 'March 2026', '2026-03-20'), far: C2('C2M6', 'June 2026', '2026-06-18') },
+  quotes: {
+    near: { bid: 4000.00, ask: 4000.50, last: 4000.25, bidSize: 20, askSize: 20 },
+    far: { bid: 4030.00, ask: 4030.50, last: 4030.25, bidSize: 3, askSize: 20 }, // 3 contracts displayed at the bid
+  },
+  closes: {
+    near: { '2026-03-16': 4002.00, '2026-03-17': 4004.00, '2026-03-18': 4001.00, '2026-03-19': 3998.00 },
+    far: { '2026-03-16': 4031.00, '2026-03-17': 4035.00, '2026-03-18': 4033.00, '2026-03-19': 4031.50, '2026-03-20': 4029.00 },
+  },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 15_000, unsettled: 0, reserved: 0, margin: 0, availableToTrade: 15_000, availableToWithdraw: 15_000 } },
+      treasury: { USD: { settled: 985_000, unsettled: 0, reserved: 0, availableToTrade: 985_000, availableToWithdraw: 985_000 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 15_000, treasury: 985_000, book: 1_000_000 },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+  },
+  steps: [
+    {
+      // 5 March bought, 5 June sold: margin 10 x 2,000 = 20,000, commission 10 x 2.25 = 22.50. 15,000 free: short 5,022.50.
+      id: 'open-short-of-cash', covers: 'financing', action: 'package', as: 'refused', instrument: 'near',
+      input: fcInput(5, null), strategyPage: FC_PAGE(5, null),
+      status: 'blocked', reason: 'Both legs post initial margin and the Account cannot cover it: the preview is blocked until financing is chosen.',
+      expect: {
+        refused: 'Alpha is short 5,022.50 USD',
+        preview: {
+          blocking: 1, errors: ['cash'],
+          legs: [
+            { kind: 'trade', action: 'buy', purpose: 'primary', instrument: 'near', qty: 5, estimate: 4000.50, settleDate: '2026-03-16', notional: 200_025, initialMargin: 10_000, fees: 11.25, dependsOn: [] }, // 5 x 4,000.50 x 10
+            { kind: 'trade', action: 'sell', purpose: 'primary', instrument: 'far', qty: 5, estimate: 4030.00, settleDate: '2026-03-16', notional: 201_500, initialMargin: 10_000, fees: 11.25, dependsOn: [] }, // 5 x 4,030.00 x 10
+          ],
+          cash: { USD: { purchases: 0, fees: 22.50, margin: 20_000, required: 20_022.50, available: 15_000, shortfall: 5_022.50 } },
+        },
+      },
+    },
+    {
+      // Treasury funding 5,022.50 runs first and both legs depend on it. March: 5 at 4,000.50 (margin 10,000, commission
+      // 11.25). June: 3 at 4,030.00 (6,000 and 6.75), then 2 on the next cycle (4,000 and 4.50).
+      id: 'open', covers: ['open', 'financing', 'initial margin', 'partial fill', 'dependency'], action: 'package', as: 'cal', instrument: 'near',
+      input: fcInput(5, { mode: 'treasury' }), strategyPage: FC_PAGE(5, { mode: 'treasury' }),
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [
+            { kind: 'funding', purpose: 'financing', qty: 5_022.50, cash: 5_022.50, dependsOn: [] },
+            { kind: 'trade', action: 'buy', instrument: 'near', qty: 5, estimate: 4000.50, model: 'quoted-bid-ask', settleDate: '2026-03-16', notional: 200_025, initialMargin: 10_000, fees: 11.25, dependsOn: [1] },
+            { kind: 'trade', action: 'sell', instrument: 'far', qty: 5, estimate: 4030.00, model: 'quoted-bid-ask', settleDate: '2026-03-16', notional: 201_500, initialMargin: 10_000, fees: 11.25, dependsOn: [1] },
+          ],
+          cash: { USD: { fees: 22.50, margin: 20_000, financingIn: 5_022.50, required: 20_022.50, available: 15_000, shortfall: 0 } },
+        },
+        result: {
+          status: 'partial',
+          orders: [
+            { kind: 'funding', status: 'filled' },
+            { kind: 'trade', action: 'buy', instrument: 'near', status: 'filled', qty: 5, filledQty: 5, avgPrice: 4000.50 },
+            { kind: 'trade', action: 'sell', instrument: 'far', status: 'partial', qty: 5, filledQty: 3, avgPrice: 4030.00 },
+          ],
+        },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'transfer.funding', summary: 'Treasury funding: 5,022.50 USD from Treasury to Alpha' },
+          { type: 'trade.fill', summary: 'Bought 5 C2H6 @ 4,000.50 (notional 200,025.00 USD; margin posted 10,000.00 USD)', cash: { USD: -10_011.25 }, date: '2026-03-16' },
+          { type: 'trade.fill', summary: 'Sold 3 C2M6 @ 4,030.00 (notional 120,900.00 USD; margin posted 6,000.00 USD)', cash: { USD: -6_006.75 } },
+          { type: 'trade.fill', summary: 'Sold 2 C2M6 @ 4,030.00 (notional 80,600.00 USD; margin posted 4,000.00 USD)', cash: { USD: -4_004.50 } },
+        ],
+        cash: {
+          // 15,000 + 5,022.50 - 20,022.50 = 0 settled; 20,000 posted.
+          account: { USD: { settled: 0, unsettled: 0, margin: 20_000, availableToTrade: 0, availableToWithdraw: 0 } },
+          treasury: { USD: { settled: 979_977.50, availableToTrade: 979_977.50, availableToWithdraw: 979_977.50 } },
+        },
+        positions: [
+          { instrument: 'far', lot: 'cal', owner: 'account', direction: 'short', qty: -5, avgCost: 4030, cost: 0, price: 4030.25, value: -12.50, unrealized: -12.50, notional: 201_512.50, margin: 10_000 }, // 0.25 x 10 x -5; 5 x 4,030.25 x 10
+          { instrument: 'near', lot: 'cal', owner: 'account', direction: 'long', qty: 5, avgCost: 4000.50, cost: 0, price: 4000.25, value: -12.50, unrealized: -12.50, notional: 200_012.50, margin: 10_000 }, // -0.25 x 10 x 5
+        ],
+        holdings: { far: { long: 0, short: 5, net: -5 }, near: { long: 5, short: 0, net: 5 } },
+        lifecycle: [{ type: 'future.expiry', instrument: 'near', dueDate: '2026-03-20', status: 'pending' }, { type: 'future.expiry', instrument: 'far', dueDate: '2026-06-18', status: 'pending' }],
+        pnl: { account: { realized: 0, commissions: -22.50, unrealized: -25, total: -47.50 }, book: { realized: 0, commissions: -22.50, unrealized: -25, total: -47.50 }, treasury: { total: 0 } },
+        nav: { account: 19_975, treasury: 979_977.50, book: 999_952.50 },
+        balance: {
+          account: { cash: null, margin: 20_000, positions: -25, assets: 19_975, liabilities: 0, netAssets: 19_975 },
+          treasury: { cash: 979_977.50, assets: 979_977.50, netAssets: 979_977.50 },
+          book: { cash: 979_977.50, margin: 20_000, positions: -25, assets: 999_952.50, liabilities: 0, netAssets: 999_952.50 },
+        },
+      },
+    },
+    {
+      // Nothing is free for variation margin: a cushion.
+      id: 'fund-cushion', covers: 'internal funding', action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 10_000,
+      expect: {
+        events: [{ type: 'transfer.funding', summary: 'Treasury funding: 10,000.00 USD from Treasury to Alpha' }],
+        cash: { account: { USD: { settled: 10_000, availableToTrade: 10_000, availableToWithdraw: 10_000 } }, treasury: { USD: { settled: 969_977.50, availableToTrade: 969_977.50, availableToWithdraw: 969_977.50 } } },
+        nav: { account: 29_975, treasury: 969_977.50 },
+        balance: { account: { cash: 10_000, assets: 29_975, netAssets: 29_975 }, treasury: { cash: 969_977.50, assets: 969_977.50, netAssets: 969_977.50 }, book: { cash: 979_977.50 } },
+      },
+    },
+    {
+      // End of 16 March. March long: (4,002.00 - 4,000.50) x 10 x 5 = 75 received. June short: (4,031.00 - 4,030.00)
+      // x 10 x 5 = 50 paid.
+      id: 'variation-day-1', covers: 'variation margin', action: 'clock', to: MAR(16, '17:30'),
+      expect: {
+        events: [
+          { type: 'future.variation', summary: 'Variation margin received on 5 C2H6: 75.00 USD (settlement 4,002.00 vs 4,000.50)', cash: { USD: 75 }, date: '2026-03-16' },
+          { type: 'future.variation', summary: 'Variation margin paid on -5 C2M6: 50.00 USD (settlement 4,031.00 vs 4,030.00)', cash: { USD: -50 } },
+        ],
+        cash: { account: { USD: { settled: 10_025, availableToTrade: 10_025, availableToWithdraw: 10_025 } } },
+        positions: [
+          { instrument: 'far', lot: 'cal', avgCost: 4031, value: 37.50, unrealized: 37.50 }, // (4,030.25 - 4,031.00) x 10 x -5
+          { instrument: 'near', lot: 'cal', avgCost: 4002, value: -87.50, unrealized: -87.50 }, // (4,000.25 - 4,002.00) x 50
+        ],
+        pnl: { account: { realized: 25, unrealized: -50, total: -47.50 }, book: { realized: 25, unrealized: -50, total: -47.50 } },
+        balance: { account: { cash: 10_025, positions: -50, assets: 29_975 }, book: { cash: 980_002.50, positions: -50, assets: 999_952.50 } },
+      },
+    },
+    { id: 'tuesday', action: 'clock', to: MAR(17), expect: {} },
+    // The June contract's quote stops updating at 09:50: it still marks the position but cannot be executed against.
+    { id: 'far-quote-stops', action: 'quote', instrument: 'far', quote: { bid: 4030.00, ask: 4030.50, last: 4030.25, bidSize: 20, askSize: 20, asOf: MAR(17, '09:50') }, expect: {} },
+    {
+      // 1 March at 4,000.50 (margin 2,000, commission 2.25) and 1 June estimated at its last 4,030.25 (40,302.50
+      // notional, margin 2,000, commission 2.25): 4,004.50 of 10,025. The June leg waits for a quote.
+      ...fcOne('retry'), id: 'open-retry', covers: ['open', 'failed leg'],
+      expect: {
+        preview: {
+          blocking: 0, warnings: ['not-executable', 'unbounded'], // unbounded: the spread between two months has no fixed maximum loss
+          legs: [
+            { kind: 'trade', action: 'buy', instrument: 'near', qty: 1, estimate: 4000.50, settleDate: '2026-03-17', notional: 40_005, initialMargin: 2_000, fees: 2.25, dependsOn: [] },
+            { kind: 'trade', action: 'sell', instrument: 'far', qty: 1, estimate: null, reference: 4030.25, executable: false, notional: 40_302.50, initialMargin: 2_000, fees: 2.25, dependsOn: [] },
+          ],
+          cash: { USD: { fees: 4.50, margin: 4_000, required: 4_004.50, available: 10_025, shortfall: 0 } },
+        },
+        result: { status: 'partial', orders: [{ action: 'buy', instrument: 'near', status: 'filled', filledQty: 1, avgPrice: 4000.50 }, { action: 'sell', instrument: 'far', status: 'working', filledQty: 0 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1 C2H6 @ 4,000.50 (notional 40,005.00 USD; margin posted 2,000.00 USD)', cash: { USD: -2_002.25 }, date: '2026-03-17' }],
+        cash: { account: { USD: { settled: 8_022.75, margin: 22_000, availableToTrade: 8_022.75, availableToWithdraw: 8_022.75 } } },
+        positions: [
+          { instrument: 'far', lot: 'cal', value: 37.50 },
+          { instrument: 'near', lot: 'cal', value: -87.50 },
+          { instrument: 'near', lot: 'retry', owner: 'account', direction: 'long', qty: 1, avgCost: 4000.50, cost: 0, price: 4000.25, value: -2.50, unrealized: -2.50, margin: 2_000 },
+        ],
+        holdings: { near: { long: 6, short: 0, net: 6 } },
+        openOrders: [{ instrument: 'far', kind: 'trade', action: 'sell', status: 'working', qty: 1, filledQty: 0 }],
+        lifecycle: [
+          { type: 'future.expiry', instrument: 'near', dueDate: '2026-03-20', status: 'pending' }, { type: 'future.expiry', instrument: 'near', dueDate: '2026-03-20', status: 'pending' },
+          { type: 'future.expiry', instrument: 'far', dueDate: '2026-06-18', status: 'pending' },
+        ],
+        pnl: { account: { commissions: -24.75, unrealized: -52.50, total: -52.25 }, book: { commissions: -24.75, unrealized: -52.50, total: -52.25 } },
+        nav: { account: 29_970.25, book: 999_947.75 },
+        balance: {
+          account: { cash: 8_022.75, margin: 22_000, positions: -52.50, assets: 29_970.25, netAssets: 29_970.25 },
+          book: { cash: 978_000.25, margin: 22_000, positions: -52.50, assets: 999_947.75, netAssets: 999_947.75 },
+        },
+      },
+    },
+    {
+      ...fcOne('accept'), id: 'open-accept', covers: ['open', 'failed leg'],
+      expect: {
+        preview: { blocking: 0, legs: [{ instrument: 'near', qty: 1, estimate: 4000.50 }, { instrument: 'far', qty: 1, estimate: null }], cash: { USD: { required: 4_004.50, available: 8_022.75, shortfall: 0 } } },
+        result: { status: 'partial', orders: [{ instrument: 'near', status: 'filled' }, { instrument: 'far', status: 'working' }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1 C2H6 @ 4,000.50 (notional 40,005.00 USD; margin posted 2,000.00 USD)' }],
+        cash: { account: { USD: { settled: 6_020.50, margin: 24_000, availableToTrade: 6_020.50, availableToWithdraw: 6_020.50 } } },
+        positions: [{ instrument: 'far', lot: 'cal' }, { instrument: 'near', lot: 'accept', qty: 1, value: -2.50 }, { instrument: 'near', lot: 'cal' }, { instrument: 'near', lot: 'retry' }],
+        holdings: { near: { long: 7, short: 0, net: 7 } },
+        openOrders: [{ instrument: 'far', status: 'working' }, { instrument: 'far', status: 'working' }],
+        lifecycle: [{ instrument: 'near' }, { instrument: 'near' }, { instrument: 'near' }, { instrument: 'far' }],
+        pnl: { account: { commissions: -27, unrealized: -55, total: -57 }, book: { commissions: -27, unrealized: -55, total: -57 } },
+        nav: { account: 29_965.50, book: 999_943 },
+        balance: {
+          account: { cash: 6_020.50, margin: 24_000, positions: -55, assets: 29_965.50, netAssets: 29_965.50 },
+          book: { cash: 975_998, margin: 24_000, positions: -55, assets: 999_943, netAssets: 999_943 },
+        },
+      },
+    },
+    {
+      ...fcOne('unwind'), id: 'open-unwind', covers: ['open', 'failed leg'],
+      expect: {
+        preview: { blocking: 0, legs: [{ instrument: 'near', qty: 1, estimate: 4000.50 }, { instrument: 'far', qty: 1, estimate: null }], cash: { USD: { required: 4_004.50, available: 6_020.50, shortfall: 0 } } },
+        result: { status: 'partial', orders: [{ instrument: 'near', status: 'filled' }, { instrument: 'far', status: 'working' }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1 C2H6 @ 4,000.50 (notional 40,005.00 USD; margin posted 2,000.00 USD)' }],
+        cash: { account: { USD: { settled: 4_018.25, margin: 26_000, availableToTrade: 4_018.25, availableToWithdraw: 4_018.25 } } },
+        positions: [{ instrument: 'far', lot: 'cal' }, { instrument: 'near', lot: 'accept' }, { instrument: 'near', lot: 'cal' }, { instrument: 'near', lot: 'retry' }, { instrument: 'near', lot: 'unwind', qty: 1, value: -2.50 }],
+        holdings: { near: { long: 8, short: 0, net: 8 } },
+        openOrders: [{ instrument: 'far', status: 'working' }, { instrument: 'far', status: 'working' }, { instrument: 'far', status: 'working' }],
+        lifecycle: [{ instrument: 'near' }, { instrument: 'near' }, { instrument: 'near' }, { instrument: 'near' }, { instrument: 'far' }],
+        pnl: { account: { commissions: -29.25, unrealized: -57.50, total: -61.75 }, book: { commissions: -29.25, unrealized: -57.50, total: -61.75 } },
+        nav: { account: 29_960.75, book: 999_938.25 },
+        balance: {
+          account: { cash: 4_018.25, margin: 26_000, positions: -57.50, assets: 29_960.75, netAssets: 29_960.75 },
+          book: { cash: 973_995.75, margin: 26_000, positions: -57.50, assets: 999_938.25, netAssets: 999_938.25 },
+        },
+      },
+    },
+    {
+      // End of 17 March: March 4,004.00, June 4,035.00. cal March (4,004 - 4,002) x 50 = 100 received; cal June
+      // (4,035 - 4,031) x 50 = 200 paid; retry, accept, unwind March (4,004 - 4,000.50) x 10 = 35 received each. The
+      // three June legs expire unfilled.
+      id: 'june-legs-expire', covers: ['failed leg', 'variation margin'], action: 'clock', to: MAR(18),
+      expect: {
+        events: [
+          { type: 'future.variation', summary: 'Variation margin received on 5 C2H6: 100.00 USD (settlement 4,004.00 vs 4,002.00)', cash: { USD: 100 }, date: '2026-03-17' },
+          { type: 'future.variation', summary: 'Variation margin paid on -5 C2M6: 200.00 USD (settlement 4,035.00 vs 4,031.00)', cash: { USD: -200 } },
+          { type: 'future.variation', summary: 'Variation margin received on 1 C2H6: 35.00 USD (settlement 4,004.00 vs 4,000.50)', cash: { USD: 35 } },
+          { type: 'future.variation', summary: 'Variation margin received on 1 C2H6: 35.00 USD (settlement 4,004.00 vs 4,000.50)', cash: { USD: 35 } },
+          { type: 'future.variation', summary: 'Variation margin received on 1 C2H6: 35.00 USD (settlement 4,004.00 vs 4,000.50)', cash: { USD: 35 } },
+          { type: 'order.expired', summary: 'Leg 2 expired: sell 1 C2M6. Day order did not fill before the end of the business day' },
+          { type: 'order.expired', summary: 'Leg 2 expired: sell 1 C2M6. Day order did not fill before the end of the business day' },
+          { type: 'order.expired', summary: 'Leg 2 expired: sell 1 C2M6. Day order did not fill before the end of the business day' },
+        ],
+        cash: { account: { USD: { settled: 4_023.25, availableToTrade: 4_023.25, availableToWithdraw: 4_023.25 } } }, // 4,018.25 + 100 - 200 + 105
+        positions: [
+          { instrument: 'far', lot: 'cal', avgCost: 4035, value: 237.50, unrealized: 237.50 }, // (4,030.25 - 4,035) x -50
+          { instrument: 'near', lot: 'accept', avgCost: 4004, value: -37.50 }, { instrument: 'near', lot: 'cal', avgCost: 4004, value: -187.50 }, // (4,000.25 - 4,004) x 10; x 50
+          { instrument: 'near', lot: 'retry', avgCost: 4004, value: -37.50 }, { instrument: 'near', lot: 'unwind', avgCost: 4004, value: -37.50 },
+        ],
+        openOrders: [],
+        failed: { orders: 3 },
+        alerts: ['strategy.attention', 'strategy.attention', 'strategy.attention'],
+        pnl: { account: { realized: 30, unrealized: -62.50, total: -61.75 }, book: { realized: 30, unrealized: -62.50, total: -61.75 } },
+        balance: { account: { cash: 4_023.25, positions: -62.50, assets: 29_960.75 }, book: { cash: 974_000.75, positions: -62.50, assets: 999_938.25 } },
+      },
+    },
+    {
+      id: 'far-quote-back', action: 'quote', instrument: 'far', quote: { bid: 4034.00, ask: 4034.50, last: 4034.25, bidSize: 20, askSize: 20 },
+      expect: {
+        positions: [{ instrument: 'far', lot: 'cal', price: 4034.25, value: 37.50, unrealized: 37.50 }, { instrument: 'near', lot: 'accept' }, { instrument: 'near', lot: 'cal' }, { instrument: 'near', lot: 'retry' }, { instrument: 'near', lot: 'unwind' }], // (4,034.25 - 4,035) x -50
+        pnl: { account: { unrealized: -262.50, total: -261.75 }, book: { unrealized: -262.50, total: -261.75 } },
+        nav: { account: 29_760.75, book: 999_738.25 },
+        balance: { account: { positions: -262.50, assets: 29_760.75, netAssets: 29_760.75 }, book: { positions: -262.50, assets: 999_738.25, netAssets: 999_738.25 } },
+      },
+    },
+    {
+      // Retry sells the June contract at 4,034.00: margin 2,000 and commission 2.25.
+      id: 'retry', covers: ['retry', 'failed leg'], action: 'recover', how: 'retry', lot: 'retry',
+      expect: {
+        preview: { blocking: 0, errors: [], intent: 'retry', legs: [{ kind: 'trade', action: 'sell', instrument: 'far', qty: 1, estimate: 4034.00, settleDate: '2026-03-18', notional: 40_340, initialMargin: 2_000, fees: 2.25 }], cash: { USD: { fees: 2.25, margin: 2_000, required: 2_002.25, available: 4_023.25, shortfall: 0 } } },
+        result: { status: 'open', complete: true, orders: [{ action: 'sell', instrument: 'far', status: 'filled', filledQty: 1, avgPrice: 4034.00 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 1 C2M6 @ 4,034.00 (notional 40,340.00 USD; margin posted 2,000.00 USD)', cash: { USD: -2_002.25 }, date: '2026-03-18' }],
+        cash: { account: { USD: { settled: 2_021, margin: 28_000, availableToTrade: 2_021, availableToWithdraw: 2_021 } } },
+        positions: [
+          { instrument: 'far', lot: 'cal' }, { instrument: 'far', lot: 'retry', owner: 'account', direction: 'short', qty: -1, avgCost: 4034, cost: 0, price: 4034.25, value: -2.50, unrealized: -2.50, margin: 2_000 },
+          { instrument: 'near', lot: 'accept' }, { instrument: 'near', lot: 'cal' }, { instrument: 'near', lot: 'retry' }, { instrument: 'near', lot: 'unwind' },
+        ],
+        holdings: { far: { long: 0, short: 6, net: -6 } },
+        lifecycle: [{ instrument: 'near' }, { instrument: 'near' }, { instrument: 'near' }, { instrument: 'near' }, { instrument: 'far' }, { instrument: 'far' }],
+        alerts: ['strategy.attention', 'strategy.attention'],
+        pnl: { account: { commissions: -31.50, unrealized: -265, total: -266.50 }, book: { commissions: -31.50, unrealized: -265, total: -266.50 } },
+        nav: { account: 29_756, book: 999_733.50 },
+        balance: {
+          account: { cash: 2_021, margin: 28_000, positions: -265, assets: 29_756, netAssets: 29_756 },
+          book: { cash: 971_998.50, margin: 28_000, positions: -265, assets: 999_733.50, netAssets: 999_733.50 },
+        },
+      },
+    },
+    {
+      id: 'accept', covers: ['accept', 'failed leg'], action: 'strategy_action', lot: 'accept', how: 'accept',
+      expect: { events: [{ type: 'strategy.accepted', summary: 'accepted as it stands with 1 leg unexecuted. The position no longer matches its template.' }], alerts: ['strategy.attention'] },
+    },
+    {
+      // Unwind sells the March contract at the bid 4,000.00: realized (4,000.00 - 4,004.00) x 10 = -40; margin 2,000
+      // released: 2,000 - 40 - 2.25 = 1,957.75 back at once.
+      id: 'unwind', covers: ['unwind', 'margin release'], action: 'recover', how: 'unwind', lot: 'unwind',
+      expect: {
+        preview: { blocking: 0, errors: [], intent: 'unwind', legs: [{ kind: 'trade', action: 'sell', instrument: 'near', qty: 1, estimate: 4000.00, settleDate: '2026-03-18', notional: 40_000, initialMargin: -2_000, fees: 2.25 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', instrument: 'near', status: 'filled', filledQty: 1, avgPrice: 4000.00 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 1 C2H6 @ 4,000.00 (notional 40,000.00 USD; margin released 2,000.00 USD; realized -40.00 USD)', cash: { USD: 1_957.75 } }],
+        cash: { account: { USD: { settled: 3_978.75, margin: 26_000, availableToTrade: 3_978.75, availableToWithdraw: 3_978.75 } } },
+        positions: [{ instrument: 'far', lot: 'cal' }, { instrument: 'far', lot: 'retry' }, { instrument: 'near', lot: 'accept' }, { instrument: 'near', lot: 'cal' }, { instrument: 'near', lot: 'retry' }],
+        holdings: { near: { long: 7, short: 0, net: 7 } },
+        lifecycle: [{ instrument: 'near' }, { instrument: 'near' }, { instrument: 'near' }, { instrument: 'far' }, { instrument: 'far' }],
+        alerts: [],
+        pnl: { account: { realized: -10, commissions: -33.75, unrealized: -227.50, total: -271.25 }, book: { realized: -10, commissions: -33.75, unrealized: -227.50, total: -271.25 } },
+        nav: { account: 29_751.25, book: 999_728.75 },
+        balance: {
+          account: { cash: 3_978.75, margin: 26_000, positions: -227.50, assets: 29_751.25, netAssets: 29_751.25 },
+          book: { cash: 973_956.25, margin: 26_000, positions: -227.50, assets: 999_728.75, netAssets: 999_728.75 },
+        },
+      },
+    },
+    {
+      // End of 18 March: March 4,001.00, June 4,033.00. cal March (4,001 - 4,004) x 50 = 150 paid; cal June (4,033 -
+      // 4,035) x -50 = 100 received; retry and accept March (4,001 - 4,004) x 10 = 30 paid each; retry June (4,033 -
+      // 4,034) x -10 = 10 received.
+      id: 'variation-day-3', covers: 'variation margin', action: 'clock', to: MAR(19),
+      expect: {
+        events: [
+          { type: 'future.variation', summary: 'Variation margin paid on 5 C2H6: 150.00 USD (settlement 4,001.00 vs 4,004.00)', cash: { USD: -150 }, date: '2026-03-18' },
+          { type: 'future.variation', summary: 'Variation margin received on -5 C2M6: 100.00 USD (settlement 4,033.00 vs 4,035.00)', cash: { USD: 100 } },
+          { type: 'future.variation', summary: 'Variation margin paid on 1 C2H6: 30.00 USD (settlement 4,001.00 vs 4,004.00)', cash: { USD: -30 } },
+          { type: 'future.variation', summary: 'Variation margin paid on 1 C2H6: 30.00 USD (settlement 4,001.00 vs 4,004.00)', cash: { USD: -30 } },
+          { type: 'future.variation', summary: 'Variation margin received on -1 C2M6: 10.00 USD (settlement 4,033.00 vs 4,034.00)', cash: { USD: 10 } },
+        ],
+        cash: { account: { USD: { settled: 3_878.75, availableToTrade: 3_878.75, availableToWithdraw: 3_878.75 } } },
+        positions: [
+          { instrument: 'far', lot: 'cal', avgCost: 4033, value: -62.50 }, { instrument: 'far', lot: 'retry', avgCost: 4033, value: -12.50 }, // (4,034.25 - 4,033) x -50; x -10
+          { instrument: 'near', lot: 'accept', avgCost: 4001, value: -7.50 }, { instrument: 'near', lot: 'cal', avgCost: 4001, value: -37.50 }, { instrument: 'near', lot: 'retry', avgCost: 4001, value: -7.50 },
+        ],
+        pnl: { account: { realized: -110, unrealized: -127.50, total: -271.25 }, book: { realized: -110, unrealized: -127.50, total: -271.25 } },
+        balance: { account: { cash: 3_878.75, positions: -127.50, assets: 29_751.25 }, book: { cash: 973_856.25, positions: -127.50, assets: 999_728.75 } },
+      },
+    },
+    {
+      // End of 19 March: March 3,998.00, June 4,031.50. cal March -150; cal June +75; retry and accept March -30 each;
+      // retry June +15. Friday 20 March is the March contract's last day: its final settlement waits for the price.
+      id: 'last-trading-day', covers: ['variation margin', 'final settlement'], action: 'clock', to: MAR(20),
+      expect: {
+        events: [
+          { type: 'future.variation', summary: 'Variation margin paid on 5 C2H6: 150.00 USD (settlement 3,998.00 vs 4,001.00)', cash: { USD: -150 }, date: '2026-03-19' },
+          { type: 'future.variation', summary: 'Variation margin received on -5 C2M6: 75.00 USD (settlement 4,031.50 vs 4,033.00)', cash: { USD: 75 } },
+          { type: 'future.variation', summary: 'Variation margin paid on 1 C2H6: 30.00 USD (settlement 3,998.00 vs 4,001.00)', cash: { USD: -30 } },
+          { type: 'future.variation', summary: 'Variation margin paid on 1 C2H6: 30.00 USD (settlement 3,998.00 vs 4,001.00)', cash: { USD: -30 } },
+          { type: 'future.variation', summary: 'Variation margin received on -1 C2M6: 15.00 USD (settlement 4,031.50 vs 4,033.00)', cash: { USD: 15 } },
+        ],
+        cash: { account: { USD: { settled: 3_758.75, availableToTrade: 3_758.75, availableToWithdraw: 3_758.75 } } },
+        positions: [
+          { instrument: 'far', lot: 'cal', avgCost: 4031.50, value: -137.50 }, { instrument: 'far', lot: 'retry', avgCost: 4031.50, value: -27.50 }, // (4,034.25 - 4,031.50) x -50; x -10
+          { instrument: 'near', lot: 'accept', avgCost: 3998, value: 22.50 }, { instrument: 'near', lot: 'cal', avgCost: 3998, value: 112.50 }, { instrument: 'near', lot: 'retry', avgCost: 3998, value: 22.50 },
+        ],
+        lifecycle: [FC_NEAR_BLOCKED, FC_NEAR_BLOCKED, FC_NEAR_BLOCKED, { type: 'future.expiry', instrument: 'far', dueDate: '2026-06-18', status: 'pending' }, { type: 'future.expiry', instrument: 'far', dueDate: '2026-06-18', status: 'pending' }],
+        pnl: { account: { realized: -230, unrealized: -7.50, total: -271.25 }, book: { realized: -230, unrealized: -7.50, total: -271.25 } },
+        balance: { account: { cash: 3_758.75, positions: -7.50, assets: 29_751.25 }, book: { cash: 973_736.25, positions: -7.50, assets: 999_728.75 } },
+      },
+    },
+    // The March contract's final settlement price, the special opening quotation of the index: 3,996.40.
+    { id: 'final-settlement-price', covers: 'final settlement', action: 'close_price', instrument: 'near', date: '2026-03-20', value: 3996.40, expect: {} },
+    {
+      // March closes in cash at 3,996.40 against 3,998.00, no commission: cal (3,996.40 - 3,998) x 50 = -80, margin
+      // 10,000 released (+9,920); retry and accept -16 each, 2,000 released (+1,984 each). June remains: end-of-day
+      // 4,029.00 against 4,031.50: cal +125, retry +25.
+      id: 'near-expiry', covers: ['final settlement', 'expiry', 'margin release', 'far leg remains', 'variation margin'], action: 'clock', to: MAR(20, '17:30'),
+      expect: {
+        events: [
+          { type: 'future.final_settlement', summary: 'Final settlement: 5 C2H6 closed in cash at 3,996.40', cash: { USD: 9_920 }, owner: 'account', date: '2026-03-20' },
+          { type: 'future.final_settlement', summary: 'Final settlement: 1 C2H6 closed in cash at 3,996.40', cash: { USD: 1_984 } },
+          { type: 'future.final_settlement', summary: 'Final settlement: 1 C2H6 closed in cash at 3,996.40', cash: { USD: 1_984 } },
+          { type: 'future.variation', summary: 'Variation margin received on -5 C2M6: 125.00 USD (settlement 4,029.00 vs 4,031.50)', cash: { USD: 125 }, date: '2026-03-20' },
+          { type: 'future.variation', summary: 'Variation margin received on -1 C2M6: 25.00 USD (settlement 4,029.00 vs 4,031.50)', cash: { USD: 25 } },
+        ],
+        cash: { account: { USD: { settled: 17_796.75, margin: 12_000, availableToTrade: 17_796.75, availableToWithdraw: 17_796.75 } } }, // 3,758.75 + 9,920 + 3,968 + 150
+        positions: [
+          { instrument: 'far', lot: 'cal', direction: 'short', qty: -5, avgCost: 4029, price: 4034.25, value: -262.50, unrealized: -262.50, margin: 10_000 }, // (4,034.25 - 4,029) x -50
+          { instrument: 'far', lot: 'retry', direction: 'short', qty: -1, avgCost: 4029, price: 4034.25, value: -52.50, unrealized: -52.50, margin: 2_000 },
+        ],
+        holdings: { near: null, far: { long: 0, short: 6, net: -6 } },
+        lifecycle: [{ type: 'future.expiry', instrument: 'far', dueDate: '2026-06-18', status: 'pending' }, { type: 'future.expiry', instrument: 'far', dueDate: '2026-06-18', status: 'pending' }],
+        pnl: { account: { realized: -192, unrealized: -315, total: -540.75 }, book: { realized: -192, unrealized: -315, total: -540.75 } }, // -230 - 112 + 150
+        nav: { account: 29_481.75, book: 999_459.25 },
+        balance: {
+          account: { cash: 17_796.75, margin: 12_000, positions: -315, assets: 29_481.75, netAssets: 29_481.75 },
+          book: { cash: 987_774.25, margin: 12_000, positions: -315, assets: 999_459.25, netAssets: 999_459.25 },
+        },
+      },
+    },
+    { id: 'monday', action: 'clock', to: MAR(23), expect: {} },
+    {
+      id: 'far-quote-monday', action: 'quote', instrument: 'far', quote: { bid: 4027.00, ask: 4027.50, last: 4027.25, bidSize: 20, askSize: 20 },
+      expect: {
+        positions: [{ instrument: 'far', lot: 'cal', price: 4027.25, value: 87.50, unrealized: 87.50 }, { instrument: 'far', lot: 'retry', price: 4027.25, value: 17.50, unrealized: 17.50 }], // (4,027.25 - 4,029) x -50; x -10
+        pnl: { account: { unrealized: 105, total: -120.75 }, book: { unrealized: 105, total: -120.75 } },
+        nav: { account: 29_901.75, book: 999_879.25 },
+        balance: { account: { positions: 105, assets: 29_901.75, netAssets: 29_901.75 }, book: { positions: 105, assets: 999_879.25, netAssets: 999_879.25 } },
+      },
+    },
+    {
+      // Close the spread's remaining leg: 5 June bought back at 4,027.50 (realized (4,029 - 4,027.50) x 50 = 75;
+      // margin 10,000 released; commission 11.25): 10,063.75 back at once.
+      id: 'close-cal', covers: ['close', 'margin release'], action: 'close', lot: 'cal', instrument: 'far', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], intent: 'close', legs: [{ kind: 'trade', action: 'buy', instrument: 'far', qty: 5, estimate: 4027.50, settleDate: '2026-03-23', notional: 201_375, initialMargin: -10_000, fees: 11.25 }] },
+        result: { status: 'closed', orders: [{ action: 'buy', instrument: 'far', status: 'filled', filledQty: 5, avgPrice: 4027.50 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Bought 5 C2M6 @ 4,027.50 (notional 201,375.00 USD; margin released 10,000.00 USD; realized 75.00 USD)', cash: { USD: 10_063.75 }, date: '2026-03-23' }],
+        cash: { account: { USD: { settled: 27_860.50, margin: 2_000, availableToTrade: 27_860.50, availableToWithdraw: 27_860.50 } } },
+        positions: [{ instrument: 'far', lot: 'retry', value: 17.50 }],
+        holdings: { far: { long: 0, short: 1, net: -1 } },
+        lifecycle: [{ type: 'future.expiry', instrument: 'far', dueDate: '2026-06-18', status: 'pending' }],
+        pnl: { account: { realized: -117, commissions: -45, unrealized: 17.50, total: -144.50 }, book: { realized: -117, commissions: -45, unrealized: 17.50, total: -144.50 } },
+        nav: { account: 29_878, book: 999_855.50 },
+        balance: {
+          account: { cash: 27_860.50, margin: 2_000, positions: 17.50, assets: 29_878, netAssets: 29_878 },
+          book: { cash: 997_838, margin: 2_000, positions: 17.50, assets: 999_855.50, netAssets: 999_855.50 },
+        },
+      },
+    },
+    {
+      // The retried June contract bought back at 4,027.50: realized (4,029 - 4,027.50) x 10 = 15; 2,000 released;
+      // 2,012.75 back. Whole scenario by hand: cal March (3,996.40 - 4,000.50) x 50 = -205; cal June (4,030 - 4,027.50)
+      // x 50 = +125; retry and accept March -41 each; unwind March (4,000 - 4,000.50) x 10 = -5; retry June (4,034 -
+      // 4,027.50) x 10 = +65: realized -102. Commission 21 contracts x 2.25 = 47.25. Account: 30,022.50 funded - 149.25.
+      id: 'close-retry', covers: ['close', 'margin release'], action: 'close', lot: 'retry', instrument: 'far', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'buy', instrument: 'far', qty: 1, estimate: 4027.50, notional: 40_275, initialMargin: -2_000, fees: 2.25 }] },
+        result: { status: 'closed', orders: [{ action: 'buy', status: 'filled', filledQty: 1, avgPrice: 4027.50 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Bought 1 C2M6 @ 4,027.50 (notional 40,275.00 USD; margin released 2,000.00 USD; realized 15.00 USD)', cash: { USD: 2_012.75 } }],
+        cash: { account: { USD: { settled: 29_873.25, unsettled: 0, margin: 0, availableToTrade: 29_873.25, availableToWithdraw: 29_873.25 } }, treasury: { USD: { settled: 969_977.50 } } },
+        positions: [],
+        holdings: { far: null },
+        lifecycle: [],
+        pnl: { account: { realized: -102, commissions: -47.25, unrealized: 0, total: -149.25 }, book: { realized: -102, commissions: -47.25, unrealized: 0, total: -149.25 } },
+        nav: { account: 29_873.25, treasury: 969_977.50, book: 999_850.75 },
+        balance: {
+          account: { cash: 29_873.25, margin: null, positions: null, assets: 29_873.25, liabilities: 0, netAssets: 29_873.25 },
+          book: { cash: 999_850.75, margin: null, positions: null, assets: 999_850.75, netAssets: 999_850.75 },
+        },
+      },
+    },
+  ],
+};
+
+export default [bearCall, longStraddle, longStrangle, ironCondor, ironButterfly, longButterfly, longCalendar, longDiagonal, syntheticLong, syntheticShort, pairsTrade, futuresHedge, futuresCalendar];
