@@ -191,3 +191,4 @@
 - 2026-10-13T18:23Z | fw | +0.2 | fw: tba_mortgage passes at engine, API and browser (pool allocation by hand, simulated delivery); all 8 forwards pass
 - 2026-10-13T18:23Z | m1 | +0.2 | weather_derivative passes at engine, API and browser
 - 2026-10-13T18:24Z | b3 | +0.2 | rmbs passes at engine, API and browser
+- 2026-10-13T18:25Z | m1 | +0.2 | credit_spread_forward passes at engine, API and browser

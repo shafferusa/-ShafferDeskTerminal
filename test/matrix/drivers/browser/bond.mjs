@@ -33,9 +33,16 @@
 //                   price, face, label } }`. A refusal shown in the dialog is returned as the step's refusal.
 //   actions.owner_screens   the Accounting screens read with Treasury in scope (`owner: 'treasury'`).
 //
+//   Added by b3 (structured bonds):
+//   contractTerms   also indexRatio, inflationFloor, callSchedule, putSchedule (arrays written as "date price; ..."),
+//                   conversionRatio, paymentDelayDays, guarantor, and the shares a convertible converts into (`underlying`).
+//   actions.instrument_lifecycle   also the instrument form's index ratio (`{ action: 'index_ratio', ratio, asOf }`), issuer
+//                   call (`{ action: 'call', price, share }`), write-down or loss (`{ action: 'writedown', newFactor, kind,
+//                   effective }`) and the paydown's optional effective date, payment date and scheduled factor.
+//   actions.lifecycle   also a holder put (`{ action: 'put', face, label }`) and a conversion or exchange into shares
+//                   (`{ action: 'convert', face, sharePrice, settlement: 'shares' | 'cash' }`) from the Lifecycle menu.
+//
 // What it does not do (add it here, in `actions`, when a product needs it)
-//   - The other lifecycle events recorded by hand: principal paydown (pool factor), coupon suspension, conversion.
-//     Manual cash flows work through the shared path.
 //   - Editing an instrument after registration (a fixing entered on a floating-rate note, a changed calendar).
 
 export const family = 'bond';

@@ -2301,4 +2301,271 @@ const weatherDerivative = {
   ],
 };
 
-export default [privateEquity, ventureCapital, hedgeFund, infrastructure, directRealEstate, insuranceLinked, varianceSwap, volatilitySwap, correlationSwap, dispersionSwap, recoverySwap, weatherDerivative];
+// ---------------------------------------------------------------------------------------------
+// credit_spread_forward
+// ---------------------------------------------------------------------------------------------
+// Buying the credit spread of an industrial issuer's 2033 notes forward at 120 bp: 10,000,000 notional, risky duration
+// 5.2 years (stated on the contract, worked out by the desk: not modelled here). Position-level collateral terms: an
+// independent amount of 5% of notional (500,000). Marks by hand; the spread at the fixing date entered by hand; the buyer
+// receives notional x duration x (spread - 120 bp) / 10,000.
+const CSF_POS = { instrument: 'main', lot: 'forward', owner: 'account', direction: 'spread buyer' };
+const CSF_NAME = 'Calder Industrial 4.75% 2033 credit-spread forward, 120 bp, September 2026 (Halvorsen Bank)';
+const creditSpreadForward = {
+  productId: 'credit_spread_forward',
+  title: 'Credit-spread forward on Calder Industrial 2033 notes at 120 bp, 10,000,000 notional, duration 5.2: independent amount, marks and fixing by hand',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: ['Trading owner', 'Action (Enter the contract)', 'Contracts', 'State a fill price', 'Reference obligation, forward spread, notional, risky duration, side, expiry (registration)', 'Collateral basis (registration, required)'],
+    manualInputs: ['risky duration (a contract term, from the desk)', 'marks (value to us, date, source)', 'the spread at the fixing date'],
+    settlement: 'Entry T+2 on the US calendar; settlement T+2 after the spread is entered on the fixing date (15 September 2026, paid 17 September)',
+    lifecycle: 'The fixing date waits, visibly, for the spread entered by hand',
+    accounting: 'Zero cost; valued at the mark by hand; settlement = notional x duration x (spread - forward spread) / 10,000; realized',
+    collateral: 'Position-level terms: independent amount 5% of notional (500,000) posted at entry, returned at settlement',
+  },
+  start: ny('2026-06-01'),
+  settlementCheck: { lag: 2, holidays: [] },
+  book: { name: 'Matrix credit-spread forward', reportingCcy: 'USD', capital: [{ ccy: 'USD', amount: 3_000_000 }], account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 2_000_000 }] }, settings: SETTINGS },
+  instruments: {
+    main: { productId: 'credit_spread_forward', name: CSF_NAME, symbol: 'CSF-CALDER-SEP26', marketView: 'US_DERIV', venueType: 'otc', jurisdiction: 'US', underlyingGeo: 'US', tradingCcy: 'USD',
+      terms: { referenceEntity: 'Calder Industrial Inc. 4.75% senior notes due 2033, spread over the interpolated Treasury yield', forwardSpreadBp: 120, notional: 10_000_000, riskyDuration: 5.2, side: 'buy', expiry: '2026-09-15', valuationMaxAgeDays: 10, counterparty: 'Halvorsen Bank',
+        collateralBasis: { type: 'position', independentAmount: { type: 'pct', pct: 0.05 }, variationMargin: false, threshold: 0, minimumTransfer: 0 } } },
+  },
+  expectAtStart: SIMPLE_START(2_000_000, 1_000_000),
+  steps: [
+    {
+      id: 'enter', covers: ['open', 'collateral'], action: 'ticket', instrument: 'main', side: 'buy', qty: 1, as: 'forward', order: { statedPrice: 0 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 1, estimate: 0, model: 'stated-price', settleDate: '2026-06-03', calendar: 'US', cash: 0, fees: 0, notional: 10_000_000 }],
+          cash: { USD: { margin: 500_000, required: 500_000, available: 2_000_000, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 1, avgPrice: 0 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Bought 1 CSF-CALDER-SEP26 @ 0.00 USD', owner: 'account', date: '2026-06-01' },
+          { type: 'manual.collateral', summary: `Collateral posted on ${CSF_NAME} under its position-level terms: 500,000.00 USD (independent amount, 5.00% of 10,000,000.00 USD notional)`, cash: { USD: -500_000 }, owner: 'account' },
+        ],
+        cash: { account: { USD: { settled: 1_500_000, margin: 500_000, availableToTrade: 1_500_000 } } },
+        positions: [{ ...CSF_POS, qty: 1, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, margin: 500_000, manual: { kind: 'spread_forward', endDate: '2026-09-15', valuation: null } }],
+        holdings: { main: { long: 1, short: 0, net: 1 } },
+        pending: [],
+        lifecycle: [{ type: 'manual.settlement', instrument: 'main', dueDate: '2026-09-15', status: 'pending', owner: 'account' }],
+        otc: [{ instrument: 'main', lot: 'forward', owner: 'account', qty: 1, basis: 'position', mark: null, iaRequired: 500_000, iaPosted: 500_000 }],
+        pnl: { account: { realized: 0, fees: 0 } },
+        nav: { account: 2_000_000, book: 3_000_000 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 1_500_000, margin: 500_000, assets: 2_000_000, liabilities: 0, netAssets: 2_000_000 } },
+      },
+    },
+    { id: 'next-monday', action: 'clock', to: ny('2026-06-08'), expect: {} },
+    {
+      // The spread tightened to 110 bp: about -10 x 5.2 x 1,000 = -52,000 (the dealer's mark, entered by hand).
+      id: 'mark-tighter', covers: 'valuation', action: 'lifecycle', lot: 'forward', body: { action: 'valuation', value: -52_000, asOf: '2026-06-08', source: 'Dealer mark, Halvorsen Bank' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of CSF-CALDER-SEP26 entered by hand: -52,000.00 USD for the 1 held, as of 2026-06-08, source: Dealer mark, Halvorsen Bank. A manual input, not a market quote' }],
+        positions: [{ ...CSF_POS, qty: 1, price: -52_000, value: -52_000, unrealized: -52_000, provisional: false, freshness: 'manual', margin: 500_000 }],
+        otc: [{ instrument: 'main', mark: -52_000, markValue: -52_000 }],
+        pnl: { account: { unrealized: -52_000, total: -52_000 } },
+        nav: { account: 1_948_000, book: 2_948_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: -52_000, assets: 1_948_000, netAssets: 1_948_000 } },
+      },
+    },
+    {
+      id: 'august', covers: 'valuation', action: 'clock', to: ny('2026-08-17'),
+      expect: { positions: [{ ...CSF_POS, qty: 1, value: -52_000, freshness: 'stale', margin: 500_000 }], provisional: { account: true, book: true } },
+    },
+    {
+      id: 'mark-wider', covers: 'valuation', action: 'lifecycle', lot: 'forward', body: { action: 'valuation', value: 156_000, asOf: '2026-08-17', source: 'Dealer mark, Halvorsen Bank' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of CSF-CALDER-SEP26 entered by hand: 156,000.00 USD for the 1 held, as of 2026-08-17, source: Dealer mark, Halvorsen Bank. A manual input, not a market quote' }],
+        positions: [{ ...CSF_POS, qty: 1, price: 156_000, value: 156_000, unrealized: 156_000, freshness: 'manual', margin: 500_000 }],
+        otc: [{ instrument: 'main', mark: 156_000, markValue: 156_000 }],
+        pnl: { account: { unrealized: 156_000, total: 156_000 } },
+        nav: { account: 2_156_000, book: 3_156_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 156_000, assets: 2_156_000, netAssets: 2_156_000 } },
+      },
+    },
+    {
+      // Tuesday 15 September 2026, the fixing date: the item is due and waits for the spread; the 17 August mark is 29 days old.
+      id: 'fixing-date', covers: 'settlement', action: 'clock', to: ny('2026-09-15'),
+      expect: {
+        lifecycle: [{ type: 'manual.settlement', instrument: 'main', dueDate: '2026-09-15', status: 'blocked', owner: 'account', reason: /^Waiting for the realised value, entered by hand \(Lifecycle, Final settlement\)\. Settlement = notional x risky duration x \(spread at expiry - 120\.00 bp\)/ }],
+        positions: [{ ...CSF_POS, qty: 1, value: 156_000, freshness: 'stale', margin: 500_000 }],
+        provisional: { account: true, book: true },
+      },
+    },
+    {
+      // Spread at fixing 147.50 bp: 10,000,000 x 5.2 x (147.50 - 120) / 10,000 = 143,000, received T+2 (17 September).
+      id: 'settlement', covers: ['close', 'collateral'], action: 'lifecycle', lot: 'forward', body: { action: 'settle', realised: 147.5 },
+      expect: {
+        events: [
+          { type: 'manual.settlement', summary: 'Final settlement of CSF-CALDER-SEP26 entered by hand: spread at expiry 147.50 bp against 120.00 bp: 10,000,000.00 USD x 5.20 x (147.50 - 120.00) / 10,000 = 143,000.00 USD received 2026-09-17', owner: 'account', date: '2026-09-15' },
+          { type: 'manual.collateral', summary: `Collateral returned on ${CSF_NAME} under its position-level terms: 500,000.00 USD (independent amount, the position ended)`, cash: { USD: 500_000 } },
+        ],
+        cash: { account: { USD: { settled: 2_000_000, unsettled: 143_000, margin: 0, availableToTrade: 2_143_000 } } },
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', lot: 'forward', owner: 'account', dueDate: '2026-09-17', amount: 143_000, ccy: 'USD', into: 'cash' }],
+        lifecycle: [],
+        otc: [],
+        pnl: { account: { realized: 143_000, unrealized: 0, total: 143_000 } },
+        nav: { account: 2_143_000, book: 3_143_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { cash: 2_000_000, margin: null, receivable: 143_000, positions: null, assets: 2_143_000, netAssets: 2_143_000 } },
+      },
+    },
+    {
+      id: 'settlement-paid', covers: 'settlement', action: 'clock', to: ny('2026-09-17'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 143,000.00 USD into settled cash', cash: { USD: 143_000 }, date: '2026-09-17' }],
+        cash: { account: { USD: { settled: 2_143_000, unsettled: 0, availableToTrade: 2_143_000 } } },
+        pending: [],
+        balance: { account: { cash: 2_143_000, receivable: null, assets: 2_143_000, liabilities: 0, netAssets: 2_143_000 } },
+      },
+    },
+  ],
+};
+
+// ---------------------------------------------------------------------------------------------
+// credit_spread_option
+// ---------------------------------------------------------------------------------------------
+// A payer option on the credit spread of a financial issuer's 2031 notes, strike 250 bp, 20,000,000 notional, risky duration
+// 3.8: premium 95,000 paid, uncollateralized (stated). Half sold back at an agreed price after the spread widened; the rest
+// expires out of the money (spread 231 bp at expiry): nothing is paid and its premium is realized as a loss.
+const CSO_POS = { instrument: 'main', lot: 'option', owner: 'account', direction: 'holder' };
+const creditSpreadOption = {
+  productId: 'credit_spread_option',
+  title: 'Payer credit-spread option on Belcourt Financial 2031 notes, strike 250 bp: premium, marks, half sold, the rest expires worthless, by hand',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: ['Trading owner', 'Action (Enter the contract, Terminate)', 'Contracts', 'State a fill price (the premium)', 'Reference obligation, strike, notional, risky duration, payer or receiver, side, expiry (registration)', 'Collateral basis (registration, required): uncollateralized'],
+    manualInputs: ['premium', 'marks (value to us, date, source)', 'agreed price of the half sold back', 'the spread at expiry'],
+    settlement: 'Premium and the half sold T+2 on the US calendar; nothing to settle at expiry when out of the money',
+    lifecycle: 'Expiry waits, visibly, for the spread entered by hand; payer payoff = notional x duration x max(spread - strike, 0) / 10,000',
+    accounting: 'Cost = premium; valued at the mark by hand; the half sold realized; the rest expires worthless (premium realized as a loss)',
+    collateral: 'Uncollateralized, an explicit paper assumption on the contract',
+  },
+  start: ny('2026-09-08'), // Tuesday 8 September 2026 (Monday 7 September is Labor Day)
+  settlementCheck: { lag: 2, holidays: [] },
+  book: { name: 'Matrix credit-spread option', reportingCcy: 'USD', capital: [{ ccy: 'USD', amount: 3_000_000 }], account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 2_000_000 }] }, settings: SETTINGS },
+  instruments: {
+    main: { productId: 'credit_spread_option', name: 'Belcourt Financial 5.50% 2031 payer spread option, strike 250 bp, December 2026 (Calder Trust Markets)', symbol: 'CSO-BELC-P250', marketView: 'US_DERIV', venueType: 'otc', jurisdiction: 'US', underlyingGeo: 'US', tradingCcy: 'USD',
+      terms: { referenceEntity: 'Belcourt Financial Corp. 5.50% notes due 2031, spread over Treasuries', strikeSpreadBp: 250, notional: 20_000_000, riskyDuration: 3.8, optionType: 'payer', side: 'long', expiry: '2026-12-15', valuationMaxAgeDays: 15,
+        counterparty: 'Calder Trust Markets', collateralBasis: { type: 'uncollateralized' } } },
+  },
+  expectAtStart: SIMPLE_START(2_000_000, 1_000_000),
+  steps: [
+    {
+      id: 'buy-the-option', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 1, as: 'option', order: { statedPrice: 95_000 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 1, estimate: 95_000, model: 'stated-price', settleDate: '2026-09-10', calendar: 'US', cash: -95_000, fees: 0, notional: 20_000_000 }],
+          cash: { USD: { purchases: 95_000, required: 95_000, available: 2_000_000, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 1, avgPrice: 95_000 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1 CSO-BELC-P250 @ 95,000.00 USD', owner: 'account', date: '2026-09-08' }],
+        cash: { account: { USD: { settled: 2_000_000, unsettled: -95_000, availableToTrade: 1_905_000 } } },
+        positions: [{ ...CSO_POS, qty: 1, avgCost: 95_000, cost: 95_000, price: null, value: null, unrealized: null, provisional: true, manual: { kind: 'spread_option', endDate: '2026-12-15', valuation: null } }],
+        holdings: { main: { long: 1, short: 0, net: 1 } },
+        pending: [{ instrument: 'main', lot: 'option', owner: 'account', dueDate: '2026-09-10', amount: -95_000, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'manual.settlement', instrument: 'main', dueDate: '2026-12-15', status: 'pending', owner: 'account' }],
+        otc: [{ instrument: 'main', lot: 'option', owner: 'account', qty: 1, basis: 'uncollateralized', iaPosted: 0, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, fees: 0 } },
+        nav: { account: 2_000_000, book: 3_000_000 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 2_000_000, positions: 95_000, payable: 95_000, assets: 2_095_000, liabilities: 95_000, netAssets: 2_000_000 } },
+      },
+    },
+    {
+      id: 'premium-paid', covers: 'settlement', action: 'clock', to: ny('2026-09-10'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 95,000.00 USD from settled cash', cash: { USD: -95_000 } }],
+        cash: { account: { USD: { settled: 1_905_000, unsettled: 0, availableToTrade: 1_905_000 } } },
+        pending: [],
+        balance: { account: { cash: 1_905_000, payable: null, assets: 2_000_000, liabilities: 0 } },
+      },
+    },
+    { id: 'spread-widens', action: 'clock', to: ny('2026-09-21'), expect: {} },
+    {
+      id: 'mark-september', covers: 'valuation', action: 'lifecycle', lot: 'option', body: { action: 'valuation', value: 140_000, asOf: '2026-09-21', source: 'Dealer mark, Calder Trust Markets' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of CSO-BELC-P250 entered by hand: 140,000.00 USD for the 1 held, as of 2026-09-21, source: Dealer mark, Calder Trust Markets. A manual input, not a market quote' }],
+        positions: [{ ...CSO_POS, qty: 1, cost: 95_000, price: 140_000, value: 140_000, unrealized: 45_000, provisional: false, freshness: 'manual' }],
+        otc: [{ instrument: 'main', mark: 140_000, markValue: 140_000 }],
+        pnl: { account: { unrealized: 45_000, total: 45_000 } },
+        nav: { account: 2_045_000, book: 3_045_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 140_000, assets: 2_045_000, netAssets: 2_045_000 } },
+      },
+    },
+    {
+      // Half sold back at 160,000 a contract: 80,000 received T+2 (23 September); cost 47,500; realized 32,500.
+      id: 'sell-half', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 0.5, from: 'option', order: { statedPrice: 160_000 },
+      expect: {
+        preview: { blocking: 0, legs: [{ action: 'sell', qty: 0.5, estimate: 160_000, model: 'stated-price', settleDate: '2026-09-23', cash: 80_000, fees: 0 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 0.5, avgPrice: 160_000 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 0.5 CSO-BELC-P250 @ 160,000.00 USD (realized 32,500.00 USD)' }],
+        cash: { account: { USD: { settled: 1_905_000, unsettled: 80_000, availableToTrade: 1_985_000 } } },
+        positions: [{ ...CSO_POS, qty: 0.5, avgCost: 95_000, cost: 47_500, price: 140_000, value: 70_000, unrealized: 22_500 }],
+        holdings: { main: { long: 0.5, short: 0, net: 0.5 } },
+        pending: [{ instrument: 'main', lot: 'option', owner: 'account', dueDate: '2026-09-23', amount: 80_000, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: 0.5, markValue: 70_000 }],
+        pnl: { account: { realized: 32_500, unrealized: 22_500, total: 55_000 } },
+        nav: { account: 2_055_000, book: 3_055_000 },
+        balance: { account: { cash: 1_905_000, receivable: 80_000, positions: 70_000, assets: 2_055_000, netAssets: 2_055_000 } },
+      },
+    },
+    {
+      id: 'sale-paid', covers: 'settlement', action: 'clock', to: ny('2026-09-23'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 80,000.00 USD into settled cash', cash: { USD: 80_000 } }],
+        cash: { account: { USD: { settled: 1_985_000, unsettled: 0, availableToTrade: 1_985_000 } } },
+        pending: [],
+        balance: { account: { cash: 1_985_000, receivable: null } },
+      },
+    },
+    {
+      // Monday 9 November: the 21 September mark is 49 days old (limit 15).
+      id: 'november', covers: 'valuation', action: 'clock', to: ny('2026-11-09'),
+      expect: { positions: [{ ...CSO_POS, qty: 0.5, value: 70_000, freshness: 'stale' }], provisional: { account: true, book: true } },
+    },
+    {
+      // The spread has come back: the half held is worth 15,000 (30,000 a contract).
+      id: 'mark-november', covers: 'valuation', action: 'lifecycle', lot: 'option', body: { action: 'valuation', value: 15_000, asOf: '2026-11-09', source: 'Dealer mark, Calder Trust Markets' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of CSO-BELC-P250 entered by hand: 15,000.00 USD for the 0.5 held (30,000.00 mark per contract, signed), as of 2026-11-09, source: Dealer mark, Calder Trust Markets. A manual input, not a market quote' }],
+        positions: [{ ...CSO_POS, qty: 0.5, cost: 47_500, price: 30_000, value: 15_000, unrealized: -32_500, freshness: 'manual' }],
+        otc: [{ instrument: 'main', mark: 30_000, markValue: 15_000 }],
+        pnl: { account: { unrealized: -32_500, total: 0 } },
+        nav: { account: 2_000_000, book: 3_000_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 15_000, assets: 2_000_000, netAssets: 2_000_000 } },
+      },
+    },
+    {
+      // Tuesday 15 December 2026, expiry: the item waits for the spread; the 9 November mark is 36 days old.
+      id: 'expiry', covers: 'settlement', action: 'clock', to: ny('2026-12-15'),
+      expect: {
+        lifecycle: [{ type: 'manual.settlement', instrument: 'main', dueDate: '2026-12-15', status: 'blocked', owner: 'account', reason: /^Waiting for the realised value, entered by hand \(Lifecycle, Final settlement\)\. Payoff = notional x risky duration x max\(spread at expiry - 250\.00 bp, 0\)/ }],
+        positions: [{ ...CSO_POS, qty: 0.5, value: 15_000, freshness: 'stale' }],
+        provisional: { account: true, book: true },
+      },
+    },
+    {
+      // Spread at expiry 231 bp, under the 250 bp strike: the payer option is worth nothing. The 47,500 of premium left is realized.
+      id: 'expires-worthless', covers: ['close', 'expiry'], action: 'lifecycle', lot: 'option', body: { action: 'settle', realised: 231 },
+      expect: {
+        events: [{ type: 'manual.settlement', summary: 'Final settlement of CSO-BELC-P250 entered by hand: spread at expiry 231.00 bp, strike 250.00 bp (payer): 20,000,000.00 USD x 3.80 x 0.00 / 10,000, x 0.5 held = 0.00 USD: nothing is paid', owner: 'account', date: '2026-12-15' }],
+        positions: [],
+        holdings: { main: null },
+        pending: [],
+        lifecycle: [],
+        otc: [],
+        pnl: { account: { realized: -15_000, unrealized: 0, total: -15_000 } }, // 32,500 - 47,500
+        nav: { account: 1_985_000, book: 2_985_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { cash: 1_985_000, positions: null, assets: 1_985_000, liabilities: 0, netAssets: 1_985_000 } },
+      },
+    },
+  ],
+};
+
+export default [privateEquity, ventureCapital, hedgeFund, infrastructure, directRealEstate, insuranceLinked, varianceSwap, volatilitySwap, correlationSwap, dispersionSwap, recoverySwap, weatherDerivative, creditSpreadForward, creditSpreadOption];

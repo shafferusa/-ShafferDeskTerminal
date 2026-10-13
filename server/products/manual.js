@@ -262,7 +262,7 @@ export function payoffOf(inst, body) {
       return { amount: amt, inputs: { constituentVol: cv, indexVol: iv, dispersion: D }, text: `constituents ${f2(cv)} less index ${f2(iv)} = dispersion ${f2(D)}, strike ${f2(t.strikeVol)}: ${fmt(t.notionalPerPoint, ccy)} x (${f2(D)} - ${f2(t.strikeVol)})${s < 0 ? ', sign reversed (dispersion seller)' : ''}` };
     }
     case 'recovery': {
-      if (body.noCreditEvent) return { amount: 0, inputs: { noCreditEvent: true }, text: 'no credit event before maturity: nothing is paid' };
+      if (body.noCreditEvent) return { amount: 0, inputs: { noCreditEvent: true }, text: 'no credit event before maturity' };
       const R = req('realised', 'the recovery rate in % (the auction final price)');
       need(R >= 0 && R <= 100, 'The recovery rate is between 0 and 100%.');
       const amt = signed(t.notional * (R - t.recoveryStrikePct) / 100);
