@@ -53,3 +53,13 @@ dependency are stated; nothing is quietly skipped or presented as supported.
   "Worker results are useful" but the coordinator re-runs everything at the end against one commit, so a product
   you report as passing must pass again from a clean run: no reliance on leftover state, timing luck or a
   particular machine load.
+
+## Update, 2026-10-13 19:15 UTC
+- 163 products pass at all three levels; `npm test` 629 of 629. Finished families: equity, fund, crypto, cash, fx,
+  spot, option, otcoption, future, forward, bond (government, corporate, structured A), loan, repo, secloan, manual,
+  rate swaps. Drivers exist for all of them under test/matrix/drivers/browser/ (cds.mjs is minimal: extend it).
+- The manual family now goes through collateral agreements; OTC options have Bermudan style, physical FX exercise
+  only when funded, settlement-value entry on the Pending tab; futures and forwards simulate physical delivery.
+- The system suite (test/system) enforces a mapping of every case to every level; its route classification lists
+  every route in server/api.js: if you add a route, add it there too (test/system/cases/isolation.mjs or
+  lib/mapping.mjs: read how) or `npm test` goes red.
