@@ -174,6 +174,34 @@ async function fillStrategyPage(ui, t, ctx, step) {
     }
     if (sp.futures.contracts !== undefined && sp.futures.contracts !== null) await ui.input(fp, 'Contracts').fill(String(sp.futures.contracts));
   }
+  // t2: the custom builder's legs ("Legs" panel, "Add a leg" dialog), in order: [{ type: 'instrument' | 'option',
+  //     instrument?: '<key>', side: '<Side label>', qty, purpose?: 'hedge', right?: 'C' | 'P', expiration?, strike?,
+  //     after?: <leg n> (its "Runs after") }]. Option legs are on the underlying chosen at the top of the page.
+  if (sp.legs) {
+    const lp = ui.section(main, 'Legs');
+    for (const l of sp.legs) {
+      await ui.button(lp, 'Add a leg').click();
+      const dlg = ui.dialog(/^Add a leg/);
+      await dlg.waitFor();
+      await ui.select(dlg, 'Leg').selectOption(l.type === 'option' ? 'option' : 'instrument');
+      await ui.drawn();
+      if (l.purpose === 'hedge') await ui.option(dlg, 'Purpose', 'Hedge').click();
+      if (l.type === 'option') {
+        await ui.option(dlg, 'Type', l.right === 'C' ? 'Call' : 'Put').click();
+        const exp = ui.field(dlg, 'Expiration');
+        await exp.locator('select, input').first().waitFor();
+        if (await exp.locator('select').count()) await exp.locator('select').selectOption(l.expiration); else await exp.locator('input').fill(l.expiration);
+        await ui.drawn();
+        const k = ui.field(dlg, 'Strike');
+        if (await k.locator('select').count()) await k.locator('select').selectOption(String(l.strike)); else await k.locator('input').fill(String(l.strike));
+      } else await pickInstrument(ui, dlg, 'Instrument', ctx.inst(l.instrument));
+      await ui.select(dlg, 'Side').selectOption({ label: l.side });
+      await ui.input(dlg, l.type === 'option' ? 'Contracts' : ctx.inst(l.instrument).qtyLabel || 'Quantity').fill(String(l.qty));
+      await ui.button(dlg, 'Add leg').click();
+      await dlg.waitFor({ state: 'detached' });
+    }
+    for (const [i, l] of sp.legs.entries()) if (l.after) await lp.locator('tbody tr').nth(i).locator('select').selectOption({ label: `Leg ${l.after}` });
+  }
 
   if (sp.expiration || sp.strikes || sp.contracts !== undefined || sp.right) {
     const oc = ui.section(main, 'Option contracts');
@@ -223,6 +251,9 @@ function requestProblems(sent, want) {
     contracts: x.options?.contracts ?? null, orderType: x.orderType || 'market', limitPrice: x.limitPrice ?? null, stopPrice: x.stopPrice ?? null, tif: x.tif || 'day', netLimit: x.netLimit ?? null,
     financing: x.financing?.mode || 'none', loanRate: x.financing?.rate ?? null, borrowFee: x.borrow?.feeRate ?? null,
     investmentStrategy: x.investmentStrategy?.id || x.investmentStrategy?.name || null, holdingDays: x.holdingPeriod?.days ?? null, objective: x.hedgeObjective?.type || null,
+    // t2: the futures contracts and, for the custom builder, every leg (kind, side, quantity, instrument or option, purpose, runs after).
+    ...(want.futures ? { futures: JSON.stringify([x.futures?.instrumentId || null, x.futures?.farInstrumentId || null, x.futures?.contracts ?? null]) } : {}),
+    ...(want.template === 'custom' ? { legs: JSON.stringify((x.legs || []).map((l) => [l.kind || 'trade', l.action, l.qty, l.instrumentId || null, l.option ? `${l.option.right}${l.option.strike}@${l.option.expiration}` : null, l.purpose || 'primary', (l.dependsOn || []).join('+')])) } : {}),
   });
   const a = pick(sent), b = pick(want);
   for (const k of Object.keys(b)) if (String(a[k]) !== String(b[k])) out.push(`Strategies page: the request sent ${k} = ${a[k]}, the step's input states ${b[k]}`);

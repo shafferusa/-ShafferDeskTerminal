@@ -93,3 +93,25 @@ test('a protective call exercised against the short it protects returns the borr
   assert.ok(app.accounting.history(book.id, acct.id).events.some((e) => e.type === 'secloan.return'));
   assert.deepEqual(ledgerImbalance(app), []);
 });
+
+test('a covered put funded to the preview\'s figure executes: the short sale\'s margin is needed before the written puts\' premium arrives', async () => {
+  const { app, inst } = makeApp();
+  const { book, acct, treasury } = makeBook(app, { account: 20_000 });
+  pin(app, inst.ALFA, 200, 200.04);
+  // 100 short at 200: top-up 400 + margin 6,000 + commission = what the short sale takes from free cash when it executes.
+  const free = app.ledger.cash(acct.id, 'USD').availableToTrade;
+  app.books.transfer({ bookId: book.id, fromUnitId: acct.id, toUnitId: treasury.id, ccy: 'USD', amount: free - 5_000, purpose: 'sweep' });
+  const input = { bookId: book.id, unitId: acct.id, template: 'covered_put', underlyingId: inst.ALFA.id, quantity: 100, options: { expiration: '2026-04-17', strikes: { put: 180 } } };
+  const bare = await app.packages.preview(input);
+  const short = bare.legs.find((l) => l.action === 'sell_short');
+  const takes = short.shortCollateral.topUp + short.shortCollateral.marginHold + short.feeTotal;
+  const msg = bare.checks.find((c) => c.code === 'cash')?.message || '';
+  assert.match(msg, /while the legs execute/, 'the netted figure counted the later premium; the short sale needs its cash first');
+  assert.match(msg, /short sale's margin/);
+  assert.ok(Math.abs(bare.totals.cash.USD.shortfall - (takes - 5_000)) < 0.005, `shortfall ${bare.totals.cash.USD.shortfall} vs ${takes - 5_000}`);
+  const pv = await app.packages.preview({ ...input, financing: { mode: 'treasury' } });
+  assert.equal(pv.blocking, 0);
+  const r = await app.packages.submit({ ...input, financing: { mode: 'treasury' }, legs: pv.legs, clientToken: pv.token, confirm: true });
+  assert.equal(r.strategy.status, 'open', r.strategy.orders.map((o) => `${o.kind} ${o.status} ${o.statusReason || ''}`).join(' | '));
+  assert.deepEqual(ledgerImbalance(app), []);
+});

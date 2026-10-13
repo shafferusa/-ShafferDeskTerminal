@@ -285,3 +285,4 @@
 - 2026-10-13T20:51Z | t2 | +0.2 | futures_calendar passes at engine, API and browser
 - 2026-10-13T20:53Z | b4 | +0 | bond driver: manual cash flow waits for the Lifecycle menu (flake seen in private_credit)
 - 2026-10-13T20:54Z | s3 | +0.2 | asset_swap passes at engine, API and browser
+- 2026-10-13T20:57Z | t1 | +0.2 | T:covered_put template passes at engine, API and browser

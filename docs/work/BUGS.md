@@ -287,3 +287,38 @@ start fixing never asked of the data service; a return or price fixing asked for
   execute") always explains "(the cash reserved against a written option is needed before the premium of a later leg
   arrives)". For a covered call the deficit is the share purchase (leg 1) paid before the written call's premium; no
   cash is reserved. Reproduce: T:covered_call, cash-short-not-financed. The figure (3,164.50) is right; the reason is not.
+
+## s2 (other swaps): findings, 2026-10-13
+Fixed by s2 (for the record; regression tests in test/core/swap-other.test.js):
+- server/products/swap.js: "Notional resets" paid the financing of the period just ended on the NEW reset notional when the return leg
+  was paid first (equity_swap, first-reset: 65,216.67 instead of 60,666.67). Now the reset applies from the next period (scaleSteps).
+- server/products/swap.js: a dividend on a total-return reference in the FIRST period (before any reset) was silently not passed through
+  (start fixing taken from the last reset paid, null -> skipped). Now a swap.dividend task uses the period's start close, blocks visibly
+  while it is missing, and the maturity waits for it (equity_trs, dividend-passed-through). server/core/engine.js: tasks created by
+  corporate actions run in the same pass.
+- server/products/swap.js: a notional schedule entry that could not be read was silently dropped; now refused by name.
+- server/core/tasks.js: tasks due the same day and created at the same instant (frozen clock) were taken in the order of their random ids,
+  so the order of two same-day leg payments differed between engine and API/browser runs (commodity_index_swap). Tie-break by rowid.
+- test/matrix/drivers/browser.mjs: the positions reader took an independent amount posted in another currency (USD collateral on the GBP
+  OIS) as the position's margin and reported a screen/API mismatch (ois, open). Now only same-currency amounts are compared there.
+Open (not s2's to fix, seen while running npm test at the end):
+- test/core/failure-recovery.test.js "a number of contracts stated for an exercise must be whole for a listed option" fails (Missing
+  expected exception) with or without s2's changes.
+- test/matrix/specs/templates-a.mjs: covered_put has no matrix.ticket, so specs.test.js and engine.test.js fail to load (t1 in progress).
+Limitations established by s2 (stated in the specs' matrix metadata and the catalog notes):
+- The catalog has no index product: equity, commodity and freight indices are reference instruments of another product (ETF, physical
+  commodity), never traded. A Shaffer reference-data index type would remove this.
+- Bond TRS coupon pass-through is by hand (manual coupon cash flow): a swap does not follow its reference bond's coupon schedule.
+- Dividend pass-through is paid on the ex-date (the corporate-action form has no separate pay date).
+- Electricity delivery hours ignore clock changes (23/25-hour days counted as 24). Scenarios avoid DST months.
+- An independent amount that follows a notional schedule is trued up when the payment ending a period is made, not on the period's
+  first day (they differ when the payment date is adjusted or lagged).
+- Legs are paid gross unless the contract states Net settlement (which is refused with return, overnight-index or exchanged-notional legs).
+- FIXED (t1, covered put): the interim-cash check skipped packages with a short sale, so a covered put funded to the
+  preview's netted figure (which counted the written puts' premium) was rejected at execution: the short sale needs its
+  top-up, margin and commission before the premium arrives (Treasury funding executed, borrow filled, package in
+  attention). server/core/packages.js interimNeeds now sequences sell_short/borrow_sec legs; the refusal's reason now
+  names the short sale or the purchase (the covered-call wording above is fixed by the same change).
+  test/core/templates-t1.test.js.
+- OPEN, not t1's: test/core/failure-recovery.test.js "a number of contracts stated for an exercise must be whole" fails
+  since the lifecycle route became async (s3, server/api.js line ~367): the test uses assert.throws on a promise.
