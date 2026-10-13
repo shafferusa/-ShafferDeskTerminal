@@ -1497,4 +1497,202 @@ const tripartyRepo = {
   ],
 };
 
-export default [repo, reverseRepo, overnightRepo, termRepo, openRepo, bilateralRepo, tripartyRepo];
+// ---------------------------------------------------------------------------------------------
+// gc_repo
+// ---------------------------------------------------------------------------------------------
+// A general-collateral repo: an Account finances 2,500,000 face of a Treasury note for two weeks at the GC rate, here
+// SOFR + 0.05% (floating, fixings from a labelled fixture). The fixings stop after Friday 8 May; a fixing covers at most a
+// week, so from 16 May interest cannot be worked out: accrual stops (flagged on the row, alert raised), the automatic
+// repurchase on 19 May waits, blocked with its reason, and a repurchase by hand is refused. The desk enters SOFR for
+// 15 May by hand and the waiting repurchase is made at once with interest at each fixing.
+//
+// General versus special collateral in the Terminal: the collateral type is recorded as a term (General collateral here);
+// the rate is the one entered. Nothing else is simulated differently (see special_repo).
+//
+// Inputs: T-3.75-AUG30 (as in reverse_repo; period 15 Feb to 15 Aug: 181 days; 2,500,000 face accrues 46,875 / 181 =
+// 258.98 a day), quoted 99.20 / 99.30, last 99.25; no commission; T+1. SOFR 4.30% for 4 to 8 May (fixture), none after;
+// 4.29% for 15 May entered by hand. Repo 2,400,000 at SOFR + 0.05% ACT/360, 5 to 19 May 2026, haircut 2%.
+//   Bought 4 May, settles 5 May: 2,482,500.00 plus 79 days accrued, 20,459.25 = 2,502,959.25.
+//   Collateral 5 May: 2,481,250.00 plus 20,459.25 = 2,501,709.25; less 2%: 2,451,675.07.
+//   Interest: 5 to 15 May, 11 days at 4.35% (each day's fixing, or the last within a week): 11 x 290.00 = 3,190.00;
+//   16 to 18 May, 3 days at 4.34% (the 15 May fixing): 3 x 289.333333 = 868.00; total 4,058.00.
+const GC_SOFR = Object.fromEntries(['04', '05', '06', '07', '08'].map((d) => [`2026-05-${d}`, 4.30]));
+const GCREPO = { owner: 'account', side: 'repo', productId: 'gc_repo', productLabel: 'General-collateral repo', ccy: 'USD', principal: 2_400_000, name: 'Wexham GC repo', collateral: { instrument: 'note', lot: 'notes' }, as: 'gcrepo',
+  terms: { collateralInstrumentId: '$inst:note', collateralQty: 2_500_000, haircut: 0.02, rateType: 'floating', referenceRate: 'SOFR', spread: 0.0005, dayCount: 'ACT/360', term: 'term', endDate: '2026-05-19', style: 'classic', collateralType: 'gc', triparty: false, counterparty: 'Wexham Securities' } };
+const GNOTES = { instrument: 'note', lot: 'notes', owner: 'account', direction: 'long', qty: 2_500_000, avgCost: 99.30, cost: 2_482_500, price: 99.25, value: 2_481_250, unrealized: -1_250 };
+const GC_POS = { instrument: 'gcrepo', lot: 'gcrepo', owner: 'account', direction: 'repo (cash borrowed)', qty: -2_400_000, value: 2_400_000, carrying: -2_400_000, collateralHeld: null };
+const NOTE_LIFE = [{ type: 'bond.coupon', instrument: 'note', dueDate: '2026-08-17', status: 'pending', owner: 'account' }, { type: 'bond.maturity', instrument: 'note', dueDate: '2030-08-15', status: 'pending', owner: 'account' }];
+const GC_BLOCK = 'Repo repurchase on Wexham GC repo is waiting for a SOFR fixing: none is available from 2026-05-16, so the interest due cannot be worked out. Enter the fixing by hand (Data connection, Manual entries) or set the rate on the arrangement.';
+const GC_RECORD = { owner: 'account', origin: 'account', family: 'repo', type: 'Repo (cash borrowed against securities)', lot: 'gcrepo', principal: 2_400_000, principalRc: 2_400_000, ccy: 'USD', rate: null, rateType: 'floating', rateText: 'SOFR + 0.05%', dayCount: 'ACT/360',
+  feesToDate: 0, startDate: '2026-05-05', maturity: '2026-05-19', term: 'term', lender: 'Wexham Securities', collateral: 'T-3.75-AUG30: 2,500,000 pledged, haircut 2.00%', schedule: 'Interest paid at repurchase', nextPayment: '2026-05-19', nextPaymentType: 'repo.end', structure: 'Classic repo, bilateral' };
+
+const gcRepo = {
+  productId: 'gc_repo',
+  title: 'General-collateral repo of 2,500,000 US Treasury notes by an Account at SOFR + 0.05%: fixings stop, the repurchase waits for a fixing entered by hand',
+  matrix: {
+    ...REPO_TICKET,
+    automaticInputs: ['the notes\' dirty value and the cash supported', 'each day\'s SOFR fixing (fixture; a fixing covers at most a week)', 'repo interest accrued daily at the fixing plus the spread', 'the stop of accrual, the flag and the alert when no fixing is available', 'the repurchase on the end date, waiting (blocked, with its reason) until the fixing is supplied or entered'],
+    manualInputs: ['every term, entered on the ticket (floating: reference rate SOFR and spread; collateral type General collateral)', 'a missing SOFR fixing, entered by hand (Data connection, Manual entries)'],
+    settlement: 'None for the repo: cash received when confirmed and paid back at the repurchase. The notes bought settle T+1',
+    lifecycle: 'Interest accrues daily at SOFR + 0.05%; without a fixing it stops and the repurchase waits; a repurchase by hand is refused meanwhile; once the fixing is entered the waiting repurchase is made at once',
+    accounting: 'Cash borrowed is a liability of the Account; repo interest a funding expense; the pledged notes stay on the Account\'s balance sheet with their accrued coupon',
+    collateral: 'General collateral (any eligible Treasury), recorded as a term: the notes pledged, released on repurchase. Nothing else differs from special collateral in the Terminal',
+  },
+  tradedOn: 'A GC repo is not a registry instrument: it is entered on the Repo or reverse repo ticket of the Treasury page (for the Account) and registers itself when the ticket is confirmed. The collateral is a registered US Treasury note.',
+  start: AT_1000('2026-05-04'), // Monday 4 May 2026, 10:00 New York
+  settlementCheck: { lag: 1, holidays: [] },
+  book: {
+    name: 'Matrix GC repo', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 3_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 2_600_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0 } }, fill: FILL, settlement: { bond: 1 } },
+  },
+  instruments: { note: NOTE },
+  quotes: { note: { bid: 99.20, ask: 99.30, last: 99.25, bidSize: 50_000_000, askSize: 50_000_000 } },
+  rates: { SOFR: { byDate: GC_SOFR } },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 2_600_000, unsettled: 0, payable: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 2_600_000, availableToWithdraw: 2_600_000, borrowed: 0, lent: 0 } },
+      treasury: { USD: { settled: 400_000, availableToTrade: 400_000, borrowed: 0 } },
+    },
+    positions: [], holdings: {}, pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 2_600_000, treasury: 400_000, book: 3_000_000 },
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+    pnl: { account: { couponInterest: 0, borrowFunding: 0, unrealized: 0, total: 0 }, book: { total: 0 } },
+    balance: {
+      account: { cash: 2_600_000, assets: 2_600_000, liabilities: 0, netAssets: 2_600_000 },
+      book: { cash: 3_000_000, assets: 3_000_000, liabilities: 0, netAssets: 3_000_000 },
+    },
+    oversight: { accountBorrowings: [], treasuryOwn: [] },
+  },
+  steps: [
+    {
+      id: 'buy-the-notes', covers: 'collateral', action: 'ticket', ticketOf: 'bond', instrument: 'note', side: 'buy', qty: 2_500_000, as: 'notes',
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'buy', instrument: 'note', qty: 2_500_000, estimate: 99.30, settleDate: '2026-05-05', gross: 2_482_500, accrued: 20_459.25, cash: -2_502_959.25, fees: 0 }] },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 2_500_000, avgPrice: 99.30 }] },
+        events: [{ type: 'strategy.submitted', owner: 'account' }, { type: 'trade.fill', summary: 'Bought 2,500,000 T-3.75-AUG30 @ 99.30 USD', owner: 'account', date: '2026-05-04' }],
+        cash: { account: { USD: { settled: 2_600_000, unsettled: -2_502_959.25, payable: 2_502_959.25, availableToTrade: 97_040.75, availableToWithdraw: 97_040.75 } } },
+        positions: [{ ...GNOTES, accrued: 20_459.25, pledged: 0 }],
+        holdings: { note: { long: 2_500_000, short: 0, net: 2_500_000 } },
+        pending: [{ instrument: 'note', lot: 'notes', owner: 'account', dueDate: '2026-05-05', amount: -2_502_959.25, ccy: 'USD', into: 'cash' }],
+        lifecycle: NOTE_LIFE,
+        pnl: { account: { unrealized: -1_250, total: -1_250 }, book: { total: -1_250 } },
+        nav: { account: 2_598_750, book: 2_998_750 },
+        balance: {
+          account: { cash: 2_600_000, positions: 2_481_250, accruedIncome: 20_459.25, payable: 2_502_959.25, assets: 5_101_709.25, liabilities: 2_502_959.25, netAssets: 2_598_750 },
+          book: { cash: 3_000_000, positions: 2_481_250, accruedIncome: 20_459.25, payable: 2_502_959.25, assets: 5_501_709.25, liabilities: 2_502_959.25, netAssets: 2_998_750 },
+        },
+      },
+    },
+    {
+      id: 'notes-settle', covers: 'settlement', action: 'clock', to: AT_1000('2026-05-05'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: /^Settlement: paid 2,502,959\.25 USD/, cash: { USD: -2_502_959.25 }, owner: 'account', date: '2026-05-05' }],
+        cash: { account: { USD: { settled: 97_040.75, unsettled: 0, payable: 0, availableToTrade: 97_040.75, availableToWithdraw: 97_040.75 } } },
+        pending: [],
+        balance: { account: { cash: 97_040.75, payable: null, assets: 2_598_750, liabilities: 0 }, book: { cash: 497_040.75, payable: null, assets: 2_998_750, liabilities: 0 } },
+      },
+    },
+    repoTicket('repo-at-the-gc-rate', GCREPO, {
+      covers: ['open', 'borrow', 'floating rate', 'collateral'],
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'repo_open', action: 'repo', purpose: 'financing', qty: 2_400_000, cash: 2_400_000, fees: 0, ccy: 'USD', dailyCost: 290, // 2,400,000 x (4.30% + 0.05%) / 360
+            financing: { amount: 2_400_000, rateType: 'floating', rate: null, referenceRate: 'SOFR', spread: 0.0005, fixing: 4.30, maturity: '2026-05-19', interestFrom: '2026-05-05',
+              collateral: { qty: 2_500_000, clean: 2_481_250, accrued: 20_459.25, worth: 2_501_709.25, haircutAmount: 50_034.18, buffer: 0, supports: 2_451_675.07 }, forward: null } }],
+          cash: { USD: { financingIn: 2_400_000, financingOut: 0, required: 0, available: 97_040.75, shortfall: 0, netCash: 2_400_000 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'repo_open', action: 'repo', instrument: 'gcrepo', status: 'filled', qty: 2_400_000, filledQty: 2_400_000 }] },
+        events: [
+          { type: 'strategy.submitted', owner: 'account' },
+          { type: 'repo.open', summary: 'Repo: received 2,400,000.00 USD against 2,500,000 T-3.75-AUG30 at SOFR + 0.05% to 2026-05-19', cash: { USD: 2_400_000 }, owner: 'account', date: '2026-05-05' },
+        ],
+        cash: { account: { USD: { settled: 2_497_040.75, availableToTrade: 2_497_040.75, availableToWithdraw: 2_497_040.75, borrowed: 2_400_000 } } },
+        positions: [{ ...GC_POS, accrued: 0 }, { ...GNOTES, accrued: 20_459.25, pledged: 2_500_000 }],
+        lifecycle: [{ type: 'repo.end', instrument: 'gcrepo', dueDate: '2026-05-19', status: 'pending', owner: 'account' }, ...NOTE_LIFE],
+        borrowings: [{ ...GC_RECORD, accrued: 0, costToDate: 0, blocked: null }],
+        balance: {
+          account: { cash: 2_497_040.75, borrowed: 2_400_000, assets: 4_998_750, liabilities: 2_400_000, netAssets: 2_598_750 },
+          book: { cash: 2_897_040.75, borrowed: 2_400_000, assets: 5_398_750, liabilities: 2_400_000, netAssets: 2_998_750 },
+        },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'gcrepo', principal: 2_400_000, ccy: 'USD', accrued: 0 }], treasuryOwn: [], accounts: { account: { cashBorrowed: 2_400_000 } } },
+      },
+    }),
+    {
+      // Tuesday 12 May: the run of Monday 11 May. The notes accrue to 85 days (22,013.12, +1,553.87); the repo 6 days at 4.35%
+      // (5 to 10 May; the weekend on Friday's fixing): 1,740.00.
+      id: 'a-week-at-the-gc-rate', covers: 'interest accrual', action: 'clock', to: AT_1000('2026-05-12'),
+      expect: {
+        events: [
+          { type: 'accrual.coupon', summary: /^Interest accrued on T-3\.75-AUG30: 1,553\.87 USD$/, owner: 'account', date: '2026-05-12' },
+          { type: 'accrual.interest', summary: 'Repo interest accrued on Wexham GC repo: 1,740.00 USD', owner: 'account', date: '2026-05-12' },
+        ],
+        positions: [{ ...GC_POS, accrued: -1_740 }, { ...GNOTES, accrued: 22_013.12, pledged: 2_500_000 }],
+        borrowings: [{ ...GC_RECORD, accrued: 1_740, costToDate: 1_740, blocked: null }],
+        pnl: { account: { couponInterest: 1_553.87, borrowFunding: -1_740, unrealized: -1_250, total: -1_436.13 }, book: { total: -1_436.13 } },
+        nav: { account: 2_598_563.87, book: 2_998_563.87 },
+        balance: {
+          account: { accruedIncome: 22_013.12, accruedExpense: 1_740, assets: 5_000_303.87, liabilities: 2_401_740, netAssets: 2_598_563.87 },
+          book: { accruedIncome: 22_013.12, accruedExpense: 1_740, assets: 5_400_303.87, liabilities: 2_401_740, netAssets: 2_998_563.87 },
+        },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'gcrepo', principal: 2_400_000, ccy: 'USD', accrued: 1_740 }] },
+      },
+    },
+    {
+      // Tuesday 19 May, the end date. Interest runs on the 8 May fixing to 15 May (5 more days, 1,450.00, total 3,190.00); from
+      // 16 May there is none within a week: it stops, and the repurchase waits, blocked. The run of 18 May accrues the notes to
+      // 92 days (23,825.97, +1,812.85).
+      id: 'repurchase-waits-for-a-fixing', covers: ['maturity', 'missing fixing', 'missing fixing blocks'], action: 'clock', to: AT_1000('2026-05-19'),
+      expect: {
+        events: [
+          { type: 'accrual.interest', summary: 'Repo interest accrued on Wexham GC repo: 1,450.00 USD', owner: 'account', date: '2026-05-19' },
+          { type: 'accrual.coupon', summary: /^Interest accrued on T-3\.75-AUG30: 1,812\.85 USD$/, owner: 'account', date: '2026-05-19' },
+        ],
+        positions: [{ ...GC_POS, accrued: -3_190 }, { ...GNOTES, accrued: 23_825.97, pledged: 2_500_000 }],
+        lifecycle: [{ type: 'repo.end', instrument: 'gcrepo', dueDate: '2026-05-19', status: 'blocked', owner: 'account', reason: GC_BLOCK }, ...NOTE_LIFE],
+        alerts: ['rate.missing'],
+        borrowings: [{ ...GC_RECORD, accrued: 3_190, costToDate: 3_190, blocked: GC_BLOCK }],
+        pnl: { account: { couponInterest: 3_366.72, borrowFunding: -3_190, total: -1_073.28 }, book: { total: -1_073.28 } },
+        nav: { account: 2_598_926.72, book: 2_998_926.72 },
+        balance: {
+          account: { accruedIncome: 23_825.97, accruedExpense: 3_190, assets: 5_002_116.72, liabilities: 2_403_190, netAssets: 2_598_926.72 },
+          book: { accruedIncome: 23_825.97, accruedExpense: 3_190, assets: 5_402_116.72, liabilities: 2_403_190, netAssets: 2_998_926.72 },
+        },
+        oversight: { accountBorrowings: [{ owner: 'account', origin: 'account', lot: 'gcrepo', principal: 2_400_000, ccy: 'USD', accrued: 3_190 }] },
+      },
+    },
+    {
+      id: 'repurchase-by-hand-without-the-fixing', covers: ['repurchase', 'missing fixing blocks'], action: 'repay', lot: 'gcrepo',
+      status: 'blocked', reason: 'The interest to today cannot be worked out without a fixing; the Terminal does not settle on the interest accrued so far.',
+      expect: { refused: 'Repo interest on Wexham GC repo cannot be worked out: no SOFR fixing from 2026-05-16. Enter the fixing by hand or set the rate before the repurchase.' },
+    },
+    {
+      // SOFR for Friday 15 May, 4.29%, entered by hand: it covers 16 to 18 May at 4.34%, 868.00. The waiting repurchase is made at
+      // once: 2,400,000 plus 4,058.00.
+      id: 'enter-the-fixing-by-hand', covers: ['manual fixing', 'repurchase', 'close', 'collateral released'], action: 'manual_rate', code: 'SOFR', value: 4.29, date: '2026-05-15', note: 'SOFR for 15 May, entered by hand: the feed has none after 8 May',
+      expect: {
+        events: [
+          { type: 'accrual.interest', summary: 'Repo interest accrued on Wexham GC repo: 868.00 USD', owner: 'account', date: '2026-05-19' },
+          { type: 'interest.payment', summary: 'Repo interest paid on Wexham GC repo: 4,058.00 USD', cash: { USD: -4_058 }, owner: 'account', date: '2026-05-19' },
+          { type: 'repo.close', summary: 'Repo repurchase: paid 2,400,000.00 USD principal (interest 4,058.00 USD); collateral released', cash: { USD: -2_400_000 }, owner: 'account', date: '2026-05-19' },
+        ],
+        cash: { account: { USD: { settled: 92_982.75, availableToTrade: 92_982.75, availableToWithdraw: 92_982.75, borrowed: 0 } } }, // 2,497,040.75 - 2,404,058.00
+        positions: [{ ...GNOTES, accrued: 23_825.97, pledged: 0 }],
+        lifecycle: NOTE_LIFE, alerts: [], borrowings: [],
+        pnl: { account: { couponInterest: 3_366.72, borrowFunding: -4_058, total: -1_941.28 }, book: { total: -1_941.28 } },
+        nav: { account: 2_598_058.72, book: 2_998_058.72 },
+        balance: {
+          account: { cash: 92_982.75, accruedExpense: null, borrowed: null, assets: 2_598_058.72, liabilities: 0, netAssets: 2_598_058.72 },
+          book: { cash: 492_982.75, accruedExpense: null, borrowed: null, assets: 2_998_058.72, liabilities: 0, netAssets: 2_998_058.72 },
+        },
+        oversight: { accountBorrowings: [], accounts: { account: { cashBorrowed: 0 } } },
+      },
+    },
+  ],
+};
+
+export default [repo, reverseRepo, overnightRepo, termRepo, openRepo, bilateralRepo, tripartyRepo, gcRepo];

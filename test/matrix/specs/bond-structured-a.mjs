@@ -2005,4 +2005,269 @@ const agencyMbs = {
   ],
 };
 
-export default [tips, foreignInflationLinked, callableBond, puttableBond, convertibleBond, exchangeableBond, cocoBond, agencyMbs];
+// ---------------------------------------------------------------------------------------------
+// non_agency_mbs
+// ---------------------------------------------------------------------------------------------
+// A private-label (non-agency) prime jumbo RMBS, subordinate Class B-1: 4.75% fixed, monthly 30/360, 24-day payment delay,
+// no guarantee (losses on the loans reach the subordinate classes first), T+2 (the instrument's own convention), factor
+// 0.6825513 for March 2029. Bought at a discount (92.50) by the Account.
+//   - Bought on Tuesday 6 March, increased on Thursday 8 March (settling Monday 12 March); held over Good Friday (30 March,
+//     bond and stock markets closed).
+//   - The April remittance report (published Friday 6 April) is recorded by hand, effective 1 April: first the realized loss
+//     allocated to the class, factor 0.6825513 to 0.6804313 (no payment: 4,500,000 x 0.00212 = 9,540 of principal written
+//     off), then the paydown, 0.6804313 to 0.6741078 (0.6790421 after scheduled amortisation alone), paid on 25 April.
+//   - A third is sold; the March coupon (on the March factor) and the April principal come on 25 April to the holder at the
+//     record date; the rest is sold for settlement before the April record date.
+// Commission: 0.5 basis point of clean principal. Days of 30/360 from 1 Mar: to 8 Mar 7, 9 Mar 8, 12 Mar 11, 29 Mar 28;
+// from 1 Apr: to 5 Apr 4, 9 Apr 8, 10 Apr 9, 24 Apr 23, 27 Apr 26. A month's coupon is 4.75% / 12 of current face.
+const nonAgencyMbs = {
+  productId: 'non_agency_mbs',
+  title: 'Harborview Prime Mortgage Trust 2024-2 Class B-1 (non-agency, subordinate): bought at a discount, increased, Good Friday, realized loss allocated by hand, paydown with prepayment split, partial sale, March coupon and April principal after the 24-day delay, close',
+  matrix: {
+    ...BOND_TICKET,
+    requiredFields: ['Account', 'Action', 'Face amount (original face)'],
+    manualInputs: ['Registration: Pool factor, Payment delay 24, no Guarantor, Settlement convention 2', 'Realized loss allocated by hand (instrument form: Principal written down to, Kind of write-down: Realized loss allocated, Write-down effective from)', 'Paydown recorded by hand (New pool factor, Factor effective from, Principal paid on, Factor after scheduled principal)'],
+    settlement: 'T+2 on the US bond calendar (the deal\'s own convention); current face = original face x factor; accrued 30/360 on current face',
+    lifecycle: 'Monthly coupon on the factor of the month, paid after the 24-day delay; loss allocation writes the factor down with no payment and cancels the interest accrued on the principal written off; paydown principal receivable until the payment date',
+    accounting: 'Cost per 100 of current face; the cost of principal written off is a realized loss; paydown at par against a discount cost is a realized gain; coupon and interest income; commission expensed',
+    collateral: 'None for a long position',
+  },
+  start: EST('2029-03-06'), // Tuesday
+  settlementCheck: { lag: 2, holidays: ['2029-03-30'] }, // Good Friday
+  book: {
+    name: 'Matrix non-agency MBS', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 5_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 4_000_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0.5 } }, fill: FILL, settlement: { bond: 1 }, short: SHORT },
+  },
+  instruments: {
+    main: { productId: 'non_agency_mbs', name: 'Harborview Prime Mortgage Trust 2024-2 Class B-1 4.75%', symbol: 'HPMT-24-2-B1', marketView: 'US_CASH', venueType: 'otc', issuer: 'Harborview Prime Mortgage Trust 2024-2', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { settleLag: 2 },
+      terms: { couponType: 'fixed', couponRate: 0.0475, frequency: 12, maturity: '2054-06-01', issueDate: '2024-06-01', dayCount: '30/360', redemption: 100, factor: 0.6825513, paymentDelayDays: 24, seniority: 'Subordinate (Class B-1)' } },
+  },
+  quotes: { main: { bid: 92, ask: 92.5, last: 92.25, bidSize: 20_000_000, askSize: 20_000_000 } },
+  expectAtStart: { ...startState(4_000_000, 1_000_000), cash: { account: usdCash(4_000_000), treasury: usdCash(1_000_000) } },
+  steps: [
+    {
+      id: 'open', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 3_000_000, as: 'lot',
+      expect: {
+        preview: {
+          blocking: 0, errors: [], warnings: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 3_000_000, estimate: 92.5, model: 'quoted-bid-ask', priceSource: 'Test fixture', settleDate: '2029-03-08', calendar: 'USBOND',
+            notional: 2_047_653.90, // current face: 3,000,000 x 0.6825513
+            gross: 1_894_079.86, // 2,047,653.90 x 92.50 / 100 = 1,894,079.858
+            accrued: 1_891.24, // 7 days: 2,047,653.90 x 4.75% x 7/360 = 1,891.2423
+            cash: -1_895_971.10, fees: 94.7 }], // 0.5 bp of 1,894,079.86 = 94.704
+          cash: { USD: { purchases: 1_895_971.10, fees: 94.7, required: 1_896_065.80, available: 4_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 3_000_000, avgPrice: 92.5, fills: [{ qty: 3_000_000, price: 92.5, model: 'quoted-bid-ask', settleDate: '2029-03-08', source: 'Test fixture' }] }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 3,000,000 HPMT-24-2-B1 @ 92.50 USD', owner: 'account', date: '2029-03-06' }],
+        cash: { account: { USD: { settled: 4_000_000, unsettled: -1_896_065.80, availableToTrade: 2_103_934.20 } } },
+        positions: [{ instrument: 'main', lot: 'lot', owner: 'account', direction: 'long', qty: 3_000_000, avgCost: 92.5, cost: 1_894_079.86, price: 92.25,
+          value: 1_888_960.72, unrealized: -5_119.14, accrued: 1_891.24, priceSource: 'Test fixture' }], // 2,047,653.90 x 92.25 / 100 = 1,888,960.723
+        holdings: { main: { long: 3_000_000, short: 0, net: 3_000_000 } },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2029-03-08', amount: -1_896_065.80, ccy: 'USD', into: 'cash' }],
+        // First coupon 1 April (March's interest) + 24 days = Wednesday 25 April. Maturity 1 Jun 2054 + 24 = Thursday 25 June 2054.
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2029-04-25', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2054-06-25', status: 'pending' }],
+        pnl: { account: { realized: 0, couponInterest: 0, commissions: -94.7, fees: 0, borrowFunding: 0, unrealized: -5_119.14, total: -5_213.84 } },
+        nav: { account: 3_994_786.16, book: 4_994_786.16 },
+        balance: { account: { cash: 4_000_000, accruedIncome: 1_891.24, positions: 1_888_960.72, payable: 1_896_065.80, assets: 5_890_851.96, liabilities: 1_896_065.80, netAssets: 3_994_786.16 } },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: EST('2029-03-08'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 1,896,065.80 USD from settled cash', cash: { USD: -1_896_065.80 }, date: '2029-03-08' }],
+        cash: { account: { USD: { settled: 2_103_934.20, unsettled: 0, availableToTrade: 2_103_934.20 } } },
+        pending: [],
+        balance: { account: { cash: 2_103_934.20, payable: null, assets: 3_994_786.16, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'increase', covers: 'increase', action: 'resize', lot: 'lot', factor: 1.5, // 3,000,000 -> 4,500,000
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', qty: 1_500_000, estimate: 92.5, settleDate: '2029-03-12', notional: 1_023_826.95,
+          gross: 947_039.93, accrued: 1_485.97, cash: -948_525.90, fees: 47.35 }], // 1,023,826.95 x 92.50 / 100 = 947,039.929; 11 days: 1,485.966; 0.5 bp = 47.352
+          cash: { USD: { purchases: 948_525.90, fees: 47.35, required: 948_573.25, available: 2_103_934.20, shortfall: 0 } } },
+        result: { status: 'open', orders: [{ action: 'buy', status: 'filled', filledQty: 1_500_000, avgPrice: 92.5 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Bought 1,500,000 HPMT-24-2-B1 @ 92.50 USD' }],
+        cash: { account: { USD: { settled: 2_103_934.20, unsettled: -948_573.25, availableToTrade: 1_155_360.95 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 4_500_000, cost: 2_841_119.79, avgCost: 92.5, price: 92.25, value: 2_833_441.08, unrealized: -7_678.71, accrued: 3_377.21 }], // 3,071,480.85 x 92.25 / 100
+        holdings: { main: { long: 4_500_000, short: 0, net: 4_500_000 } },
+        pending: [{ instrument: 'main', dueDate: '2029-03-12', amount: -948_573.25, into: 'cash' }],
+        pnl: { account: { commissions: -142.05, unrealized: -7_678.71, total: -7_820.76 } },
+        nav: { account: 3_992_179.24, book: 4_992_179.24 },
+        balance: { account: { cash: 2_103_934.20, accruedIncome: 3_377.21, positions: 2_833_441.08, payable: 948_573.25, assets: 4_940_752.49, liabilities: 948_573.25, netAssets: 3_992_179.24 } },
+      },
+    },
+    {
+      // Monday 12 March. End of day Friday 9 Mar: 2,047,653.90 settled, 8 days, 2,161.4124, plus 1,023,826.95 to 12 Mar,
+      // 1,485.9663: 3,647.38. On the books 3,377.21: 270.17 more.
+      id: 'settle-increase', covers: ['settlement', 'accrual'], action: 'clock', to: EDT('2029-03-12'),
+      expect: {
+        events: [
+          { type: 'settlement.pay', summary: 'paid 948,573.25 USD from settled cash', cash: { USD: -948_573.25 } },
+          { type: 'accrual.coupon', summary: 'Interest accrued on HPMT-24-2-B1: 270.17 USD' },
+        ],
+        cash: { account: { USD: { settled: 1_155_360.95, unsettled: 0, availableToTrade: 1_155_360.95 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 4_500_000, accrued: 3_647.38 }],
+        pending: [],
+        pnl: { account: { couponInterest: 270.17, total: -7_550.59 } },
+        nav: { account: 3_992_449.41, book: 4_992_449.41 },
+        balance: { account: { cash: 1_155_360.95, payable: null, accruedIncome: 3_647.38, assets: 3_992_449.41, liabilities: 0, netAssets: 3_992_449.41 } },
+      },
+    },
+    {
+      // Monday 2 April, after Good Friday. End of day Thursday 29 Mar: 3,071,480.85 x 4.75% x 28/360 = 11,347.42; 7,700.04 more.
+      id: 'after-good-friday', covers: ['accrual', 'market holiday'], action: 'clock', to: EDT('2029-04-02'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on HPMT-24-2-B1: 7,700.04 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 4_500_000, accrued: 11_347.42 }],
+        pnl: { account: { couponInterest: 7_970.21, total: 149.45 } },
+        nav: { account: 4_000_149.45, book: 5_000_149.45 },
+        balance: { account: { accruedIncome: 11_347.42, assets: 4_000_149.45, netAssets: 4_000_149.45 } },
+      },
+    },
+    {
+      // Friday 6 April. End of day 5 Apr: March's coupon (due 25 April) 3,071,480.85 x 4.75% / 12 = 12,157.95, plus 4 days of April
+      // on the March factor 1,621.06: 13,779.01. 2,431.59 more.
+      id: 'remittance-day', covers: 'accrual', action: 'clock', to: EDT('2029-04-06'),
+      expect: {
+        events: [{ type: 'accrual.coupon', summary: 'Interest accrued on HPMT-24-2-B1: 2,431.59 USD' }],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 4_500_000, accrued: 13_779.01 }],
+        pnl: { account: { couponInterest: 10_401.80, total: 2_581.04 } },
+        nav: { account: 4_002_581.04, book: 5_002_581.04 },
+        balance: { account: { accruedIncome: 13_779.01, assets: 4_002_581.04, netAssets: 4_002_581.04 } },
+      },
+    },
+    {
+      // The realized loss allocated to Class B-1, recorded by hand from the remittance report: factor 0.6825513 to 0.6804313 from
+      // 1 April. 4,500,000 x 0.00212 = 9,540 of principal written off, no payment. Cost out 2,841,119.79 x 0.00212 / 0.6825513
+      // = 8,824.50: realized loss. April's 4 days of interest on the principal written off are cancelled: on 3,061,940.85 they
+      // are 1,616.02 instead of 1,621.06, 5.04 down. March's coupon keeps the March factor.
+      id: 'loss-allocated', covers: 'loss allocation (by hand)', action: 'instrument_lifecycle', instrument: 'main', body: { action: 'writedown', newFactor: 0.6804313, kind: 'loss', effective: '2029-04-01' },
+      expect: {
+        events: [
+          { type: 'bond.loss', summary: 'Realized loss allocated by hand to HPMT-24-2-B1: factor 0.6825513 to 0.6804313 from 2029-04-01, 9,540 of principal written off with no payment (4,500,000 original face); cost 8,824.50 USD written off as realized loss', owner: 'account', date: '2029-04-06' },
+          { type: 'accrual.coupon', summary: 'Accrued interest cancelled with the principal written off on HPMT-24-2-B1: 5.04 USD' },
+        ],
+        positions: [{ instrument: 'main', lot: 'lot', qty: 4_500_000, cost: 2_832_295.29, avgCost: 92.5, price: 92.25, value: 2_824_640.43, unrealized: -7_654.86, accrued: 13_773.97 }], // 3,061,940.85 x 92.25 / 100 = 2,824,640.434
+        pnl: { account: { realized: -8_824.50, couponInterest: 10_396.76, unrealized: -7_654.86, total: -6_224.65 } },
+        nav: { account: 3_993_775.35, book: 4_993_775.35 },
+        balance: { account: { accruedIncome: 13_773.97, positions: 2_824_640.43, assets: 3_993_775.35, netAssets: 3_993_775.35 } },
+      },
+    },
+    {
+      // The paydown, also from 1 April: 0.6804313 to 0.6741078, principal 4,500,000 x 0.0063235 = 28,455.75 receivable on 25 April.
+      // Scheduled 0.0013892 of original face (0.6804313 - 0.6790421), prepaid 0.0049343 (SMM 0.0049343 / 0.6790421 = 0.7267%).
+      // Cost out 2,832,295.29 x 0.0063235 / 0.6804313 = 26,321.57: realized +2,134.18 (principal returned at par, bought at 92.50).
+      // April's 4 days on 3,033,485.10: 1,600.95 instead of 1,616.02, 15.01 down... restated: 13,758.96.
+      id: 'factor-and-paydown', covers: ['paydown (by hand)', 'prepayment (by hand)'], action: 'instrument_lifecycle', instrument: 'main',
+      body: { action: 'paydown', newFactor: 0.6741078, effective: '2029-04-01', payDate: '2029-04-25', scheduledFactor: 0.6790421 },
+      expect: {
+        events: [
+          { type: 'bond.paydown', summary: 'Principal paydown on HPMT-24-2-B1: factor 0.6804313 to 0.6741078 from 2029-04-01; scheduled principal 0.0013892, prepaid 0.0049343 of original face (SMM 0.7267%), 28,455.75 USD receivable on 2029-04-25', owner: 'account', date: '2029-04-06' },
+          { type: 'accrual.coupon', summary: 'Accrued interest restated on the new factor of HPMT-24-2-B1, down: 15.01 USD' },
+        ],
+        cash: { account: { USD: { settled: 1_155_360.95, unsettled: 28_455.75, availableToTrade: 1_183_816.70 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 4_500_000, cost: 2_805_973.72, avgCost: 92.5, price: 92.25, value: 2_798_390, unrealized: -7_583.72, accrued: 13_758.96 }], // 3,033,485.10 x 92.25 / 100 = 2,798,390.005
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2029-04-25', amount: 28_455.75, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: -6_690.32, couponInterest: 10_381.75, unrealized: -7_583.72, total: -4_034.34 } },
+        nav: { account: 3_995_965.66, book: 4_995_965.66 },
+        balance: { account: { receivable: 28_455.75, accruedIncome: 13_758.96, positions: 2_798_390, assets: 3_995_965.66, netAssets: 3_995_965.66 } },
+      },
+    },
+    {
+      // A third sold: current face 1,500,000 x 0.6741078 = 1,011,161.70 at 92.00 = 930,268.76; accrued 9 days to Tuesday 10 April,
+      // 1,200.75. Cost out 2,805,973.72 / 3 = 935,324.57: realized -5,055.81.
+      id: 'reduce', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 1_500_000, from: 'lot',
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 1_500_000, estimate: 92, settleDate: '2029-04-10', notional: 1_011_161.70,
+          gross: 930_268.76, accrued: 1_200.75, cash: 931_469.51, fees: 46.51 }] }, // 1,011,161.70 x 4.75% x 9/360 = 1,200.754; 0.5 bp = 46.513
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 1_500_000, avgPrice: 92 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: /^Sold 1,500,000 HPMT-24-2-B1 @ 92\.00 USD \(realized [-−]5,055\.81 USD\)$/ }],
+        cash: { account: { USD: { settled: 1_155_360.95, unsettled: 959_878.75, availableToTrade: 2_115_239.70 } } }, // 28,455.75 + 931,423.00
+        positions: [{ instrument: 'main', lot: 'lot', qty: 3_000_000, cost: 1_870_649.15, avgCost: 92.5, price: 92.25, value: 1_865_593.34, unrealized: -5_055.81, accrued: 12_558.21 }],
+        holdings: { main: { long: 3_000_000, short: 0, net: 3_000_000 } },
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2029-04-25', status: 'pending' }, { type: 'bond.coupon', instrument: 'main', dueDate: '2029-05-25', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2054-06-25', status: 'pending' }],
+        pending: [
+          { instrument: 'main', owner: 'account', dueDate: '2029-04-10', amount: 931_423, ccy: 'USD', into: 'cash' },
+          { instrument: 'main', owner: 'account', dueDate: '2029-04-25', amount: 28_455.75, ccy: 'USD', into: 'cash' },
+        ],
+        pnl: { account: { realized: -11_746.13, commissions: -188.56, unrealized: -5_055.81, total: -6_608.75 } },
+        nav: { account: 3_993_391.25, book: 4_993_391.25 },
+        balance: { account: { receivable: 959_878.75, accruedIncome: 12_558.21, positions: 1_865_593.34, assets: 3_993_391.25, netAssets: 3_993_391.25 } },
+      },
+    },
+    {
+      // Tuesday 10 April. End of day 9 Apr: March's coupon on the 4,500,000 held at the record date 12,157.95, plus 8 days of April
+      // on 3,033,485.10 (the sale settles today) 3,202.01, less the 9 days sold 1,200.75: 14,159.21. 1,601.00 more.
+      id: 'settle-reduce', covers: ['settlement', 'accrual'], action: 'clock', to: EDT('2029-04-10'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 931,423.00 USD into settled cash', cash: { USD: 931_423 } },
+          { type: 'accrual.coupon', summary: 'Interest accrued on HPMT-24-2-B1: 1,601.00 USD' },
+        ],
+        cash: { account: { USD: { settled: 2_086_783.95, unsettled: 28_455.75, availableToTrade: 2_115_239.70 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 3_000_000, accrued: 14_159.21 }],
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2029-04-25', amount: 28_455.75, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { couponInterest: 11_982.75, total: -5_007.75 } },
+        nav: { account: 3_994_992.25, book: 4_994_992.25 },
+        balance: { account: { cash: 2_086_783.95, receivable: 28_455.75, accruedIncome: 14_159.21, assets: 3_994_992.25, netAssets: 3_994_992.25 } },
+      },
+    },
+    {
+      // Wednesday 25 April: the April principal 28,455.75 arrives, and March's coupon on the 4,500,000 held at the March record date
+      // on the March factor: 12,157.95. End of day 24 Apr: 2,022,323.40 x 4.75% x 23/360 = 6,137.19; 4,135.93 more.
+      id: 'coupon-and-principal', covers: ['coupon', 'paydown (by hand)', 'settlement'], action: 'clock', to: EDT('2029-04-25'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 28,455.75 USD into settled cash', cash: { USD: 28_455.75 }, date: '2029-04-25' },
+          { type: 'bond.coupon', summary: 'Coupon received on 4,500,000 HPMT-24-2-B1 (factor 0.6825513: current face 3,071,480.85): 12,157.95 USD', cash: { USD: 12_157.95 }, owner: 'account', date: '2029-04-25' },
+          { type: 'accrual.coupon', summary: 'Interest accrued on HPMT-24-2-B1: 4,135.93 USD' },
+        ],
+        cash: { account: { USD: { settled: 2_127_397.65, unsettled: 0, availableToTrade: 2_127_397.65 } } },
+        positions: [{ instrument: 'main', lot: 'lot', qty: 3_000_000, accrued: 6_137.19 }],
+        pending: [],
+        lifecycle: [{ type: 'bond.coupon', instrument: 'main', dueDate: '2029-05-25', status: 'pending' }, { type: 'bond.maturity', instrument: 'main', dueDate: '2054-06-25', status: 'pending' }],
+        pnl: { account: { couponInterest: 16_118.68, total: -871.82 } },
+        nav: { account: 3_999_128.18, book: 4_999_128.18 },
+        balance: { account: { cash: 2_127_397.65, receivable: null, accruedIncome: 6_137.19, assets: 3_999_128.18, netAssets: 3_999_128.18 } },
+      },
+    },
+    {
+      // The rest sold for settlement on Friday 27 April, before the April record date. 2,022,323.40 x 92.00 / 100 = 1,860,537.53;
+      // accrued 26 days 6,937.69 (800.50 more than on the books); realized 1,860,537.53 - 1,870,649.15 = -10,111.62.
+      id: 'close', covers: 'close', action: 'close', lot: 'lot', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', qty: 3_000_000, estimate: 92, settleDate: '2029-04-27', notional: 2_022_323.40,
+          gross: 1_860_537.53, accrued: 6_937.69, cash: 1_867_475.22, fees: 93.03 }] }, // 2,022,323.40 x 4.75% x 26/360 = 6,937.688; 0.5 bp = 93.027
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 3_000_000, avgPrice: 92 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: /^Sold 3,000,000 HPMT-24-2-B1 @ 92\.00 USD \(realized [-−]10,111\.62 USD\)$/ },
+          { type: 'accrual.coupon', summary: 'Interest earned to disposal of HPMT-24-2-B1: 800.50 USD' },
+        ],
+        cash: { account: { USD: { settled: 2_127_397.65, unsettled: 1_867_382.19, availableToTrade: 3_994_779.84 } } },
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', owner: 'account', dueDate: '2029-04-27', amount: 1_867_382.19, ccy: 'USD', into: 'cash' }],
+        lifecycle: [],
+        pnl: { account: { realized: -21_857.75, couponInterest: 16_919.18, commissions: -281.59, unrealized: 0, total: -5_220.16 } },
+        nav: { account: 3_994_779.84, book: 4_994_779.84 },
+        balance: { account: { cash: 2_127_397.65, receivable: 1_867_382.19, positions: null, accruedIncome: null, assets: 3_994_779.84, liabilities: 0, netAssets: 3_994_779.84 } },
+      },
+    },
+    {
+      id: 'settle-close', covers: 'settlement', action: 'clock', to: EDT('2029-04-27'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 1,867,382.19 USD into settled cash', cash: { USD: 1_867_382.19 } }],
+        cash: { account: { USD: { settled: 3_994_779.84, unsettled: 0, availableToTrade: 3_994_779.84 } }, treasury: usdCash(1_000_000) },
+        pending: [],
+        balance: { account: { cash: 3_994_779.84, receivable: null, assets: 3_994_779.84, liabilities: 0 } },
+      },
+    },
+  ],
+};
+
+export default [tips, foreignInflationLinked, callableBond, puttableBond, convertibleBond, exchangeableBond, cocoBond, agencyMbs, nonAgencyMbs];

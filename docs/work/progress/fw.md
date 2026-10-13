@@ -35,6 +35,11 @@
 - fra: passed E/A/B. Terminal fixes for it: contracts.js shows Fixing date for an FRA; api.js refreshBook also refreshes
   FX pairs of open positions' currencies (and the engine driver mirror) - NAV was provisional on a stale EUR rate.
   FRA offset discounting logged in BUGS.md (not fixed).
+- Asset forwards (fx.js): units delivered = qty x multiplier / underlying multiplier; multiplier defaults to the
+  underlying's; quantity/price labels from the underlying (qtyLabelFor, terms.quantityUnit/priceUnits); delivery
+  against payment ON the value date (was the underlying's lag from it). bond.js fillsOf counts 'forward.delivery' and
+  'option.delivery' events as fills (accrued interest bought on delivery was reversed by the next EOD).
+- bond_forward passes E/A/B; equity_forward re-passes E/A/B with same-day delivery.
 - test/core/forwards.test.js (4 tests) passes. equity_forward passes E/A/B (delivery from holdings fix in fx.js settleForwardTask).
   then equity_forward (agreement basis? physical delivery), bond_forward, commodity_forward, fx_swap, tba_mortgage.
 

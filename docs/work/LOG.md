@@ -170,3 +170,4 @@
 - 2026-10-13T18:09Z | b3 | +0.2 | agency_mbs passes at engine, API and browser
 - 2026-10-13T18:10Z | o2 | +0 | OTC exotic manual workflows built (Asian fixings, lookback extreme, basket/spread value, quanto rate, compound and swaption exercise into the underlying, CDS swaption knock-out)
 - 2026-10-13T18:11Z | o2 | +0 | core test otc.test.js green again: an Asian option without averaging dates keeps the settlement amount by hand
+- 2026-10-13T18:12Z | fw | +0.2 | fw: bond_forward passes at engine, API and browser (delivery with accrued interest on the value date)

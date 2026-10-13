@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 73.4% of the pass** (last milestone 2026-10-13T18:11Z, o2: core test otc.test.js green again: an Asian option without averaging dates keeps the settlement amount by hand)
+**Completeness: about 73.6% of the pass** (last milestone 2026-10-13T18:12Z, fw: fw: bond_forward passes at engine, API and browser (delivery with accrued interest on the value date))
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 

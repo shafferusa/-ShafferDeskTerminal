@@ -1342,4 +1342,225 @@ const insuranceLinked = {
   ],
 };
 
-export default [privateEquity, ventureCapital, hedgeFund, infrastructure, directRealEstate, insuranceLinked];
+// ---- the OTC contracts valued by hand ---------------------------------------------------------------------------------
+// Each is registered as its own contract with its terms, its settlement formula (shown on the contract and repeated with
+// the figures in the history row of the final settlement) and its collateral basis, which the Terminal requires as for
+// swaps and OTC options (core/agreements.js). Quantity 1 is the contract as registered; a mark entered by hand is the value
+// of the position to us (negative when against us), stored per contract. The final settlement is entered as the
+// realised value, worked out with the formula, and paid on the settlement date of the Book's manual lag (T+2).
+// Times: 10:00 New York (14:00 UTC in daylight time, 15:00 otherwise); end-of-day passes at 17:30 New York.
+const ny = (date, hhmm) => `${date}T${hhmm || (date >= '2026-03-08' && date < '2026-11-01' ? '14:00' : '15:00')}:00.000Z`;
+const nyEod = (date) => ny(date, date >= '2026-03-08' && date < '2026-11-01' ? '21:30' : '22:30');
+const OTC_TICKET = {
+  ticket: 'Instrument drawer, Trade tab: "Enter the contract" (and "Terminate (agreed amount)") with "State a fill price" (the upfront or the agreed amount per contract); then the trade preview. Marks and the final settlement: the position\'s Lifecycle menu',
+  automaticInputs: ['settlement date from the Book\'s manual lag on the contract\'s calendar', 'the settlement amount from the realised value with the contract\'s formula', 'collateral under the stated basis (independent amount, variation margin from the marks)'],
+};
+const SIMPLE_START = (account, treasury) => ({ cash: { account: { USD: { settled: account, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: account } }, treasury: { USD: { settled: treasury } } },
+  positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [], otc: [], nav: { account, treasury, book: account + treasury }, provisional: { account: false, book: false }, failed: { orders: 0, settlements: 0, lifecycle: 0 } });
+
+// ---------------------------------------------------------------------------------------------
+// variance_swap
+// ---------------------------------------------------------------------------------------------
+// Long 3-month S&P 500 variance at a strike of 20 with 50,000 vega notional (variance notional 50,000 / (2 x 20) = 1,250),
+// realised volatility capped at 2.5 x strike. Position-level collateral terms: variation margin on the marks entered by
+// hand with a 100,000 threshold and a 25,000 minimum transfer: posted when the mark is against us, returned, then held
+// from the counterparty, and handed back when the contract ends. 40% terminated early at an agreed amount; the rest
+// settled from the realised volatility entered by hand on the first business day after expiry (19 June is Juneteenth).
+const VS_POS = { instrument: 'main', lot: 'swap', owner: 'account', direction: 'variance buyer' };
+const VS_TASK = { type: 'manual.settlement', instrument: 'main', dueDate: '2026-06-19', owner: 'account' };
+const varianceSwap = {
+  productId: 'variance_swap',
+  title: 'S&P 500 variance swap, strike 20, vega notional 50,000, capped at 2.5x: marks and variation margin by hand, partial termination, settlement from realised volatility',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: ['Trading owner', 'Action (Enter the contract, Terminate)', 'Contracts', 'State a fill price', 'Strike, vega notional, cap, side, expiry (registration)', 'Collateral basis (registration, required)'],
+    manualInputs: ['marks (value of the position to us, date, source)', 'agreed termination amount', 'realised volatility at expiry'],
+    settlement: 'Entry and termination T+2 on the US calendar; final settlement T+2 after the realised volatility is entered (22 June 2026, paid 24 June)',
+    lifecycle: 'Expiry is a lifecycle item that waits, visibly, for the realised volatility entered by hand; the settlement amount is worked out with the formula and the position closed',
+    accounting: 'Zero cost at entry; valued at the mark entered by hand (negative when against us); termination and final settlement realized; settlement = variance notional x (realised vol² - strike²)',
+    collateral: 'Position-level terms: variation margin on the marks, threshold 100,000, minimum transfer 25,000; posted from settled cash, received into restricted cash, returned when the contract ends',
+  },
+  start: ny('2026-03-16'),
+  settlementCheck: { lag: 2, holidays: [] },
+  book: { name: 'Matrix variance swap', reportingCcy: 'USD', capital: [{ ccy: 'USD', amount: 3_000_000 }], account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 2_000_000 }] }, settings: SETTINGS },
+  instruments: {
+    main: { productId: 'variance_swap', name: 'S&P 500 variance swap, strike 20, June 2026 (Halvorsen Bank)', symbol: 'VS-SPX-JUN26', marketView: 'US_DERIV', venueType: 'otc', jurisdiction: 'US', underlyingGeo: 'US', tradingCcy: 'USD',
+      terms: { underlyingIndex: 'S&P 500 index, daily closes, 252 days a year', strikeVol: 20, vegaNotional: 50_000, capMultiple: 2.5, side: 'long', expiry: '2026-06-19', valuationMaxAgeDays: 3, counterparty: 'Halvorsen Bank',
+        collateralBasis: { type: 'position', independentAmount: { type: 'none' }, variationMargin: true, threshold: 100_000, minimumTransfer: 25_000 } } },
+  },
+  expectAtStart: SIMPLE_START(2_000_000, 1_000_000),
+  steps: [
+    {
+      id: 'enter', covers: 'open', action: 'ticket', instrument: 'main', side: 'buy', qty: 1, as: 'swap', order: { statedPrice: 0 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'buy', instrument: 'main', qty: 1, estimate: 0, model: 'stated-price', settleDate: '2026-03-18', calendar: 'US', cash: 0, fees: 0, notional: 50_000 }] }, // notional for collateral: the vega notional
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 1, avgPrice: 0 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 1 VS-SPX-JUN26 @ 0.00 USD', owner: 'account', date: '2026-03-16' }],
+        positions: [{ ...VS_POS, qty: 1, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, manual: { kind: 'variance', endDate: '2026-06-19', valuation: null } }],
+        holdings: { main: { long: 1, short: 0, net: 1 } },
+        pending: [],
+        lifecycle: [{ ...VS_TASK, status: 'pending' }],
+        otc: [{ instrument: 'main', lot: 'swap', owner: 'account', qty: 1, basis: 'position', mark: null, iaPosted: 0, vmPosted: 0, vmHeld: 0, vmStatus: 'not_valued_yet' }],
+        pnl: { account: { realized: 0, fees: 0 } },
+        nav: { account: 2_000_000, book: 3_000_000 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 2_000_000, assets: 2_000_000, liabilities: 0, netAssets: 2_000_000 } },
+      },
+    },
+    {
+      // The end-of-day pass has no mark for the contract: no variation margin can be worked out, and that is said.
+      id: 'no-mark-no-call', covers: 'variation margin', action: 'clock', to: nyEod('2026-03-16'),
+      expect: { otc: [{ instrument: 'main', vmStatus: 'cannot_value', vmReason: /VS-SPX-JUN26 has no mark/, vmPosted: 0 }], alerts: ['collateral.unvalued'] },
+    },
+    { id: 'tuesday', action: 'clock', to: ny('2026-03-17'), expect: {} },
+    {
+      id: 'mark-against-us', covers: 'valuation', action: 'lifecycle', lot: 'swap', body: { action: 'valuation', value: -180_000, asOf: '2026-03-17', source: 'Dealer mark, Halvorsen Bank (mid)' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of VS-SPX-JUN26 entered by hand: -180,000.00 USD for the 1 held, as of 2026-03-17, source: Dealer mark, Halvorsen Bank (mid). A manual input, not a market quote' }],
+        positions: [{ ...VS_POS, qty: 1, cost: 0, price: -180_000, value: -180_000, unrealized: -180_000, provisional: false, freshness: 'manual', priceSource: 'Manual entry' }],
+        otc: [{ instrument: 'main', mark: -180_000, markValue: -180_000 }],
+        pnl: { account: { unrealized: -180_000, total: -180_000 } },
+        nav: { account: 1_820_000, book: 2_820_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: -180_000, assets: 1_820_000, netAssets: 1_820_000 } },
+      },
+    },
+    {
+      // -180,000 is 80,000 beyond the 100,000 threshold (more than the 25,000 minimum transfer): 80,000 posted.
+      id: 'variation-margin-posted', covers: 'variation margin', action: 'clock', to: nyEod('2026-03-17'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under position-level terms: 80,000.00 USD posted. Netting set of 1 position marked at -180,000.00 USD; threshold 100,000.00 USD.', cash: { USD: -80_000 }, owner: 'account', date: '2026-03-17' }],
+        cash: { account: { USD: { settled: 1_920_000, margin: 80_000, availableToTrade: 1_920_000 } } },
+        otc: [{ instrument: 'main', vmPosted: 80_000, vmHeld: 0, vmExposure: -180_000, vmStatus: 'ok' }],
+        alerts: [],
+        balance: { account: { cash: 1_920_000, margin: 80_000 } },
+      },
+    },
+    { id: 'friday', action: 'clock', to: ny('2026-03-20'), expect: {} },
+    {
+      id: 'mark-recovers', covers: 'valuation', action: 'lifecycle', lot: 'swap', body: { action: 'valuation', value: 60_000, asOf: '2026-03-20', source: 'Dealer mark, Halvorsen Bank (mid)' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of VS-SPX-JUN26 entered by hand: 60,000.00 USD for the 1 held, as of 2026-03-20, source: Dealer mark, Halvorsen Bank (mid). A manual input, not a market quote' }],
+        positions: [{ ...VS_POS, qty: 1, cost: 0, price: 60_000, value: 60_000, unrealized: 60_000 }],
+        otc: [{ instrument: 'main', mark: 60_000, markValue: 60_000 }],
+        pnl: { account: { unrealized: 60_000, total: 60_000 } },
+        nav: { account: 2_060_000, book: 3_060_000 },
+        balance: { account: { positions: 60_000, assets: 2_060_000, netAssets: 2_060_000 } },
+      },
+    },
+    {
+      // +60,000 is inside the threshold: nothing is required, the 80,000 comes back.
+      id: 'variation-margin-returned', covers: 'variation margin', action: 'clock', to: nyEod('2026-03-20'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under position-level terms: 80,000.00 USD returned to us. Netting set of 1 position marked at 60,000.00 USD; threshold 100,000.00 USD.', cash: { USD: 80_000 }, owner: 'account' }],
+        cash: { account: { USD: { settled: 2_000_000, margin: 0, availableToTrade: 2_000_000 } } },
+        otc: [{ instrument: 'main', vmPosted: 0, vmHeld: 0, vmExposure: 60_000, vmStatus: 'ok' }],
+        balance: { account: { cash: 2_000_000, margin: null } },
+      },
+    },
+    { id: 'monday', action: 'clock', to: ny('2026-03-23'), expect: {} },
+    {
+      id: 'settle-before-expiry', covers: 'settlement', action: 'lifecycle', lot: 'swap', body: { action: 'settle', realised: 25 },
+      status: 'blocked', reason: 'The contract settles from its expiry, 19 June 2026.',
+      expect: { refused: 'VS-SPX-JUN26 settles from 2026-06-19' },
+    },
+    {
+      // 40% terminated at an agreed 150,000 for the whole contract: 0.4 x 150,000 = 60,000 received T+2 (25 March); realized 60,000.
+      // The 0.6 left is valued at the 20 March mark: 0.6 x 60,000 = 36,000.
+      id: 'partial-termination', covers: 'reduce', action: 'ticket', instrument: 'main', side: 'sell', qty: 0.4, from: 'swap', order: { statedPrice: 150_000 },
+      expect: {
+        preview: { blocking: 0, legs: [{ action: 'sell', qty: 0.4, estimate: 150_000, model: 'stated-price', settleDate: '2026-03-25', cash: 60_000, fees: 0 }] },
+        result: { status: 'open', orders: [{ action: 'sell', status: 'filled', filledQty: 0.4, avgPrice: 150_000 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 0.4 VS-SPX-JUN26 @ 150,000.00 USD (realized 60,000.00 USD)' }],
+        cash: { account: { USD: { settled: 2_000_000, unsettled: 60_000, availableToTrade: 2_060_000 } } },
+        positions: [{ ...VS_POS, qty: 0.6, cost: 0, price: 60_000, value: 36_000, unrealized: 36_000 }],
+        holdings: { main: { long: 0.6, short: 0, net: 0.6 } },
+        pending: [{ instrument: 'main', lot: 'swap', owner: 'account', dueDate: '2026-03-25', amount: 60_000, ccy: 'USD', into: 'cash' }],
+        otc: [{ instrument: 'main', qty: 0.6, mark: 60_000, markValue: 36_000 }],
+        pnl: { account: { realized: 60_000, unrealized: 36_000, total: 96_000 } },
+        nav: { account: 2_096_000, book: 3_096_000 },
+        balance: { account: { cash: 2_000_000, receivable: 60_000, positions: 36_000, assets: 2_096_000, netAssets: 2_096_000 } },
+      },
+    },
+    {
+      id: 'termination-paid', covers: 'settlement', action: 'clock', to: ny('2026-03-25'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 60,000.00 USD into settled cash', cash: { USD: 60_000 } }],
+        cash: { account: { USD: { settled: 2_060_000, unsettled: 0, availableToTrade: 2_060_000 } } },
+        pending: [],
+        balance: { account: { cash: 2_060_000, receivable: null } },
+      },
+    },
+    {
+      // Friday 27 March: the 20 March mark is 7 days old, past the 3-day limit.
+      id: 'mark-stale', covers: 'valuation', action: 'clock', to: ny('2026-03-27'),
+      expect: { positions: [{ ...VS_POS, qty: 0.6, value: 36_000, freshness: 'stale' }], provisional: { account: true, book: true } },
+    },
+    { id: 'june', action: 'clock', to: ny('2026-06-15'), expect: {} },
+    {
+      // The 0.6 held is worth 210,000 to us: 350,000 a contract.
+      id: 'mark-in-our-favour', covers: 'valuation', action: 'lifecycle', lot: 'swap', body: { action: 'valuation', value: 210_000, asOf: '2026-06-15', source: 'Dealer mark, Halvorsen Bank (mid)' },
+      expect: {
+        events: [{ type: 'manual.valuation', summary: 'Valuation of VS-SPX-JUN26 entered by hand: 210,000.00 USD for the 0.6 held (350,000.00 mark per contract, signed), as of 2026-06-15, source: Dealer mark, Halvorsen Bank (mid). A manual input, not a market quote' }],
+        positions: [{ ...VS_POS, qty: 0.6, price: 350_000, value: 210_000, unrealized: 210_000, freshness: 'manual' }],
+        otc: [{ instrument: 'main', mark: 350_000, markValue: 210_000 }],
+        pnl: { account: { unrealized: 210_000, total: 270_000 } },
+        nav: { account: 2_270_000, book: 3_270_000 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 210_000, assets: 2_270_000, netAssets: 2_270_000 } },
+      },
+    },
+    {
+      // +210,000 is 110,000 beyond the threshold: 110,000 received from the counterparty, held as restricted cash and owed back.
+      id: 'variation-margin-received', covers: 'variation margin', action: 'clock', to: nyEod('2026-06-15'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under position-level terms: 110,000.00 USD received. Netting set of 1 position marked at 210,000.00 USD; threshold 100,000.00 USD.', cash: { USD: 110_000 }, owner: 'account' }],
+        cash: { account: { USD: { settled: 2_060_000, restricted: 110_000, availableToTrade: 2_060_000 } } },
+        otc: [{ instrument: 'main', vmPosted: 0, vmHeld: 110_000, vmExposure: 210_000, vmStatus: 'ok' }],
+        balance: { account: { restricted: 110_000, collateralReceived: 110_000, assets: 2_380_000, liabilities: 110_000, netAssets: 2_270_000 } },
+      },
+    },
+    {
+      // Monday 22 June 2026, the first business day after the expiry (Friday 19 June is Juneteenth): the expiry waits, visibly,
+      // for the realised volatility. The 15 June mark is 7 days old.
+      id: 'expiry-waits', covers: 'settlement', action: 'clock', to: ny('2026-06-22'),
+      expect: {
+        lifecycle: [{ ...VS_TASK, status: 'blocked', reason: /^Waiting for the realised value, entered by hand \(Lifecycle, Final settlement\)\. Settlement = variance notional x/ }],
+        positions: [{ ...VS_POS, qty: 0.6, value: 210_000, freshness: 'stale' }],
+        provisional: { account: true, book: true },
+      },
+    },
+    {
+      // Realised volatility 26.50 (under the 50.00 cap): 1,250 x (26.50² - 20.00²) = 1,250 x 302.25 = 377,812.50 a contract;
+      // x 0.6 = 226,687.50, received T+2 (24 June). The 110,000 held goes back to the counterparty as the contract ends.
+      id: 'final-settlement', covers: 'close', action: 'lifecycle', lot: 'swap', body: { action: 'settle', realised: 26.5 },
+      expect: {
+        events: [
+          { type: 'manual.settlement', summary: 'Final settlement of VS-SPX-JUN26 entered by hand: realised volatility 26.50, strike 20.00: variance notional 1,250.00 (50,000.00 USD / (2 x 20.00)) x (26.50² - 20.00²), x 0.6 held = 226,687.50 USD received 2026-06-24', owner: 'account', date: '2026-06-22' },
+          { type: 'collateral.variation', summary: 'Variation margin under position-level terms: 110,000.00 USD returned to the counterparty. The last position of the netting set ended.', cash: { USD: -110_000 } },
+        ],
+        cash: { account: { USD: { settled: 2_060_000, unsettled: 226_687.5, restricted: 0, availableToTrade: 2_286_687.5 } } },
+        positions: [],
+        holdings: { main: null },
+        pending: [{ instrument: 'main', lot: 'swap', owner: 'account', dueDate: '2026-06-24', amount: 226_687.5, ccy: 'USD', into: 'cash' }],
+        lifecycle: [],
+        otc: [],
+        pnl: { account: { realized: 286_687.5, unrealized: 0, total: 286_687.5 } }, // 60,000 + 226,687.50
+        nav: { account: 2_286_687.5, book: 3_286_687.5 },
+        provisional: { account: false, book: false },
+        balance: { account: { cash: 2_060_000, receivable: 226_687.5, positions: null, restricted: null, collateralReceived: null, assets: 2_286_687.5, liabilities: 0, netAssets: 2_286_687.5 } },
+      },
+    },
+    {
+      id: 'settlement-paid', covers: 'settlement', action: 'clock', to: ny('2026-06-24'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 226,687.50 USD into settled cash', cash: { USD: 226_687.5 }, date: '2026-06-24' }],
+        cash: { account: { USD: { settled: 2_286_687.5, unsettled: 0, availableToTrade: 2_286_687.5 } } },
+        pending: [],
+        balance: { account: { cash: 2_286_687.5, receivable: null } },
+      },
+    },
+  ],
+};
+
+export default [privateEquity, ventureCapital, hedgeFund, infrastructure, directRealEstate, insuranceLinked, varianceSwap];
