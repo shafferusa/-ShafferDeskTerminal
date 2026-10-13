@@ -315,7 +315,7 @@ export function createAccounting(app) {
         // and the daily mark tops them up), so it is read from that position as well as from the borrow itself.
         const shortPos = und ? positions.find(p.unit_id, und.id, p.strategy_id) : null;
         const held = money(ledger.positionBalance(p.id, 'cash.restricted', ccy) + (shortPos ? ledger.positionBalance(shortPos.id, 'cash.restricted', ccy) : 0), ccy);
-        collateral = { kind: 'cash', description: `Cash collateral ${((t.collateralPct || 1) * 100).toFixed(0)}% of market value, held as restricted cash`, cash: held, ccy }; }
+        collateral = { kind: 'cash', description: `Cash collateral ${((t.collateralPct || 1) * 100).toFixed(0)}% of market value, held as restricted cash`, cash: held || null, ccy }; }
       else if (Array.isArray(t.collateral) && t.collateral.length) collateral = { kind: 'securities', description: t.collateral.map((c) => { const cp = positions.get(c.positionId); const ci = cp ? instruments.get(cp.instrument_id) : null; return `${ci ? ci.symbol || ci.name : 'Securities'}: ${Number(c.qty).toLocaleString('en-US')} pledged`; }).join('; ') };
       else collateral = { kind: 'none', description: t.loanType === 'margin' ? 'Secured on the Account\'s holdings (margin loan); no specific pledge recorded' : 'None (unsecured)' };
       out.push({
