@@ -1945,4 +1945,294 @@ const interestRateOption = {
   ],
 };
 
-export default [otcOption, bondOption, fxOption, commodityOption, cryptoOption, digitalOption, interestRateOption];
+// ---------------------------------------------------------------------------------------------
+// swaption
+// ---------------------------------------------------------------------------------------------
+// Two European swaptions on a 2-year USD swap starting 19 June 2026 (pay 4.00% fixed semi-annual 30/360, receive
+// 3-month Term SOFR quarterly ACT/360, maturity 19 June 2028), dealt with Dealer J, expiring Wednesday 17 June 2026.
+// Quantity is the notional; the premium is per 100 of notional (multiplier 0.01). A call is a payer swaption (it enters
+// the swap as written), a put a receiver swaption (the opposite side).
+//   - a payer swaption struck at 4.00%, physical, bought; position-level terms: variation margin over a 50,000 threshold.
+//     The Terminal does not value the swap to decide the exercise: at expiry the item asks for the decision. It is
+//     exercised by hand into the registered swap at a stated entry price of 0.00 (the swap is struck at 4.00%), which
+//     then lives with its own legs, payment schedule and collateral basis (independent amount 1% of notional), and is
+//     terminated the next day at a stated 0.30 per 100.
+//   - a receiver swaption struck at 3.50%, cash-settled, written; position-level terms: a fixed independent amount of
+//     50,000. Its settlement amount, agreed with the dealer, is entered by hand on the expiry item: 12,000 to the holder.
+const FS_SWAP = 'USD 2Y IRS pay 4.00% v TSFR3M, 19 Jun 2026 to 19 Jun 2028 (Dealer J)';
+const PAYER = 'USD 2Y payer swaption 4.00%, expiry 17 Jun 2026, physical (Dealer J)';
+const RECEIVER = 'USD 2Y receiver swaption 3.50%, expiry 17 Jun 2026, cash (Dealer J)';
+const swaption = {
+  productId: 'swaption',
+  title: 'USD 2-year swaptions: payer 4.00% bought and exercised by hand into its swap (then terminated); receiver 3.50% written, cash-settled at an amount entered by hand',
+  matrix: {
+    ...OTC_TICKET,
+    requiredFields: [...OTC_TICKET.requiredFields, 'Underlying instrument: the registered swap the swaption is exercised into', 'Payoff: Swaption', 'Multiplier 0.01 (premium per 100 of notional)'],
+    automaticInputs: ['premium settlement date, T+2 on the US dollar calendar', 'commission per unit of notional from the Book fee schedule', 'variation margin and independent amount from the position-level terms of each contract', 'after exercise: the swap\'s payment schedule and independent amount from its own registered terms'],
+    manualInputs: ['premium per 100 of notional (stated fill price)', 'marks entered by hand (Manual entry)', 'exercise decision at expiry: exercise into the swap with its entry price per 100 (Lifecycle, Exercise), or 0 as the settlement amount', 'settlement amount of the cash-settled receiver swaption, agreed with the dealer (Accounting, Pending)', 'termination of the swap at a stated amount per 100'],
+    settlement: 'Premium and commission T+2 on the US dollar calendar; the swap entered on exercise settles T+2 (effective 19 June); the receiver\'s cash settlement T+1; the swap termination T+2',
+    lifecycle: 'At expiry both items wait for an input: the payer for the exercise decision, the receiver for its settlement amount. Exercise into the swap by hand opens the swap with its own payment schedule and maturity; terminated at a stated amount; nothing scheduled afterwards',
+    accounting: 'Premium per 100 x notional x 0.01; premium realized on exercise and on cash settlement; the swap entered at its stated entry price and carried at its mark; commission expensed. The swaption is not valued by the Terminal',
+    collateral: 'Payer (bought): position-level terms, variation margin over a 50,000 threshold, received from the dealer and returned on exercise. Receiver (written): fixed independent amount 50,000, returned at settlement. The swap: its own basis, independent amount 1% of notional, posted on exercise and returned on termination',
+  },
+  start: at('2026-03-02'),
+  settlementCheck: { lag: 2, holidays: [] },
+  book: {
+    name: 'Matrix swaption', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 3_000_000 }],
+    account: { name: 'Rates', funding: [{ ccy: 'USD', amount: 1_000_000 }] },
+    settings: { fees: { otcoption: { perUnit: 0.00001, minimum: 0, bps: 0 }, swap: NO_FEE }, fill: FILL, settlement: { otcoption: 2, swap: 2 } }, // 10.00 per million of notional
+  },
+  instruments: {
+    swap: {
+      productId: 'interest_rate_swap', name: FS_SWAP, symbol: 'USD-FS-IRS-2Y', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', multiplier: 0.01,
+      conventions: { tradingCalendar: 'USD', settlementCalendar: 'USD', paymentCalendar: 'USD' },
+      terms: {
+        effective: '2026-06-19', maturity: '2028-06-19', counterparty: 'Dealer J',
+        collateralBasis: { type: 'position', independentAmount: { type: 'pct', pct: 0.01 }, variationMargin: false, threshold: 0, minimumTransfer: 0 },
+        legs: [
+          { side: 'pay', type: 'fixed', ccy: 'USD', rate: 0.04, months: 6, dayCount: '30/360' },
+          { side: 'receive', type: 'float', ccy: 'USD', index: 'TSFR3M', spread: 0, months: 3, dayCount: 'ACT/360' },
+        ],
+      },
+    },
+    payer: {
+      productId: 'swaption', name: PAYER, symbol: 'USD2Y-PAY400-JUN26', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', underlying: 'swap', multiplier: 0.01,
+      conventions: { tradingCalendar: 'USD', settlementCalendar: 'USD', paymentCalendar: 'USD' },
+      terms: { right: 'C', strike: 4.00, expiration: '2026-06-17', optionType: 'swaption', exercise: 'european', settlement: 'physical', counterparty: 'Dealer J',
+        collateralBasis: { type: 'position', independentAmount: { type: 'none' }, variationMargin: true, threshold: 50_000, minimumTransfer: 10_000 } },
+    },
+    receiver: {
+      productId: 'swaption', name: RECEIVER, symbol: 'USD2Y-REC350-JUN26', marketView: 'US_DERIV', venueType: 'otc', venueCountry: 'US', tradingCcy: 'USD', underlying: 'swap', multiplier: 0.01,
+      conventions: { tradingCalendar: 'USD', settlementCalendar: 'USD', paymentCalendar: 'USD' },
+      terms: { right: 'P', strike: 3.50, expiration: '2026-06-17', optionType: 'swaption', exercise: 'european', settlement: 'cash', counterparty: 'Dealer J',
+        collateralBasis: { type: 'position', independentAmount: { type: 'fixed', amount: 50_000 }, variationMargin: false, threshold: 0, minimumTransfer: 0 } },
+    },
+  },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 1_000_000, unsettled: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 1_000_000, availableToWithdraw: 1_000_000 } },
+      treasury: { USD: { settled: 2_000_000 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [], otc: [], alerts: [],
+    nav: { account: 1_000_000, treasury: 2_000_000, book: 3_000_000 },
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+  },
+  steps: [
+    otcTicket({
+      id: 'buy-payer', covers: ['open', 'collateral'], instrument: 'payer', side: 'buy', qty: 10_000_000, premium: 0.85, as: 'payers',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'buy', instrument: 'payer', qty: 10_000_000, estimate: 0.85, model: 'stated-price', settleDate: '2026-03-04', calendar: 'USD', cash: -85_000, fees: 100, notional: 10_000_000 }], // 10,000,000 x 0.85 x 0.01; 10,000,000 x 0.00001
+          cash: { USD: { purchases: 85_000, fees: 100, margin: 0, required: 85_100, available: 1_000_000, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 10_000_000, avgPrice: 0.85 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 10,000,000 USD2Y-PAY400-JUN26 @ 0.85 USD', owner: 'account', date: '2026-03-02' }],
+        cash: { account: { USD: { settled: 1_000_000, unsettled: -85_100, availableToTrade: 914_900, availableToWithdraw: 914_900 } } },
+        positions: [{ instrument: 'payer', lot: 'payers', owner: 'account', direction: 'long', qty: 10_000_000, avgCost: 0.85, cost: 85_000, price: null, value: null, unrealized: null, provisional: true, notional: 10_000_000, margin: 0 }],
+        holdings: { payer: { long: 10_000_000, short: 0, net: 10_000_000 } },
+        pending: [{ instrument: 'payer', owner: 'account', dueDate: '2026-03-04', amount: -85_100, ccy: 'USD', into: 'cash' }],
+        lifecycle: [{ type: 'option.expiry', instrument: 'payer', dueDate: '2026-06-17', status: 'pending' }],
+        otc: [{ instrument: 'payer', lot: 'payers', qty: 10_000_000, basis: 'position', mark: null, iaRequired: 0, iaPosted: 0, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: 0, commissions: -100, unrealized: 0, total: -100 } },
+        nav: { account: 999_900, book: 2_999_900 },
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 1_000_000, payable: 85_100, positions: 85_000, assets: 1_085_000, liabilities: 85_100, netAssets: 999_900 } },
+      },
+    }),
+    { id: 'half-an-hour-later', action: 'clock', to: at('2026-03-02', '15:30'), expect: {} },
+    otcTicket({
+      id: 'write-receiver', covers: ['write', 'collateral'], instrument: 'receiver', side: 'sell', qty: 10_000_000, premium: 0.40, as: 'receivers',
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'trade', action: 'sell', instrument: 'receiver', qty: 10_000_000, estimate: 0.4, model: 'stated-price', settleDate: '2026-03-04', calendar: 'USD', cash: 40_000, fees: 100, notional: 10_000_000 }],
+          cash: { USD: { proceeds: 40_000, fees: 100, margin: 50_000, required: 50_100, available: 914_900, shortfall: 0 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 10_000_000, avgPrice: 0.4 }] },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'trade.fill', summary: 'Sold 10,000,000 USD2Y-REC350-JUN26 @ 0.40 USD', owner: 'account' },
+          { type: 'otcoption.collateral', summary: `Collateral posted on ${RECEIVER} under its position-level terms: 50,000.00 USD (independent amount, fixed amount for the position)`, cash: { USD: -50_000 } },
+        ],
+        cash: { account: { USD: { settled: 950_000, unsettled: -45_200, margin: 50_000, availableToTrade: 904_800, availableToWithdraw: 864_900 } } }, // -85,100 + 39,900; 950,000 - 85,100
+        positions: [
+          { instrument: 'payer', lot: 'payers', qty: 10_000_000 },
+          { instrument: 'receiver', lot: 'receivers', owner: 'account', direction: 'short', qty: -10_000_000, avgCost: 0.4, cost: -40_000, price: null, value: null, unrealized: null, provisional: true, notional: 10_000_000, margin: 50_000 },
+        ],
+        holdings: { receiver: { long: 0, short: 10_000_000, net: -10_000_000 } },
+        pending: [
+          { instrument: 'payer', owner: 'account', dueDate: '2026-03-04', amount: -85_100, ccy: 'USD', into: 'cash' },
+          { instrument: 'receiver', owner: 'account', dueDate: '2026-03-04', amount: 39_900, ccy: 'USD', into: 'cash' },
+        ],
+        lifecycle: [{ type: 'option.expiry', instrument: 'payer', dueDate: '2026-06-17', status: 'pending' }, { type: 'option.expiry', instrument: 'receiver', dueDate: '2026-06-17', status: 'pending' }],
+        otc: [{ instrument: 'payer' }, { instrument: 'receiver', lot: 'receivers', qty: -10_000_000, basis: 'position', iaRequired: 50_000, iaPosted: 50_000, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { commissions: -200, total: -200 } },
+        nav: { account: 999_800, book: 2_999_800 }, // 950,000 + 50,000 + 39,900 - 85,100 + 85,000 - 40,000
+        balance: { account: { cash: 950_000, margin: 50_000, receivable: 39_900, payable: 85_100, positions: 45_000, assets: 1_084_900, liabilities: 85_100, netAssets: 999_800 } },
+      },
+    }),
+    {
+      id: 'mark-payer', covers: 'manual mark', action: 'manual_price', instrument: 'payer', value: 1.20, note: 'Dealer J mark per 100 of notional, by hand',
+      expect: {
+        positions: [{ instrument: 'payer', lot: 'payers', price: 1.2, value: 120_000, unrealized: 35_000, provisional: false }, { instrument: 'receiver', lot: 'receivers' }], // 10,000,000 x 1.20 x 0.01
+        otc: [{ instrument: 'payer', mark: 1.2, markValue: 120_000 }, { instrument: 'receiver' }],
+        pnl: { account: { unrealized: 35_000, total: 34_800 } },
+        nav: { account: 1_034_800, book: 3_034_800 },
+        balance: { account: { positions: 80_000, assets: 1_119_900, netAssets: 1_034_800 } },
+      },
+    },
+    {
+      id: 'mark-receiver', covers: 'manual mark', action: 'manual_price', instrument: 'receiver', value: 0.25, note: 'Dealer J mark per 100 of notional, by hand',
+      expect: {
+        positions: [{ instrument: 'payer', lot: 'payers' }, { instrument: 'receiver', lot: 'receivers', price: 0.25, value: -25_000, unrealized: 15_000, provisional: false }],
+        otc: [{ instrument: 'payer' }, { instrument: 'receiver', mark: 0.25, markValue: -25_000 }],
+        pnl: { account: { unrealized: 50_000, total: 49_800 } },
+        nav: { account: 1_049_800, book: 3_049_800 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 95_000, assets: 1_134_900, netAssets: 1_049_800 } },
+      },
+    },
+    {
+      // Payer marked at +120,000: 70,000 beyond the 50,000 threshold, posted by Dealer J (restricted, owed back).
+      id: 'variation-margin-received', covers: 'variation margin', action: 'clock', to: eod('2026-03-02'),
+      expect: {
+        events: [{ type: 'collateral.variation', summary: 'Variation margin under position-level terms: 70,000.00 USD received. Netting set of 1 position marked at 120,000.00 USD; threshold 50,000.00 USD.', owner: 'account' }],
+        cash: { account: { USD: { restricted: 70_000 } } },
+        otc: [{ instrument: 'payer', vmHeld: 70_000, vmExposure: 120_000, vmStatus: 'ok' }, { instrument: 'receiver' }],
+        balance: { account: { restricted: 70_000, collateralReceived: 70_000, assets: 1_204_900, liabilities: 155_100, netAssets: 1_049_800 } },
+      },
+    },
+    {
+      id: 'settle-premiums', covers: 'settlement', action: 'clock', to: at('2026-03-04'),
+      expect: {
+        events: [
+          { type: 'settlement.receive', summary: 'received 39,900.00 USD into settled cash', cash: { USD: 39_900 } },
+          { type: 'settlement.pay', summary: 'paid 85,100.00 USD from settled cash', cash: { USD: -85_100 } },
+        ],
+        cash: { account: { USD: { settled: 904_800, unsettled: 0, availableToTrade: 904_800, availableToWithdraw: 904_800 } } },
+        pending: [],
+        balance: { account: { cash: 904_800, receivable: null, payable: null, assets: 1_119_800, liabilities: 70_000 } }, // 904,800 + 70,000 + 50,000 + 95,000
+      },
+    },
+    {
+      // Expiry, after the close: each item waits for its input, visibly. Nothing is valued or decided by the Terminal.
+      id: 'expiry-waits-for-inputs', covers: 'expiry', action: 'clock', to: eod('2026-06-17'),
+      expect: {
+        events: [],
+        lifecycle: [
+          { type: 'option.expiry', instrument: 'payer', dueDate: '2026-06-17', status: 'blocked', reason: /^Record the exercise decision: exercise into USD-FS-IRS-2Y from the position's Lifecycle menu/ },
+          { type: 'option.expiry', instrument: 'receiver', dueDate: '2026-06-17', status: 'blocked', reason: /^Enter the settlement amount for this swaption/ },
+        ],
+      },
+    },
+    {
+      // Exercised by hand into the swap at 0.00 per 100: the payer closes at zero (85,000 realized) and 10,000,000 of the
+      // swap is entered as written (pay 4.00% fixed), settling T+2 on its effective date. The swap posts its own 1%
+      // independent amount, 100,000, and schedules its payments; the 70,000 Dealer J posted against the payer goes back.
+      id: 'exercise-into-swap', covers: ['exercise into the swap', 'physical settlement', 'collateral'], action: 'lifecycle', lot: 'payers', body: { action: 'exercise', contracts: 10_000_000, price: 0 },
+      expect: {
+        events: [
+          { type: 'option.exercised', summary: 'Exercised: 10,000,000 USD2Y-PAY400-JUN26 at strike 4', owner: 'account', date: '2026-06-17' },
+          { type: 'option.delivery', summary: 'Simulated exercise into USD-FS-IRS-2Y: entered as written 10,000,000 notional at 0.00 per 100 on exercise of USD2Y-PAY400-JUN26', owner: 'account' },
+          { type: 'swap.collateral', summary: `Collateral posted on ${FS_SWAP} under its position-level terms: 100,000.00 USD (independent amount, 1.00% of 10,000,000.00 USD notional)`, cash: { USD: -100_000 } },
+          { type: 'collateral.variation', summary: 'Variation margin under position-level terms: 70,000.00 USD returned to the counterparty. The last position of the netting set ended.', owner: 'account' },
+        ],
+        cash: { account: { USD: { settled: 804_800, restricted: 0, margin: 150_000, availableToTrade: 804_800, availableToWithdraw: 804_800 } } },
+        positions: [
+          { instrument: 'receiver', lot: 'receivers', qty: -10_000_000 },
+          { instrument: 'swap', lot: 'payers', owner: 'account', direction: 'as written', qty: 10_000_000, avgCost: 0, cost: 0, price: null, value: null, unrealized: null, provisional: true, notional: 10_000_000, margin: 100_000 },
+        ],
+        holdings: { payer: null, swap: { long: 10_000_000, short: 0, net: 10_000_000 } },
+        lifecycle: [
+          { type: 'option.expiry', instrument: 'receiver', dueDate: '2026-06-17', status: 'blocked' },
+          { type: 'swap.payment', instrument: 'swap', dueDate: '2026-09-21', status: 'pending' }, // floating, 19 Jun to 19 Sep (a Saturday)
+          { type: 'swap.payment', instrument: 'swap', dueDate: '2026-12-21', status: 'pending' }, // fixed, 19 Jun to 19 Dec (a Saturday)
+          { type: 'swap.maturity', instrument: 'swap', dueDate: '2028-06-19', status: 'pending' },
+        ],
+        otc: [{ instrument: 'receiver', lot: 'receivers' }, { instrument: 'swap', lot: 'payers', qty: 10_000_000, basis: 'position', mark: null, iaRequired: 100_000, iaPosted: 100_000, vmPosted: 0, vmHeld: 0 }],
+        pnl: { account: { realized: -85_000, unrealized: 15_000, total: -70_200 } },
+        nav: { account: 929_800, book: 2_929_800 }, // 804,800 + 150,000 + 0 (swap at cost) - 25,000
+        provisional: { account: true, book: true },
+        balance: { account: { cash: 804_800, margin: 150_000, restricted: null, collateralReceived: null, positions: -25_000, assets: 929_800, liabilities: 0, netAssets: 929_800 } },
+      },
+    },
+    {
+      // The receiver's settlement amount agreed with Dealer J, entered by hand: 12,000 due to the holder, so paid by the
+      // Account, T+1: 12,000 / (10,000,000 x 0.01) = 0.12 per 100. Realized 40,000 - 12,000. The 50,000 comes back.
+      id: 'receiver-settlement-amount', covers: ['expiry', 'cash settlement', 'manual settlement amount', 'collateral'], action: 'settlement_amount', lot: 'receivers', amount: 12_000,
+      expect: {
+        events: [
+          { type: 'option.cash_settled', summary: 'Assigned (cash settlement): 10,000,000 USD2Y-REC350-JUN26 at 0.12 USD per 100 of notional (settlement amount entered by hand)', owner: 'account', date: '2026-06-17' },
+          { type: 'otcoption.collateral', summary: `Collateral returned on ${RECEIVER} under its position-level terms: 50,000.00 USD (independent amount, the position ended)`, cash: { USD: 50_000 } },
+        ],
+        cash: { account: { USD: { settled: 854_800, margin: 100_000, unsettled: -12_000, availableToTrade: 842_800, availableToWithdraw: 842_800 } } },
+        positions: [{ instrument: 'swap', lot: 'payers', qty: 10_000_000 }],
+        holdings: { receiver: null },
+        pending: [{ instrument: 'receiver', owner: 'account', dueDate: '2026-06-18', amount: -12_000, ccy: 'USD', into: 'cash' }],
+        lifecycle: [
+          { type: 'swap.payment', instrument: 'swap', dueDate: '2026-09-21', status: 'pending' },
+          { type: 'swap.payment', instrument: 'swap', dueDate: '2026-12-21', status: 'pending' },
+          { type: 'swap.maturity', instrument: 'swap', dueDate: '2028-06-19', status: 'pending' },
+        ],
+        otc: [{ instrument: 'swap', lot: 'payers' }],
+        pnl: { account: { realized: -57_000, unrealized: 0, total: -57_200 } }, // -85,000 + 28,000
+        nav: { account: 942_800, book: 2_942_800 }, // 854,800 + 100,000 - 12,000
+        balance: { account: { cash: 854_800, margin: 100_000, payable: 12_000, positions: null, assets: 954_800, liabilities: 12_000, netAssets: 942_800 } },
+      },
+    },
+    {
+      id: 'pay-settlement', covers: 'settlement', action: 'clock', to: at('2026-06-18'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: 'paid 12,000.00 USD from settled cash', cash: { USD: -12_000 } }],
+        cash: { account: { USD: { settled: 842_800, unsettled: 0, availableToTrade: 842_800, availableToWithdraw: 842_800 } } },
+        pending: [],
+        balance: { account: { cash: 842_800, payable: null, assets: 942_800, liabilities: 0 } },
+      },
+    },
+    {
+      id: 'mark-swap', covers: 'manual mark', action: 'manual_price', instrument: 'swap', value: 0.30, note: 'Dealer J mark per 100 of notional, by hand',
+      expect: {
+        positions: [{ instrument: 'swap', lot: 'payers', price: 0.3, value: 30_000, unrealized: 30_000, provisional: false }], // 10,000,000 x 0.30 / 100
+        otc: [{ instrument: 'swap', mark: 0.3, markValue: 30_000 }],
+        pnl: { account: { unrealized: 30_000, total: -27_200 } },
+        nav: { account: 972_800, book: 2_972_800 },
+        provisional: { account: false, book: false },
+        balance: { account: { positions: 30_000, assets: 972_800, netAssets: 972_800 } },
+      },
+    },
+    {
+      // The swap terminated with Dealer J at 0.30 per 100: 30,000 received T+2 (Monday 22 June). Its 100,000 comes back and
+      // its payments are no longer scheduled.
+      id: 'terminate-swap', covers: ['termination at a stated amount', 'close'], action: 'close', lot: 'payers', scope: 'strategy', percent: 100, order: { statedPrice: 0.30 },
+      expect: {
+        preview: { blocking: 0, errors: [], legs: [{ kind: 'trade', action: 'sell', instrument: 'swap', qty: 10_000_000, estimate: 0.3, model: 'stated-price', settleDate: '2026-06-22', cash: 30_000, fees: 0 }] },
+        result: { orders: [{ kind: 'trade', action: 'sell', status: 'filled', filledQty: 10_000_000, avgPrice: 0.3 }] },
+        events: [
+          { type: 'strategy.legs_added' },
+          { type: 'trade.fill', summary: 'Terminated: 10,000,000 notional of USD-FS-IRS-2Y at 0.30 per 100 notional (realized 30,000.00 USD)' },
+          { type: 'swap.collateral', summary: `Collateral returned on ${FS_SWAP} under its position-level terms: 100,000.00 USD (independent amount, the position ended)`, cash: { USD: 100_000 } },
+        ],
+        cash: { account: { USD: { settled: 942_800, margin: 0, unsettled: 30_000, availableToTrade: 972_800, availableToWithdraw: 942_800 } } },
+        positions: [], holdings: { swap: null }, otc: [], lifecycle: [],
+        pending: [{ instrument: 'swap', owner: 'account', dueDate: '2026-06-22', amount: 30_000, ccy: 'USD', into: 'cash' }],
+        pnl: { account: { realized: -27_000, unrealized: 0, total: -27_200 } },
+        nav: { account: 972_800, book: 2_972_800 },
+        balance: { account: { cash: 942_800, margin: null, receivable: 30_000, positions: null, assets: 972_800, liabilities: 0, netAssets: 972_800 } },
+      },
+    },
+    {
+      id: 'settle-termination', covers: 'settlement', action: 'clock', to: at('2026-06-22'),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 30,000.00 USD into settled cash', cash: { USD: 30_000 } }],
+        cash: { account: { USD: { settled: 972_800, unsettled: 0, availableToTrade: 972_800, availableToWithdraw: 972_800 } } },
+        pending: [],
+        balance: { account: { cash: 972_800, receivable: null } },
+      },
+    },
+  ],
+};
+
+export default [otcOption, bondOption, fxOption, commodityOption, cryptoOption, digitalOption, interestRateOption, swaption];

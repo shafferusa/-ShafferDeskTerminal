@@ -1199,13 +1199,13 @@ const fxSwap = {
       id: 'far-leg-settles', covers: ['settlement', 'close', 'holiday'], action: 'clock', to: AM('2026-07-06'),
       expect: {
         events: [{ type: 'forward.settlement', summary: 'FX forward settled: delivered 1,000,000.00 EUR against 1,087,200.00 USD at 1.0872', owner: 'account', date: '2026-07-06' }],
-        cash: { account: { USD: cashOf(1_502_200), EUR: cashOf(0) } },
+        cash: { account: { USD: cashOf(1_502_200), EUR: null } }, // no euro balance is left
         positions: [],
         holdings: { far: null },
         lifecycle: [],
         pnl: { account: { realized: 0, unrealized: 0, fx: 2_200, total: 2_200 } },
         nav: { account: 1_502_200, book: 3_002_200 },
-        balance: { account: { cash: 1_502_200, positions: null, assets: 1_502_200, liabilities: 0, netAssets: 1_502_200 } },
+        balance: { account: { cash: 1_502_200, positions: null, assets: 1_502_200, liabilities: 0, netAssets: 1_502_200, local: { EUR: null, USD: { cash: 1_502_200 } } } },
         otc: [],
       },
     },

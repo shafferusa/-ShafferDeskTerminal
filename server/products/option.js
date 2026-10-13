@@ -407,7 +407,7 @@ function makeOptionPlugin(family, listed) {
           const und = app.instruments.get(inst.underlying_id);
           return { blocked: `Record the exercise decision: exercise into ${und ? und.symbol || und.name : 'the underlying swap'} from the position's Lifecycle menu (Exercise, with the entry price per 100), or enter 0 as the settlement amount if the swaption is not exercised. The Terminal does not value the swap to decide for you.`, needs: [{ kind: 'settlement-amount', taskId: task.id }] };
         }
-        return { blocked: `Enter the settlement amount for this ${t.optionType} option (it is not computed by the Terminal).`, needs: [{ kind: 'settlement-amount', taskId: task.id }] };
+        return { blocked: `Enter the settlement amount for this ${t.optionType === 'swaption' ? 'swaption' : `${t.optionType} option`} (it is not computed by the Terminal).`, needs: [{ kind: 'settlement-amount', taskId: task.id }] };
       }
       if (task.data.manualAmount !== undefined && task.data.manualAmount !== null) {
         const r = settleOption(app, { book, unit, inst, pos, S: null, date: t.expiration, manualAmount: task.data.manualAmount, mode: 'engine' });

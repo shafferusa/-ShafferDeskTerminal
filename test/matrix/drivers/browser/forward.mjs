@@ -156,6 +156,46 @@ async function openStrategy(ui, ctx, lot, owner) {
 }
 
 export const actions = {
+  /**
+   * A package of registered forwards on the Strategies page (an FX swap's near and far legs): Trading owner, template
+   * Custom, "Add a leg" with Leg "Registered instrument" for each leg (instrument, side, quantity, stated fill price),
+   * then Preview package. Packages of anything else are left to the shared path.
+   */
+  async package(ui, t, ctx, step, { previewAndConfirm, expectsRefusal }) {
+    const input = step.input || {};
+    const legs = input.legs || [];
+    if ((input.template && input.template !== 'custom') || input.attachTo || !legs.length || !legs.every((l) => l.kind === 'trade' && String(l.instrumentId || '').startsWith('$inst:'))) return undefined;
+    const { page } = ui;
+    await ui.closeOverlays();
+    await ui.reloadAt('#/strategy');
+    const main = page.locator('main');
+    await ui.select(main, 'Trading owner').selectOption({ label: ownerName(ctx, step.owner) });
+    await ui.select(main, 'Execution template').selectOption('custom');
+    await ui.drawn();
+    for (const leg of legs) {
+      const inst = ctx.inst(leg.instrumentId.slice(6));
+      await ui.button(ui.section(main, /^Legs/), 'Add a leg').click();
+      const dlg = ui.dialog('Add a leg');
+      await dlg.waitFor();
+      await ui.select(dlg, /^\s*Leg\s*$/).selectOption('instrument');
+      await ui.drawn();
+      if (leg.purpose === 'hedge') await ui.option(dlg, 'Purpose', 'Hedge').click();
+      await pickInstrument(ui, ui.field(dlg, exactly('Instrument')), inst);
+      await ui.select(dlg, /^\s*Side\s*$/).selectOption(leg.action);
+      await ui.input(dlg, inst.qtyLabel || 'Quantity').fill(String(leg.qty));
+      if (leg.statedPrice !== undefined && leg.statedPrice !== null) await ui.input(dlg, 'State a fill price').fill(String(leg.statedPrice));
+      await ui.button(dlg, 'Add leg').click();
+      if (await dlg.locator('.notice.err').count()) {
+        const message = (await dlg.locator('.notice.err').first().innerText()).trim();
+        await ui.button(dlg, 'Cancel').click();
+        return { refusal: { message, where: 'Add a leg dialog' } };
+      }
+      await dlg.waitFor({ state: 'hidden' });
+    }
+    const out = await previewAndConfirm(ui, ctx, () => ui.button(main, 'Preview package').click(), { expectsRefusal });
+    if (out.strategy && step.as && !ctx.lots.has(step.as)) ctx.nameLot(step.as, out.strategy.id, step.instrument);
+    return out;
+  },
   /** A paper collateral agreement of the Book (Treasury, Collateral, New agreement): the same dialog the swap scenarios drive. */
   agreement: (...args) => swapActions.agreement(...args),
   /** Early termination at a stated amount: the position's Lifecycle menu, "Early termination", amount, notional, settlement date. */
