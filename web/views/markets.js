@@ -106,7 +106,7 @@ export default function Markets({ args, book, status }) {
   const table = (t, rows, { title } = {}) => html`<section class="panel mk-panel">
     ${title ? html`<header><h3>${title}</h3><span class="note">${rows.length === 1 ? '1 instrument' : `${rows.length} instruments`}</span></header>` : null}
     <div class="body flush">
-      ${base.loading && !base.data ? html`<${Empty}>Loading instruments…<//>` : html`<${Table} margin columns=${columnsFor(t.id, ctx)} rows=${rows} rowKey=${(i) => i.id} onRowClick=${(i) => openInstrument(i.id)}
+      ${base.loading && !base.data ? html`<${Empty}>Loading instruments…<//>` : html`<${MkTable} columns=${columnsFor(t.id, ctx)} rows=${rows} onRowClick=${(i) => openInstrument(i.id)}
         empty=${emptyFor(t, { instruments, filtered, inTab, wl, q, marketAwaiting, view, create })} />`}
     </div></section>`;
 
@@ -156,6 +156,20 @@ function Elsewhere({ q, hits, tabsAll }) {
       <span class="muted">${list.slice(0, 6).map((i) => i.symbol || i.name).join(', ')}${list.length > 6 ? ` and ${list.length - 6} more` : ''}</span></li>`)}</ul>`
       : html`<p class="note" style="margin:0">Nothing in US Based, US Derivatives, Foreign Based or Foreign Derivatives other than this view matches "${q}".</p>`}
   </div></div>`;
+}
+
+/**
+ * The Marketplace table: the kit's ledger table, with each cell labelled by its column (data-label) so that where the
+ * panel is too narrow for every column (a container query in app.css) each row becomes a card of labelled values
+ * instead of clipping columns or scrolling sideways.
+ */
+function MkTable({ columns, rows, onRowClick, empty }) {
+  if (!rows.length) return html`<${Empty} ...${empty} />`;
+  return html`<div class="tablewrap mk-wrap"><table class="ledger margin tight mk-table">
+    <thead><tr>${columns.map((c) => html`<th class=${c.align || ''} title=${c.title}>${c.label}</th>`)}</tr></thead>
+    <tbody>${rows.map((row) => html`<tr key=${row.id} class="click" onClick=${() => onRowClick(row)}>
+      ${columns.map((c, n) => html`<td class=${`${c.align || ''} ${n === 0 ? 'mk-head' : ''}`} data-label=${n === 0 ? null : c.label}>${c.render(row)}</td>`)}</tr>`)}</tbody>
+  </table></div>`;
 }
 
 // ---- empty states ---------------------------------------------------------------------------------------------------

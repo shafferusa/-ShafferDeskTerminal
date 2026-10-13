@@ -296,7 +296,8 @@ export const actions = {
     if (!r.ok) {
       await dlg.locator('.notice.err', { hasText: r.body?.error || 'no message' }).first().waitFor();
       const message = r.body?.error;
-      await ui.button(dlg, 'Cancel').click();
+      // The confirmation stays open beside the message, with its own Cancel: close the form with the footer's (the last one).
+      await ui.button(dlg, 'Cancel').last().click();
       return { refusal: { message, status: r.status, where: 'instrument form message' } };
     }
     await ui.toast(done);

@@ -388,4 +388,208 @@ const reverseRepo = {
   ],
 };
 
-export default [repo, reverseRepo];
+// ---------------------------------------------------------------------------------------------
+// overnight_repo
+// ---------------------------------------------------------------------------------------------
+// Treasury funds a holding of US Treasury bills overnight and rolls the funding. It buys 10,000,000 face of a bill and,
+// once it has settled, repos it overnight for the most cash it supports (value less a 1% haircut). The next business day
+// the repo is repurchased automatically with one day's interest and Treasury rolls it by hand: a new overnight repo on
+// the same bills at the new day's rate. That one is entered on Friday 22 May: the next business day of the dollar
+// payment calendar is Tuesday 26 May (Memorial Day, Monday 25 May, is a holiday), so it runs four days, and nothing
+// happens on the holiday.
+//
+// Inputs: USTB-20AUG26 (discount bill, no coupon, nothing accrues on it), quoted 98.94 / 98.95, last 98.945 (fixture); no
+// commission; T+1. Repo 1: 3.65% ACT/360, 21 to 22 May. Repo 2 (the roll): 3.70% ACT/360, 22 to 26 May.
+//   Bills: 10,000,000 x 98.945 / 100 = 9,894,500.00; less 1%: 9,795,555.00, borrowed both times.
+//   Repo 1: 9,795,555 x 0.0365 / 360 = 993.1604 -> 993.16 for the one day.
+//   Repo 2: 9,795,555 x 0.037 / 360 = 1,006.7654 a day; 4 days: 4,027.0615 -> 4,027.06.
+const BILL = { productId: 'treasury_bill', name: 'US Treasury Bill 20-Aug-2026', symbol: 'USTB-20AUG26', marketView: 'US_CASH', venueType: 'otc', issuer: 'United States Treasury', domicile: 'US', underlyingGeo: 'US', tradingCcy: 'USD', multiplier: 0.01,
+  terms: { couponType: 'zero', maturity: '2026-08-20', issueDate: '2026-02-19', dayCount: 'ACT/360', redemption: 100, minDenomination: 100 } };
+const ON_TERMS = { collateralInstrumentId: '$inst:bill', collateralQty: 10_000_000, haircut: 0.01, rateType: 'fixed', rate: 0.0365, dayCount: 'ACT/360', term: 'overnight', style: 'classic', collateralType: 'gc', triparty: false, counterparty: 'Larkspur Capital Markets' };
+const ON1 = { owner: 'treasury', side: 'repo', productId: 'overnight_repo', productLabel: 'Overnight repo', ccy: 'USD', principal: 9_795_555, name: 'Larkspur overnight repo 21 May', collateral: { instrument: 'bill', lot: 'bills' }, as: 'on1', terms: ON_TERMS };
+const ON2 = { ...ON1, name: 'Larkspur overnight repo 22 May', as: 'on2', terms: { ...ON_TERMS, rate: 0.037 } };
+const BILLS = { instrument: 'bill', lot: 'bills', owner: 'treasury', direction: 'long', qty: 10_000_000, avgCost: 98.95, cost: 9_895_000, price: 98.945, value: 9_894_500, unrealized: -500, accrued: 0 };
+const BILL_LIFE = { type: 'bond.maturity', instrument: 'bill', dueDate: '2026-08-20', status: 'pending', owner: 'treasury' };
+const onRecord = (lot, rate, rateText, maturity) => ({ owner: 'treasury', origin: 'treasury', family: 'repo', type: 'Repo (cash borrowed against securities)', lot, principal: 9_795_555, principalRc: 9_795_555, ccy: 'USD', rate, rateType: 'fixed', rateText, dayCount: 'ACT/360',
+  accrued: 0, costToDate: 0, feesToDate: 0, maturity, term: 'overnight', lender: 'Larkspur Capital Markets', collateral: 'USTB-20AUG26: 10,000,000 pledged, haircut 1.00%', schedule: 'Interest paid at repurchase', nextPayment: maturity, nextPaymentType: 'repo.end', blocked: null });
+
+const overnightRepo = {
+  productId: 'overnight_repo',
+  title: 'Overnight repo of 10,000,000 US Treasury bills by Treasury, repurchased the next business day and rolled by hand over Memorial Day',
+  matrix: {
+    ...REPO_TICKET,
+    automaticInputs: ['the end date: the next business day of the dollar payment calendar (Tuesday after Memorial Day)', 'the bills\' value from the price fixture (a discount bill accrues nothing)', 'the most cash it supports after the haircut', 'repurchase on the end date with interest for the days run', 'the daily check of the cover'],
+    manualInputs: ['every term, entered on the ticket', 'the roll: a new overnight repo entered each day at that day\'s rate (the Terminal does not renew an overnight repo by itself)'],
+    settlement: 'None for the repo: cash received when confirmed, paid back on the next business day. The bills bought settle T+1',
+    lifecycle: 'Repurchased automatically on the next business day with interest; rolled by entering a new overnight repo; an end date over a holiday runs to the next business day with interest for every day',
+    accounting: 'Cash borrowed is a liability of Treasury; repo interest is a funding expense; the pledged bills stay on Treasury\'s balance sheet at market value',
+    collateral: 'The bills are pledged for each night: not sellable or lendable; released at each repurchase and pledged again by the roll',
+  },
+  tradedOn: 'An overnight repo is not a registry instrument: it is entered on the Repo or reverse repo ticket of the Treasury page and registers itself when the ticket is confirmed. The collateral is a registered US Treasury bill.',
+  start: AT_1000('2026-05-20'), // Wednesday 20 May 2026, 10:00 New York
+  settlementCheck: { lag: 1, holidays: ['2026-05-25'] },
+  book: {
+    name: 'Matrix overnight repo', reportingCcy: 'USD',
+    capital: [{ ccy: 'USD', amount: 12_000_000 }],
+    account: { name: 'Alpha', funding: [{ ccy: 'USD', amount: 1_000_000 }] },
+    settings: { fees: { bond: { perUnit: 0, minimum: 0, bps: 0 } }, fill: FILL, settlement: { bond: 1 } },
+  },
+  instruments: { bill: BILL },
+  quotes: { bill: { bid: 98.94, ask: 98.95, last: 98.945, bidSize: 50_000_000, askSize: 50_000_000 } },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 1_000_000, availableToTrade: 1_000_000, availableToWithdraw: 1_000_000, borrowed: 0, lent: 0 } },
+      treasury: { USD: { settled: 11_000_000, unsettled: 0, payable: 0, reserved: 0, restricted: 0, margin: 0, availableToTrade: 11_000_000, availableToWithdraw: 11_000_000, borrowed: 0, lent: 0 } },
+    },
+    positions: [], holdings: {}, pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 1_000_000, treasury: 11_000_000, book: 12_000_000 },
+    provisional: { account: false, book: false },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+    pnl: { account: { total: 0 }, treasury: { borrowFunding: 0, unrealized: 0, total: 0 }, book: { total: 0 } },
+    balance: {
+      account: { cash: 1_000_000, assets: 1_000_000, liabilities: 0, netAssets: 1_000_000 },
+      treasury: { cash: 11_000_000, assets: 11_000_000, liabilities: 0, netAssets: 11_000_000 },
+      book: { cash: 12_000_000, assets: 12_000_000, liabilities: 0, netAssets: 12_000_000 },
+    },
+    oversight: { accountBorrowings: [], treasuryOwn: [] },
+  },
+  steps: [
+    {
+      id: 'buy-the-bills', covers: 'collateral', action: 'ticket', ticketOf: 'bond', instrument: 'bill', owner: 'treasury', side: 'buy', qty: 10_000_000, as: 'bills',
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'buy', instrument: 'bill', qty: 10_000_000, estimate: 98.95, model: 'quoted-bid-ask', settleDate: '2026-05-21', gross: 9_895_000, accrued: 0, cash: -9_895_000, fees: 0 }] }, // 10,000,000 x 98.95 / 100
+        result: { status: 'open', orders: [{ kind: 'trade', action: 'buy', status: 'filled', filledQty: 10_000_000, avgPrice: 98.95 }] },
+        events: [{ type: 'strategy.submitted', owner: 'treasury' }, { type: 'trade.fill', summary: 'Bought 10,000,000 USTB-20AUG26 @ 98.95 USD', owner: 'treasury', date: '2026-05-20' }],
+        cash: { treasury: { USD: { settled: 11_000_000, unsettled: -9_895_000, payable: 9_895_000, availableToTrade: 1_105_000, availableToWithdraw: 1_105_000 } } },
+        positions: [{ ...BILLS, pledged: 0 }],
+        holdings: { bill: { long: 10_000_000, short: 0, net: 10_000_000 } },
+        pending: [{ instrument: 'bill', lot: 'bills', owner: 'treasury', dueDate: '2026-05-21', amount: -9_895_000, ccy: 'USD', into: 'cash' }],
+        lifecycle: [BILL_LIFE],
+        pnl: { treasury: { unrealized: -500, total: -500 }, book: { total: -500 } }, // 10,000,000 x (98.945 - 98.95) / 100
+        nav: { treasury: 10_999_500, book: 11_999_500 },
+        balance: {
+          treasury: { cash: 11_000_000, positions: 9_894_500, payable: 9_895_000, assets: 20_894_500, liabilities: 9_895_000, netAssets: 10_999_500 },
+          book: { cash: 12_000_000, positions: 9_894_500, payable: 9_895_000, assets: 21_894_500, liabilities: 9_895_000, netAssets: 11_999_500 },
+        },
+      },
+    },
+    {
+      id: 'bills-settle', covers: 'settlement', action: 'clock', to: AT_1000('2026-05-21'),
+      expect: {
+        events: [{ type: 'settlement.pay', summary: /^Settlement: paid 9,895,000\.00 USD/, cash: { USD: -9_895_000 }, owner: 'treasury', date: '2026-05-21' }],
+        cash: { treasury: { USD: { settled: 1_105_000, unsettled: 0, payable: 0, availableToTrade: 1_105_000, availableToWithdraw: 1_105_000 } } },
+        pending: [],
+        balance: { treasury: { cash: 1_105_000, payable: null, assets: 10_999_500, liabilities: 0 }, book: { cash: 2_105_000, payable: null, assets: 11_999_500, liabilities: 0 } },
+      },
+    },
+    repoTicket('repo-overnight', ON1, {
+      covers: ['open', 'borrow', 'haircut', 'collateral'],
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [{ kind: 'repo_open', action: 'repo', purpose: 'financing', qty: 9_795_555, cash: 9_795_555, fees: 0, ccy: 'USD', dailyCost: 993.16,
+            financing: { amount: 9_795_555, rateType: 'fixed', rate: 0.0365, maturity: '2026-05-22', interestFrom: '2026-05-21',
+              collateral: { qty: 10_000_000, clean: 9_894_500, accrued: 0, worth: 9_894_500, haircutAmount: 98_945, buffer: 0, supports: 9_795_555 }, forward: null } }],
+          cash: { USD: { financingIn: 9_795_555, financingOut: 0, required: 0, available: 1_105_000, shortfall: 0, netCash: 9_795_555 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'repo_open', action: 'repo', instrument: 'on1', status: 'filled', qty: 9_795_555, filledQty: 9_795_555 }] },
+        events: [
+          { type: 'strategy.submitted', owner: 'treasury' },
+          { type: 'repo.open', summary: 'Repo: received 9,795,555.00 USD against 10,000,000 USTB-20AUG26 at 3.650% fixed to 2026-05-22', cash: { USD: 9_795_555 }, owner: 'treasury', date: '2026-05-21' },
+        ],
+        cash: { treasury: { USD: { settled: 10_900_555, availableToTrade: 10_900_555, availableToWithdraw: 10_900_555, borrowed: 9_795_555 } } }, // 1,105,000 + 9,795,555
+        positions: [
+          { ...BILLS, pledged: 10_000_000 },
+          { instrument: 'on1', lot: 'on1', owner: 'treasury', direction: 'repo (cash borrowed)', qty: -9_795_555, value: 9_795_555, carrying: -9_795_555, accrued: 0, collateralHeld: null },
+        ],
+        lifecycle: [{ type: 'repo.end', instrument: 'on1', dueDate: '2026-05-22', status: 'pending', owner: 'treasury' }, BILL_LIFE],
+        borrowings: [{ ...onRecord('on1', 0.0365, '3.650% fixed', '2026-05-22'), startDate: '2026-05-21' }],
+        balance: {
+          treasury: { cash: 10_900_555, positions: 9_894_500, borrowed: 9_795_555, assets: 20_795_055, liabilities: 9_795_555, netAssets: 10_999_500 },
+          book: { cash: 11_900_555, positions: 9_894_500, borrowed: 9_795_555, assets: 21_795_055, liabilities: 9_795_555, netAssets: 11_999_500 },
+        },
+        oversight: { accountBorrowings: [], treasuryOwn: [{ owner: 'treasury', origin: 'treasury', lot: 'on1', principal: 9_795_555, ccy: 'USD', accrued: 0 }] },
+      },
+    }),
+    {
+      // Friday 22 May: repurchased with one day's interest, 993.16; the bills are released.
+      id: 'repurchased-next-business-day', covers: ['maturity', 'close', 'repurchase', 'collateral released'], action: 'clock', to: AT_1000('2026-05-22'),
+      expect: {
+        events: [
+          { type: 'accrual.interest', summary: 'Repo interest accrued on Larkspur overnight repo 21 May: 993.16 USD', owner: 'treasury', date: '2026-05-22' },
+          { type: 'interest.payment', summary: 'Repo interest paid on Larkspur overnight repo 21 May: 993.16 USD', cash: { USD: -993.16 }, owner: 'treasury', date: '2026-05-22' },
+          { type: 'repo.close', summary: 'Repo repurchase: paid 9,795,555.00 USD principal (interest 993.16 USD); collateral released', cash: { USD: -9_795_555 }, owner: 'treasury', date: '2026-05-22' },
+        ],
+        cash: { treasury: { USD: { settled: 1_104_006.84, availableToTrade: 1_104_006.84, availableToWithdraw: 1_104_006.84, borrowed: 0 } } }, // 10,900,555 - 9,795,555 - 993.16
+        positions: [{ ...BILLS, pledged: 0 }],
+        lifecycle: [BILL_LIFE], borrowings: [],
+        pnl: { treasury: { borrowFunding: -993.16, unrealized: -500, total: -1_493.16 }, book: { total: -1_493.16 } },
+        nav: { treasury: 10_998_506.84, book: 11_998_506.84 },
+        balance: {
+          treasury: { cash: 1_104_006.84, borrowed: null, accruedExpense: null, assets: 10_998_506.84, liabilities: 0, netAssets: 10_998_506.84 },
+          book: { cash: 2_104_006.84, borrowed: null, accruedExpense: null, assets: 11_998_506.84, liabilities: 0, netAssets: 11_998_506.84 },
+        },
+        oversight: { treasuryOwn: [] },
+      },
+    },
+    repoTicket('roll-over-the-holiday', ON2, {
+      covers: ['open', 'roll', 'holiday'],
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          // Entered on Friday: the next business day is Tuesday 26 May (Memorial Day on Monday).
+          legs: [{ kind: 'repo_open', action: 'repo', purpose: 'financing', qty: 9_795_555, cash: 9_795_555, fees: 0, ccy: 'USD', dailyCost: 1_006.77,
+            financing: { amount: 9_795_555, rateType: 'fixed', rate: 0.037, maturity: '2026-05-26', interestFrom: '2026-05-22',
+              collateral: { qty: 10_000_000, clean: 9_894_500, accrued: 0, worth: 9_894_500, haircutAmount: 98_945, buffer: 0, supports: 9_795_555 }, forward: null } }],
+          cash: { USD: { financingIn: 9_795_555, financingOut: 0, required: 0, available: 1_104_006.84, shortfall: 0, netCash: 9_795_555 } },
+        },
+        result: { status: 'open', orders: [{ kind: 'repo_open', action: 'repo', instrument: 'on2', status: 'filled', qty: 9_795_555, filledQty: 9_795_555 }] },
+        events: [
+          { type: 'strategy.submitted', owner: 'treasury' },
+          { type: 'repo.open', summary: 'Repo: received 9,795,555.00 USD against 10,000,000 USTB-20AUG26 at 3.700% fixed to 2026-05-26', cash: { USD: 9_795_555 }, owner: 'treasury', date: '2026-05-22' },
+        ],
+        cash: { treasury: { USD: { settled: 10_899_561.84, availableToTrade: 10_899_561.84, availableToWithdraw: 10_899_561.84, borrowed: 9_795_555 } } },
+        positions: [
+          { ...BILLS, pledged: 10_000_000 },
+          { instrument: 'on2', lot: 'on2', owner: 'treasury', direction: 'repo (cash borrowed)', qty: -9_795_555, value: 9_795_555, carrying: -9_795_555, accrued: 0, collateralHeld: null },
+        ],
+        lifecycle: [{ type: 'repo.end', instrument: 'on2', dueDate: '2026-05-26', status: 'pending', owner: 'treasury' }, BILL_LIFE],
+        borrowings: [{ ...onRecord('on2', 0.037, '3.700% fixed', '2026-05-26'), startDate: '2026-05-22' }],
+        balance: {
+          treasury: { cash: 10_899_561.84, borrowed: 9_795_555, assets: 20_794_061.84, liabilities: 9_795_555, netAssets: 10_998_506.84 },
+          book: { cash: 11_899_561.84, borrowed: 9_795_555, assets: 21_794_061.84, liabilities: 9_795_555, netAssets: 11_998_506.84 },
+        },
+        oversight: { treasuryOwn: [{ owner: 'treasury', origin: 'treasury', lot: 'on2', principal: 9_795_555, ccy: 'USD', accrued: 0 }] },
+      },
+    }),
+    {
+      // Memorial Day: the run of Friday 22 May accrues nothing (the repo started that day); nothing is repurchased.
+      id: 'memorial-day-nothing-happens', covers: 'holiday', action: 'clock', to: AT_1000('2026-05-25'),
+      expect: { events: [], lifecycle: [{ type: 'repo.end', instrument: 'on2', dueDate: '2026-05-26', status: 'pending', owner: 'treasury' }, BILL_LIFE], nav: { treasury: 10_998_506.84, book: 11_998_506.84 } },
+    },
+    {
+      // Tuesday 26 May: four days of interest (22 to 26 May), 4,027.06, paid with the principal; the bills are released.
+      id: 'repurchased-after-the-holiday', covers: ['maturity', 'close', 'repurchase', 'collateral released'], action: 'clock', to: AT_1000('2026-05-26'),
+      expect: {
+        events: [
+          { type: 'accrual.interest', summary: 'Repo interest accrued on Larkspur overnight repo 22 May: 4,027.06 USD', owner: 'treasury', date: '2026-05-26' },
+          { type: 'interest.payment', summary: 'Repo interest paid on Larkspur overnight repo 22 May: 4,027.06 USD', cash: { USD: -4_027.06 }, owner: 'treasury', date: '2026-05-26' },
+          { type: 'repo.close', summary: 'Repo repurchase: paid 9,795,555.00 USD principal (interest 4,027.06 USD); collateral released', cash: { USD: -9_795_555 }, owner: 'treasury', date: '2026-05-26' },
+        ],
+        cash: { treasury: { USD: { settled: 1_099_979.78, availableToTrade: 1_099_979.78, availableToWithdraw: 1_099_979.78, borrowed: 0 } } }, // 10,899,561.84 - 9,795,555 - 4,027.06
+        positions: [{ ...BILLS, pledged: 0 }],
+        lifecycle: [BILL_LIFE], borrowings: [],
+        pnl: { treasury: { borrowFunding: -5_020.22, unrealized: -500, total: -5_520.22 }, book: { total: -5_520.22 } }, // 993.16 + 4,027.06
+        nav: { treasury: 10_994_479.78, book: 11_994_479.78 },
+        balance: {
+          treasury: { cash: 1_099_979.78, borrowed: null, assets: 10_994_479.78, liabilities: 0, netAssets: 10_994_479.78 },
+          book: { cash: 2_099_979.78, borrowed: null, assets: 11_994_479.78, liabilities: 0, netAssets: 11_994_479.78 },
+        },
+        oversight: { treasuryOwn: [] },
+      },
+    },
+  ],
+};
+
+export default [repo, reverseRepo, overnightRepo];

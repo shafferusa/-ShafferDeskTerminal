@@ -238,5 +238,6 @@ export function manualLines(p) {
   if (m.kind === 'freight' && m.settledQty) out.push(`settled ${fmtQty(m.settledQty)}: ${fmtMoney(m.settled, ccy, { sign: true })}`);
   if (m.endDate) out.push(`settles from ${m.endDate}`);
   out.push(m.valuation ? `valued by hand as of ${m.valuation.date} (${m.valuation.source})${m.valuation.stale ? ', stale' : ''}${m.valuation.rolledForward ? `, rolled forward ${fmtMoney(m.valuation.rolledForward, ccy, { sign: true })}` : ''}` : 'no valuation entered');
-  return out;
+  // Long lines wrap inside the position cell instead of pushing the table wider.
+  return out.map((x) => html`<span class="manual-line">${x}</span>`);
 }
