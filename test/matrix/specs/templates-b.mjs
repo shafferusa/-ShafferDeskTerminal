@@ -6341,4 +6341,444 @@ const futuresCalendar = {
   ],
 };
 
-export default [bearCall, longStraddle, longStrangle, ironCondor, ironButterfly, longButterfly, longCalendar, longDiagonal, syntheticLong, syntheticShort, pairsTrade, futuresHedge, futuresCalendar];
+// =====================================================================================================================
+// custom
+// =====================================================================================================================
+// The custom builder ("Custom Multi-Leg"): a validated mixed package of supported instruments, built leg by leg in the
+// "Add a leg" dialog. Ardent Robotics shares (NYSE, T+1) and its listed 20 March 2026 38 puts (physical delivery):
+//   leg 1  buy 500 ARDR (primary)
+//   leg 2  buy 5 ARDR 38 puts (hedge), "Runs after" leg 1: protection carried by the package itself
+// plus the page's financing (Treasury funding) when cash is short.
+//   cu      the hedge request is sent with the package: the fixture sees the 5 puts as protection already in place and
+//           proposes nothing more. Refused short of cash, then funded; the puts fill 3 then 2 (3 displayed). The
+//           stock closes at 37 on 20 March: the puts are exercised and deliver the 500 shares at 38: nothing left.
+//   refused a sale of shares the package does not hold, with no securities borrow (an unsupported combination): refused
+//           with the reason, nothing recorded.
+//   retry / accept / unwind  100 shares and 1 put when the put has no fresh quote: the put legs expire at the end of the
+//           day; Retry buys the put (exercised at expiry with the 100 shares), Accept keeps the shares alone (sold at the
+//           end), Unwind sells them.
+const CU_OPT = { underlyingId: '$inst:stock', expiration: '2026-03-20', strike: 38, right: 'P', multiplier: 100, deliverableUnits: 100, exercise: 'american', settlement: 'physical' };
+const CU_ORDER = { orderType: 'market', limitPrice: null, stopPrice: null, tif: 'day', statedPrice: null };
+/** The legs as the page sends them (web/views/strategy.js, customToSpecs). */
+const cuShares = (qty, key = 'stock', action = 'buy') => ({ purpose: 'primary', role: 'leg', kind: 'trade', action, instrumentId: `$inst:${key}`, qty, ...CU_ORDER, dependsOn: [] });
+const cuPut = (qty) => ({ purpose: 'hedge', role: 'hedge', kind: 'trade', action: 'buy', qty, group: 'options', option: CU_OPT, ...CU_ORDER, dependsOn: [1] });
+const cuInput = (legs, financing, context = {}) => ({ template: 'custom', underlyingId: '$inst:stock', origin: 'strategy_page', investmentStrategy: null, holdingPeriod: null, hedgeObjective: null, legs, financing, ...context });
+const CU_PAGE = (shares, puts, financing) => ({
+  template: 'Custom Multi-Leg', underlying: 'stock',
+  legs: [{ type: 'instrument', instrument: 'stock', side: 'Buy', qty: shares }, { type: 'option', right: 'P', expiration: '2026-03-20', strike: 38, side: 'Buy', qty: puts, purpose: 'hedge', after: 1 }],
+  ...(financing ? { financing } : {}),
+});
+const cuOne = (as) => ({ action: 'package', as, instrument: 'stock', input: cuInput([cuShares(100), cuPut(1)], null), strategyPage: CU_PAGE(100, 1, null) });
+const CU_CONTEXT = { investmentStrategy: { id: 'DEMO-IS-002', name: 'Core Equity', resolved: true, source: 'Demo fixture, not Analytics Lab', version: 'demo-1' }, holdingPeriod: { days: 30 }, hedgeObjective: { type: 'downside_protection' } };
+const customTemplate = {
+  template: 'custom',
+  title: 'Custom multi-leg package: Ardent Robotics shares with listed 38 puts as its own protection, Treasury funding, put exercise at expiry',
+  matrix: {
+    ticket: 'Strategies page, Custom Multi-Leg: Trading owner, Underlying (for the option legs), Legs panel ("Add a leg": Leg type, Purpose, Instrument or option Type / Expiration / Strike, Side, Quantity or Contracts; "Runs after" per leg), Financing; the hedge panel; the package preview and one confirmation. Retry, Unwind, Accept and Close on the strategy instance',
+    requiredFields: ['Trading owner', 'Execution template', 'at least one leg: its type, instrument (or option on the underlying), side and quantity'],
+    automaticInputs: ['bid, ask, last and displayed size of the shares and the puts (quote fixtures)', 'settlement dates from the US calendar', 'commission from the Book fee schedule', 'Treasury funding sized to the shortfall', 'hedge request answered by the labelled demo fixture', 'underlying close for the expiration date (close fixture)'],
+    manualInputs: ['every leg and its dependency', 'Retry, Unwind or Accept as it stands after the put leg fails', 'Close of what the package still holds'],
+    settlement: 'Shares and option premium T+1; exercise of the long puts delivers the shares at the strike, the proceeds settling T+1; Treasury funding at once',
+    lifecycle: 'The put leg runs after the shares and follows their fills; a failed put leg leaves the instance needing attention: Retry, Unwind or Accept; at expiry the in-the-money puts are exercised (automatic) and deliver the shares of the same instance',
+    accounting: 'Shares at average cost; puts at premium paid; on exercise the premium is realized and the shares are sold at the strike (realized against their cost); commissions expensed',
+    collateral: 'None: nothing is written or sold short',
+  },
+  start: MAR(2),
+  settlementCheck: { lag: 1, holidays: [] },
+  book: book('Templates custom', { funding: [{ ccy: 'USD', amount: 10_000 }] }),
+  instruments: {
+    stock: stockDraft('Ardent Robotics Inc.', 'ARDR'),
+    other: stockDraft('Brixton Tools Inc.', 'BRXT'),
+    p38: equityOption('ARDR', 'ARDR260320P38', 'P', 38, '2026-03-20'),
+  },
+  quotes: {
+    stock: { bid: 39.98, ask: 40.02, last: 40.00, bidSize: 10000, askSize: 10000 },
+    other: { bid: 24.98, ask: 25.02, last: 25.00, bidSize: 10000, askSize: 10000 },
+    p38: { bid: 0.90, ask: 1.00, last: 0.95, bidSize: 20, askSize: 3 }, // 3 contracts displayed at the ask
+  },
+  expectAtStart: {
+    cash: {
+      account: { USD: { settled: 10_000, unsettled: 0, reserved: 0, availableToTrade: 10_000, availableToWithdraw: 10_000 } },
+      treasury: { USD: { settled: 990_000, unsettled: 0, reserved: 0, availableToTrade: 990_000, availableToWithdraw: 990_000 } },
+    },
+    positions: [], pending: [], openOrders: [], lifecycle: [], borrowings: [],
+    nav: { account: 10_000, treasury: 990_000, book: 1_000_000 },
+    failed: { orders: 0, settlements: 0, lifecycle: 0 },
+    alerts: [],
+  },
+  steps: [
+    {
+      // The package's own puts go out with the hedge request as protection already in place; the fixture adds nothing.
+      id: 'hedge-request', covers: ['hedge request', 'existing protection'], action: 'hedge_request',
+      input: cuInput([cuShares(500), cuPut(5)], null, CU_CONTEXT),
+      strategyPage: { investmentStrategy: 'DEMO-IS-002', holdingDays: 30, objective: 'Downside protection', ...CU_PAGE(500, 5, null) },
+      expect: {
+        result: {
+          state: 'recommendation_ready', complete: true, source: { kind: 'demo-fixture', label: 'Demo fixture, not Shaffer Hedge' }, packages: [], recommendedId: null,
+          note: 'Nothing further is proposed for price risk: the position is already protected (5 puts in the template). The demo fixture does not layer a second hedge on top.',
+          investmentStrategy: { id: 'DEMO-IS-002', name: 'Core Equity', resolved: true }, holdingDays: 30, objective: 'downside_protection',
+          primary: { instrument: 'stock', direction: 'long', quantity: 500, status: 'proposed' },
+          proposedProtection: [{ action: 'buy', quantity: 5, right: 'P', strike: 38 }], linkedProtection: [], hedgesHeld: [],
+        },
+      },
+    },
+    {
+      // 500 x 40.02 = 20,010 (commission 2.50) and 5 x 1.00 x 100 = 500 (commission 3.25): 20,515.75 against 10,000.
+      id: 'open-short-of-cash', covers: 'financing', action: 'package', as: 'refused', instrument: 'stock',
+      input: cuInput([cuShares(500), cuPut(5)], null), strategyPage: CU_PAGE(500, 5, null),
+      status: 'blocked', reason: 'The Account cannot pay for the package: the preview is blocked until financing is chosen.',
+      expect: {
+        refused: 'Alpha is short 10,515.75 USD',
+        preview: {
+          blocking: 1, errors: ['cash'],
+          legs: [
+            { kind: 'trade', action: 'buy', purpose: 'primary', instrument: 'stock', qty: 500, estimate: 40.02, settleDate: '2026-03-03', cash: -20_010, fees: 2.50, dependsOn: [] },
+            { kind: 'trade', action: 'buy', purpose: 'hedge', instrument: 'p38', qty: 5, estimate: 1.00, settleDate: '2026-03-03', cash: -500, fees: 3.25, dependsOn: [1] },
+          ],
+          cash: { USD: { purchases: 20_510, fees: 5.75, required: 20_515.75, available: 10_000, shortfall: 10_515.75 } },
+        },
+      },
+    },
+    {
+      // Treasury funding 10,515.75 first; the shares fill 500 at 40.02; the puts, which run after the shares, 3 at 1.00
+      // (commission 1.95) and 2 on the next cycle (1.30).
+      id: 'open', covers: ['open', 'financing', 'partial fill', 'dependency', 'existing protection'], action: 'package', as: 'cu', instrument: 'stock',
+      input: cuInput([cuShares(500), cuPut(5)], { mode: 'treasury' }), strategyPage: CU_PAGE(500, 5, { mode: 'treasury' }),
+      expect: {
+        preview: {
+          blocking: 0, errors: [],
+          legs: [
+            { kind: 'funding', purpose: 'financing', qty: 10_515.75, cash: 10_515.75, dependsOn: [] },
+            { kind: 'trade', action: 'buy', purpose: 'primary', instrument: 'stock', qty: 500, estimate: 40.02, model: 'quoted-bid-ask', settleDate: '2026-03-03', cash: -20_010, fees: 2.50, dependsOn: [1] },
+            { kind: 'trade', action: 'buy', purpose: 'hedge', instrument: 'p38', qty: 5, estimate: 1.00, model: 'quoted-bid-ask', settleDate: '2026-03-03', cash: -500, fees: 3.25, dependsOn: [2, 1] },
+          ],
+          cash: { USD: { purchases: 20_510, fees: 5.75, financingIn: 10_515.75, required: 20_515.75, available: 10_000, shortfall: 0 } },
+          optionRequirement: [],
+        },
+        result: {
+          status: 'partial',
+          orders: [
+            { kind: 'funding', status: 'filled' },
+            { kind: 'trade', action: 'buy', instrument: 'stock', status: 'filled', filledQty: 500, avgPrice: 40.02 },
+            { kind: 'trade', action: 'buy', instrument: 'p38', status: 'partial', qty: 5, filledQty: 3, avgPrice: 1.00 },
+          ],
+        },
+        events: [
+          { type: 'strategy.submitted' },
+          { type: 'transfer.funding', summary: 'Treasury funding: 10,515.75 USD from Treasury to Alpha' },
+          { type: 'trade.fill', summary: 'Bought 500 ARDR @ 40.02 USD', date: '2026-03-02' },
+          { type: 'trade.fill', summary: 'Bought 3 ARDR260320P38 @ 1.00 USD' },
+          { type: 'trade.fill', summary: 'Bought 2 ARDR260320P38 @ 1.00 USD' },
+        ],
+        cash: {
+          account: { USD: { settled: 20_515.75, unsettled: -20_515.75, reserved: 0, availableToTrade: 0, availableToWithdraw: 0 } },
+          treasury: { USD: { settled: 979_484.25, availableToTrade: 979_484.25, availableToWithdraw: 979_484.25 } },
+        },
+        positions: [
+          { instrument: 'p38', lot: 'cu', owner: 'account', direction: 'long', qty: 5, avgCost: 1, cost: 500, price: 0.95, value: 475, unrealized: -25 },
+          { instrument: 'stock', lot: 'cu', owner: 'account', direction: 'long', qty: 500, avgCost: 40.02, cost: 20_010, price: 40, value: 20_000, unrealized: -10 },
+        ],
+        holdings: { p38: { long: 5, short: 0, net: 5 }, stock: { long: 500, short: 0, net: 500 } },
+        pending: [
+          { instrument: 'p38', lot: 'cu', dueDate: '2026-03-03', amount: -301.95, into: 'cash' },
+          { instrument: 'p38', lot: 'cu', dueDate: '2026-03-03', amount: -201.30, into: 'cash' },
+          { instrument: 'stock', lot: 'cu', dueDate: '2026-03-03', amount: -20_012.50, into: 'cash' },
+        ],
+        lifecycle: [{ type: 'option.expiry', instrument: 'p38', dueDate: '2026-03-20', status: 'pending' }],
+        pnl: { account: { realized: 0, commissions: -5.75, unrealized: -35, total: -40.75 }, book: { realized: 0, commissions: -5.75, unrealized: -35, total: -40.75 }, treasury: { total: 0 } },
+        nav: { account: 20_475, treasury: 979_484.25, book: 999_959.25 },
+        balance: {
+          account: { cash: 20_515.75, payable: 20_515.75, positions: 20_475, assets: 40_990.75, liabilities: 20_515.75, netAssets: 20_475 },
+          treasury: { cash: 979_484.25, assets: 979_484.25, netAssets: 979_484.25 },
+          book: { cash: 1_000_000, payable: 20_515.75, positions: 20_475, assets: 1_020_475, liabilities: 20_515.75, netAssets: 999_959.25 },
+        },
+      },
+    },
+    {
+      id: 'settle-open', covers: 'settlement', action: 'clock', to: MAR(3),
+      expect: {
+        events: [
+          { type: 'settlement.pay', summary: 'paid 20,012.50 USD from settled cash', date: '2026-03-03' },
+          { type: 'settlement.pay', summary: 'paid 301.95 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 201.30 USD from settled cash' },
+        ],
+        cash: { account: null },
+        pending: [],
+        balance: {
+          account: { cash: null, payable: null, assets: 20_475, liabilities: 0, netAssets: 20_475 },
+          book: { cash: 979_484.25, payable: null, assets: 999_959.25, liabilities: 0, netAssets: 999_959.25 },
+        },
+      },
+    },
+    {
+      id: 'fund-account', covers: 'internal funding', action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 15_000,
+      expect: {
+        events: [{ type: 'transfer.funding', summary: 'Treasury funding: 15,000.00 USD from Treasury to Alpha' }],
+        cash: { account: { USD: { settled: 15_000, unsettled: 0, availableToTrade: 15_000, availableToWithdraw: 15_000 } }, treasury: { USD: { settled: 964_484.25, availableToTrade: 964_484.25, availableToWithdraw: 964_484.25 } } },
+        nav: { account: 35_475, treasury: 964_484.25 },
+        balance: { account: { cash: 15_000, assets: 35_475, netAssets: 35_475 }, treasury: { cash: 964_484.25, assets: 964_484.25, netAssets: 964_484.25 }, book: { cash: 979_484.25 } },
+      },
+    },
+    {
+      // Buy 100 ARDR and sell 300 BRXT in one custom package: BRXT is not held and no securities borrow is in the
+      // package, so the sale has nothing to deliver. Refused with the reason; nothing is recorded.
+      id: 'refused-unsupported', covers: ['custom validation', 'unsupported combination'], action: 'package', as: 'refused', instrument: 'stock',
+      input: cuInput([cuShares(100), cuShares(300, 'other', 'sell')], null),
+      strategyPage: { template: 'Custom Multi-Leg', underlying: 'stock', legs: [{ type: 'instrument', instrument: 'stock', side: 'Buy', qty: 100 }, { type: 'instrument', instrument: 'other', side: 'Sell', qty: 300 }] },
+      status: 'blocked', reason: 'A sale of a security the package does not hold, without a securities borrow, is not a supported combination.',
+      expect: {
+        refused: 'Leg 2: this strategy holds 0 BRXT; it cannot sell 300. To go short, use a short sale with a securities borrow.',
+        preview: { blocking: 1, errors: ['no-position'] },
+      },
+    },
+    // The put's quote stops updating at 09:50.
+    { id: 'put-quote-stops', action: 'quote', instrument: 'p38', quote: { bid: 0.90, ask: 1.00, last: 0.95, bidSize: 20, askSize: 20, asOf: MAR(3, '09:50') }, expect: {} },
+    {
+      // 100 shares at 40.02 (4,002, commission 0.50 raised to the 1.00 minimum) and 1 put estimated at its last 0.95 (95,
+      // commission 0.65): 4,098.65 of 15,000. The put waits for a quote.
+      ...cuOne('retry'), id: 'open-retry', covers: ['open', 'failed leg'],
+      expect: {
+        preview: {
+          blocking: 0, warnings: ['not-executable'],
+          legs: [
+            { kind: 'trade', action: 'buy', instrument: 'stock', qty: 100, estimate: 40.02, settleDate: '2026-03-04', cash: -4_002, fees: 1, dependsOn: [] },
+            { kind: 'trade', action: 'buy', purpose: 'hedge', instrument: 'p38', qty: 1, estimate: null, reference: 0.95, executable: false, settleDate: '2026-03-04', cash: -95, fees: 0.65, dependsOn: [1] },
+          ],
+          cash: { USD: { purchases: 4_097, fees: 1.65, required: 4_098.65, available: 15_000, shortfall: 0 } },
+        },
+        result: { status: 'partial', orders: [{ instrument: 'stock', status: 'filled', filledQty: 100, avgPrice: 40.02 }, { instrument: 'p38', status: 'working', filledQty: 0 }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 100 ARDR @ 40.02 USD', date: '2026-03-03' }],
+        cash: { account: { USD: { settled: 15_000, unsettled: -4_003, availableToTrade: 10_997, availableToWithdraw: 10_997 } } },
+        positions: [
+          { instrument: 'p38', lot: 'cu', value: 475 },
+          { instrument: 'stock', lot: 'cu', value: 20_000 },
+          { instrument: 'stock', lot: 'retry', owner: 'account', direction: 'long', qty: 100, avgCost: 40.02, cost: 4_002, price: 40, value: 4_000, unrealized: -2 },
+        ],
+        holdings: { stock: { long: 600, short: 0, net: 600 } },
+        pending: [{ instrument: 'stock', lot: 'retry', dueDate: '2026-03-04', amount: -4_003, into: 'cash' }],
+        openOrders: [{ instrument: 'p38', kind: 'trade', action: 'buy', status: 'working', qty: 1, filledQty: 0 }],
+        pnl: { account: { commissions: -6.75, unrealized: -37, total: -43.75 }, book: { commissions: -6.75, unrealized: -37, total: -43.75 } },
+        nav: { account: 35_472, book: 999_956.25 },
+        balance: {
+          account: { cash: 15_000, payable: 4_003, positions: 24_475, assets: 39_475, liabilities: 4_003, netAssets: 35_472 },
+          book: { cash: 979_484.25, payable: 4_003, positions: 24_475, assets: 1_003_959.25, liabilities: 4_003, netAssets: 999_956.25 },
+        },
+      },
+    },
+    {
+      ...cuOne('accept'), id: 'open-accept', covers: ['open', 'failed leg'],
+      expect: {
+        preview: { blocking: 0, legs: [{ instrument: 'stock', qty: 100 }, { instrument: 'p38', qty: 1, estimate: null }], cash: { USD: { required: 4_098.65, available: 10_997, shortfall: 0 } } },
+        result: { status: 'partial', orders: [{ instrument: 'stock', status: 'filled' }, { instrument: 'p38', status: 'working' }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 100 ARDR @ 40.02 USD' }],
+        cash: { account: { USD: { settled: 15_000, unsettled: -8_006, availableToTrade: 6_994, availableToWithdraw: 6_994 } } },
+        positions: [{ instrument: 'p38', lot: 'cu' }, { instrument: 'stock', lot: 'accept', qty: 100, value: 4_000 }, { instrument: 'stock', lot: 'cu' }, { instrument: 'stock', lot: 'retry' }],
+        holdings: { stock: { long: 700, short: 0, net: 700 } },
+        pending: [{ lot: 'accept', amount: -4_003 }, { lot: 'retry', amount: -4_003 }],
+        openOrders: [{ instrument: 'p38', status: 'working' }, { instrument: 'p38', status: 'working' }],
+        pnl: { account: { commissions: -7.75, unrealized: -39, total: -46.75 }, book: { commissions: -7.75, unrealized: -39, total: -46.75 } },
+        nav: { account: 35_469, book: 999_953.25 },
+        balance: {
+          account: { cash: 15_000, payable: 8_006, positions: 28_475, assets: 43_475, liabilities: 8_006, netAssets: 35_469 },
+          book: { cash: 979_484.25, payable: 8_006, positions: 28_475, assets: 1_007_959.25, liabilities: 8_006, netAssets: 999_953.25 },
+        },
+      },
+    },
+    {
+      ...cuOne('unwind'), id: 'open-unwind', covers: ['open', 'failed leg'],
+      expect: {
+        preview: { blocking: 0, legs: [{ instrument: 'stock', qty: 100 }, { instrument: 'p38', qty: 1, estimate: null }], cash: { USD: { required: 4_098.65, available: 6_994, shortfall: 0 } } },
+        result: { status: 'partial', orders: [{ instrument: 'stock', status: 'filled' }, { instrument: 'p38', status: 'working' }] },
+        events: [{ type: 'strategy.submitted' }, { type: 'trade.fill', summary: 'Bought 100 ARDR @ 40.02 USD' }],
+        cash: { account: { USD: { settled: 15_000, unsettled: -12_009, availableToTrade: 2_991, availableToWithdraw: 2_991 } } },
+        positions: [{ instrument: 'p38', lot: 'cu' }, { instrument: 'stock', lot: 'accept' }, { instrument: 'stock', lot: 'cu' }, { instrument: 'stock', lot: 'retry' }, { instrument: 'stock', lot: 'unwind', qty: 100, value: 4_000 }],
+        holdings: { stock: { long: 800, short: 0, net: 800 } },
+        pending: [{ lot: 'accept' }, { lot: 'retry' }, { lot: 'unwind', amount: -4_003 }],
+        openOrders: [{ instrument: 'p38', status: 'working' }, { instrument: 'p38', status: 'working' }, { instrument: 'p38', status: 'working' }],
+        pnl: { account: { commissions: -8.75, unrealized: -41, total: -49.75 }, book: { commissions: -8.75, unrealized: -41, total: -49.75 } },
+        nav: { account: 35_466, book: 999_950.25 },
+        balance: {
+          account: { cash: 15_000, payable: 12_009, positions: 32_475, assets: 47_475, liabilities: 12_009, netAssets: 35_466 },
+          book: { cash: 979_484.25, payable: 12_009, positions: 32_475, assets: 1_011_959.25, liabilities: 12_009, netAssets: 999_950.25 },
+        },
+      },
+    },
+    {
+      // The share purchases settle on 4 March; the three put legs expired unfilled at the end of 3 March.
+      id: 'put-legs-expire', covers: ['failed leg', 'settlement'], action: 'clock', to: MAR(4),
+      expect: {
+        events: [
+          { type: 'settlement.pay', summary: 'paid 4,003.00 USD from settled cash', date: '2026-03-04' },
+          { type: 'settlement.pay', summary: 'paid 4,003.00 USD from settled cash' },
+          { type: 'settlement.pay', summary: 'paid 4,003.00 USD from settled cash' },
+          { type: 'order.expired', summary: 'Leg 2 expired: buy 1 ARDR260320P38. Day order did not fill before the end of the business day' },
+          { type: 'order.expired', summary: 'Leg 2 expired: buy 1 ARDR260320P38. Day order did not fill before the end of the business day' },
+          { type: 'order.expired', summary: 'Leg 2 expired: buy 1 ARDR260320P38. Day order did not fill before the end of the business day' },
+        ],
+        cash: { account: { USD: { settled: 2_991, unsettled: 0, availableToTrade: 2_991, availableToWithdraw: 2_991 } } },
+        pending: [], openOrders: [],
+        failed: { orders: 3 },
+        alerts: ['strategy.attention', 'strategy.attention', 'strategy.attention'],
+        balance: {
+          account: { cash: 2_991, payable: null, assets: 35_466, liabilities: 0 },
+          book: { cash: 967_475.25, payable: null, assets: 999_950.25, liabilities: 0 },
+        },
+      },
+    },
+    { id: 'put-quote-back', action: 'quote', instrument: 'p38', quote: { bid: 0.90, ask: 1.00, last: 0.95, bidSize: 20, askSize: 20 }, expect: {} },
+    {
+      // Retry buys the put at 1.00: 100 and commission 0.65, due 5 March.
+      id: 'retry', covers: ['retry', 'failed leg'], action: 'recover', how: 'retry', lot: 'retry',
+      expect: {
+        preview: { blocking: 0, errors: [], intent: 'retry', legs: [{ kind: 'trade', action: 'buy', instrument: 'p38', qty: 1, estimate: 1.00, settleDate: '2026-03-05', cash: -100, fees: 0.65 }], cash: { USD: { purchases: 100, fees: 0.65, required: 100.65, available: 2_991, shortfall: 0 } } },
+        result: { status: 'open', complete: true, orders: [{ action: 'buy', instrument: 'p38', status: 'filled', filledQty: 1, avgPrice: 1.00 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Bought 1 ARDR260320P38 @ 1.00 USD', date: '2026-03-04' }],
+        cash: { account: { USD: { settled: 2_991, unsettled: -100.65, availableToTrade: 2_890.35, availableToWithdraw: 2_890.35 } } },
+        positions: [
+          { instrument: 'p38', lot: 'cu' }, { instrument: 'p38', lot: 'retry', owner: 'account', direction: 'long', qty: 1, avgCost: 1, cost: 100, price: 0.95, value: 95, unrealized: -5 },
+          { instrument: 'stock', lot: 'accept' }, { instrument: 'stock', lot: 'cu' }, { instrument: 'stock', lot: 'retry' }, { instrument: 'stock', lot: 'unwind' },
+        ],
+        holdings: { p38: { long: 6, short: 0, net: 6 } },
+        pending: [{ instrument: 'p38', lot: 'retry', dueDate: '2026-03-05', amount: -100.65, into: 'cash' }],
+        lifecycle: [{ type: 'option.expiry', instrument: 'p38', dueDate: '2026-03-20', status: 'pending' }, { type: 'option.expiry', instrument: 'p38', dueDate: '2026-03-20', status: 'pending' }],
+        alerts: ['strategy.attention', 'strategy.attention'],
+        pnl: { account: { commissions: -9.40, unrealized: -46, total: -55.40 }, book: { commissions: -9.40, unrealized: -46, total: -55.40 } },
+        nav: { account: 35_460.35, book: 999_944.60 },
+        balance: {
+          account: { cash: 2_991, payable: 100.65, positions: 32_570, assets: 35_561, liabilities: 100.65, netAssets: 35_460.35 },
+          book: { cash: 967_475.25, payable: 100.65, positions: 32_570, assets: 1_000_045.25, liabilities: 100.65, netAssets: 999_944.60 },
+        },
+      },
+    },
+    {
+      id: 'accept', covers: ['accept', 'failed leg'], action: 'strategy_action', lot: 'accept', how: 'accept',
+      expect: { events: [{ type: 'strategy.accepted', summary: 'accepted as it stands with 1 leg unexecuted. The position no longer matches its template.' }], alerts: ['strategy.attention'] },
+    },
+    {
+      // Unwind sells the 100 shares at 39.98 (3,998, commission 1.00): realized 100 x (39.98 - 40.02) = -4.
+      id: 'unwind', covers: ['unwind'], action: 'recover', how: 'unwind', lot: 'unwind',
+      expect: {
+        preview: { blocking: 0, errors: [], intent: 'unwind', legs: [{ kind: 'trade', action: 'sell', instrument: 'stock', qty: 100, estimate: 39.98, settleDate: '2026-03-05', cash: 3_998, fees: 1 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', instrument: 'stock', status: 'filled', filledQty: 100, avgPrice: 39.98 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 100 ARDR @ 39.98 USD (realized -4.00 USD)' }],
+        cash: { account: { USD: { settled: 2_991, unsettled: 3_896.35, availableToTrade: 6_887.35, availableToWithdraw: 2_890.35 } } },
+        positions: [{ instrument: 'p38', lot: 'cu' }, { instrument: 'p38', lot: 'retry' }, { instrument: 'stock', lot: 'accept' }, { instrument: 'stock', lot: 'cu' }, { instrument: 'stock', lot: 'retry' }],
+        holdings: { stock: { long: 700, short: 0, net: 700 } },
+        pending: [{ instrument: 'p38', lot: 'retry', dueDate: '2026-03-05', amount: -100.65 }, { instrument: 'stock', lot: 'unwind', dueDate: '2026-03-05', amount: 3_997, into: 'cash' }],
+        alerts: [],
+        pnl: { account: { realized: -4, commissions: -10.40, unrealized: -44, total: -58.40 }, book: { realized: -4, commissions: -10.40, unrealized: -44, total: -58.40 } },
+        nav: { account: 35_457.35, book: 999_941.60 },
+        balance: {
+          account: { cash: 2_991, receivable: 3_997, payable: 100.65, positions: 28_570, assets: 35_558, liabilities: 100.65, netAssets: 35_457.35 },
+          book: { cash: 967_475.25, receivable: 3_997, payable: 100.65, positions: 28_570, assets: 1_000_042.25, liabilities: 100.65, netAssets: 999_941.60 },
+        },
+      },
+    },
+    {
+      id: 'settle-day', covers: 'settlement', action: 'clock', to: MAR(5),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 3,997.00 USD into settled cash', date: '2026-03-05' }, { type: 'settlement.pay', summary: 'paid 100.65 USD from settled cash' }],
+        cash: { account: { USD: { settled: 6_887.35, unsettled: 0, availableToTrade: 6_887.35, availableToWithdraw: 6_887.35 } } },
+        pending: [],
+        balance: {
+          account: { cash: 6_887.35, receivable: null, payable: null, assets: 35_457.35, liabilities: 0 },
+          book: { cash: 971_371.60, receivable: null, payable: null, assets: 999_941.60, liabilities: 0 },
+        },
+      },
+    },
+    {
+      // The shares fall to 37: accept, cu, retry are 3,700, 18,500 and 3,700 (-302, -1,510, -302).
+      id: 'stock-falls', action: 'quote', instrument: 'stock', quote: { bid: 36.98, ask: 37.02, last: 37.00, bidSize: 10000, askSize: 10000 },
+      expect: {
+        positions: [
+          { instrument: 'p38', lot: 'cu', value: 475 }, { instrument: 'p38', lot: 'retry', value: 95 },
+          { instrument: 'stock', lot: 'accept', price: 37, value: 3_700, unrealized: -302 }, { instrument: 'stock', lot: 'cu', price: 37, value: 18_500, unrealized: -1_510 }, { instrument: 'stock', lot: 'retry', price: 37, value: 3_700, unrealized: -302 },
+        ],
+        pnl: { account: { unrealized: -2_144, total: -2_158.40 }, book: { unrealized: -2_144, total: -2_158.40 } },
+        nav: { account: 33_357.35, book: 997_841.60 },
+        balance: { account: { positions: 26_470, assets: 33_357.35, netAssets: 33_357.35 }, book: { positions: 26_470, assets: 997_841.60, netAssets: 997_841.60 } },
+      },
+    },
+    {
+      // ...and the 38 puts are worth their intrinsic value, 1.00: 500 and 100, at cost.
+      id: 'put-rises', action: 'quote', instrument: 'p38', quote: { bid: 0.98, ask: 1.02, last: 1.00, bidSize: 20, askSize: 20 },
+      expect: {
+        positions: [
+          { instrument: 'p38', lot: 'cu', price: 1, value: 500, unrealized: 0 }, { instrument: 'p38', lot: 'retry', price: 1, value: 100, unrealized: 0 },
+          { instrument: 'stock', lot: 'accept' }, { instrument: 'stock', lot: 'cu' }, { instrument: 'stock', lot: 'retry' },
+        ],
+        pnl: { account: { unrealized: -2_114, total: -2_128.40 }, book: { unrealized: -2_114, total: -2_128.40 } },
+        nav: { account: 33_387.35, book: 997_871.60 },
+        balance: { account: { positions: 26_500, assets: 33_387.35, netAssets: 33_387.35 }, book: { positions: 26_500, assets: 997_871.60, netAssets: 997_871.60 } },
+      },
+    },
+    { id: 'expiry-close', action: 'close_price', instrument: 'stock', date: '2026-03-20', value: 37.00, expect: {} },
+    {
+      // 20 March, close 37: the 38 puts are exercised (closed at zero: their premium realized, -500 and -100) and deliver
+      // 500 and 100 shares of their own instances at 38 (realized 500 x (38 - 40.02) = -1,010 and -202; 19,000 and 3,800
+      // due Monday 23 March). Realized -4 - 600 - 1,212 = -1,816. "accept" keeps its 100 shares.
+      id: 'expiry', covers: ['expiry', 'exercise', 'delivery', 'package closure'], action: 'clock', to: MAR(20, '17:30'),
+      expect: {
+        events: [
+          { type: 'option.exercised', summary: 'Exercised: 5 ARDR260320P38 at strike 38', date: '2026-03-20' },
+          { type: 'option.delivery', summary: /^Simulated delivery: delivered 500 ARDR at strike 38 on exercise of ARDR260320P38/ },
+          { type: 'option.exercised', summary: 'Exercised: 1 ARDR260320P38 at strike 38' },
+          { type: 'option.delivery', summary: /^Simulated delivery: delivered 100 ARDR at strike 38 on exercise of ARDR260320P38/ },
+        ],
+        cash: { account: { USD: { settled: 6_887.35, unsettled: 22_800, availableToTrade: 29_687.35, availableToWithdraw: 6_887.35 } } },
+        positions: [{ instrument: 'stock', lot: 'accept', owner: 'account', direction: 'long', qty: 100, avgCost: 40.02, cost: 4_002, price: 37, value: 3_700, unrealized: -302 }],
+        holdings: { p38: null, stock: { long: 100, short: 0, net: 100 } },
+        pending: [{ instrument: 'stock', lot: 'retry', dueDate: '2026-03-23', amount: 3_800, into: 'cash' }, { instrument: 'stock', lot: 'cu', dueDate: '2026-03-23', amount: 19_000, into: 'cash' }],
+        lifecycle: [],
+        pnl: { account: { realized: -1_816, commissions: -10.40, unrealized: -302, total: -2_128.40 }, book: { realized: -1_816, commissions: -10.40, unrealized: -302, total: -2_128.40 } },
+        nav: { account: 33_387.35, book: 997_871.60 },
+        balance: {
+          account: { cash: 6_887.35, receivable: 22_800, positions: 3_700, assets: 33_387.35, liabilities: 0, netAssets: 33_387.35 },
+          book: { cash: 971_371.60, receivable: 22_800, positions: 3_700, assets: 997_871.60, netAssets: 997_871.60 },
+        },
+      },
+    },
+    {
+      id: 'settle-delivery', covers: 'settlement', action: 'clock', to: MAR(23),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 19,000.00 USD into settled cash', date: '2026-03-23' }, { type: 'settlement.receive', summary: 'received 3,800.00 USD into settled cash' }],
+        cash: { account: { USD: { settled: 29_687.35, unsettled: 0, availableToTrade: 29_687.35, availableToWithdraw: 29_687.35 } } },
+        pending: [],
+        balance: { account: { cash: 29_687.35, receivable: null, assets: 33_387.35 }, book: { cash: 994_171.60, receivable: null, assets: 997_871.60 } },
+      },
+    },
+    {
+      // The accepted shares sold at 36.98 (3,698, commission 1.00): realized 100 x (36.98 - 40.02) = -304.
+      id: 'close-accept', covers: ['close'], action: 'close', lot: 'accept', instrument: 'stock', scope: 'strategy', percent: 100,
+      expect: {
+        preview: { blocking: 0, legs: [{ kind: 'trade', action: 'sell', instrument: 'stock', qty: 100, estimate: 36.98, settleDate: '2026-03-24', cash: 3_698, fees: 1 }] },
+        result: { status: 'closed', orders: [{ action: 'sell', status: 'filled', filledQty: 100, avgPrice: 36.98 }] },
+        events: [{ type: 'strategy.legs_added' }, { type: 'trade.fill', summary: 'Sold 100 ARDR @ 36.98 USD (realized -304.00 USD)', date: '2026-03-23' }],
+        cash: { account: { USD: { settled: 29_687.35, unsettled: 3_697, availableToTrade: 33_384.35, availableToWithdraw: 29_687.35 } } },
+        positions: [],
+        holdings: { stock: null },
+        pending: [{ instrument: 'stock', lot: 'accept', dueDate: '2026-03-24', amount: 3_697, into: 'cash' }],
+        pnl: { account: { realized: -2_120, commissions: -11.40, unrealized: 0, total: -2_131.40 }, book: { realized: -2_120, commissions: -11.40, unrealized: 0, total: -2_131.40 } },
+        nav: { account: 33_384.35, book: 997_868.60 },
+        balance: {
+          account: { cash: 29_687.35, receivable: 3_697, positions: null, assets: 33_384.35, netAssets: 33_384.35 },
+          book: { cash: 994_171.60, receivable: 3_697, positions: null, assets: 997_868.60, netAssets: 997_868.60 },
+        },
+      },
+    },
+    {
+      // Nothing left. Whole scenario by hand: cu 500 x (38 - 40.02) - 500 = -1,510; retry 100 x (38 - 40.02) - 100 =
+      // -302; accept 100 x (36.98 - 40.02) = -304; unwind -4: realized -2,120. Commission 2.50 + 3.25 + 3 x 1.00 + 0.65
+      // + 1.00 + 1.00 = 11.40. Account: 10,000 + 10,515.75 + 15,000 funded - 2,131.40.
+      id: 'settle-final', covers: 'settlement', action: 'clock', to: MAR(24),
+      expect: {
+        events: [{ type: 'settlement.receive', summary: 'received 3,697.00 USD into settled cash', date: '2026-03-24' }],
+        cash: { account: { USD: { settled: 33_384.35, unsettled: 0, availableToTrade: 33_384.35, availableToWithdraw: 33_384.35 } }, treasury: { USD: { settled: 964_484.25 } } },
+        pending: [],
+        balance: { account: { cash: 33_384.35, receivable: null, assets: 33_384.35 }, book: { cash: 997_868.60, receivable: null, assets: 997_868.60 } },
+      },
+    },
+  ],
+};
+
+export default [bearCall, longStraddle, longStrangle, ironCondor, ironButterfly, longButterfly, longCalendar, longDiagonal, syntheticLong, syntheticShort, pairsTrade, futuresHedge, futuresCalendar, customTemplate];

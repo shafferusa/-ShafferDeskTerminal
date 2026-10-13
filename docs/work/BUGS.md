@@ -322,3 +322,29 @@ Limitations established by s2 (stated in the specs' matrix metadata and the cata
   test/core/templates-t1.test.js.
 - OPEN, not t1's: test/core/failure-recovery.test.js "a number of contracts stated for an exercise must be whole" fails
   since the lifecycle route became async (s3, server/api.js line ~367): the test uses assert.throws on a promise.
+
+## s3 (partial swaps and credit derivatives, 2026-10-13)
+Fixed by s3 (regression tests in test/core/credit.test.js and test/core/swap-partial.test.js):
+- server/products/swap-partial.js: a puttable swap registered from the registry form became a call (the form sends no kind and the kind
+  defaulted to call), so the position offered "Call exercised" and refused "Put exercised". The kind now follows the product.
+- server/api.js + swap-partial.js: an exercise of a callable/puttable swap or a loan TRS pass-through before any payment had fetched the
+  fixings (or the loan's starting close) from the data service was refused ("needs the TSFR3M fixing of ..."). The route now asks the
+  data service for what the action needs first (lifecycleNeeds); POST /api/positions/:id/lifecycle became async (same route, no new one).
+- server/products/swap-partial.js: a loan TRS principal pass-through in the first period was refused (no last fixing); it now starts
+  from the reference loan's close of the effective date.
+- server/products/credit.js (CDS rewrite): accrued premium exchanged at trade on the part of a position reduced was carried as accrued
+  income instead of realized; a credit event dated before the effective date was refused; a bespoke contract charged premium from the
+  effective date even when traded later. All three fixed.
+Open (s3, not fixed):
+- server/data/index.js (fxDirect): an FX fixing entered by hand for a past date also serves as the latest manual spot rate of the pair
+  when no other is supplied (it should only answer for its own date). Seen on non_deliverable_swap; scenarios supply spot separately.
+- test/matrix/specs/templates-*.mjs: protective_put, protective_call, covered_call, covered_put and futures_hedge fail the specs.test.js
+  audit (t1/t2 in progress).
+Limitations established by s3 (stated in the specs' matrix metadata and the catalog notes):
+- No Mumbai holiday calendar: a non-deliverable INR swap pays and fixes on the USD calendar (a Shaffer reference-data calendar would fix it).
+- Loan TRS interest and repayments are passed through by hand: the swap does not follow the reference loan's own cash flows.
+- An equity basket's level is entered by hand on each payment item: no service supplies a custom composite.
+- Dividend swap periods count the dividends recorded by hand on the stock (none recorded: zero, not missing).
+- Quanto legs: no quanto convexity adjustment (fixed conversion only).
+- Bespoke CDS terminations are all-in (no separate accrued); an ABS CDS reimbursement does not adjust premium separately.
+- CDS fill summaries keep "Bought/Sold" wording (another scenario depends on it).

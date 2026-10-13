@@ -14339,6 +14339,595 @@
    "covers": [
     "restart"
    ]
+  },
+  "A:callable_swap:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 375,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:18.300Z",
+   "product": "callable_swap",
+   "template": null,
+   "family": "swap",
+   "step": "setup",
+   "covers": []
+  },
+  "A:callable_swap:open": {
+   "status": "passed",
+   "message": "",
+   "ms": 78,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:18.300Z",
+   "product": "callable_swap",
+   "template": null,
+   "family": "swap",
+   "step": "open",
+   "covers": [
+    "open"
+   ]
+  },
+  "A:callable_swap:mark-at-par": {
+   "status": "passed",
+   "message": "",
+   "ms": 33,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:18.300Z",
+   "product": "callable_swap",
+   "template": null,
+   "family": "swap",
+   "step": "mark-at-par",
+   "covers": [
+    "manual mark"
+   ]
+  },
+  "A:callable_swap:settle-commission": {
+   "status": "passed",
+   "message": "",
+   "ms": 46,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:18.300Z",
+   "product": "callable_swap",
+   "template": null,
+   "family": "swap",
+   "step": "settle-commission",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "A:callable_swap:first-quarter": {
+   "status": "passed",
+   "message": "",
+   "ms": 39,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:18.300Z",
+   "product": "callable_swap",
+   "template": null,
+   "family": "swap",
+   "step": "first-quarter",
+   "covers": [
+    "floating payment"
+   ]
+  },
+  "A:callable_swap:mark-lower": {
+   "status": "passed",
+   "message": "",
+   "ms": 33,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:18.300Z",
+   "product": "callable_swap",
+   "template": null,
+   "family": "swap",
+   "step": "mark-lower",
+   "covers": [
+    "manual mark"
+   ]
+  },
+  "A:callable_swap:variation-margin-posted": {
+   "status": "passed",
+   "message": "",
+   "ms": 60,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:18.300Z",
+   "product": "callable_swap",
+   "template": null,
+   "family": "swap",
+   "step": "variation-margin-posted",
+   "covers": [
+    "variation margin"
+   ]
+  },
+  "A:callable_swap:second-quarter": {
+   "status": "passed",
+   "message": "",
+   "ms": 47,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:18.300Z",
+   "product": "callable_swap",
+   "template": null,
+   "family": "swap",
+   "step": "second-quarter",
+   "covers": [
+    "floating payment"
+   ]
+  },
+  "A:callable_swap:exercise-off-date-refused": {
+   "status": "blocked",
+   "message": "A Bermudan call: exercise is allowed on the call dates only, and 20 November 2026 is not one. Terminal: \"CALL-410-0529 can be called only on its call dates (2027-02-22, 2027-08-20, 2028-02-22); today is 2026-11-20.\"",
+   "ms": 34,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:18.300Z",
+   "product": "callable_swap",
+   "template": null,
+   "family": "swap",
+   "step": "exercise-off-date-refused",
+   "covers": [
+    "call exercise",
+    "refusal"
+   ]
+  },
+  "A:callable_swap:third-quarter": {
+   "status": "passed",
+   "message": "",
+   "ms": 37,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:18.300Z",
+   "product": "callable_swap",
+   "template": null,
+   "family": "swap",
+   "step": "third-quarter",
+   "covers": [
+    "floating payment"
+   ]
+  },
+  "A:callable_swap:mark-before-exercise": {
+   "status": "passed",
+   "message": "",
+   "ms": 36,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:18.300Z",
+   "product": "callable_swap",
+   "template": null,
+   "family": "swap",
+   "step": "mark-before-exercise",
+   "covers": [
+    "manual mark"
+   ]
+  },
+  "A:callable_swap:counterparty-exercise-refused": {
+   "status": "blocked",
+   "message": "The call belongs to the side entered as written (this position): the counterparty holds no right to end the swap. Terminal: \"The call on CALL-410-0529 belongs to this position: the counterparty cannot exercise it. Record our own exercise instead.\"",
+   "ms": 36,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:18.300Z",
+   "product": "callable_swap",
+   "template": null,
+   "family": "swap",
+   "step": "counterparty-exercise-refused",
+   "covers": [
+    "call exercise",
+    "refusal"
+   ]
+  },
+  "A:callable_swap:call-exercised": {
+   "status": "passed",
+   "message": "",
+   "ms": 35,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:18.300Z",
+   "product": "callable_swap",
+   "template": null,
+   "family": "swap",
+   "step": "call-exercised",
+   "covers": [
+    "call exercise",
+    "close",
+    "collateral"
+   ]
+  },
+  "A:callable_swap:after-the-exercise": {
+   "status": "passed",
+   "message": "",
+   "ms": 30,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:18.300Z",
+   "product": "callable_swap",
+   "template": null,
+   "family": "swap",
+   "step": "after-the-exercise",
+   "covers": [
+    "close"
+   ]
+  },
+  "A:callable_swap:restart": {
+   "status": "passed",
+   "message": "",
+   "ms": 307,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:18.300Z",
+   "product": "callable_swap",
+   "template": null,
+   "family": "swap",
+   "step": "restart",
+   "covers": [
+    "restart"
+   ]
+  },
+  "A:puttable_swap:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 455,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:20.424Z",
+   "product": "puttable_swap",
+   "template": null,
+   "family": "swap",
+   "step": "setup",
+   "covers": []
+  },
+  "A:puttable_swap:open-opposite": {
+   "status": "passed",
+   "message": "",
+   "ms": 172,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:20.424Z",
+   "product": "puttable_swap",
+   "template": null,
+   "family": "swap",
+   "step": "open-opposite",
+   "covers": [
+    "open",
+    "collateral"
+   ]
+  },
+  "A:puttable_swap:mark-at-par": {
+   "status": "passed",
+   "message": "",
+   "ms": 53,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:20.424Z",
+   "product": "puttable_swap",
+   "template": null,
+   "family": "swap",
+   "step": "mark-at-par",
+   "covers": [
+    "manual mark"
+   ]
+  },
+  "A:puttable_swap:settle-commission": {
+   "status": "passed",
+   "message": "",
+   "ms": 93,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:20.424Z",
+   "product": "puttable_swap",
+   "template": null,
+   "family": "swap",
+   "step": "settle-commission",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "A:puttable_swap:first-quarter": {
+   "status": "passed",
+   "message": "",
+   "ms": 66,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:20.424Z",
+   "product": "puttable_swap",
+   "template": null,
+   "family": "swap",
+   "step": "first-quarter",
+   "covers": [
+    "floating payment"
+   ]
+  },
+  "A:puttable_swap:mid-october": {
+   "status": "passed",
+   "message": "",
+   "ms": 54,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:20.424Z",
+   "product": "puttable_swap",
+   "template": null,
+   "family": "swap",
+   "step": "mid-october",
+   "covers": []
+  },
+  "A:puttable_swap:mark-before-termination": {
+   "status": "passed",
+   "message": "",
+   "ms": 92,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:20.424Z",
+   "product": "puttable_swap",
+   "template": null,
+   "family": "swap",
+   "step": "mark-before-termination",
+   "covers": [
+    "manual mark"
+   ]
+  },
+  "A:puttable_swap:partial-termination": {
+   "status": "passed",
+   "message": "",
+   "ms": 72,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:20.424Z",
+   "product": "puttable_swap",
+   "template": null,
+   "family": "swap",
+   "step": "partial-termination",
+   "covers": [
+    "reduce",
+    "partial termination",
+    "collateral"
+   ]
+  },
+  "A:puttable_swap:settle-termination": {
+   "status": "passed",
+   "message": "",
+   "ms": 43,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:20.424Z",
+   "product": "puttable_swap",
+   "template": null,
+   "family": "swap",
+   "step": "settle-termination",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "A:puttable_swap:december-payments": {
+   "status": "passed",
+   "message": "",
+   "ms": 41,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:20.424Z",
+   "product": "puttable_swap",
+   "template": null,
+   "family": "swap",
+   "step": "december-payments",
+   "covers": [
+    "fixed payment",
+    "floating payment"
+   ]
+  },
+  "A:puttable_swap:put-date": {
+   "status": "passed",
+   "message": "",
+   "ms": 38,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:20.424Z",
+   "product": "puttable_swap",
+   "template": null,
+   "family": "swap",
+   "step": "put-date",
+   "covers": []
+  },
+  "A:puttable_swap:put-exercised": {
+   "status": "passed",
+   "message": "",
+   "ms": 45,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:20.424Z",
+   "product": "puttable_swap",
+   "template": null,
+   "family": "swap",
+   "step": "put-exercised",
+   "covers": [
+    "put exercise",
+    "close",
+    "collateral"
+   ]
+  },
+  "A:puttable_swap:after-the-exercise": {
+   "status": "passed",
+   "message": "",
+   "ms": 28,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:20.424Z",
+   "product": "puttable_swap",
+   "template": null,
+   "family": "swap",
+   "step": "after-the-exercise",
+   "covers": [
+    "close"
+   ]
+  },
+  "A:puttable_swap:restart": {
+   "status": "passed",
+   "message": "",
+   "ms": 562,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:20.424Z",
+   "product": "puttable_swap",
+   "template": null,
+   "family": "swap",
+   "step": "restart",
+   "covers": [
+    "restart"
+   ]
+  },
+  "A:loan_trs:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 406,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:21.879Z",
+   "product": "loan_trs",
+   "template": null,
+   "family": "swap",
+   "step": "setup",
+   "covers": []
+  },
+  "A:loan_trs:open": {
+   "status": "passed",
+   "message": "",
+   "ms": 85,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:21.879Z",
+   "product": "loan_trs",
+   "template": null,
+   "family": "swap",
+   "step": "open",
+   "covers": [
+    "open",
+    "collateral"
+   ]
+  },
+  "A:loan_trs:mark-at-par": {
+   "status": "passed",
+   "message": "",
+   "ms": 30,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:21.879Z",
+   "product": "loan_trs",
+   "template": null,
+   "family": "swap",
+   "step": "mark-at-par",
+   "covers": [
+    "manual mark"
+   ]
+  },
+  "A:loan_trs:settle-commission": {
+   "status": "passed",
+   "message": "",
+   "ms": 38,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:21.879Z",
+   "product": "loan_trs",
+   "template": null,
+   "family": "swap",
+   "step": "settle-commission",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "A:loan_trs:loan-payment-date": {
+   "status": "passed",
+   "message": "",
+   "ms": 31,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:21.879Z",
+   "product": "loan_trs",
+   "template": null,
+   "family": "swap",
+   "step": "loan-payment-date",
+   "covers": []
+  },
+  "A:loan_trs:interest-passed-through": {
+   "status": "passed",
+   "message": "",
+   "ms": 48,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:21.879Z",
+   "product": "loan_trs",
+   "template": null,
+   "family": "swap",
+   "step": "interest-passed-through",
+   "covers": [
+    "interest pass-through"
+   ]
+  },
+  "A:loan_trs:repayment-passed-through": {
+   "status": "passed",
+   "message": "",
+   "ms": 63,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:21.879Z",
+   "product": "loan_trs",
+   "template": null,
+   "family": "swap",
+   "step": "repayment-passed-through",
+   "covers": [
+    "principal pass-through"
+   ]
+  },
+  "A:loan_trs:first-quarter": {
+   "status": "passed",
+   "message": "",
+   "ms": 35,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:21.879Z",
+   "product": "loan_trs",
+   "template": null,
+   "family": "swap",
+   "step": "first-quarter",
+   "covers": [
+    "loan return",
+    "financing payment"
+   ]
+  },
+  "A:loan_trs:mid-november": {
+   "status": "passed",
+   "message": "",
+   "ms": 29,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:21.879Z",
+   "product": "loan_trs",
+   "template": null,
+   "family": "swap",
+   "step": "mid-november",
+   "covers": []
+  },
+  "A:loan_trs:mark-before-termination": {
+   "status": "passed",
+   "message": "",
+   "ms": 34,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:21.879Z",
+   "product": "loan_trs",
+   "template": null,
+   "family": "swap",
+   "step": "mark-before-termination",
+   "covers": [
+    "manual mark"
+   ]
+  },
+  "A:loan_trs:terminate": {
+   "status": "passed",
+   "message": "",
+   "ms": 47,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:21.879Z",
+   "product": "loan_trs",
+   "template": null,
+   "family": "swap",
+   "step": "terminate",
+   "covers": [
+    "close",
+    "full termination",
+    "collateral"
+   ]
+  },
+  "A:loan_trs:settle-termination": {
+   "status": "passed",
+   "message": "",
+   "ms": 22,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:21.879Z",
+   "product": "loan_trs",
+   "template": null,
+   "family": "swap",
+   "step": "settle-termination",
+   "covers": [
+    "settlement",
+    "close"
+   ]
+  },
+  "A:loan_trs:restart": {
+   "status": "passed",
+   "message": "",
+   "ms": 307,
+   "commit": "e8c4c9c+changes",
+   "at": "2026-10-13T21:01:21.879Z",
+   "product": "loan_trs",
+   "template": null,
+   "family": "swap",
+   "step": "restart",
+   "covers": [
+    "restart"
+   ]
   }
  },
  "runs": {
@@ -15310,7 +15899,58 @@
     "platform": "linux",
     "server": "server/index.js --demo, engine timer off"
    }
+  },
+  "callable_swap": {
+   "at": "2026-10-13T21:01:18.300Z",
+   "commit": "e8c4c9c+changes",
+   "ms": 1227,
+   "family": "swap",
+   "steps": 15,
+   "ran": 15,
+   "passed": 13,
+   "failed": 0,
+   "blocked": 2,
+   "unsupported": 0,
+   "environment": {
+    "node": "v22.22.0",
+    "platform": "linux",
+    "server": "server/index.js --demo, engine timer off"
+   }
+  },
+  "puttable_swap": {
+   "at": "2026-10-13T21:01:20.424Z",
+   "commit": "e8c4c9c+changes",
+   "ms": 1815,
+   "family": "swap",
+   "steps": 14,
+   "ran": 14,
+   "passed": 14,
+   "failed": 0,
+   "blocked": 0,
+   "unsupported": 0,
+   "environment": {
+    "node": "v22.22.0",
+    "platform": "linux",
+    "server": "server/index.js --demo, engine timer off"
+   }
+  },
+  "loan_trs": {
+   "at": "2026-10-13T21:01:21.879Z",
+   "commit": "e8c4c9c+changes",
+   "ms": 1177,
+   "family": "swap",
+   "steps": 13,
+   "ran": 13,
+   "passed": 13,
+   "failed": 0,
+   "blocked": 0,
+   "unsupported": 0,
+   "environment": {
+    "node": "v22.22.0",
+    "platform": "linux",
+    "server": "server/index.js --demo, engine timer off"
+   }
   }
  },
- "updatedAt": "2026-10-13T16:37:38.014Z"
+ "updatedAt": "2026-10-13T21:01:21.879Z"
 }

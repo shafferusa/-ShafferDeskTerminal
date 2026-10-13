@@ -3110,4 +3110,83 @@ const coveredPut = {
   ],
 };
 
-export default [longTemplate, shortTemplate, protectivePut, protectiveCall, coveredCall, coveredPut];
+// ---------------------------------------------------------------------------------------------
+// long_collar
+// ---------------------------------------------------------------------------------------------
+const lc = (qty, extra = {}) => pageInput('long_collar', { quantity: qty, options: { expiration: '2026-03-20', strikes: { put: 48, call: 52 }, contracts: null }, ...extra });
+const lcPage = (qty, extra = {}) => ({ template: 'Long Collar', underlying: 'main', quantity: qty, expiration: '2026-03-20', strikes: { 'Put strike': 48, 'Call strike': 52 }, ...extra });
+const SCRIPTED_PUT = { id: 'scripted-1', label: 'Scripted package', recommended: true, legs: [{ role: 'hedge', hedgeFamily: 'Options', kind: 'trade', action: 'buy', option: { underlyingId: '$inst:main', expiration: '2026-03-20', strike: 46, right: 'P', multiplier: 100, deliverableUnits: 100, exercise: 'american', settlement: 'physical' }, quantity: 1, sizingBasis: 'scripted', riskAddressed: 'Price' }] };
+
+const longCollar = {
+  template: 'long_collar',
+  title: 'Long collar on Kestrel Logistics: shares, bought put and written call as one package, existing protection acknowledged, partial fills, expiry, roll',
+  matrix: { ...TEMPLATE_MATRIX },
+  start: MAR(2),
+  settlementCheck: { lag: 1, holidays: [] },
+  book: book('Matrix template long collar'),
+  instruments: { main: STOCK, put48: option('P', 48), call52: option('C', 52), put46: option('P', 46), put48apr: option('P', 48, '2026-04-17'), call52apr: option('C', 52, '2026-04-17') },
+  quotes: {
+    main: { bid: 49.95, ask: 50.05, last: 50.00, bidSize: 300, askSize: 300 },
+    put48: { bid: 0.90, ask: 1.00, last: 0.95, bidSize: 3, askSize: 3 },
+    call52: { bid: 0.80, ask: 0.90, last: 0.85, bidSize: 3, askSize: 3 },
+    put46: { bid: 0.40, ask: 0.50, last: 0.45, bidSize: 100, askSize: 100 },
+    put48apr: { bid: 1.60, ask: 1.70, last: 1.65, bidSize: 100, askSize: 100 },
+    call52apr: { bid: 1.40, ask: 1.50, last: 1.45, bidSize: 100, askSize: 100 },
+  },
+  expectAtStart: startState(),
+  steps: [
+    { id: 'hedge-request', covers: ['hedge request', 'template protection'], action: 'hedge_request', input: lc(1000, CONTEXT), strategyPage: { ...PAGE_CONTEXT, ...lcPage(1000) }, expect: {} },
+    { id: 'open-partial', covers: ['open', 'partial fill', 'dependent leg scaled'], action: 'package', as: 'core', instrument: 'main', input: lc(1000), strategyPage: lcPage(1000), expect: {} },
+    { id: 'cancel-remainder', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'core', expect: {} },
+    { id: 'retry', covers: ['retry'], action: 'recover', how: 'retry', lot: 'core', expect: {} },
+    { id: 'limit-never-reached', covers: ['failed dependent leg'], action: 'package', as: 'limited', instrument: 'main', input: lc(200), strategyPage: lcPage(200), editLegs: { 2: { orderType: 'limit', limitPrice: 0.5 } }, expect: {} },
+    { id: 'cancel-limited', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'limited', expect: {} },
+    { id: 'unwind', covers: ['unwind'], action: 'recover', how: 'unwind', lot: 'limited', expect: {} },
+    { id: 'kept-limit', covers: ['failed dependent leg'], action: 'package', as: 'kept', instrument: 'main', input: lc(100), strategyPage: lcPage(100), editLegs: { 2: { orderType: 'limit', limitPrice: 0.5 }, 3: { orderType: 'limit', limitPrice: 1.5 } }, expect: {} },
+    { id: 'cancel-kept', covers: ['cancel working legs', 'needs attention'], action: 'strategy_action', how: 'cancel_working', lot: 'kept', expect: {} },
+    { id: 'accept-kept', covers: ['accept as it stands'], action: 'strategy_action', how: 'accept', lot: 'kept', expect: {} },
+    { id: 'hedge-script', action: 'hedge_script', script: { responses: [{ packages: [SCRIPTED_PUT] }] }, expect: {} },
+    {
+      id: 'existing-unacknowledged', covers: ['existing protection'], action: 'package', instrument: 'main',
+      input: { template: 'long_collar', underlyingId: '$inst:main', origin: 'strategy_page', ...CONTEXT, mode: 'existing', existingPositionId: '$pos:kept:main', quantity: 100, hedgeRatio: 1, options: { expiration: '2026-03-20', strikes: { put: 48, call: 52 }, contracts: null }, borrow: null, orderType: 'market', limitPrice: null, stopPrice: null, tif: 'day', financing: null },
+      strategyPage: { ...PAGE_CONTEXT, template: 'Long Collar', underlying: 'main', mode: 'existing', existing: { lot: 'kept', instrument: 'main' }, expiration: '2026-03-20', strikes: { 'Put strike': 48, 'Call strike': 52 }, hedge: 'Scripted package' },
+      hedge: { packageId: 'scripted-1' },
+      status: 'blocked', reason: 'x', expect: { refused: 'Protection is already in place' },
+    },
+    {
+      id: 'existing-holding', covers: ['existing holding', 'existing protection', 'open'], action: 'package', as: 'wrapped', instrument: 'main',
+      input: { template: 'long_collar', underlyingId: '$inst:main', origin: 'strategy_page', ...CONTEXT, mode: 'existing', existingPositionId: '$pos:kept:main', quantity: 100, hedgeRatio: 1, options: { expiration: '2026-03-20', strikes: { put: 48, call: 52 }, contracts: null }, borrow: null, orderType: 'market', limitPrice: null, stopPrice: null, tif: 'day', financing: null },
+      strategyPage: { ...PAGE_CONTEXT, template: 'Long Collar', underlying: 'main', mode: 'existing', existing: { lot: 'kept', instrument: 'main' }, expiration: '2026-03-20', strikes: { 'Put strike': 48, 'Call strike': 52 }, hedge: 'Scripted package' },
+      hedge: { packageId: 'scripted-1' }, acknowledgeProtection: true,
+      expect: {},
+    },
+    { id: 'hedge-script-off', action: 'hedge_script', script: { clear: true }, expect: {} },
+    { id: 'kept-after-link', covers: ['existing holding'], action: 'strategy_check', lot: 'kept', expect: {} },
+    { id: 'deep-book', action: 'quote', instrument: 'main', quote: { bid: 49.95, ask: 50.05, last: 50.00, bidSize: 10000, askSize: 10000 }, expect: {} },
+    { id: 'deep-book-put', action: 'quote', instrument: 'put48', quote: { bid: 0.90, ask: 1.00, last: 0.95, bidSize: 100, askSize: 100 }, expect: {} },
+    { id: 'deep-book-call', action: 'quote', instrument: 'call52', quote: { bid: 0.80, ask: 0.90, last: 0.85, bidSize: 100, askSize: 100 }, expect: {} },
+    { id: 'resize-up', covers: ['resize', 'increase'], action: 'resize', lot: 'core', factor: 1.2, expect: {} },
+    { id: 'roll', covers: ['roll'], action: 'roll', lot: 'core', newExpiration: '2026-04-17', expect: {} },
+    { id: 'next-day', covers: ['settlement'], action: 'clock', to: MAR(3), expect: {} },
+    { id: 'sweep-to-treasury', covers: ['transfer'], action: 'transfer', from: 'account', to: 'treasury', ccy: 'USD', amount: 120_000, expect: {} },
+    { id: 'cash-short-not-financed', covers: ['financing: not financed'], action: 'package', instrument: 'main', input: lc(400), strategyPage: lcPage(400), status: 'blocked', reason: 'x', expect: { refused: 'short' } },
+    { id: 'funded-from-treasury', covers: ['financing: Treasury funding'], action: 'package', as: 'funded', instrument: 'main', input: lc(400, { financing: { mode: 'treasury' } }), strategyPage: lcPage(400, { financing: { mode: 'treasury' } }), expect: {} },
+    { id: 'funded-by-loan', covers: ['financing: borrow'], action: 'package', as: 'levered', instrument: 'main', contractAs: 'loan', input: lc(200, { financing: { mode: 'loan', rateType: 'fixed', rate: 0.06 } }), strategyPage: lcPage(200, { financing: { mode: 'loan', rate: 0.06 } }), expect: {} },
+    { id: 'settle-financed', covers: ['settlement'], action: 'clock', to: MAR(4), expect: {} },
+    { id: 'treasury-top-up', covers: ['transfer'], action: 'transfer', from: 'treasury', to: 'account', ccy: 'USD', amount: 50_000, expect: {} },
+    { id: 'close-levered', covers: ['close', 'repay'], action: 'close', lot: 'levered', scope: 'strategy', expect: {} },
+    { id: 'settle-close-levered', covers: ['settlement'], action: 'clock', to: MAR(5), expect: {} },
+    { id: 'expiry-close', action: 'close_price', instrument: 'main', date: '2026-03-20', value: 47, expect: {} },
+    { id: 'expiry-quote', action: 'quote', instrument: 'main', quote: { bid: 46.95, ask: 47.05, last: 47.00, bidSize: 10000, askSize: 10000 }, expect: {} },
+    { id: 'expiry', covers: ['expiry', 'exercise', 'lapse'], action: 'clock', to: MAR(20, '17:30'), expect: {} },
+    { id: 'after-expiry-wrapped', covers: ['package state after expiry'], action: 'strategy_check', lot: 'wrapped', expect: {} },
+    { id: 'after-expiry-funded', covers: ['package state after expiry'], action: 'strategy_check', lot: 'funded', expect: {} },
+    { id: 'settle-expiry', covers: ['settlement'], action: 'clock', to: MAR(23), expect: {} },
+    { id: 'close-share', covers: ['reduce', 'close share'], action: 'close', lot: 'core', scope: 'strategy', percent: 50, expect: {} },
+    { id: 'close-exact', covers: ['reduce', 'close exact amount'], action: 'close', lot: 'core', instrument: 'main', qty: 200, expect: {} },
+    { id: 'close-all', covers: ['close'], action: 'close', lot: 'core', scope: 'strategy', expect: {} },
+    { id: 'settle-closes', covers: ['settlement'], action: 'clock', to: MAR(24), expect: {} },
+  ],
+};
+
+export default [longTemplate, shortTemplate, protectivePut, protectiveCall, coveredCall, coveredPut, longCollar];

@@ -23,7 +23,9 @@
 //     sizeBy?: 'quantity' | 'notional', quantity?, notional?, hedgeRatio?, expiration?, farExpiration?, right?: 'C' | 'P',
 //     strikes?: { '<field label>': strike }, contracts?, contractSpec?: { multiplier, deliverableUnits },
 //     borrow?: { available, feeRate }, order?: { orderType, limitPrice, stopPrice, tif }, netLimit?,
-//     financing?: { mode: 'treasury' | 'loan', rate? }, hedge?: 'none' | '<package label>' }
+//     financing?: { mode: 'treasury' | 'loan', rate? }, hedge?: 'none' | '<package label>',
+//     (t2) direction?: 'long' | 'short', pair?: { instrument, ratio }, futures?: { buy, sell?, contracts? },
+//     legs?: [{ type: 'instrument' | 'option', instrument?, side, qty, purpose?, right?, expiration?, strike?, after? }] }
 // Step-level: `editLegs: { <leg n>: { orderType, limitPrice, statedPrice, qty } }` (changed in the preview dialog, then
 // re-checked) and `acknowledgeProtection: true` ("Add this protection deliberately").
 

@@ -364,7 +364,8 @@ export function createApi(app) {
   });
 
   // ---- lifecycle by hand ---------------------------------------------------------------------------------------------
-  r.post('/api/positions/:id/lifecycle', async ({ params, body }) => { // s3: async for the data a pass-through needs
+  // s3: `fetched` once the data an exercise or a pass-through needs has been asked for (every other action stays synchronous).
+  const positionLifecycle = ({ params, body }, fetched = false) => {
     const pos = positions.get(params.id);
     need(pos, 'Position not found.', { status: 404 });
     const inst = instruments.get(pos.instrument_id);
@@ -380,7 +381,7 @@ export function createApi(app) {
       need(!(step >= 1) || Math.abs(n / step - Math.round(n / step)) < 1e-9, `The number of contracts must be a multiple of ${step}.`);
     }
     // s3: an exercise or a loan pass-through needs the fixings accrued on (and a loan's starting close): ask for them first.
-    if (['call_exercise', 'put_exercise', 'pass_through'].includes(body.action) && plugin.lifecycleNeeds) await app.data.refresh(plugin.lifecycleNeeds(app, ctx));
+    if (!fetched && ['call_exercise', 'put_exercise', 'pass_through'].includes(body.action) && plugin.lifecycleNeeds) return app.data.refresh(plugin.lifecycleNeeds(app, ctx)).then(() => positionLifecycle({ params, body }, true));
     const out = db.tx(() => {
       let result;
       switch (body.action) {
@@ -436,7 +437,8 @@ export function createApi(app) {
     });
     app.engine.emit({ type: 'changed', summary: { lifecycle: body.action } });
     return { ok: true, result: out, strategy: pos.strategy_id ? app.packages.strategyView(pos.strategy_id) : null };
-  });
+  };
+  r.post('/api/positions/:id/lifecycle', (req) => positionLifecycle(req));
   r.post('/api/instruments/:id/lifecycle', ({ params, body }) => {
     const inst = instruments.require(params.id);
     const plugin = app.products.get(inst.family);
