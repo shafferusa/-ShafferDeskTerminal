@@ -14,6 +14,8 @@ import { addBusinessDays, adjust } from '../quant/calendar.js';
 import { addDays, addMonths, diffDays, makeDate, ymd } from '../quant/dates.js';
 import { CCY_RE, ISO_DATE_RE, isZero, money, need, num } from '../core/util.js';
 import { fmtQty, trueUpAccrual } from './common.js';
+import { markOf } from '../data/observation.js';
+import { accruedPer100 } from '../quant/bond.js';
 import { calendarFor, paymentCalendarFor } from './security.js';
 
 const basisDays = (dc) => (dc === 'ACT/365' ? 365 : 360);
@@ -93,7 +95,7 @@ function describeRate(t) {
   return `${((t.rate || 0) * 100).toFixed(3)}% fixed`;
 }
 
-function normalizeRate(t, errors, { strictDayCount = false } = {}) {
+function normalizeRate(t, errors, { strictDayCount = false, what = 'a cash loan or deposit' } = {}) {
   t.rateType = t.rateType === 'floating' ? 'floating' : 'fixed';
   if (t.rateType === 'fixed') {
     t.rate = num(t.rate);
@@ -105,7 +107,7 @@ function normalizeRate(t, errors, { strictDayCount = false } = {}) {
   }
   // A day count the accrual does not implement is refused (cash loans and deposits), never replaced in silence:
   // interest would otherwise be worked out on a basis the contract does not state.
-  if (strictDayCount && t.dayCount && !['ACT/360', 'ACT/365'].includes(t.dayCount)) errors.push(`Day count ${t.dayCount} is not supported for a cash loan or deposit. Interest is simulated on ACT/360 or ACT/365 only.`);
+  if (strictDayCount && t.dayCount && !['ACT/360', 'ACT/365'].includes(t.dayCount)) errors.push(`Day count ${t.dayCount} is not supported for ${what}. Interest is simulated on ACT/360 or ACT/365 only.`);
   t.dayCount = ['ACT/360', 'ACT/365'].includes(t.dayCount) ? t.dayCount : 'ACT/360';
 }
 
@@ -324,7 +326,8 @@ export const repo = {
   normalize(app, draft) {
     const errors = [];
     const t = { ...(draft.terms || {}) };
-    normalizeRate(t, errors);
+    // Repo interest is money-market interest: ACT/360 (dollar, euro) or ACT/365 (sterling). Another day count is refused.
+    normalizeRate(t, errors, { strictDayCount: true, what: 'a repo' });
     if (!CCY_RE.test(draft.trading_ccy || '')) errors.push('Repo currency is required.');
     if (!t.collateralInstrumentId) errors.push('Choose the collateral security.');
     t.collateralQty = num(t.collateralQty);
@@ -334,6 +337,7 @@ export const repo = {
     t.term = ['overnight', 'term', 'open'].includes(t.term) ? t.term : t.endDate ? 'term' : 'open';
     if (t.term === 'open') t.endDate = null;
     else if (t.endDate && !ISO_DATE_RE.test(t.endDate)) errors.push('End date must be YYYY-MM-DD.');
+    else if (t.term === 'term' && !t.endDate) errors.push('A term repo needs its end date (choose Open for a repo that runs until terminated).');
     t.style = ['classic', 'buy_sell_back'].includes(t.style) ? t.style : 'classic';
     t.collateralType = ['gc', 'special'].includes(t.collateralType) ? t.collateralType : 'gc';
     t.triparty = Boolean(t.triparty);

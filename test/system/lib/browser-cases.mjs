@@ -2011,7 +2011,7 @@ export async function serviceAway(b, c) {
   c.eq(await panel.getByRole('button', { name: /Test connection/ }).evaluate((x) => x.disabled || x.getAttribute('aria-busy') === 'true' || x.classList.contains('busy')), true, 'no answer: while it waits the Test connection button shows that it is busy');
   const t0 = Date.now();
   const answered = await testing;
-  c.note(`no answer: the test answered ${JSON.stringify(answered.body?.result || answered.body).slice(0, 300)}`);
+  c.ok(answered.body?.result?.reachable === false, 'no answer: behind the page the test reports the address unreachable', JSON.stringify(answered.body).slice(0, 400));
   const verdict = panel.locator('.notice').filter({ hasText: /could not be reached/ }).first();
   await verdict.waitFor();
   const waited = Date.now() - t0 + 400;

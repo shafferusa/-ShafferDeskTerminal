@@ -107,3 +107,4 @@
 - 2026-10-13T16:58Z | b2 | +0.2 | commercial_paper passes at engine, API and browser
 - 2026-10-13T16:59Z | fix | +1 | A complete: collateral follow-up (stale-mark calls, collateral on Accounting rows, borrow collateral, narrow collateral screens, no-basis fix from templates and Add legs)
 - 2026-10-13T16:59Z | fix | +1 | B complete: every BUGS.md finding fixed, stated as a convention, or explained (except ui1's two)
+- 2026-10-13T16:59Z | fix | +0.5 | C complete: shell fits 1024x768 and 390x844 in demo and normal mode, light and dark (sidebar drawer behind Menu)
