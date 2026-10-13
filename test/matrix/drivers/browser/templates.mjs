@@ -491,7 +491,8 @@ export const actions = {
     const pop = await openHedgeFromQueue(ui, r.id);
     const form = pop.locator('[data-testid=hedge-complete-form]').first();
     const f = ui.field(form, 'Investment Strategy');
-    await f.locator('select, input:enabled').first().waitFor();
+    // The Strategy list is asked for first (a disabled input while it loads): a listed Strategy is chosen from its select.
+    await f.locator('select').waitFor({ timeout: 8000 }).catch(() => {});
     const isRef = typeof step.investmentStrategy === 'string' ? { id: step.investmentStrategy, name: step.investmentStrategy } : step.investmentStrategy;
     if (await f.locator('select').count()) await f.locator('select').selectOption(isRef.id); else await f.locator('input').fill(isRef.name);
     await ui.input(form, 'Intended holding period').fill(String(step.holdingDays));
@@ -501,7 +502,8 @@ export const actions = {
     const after = await t.http.get(`/api/hedge/requests/${r.id}`);
     const shown = await pop.getAttribute('data-state');
     if (shown !== after.state) problems.push(`Hedge popup: shows state "${shown}", the request is "${after.state}".`);
-    if (after.source && !(await pop.locator('[data-testid=hedge-status]').innerText()).includes(after.source.label)) problems.push(`Hedge popup: does not name the source of the recommendation (${after.source.label}).`);
+    const words = after.source ? { 'demo-fixture': 'demo fixture, not Shaffer Hedge', 'test-fixture': 'test fixture, not Shaffer Hedge' }[after.source.kind] || 'Shaffer Hedge' : null;
+    if (words && !(await pop.locator('[data-testid=hedge-status]').innerText()).includes(words)) problems.push(`Hedge popup: does not name the source of the recommendation (${words}).`);
     await pop.locator('header').getByRole('button', { name: 'Close' }).click();
     return { result: hedgeRequestView(after, ctx), problems };
   },
