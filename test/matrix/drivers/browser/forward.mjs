@@ -200,7 +200,8 @@ export const actions = {
   agreement: (...args) => swapActions.agreement(...args),
   /** Early termination at a stated amount: the position's Lifecycle menu, "Early termination", amount, notional, settlement date. */
   async lifecycle(ui, t, ctx, step, tools) {
-    if (step.body?.action !== 'terminate') return undefined;
+    if (!['terminate', 'allocate'].includes(step.body?.action)) return undefined;
+    const kind = step.body.action === 'allocate' ? { menu: 'Pool allocation', button: 'Record allocation' } : { menu: 'Early termination', button: 'Record termination' };
     const lot = ctx.lot(step.lot);
     const inst = ctx.inst(step.instrument || lot.instrument);
     const sym = inst.symbol || inst.name;
@@ -213,23 +214,31 @@ export const actions = {
       return { refusal: { message: `The strategy instance lists no open ${sym} position (positions listed: ${listed.join(', ') || 'none'}), so it cannot be terminated.`, where: 'strategy instance, Positions' } };
     }
     const menu = row.locator('select').first();
+    // The menu's items depend on the contract's terms, which load after the row.
+    try { await menu.locator('option', { hasText: new RegExp(`^${kind.menu}$`) }).waitFor({ state: 'attached', timeout: 8000 }); } catch { /* reported below */ }
     const offered = (await menu.locator('option').allInnerTexts()).map((x) => x.trim()).filter((x) => x && x !== 'Lifecycle');
-    if (!offered.includes('Early termination')) return { refusal: { message: `The Lifecycle menu of this position offers only: ${offered.join(', ') || 'nothing'}. "Early termination" is not offered.`, where: 'strategy instance, position Lifecycle menu' } };
-    await menu.selectOption({ label: 'Early termination' });
-    const dlg = ui.dialog(/^Early termination/);
+    if (!offered.includes(kind.menu)) return { refusal: { message: `The Lifecycle menu of this position offers only: ${offered.join(', ') || 'nothing'}. "${kind.menu}" is not offered.`, where: 'strategy instance, position Lifecycle menu' } };
+    await menu.selectOption({ label: kind.menu });
+    const dlg = ui.dialog(new RegExp(`^${kind.menu}`));
     await dlg.waitFor();
     const b = step.body;
-    if (b.amount !== undefined && b.amount !== null) await ui.input(dlg, /^\s*Termination amount/).fill(String(b.amount));
-    if (b.qty !== undefined && b.qty !== null) await ui.input(dlg, 'Notional terminated').fill(String(b.qty));
-    if (b.settleDate) await ui.input(dlg, 'Settlement date').fill(b.settleDate);
-    const r = await ui.respondsTo('POST', /^\/api\/positions\/[^/]+\/lifecycle$/, () => ui.button(dlg, 'Record termination').click());
+    if (b.action === 'allocate') {
+      const pool = String(b.instrumentId || '').startsWith('$inst:') ? ctx.inst(b.instrumentId.slice(6)) : null;
+      if (!pool) throw new Error('A pool allocation step names the pool as instrumentId: \'$inst:<key>\'.');
+      await pickInstrument(ui, ui.field(dlg, 'Allocated pool'), pool);
+    } else {
+      if (b.amount !== undefined && b.amount !== null) await ui.input(dlg, /^\s*Termination amount/).fill(String(b.amount));
+      if (b.qty !== undefined && b.qty !== null) await ui.input(dlg, 'Notional terminated').fill(String(b.qty));
+      if (b.settleDate) await ui.input(dlg, 'Settlement date').fill(b.settleDate);
+    }
+    const r = await ui.respondsTo('POST', /^\/api\/positions\/[^/]+\/lifecycle$/, () => ui.button(dlg, kind.button).click());
     if (!r.ok) {
       const msg = r.body?.error || 'no message';
       await dlg.locator('.notice.err', { hasText: msg.slice(0, 60) }).first().waitFor();
       const shown = (await dlg.locator('.notice.err').first().innerText()).replace(/\s+/g, ' ').trim();
       await ui.button(dlg, 'Cancel').click();
       await dlg.waitFor({ state: 'hidden' });
-      return { refusal: { message: shown, status: r.status, where: 'early termination dialog' } };
+      return { refusal: { message: shown, status: r.status, where: `${kind.menu} dialog` } };
     }
     await dlg.waitFor({ state: 'hidden' });
     return {};

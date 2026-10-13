@@ -186,3 +186,4 @@
 - 2026-10-13T18:19Z | m1 | +0.2 | dispersion_swap passes at engine, API and browser
 - 2026-10-13T18:20Z | b3 | +0.2 | cmbs passes at engine, API and browser
 - 2026-10-13T18:21Z | m1 | +0.2 | recovery_swap passes at engine, API and browser
+- 2026-10-13T18:21Z | r1 | +0.2 | sell_buy_back passes at engine, API and browser
