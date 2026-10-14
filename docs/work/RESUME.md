@@ -14,4 +14,4 @@ everywhere, product-specific tab framework, trading and hedge integration, as-of
 analytics & risk + positions), P1 product-specific pages. Wave 3: integration tests of the listed failure modes,
 docs (data-contract requirements, integration checklist), final run and report.
 
-**Completeness: about 22.5% of the pass** (last milestone 2026-10-14T14:04Z, p1: p1: futures (terms, Book clearing terms vs supplied exchange margin, supplied curve with contract marked), funds (NAV/fees, holdings and weights, NAV history), FX (pair, both calendars, value date, supplied rate and forward points); npm test 864/864, workspace 235/235, matrix 6/6)
+**Completeness: about 23.5% of the pass** (last milestone 2026-10-14T14:04Z, p1: p1: swaps and credit (legs pay/receive, reference exposure, financing, collateral and agreement, schedules with next payment, mark in use, manual and supplied marks with provenance, history) and other products (terms and Book records for repo/loan/secloan/manual/cash/spot/crypto/forward); tests green)
