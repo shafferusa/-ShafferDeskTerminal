@@ -98,12 +98,13 @@ export const none = (title, children) => html`<${Empty} title=${title}>${childre
 export function PointsChart({ points, fmt = (v) => fmtNum(v, 2), height = 150 }) {
   const pts = points.filter((p) => isNum(p.value));
   if (pts.length < 2) return null;
-  const W = 640, H = height, padX = 48, top = 26, bottom = 30;
+  // Narrow drawings for few points, so the labels stay legible when the panel is narrow.
+  const W = Math.max(320, 110 * pts.length), H = height, padX = 48, top = 26, bottom = 30;
   const lo = Math.min(...pts.map((p) => p.value)), hi = Math.max(...pts.map((p) => p.value));
   const span = hi - lo || Math.abs(hi) || 1;
   const x = (i) => padX + (i * (W - 2 * padX)) / (pts.length - 1);
   const y = (v) => top + (1 - (v - lo) / span) * (H - top - bottom);
-  return html`<svg class="p1-points" viewBox=${`0 0 ${W} ${H}`} role="img" aria-label="Supplied points, not joined">
+  return html`<svg class="p1-points" viewBox=${`0 0 ${W} ${H}`} style=${`max-width:${W}px`} role="img" aria-label="Supplied points, not joined">
     <line x1=${padX - 20} x2=${W - padX + 20} y1=${H - bottom + 6} y2=${H - bottom + 6} class="axis" />
     ${pts.map((p, i) => html`<g>
       <circle cx=${x(i)} cy=${y(p.value)} r=${p.mine ? 6 : 4} class=${p.mine ? 'mine' : ''} />

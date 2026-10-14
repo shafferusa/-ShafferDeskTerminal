@@ -14,4 +14,4 @@ everywhere, product-specific tab framework, trading and hedge integration, as-of
 analytics & risk + positions), P1 product-specific pages. Wave 3: integration tests of the listed failure modes,
 docs (data-contract requirements, integration checklist), final run and report.
 
-**Completeness: about 23.5% of the pass** (last milestone 2026-10-14T14:04Z, p1: p1: swaps and credit (legs pay/receive, reference exposure, financing, collateral and agreement, schedules with next payment, mark in use, manual and supplied marks with provenance, history) and other products (terms and Book records for repo/loan/secloan/manual/cash/spot/crypto/forward); tests green)
+**Completeness: about 24.0% of the pass** (last milestone 2026-10-14T14:15Z, p1: p1: tests and docs (product-datasets engine tests 5, workspace browser checks 60 for one instrument per family, every tab and state; SERVER-CLIENT, DATA-CONTRACT-REQUIREMENTS, INTEGRATION-CHECKLIST); responsive fix; npm test 864/864, workspace 235/235, matrix 6/6)

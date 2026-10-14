@@ -40,6 +40,13 @@ Order:
 5. SP3E analytics, runs, earnings window, then Strategies and Hedge (existing `analyticsContract`). Extra checks:
    fair value units equal quote units for the instrument; Gap % shown exactly as supplied (no Terminal arithmetic);
    a historical run is flagged historical; Fundamental and Realistic stay separate; the Strategy is chosen by ID.
+5b. Product pages (p1): `ratingsCovenants`, `yieldSpread`, `optionGreeks`, `futuresCurve`, `exchangeMargin`,
+   `fundHoldings`, `fundFacts`, `otcMarks`, `fxCurve`. Extra checks: each record names its provider and time; a
+   yield states its type and compounding and the price it was struck on; Greek units are printed as the provider
+   states them; a futures curve shows only the months supplied; an exchange margin is shown beside, never instead
+   of, the margin registered on the contract (which the paper engine posts); fund weights are in percent of net
+   assets with the report date; an OTC mark states dealer, clearing or model; a forward curve gives points with their
+   units. None of these values is computed in the Terminal (search the network log: no derived request).
 6. Point-in-time: for each dataset the contract says supports `asOf`, set `serverCapabilities.pointInTime[ds] = true`
    and check an as-of request returns as-filed data; for the rest check "Not supported by the contract".
 
@@ -54,6 +61,11 @@ Order:
 4. Disconnect the gateway (stop the test service). Check: each tab shows its error or cached-stale state; nothing
    shows zero for a missing value; reconnecting restores `available` without a page reload.
 5. Every tab in light and dark, at 1440x900, 1024x768 and 390x844.
+6. Product pages (one instrument per family: bond, listed option, OTC option, future, fund, FX pair, swap, credit
+   default swap, forward, loan or repo, manually valued holding, spot asset): every tab opens; the issuer or underlying
+   link opens its own workspace and its statements are never shown as the contract's; the bond's accrued interest
+   equals the ticket's for the same settlement date; schedules match the contract; "Not covered for this product"
+   lists what the contract does not supply. The browser checks are `test/workspace/checks/p1-product-pages.mjs`.
 
 ## D. Paper execution from a server response
 

@@ -894,10 +894,11 @@ table.ledger.fl-table td:first-child { white-space: nowrap; }
   .e3-cards table.ledger td:empty { display: none; }
   .e3-cards table.ledger td[data-label]::before { content: attr(data-label); display: block; font-size: 11px; color: var(--muted); }
 }
-.p1-points { display: block; width: 100%; max-width: 640px; height: auto; }
+.p1-points { display: block; width: 100%; height: auto; }
 .p1-points circle { fill: var(--sheet); stroke: var(--pen); stroke-width: 2; }
 .p1-points circle.mine { fill: var(--pen); }
 .p1-points .axis { stroke: var(--rule-strong); stroke-width: 1; }
 .p1-points text { fill: var(--ink); font-size: 14px; }
 .p1-points text.l { fill: var(--muted); }
 @media (max-width: 700px) { .e1-grouprow td > * { position: sticky; left: 8px; } .e1-gfacts { max-width: calc(100vw - 72px); } }
+.ws-cols > * { min-width: 0; }
