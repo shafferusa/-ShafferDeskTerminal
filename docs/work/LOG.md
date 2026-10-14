@@ -12,3 +12,4 @@
 - 2026-10-14T13:47Z | e2 | +1 | e2: Filings and reports tab (cursor pages, search and type filter over all pages, sandboxed document viewer with new-tab link, all states); browser checks 48 green; npm test 864/864; workspace 176/176
 - 2026-10-14T13:47Z | e3 | +1 | e3: corporate actions tab: processed vs informational, idempotent Record in the paper ledger, duplicate recorded once via the interface, revisions; engine + browser tests; npm test 864/864, workspace 176/176, browser 2 products no failures
 - 2026-10-14T13:47Z | e3 | +0.5 | e3: news and events tab: pagination, kind filter, facts/classification/interpretation apart; browser checks; npm test 864/864, workspace 176/176, browser 2 products no failures
+- 2026-10-14T13:47Z | e3 | +1 | e3: analytics and risk tab: SP3E outputs with gap reference price, runs with historical marked, unavailable Strategy; browser checks; npm test 864/864, workspace 176/176, browser 2 products no failures
