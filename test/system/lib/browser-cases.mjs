@@ -2261,6 +2261,106 @@ export async function hedgeReconnection(b, c) {
   await b.clean(c, book.id);
 }
 
+/**
+ * SB:hedge:prompt-race. The post-trade popup is found whatever the timing: a change announced while the page is still
+ * asking for waiting prompts, an event stream that is down, and a stream that comes back. The engine timer is off:
+ * each cycle is run explicitly, so the moment the prompt is created is known.
+ */
+export async function hedgePromptRace(b, c) {
+  const { page } = b;
+  const CTX = { investmentStrategy: { name: 'Core Equity' }, holdingPeriod: { days: 60 }, hedgeObjective: { type: 'downside_protection' } };
+  const book = await b.book('Hedge popup timing', { capital: 2_000_000, funding: 1_000_000 });
+  const inst = {};
+  for (const sym of ['HPA', 'HPB', 'HPC']) inst[sym] = await b.stock(sym, { bid: 50.00, ask: 50.02, last: 50.00, bidSize: 50_000, askSize: 50_000 });
+  await enter(b, book, '#/accounting');
+  await settle(b);
+  const popup = page.locator('[data-testid=hedge-popup]');
+  const seen = watchRequests(page, 'POST', /^\/api\/hedge\/requests\/[^/]+\/seen$/);
+  const promptOf = async (strategy) => (await b.get('/api/hedge/requests', { bookId: book.id })).items.find((r) => r.strategyId === strategy.id);
+  const closePopup = async () => {
+    const one = await popup.first().elementHandle();
+    await popup.first().locator('header').getByRole('button', { name: 'Close' }).click();
+    await one.waitForElementState('hidden');
+  };
+
+  // 1. The prompts request is held: the server has answered it (no prompt yet), the answer reaches the page later.
+  //    Meanwhile the position is bought and the engine cycle that creates its prompt is announced to the page.
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  let armed = true;
+  const held = [];
+  await page.route('**/api/hedge/prompts?*', async (route) => {
+    if (!armed) return route.continue();
+    armed = false;
+    const res = await route.fetch(); // answered now, before the prompt exists
+    held.push((await res.json()).items.length);
+    await gate;
+    await route.fulfill({ response: res });
+  });
+  const a = await b.trade({ ...b.ticketInput(book, inst.HPA, 'buy', 100), ...CTX }); // announced: the page asks for prompts (held)
+  for (let i = 0; i < 100 && !held.length; i++) await sleep(50);
+  c.eq(held, [0], 'the page asked for waiting prompts after the order was announced, and the server answered "none" (held back)');
+  await b.tick(); // creates the prompt and announces it while the first request is still on its way
+  const pa = await promptOf(a);
+  c.ok(Boolean(pa), 'the engine cycle created the post-trade hedge request for HPA', 'no request');
+  await sleep(1_000); // the announcement has reached the page, which is still waiting for the held answer
+  release();
+  const t0 = Date.now();
+  const opened = await popup.waitFor({ timeout: 6_000 }).then(() => true, () => false);
+  c.ok(opened, 'when the held answer arrives the page asks again and the hedge popup opens for HPA, without any other change on the server', 'no popup within 6 s of the held answer');
+  if (opened) {
+    c.note(`popup opened ${Date.now() - t0} ms after the held answer was delivered`);
+    c.eq(await popup.getAttribute('aria-label'), 'Hedge for long HPA', 'it is the popup of the long HPA');
+    await closePopup();
+  }
+  await page.unroute('**/api/hedge/prompts?*');
+
+  // 2. The event stream is down (every connection attempt fails): the slow check still finds a waiting prompt.
+  await page.route('**/api/stream', (route) => route.abort('failed'));
+  await page.reload();
+  await page.locator('.shell .topbar').waitFor();
+  await settle(b);
+  const bb = await b.trade({ ...b.ticketInput(book, inst.HPB, 'buy', 100), ...CTX });
+  await b.tick();
+  c.ok(Boolean(await promptOf(bb)), 'with the event stream down, the engine cycle created the request for HPB', 'no request');
+  const t1 = Date.now();
+  const openedB = await popup.waitFor({ timeout: 20_000 }).then(() => true, () => false);
+  c.ok(openedB, 'with no event reaching the page, the hedge popup for HPB still opens within 20 seconds', 'no popup within 20 s');
+  if (openedB) {
+    c.note(`stream down: popup opened ${Date.now() - t1} ms after the prompt was created`);
+    c.eq(await popup.getAttribute('aria-label'), 'Hedge for long HPB', 'it is the popup of the long HPB');
+    await closePopup();
+  }
+
+  // 3. A prompt created while the stream is down; then the stream comes back.
+  const cc = await b.trade({ ...b.ticketInput(book, inst.HPC, 'buy', 100), ...CTX });
+  await b.tick();
+  c.ok(Boolean(await promptOf(cc)), 'still with the stream down, the engine cycle created the request for HPC', 'no request');
+  const reconnected = page.waitForRequest((r) => new URL(r.url()).pathname === '/api/stream', { timeout: 20_000 }).then(() => true, () => false);
+  await page.unroute('**/api/stream');
+  const t2 = Date.now();
+  const openedC = await popup.waitFor({ timeout: 20_000 }).then(() => true, () => false);
+  c.ok(await reconnected, 'the page connects to the event stream again once it is back');
+  c.ok(openedC, 'and the hedge popup for HPC opens', 'no popup within 20 s');
+  if (openedC) {
+    c.note(`stream back: popup opened ${Date.now() - t2} ms after the stream was restored`);
+    c.eq(await popup.getAttribute('aria-label'), 'Hedge for long HPC', 'it is the popup of the long HPC');
+    await closePopup();
+  }
+
+  // Never the same prompt twice, one popup at a time: more cycles, announcements and a slow check later, nothing reopens.
+  await b.tick(); await b.tick();
+  await sleep(12_000);
+  c.eq(await popup.count(), 0, 'after more engine cycles and a slow check, no popup opens again');
+  seen.stop();
+  const ids = seen.seen.map((u) => new URL(u).pathname.split('/')[4]);
+  c.eq(ids, [pa.id, (await promptOf(bb)).id, (await promptOf(cc)).id], 'each prompt was shown, and marked seen, exactly once, in order');
+  c.eq((await b.get('/api/hedge/prompts', { bookId: book.id })).items.length, 0, 'no prompt is left waiting');
+  // The connection attempts refused on purpose while the stream was down are the only expected console errors.
+  b.takePageErrors().forEach((e) => { if (!/api\/stream|ERR_FAILED|EventSource/.test(e)) c.fail(`browser console error: ${e}`); });
+  await b.clean(c, book.id);
+}
+
 // ---------------------------------------------------------------------------------------------
 // Persistence across restarts, and an interrupted confirmation, as the user sees them
 // ---------------------------------------------------------------------------------------------

@@ -311,3 +311,4 @@
 - 2026-10-13T23:15Z | fin | +0.5 | failed settlements retried only on new cash or a new business day; attempts and last attempt time on the Failed tab; npm test 811/811
 - 2026-10-14T01:11Z | hist | +0 | hist: SB:history:reference-edits fixed (test waited too little for the locked contract-terms fieldset, which renders after the catalog loads); system browser 38/38, npm test 811/811
 - 2026-10-14T04:07Z | flaky | +0 | flaky: Lifecycle menu waits for contract terms (strategy-detail.js + drivers' lifecycleMenu); locked-terms check is one :disabled snapshot; cds_swaption 5/5 under load, system browser 3/3, npm test 811/811
+- 2026-10-14T04:13Z | popup | +0 | popup: hedge prompt check no longer drops refreshes during an in-flight check; checks on stream reconnect and every 10 s; new SB:hedge:prompt-race

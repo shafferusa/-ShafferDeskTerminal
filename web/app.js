@@ -25,8 +25,43 @@ const parseHash = () => {
 const flag = (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : v === '1'; } catch { return d; } };
 const setFlag = (k, v) => { try { localStorage.setItem(k, v ? '1' : '0'); } catch { /* ignore */ } };
 
-// True while the post-trade hedge prompt is being fetched and opened, so two reloads cannot open two popups.
-let promptOpening = false;
+// ---- the post-trade hedge prompt (workflow 2) ----
+// After a direct Marketplace fill the engine creates a hedge request and its popup opens here, with the recommended
+// package or, while Analytics Lab is away, the waiting state. One check at a time, so two refreshes cannot open two
+// popups; a refresh that arrives while a check is on its way is remembered and checked again once that one completes
+// (its answer may predate the change that refresh announced). The check also runs when the event stream (re)connects
+// and every PROMPT_POLL_MS, so a waiting prompt is found even when no event reaches the page.
+const PROMPT_POLL_MS = 10_000;
+let promptChecking = false;
+let promptAgain = false;
+// Prompts this page has opened: never the same one twice, even if marking it seen has not reached the list yet.
+const promptsShown = new Set();
+function checkPrompts() {
+  const bookId = getState().bookId;
+  if (!bookId) return;
+  if (promptChecking) { promptAgain = true; return; }
+  // Never on top of a dialog in use: closing it checks again (the overlay count changes), and so does the slow check.
+  if (document.querySelector('.modal')) return;
+  promptChecking = true;
+  promptAgain = false;
+  // An answer that arrives after the user switched Book belongs to the Book left behind: it is dropped.
+  const stillHere = () => getState().bookId === bookId;
+  get('/api/hedge/prompts', { bookId }).then(async (r) => {
+    // One popup at a time: when several positions are waiting to be shown, the next opens after this one closes.
+    const h = r.items.find((x) => !promptsShown.has(x.id));
+    if (!h || document.querySelector('.modal') || !stillHere()) return;
+    // The popup's code first: a prompt is marked seen only once it can really be shown.
+    const { HedgePopup } = await import('./views/hedge.js').catch((err) => { codeMissing = true; throw err; });
+    if (document.querySelector('.modal') || !stillHere()) return;
+    await post(`/api/hedge/requests/${h.id}/seen`);
+    promptsShown.add(h.id);
+    openOverlay((close) => html`<${HedgePopup} request=${h} onClose=${close} />`);
+  }).catch(() => {}).finally(() => {
+    promptChecking = false;
+    // A refresh came in meanwhile, or the Book changed: look again, for the Book now selected.
+    if (promptAgain || !stillHere()) { promptAgain = false; checkPrompts(); }
+  });
+}
 // Set when the code of a screen or of the hedge popup could not be fetched. The browser keeps that failure for the
 // life of the page, so the screen could never load again; when the server is back the page is reloaded once.
 let codeMissing = false;
@@ -155,27 +190,16 @@ function Shell() {
     // An answer that arrives after the user switched Book belongs to the Book left behind: it is dropped.
     const stillHere = () => getState().bookId === bookId;
     get(`/api/books/${bookId}/alerts`).then((r) => { if (stillHere()) setAlerts(r.items); }, () => {});
-    // Workflow 2: after a direct Marketplace fill the hedge request is made automatically and its popup
-    // opens, with the recommended package or, while Analytics Lab is away, the waiting state. It never
-    // opens on top of a dialog that is in use; it waits for that dialog to close.
-    if (document.querySelector('.modal')) return;
-    // One popup at a time: when several positions are waiting to be shown, the next opens after this one closes.
-    if (promptOpening) return;
-    promptOpening = true;
-    get('/api/hedge/prompts', { bookId }).then(async (r) => {
-      const h = r.items[0];
-      if (h && !document.querySelector('.modal') && stillHere()) {
-        // The popup's code first: a prompt is marked seen only once it can really be shown.
-        const { HedgePopup } = await import('./views/hedge.js').catch((err) => { codeMissing = true; throw err; });
-        await post(`/api/hedge/requests/${h.id}/seen`);
-        openOverlay((close) => html`<${HedgePopup} request=${h} onClose=${close} />`);
-      }
-    }).catch(() => {}).finally(() => {
-      promptOpening = false;
-      // The Book changed while this was on its way: look again, for the Book now selected.
-      if (!stillHere()) bump();
-    });
+    // The post-trade hedge prompt: on every refresh, Book change and closed dialog (checkPrompts above).
+    checkPrompts();
   }, [bookId, tick, overlayCount]);
+  // The slow check, and a check when the tab is shown again (the slow check skips a hidden tab).
+  useEffect(() => {
+    const t = setInterval(() => { if (!document.hidden) checkPrompts(); }, PROMPT_POLL_MS);
+    const shown = () => { if (!document.hidden) checkPrompts(); };
+    document.addEventListener('visibilitychange', shown);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', shown); };
+  }, []);
 
   if (!status) return html`<div class="boot">Shaffer Desk Terminal</div>`;
   const book = currentBook();
@@ -241,11 +265,19 @@ async function boot() {
   try { await refreshStatus(); } catch (err) { document.getElementById('app').innerHTML = `<div class="boot">The Terminal server is not responding. ${err.message}</div>`; return; }
   render(html`<${Shell} />`, document.getElementById('app'));
   setInterval(() => { if (!document.hidden) refreshStatus().catch(() => {}); }, 20000);
-  // The engine announces changes (fills, settlements, lifecycle events) so screens reload at once.
-  try {
-    const es = new EventSource('/api/stream');
-    es.onmessage = () => bump();
-  } catch { /* polling still works */ }
+  connectStream();
   void getState; void Awaiting;
+}
+// The engine announces changes (fills, settlements, lifecycle events) so screens reload at once. The browser
+// reconnects by itself after a network error; a stream it gives up on (the server answered with an error while
+// restarting) is opened again. On reconnecting every screen reloads, since announcements may have been missed while
+// it was down; the first connection checks for a waiting hedge prompt.
+let streamOpened = false;
+function connectStream() {
+  let es;
+  try { es = new EventSource('/api/stream'); } catch { return; /* polling still works */ }
+  es.onmessage = () => bump();
+  es.onopen = () => { if (streamOpened) bump(); else checkPrompts(); streamOpened = true; };
+  es.onerror = () => { if (es.readyState === EventSource.CLOSED) { es.close(); setTimeout(connectStream, 3000); } };
 }
 boot();
