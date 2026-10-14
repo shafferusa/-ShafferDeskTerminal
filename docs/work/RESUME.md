@@ -14,4 +14,4 @@ everywhere, product-specific tab framework, trading and hedge integration, as-of
 analytics & risk + positions), P1 product-specific pages. Wave 3: integration tests of the listed failure modes,
 docs (data-contract requirements, integration checklist), final run and report.
 
-**Completeness: about 19.5% of the pass** (last milestone 2026-10-14T13:48Z, e1: Price history tab (tabs/price-history.js): chart+table, OHLC/volume, annotations, adj/unadj switch only when both exist, gaps/coverage/intervals, as-of; checks in test/workspace/checks/e1-tabs.mjs)
+**Completeness: about 20.5% of the pass** (last milestone 2026-10-14T13:48Z, e1: Overview tab (tabs/overview.js): issuer vs listing, units/as-of/source per figure, missing fields named, as-of without substitution)
