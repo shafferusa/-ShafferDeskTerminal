@@ -13,3 +13,4 @@
 - 2026-10-14T13:47Z | e3 | +1 | e3: corporate actions tab: processed vs informational, idempotent Record in the paper ledger, duplicate recorded once via the interface, revisions; engine + browser tests; npm test 864/864, workspace 176/176, browser 2 products no failures
 - 2026-10-14T13:47Z | e3 | +0.5 | e3: news and events tab: pagination, kind filter, facts/classification/interpretation apart; browser checks; npm test 864/864, workspace 176/176, browser 2 products no failures
 - 2026-10-14T13:47Z | e3 | +1 | e3: analytics and risk tab: SP3E outputs with gap reference price, runs with historical marked, unavailable Strategy; browser checks; npm test 864/864, workspace 176/176, browser 2 products no failures
+- 2026-10-14T13:47Z | e3 | +0.5 | e3: my positions and trades tab moved to tabs/positions.js on the ledger interface (packages, hedges, financing, fills, history), matches Accounting; npm test 864/864, workspace 176/176, browser 2 products no failures

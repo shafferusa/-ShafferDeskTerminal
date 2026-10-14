@@ -14,4 +14,4 @@ everywhere, product-specific tab framework, trading and hedge integration, as-of
 analytics & risk + positions), P1 product-specific pages. Wave 3: integration tests of the listed failure modes,
 docs (data-contract requirements, integration checklist), final run and report.
 
-**Completeness: about 18.0% of the pass** (last milestone 2026-10-14T13:47Z, e3: e3: analytics and risk tab: SP3E outputs with gap reference price, runs with historical marked, unavailable Strategy; browser checks; npm test 864/864, workspace 176/176, browser 2 products no failures)
+**Completeness: about 18.5% of the pass** (last milestone 2026-10-14T13:47Z, e3: e3: my positions and trades tab moved to tabs/positions.js on the ledger interface (packages, hedges, financing, fills, history), matches Accounting; npm test 864/864, workspace 176/176, browser 2 products no failures)
