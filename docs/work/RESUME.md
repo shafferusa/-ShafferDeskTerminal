@@ -14,4 +14,4 @@ everywhere, product-specific tab framework, trading and hedge integration, as-of
 analytics & risk + positions), P1 product-specific pages. Wave 3: integration tests of the listed failure modes,
 docs (data-contract requirements, integration checklist), final run and report.
 
-**Completeness: about 16.5% of the pass** (last milestone 2026-10-14T13:47Z, e3: e3: corporate actions tab: processed vs informational, idempotent Record in the paper ledger, duplicate recorded once via the interface, revisions; engine + browser tests; npm test 864/864, workspace 176/176, browser 2 products no failures)
+**Completeness: about 17.0% of the pass** (last milestone 2026-10-14T13:47Z, e3: e3: news and events tab: pagination, kind filter, facts/classification/interpretation apart; browser checks; npm test 864/864, workspace 176/176, browser 2 products no failures)
