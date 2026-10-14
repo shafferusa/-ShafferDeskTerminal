@@ -164,7 +164,8 @@ function AsOfLine({ ds, asOf }) {
  */
 export function DatasetBody({ ds, asOf, children, what }) {
   const e = ds.env;
-  const msg = e?.message || null;
+  // The server's sentence, without a leading state word the pill and the bold label already say.
+  const msg = e?.message ? String(e.message).replace(/^(stale|incomplete|unavailable|error)\s*[:.]\s*/i, '') : null;
   const body = () => (typeof children === 'function' ? children(e) : children);
   switch (ds.state) {
     case 'loading': return html`<div class="ws-loading" aria-busy="true">Loading ${ds.label.toLowerCase()}…</div>`;
@@ -176,7 +177,7 @@ export function DatasetBody({ ds, asOf, children, what }) {
       return html`<${Notice} tone="err"><b>${ds.label} could not be loaded.</b> ${er.message || msg || ''}${er.attempts ? ` (${er.attempts} attempts)` : ''} ${blocked ? 'The server refused access, so it is not asked again until the connection settings change.' : 'Choose Refresh to ask again.'}<//>`;
     }
     case 'stale': return html`<div class="stack"><${Notice} tone="warn"><b>Stale.</b> ${msg || `This data is older than its freshness limit${isNum(e?.freshness?.staleAfterSec) ? ` (${fmtAge(e.freshness.staleAfterSec).replace(' ago', '')})` : ''}.`}${e?.error ? ` The last refresh failed: ${e.error.message}` : ''}<//>${body()}</div>`;
-    case 'incomplete': return html`<div class="stack"><${Notice} tone="warn"><b>Incomplete.</b> ${msg || 'Some fields are missing from the server\'s answer.'}${e?.missingFields?.length ? ` Missing: ${e.missingFields.join(', ')}.` : ''} Missing values are shown as missing.<//>${body()}</div>`;
+    case 'incomplete': return html`<div class="stack"><${Notice} tone="warn"><b>Incomplete.</b> ${msg || `Some fields are missing from the server's answer${e?.missingFields?.length ? `: ${e.missingFields.join(', ')}` : ''}.`} Missing values are shown as missing.<//>${body()}</div>`;
     default: return body();
   }
 }
@@ -216,7 +217,7 @@ export function WorkspaceHeader({ inst, detail, analytics, reference, strategy, 
   const fairWhy = !strategy ? 'Choose a Strategy to see its fair price and Gap %.' : wrongStrategy ? `Supplied for Strategy ${a0.strategyId}, not ${strategy.id}: not shown.`
     : aState === 'awaiting' ? `Fair price: ${analytics.env?.message || 'Awaiting Shaffer data connection'}` : aState === 'loading' ? 'Loading' : aState === 'error' ? 'Analytics could not be loaded' : 'Not supplied by Analytics Lab for this instrument';
   const fv = (x) => (isNum(x.fair) ? html`${fmtPriceUnits(x.fair, a?.fairValueUnits || inst.priceUnits)}${a?.fairValueCurrency && a.fairValueCurrency !== (obs?.currency || inst.tradingCcy) ? html` <span class="muted">${a.fairValueCurrency}</span>` : ''}` : html`<${Missing} reason=${a ? 'Not supplied for this basis' : fairWhy} />`);
-  const gv = (x) => (isNum(x.g.value) ? html`<span title=${x.g.basis === 'supplied' ? 'As supplied by Analytics Lab' : 'Worked out here: (fair price − current market price) ÷ current market price, same currency and units'}><${Signed} value=${x.g.value} suffix="%" />${x.g.basis === 'computed' ? html`<sup class="muted">c</sup>` : ''}</span>` : html`<${Missing} reason=${a ? x.g.why : fairWhy} />`);
+  const gv = (x) => (isNum(x.g.value) ? html`<span title=${x.g.basis === 'supplied' ? `As supplied by Analytics Lab${a?.raw?.gapReference && isNum(a.raw.gapReference.price) ? `, against its reference price ${fmtPrice(a.raw.gapReference.price)} ${a.raw.gapReference.units || ''} at calculation time, not the current market price` : ''}` : 'Worked out here: (fair price − current market price) ÷ current market price, same currency and units'}><${Signed} value=${x.g.value} suffix="%" />${x.g.basis === 'computed' ? html`<sup class="muted">c</sup>` : ''}</span>` : html`<${Missing} reason=${a ? x.g.why : fairWhy} />`);
   return html`<div class=${`ws-head ${page ? 'page' : ''}`} data-ws-inst=${inst.id} data-testid="ws-header">
     <div class="ws-idline">
       ${page ? html`<h1 class="ws-title">${inst.symbol ? html`<span class="sym">${inst.symbol}</span> ` : null}${inst.name}</h1>` : null}
@@ -376,7 +377,7 @@ export function TermsPanel({ inst, detail }) {
     inst.issuer ? ['Issuer', inst.issuer] : null,
     inst.family === 'fx' && t.base ? ['Quotation', `${t.quote} per 1 ${t.base} (base ${t.base}, quote ${t.quote})`] : null,
     ['Price quoted', `${inst.priceUnits}, ${inst.tradingCcy}`], inst.settleCcy && inst.settleCcy !== inst.tradingCcy ? ['Settlement currency', inst.settleCcy] : null,
-    ['Quantity in', inst.qtyLabel], isNum(inst.multiplier) && inst.multiplier !== 1 ? ['Multiplier', fmtNum(inst.multiplier, 0)] : null,
+    ['Quantity in', inst.qtyLabel], isNum(inst.multiplier) && inst.multiplier !== 1 ? ['Multiplier', fmtQty(inst.multiplier)] : null,
     inst.family === 'bond' && obs && isNum(obs.yield) ? ['Yield (supplied with the price)', `${fmtNum(obs.yield * (Math.abs(obs.yield) < 1 ? 100 : 1), 3)}%`] : null,
     ...(inst.details || []),
     ['Settlement convention', inst.settlement?.label || html`<${Missing} />`],
@@ -385,8 +386,10 @@ export function TermsPanel({ inst, detail }) {
     ['Market view', inst.arrangement ? 'Financing arrangement (Treasury and Account pages)' : `${VIEW_LABEL[inst.marketView]}${inst.classification?.tabLabel ? `, ${inst.classification.tabLabel}` : ''}`],
     ['Terminal ID', html`<span class="mono">${inst.id}</span>`], ['Reference source', inst.refSource === 'manual' ? 'Entered by hand in the Terminal' : inst.refSource],
   ];
+  const given = new Set((inst.details || []).map(([k]) => String(k).toLowerCase()));
+  const shown = rows.filter((r) => !r || !inst.details?.includes(r) ? !(r && given.has(String(r[0]).toLowerCase()) && !inst.details.includes(r)) : true);
   return html`<section class="panel"><header><h3>Contract and reference terms</h3><span class="note">From the Terminal's instrument registry</span></header>
-    <div class="body">${FIELDS_NOTE[inst.family] ? html`<p class="note" style="margin-top:0">${FIELDS_NOTE[inst.family]}</p>` : null}<${KV} rows=${rows} /></div></section>`;
+    <div class="body">${FIELDS_NOTE[inst.family] ? html`<p class="note" style="margin-top:0">${FIELDS_NOTE[inst.family]}</p>` : null}<${KV} rows=${shown} /></div></section>`;
 }
 
 // ---- Price history ---------------------------------------------------------------------------------------------------------

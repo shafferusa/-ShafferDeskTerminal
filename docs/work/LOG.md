@@ -2,3 +2,4 @@
 - 2026-10-14T12:35Z | d1 | +1.5 | d1: server client interfaces + plumbing (timeouts, abort, retries w/o 401/403, TTL cache, pagination, refresh, selection tokens); npm test 811/811
 - 2026-10-14T12:35Z | d1 | +2 | d1: response envelope on every /api/server/* route (reference, quotes, history, fx, rates, profile, statements, earnings, filings, documents proxy, corporate actions, news, SP3E analytics, ledger, state); smoke-tested demo+normal
 - 2026-10-14T12:38Z | w1 | +2 | w1: instrument workspace: drawer + full page #/instrument/<id>, sticky header (IDs, quote, Fair/Gap by Strategy, holdings), Trade/Build strategy/Hedge, navigation from every source; browser matrix 5/5, npm test 811/811
+- 2026-10-14T12:41Z | d1 | +1.5 | d1: demo fixtures for every server dataset (statements w/ restatement + YTD, earnings, filings+docs, CA duplicate delivery, news, SP3E two runs) + POST /api/demo/fixtures/server modes; tests 828/828

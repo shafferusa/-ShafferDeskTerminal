@@ -131,3 +131,51 @@ test('analytics fields stay missing; fair value is never used as a price', async
   assert.equal(pv.legs[0].price.executable, false);
   assert.match(pv.legs[0].price.reason, /model-derived value.*not an executable quote/);
 });
+
+// ---- server client (docs/SERVER-CLIENT.md): every dataset awaits until the contract is supplied ----------------
+
+test('server client: every dataset of the market and analytics interfaces reports awaiting with its operation name', async () => {
+  const { app, stock } = live();
+  const { SERVER_DATASETS } = await import('../../server/data/ports.js');
+  const book = makeBook(app).book;
+  const S = app.data.server;
+  const paramsFor = (ds) => ({ search: { q: 'EXMP' }, quotes: { instruments: [stock] }, fx: { pairs: ['EUR/USD'] }, rates: { codes: ['SOFR'] }, documents: { docId: 'D1' }, ledger: { instrument: stock, bookId: book.id } }[ds] || { instrument: stock });
+  for (const [ds, def] of Object.entries(SERVER_DATASETS)) {
+    const env = await S.call(ds, paramsFor(ds), { requestId: `r-${ds}` });
+    if (def.interface === 'ledger') {
+      assert.equal(env.state, 'available', 'the paper ledger is local and always answers');
+      assert.equal(env.source.kind, 'terminal-ledger');
+      continue;
+    }
+    assert.equal(env.state, 'awaiting', ds);
+    assert.equal(env.operation, def.operation);
+    assert.ok(env.message.startsWith('Awaiting Shaffer data connection'), env.message);
+    assert.ok(env.message.includes(def.operation), `the message names ${def.operation}`);
+    assert.equal(env.requestId, `r-${ds}`);
+    assert.equal(env.items, undefined, 'nothing is fabricated');
+    assert.equal(env.data, undefined);
+  }
+  const st = S.state();
+  assert.equal(st.mode, 'shaffer');
+  for (const [ds, d] of Object.entries(st.datasets)) if (d.interface !== 'ledger') assert.equal(d.state, 'awaiting', ds);
+});
+
+test('server client: an address without a contract mapping still awaits, and no request leaves the Terminal', async () => {
+  const { app, stock } = live();
+  app.data.saveConnection({ gatewayUrl: 'https://gateway.shaffer.internal/api' });
+  let fetched = 0;
+  const orig = globalThis.fetch;
+  globalThis.fetch = async () => { fetched++; throw new Error('no network in tests'); };
+  try {
+    const env = await app.data.server.call('statements', { instrument: stock, statement: 'income', period: 'annual' });
+    assert.equal(env.state, 'awaiting');
+    assert.match(env.message, /market\.statements: not yet mapped in shaffer-contract\.js/);
+    const an = await app.data.server.call('analytics', { instrument: stock, strategyId: 'SP3E' });
+    assert.match(an.message, /analytics\.instrumentAnalytics: not yet mapped/);
+    assert.equal(fetched, 0);
+  } finally {
+    globalThis.fetch = orig;
+  }
+  // The credential never appears in any state the browser can read
+  assert.equal(JSON.stringify(app.data.server.state()).includes('secret'), false);
+});
