@@ -15,6 +15,7 @@ import { createFixtureControls } from './data/demo.js';
 import { STATUS_LABEL } from './data/observation.js';
 import { guardRepeats } from './http/once.js';
 import { createRouter } from './http/router.js';
+import { registerServerRoutes } from './server-api.js'; // d1: server client routes (docs/SERVER-CLIENT.md)
 import { CALENDARS, COUNTRY_CALENDAR, CURRENCY_CALENDAR, getExtraHolidays, holidaysOf, setExtraHolidays } from './quant/calendar.js';
 import { setBasketLevel } from './products/swap-partial.js'; // s3: basket level entered on a swap payment item
 
@@ -67,6 +68,7 @@ export function createApi(app) {
   r.put('/api/data/connection', ({ body }) => { app.data.saveConnection(body); return app.data.describe(); });
   r.put('/api/data/refresh', ({ body }) => { app.data.saveRefresh(body); return app.data.describe(); });
   r.post('/api/data/test', async ({ body }) => {
+    app.data.server.clearAuthBlocks(); // d1: testing the connection is when a refused (401/403) dataset may be tried again
     const port = body.port === 'analytics' ? app.data.analytics : app.data.market;
     return { port: body.port === 'analytics' ? 'analytics' : 'market', result: await port.testConnection(), data: app.data.describe() };
   });
@@ -639,6 +641,9 @@ export function createApi(app) {
     app.engine.emit({ type: 'changed', summary: { hedgeRefreshed: refreshed.length, hedgeService: 1 } });
     return { script: app.hedge.scriptView(), refreshed, service: app.hedge.serviceStatus() };
   });
+
+  // ---- server client (d1): /api/server/* and POST /api/demo/fixtures/server; registered before /api/demo/fixtures/:kind --------
+  registerServerRoutes(r, app, { requireVisible });
 
   // ---- test matrix: controlled fixtures (demo only) and the read-only integrity check ---------------------------------------
   // Fixtures stand in for the Shaffer services with values a test states. Demo mode only (403 otherwise);

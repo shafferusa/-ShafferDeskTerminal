@@ -63,3 +63,59 @@ export const analyticsContract = {
   // The response may carry `version` (or `modelRun`) and a `protection` assessment: see HedgeResponse in ports.js.
   hedge: null, // async ({http, ctx}, hedgeRequest) => HedgeResponse (see ports.js); the request is built by core/hedge.js
 };
+
+// ---------------------------------------------------------------------------------------------
+// Server client operations (docs/SERVER-CLIENT.md, server/data/server-client.js)
+// ---------------------------------------------------------------------------------------------
+//
+// One entry per dataset of SERVER_DATASETS (ports.js). Each is null until the backend builder supplies the
+// contract; a null operation makes its dataset answer state 'awaiting' with the operation name (for example
+// "Awaiting Shaffer data connection (market.statements not yet mapped)"). Fill one in as
+//
+//   statements: async ({ http, ctx, signal, cursor, page, pageSize }, params) => ContractResult
+//
+// where `http.get(path, { query, signal })` / `http.post(path, body, { signal })` call the ONE configured gateway
+// with the server-side credential, a timeout and the caller's cancellation signal, and throw an Error carrying
+// `status` on an HTTP error (so 401/403 are never retried). ContractResult is documented in ports.js. The paths,
+// query names, auth scheme and payload mapping all come from the supplied contract: none is assumed here.
+//
+// Where an operation below is null but the matching legacy operation in marketContract above is mapped
+// (search, reference, quotes, history, fx, rates, corporateActions), the server client adapts the legacy one, so
+// a mapping is never written twice.
+
+export const serverOperations = {
+  market: {
+    search: null,           // ({...}, { q, limit, marketView }) => { items: [ReferenceHit], nextCursor? | page?, totalPages? }
+    reference: null,        // ({...}, { serverId }) => { data: InstrumentReference, asOf? }
+    quotes: null,           // ({...}, { instruments }) => { items: [Quote], asOf? }
+    history: null,          // ({...}, { instrument, from, to, interval, adjusted }) => { items: [Bar], data: { adjusted, adjustmentBasis, annotations }, coverage }
+    fx: null,               // ({...}, { pairs }) => { items: [FxRate] }
+    rates: null,            // ({...}, { codes, from, to }) => { items: [RateObservation] }
+    profile: null,          // ({...}, { instrument }) => { data: { issuer, listing, highlights, nextEarnings } }
+    statements: null,       // ({...}, { instrument, statement, period, periods, asOf }) => { data: { periods, lines, currency, units } }
+    earnings: null,         // ({...}, { instrument, from, to }) => { items: [EarningsEvent] }
+    filings: null,          // ({...}, { instrument, kind, asOf }) => { items: [Filing], nextCursor? | page? }
+    document: null,         // ({...}, { docId }) => { mediaType, filename?, body: ReadableStream | Buffer | string }
+    corporateActions: null, // ({...}, { instrument, from, to }) => { items: [CorporateActionEvent] }
+    news: null,             // ({...}, { instrument, from, asOf }) => { items: [NewsItem], nextCursor? | page? }
+  },
+  analytics: {
+    instrumentAnalytics: null, // ({...}, { instrument, strategyId, runId, asOf }) => { data: AnalyticsRecord }
+    runs: null,                // ({...}, { instrument, strategyId, asOf }) => { items: [RunSummary] }
+    earningsWindow: null,      // ({...}, { instrument, strategyId }) => { data: { eligible, window, reason, runId, calculatedAt } }
+  },
+};
+
+/**
+ * What the contract says it supports, per dataset. Empty until the contract is supplied, which means:
+ *   pointInTime[dataset]   true when the server answers an `asOf` request with what was known then
+ *   pagination[dataset]    'cursor' | 'page' | null
+ *   subscriptions[dataset] ({ ctx, params, onData, onError }) => unsubscribe   (push updates, if any are supported)
+ *   versions               { api, schema } the contract is written against
+ */
+export const serverCapabilities = {
+  pointInTime: {},
+  pagination: {},
+  subscriptions: {},
+  versions: { api: null, schema: null },
+};

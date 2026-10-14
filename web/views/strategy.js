@@ -14,6 +14,7 @@ import { ContractFields, draftToContract, InstrumentPicker, newDraft, PositionPi
 import { defaultUnit, OrderFields, ownerHint, UnitSelect } from './instrument.js';
 import { ConventionFields, conventionsPayload } from './registry.js';
 import { PreviewModal } from './preview.js';
+import { takeStrategyHandoff } from './workspace.js';
 import { HedgeQueue, OBJECTIVES, PackageDetail, PackageList, RequestState, RequestSummary, SCOPES, SourceFacts, sourceWords, StatePill, strategyInput, StrategyPicker, StrategyRef, usePackagePreview } from './hedge.js';
 
 const STOCK = 'stock', OPT = 'options', FUT = 'futures';
@@ -212,7 +213,7 @@ function CustomLegs({ legs, setLegs, book, unitId, und, catalog, defaultPurpose 
   return html`<div class="stack">
     ${legs.length ? html`<div class="tablewrap"><table class="ledger margin"><thead><tr><th></th><th>Leg</th><th>Purpose</th><th>Order</th><th>Runs after</th><th></th></tr></thead><tbody>
       ${legs.map((l, i) => html`<tr key=${l.key}><td><span class="leg-n">${i + 1}</span></td>
-        <td class="wrap"><div class="strong">${describeLeg(l)}</div>${l.note ? html`<div class="sub">${l.note}</div>` : null}</td>
+        <td class="wrap"><div class="strong">${describeLeg(l)}${l.instrumentId ? html` <button type="button" class="btn link small" title="Open this leg's instrument" onClick=${() => import('./instrument.js').then((m) => m.openInstrument(l.instrumentId))}>Open instrument</button>` : null}</div>${l.note ? html`<div class="sub">${l.note}</div>` : null}</td>
         <td>${{ primary: 'Primary', hedge: 'Hedge', financing: 'Financing' }[l.purpose]}</td>
         <td>${l.kind === 'trade' ? `${{ market: 'Market', limit: 'Limit', stop: 'Stop', stop_limit: 'Stop limit' }[l.orderType] || 'Market'}${isNum(l.limitPrice) ? ` ${fmtPrice(l.limitPrice)}` : ''}${isNum(l.statedPrice) ? `, stated fill ${fmtPrice(l.statedPrice)}` : ''}` : ''}</td>
         <td>${l.kind === 'borrow_sec' ? '' : html`<${Select} value=${l.afterKeys[0] ?? ''} onChange=${(v) => setAfter(l.key, v)} placeholder="No dependency" options=${legs.filter((x) => x.key !== l.key).map((x) => ({ value: x.key, label: `Leg ${legs.indexOf(x) + 1}` }))} />`}</td>
@@ -393,7 +394,10 @@ export default function Strategy({ args, book, status }) {
   const [netLimit, setNetLimit] = useState(null);
   const [fin, setFin] = useState({ mode: 'none', rate: null });
   // ctx.strategy is a Strategy reference: { id, name, resolved: true } from the list, or { id: null, name, resolved: false } when typed.
-  const [ctx, setCtx] = useState({ strategy: null, days: null, objective: '', scope: 'trade' });
+  // Build strategy from an instrument workspace hands over the investment Strategy chosen there (workspace.js), once.
+  const [ctx, setCtx] = useState(() => ({ strategy: args[0] === 'for' && args[1] ? takeStrategyHandoff(args[1], book.id) : null, days: null, objective: '', scope: 'trade' }));
+  // Opened again for another instrument while this page is already shown (the address changes, the page stays).
+  useEffect(() => { if (args[0] === 'for' && args[1]) { setUndId(args[1]); const s = takeStrategyHandoff(args[1], book.id); if (s) setCtx((c) => ({ ...c, strategy: s })); } }, [args[0], args[1]]);
   const [legs, setLegs] = useState([]);
   const [signalRef, setSignalRef] = useState(null);
   const [hedgeSel, setHedgeSel] = useState('');

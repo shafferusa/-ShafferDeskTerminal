@@ -21,6 +21,7 @@ import { createSettlement } from './core/settlement.js';
 import { createAlerts, createTasks } from './core/tasks.js';
 import { createValuation } from './core/valuation.js';
 import { createDataAdapter } from './data/index.js';
+import { attachServerIntegration } from './data/server-integration.js';
 import { openDatabase } from './db/db.js';
 import { createProducts } from './products/index.js';
 import { setExtraHolidays } from './quant/calendar.js';
@@ -46,6 +47,8 @@ export function createApp({ config, clock, db } = {}) {
   app.packages = createPackages(app);
   app.hedge = createHedge(app);
   app.corpactions = createCorporateActions(app);
+  // Server client (docs/SERVER-CLIENT.md): its local ledger interface and, in demo mode only, the labelled fixtures.
+  attachServerIntegration(app);
   app.accounting = createAccounting(app);
   app.engine = createEngine(app);
   // Market holidays entered by hand (one-off closures the rule-based calendars cannot know).

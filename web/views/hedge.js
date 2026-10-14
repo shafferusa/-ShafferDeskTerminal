@@ -274,7 +274,7 @@ function LegCard({ leg, done, changed, unitId, onCollateral, onStatedPrice }) {
   const fwdBase = leg.instrument?.family === 'forward' && !isNum(p?.estimate) && ['fx', 'ndf'].includes(leg.contract?.terms?.forwardType) ? leg.contract.terms.base || null : null;
   return html`<div class="hleg" data-leg=${leg.n}>
     <div class="hleg-head"><span class="leg-n">${leg.n}</span>
-      <div class="grow"><div class="strong">${leg.label}${changed ? html` <${Pill} tone="warn" title="Figures of this leg moved since you pressed Execute now. See what changed at the top.">changed<//>` : null}</div>
+      <div class="grow"><div class="strong">${leg.label}${leg.instrument?.id && !leg.instrument.draft ? html` <button type="button" class="btn link small" title="Open this leg's instrument (quick overview, with its full page)" onClick=${() => import('./instrument.js').then((m) => m.openInstrument(leg.instrument.id))}>Open instrument</button>` : null}${changed ? html` <${Pill} tone="warn" title="Figures of this leg moved since you pressed Execute now. See what changed at the top.">changed<//>` : null}</div>
         <div class="sub">${leg.purpose === 'financing' ? 'Financing' : leg.hedgeFamily || leg.kindLabel}${leg.riskAddressed ? `, addresses ${String(leg.riskAddressed).toLowerCase()}` : ''}${leg.dependsOn?.length ? `, after leg ${leg.dependsOn.join(', ')}` : ''}</div>
         ${leg.sizingBasis || isNum(leg.hedgeRatio) ? html`<div class="sub">Sized by ${leg.sizingBasis || 'the ratio supplied'}${isNum(leg.hedgeRatio) ? `, ratio ${leg.hedgeRatio}` : ''}</div>` : null}</div></div>
     <div class="hleg-fields">

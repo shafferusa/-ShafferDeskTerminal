@@ -12,6 +12,8 @@ const ROUTES = {
   account: () => import('./views/account.js'),
   strategy: () => import('./views/strategy.js'),
   markets: () => import('./views/markets.js'),
+  instrument: () => import('./views/instrument-page.js'), // the full instrument-detail page (w1): #/instrument/<id>/<tab>
+
   instruments: () => import('./views/registry.js'),
   data: () => import('./views/data.js'),
   settings: () => import('./views/settings.js'),

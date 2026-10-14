@@ -4,11 +4,12 @@
 // (the instrument's convention, or a date or lag stated for this trade) and the Overview names the
 // trading, settlement and payment calendars; a calendar that is approximate or weekends only is
 // flagged with a badge and a sentence on both.
-import { html, useEffect, useState } from '../vendor/preact-htm.js';
+import { html, useEffect, useRef, useState } from '../vendor/preact-htm.js';
 import { bump, currentBook, fmtMoney, fmtNum, fmtPrice, fmtPriceUnits, fmtQty, fmtTime, get, getState, isNum, openOverlay, post, setUnit, toast, toastError, useLive, VIEW_LABEL } from '../lib/core.js';
 import { Awaiting, Button, Check, Drawer, Empty, Field, Holdings, holdingsFromPositions, KV, LineChart, Missing, Modal, Money, Notice, Num, Panel, Pill, Price, Prov, Seg, Select, Signed, Support, Table, Tabs, Text } from '../lib/ui.js';
 import { openPreview } from './preview.js';
 import { strategyInput, StrategyPicker } from './hedge.js';
+import { buildStrategy, hedgeFromWorkspace, openFullPage, useHeaderData, useRefreshSettings, useSelection, useWorkspaceStrategy, WorkspaceHeader } from './workspace.js';
 
 const ACTION_LABEL = { buy: 'Buy', sell: 'Sell', sell_short: 'Sell short', buy_to_cover: 'Buy to cover' };
 const OBJECTIVES = [
@@ -16,8 +17,15 @@ const OBJECTIVES = [
   { value: 'market_sector_reduction', label: 'Market / sector exposure reduction' }, { value: 'currency_protection', label: 'Currency protection' }, { value: 'rate_protection', label: 'Rate protection' },
   { value: 'credit_protection', label: 'Credit protection' }, { value: 'volatility_protection', label: 'Volatility protection' }, { value: 'server_defined', label: 'Other (defined by the Strategy on the server)' },
 ];
+/**
+ * The one way to open an instrument from anywhere (Marketplaces, search, watchlists, holdings and position rows,
+ * Strategies legs, strategy detail, hedge legs, the registry): the quick overview drawer, with Open full page leading
+ * to #/instrument/<id>. The Book and trading owner are the ones in use (store), so both carry over.
+ */
 export function openInstrument(id, opts = {}) {
-  openOverlay((close) => html`<${InstrumentDrawer} id=${id} initialTab=${opts.tab} onClose=${close} />`);
+  // Opened from a dialog (a hedge popup's leg, a preview): the drawer is raised above it.
+  const over = typeof document !== 'undefined' && Boolean(document.querySelector('.modal'));
+  openOverlay((close) => html`<div class=${over ? 'ws-over' : ''}><${InstrumentDrawer} id=${id} initialTab=${opts.tab} onClose=${close} /></div>`);
 }
 
 /**
@@ -130,7 +138,7 @@ function SettlementField({ inst, detail, book, value, onChange }) {
 /** The `settle` field of a leg for what the ticket states, or undefined for the convention. */
 const statedSettle = (v) => (v.mode === 'date' && v.date ? { date: v.date } : v.mode === 'lag' && isNum(v.lag) ? { lag: v.lag } : undefined);
 
-function Ticket({ inst, detail, book, onDone }) {
+export function Ticket({ inst, detail, book, onDone, presetStrategy, quote = true }) {
   const [unitId, setUnitId] = useState(defaultUnit(book));
   const [action, setAction] = useState(inst.actions[0]);
   const [fromId, setFromId] = useState('');
@@ -141,7 +149,9 @@ function Ticket({ inst, detail, book, onDone }) {
   const [fin, setFin] = useState('none');
   const [loanRate, setLoanRate] = useState(null);
   const [borrow, setBorrow] = useState({ available: true, feeRate: null });
-  const [ctx, setCtx] = useState({ strategy: '', days: null, objective: '' });
+  const [ctx, setCtx] = useState({ strategy: presetStrategy || '', days: null, objective: '' });
+  // The Strategy chosen in the workspace header fills the ticket's investment Strategy (it can still be changed here).
+  useEffect(() => { if (presetStrategy) setCtx((c) => ({ ...c, strategy: presetStrategy })); }, [presetStrategy?.id]);
   const [more, setMore] = useState(false);
   const [busy, setBusy] = useState(false);
   const obs = detail.observation;
@@ -189,13 +199,14 @@ function Ticket({ inst, detail, book, onDone }) {
   };
 
   if (inst.arrangement) return html`<${Notice}>This is a financing arrangement. Open, repay or terminate it from Treasury or the Account.<//>`;
+  // In the workspace drawer the sticky header already shows the quote, bid and ask (quote=false).
   return html`<div class="stack">
-    <div class="row">
+    ${quote ? html`<div class="row">
       <div><div class="note">Current market price</div><div style="font-size:20px"><${Price} obs=${obs} reason=${detail.marketState.connection === 'awaiting' ? detail.marketState.message : 'No price available'} /></div></div>
       ${obs && isNum(obs.bid) ? html`<div class="stat"><span class="k">Bid</span><span class="v" style="font-size:15px">${fmtPriceUnits(obs.bid, inst.priceUnits)}</span><span class="s">${isNum(obs.bidSize) ? `size ${fmtQty(obs.bidSize)}` : ''}</span></div>
         <div class="stat"><span class="k">Ask</span><span class="v" style="font-size:15px">${fmtPriceUnits(obs.ask, inst.priceUnits)}</span><span class="s">${isNum(obs.askSize) ? `size ${fmtQty(obs.askSize)}` : ''}</span></div>` : null}
       <span class="spacer"></span><span class="note">${inst.priceUnits}, ${inst.tradingCcy}</span>
-    </div>
+    </div>` : null}
     ${!obs ? html`<${Awaiting} compact what="There is no price for this instrument. A paper order would wait as a working order. Enter a price on the Overview tab, or state a fill price below." />` : null}
     <${CalendarFlag} calendar=${inst.calendar} />
     ${detail.trading && !detail.trading.open ? html`<${Notice} tone="warn"><b>${detail.trading.reason}</b> An order placed now stays working until then; its trade date and settlement are counted from the day it fills. A Day order placed today is good for ${detail.trading.next}.<//>` : null}
@@ -217,6 +228,7 @@ function Ticket({ inst, detail, book, onDone }) {
           <div class="grid-form"><${Field} label="Assume available"><${Check} checked=${borrow.available} onChange=${(v) => setBorrow({ ...borrow, available: v })}>Yes<//><//>
           <${Field} label="Borrow fee (decimal a year)" hint="0.005 = 0.5%"><${Num} value=${borrow.feeRate} onInput=${(v) => setBorrow({ ...borrow, feeRate: v })} /><//></div></div>`}
       <p class="note" style="margin-top:8px">The borrow is its own leg. If it fails, the short sale is rejected with it. Sale proceeds are held as restricted collateral.</p><//>` : null}
+    ${ctx.strategy && typeof ctx.strategy === 'object' && ctx.strategy.id ? html`<div class="note" data-testid="ticket-strategy">Investment Strategy: <b>${ctx.strategy.name}</b> (${ctx.strategy.id})${presetStrategy?.id === ctx.strategy.id ? ', as chosen in the header' : ''}. It goes with the order and the hedge request that follows the fill.</div>` : null}
     <div class="row"><button class="btn link" onClick=${() => setMore(!more)}>${more ? 'Hide' : 'Show'} funding and hedge context</button></div>
     ${more ? html`<div class="grid-form">
       <${Field} label="If cash is short" span=${2}><${Select} value=${fin} onChange=${setFin} options=${[{ value: 'none', label: 'Do not finance (the trade is blocked)' }, { value: 'treasury', label: 'Fund the shortfall from Treasury' }, { value: 'loan', label: 'Borrow the shortfall (simulated lender)' }]} /><//>
@@ -425,7 +437,7 @@ function OptionTicket({ und, c, chain, onClose }) {
   <//>`;
 }
 
-function Chain({ inst }) {
+export function Chain({ inst }) {
   const [exp, setExp] = useState('');
   const res = useLive(() => get(`/api/instruments/${inst.id}/chain`, { expiration: exp }), [inst.id, exp]);
   const months = useLive(() => get(`/api/instruments/${inst.id}/contracts`, { family: 'future' }), [inst.id], { interval: false });
@@ -512,6 +524,11 @@ function InstrumentDrawer({ id, initialTab, onClose }) {
   const [tab, setTab] = useState(initialTab || 'trade');
   const res = useLive(() => get(`/api/instruments/${id}/detail`, { bookId: book?.id }), [id, book?.id]);
   const d = res.data;
+  const sel = useSelection(id, 'drawer');
+  const [strategy, setStrategy] = useWorkspaceStrategy();
+  const intervalFor = useRefreshSettings();
+  const head = useHeaderData(sel, strategy, intervalFor);
+  const bodyRef = useRef(null);
   useEffect(() => { if (d && initialTab === 'chain' && !['equity', 'fund', 'future'].includes(d.instrument.family)) setTab('overview'); }, [Boolean(d)]);
   if (!d) return html`<${Drawer} title="Instrument" onClose=${onClose}>${res.error ? html`<${Notice} tone="err">${res.error.message}<//>` : html`<${Empty}>Loading…<//>`}<//>`;
   const inst = d.instrument;
@@ -525,10 +542,14 @@ function InstrumentDrawer({ id, initialTab, onClose }) {
     } catch (err) { toastError(err); }
   };
   const edit = async () => { const m = await import('./registry.js'); m.openEditInstrument(inst, { onDone: res.reload }); };
+  const trade = () => { setTab('trade'); bodyRef.current?.closest('.body')?.scrollTo?.({ top: 0 }); };
   return html`<${Drawer} wide onClose=${onClose} title=${inst.symbol ? `${inst.symbol}  ${inst.name}` : inst.name} sub=${`${inst.support.productName}, ${inst.arrangement ? 'financing arrangement' : `${VIEW_LABEL[inst.marketView]}${inst.classification?.tabLabel ? `, ${inst.classification.tabLabel}` : ''}`}, ${inst.tradingCcy}`}
     actions=${html`<${Button} small onClick=${addToList}>Add to watchlist<//><${Button} small onClick=${edit}>Edit<//>`}>
-    <${Tabs} tabs=${tabs} value=${tab} onChange=${setTab} />
-    ${tab === 'trade' ? html`<${Ticket} inst=${inst} detail=${d} book=${book} onDone=${res.reload} />` : null}
+    <div ref=${bodyRef} class="ws-sticky"><${WorkspaceHeader} inst=${inst} detail=${d} analytics=${head.analytics} reference=${head.reference} strategy=${strategy} setStrategy=${setStrategy} book=${book}
+      onTrade=${trade} onBuild=${() => { onClose(); buildStrategy(inst, strategy); }} onHedge=${() => hedgeFromWorkspace({ inst, detail: d, book, strategy })}
+      onOpenPage=${() => { onClose(); openFullPage(inst.id, tab === 'history' ? 'history' : tab === 'positions' ? 'positions' : ''); }} />
+    <${Tabs} tabs=${tabs} value=${tab} onChange=${setTab} /></div>
+    ${tab === 'trade' ? html`<${Ticket} inst=${inst} detail=${d} book=${book} onDone=${res.reload} presetStrategy=${strategy} quote=${false} />` : null}
     ${tab === 'overview' ? html`<${Overview} inst=${inst} detail=${d} reload=${res.reload} onClose=${onClose} />` : null}
     ${tab === 'chain' ? html`<${Chain} inst=${inst} />` : null}
     ${tab === 'positions' ? html`<${Positions} detail=${d} reload=${res.reload} book=${book} />` : null}

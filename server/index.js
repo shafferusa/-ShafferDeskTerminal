@@ -78,6 +78,14 @@ export function startServer(config = loadConfig()) {
       if (m.methodNotAllowed) return sendJson(res, 405, { error: 'Method not allowed' });
       const body = req.method === 'GET' || req.method === 'DELETE' ? {} : await readJson(req);
       const out = await m.handler({ params: m.params, query: Object.fromEntries(url.searchParams), body, req });
+      // A route may answer with raw bytes (the server client's document proxy, server-api.js RAW_RESPONSE).
+      const raw = out && out[Symbol.for('sdt.rawResponse')];
+      if (raw) {
+        res.writeHead(raw.status || 200, raw.headers || {});
+        if (raw.body && typeof raw.body.pipe === 'function') raw.body.pipe(res);
+        else res.end(raw.body ?? '');
+        return;
+      }
       return sendJson(res, 200, out ?? { ok: true });
     } catch (err) {
       if (err instanceof AppError) return sendJson(res, err.status, { error: err.message, code: err.code, details: err.details });

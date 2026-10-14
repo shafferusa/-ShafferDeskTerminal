@@ -177,3 +177,170 @@ export function createAwaitingAnalyticsPort({ message = AWAITING_MESSAGE, addres
 }
 
 export { datasetStates };
+
+// =============================================================================================
+// SERVER CLIENT (round of 2026-10-14): one integration layer, three interfaces, one gateway
+// =============================================================================================
+//
+//   market     market, reference and historical data, company data      Shaffer MarketData  (remote, via gateway)
+//   analytics  analytics, valuations, Strategies, Hedge, earnings window Shaffer Analytics Lab (remote, via gateway)
+//   ledger     the Terminal's own paper ledger                          local database, NEVER remote
+//
+// Both remote interfaces may share one gateway address and one server-side credential (SHAFFER_GATEWAY_URL /
+// SHAFFER_API_TOKEN). Every method is `client.<interface>.<method>(params, { signal, requestId, selection,
+// channel, asOf, fresh })` and resolves to the response Envelope (docs/SERVER-CLIENT.md, section 1). The real
+// mapping of each method lives in shaffer-contract.js (`serverOperations`); a method with no mapping answers
+// state 'awaiting' with its operation name. The plumbing (timeouts, cancellation, bounded retries with no
+// retry on 401/403, TTL cache with invalidation, cursor/page pagination, refresh intervals, a subscription hook,
+// selection tokens) is in server-client.js.
+//
+// A contract operation is `async ({ http, ctx, signal, cursor, page, pageSize }, params) => ContractResult`:
+//   ContractResult { items? | data?, asOf?, version?, schema?, coverage?: {from, to, missing[]},
+//                    missingFields?: [field], nulls?: {field: reason},
+//                    nextCursor? | page?, totalPages?, totalItems?, pageSize? }
+//   Errors: throw an Error with `status` (HTTP status) so 401/403 are classified as not retryable.
+//
+// SERVER_DATASETS below is the data-requirements catalogue: for each dataset, the inputs, the fields the
+// Terminal needs back (`requires`), units and timestamps, default freshness (seconds), pagination and point-in-time
+// expectations, and the errors the screen distinguishes. docs/DATA-CONTRACT-REQUIREMENTS.md expands it in prose.
+
+const COMMON_ERRORS = ['401/403: not retried, dataset blocked until credentials are re-tested', '404: unavailable (no data for this subject)', '408/429/5xx/network/timeout: retried with backoff (bounded), then error (retryable)'];
+
+export const SERVER_DATASETS = {
+  // ---- market interface ------------------------------------------------------------------------------
+  search: {
+    label: 'Reference search', interface: 'market', method: 'search', operation: 'market.search', shape: 'items',
+    inputs: { q: 'text (symbol, name, server ID)', limit: 'int', marketView: 'optional filter' },
+    requires: ['ids.server', 'symbol', 'name', 'productType', 'currency'],
+    optional: ['ids.issuer', 'ids.contract', 'venue', 'issuerName'],
+    units: null, timestamps: [], freshness: { ttlSec: 300, staleAfterSec: 86400, intervalSec: null, mode: 'on-demand' },
+    pagination: 'cursor or page', pointInTime: 'not needed', errors: COMMON_ERRORS,
+  },
+  reference: {
+    label: 'Instrument reference and stable IDs', interface: 'market', method: 'reference', operation: 'market.reference', shape: 'data',
+    inputs: { id: 'server instrument ID (or the Terminal ID, mapped through external_ids.shaffer)' },
+    requires: ['ids.server', 'symbol', 'name', 'productType', 'currency', 'venue', 'quoteConvention', 'units'],
+    optional: ['ids.issuer', 'ids.contract', 'multiplier', 'underlying.ids', 'listing', 'issuer.name'],
+    units: 'quoteConvention and units state how a price of this instrument is quoted (per share, % of par clean, index points, quote per base)',
+    timestamps: ['updatedAt'], freshness: { ttlSec: 3600, staleAfterSec: 7 * 86400, intervalSec: null, mode: 'on-demand' },
+    pagination: 'none', pointInTime: 'optional (reference as of a date)', errors: COMMON_ERRORS,
+  },
+  quotes: {
+    label: 'Current quotes', interface: 'market', method: 'quotes', operation: 'market.quotes', shape: 'items',
+    inputs: { ids: 'instrument IDs (batch)' },
+    requires: ['instrumentId', 'quoteType', 'currency', 'units', 'timestamp', 'status'],
+    optional: ['bid', 'ask', 'last', 'mid', 'prevClose', 'change', 'changePct', 'bidSize', 'askSize', 'delayMinutes', 'quoteConvention'],
+    units: 'price in `units` of `currency` (per share, % of par, index points, quote currency per 1 base)',
+    timestamps: ['timestamp (quote time, ISO with offset)'], freshness: { ttlSec: 5, staleAfterSec: 60, intervalSec: 5, mode: 'interval' },
+    pagination: 'none (batch)', pointInTime: 'not applicable (use history)', errors: COMMON_ERRORS,
+  },
+  history: {
+    label: 'Price history', interface: 'market', method: 'history', operation: 'market.history', shape: 'items',
+    inputs: { id: 'instrument', from: 'date', to: 'date', interval: '1d | 1wk | 1mo | intraday as supported', adjusted: 'bool' },
+    requires: ['t', 'close', 'adjusted', 'currency', 'interval'],
+    optional: ['open', 'high', 'low', 'volume', 'annotations (corporate actions)', 'adjustmentBasis'],
+    units: 'same units as quotes; volume in the instrument quantity unit', timestamps: ['t (bar end, ISO)', 'date (business date)'],
+    freshness: { ttlSec: 900, staleAfterSec: 2 * 86400, intervalSec: null, mode: 'on-demand' },
+    pagination: 'cursor or page for long ranges', pointInTime: 'n/a (history is dated)', errors: [...COMMON_ERRORS, 'unsupported interval: unavailable with coverage.missing'],
+  },
+  fx: {
+    label: 'FX rates', interface: 'market', method: 'fx', operation: 'market.fx', shape: 'items',
+    inputs: { pairs: 'BASE/QUOTE list' }, requires: ['pair', 'rate', 'timestamp', 'direction'], optional: ['bid', 'ask', 'status'],
+    units: 'quote currency per 1 unit of base', timestamps: ['timestamp'], freshness: { ttlSec: 15, staleAfterSec: 120, intervalSec: 15, mode: 'interval' },
+    pagination: 'none', pointInTime: 'optional (rate as of a date)', errors: COMMON_ERRORS,
+  },
+  rates: {
+    label: 'Reference and funding rates', interface: 'market', method: 'rates', operation: 'market.rates', shape: 'items',
+    inputs: { codes: 'rate codes', from: 'date', to: 'date' }, requires: ['code', 'date', 'value', 'units'], optional: ['tenor', 'curve'],
+    units: 'percent per annum', timestamps: ['date (fixing date)'], freshness: { ttlSec: 900, staleAfterSec: 2 * 86400, intervalSec: null, mode: 'on-demand' },
+    pagination: 'none', pointInTime: 'n/a (dated)', errors: COMMON_ERRORS,
+  },
+  profile: {
+    label: 'Company and issuer profile', interface: 'market', method: 'profile', operation: 'market.profile', shape: 'data',
+    inputs: { id: 'instrument (the issuer is resolved by the server)' },
+    requires: ['issuer.id', 'issuer.name', 'listing.exchange', 'listing.currency'],
+    optional: ['issuer.description', 'issuer.sector', 'issuer.industry', 'issuer.classifications', 'listing.marketCap', 'listing.sharesOutstanding', 'highlights', 'nextEarnings'],
+    units: 'marketCap in listing currency; sharesOutstanding in shares', timestamps: ['asOf', 'sharesOutstandingAsOf'],
+    freshness: { ttlSec: 3600, staleAfterSec: 7 * 86400, intervalSec: null, mode: 'on-demand' },
+    pagination: 'none', pointInTime: 'needed for the historical view (constituents, classifications as of a date)', errors: COMMON_ERRORS,
+  },
+  statements: {
+    label: 'Financial statements', interface: 'market', method: 'statements', operation: 'market.statements', shape: 'data',
+    inputs: { id: 'instrument or issuer', statement: 'income | balance | cashflow', period: 'quarterly | annual | ttm', periods: 'int' },
+    requires: ['periods[].key', 'periods[].fiscalYear', 'periods[].fiscalPeriod', 'periods[].periodType', 'periods[].end', 'periods[].filingDate', 'periods[].basis', 'currency', 'units', 'lines[].key', 'lines[].label', 'lines[].values'],
+    optional: ['periods[].start', 'periods[].restates', 'periods[].original', 'periods[].source', 'lines[].level', 'lines[].nulls'],
+    units: 'statement currency and scale (units: 1 | thousands | millions); per-share lines in currency per share',
+    timestamps: ['period end (instant for balance sheet)', 'filingDate', 'restatedAt'],
+    freshness: { ttlSec: 3600, staleAfterSec: 30 * 86400, intervalSec: null, mode: 'on-demand' },
+    pagination: 'page by periods when long', pointInTime: 'needed: as-filed values at a date vs current restated values', errors: COMMON_ERRORS,
+  },
+  earnings: {
+    label: 'Earnings calendar and results', interface: 'market', method: 'earnings', operation: 'market.earnings', shape: 'items',
+    inputs: { id: 'instrument or issuer', from: 'date', to: 'date' },
+    requires: ['fiscalPeriod', 'releaseAt', 'dateStatus', 'metrics[].key', 'metrics[].reported', 'metrics[].units'],
+    optional: ['reportedAt', 'metrics[].consensus', 'metrics[].prior', 'metrics[].surprise', 'metrics[].surprisePct', 'revision', 'documents'],
+    units: 'per metric (currency, currency per share, percent)', timestamps: ['releaseAt (scheduled)', 'reportedAt (actual)', 'revisedAt'],
+    freshness: { ttlSec: 1800, staleAfterSec: 86400, intervalSec: null, mode: 'on-demand' },
+    pagination: 'cursor or page', pointInTime: 'optional (consensus as of a date)', errors: COMMON_ERRORS,
+  },
+  filings: {
+    label: 'Filings and reports', interface: 'market', method: 'filings', operation: 'market.filings', shape: 'items',
+    inputs: { id: 'instrument or issuer', kind: 'optional filter' },
+    requires: ['id', 'kind', 'title', 'filedAt', 'source', 'documents[].id'], optional: ['period', 'documents[].mediaType', 'documents[].pages'],
+    units: null, timestamps: ['filedAt'], freshness: { ttlSec: 1800, staleAfterSec: 7 * 86400, intervalSec: null, mode: 'on-demand' },
+    pagination: 'cursor or page', pointInTime: 'filter by filedAt <= asOf', errors: COMMON_ERRORS,
+  },
+  documents: {
+    label: 'Documents (proxied from the gateway)', interface: 'market', method: 'document', operation: 'market.document', shape: 'stream',
+    inputs: { docId: 'document ID from filings / earnings' }, requires: ['bytes', 'mediaType'], optional: ['filename', 'length'],
+    units: null, timestamps: [], freshness: { ttlSec: 0, staleAfterSec: null, intervalSec: null, mode: 'on-demand' },
+    pagination: 'none', pointInTime: 'n/a', errors: [...COMMON_ERRORS, 'media types other than pdf/html/text are refused'],
+  },
+  corporateActions: {
+    label: 'Corporate actions (informational)', interface: 'market', method: 'corporateActions', operation: 'market.corporateActions', shape: 'items',
+    inputs: { id: 'instrument', from: 'date', to: 'date' },
+    requires: ['eventId', 'type', 'exDate', 'status'], optional: ['recordDate', 'payDate', 'amount', 'currency', 'ratio', 'terms', 'revision'],
+    units: 'amount in currency per unit; ratio as new:old', timestamps: ['announcedAt', 'exDate', 'payDate'],
+    freshness: { ttlSec: 3600, staleAfterSec: 2 * 86400, intervalSec: null, mode: 'on-demand' },
+    pagination: 'cursor or page', pointInTime: 'optional', errors: COMMON_ERRORS,
+  },
+  news: {
+    label: 'News and events', interface: 'market', method: 'news', operation: 'market.news', shape: 'items',
+    inputs: { id: 'instrument (company, its sector, relevant economy)', from: 'instant' },
+    requires: ['id', 'publishedAt', 'source', 'headline', 'scope'], optional: ['summary', 'facts', 'classification', 'interpretation', 'url'],
+    units: null, timestamps: ['publishedAt', 'receivedAt'], freshness: { ttlSec: 120, staleAfterSec: 3600, intervalSec: 120, mode: 'interval' },
+    pagination: 'cursor or page', pointInTime: 'filter by publishedAt <= asOf', errors: COMMON_ERRORS,
+  },
+  // ---- analytics interface --------------------------------------------------------------------------
+  analytics: {
+    label: 'Instrument analytics (SP3E)', interface: 'analytics', method: 'instrumentAnalytics', operation: 'analytics.instrumentAnalytics', shape: 'data',
+    inputs: { id: 'instrument', strategyId: 'Strategy ID (SP3E first)', runId: 'optional', asOf: 'optional' },
+    requires: ['strategyId', 'runId', 'version', 'calculatedAt', 'inputCutoff', 'horizon', 'fairValueCurrency', 'fairValueUnits'],
+    optional: ['efs', 'sectorScore', 'equityScore', 'fundamentalFairValue', 'realisticFairValue', 'fundamentalGapPct', 'realisticGapPct', 'uncertainty', 'timingEligibility', 'outlierFlags', 'sizing', 'hedge'],
+    units: 'fair values in fairValueCurrency and fairValueUnits (must match the quote units); gaps in percent as the server states them',
+    timestamps: ['calculatedAt', 'inputCutoff'], freshness: { ttlSec: 300, staleAfterSec: 3 * 86400, intervalSec: 300, mode: 'interval' },
+    pagination: 'none', pointInTime: 'historical runs (flagged historical, never a current recommendation)', errors: COMMON_ERRORS,
+  },
+  analyticsRuns: {
+    label: 'Analytics runs', interface: 'analytics', method: 'runs', operation: 'analytics.runs', shape: 'items',
+    inputs: { id: 'instrument', strategyId: 'Strategy ID' }, requires: ['runId', 'version', 'calculatedAt', 'inputCutoff', 'horizon'], optional: ['current'],
+    units: null, timestamps: ['calculatedAt', 'inputCutoff'], freshness: { ttlSec: 300, staleAfterSec: 3 * 86400, intervalSec: null, mode: 'on-demand' },
+    pagination: 'cursor or page', pointInTime: 'runs at or before asOf', errors: COMMON_ERRORS,
+  },
+  earningsWindow: {
+    label: 'Earnings-window eligibility (Analytics Lab)', interface: 'analytics', method: 'earningsWindow', operation: 'analytics.earningsWindow', shape: 'data',
+    inputs: { id: 'instrument', strategyId: 'Strategy ID' }, requires: ['eligible', 'runId', 'calculatedAt'], optional: ['window', 'reason'],
+    units: null, timestamps: ['calculatedAt'], freshness: { ttlSec: 900, staleAfterSec: 3 * 86400, intervalSec: null, mode: 'on-demand' },
+    pagination: 'none', pointInTime: 'optional', errors: COMMON_ERRORS,
+  },
+  // ---- ledger interface (local; never remote) -----------------------------------------------------
+  ledger: {
+    label: 'Paper ledger (this Terminal)', interface: 'ledger', method: 'instrument', operation: 'ledger.instrument', shape: 'data',
+    inputs: { id: 'instrument', bookId: 'Book' }, requires: ['holdings'], optional: ['orders', 'fills', 'recordedCorporateActions'],
+    units: 'instrument quantity units', timestamps: ['fills[].ts'], freshness: { ttlSec: 0, staleAfterSec: null, intervalSec: null, mode: 'on-demand' },
+    pagination: 'none', pointInTime: 'n/a', errors: ['404: unknown Book or instrument'],
+  },
+};
+
+/** The datasets of one interface. */
+export const datasetsOf = (iface) => Object.entries(SERVER_DATASETS).filter(([, d]) => d.interface === iface).map(([k]) => k);

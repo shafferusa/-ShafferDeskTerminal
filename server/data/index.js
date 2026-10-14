@@ -22,6 +22,7 @@ import { DEMO_INVESTMENT_STRATEGIES } from './demo-hedge.js';
 import { AWAITING_MESSAGE, makeObservation, midOf, withFreshness } from './observation.js';
 import { createAwaitingAnalyticsPort } from './ports.js';
 import { createShafferAnalyticsPort, createShafferMarketPort } from './shaffer.js';
+import { createServerClient } from './server-client.js';
 
 const MANUAL_SOURCE = 'Manual entry';
 const MANUAL_KINDS = new Set(['price', 'fx', 'rate', 'borrow']);
@@ -65,6 +66,8 @@ export function createDataAdapter({ db, config, clock }) {
       cur.requestTimeoutMs = t;
     }
     setSetting('connection', cur);
+    server?.clearAuthBlocks(); // a changed address or timeout is a reason to try a refused dataset again
+    server?.invalidate();
     return getConnection();
   }
   const REFRESH_MIN = { quotesMs: 1000, fxMs: 1000, ratesMs: 10000, referenceMs: 60000, analyticsMs: 10000, engineTickMs: 1000, uiPollMs: 1000 };
@@ -113,6 +116,12 @@ export function createDataAdapter({ db, config, clock }) {
     };
     return port;
   }
+
+  // ---- server client (docs/SERVER-CLIENT.md) ----------------------------------------------------
+  // One integration layer with three interfaces (market, analytics, ledger) behind one gateway. Its envelopes feed
+  // the instrument-detail workspace; it never writes to the paper ledger. The ledger interface and, in demo mode, the
+  // labelled fixtures are attached by app.js (server/data/server-integration.js).
+  const server = createServerClient({ clock, demo: Boolean(config.demo), getConnection, credentials: config.credentials || {}, getSetting, setSetting, fetchImpl: config.fetchImpl, sleep: config.serverSleep });
 
   // ---- refreshable cache ------------------------------------------------------------------
   const cache = new Map(); // `${kind}|${subject}` -> value
@@ -382,7 +391,7 @@ export function createDataAdapter({ db, config, clock }) {
   }
 
   return {
-    market, analytics,
+    market, analytics, server,
     setInstrumentResolver: (fn) => { resolveInstrument = fn; },
     getConnection, getRefresh, saveConnection, saveRefresh,
     refresh, price, closeFor, fx, rate, borrowInfo, session,

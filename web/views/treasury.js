@@ -649,7 +649,7 @@ function Collateral({ d, book }) {
     <${Panel} title="Securities held" note="Across Treasury and every Account of this Book, each with its owner" flush><${Table} margin rows=${inv} rowKey=${(i) => i.positionId}
       empty=${{ title: 'No securities are held', children: 'Securities bought in Treasury or an Account appear here with what is pledged, on loan and free to use as collateral.' }}
       columns=${[
-        { label: 'Security', render: (i) => html`<div class="sym">${i.instrument.symbol || i.instrument.name}</div><div class="sub clip" title=${i.instrument.name}>${i.instrument.symbol ? i.instrument.name : ''}</div>` },
+        { label: 'Security', render: (i) => html`<div class="sym"><a href="javascript:void 0" title="Open this instrument" onClick=${() => import('./instrument.js').then((m) => m.openInstrument(i.instrument.id))}>${i.instrument.symbol || i.instrument.name}</a></div><div class="sub clip" title=${i.instrument.name}>${i.instrument.symbol ? i.instrument.name : ''}</div>` },
         { label: 'Owner', render: (i) => unitName(i.owner) },
         { label: 'Quantity', align: 'r', render: (i) => fmtQty(i.qty) },
         { label: 'Pledged', align: 'r', render: (i) => fmtQty(i.pledgedQty) },
