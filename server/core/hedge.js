@@ -1118,8 +1118,8 @@ export function createHedge(app) {
     const s = app.packages.getStrategyRow(strategyId);
     if (!s) return;
     const settled = ['open', 'attention'].includes(to) && ['working', 'partial'].includes(from);
-    // Only a direct Marketplace trade asks for a hedge by itself, and only once per position.
-    if (settled && s.params.origin === 'marketplace' && s.params.intent !== 'hedge' && !db.get('SELECT 1 FROM hedge_requests WHERE strategy_id = ? LIMIT 1', strategyId)) postTradeQueue.add(strategyId);
+    // Only a direct Marketplace or instrument-detail trade asks for a hedge by itself, and only once per position.
+    if (settled && ['marketplace', 'instrument-detail'].includes(s.params.origin) && s.params.intent !== 'hedge' && !db.get('SELECT 1 FROM hedge_requests WHERE strategy_id = ? LIMIT 1', strategyId)) postTradeQueue.add(strategyId);
     if (to === 'closed') clearReview(strategyId);
   }
 

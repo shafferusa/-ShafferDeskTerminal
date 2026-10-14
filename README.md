@@ -60,6 +60,7 @@ mode touches your real paper books, and no demo price is ever shown as a market 
 | **Marketplaces** (US Based, US Derivatives, Foreign Based, Foreign Derivatives) | Filters over the instrument registry, split into product-family tabs (Equities, Funds and ETFs, Bonds and Credit, Money Market and Deposits, FX and Currencies, Commodities, Crypto and Digital Assets, Alternatives and Other; Options, Futures, Forwards, Swaps, Credit Derivatives, Structured and Other Derivatives), each with columns that fit its products, Current market price, Fair price and Gap % together, what the Book already holds (gross: `Long 200 \| Short 100 \| Net +100`), watchlists within or across families, and a product-appropriate trade ticket. **Routing convention:** a listed product is placed by its listing venue's country, a derivative by its underlying, an unlisted instrument by its jurisdiction; global FX, crypto and OTC products with no US listing and no US jurisdiction are routed by convention to the Foreign views, never by their price currency. Each row and instrument page states its basis; a non-listed instrument can be set by hand ("Set by hand" on the row). The tab is in the URL (Back and reload restore it); a search covers every tab of the view and lists matches in the other Marketplaces with their view and tab. A stock, fund or bond page and each holding link to the Treasury / Account repo, lending and secured-loan dialogs with the instrument and owner filled in. Details in `docs/ARCHITECTURE.md`, "Marketplace routing" and "Financing links". |
 | **Preview** | Every package goes through one editable preview and one confirmation: each leg with its estimated fill and the fill model used, cash, margin, collateral and funding needs, borrow availability, break-even, maximum gain and loss, and every check. All figures come from one price snapshot. A confirmation executes only the figures displayed: if a leg or a total has moved by more than the Book's tolerances, or a term such as a settlement date has changed, nothing is submitted and the changes are shown, was and now, for a new confirmation. A settlement date or lag can be stated for one trade; a date that is not a business day on the instrument's settlement calendar blocks the preview. |
 | **Instruments** | The instrument registry and the coverage list. Lifecycle support (what the paper engine simulates) and pricing coverage (whether there is a price source, and a price now) are shown as two separate things. |
+| **Instrument detail** (drawer and full page `#/instrument/<id>/<tab>[/asof/<date>]`) | Selecting an instrument anywhere (Marketplaces, search, watchlists, positions, Accounting, Treasury, Strategies legs, hedge legs) opens the same workspace: a quick overview drawer with Open full page, the originating Book and trading owner kept. A sticky header with identity and stable IDs, the execution quote, Fair price and Gap % for the chosen investment Strategy (Fundamental and Realistic apart; the gap withheld with the reason when units or currency differ), holdings long and short by Account, and Trade, Build strategy and Hedge. Tabs follow the product: for equities Overview, Price history, Earnings, Financial statements, Filings and reports, Corporate actions, News and events, Analytics and risk, My positions and trades; bonds, options, futures, funds, FX, swaps and credit, and other products have their own. Every panel states its data's state (awaiting, loading, available, stale, unavailable, incomplete, error), source, time and version, and recovers by itself after a disconnection. A research date shows what was known then and never changes the execution quote. |
 | **Data connection** | The state of the two Shaffer service ports, dataset readiness, service addresses, refresh settings and manual entries. |
 | **Settings** | Light or dark mode, market calendars and hand-entered holidays, and the Book's paper-desk assumptions (fees, fill model, confirmation tolerances, settlement lags, short collateral, margin). |
 
@@ -107,6 +108,10 @@ demo fixtures whose failure modes can be switched (`POST /api/demo/fixtures/serv
 [docs/SERVER-CLIENT.md](docs/SERVER-CLIENT.md) (routes, envelope, fixtures),
 [docs/DATA-CONTRACT-REQUIREMENTS.md](docs/DATA-CONTRACT-REQUIREMENTS.md) (what the backend builder must supply) and
 [docs/INTEGRATION-CHECKLIST.md](docs/INTEGRATION-CHECKLIST.md) (phase 6: from server response to confirmed paper execution).
+The demo fixtures can play each failure the owner listed (empty and partial answers, stale data, revisions after the
+first display, server errors and throttling, a disconnected gateway, slow answers, duplicates, currency and unit
+mismatches); `npm run test:workspace` drives them on the screens and `test/core/server-integration.test.js` on the
+routes and the paper ledger.
 
 ## Layout
 
@@ -121,11 +126,14 @@ server/
   quant/       calendars, day counts, schedules, bond maths, option payoff helpers
   db/          SQLite schema and migrations
 web/           the front end: no build step, native ES modules (Preact + htm, vendored)
+               views/workspace*.js, instrument-page.js, instrument.js: the instrument-detail workspace (framework,
+               full page, drawer); views/tabs/: the tab contents, tabs/product/: product-specific pages
   http/        router; once.js: a mutating request with a client token takes effect once
 test/
   core/        engine tests on a controllable clock (npm test)
   matrix/      one scenario per product at engine, API and browser level (npm test, npm run test:api, npm run test:browser)
   system/      failure and recovery cases at the same three levels (npm test, npm run test:system:api, npm run test:system:browser)
+  workspace/   browser checks of the instrument-detail workspace, one file per area in checks/ (npm run test:workspace)
 docs/          ARCHITECTURE.md, COVERAGE.md, TEST-MATRIX.md (npm run matrix)
 ```
 

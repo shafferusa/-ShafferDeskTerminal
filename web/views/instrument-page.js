@@ -57,7 +57,8 @@ function Workspace({ id, tabArg, asOf, book, status }) {
   if (detail.state === 'error' && !d) return html`<div><${BackLine} book=${book} /><${Notice} tone="err">${detail.error?.message || 'This instrument could not be loaded.'} Check the address, or find the instrument below.<//><${FindInstrument} tab="" /></div>`;
   if (!d) return html`<div><${BackLine} book=${book} /><div class="ws-loading" aria-busy="true">Loading the instrument…</div></div>`;
   const go = (t, date = asOf) => { location.hash = `${pageHref(id, t)}${date ? `/asof/${date}` : ''}`; };
-  const trade = () => openInstrument(id, { tab: 'trade' });
+  // A trade placed from the full detail page records that origin (i1); the hedge workflow follows its fill as for the Marketplace.
+  const trade = () => openInstrument(id, { tab: 'trade', origin: 'instrument-detail' });
   return html`<div class="ws-page" data-ws-inst=${id}>
     <${BackLine} book=${book} find=${html`<${FindInstrument} tab=${tab.id} compact />`} />
     <div class="ws-mini" aria-hidden="true"><span class="sym">${inst.symbol || inst.name}</span> <${Price} obs=${d.observation} units=${inst.priceUnits} reason="No price available" /> <span class="muted">${inst.tradingCcy}</span></div>

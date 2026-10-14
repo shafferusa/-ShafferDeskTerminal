@@ -7,6 +7,57 @@ The fields the Terminal needs back per dataset are also machine-readable in `ser
 and are exercised by the demo fixtures (`server/data/server-fixtures.js`), which show one possible shape and nothing
 more.
 
+## 0. Answer sheet (one line per requirement; the backend builder fills the last column)
+
+Every line is one question. "Terminal side" says where the answer lands, so a line can be closed by writing the
+answer and, where it applies, the function in `serverOperations`. The demo fixtures show one possible shape per
+dataset and are not a proposal. 25 remote datasets (16 market and analytics datasets of the first wave, documents
+included, and 9 product-specific datasets) plus the ledger interface, which is local and needs nothing.
+
+| # | Area | Question for the backend builder | Terminal side (where the answer goes) | Answer |
+|---|---|---|---|---|
+| G1 | Addresses | One gateway address, or one per service (MarketData, Analytics Lab)? Test and production addresses? | `SHAFFER_GATEWAY_URL` or `SHAFFER_MARKETDATA_URL` / `SHAFFER_ANALYTICS_URL`; Data connection page | |
+| G2 | Authentication | Credential type (header name and token format, mutual TLS, other), lifetime, rotation; one credential for both services? 401 vs 403 meaning? | `SHAFFER_API_TOKEN`, `SHAFFER_AUTH_HEADER` (server side only); 401 blocks the interface, 403 the dataset for that subject | |
+| G3 | Instrument IDs | The instrument ID scheme; are IDs ever reused, retired or merged; a lookup from symbol + venue to ID? | `external_ids.shaffer` on each registry instrument; reference `ids.server` | |
+| G4 | Issuer and contract IDs | Issuer IDs; contract IDs for option series and futures months; how a derivative names its underlying | reference `ids.issuer`, `ids.contract`, `underlying.ids` | |
+| G5 | Strategy IDs | Strategy ID scheme (SP3E first), names, versions; how a Strategy is retired | header Strategy chooser (by ID), `analytics?strategyId=` | |
+| G6 | Request and response | For each dataset D1 to D25 (and the D26 slots): method, path, parameter names, response schema with types and nullability, one example payload | one function per dataset in `serverOperations` (`server/data/shaffer-contract.js`) | |
+| G7 | Pagination | Cursor or page per paginated dataset (D1, D4, D9, D10, D12, D13, D20, D22, D24, and D8 by periods); maximum page size; ordering; does a cursor survive new data? | `paginate()` / `collect()`, `all=1` (bounded at 20 pages) | |
+| G8 | Errors | Status codes and an error body with a machine code; which are retryable; rate limits; is `Retry-After` sent (seconds or date)? | 408/425/429/5xx and network errors retried (2 retries, backoff 250 ms doubling, at most 4 s, `Retry-After` honoured within that); 401/403 never retried | |
+| G9 | Freshness | Per dataset: the age after which data must be shown as stale; timestamp meaning (exchange time or publish time) and time zone | `freshness.staleAfterSec` per dataset (`PUT /api/server/refresh`) | |
+| G10 | Refresh and push | Polling limits per dataset; any push mechanism (SSE, WebSocket, webhook) with its message schema and snapshot-then-delta rules | refresh interval per dataset; `serverCapabilities.subscriptions` (no-op until filled) | |
+| G11 | Versions and coverage | API, schema and model version identifiers in each response; deprecation policy; coverage per dataset (markets, product types, issuers) and known limits | envelope `version`, `schema`, `coverage`; `serverCapabilities.versions` | |
+| G12 | Point in time | Per dataset: does an `asOf` request return what was known then (as filed, before revisions)? Parameter name? | `serverCapabilities.pointInTime[dataset]`; otherwise "Not supported by the contract" and nothing substituted | |
+| G13 | Duplicates and revisions | Is a record delivered twice ever possible (same ID)? How is a revision signalled (same ID with `revision`/`revisedAt`, or a new ID with `supersedes`)? | repeats dropped by ID and reported in `duplicates`; revisions shown beside the original | |
+| G14 | Test environment | An address and a credential with known data for the phase-6 procedure (INTEGRATION-CHECKLIST.md, section E) | the normal Terminal with that environment | |
+| D1 | Reference search (`market.search`) | Parameters (text, limit, market filter); per hit: server ID, symbol, name, product type, currency; optional issuer and contract IDs, venue, issuer name | registry search, page search | |
+| D2 | Instrument reference (`market.reference`) | IDs, symbol, name, product type, venue, trading currency, quote convention and units, multiplier, underlying, listing details, product terms, last update | header identity line (server ID), Overview | |
+| D3 | Current quotes (`market.quotes`) | Maximum batch size; quote type; bid/ask with sizes or last; currency; units; timestamp; status (real-time / delayed with minutes / indicative / end of day); optional previous close and change | header market price and bid/ask; the ticket's price | |
+| D4 | Price history (`market.history`) | Range and interval parameters; bar fields (time, business date, OHLC, volume); adjusted flag and method; earliest date; how gaps are signalled; annotations | Price history tab (chart, table, gaps, annotations) | |
+| D5 | FX (`market.fx`) | Rate as quote currency per 1 base; direction; timestamp; status; optional bid/ask | FX pages, Rates tab | |
+| D6 | Rates (`market.rates`) | Codes; fixing date; value in percent per annum; optional tenor and curve membership | Rates tab | |
+| D7 | Company and issuer profile (`market.profile`) | Issuer ID and name, listing exchange and currency (required); description, sector and industry with the scheme named, country, employees, market capitalisation with date and basis, shares outstanding with date, float, highlights, next earnings date with confirmed/estimated; issuer and listing facts separable | Overview tab (issuer apart from listing) |  |
+| D8 | Financial statements (`market.statements`) | Statement, period (quarterly, annual, TTM) and count parameters; per period: key, fiscal year and period, period type (quarter, YTD, annual, TTM, instant), dates, filing date, source, basis, original values of a restated period with the restatement date; per line: key, label, level, value per period (null with reason), units and scale; supplied ratios and growth | Financial statements tab | |
+| D9 | Earnings (`market.earnings`) | Per event: fiscal period, release date-time, confirmed or estimated, reporting time, metrics (reported, consensus, prior, surprise, units), revision status and time, documents | Earnings tab | |
+| D10 | Filings (`market.filings`) | Filters; per filing: ID, kind, title, filed time, source, documents (ID, media type, pages) | Filings and reports tab | |
+| D11 | Documents (`market.document`) | Bytes streamed with a media type (PDF, HTML, plain text); filename; length; may a document be fetched only through the gateway? | `/api/server/documents/:docId` proxy, sandboxed frame and new tab | |
+| D12 | Corporate actions (`market.corporateActions`) | A stable event ID (the idempotency key); type, ex-date, status; record and pay dates, amount and currency, ratio, terms, announcement time; revision of an earlier event | Corporate actions tab; Record in the paper ledger (once per event ID) | |
+| D13 | News and events (`market.news`) | Per item: ID, publication time, source, headline, scope (company, sector, economy); facts, classification (by whom), interpretation (by whom), link | News and events tab | |
+| D14 | Ratings and covenants (`market.ratingsCovenants`) | Scope (issue or issuer), ratings (agency, scale, rating, outlook, watch, action, date), covenants (label, text, threshold, status, as of) | bond Ratings and covenants tab | |
+| D15 | Yield and spread (`market.yieldSpread`) | Yield (value, type, compounding), price used (value, units, side, time), calculation time, provider; spread (bps, type, benchmark) or null with reason | bond Overview and terms | |
+| D16 | Option Greeks (`market.optionGreeks`) | Implied volatility, delta (required); gamma, theta, vega, rho with units per measure; model; prices used; time; provider | option Greeks and volatility tab | |
+| D17 | Futures curve (`market.futuresCurve`) | Per month: contract month, expiration, price, price type, time; optional IDs, open interest, volume | future Curve tab (points only, nothing interpolated) | |
+| D18 | Exchange margin (`market.exchangeMargin`) | Initial margin per contract, currency, effective date, clearing house; optional maintenance and notes | future Contract terms and margin (beside the Book's clearing terms) | |
+| D19 | Fund facts (`market.fundFacts`) | NAV, NAV currency and date; share class, fees with document date, distribution policy, net assets | fund Overview, NAV and fees | |
+| D20 | Fund holdings (`market.fundHoldings`) | Per holding: name, weight in percent of net assets, holdings date; optional IDs, asset class, quantity, value | fund Holdings tab | |
+| D21 | FX forward curve (`market.fxCurve`) | Per tenor: tenor, forward points, points units, time; optional value date, outright, spot reference | FX Rates and curves | |
+| D22 | OTC marks (`market.otcMarks`) | Per mark: date, value, units (NPV per 100 notional unless stated), kind (dealer, clearing, model), provider, time; method | swap / CDS / forward / OTC option Marks and history | |
+| D23 | Instrument analytics (`analytics.instrumentAnalytics`) | Strategy ID, run ID, model version, calculation time, input cutoff, horizon, fair value currency and units (must equal the quote's), EFS, scores, Fundamental and Realistic Fair Value and Gap % with the reference price, uncertainty, timing, outlier flags, sizing, hedge outputs; current or historical | header Fair price and Gap %; Analytics and risk tab | |
+| D24 | Analytics runs (`analytics.runs`) | Per run: run ID, version, calculation time, input cutoff, horizon, current or historical | Analytics and risk tab (Runs) | |
+| D25 | Earnings-window eligibility (`analytics.earningsWindow`) | Eligible (true/false/null), window, reason, run ID, calculation time | Earnings tab (eligibility panel, apart from calendar facts) | |
+| D26 | Strategies and Hedge (`analyticsContract.strategies`, `analyticsContract.hedge`) | The Strategy list; the hedge request and response schemas (`core/hedge.js` builds the request; shapes in `ports.js`) | Strategy chooser; Strategies page; hedge popup and package preview | |
+| L1 | Ledger interface | Nothing: holdings, orders, fills, packages, hedges, financing and recorded corporate actions are the Terminal's own records | `/api/server/ledger/:id` | not needed |
+
 ## 1. Across all datasets (the owner's list, section 2)
 
 | Requirement | What the contract must state | Where the Terminal uses it |
@@ -166,8 +217,9 @@ Local only. Nothing is required from the backend.
 
 1. Gateway address(es) and the credential scheme; whether MarketData and Analytics Lab share them.
 2. The instrument, issuer, contract and Strategy ID schemes, and a symbol/venue to ID lookup.
-3. For each of the 25 remote datasets above (16 of the first wave and the 9 product-specific datasets): request,
-   response schema, example payloads, error codes.
+3. For each of the 25 remote datasets above (16 of the first wave, documents included, and the 9 product-specific
+   datasets), and for the Strategy list and Hedge slots: request, response schema, example payloads, error codes
+   (answer sheet lines D1 to D26).
 4. Pagination style and limits per paginated dataset (search, history if long, earnings, filings, corporate actions,
    news, runs).
 5. Quote types, units and timestamp semantics per product type; staleness limits per dataset.

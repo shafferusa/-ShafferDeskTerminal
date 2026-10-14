@@ -53,6 +53,26 @@ const r1 = (x) => Math.round(x * 10) / 10;
 const r2 = (x) => Math.round(x * 100) / 100;
 const iso = (d, time = '21:00:00') => `${d}T${time}.000Z`;
 
+/** A one-page PDF with the given lines of text (Helvetica), with a correct cross-reference table. */
+function fixturePdf(lines) {
+  const esc = (t) => String(t).replace(/[\\()]/g, (c) => `\\${c}`);
+  const text = lines.map((l, i) => `BT /F1 12 Tf 56 ${770 - i * 20} Td (${esc(l)}) Tj ET`).join('\n');
+  const objs = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    `<< /Length ${Buffer.byteLength(text, 'latin1')} >>\nstream\n${text}\nendstream`,
+  ];
+  let out = '%PDF-1.4\n';
+  const offsets = [];
+  objs.forEach((o, i) => { offsets.push(Buffer.byteLength(out, 'latin1')); out += `${i + 1} 0 obj\n${o}\nendobj\n`; });
+  const xref = Buffer.byteLength(out, 'latin1');
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offsets.map((n) => `${String(n).padStart(10, '0')} 00000 n \n`).join('')}`;
+  out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(out, 'latin1');
+}
+
 // ---- static company records -----------------------------------------------------------------------------------
 
 const COMPANIES = {
@@ -469,6 +489,12 @@ export function createServerFixtures(app) {
       return { items, cursor: c.cursor || null, nextCursor: next, pageSize, totalItems: all.length, asOf: nowIso(), source: SRC };
     },
     async document(c, p) {
+      const pdf = /^fixture-doc-([a-z0-9]+)-(\d+)-pdf$/.exec(p.docId || '');
+      if (pdf) {
+        const filing = filingsOf(pdf[1].toUpperCase()).find((x) => x.id === `fixture-fil-${pdf[1]}-${pdf[2]}`);
+        if (!filing) return null;
+        return { mediaType: 'application/pdf', filename: `${p.docId}.pdf`, body: fixturePdf([`Demo fixture document (PDF). Fictional content; not a real filing and not Shaffer data.`, `${filing.title}, ${pdf[1].toUpperCase()} (demo), filed ${filing.filedAt.slice(0, 10)}.`]) };
+      }
       const m = /^fixture-doc-([a-z0-9]+)-(\d+)-(\d+)$/.exec(p.docId || '');
       if (!m) return null;
       const sym = m[1].toUpperCase();
@@ -653,7 +679,10 @@ export function createServerFixtures(app) {
     return Array.from({ length: n }, (_, i) => {
       const [kind, title] = sym === 'SIMGOV31' ? ['offering-document', 'Offering circular'] : kinds[i % kinds.length];
       const filed = addDays(today(), -(12 + i * 31));
-      return { id: `fixture-fil-${slug}-${i}`, kind, title: `${title} (demo fixture)`, filedAt: iso(filed, '13:30:00'), period: `${filed.slice(0, 4)}`, source: 'Demo fixture', documents: [{ id: `fixture-doc-${slug}-${i}-0`, title: `${title} document`, mediaType: 'text/html', pages: 1 + (i % 4) }] };
+      const documents = [{ id: `fixture-doc-${slug}-${i}-0`, title: `${title} document`, mediaType: 'text/html', pages: 1 + (i % 4) }];
+      // One PDF document (ALFA's second filing), for the sandboxed viewer and the new-tab path (i1).
+      if (sym === 'ALFA' && i === 1) documents.push({ id: `fixture-doc-${slug}-${i}-pdf`, title: `${title} (PDF) document`, mediaType: 'application/pdf', pages: 1 });
+      return { id: `fixture-fil-${slug}-${i}`, kind, title: `${title} (demo fixture)`, filedAt: iso(filed, '13:30:00'), period: `${filed.slice(0, 4)}`, source: 'Demo fixture', documents };
     });
   }
   function corporateActionsOf(inst) {

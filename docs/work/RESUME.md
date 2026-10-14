@@ -14,4 +14,4 @@ everywhere, product-specific tab framework, trading and hedge integration, as-of
 analytics & risk + positions), P1 product-specific pages. Wave 3: integration tests of the listed failure modes,
 docs (data-contract requirements, integration checklist), final run and report.
 
-**Completeness: about 26.0% of the pass** (last milestone 2026-10-14T14:44Z, i1: i1: failure-mode acceptance (fixture modes throttled/offline/revised/duplicate/mismatch; engine tests 15 in server-integration.test.js; browser checks 31 in i1-failure-modes.mjs, 3 runs each green; panel auto-recovery, supplied-gap mismatch guard, duplicate drop); npm test 879/879)
+**Completeness: about 27.5% of the pass** (last milestone 2026-10-14T15:40Z, i1: i1: ledger regression (populated Book hashed across every route, fixture mode, reconnection, Strategy and research date; only the deliberate CA record changes; integrity clean) and full suites: npm test 880/880, test:api 235 ok, system:api 48 ok, browser equity/option/bond 68 ok, system:browser 38/39 (1 intermittent, passes on rerun))

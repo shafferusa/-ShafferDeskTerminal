@@ -63,11 +63,11 @@ by hand (always labelled as manual), or exercised in the isolated demo environme
 
 | Product | Engine family | Lifecycle | Pricing | Lifecycle: what is simulated, and what is not |
 |---|---|---|---|---|
-| Private equity interest | Manually valued holding | Manual inputs | Valued by hand | Capital calls, distributions and valuations are entered by hand. |
-| Venture capital interest | Manually valued holding | Manual inputs | Valued by hand | Capital calls, distributions and valuations are entered by hand. |
-| Hedge fund interest | Manually valued holding | Manual inputs | Valued by hand | Subscriptions, redemptions and NAV are entered by hand. |
-| Infrastructure investment | Manually valued holding | Manual inputs | Valued by hand | Cash flows and valuations are entered by hand. |
-| Direct real estate | Manually valued holding | Manual inputs | Valued by hand | Cash flows and valuations are entered by hand. |
+| Private equity interest | Manually valued holding | Manual inputs | Valued by hand | Entered by hand: the commitment (registration), capital calls with their fee part, distributions split into return of capital, gain and income with carried interest withheld, valuations with date and source (stale after the contract's limit; rolled forward for later calls and distributions), secondary sales and the wind-up. |
+| Venture capital interest | Manually valued holding | Manual inputs | Valued by hand | Entered by hand: the commitment (registration), capital calls with their fee part, distributions split into return of capital, gain and income with carried interest withheld, valuations with date and source (stale after the contract's limit; rolled forward for later calls and distributions), secondary sales and the wind-up. |
+| Hedge fund interest | Manually valued holding | Manual inputs | Valued by hand | Entered by hand: subscriptions at a stated NAV, NAV per share with date and source, redemption notices and each dealing date's NAV. The Terminal works out the dealing date (notice period, frequency), the investor-level gate and the payment date; each dealing date waits, visibly, for its NAV. |
+| Infrastructure investment | Manually valued holding | Manual inputs | Valued by hand | Entered by hand: purchase and sale prices with their closing dates, income, operating expenses, capital expenditure (added to cost), appraisals with date and source (rolled forward for capex). |
+| Direct real estate | Manually valued holding | Manual inputs | Valued by hand | Entered by hand: purchase and sale prices with their closing dates, income, operating expenses, capital expenditure (added to cost), appraisals with date and source (rolled forward for capex). |
 
 ## Government debt
 
@@ -118,22 +118,22 @@ by hand (always labelled as manual), or exercised in the isolated demo environme
 | Commercial MBS | Debt security | Partly manual | Market quote | Principal paydowns are recorded by hand. |
 | Agency MBS | Debt security | Partly manual | Market quote | Principal paydowns (pool factor) are recorded by hand. |
 | Non-agency MBS | Debt security | Partly manual | Market quote | Principal paydowns and losses are recorded by hand. |
-| TBA mortgage contract | Forward / FRA | Partly manual | Model mark | Booked as a forward on a pool; pool allocation and delivery are recorded by hand. |
-| Mortgage specified pool | Debt security | Partly manual | Market quote | Principal paydowns (pool factor) are recorded by hand. |
-| Asset-backed security | Debt security | Partly manual | Market quote | Principal paydowns are recorded by hand. |
-| Collateralised mortgage obligation (CMO) | Debt security | Partly manual | Market quote | Tranche paydowns are recorded by hand. |
-| Collateralised loan obligation (CLO) | Debt security | Partly manual | Market quote | Tranche paydowns are recorded by hand; floating coupons need fixings. |
-| Collateralised debt obligation (CDO) | Debt security | Partly manual | Market quote | Tranche paydowns and losses are recorded by hand. |
-| Credit-linked note | Debt security | Partly manual | Market quote | Credit events are recorded by hand. |
-| Structured note | Debt security | Partly manual | Market quote | Coupons follow the stated schedule; payoff-linked amounts are recorded by hand. |
+| TBA mortgage contract | Forward / FRA | Partly manual | Model mark | Booked as a forward on the pass-through coupon. The pool the seller allocates is recorded by hand on the position before settlement (checked for good delivery) and delivered on paper (simulated) on the settlement date. |
+| Mortgage specified pool | Debt security | Partly manual | Market quote | Registered with its stated pool characteristics (required). Coupons after the payment delay are automatic; the monthly factor and paydown (scheduled and prepaid) are recorded by hand; a loss allocation is refused for a guaranteed pool. |
+| Asset-backed security | Debt security | Partly manual | Market quote | Coupons net of a stated servicing fee are automatic (gross, fee and net in the history); the factor and principal paydowns from the servicer report are recorded by hand. |
+| Collateralised mortgage obligation (CMO) | Debt security | Partly manual | Market quote | A sequential class receives no principal while its senior class is outstanding: the senior balance and the tranche factor are recorded by hand from each remittance report; coupons are automatic. |
+| Collateralised loan obligation (CLO) | Debt security | Partly manual | Market quote | Floating coupons on current face need fixings (a missing fixing blocks visibly); a coupon paid in kind (deferrable class), paydowns and loss allocations are recorded by hand. |
+| Collateralised debt obligation (CDO) | Debt security | Partly manual | Market quote | Floating coupons on current face need fixings (a missing fixing blocks visibly); paydowns, loss allocations and, for a deferrable class, coupons paid in kind are recorded by hand. |
+| Credit-linked note | Debt security | Partly manual | Market quote | Registered with its reference entity. Coupons are automatic; the credit event is recorded by hand with the auction recovery: the coupon ends (accrued forfeited) and principal settles at the recovery. |
+| Structured note | Debt security | Partly manual | Market quote | Contingent coupons and the principal at maturity (protected, or against a barrier) are worked out from observations of the linked underlying, each recorded by hand; a coupon or redemption waits visibly for its observation. Other payoff-linked amounts are recorded as manual cash flows. |
 
 ## Insurance-linked
 
 | Product | Engine family | Lifecycle | Pricing | Lifecycle: what is simulated, and what is not |
 |---|---|---|---|---|
-| Catastrophe bond | Debt security | Partly manual | Market quote | Trigger events and principal losses are recorded by hand. |
-| Insurance-linked security | Manually valued holding | Manual inputs | Valued by hand | Cash flows and valuations are entered by hand. |
-| Weather derivative | Manually valued holding | Manual inputs | Valued by hand | Settlement amount and valuation are entered by hand. |
+| Catastrophe bond | Debt security | Partly manual | Market quote | Registered with its collateral account. Coupons (collateral return plus spread, fixings needed) are automatic; a covered event and its principal loss are recorded by hand, releasing collateral to the sponsor. |
+| Insurance-linked security | Manually valued holding | Manual inputs | Valued by hand | Entered by hand: coupons, valuations in % of face with date and source, loss events writing face down, and the redemption at maturity (the maturity waits for it). |
+| Weather derivative | Manually valued holding | Manual inputs | Valued by hand | Entered by hand: marks with date and source, and the index for the period; the payment is worked out from the strike, tick and cap stated on the contract. A collateral basis is required. |
 
 ## Money market
 
@@ -151,12 +151,12 @@ by hand (always labelled as manual), or exercised in the isolated demo environme
 
 | Product | Engine family | Lifecycle | Pricing | Lifecycle: what is simulated, and what is not |
 |---|---|---|---|---|
-| Syndicated loan | Debt security | Partly manual | Market quote | Held at a % of par price with floating coupons (fixings needed); amortisation and prepayments are recorded by hand. |
-| Leveraged loan | Debt security | Partly manual | Market quote | Amortisation and prepayments are recorded by hand. |
+| Syndicated loan | Debt security | Partly manual | Market quote | Held at a % of par price, traded by assignment (no short sale) on par or distressed documentation; delayed compensation after T+7 and floating coupons (fixings needed) are automatic; amortisation, prepayments, draws, repricings and fees are recorded by hand. |
+| Leveraged loan | Debt security | Partly manual | Market quote | Traded by assignment (no short sale), floating coupons with fixings, delayed compensation on late par settlement; amortisation, prepayments and a repricing (new spread, soft-call premium) are recorded by hand. |
 | Revolving credit facility | Cash loan / deposit | Partly manual | No price needed | Each drawing is a loan; commitment fees are recorded by hand. |
-| Private credit | Debt security | Partly manual | Market quote | Valuation is manual; amortisation and prepayments are recorded by hand. |
-| Distressed debt | Debt security | Partly manual | Market quote | Coupons can be suspended by hand; restructurings are recorded by hand. |
-| Loan participation | Debt security | Partly manual | Market quote | Amortisation and prepayments are recorded by hand. |
+| Private credit | Debt security | Partly manual | Market quote | Valuation is manual (stated fill prices, marks by hand); a fixed PIK component is capitalised automatically; draws on the delayed-draw commitment, commitment fees, amortisation and repayments are recorded by hand. |
+| Distressed debt | Debt security | Partly manual | Market quote | The default is recorded by hand (non-accrual, trades flat, coupon dates listed unpaid); interim and final recovery distributions are recorded by hand; distributions in new securities are recorded as a sale and a purchase. |
+| Loan participation | Debt security | Partly manual | Market quote | Registered with its grantor and the grantor's face; coupons are passed through as the participation's share after the payment delay; amortisation and prepayments are recorded by hand. |
 
 ## Cash and FX
 
@@ -182,7 +182,7 @@ by hand (always labelled as manual), or exercised in the isolated demo environme
 | Securities borrowing | Securities loan | Full lifecycle | No price needed | Borrow availability and fee come from supplied data or a stated assumption; recalls are triggered by hand or by supplied data. |
 | Securities lending | Securities loan | Full lifecycle | No price needed |  |
 | Stock loan | Securities loan | Full lifecycle | No price needed |  |
-| Bond loan | Securities loan | Full lifecycle | No price needed |  |
+| Bond loan | Securities loan | Full lifecycle | No price needed | Cash collateral on the bonds' dirty value; the fee accrues on clean market value. |
 | Short sale | Equity-like security | Full lifecycle | Market quote | Always paired with a securities borrow; proceeds are held as restricted collateral. |
 | Repo | Repo / reverse repo | Full lifecycle | No price needed |  |
 | Reverse repo | Repo / reverse repo | Full lifecycle | No price needed |  |
@@ -190,12 +190,12 @@ by hand (always labelled as manual), or exercised in the isolated demo environme
 | Term repo | Repo / reverse repo | Full lifecycle | No price needed |  |
 | Open repo | Repo / reverse repo | Full lifecycle | No price needed | Runs until terminated; the rate can be reset. |
 | Bilateral repo | Repo / reverse repo | Full lifecycle | No price needed |  |
-| Tri-party repo | Repo / reverse repo | Full lifecycle | No price needed | The tri-party agent is recorded as an attribute; collateral substitution is not automated. |
+| Tri-party repo | Repo / reverse repo | Full lifecycle | No price needed | The tri-party agent is recorded as a term; otherwise simulated as a bilateral repo. Basket allocation and the agent's substitutions are not automated: collateral changes are recorded by hand. |
 | General-collateral repo | Repo / reverse repo | Full lifecycle | No price needed |  |
-| Special-collateral repo | Repo / reverse repo | Full lifecycle | No price needed |  |
-| Buy/sell-back | Repo / reverse repo | Full lifecycle | No price needed | Accounted with the same cash flows as a reverse repo. |
-| Sell/buy-back | Repo / reverse repo | Full lifecycle | No price needed | Accounted with the same cash flows as a repo. |
-| Securities collateral swap | Manually valued holding | Manual inputs | Valued by hand | Book the two securities loans separately, or hold as a manual arrangement. |
+| Special-collateral repo | Repo / reverse repo | Full lifecycle | No price needed | The special rate is entered on the ticket (not derived); the named security cannot be substituted. |
+| Buy/sell-back | Repo / reverse repo | Full lifecycle | No price needed | Two outright trades: bought spot, sold back at a forward price fixed at inception (net of the coupon falling in the term, which the buyer receives). Accounted as cash lent against the bond; no rate reset, margin or substitution. |
+| Sell/buy-back | Repo / reverse repo | Full lifecycle | No price needed | Two outright trades: sold spot, bought back at a forward price fixed at inception (net of the coupon falling in the term, passed to the buyer). Accounted as a financing: the bond stays on the balance sheet, pledged; no rate reset, margin or substitution. |
+| Securities collateral swap | Manually valued holding | Manual inputs | Valued by hand | Book the two securities loans separately to move the securities, or hold it as a manual arrangement: baskets recorded on the contract (not moved), fees per period worked out from its terms, marks and termination by hand. A collateral basis is required. |
 
 ## Commodities
 
@@ -212,7 +212,7 @@ by hand (always labelled as manual), or exercised in the isolated demo environme
 | Electricity | Spot asset | Partly manual | Market quote | Cannot be stored; delivery periods are recorded by hand. |
 | Agricultural commodity | Spot asset | Partly manual | Market quote | Storage and delivery are recorded by hand. |
 | Livestock | Spot asset | Partly manual | Market quote | Delivery is recorded by hand. |
-| Freight contract | Manually valued holding | Manual inputs | Valued by hand | Cash flows and valuations are entered by hand. |
+| Freight contract | Manually valued holding | Manual inputs | Valued by hand | Entered by hand: marks per unit with date and source, and each period's index average; each period settles (average - contract rate) x quantity. A collateral basis is required. |
 
 ## Environmental
 
@@ -250,28 +250,28 @@ by hand (always labelled as manual), or exercised in the isolated demo environme
 
 | Product | Engine family | Lifecycle | Pricing | Lifecycle: what is simulated, and what is not |
 |---|---|---|---|---|
-| Equity forward | Forward / FRA | Full lifecycle | Model mark | Cash-settled against a supplied or entered fixing, or physically delivered into the underlying position. |
-| Bond forward | Forward / FRA | Full lifecycle | Model mark |  |
+| Equity forward | Forward / FRA | Full lifecycle | Model mark | Cash-settled against a supplied or entered fixing, or physically delivered (simulated, delivery against payment on the value date) from or into the underlying position. Early termination at a stated amount. |
+| Bond forward | Forward / FRA | Full lifecycle | Model mark | In face amount and % of par. Physically delivered (simulated) on the value date at the clean price plus accrued interest, or cash-settled against the bond's close. |
 | FX forward | Forward / FRA | Full lifecycle | Model mark | Deliverable: the two currency amounts are exchanged on the value date. |
 | Non-deliverable forward | Forward / FRA | Full lifecycle | Model mark | Cash-settled against the fixing on the fixing date. |
-| Commodity forward | Forward / FRA | Full lifecycle | Model mark |  |
+| Commodity forward | Forward / FRA | Full lifecycle | Model mark | In the commodity's own units. Cash-settled against its close on the value date (a missing fixing waits visibly), or delivered (simulated). |
 | Forward-rate agreement | Forward / FRA | Full lifecycle | Model mark | Settled at the start of the period, discounted at the fixing. |
-| FX swap | Forward / FRA | Full lifecycle | Model mark | Booked as a near leg and a far leg in one package. |
+| FX swap | Forward / FRA | Full lifecycle | Model mark | Booked as a near leg and a far leg (each a deliverable FX forward of its own value date) in one package on the Strategies page. |
 
 ## Credit derivatives
 
 | Product | Engine family | Lifecycle | Pricing | Lifecycle: what is simulated, and what is not |
 |---|---|---|---|---|
-| Credit-spread forward | Manually valued holding | Manual inputs | Valued by hand | Settlement amount and valuation are entered by hand. |
-| Credit-spread option | Manually valued holding | Manual inputs | Valued by hand | Settlement amount and valuation are entered by hand. |
+| Credit-spread forward | Manually valued holding | Manual inputs | Valued by hand | Entered by hand: marks with date and source, and the realised value at expiry; the settlement is worked out with the contract's stated formula. A collateral basis is required. |
+| Credit-spread option | Manually valued holding | Manual inputs | Valued by hand | Entered by hand: marks with date and source, and the realised value at expiry; the settlement is worked out with the contract's stated formula. A collateral basis is required. |
 | Single-name credit-default swap | Credit default swap | Full lifecycle | Model mark | Premiums pay quarterly; a credit event is triggered by hand with the recovery rate. |
-| Sovereign credit-default swap | Credit default swap | Full lifecycle | Model mark |  |
+| Sovereign credit-default swap | Credit default swap | Full lifecycle | Model mark | Sovereign credit events only (no bankruptcy); a credit event is triggered by hand. |
 | Credit-index swap | Credit default swap | Full lifecycle | Model mark | Constituent defaults reduce the notional by hand (index factor). |
-| Credit-basket swap | Credit default swap | Partly manual | Model mark | Basket defaults are recorded by hand. |
-| Credit-index tranche swap | Credit default swap | Partly manual | Model mark | Tranche losses are recorded by hand. |
-| Loan credit-default swap | Credit default swap | Partly manual | Model mark | Cancellation on refinancing is recorded by hand. |
-| Asset-backed credit-default swap | Credit default swap | Partly manual | Model mark | Pay-as-you-go amounts are recorded by hand. |
-| Recovery swap | Manually valued holding | Manual inputs | Valued by hand | Settlement amount and valuation are entered by hand. |
+| Credit-basket swap | Credit default swap | Partly manual | Model mark | Defaults are recorded by hand; nth-to-default settles in full at the nth default and ends. |
+| Credit-index tranche swap | Credit default swap | Partly manual | Model mark | Index defaults are recorded by hand; the loss is written down between the attachment and detachment points. |
+| Loan credit-default swap | Credit default swap | Partly manual | Model mark | Credit events and cancellation on refinancing are recorded by hand. |
+| Asset-backed credit-default swap | Credit default swap | Partly manual | Model mark | Monthly premium on the payment day; pay-as-you-go events (shortfall, writedown, reimbursement, amortization) are recorded by hand. |
+| Recovery swap | Manually valued holding | Manual inputs | Valued by hand | Entered by hand: marks with date and source, the credit event, and the recovery rate from the auction; settles notional x (recovery - fixed rate) only after a credit event. A collateral basis is required. |
 
 ## Options
 
@@ -284,23 +284,23 @@ by hand (always labelled as manual), or exercised in the isolated demo environme
 | Option on a future | Listed option | Full lifecycle | Market quote | Exercise delivers the futures position at the strike. Contract data must be supplied or entered. |
 | OTC option | OTC option | Full lifecycle | Model mark | Vanilla calls and puts, cash or physical settlement. |
 | Bond option | OTC option | Full lifecycle | Model mark |  |
-| Interest-rate option | OTC option | Partly manual | Model mark | Booked on a rate underlying with cash settlement against a fixing; convexity conventions are not modelled. |
+| Interest-rate option | OTC option | Partly manual | Model mark | Booked on a rate fixing, cash-settled against it and paid on the stated payment date; convexity and the discounting of an in-arrears payment are not modelled. |
 | FX option | OTC option | Full lifecycle | Model mark |  |
 | Commodity option | OTC option | Full lifecycle | Model mark |  |
 | Cryptocurrency option | OTC option | Full lifecycle | Model mark |  |
-| Swaption | OTC option | Partly manual | Model mark | Exercise is recorded by hand: cash-settle the stated amount, or book the underlying swap. |
-| Credit-default swaption | OTC option | Partly manual | Model mark | Exercise is recorded by hand. |
+| Swaption | OTC option | Partly manual | Model mark | Exercise is recorded by hand: into the registered swap at a stated entry price, or a cash settlement amount entered by hand. The swaption is not valued by the Terminal. |
+| Credit-default swaption | OTC option | Partly manual | Model mark | Exercise is recorded by hand, into the registered credit default swap at a stated upfront; a credit event knocks it out (recorded by hand, or with the credit event on the swap). |
 | Interest-rate cap | Swap | Full lifecycle | Model mark | A capped floating leg: each caplet pays against its fixing. |
 | Interest-rate floor | Swap | Full lifecycle | Model mark | A floored floating leg: each floorlet pays against its fixing. |
 | Interest-rate collar | Swap | Full lifecycle | Model mark | A cap leg and a floor leg in one contract. |
 | Digital option | OTC option | Full lifecycle | Model mark | Cash-or-nothing payout against the expiry fixing. |
-| Barrier option | OTC option | Partly manual | Model mark | Barrier events are recorded by hand (or checked against supplied closes); intraday monitoring is not simulated. |
-| Asian option | OTC option | Partly manual | Model mark | The averaged settlement amount is entered by hand at expiry. |
-| Lookback option | OTC option | Partly manual | Model mark | The settlement amount is entered by hand at expiry. |
-| Basket option | OTC option | Partly manual | Model mark | The settlement amount is entered by hand at expiry. |
-| Spread option | OTC option | Partly manual | Model mark | The settlement amount is entered by hand at expiry. |
-| Quanto option | OTC option | Partly manual | Model mark | The settlement amount is entered by hand at expiry. |
-| Compound option | OTC option | Partly manual | Model mark | Exercise into the underlying option is recorded by hand. |
+| Barrier option | OTC option | Partly manual | Model mark | Barrier events are recorded by hand on the position; prices are not monitored for the barrier, intraday or at the close. |
+| Asian option | OTC option | Partly manual | Model mark | Settles on the average of the underlying closes on the averaging dates, each supplied or entered by hand; without averaging dates the averaged settlement amount is entered by hand. |
+| Lookback option | OTC option | Partly manual | Model mark | The observed extreme is recorded by hand on the position; the payoff is worked out from it (and from the expiry close for a floating strike). |
+| Basket option | OTC option | Partly manual | Model mark | The basket value at expiry is entered by hand; the payoff is worked out from it. |
+| Spread option | OTC option | Partly manual | Model mark | The spread value at expiry is entered by hand; the payoff is worked out from it. |
+| Quanto option | OTC option | Partly manual | Model mark | Settles against the underlying close converted at the contract's fixed rate; marks are entered by hand. |
+| Compound option | OTC option | Partly manual | Model mark | Exercised into the underlying option, by hand or at expiry against that option's mark for the date, which is entered by hand. |
 
 ## Swaps
 
@@ -311,36 +311,36 @@ by hand (always labelled as manual), or exercised in the isolated demo environme
 | Interest-rate basis swap | Swap | Full lifecycle | Model mark |  |
 | Cross-currency swap | Swap | Full lifecycle | Model mark | Notional exchanges at start and end are booked in each currency. |
 | Cross-currency basis swap | Swap | Full lifecycle | Model mark |  |
-| Non-deliverable swap | Swap | Partly manual | Model mark | Legs are computed in their own currencies; the net USD settlement conversion is recorded by hand. |
+| Non-deliverable swap | Swap | Partly manual | Model mark | Legs are worked out in their own currencies and paid in the settlement currency at the FX fixing of the fixing date, entered by hand; payments wait for it. |
 | Zero-coupon inflation swap | Swap | Full lifecycle | Model mark | Needs the index fixings at start and end. |
 | Year-on-year inflation swap | Swap | Full lifecycle | Model mark | Needs an index fixing for each period. |
 | Constant-maturity swap | Swap | Full lifecycle | Model mark | The CMS rate is supplied as the fixing; no convexity adjustment is applied by the Terminal. |
-| Constant-maturity spread swap | Swap | Partly manual | Model mark | The spread fixing is supplied as a single rate code. |
+| Constant-maturity spread swap | Swap | Partly manual | Model mark | The leg pays the first index less a second index (Minus index) plus the spread, both fixed at the period start. |
 | Forward-starting swap | Swap | Full lifecycle | Model mark |  |
-| Amortizing swap | Swap | Full lifecycle | Model mark | Uses the notional schedule in the contract terms. |
-| Accreting swap | Swap | Full lifecycle | Model mark | Uses the notional schedule in the contract terms. |
-| Callable swap | Swap | Partly manual | Model mark | Early termination is recorded by hand as an unwind at a stated amount. |
-| Puttable swap | Swap | Partly manual | Model mark | Early termination is recorded by hand as an unwind at a stated amount. |
-| Quanto swap | Swap | Partly manual | Model mark | Legs pay in the settlement currency on the stated notional; quanto adjustments are not modelled. |
-| Asset swap | Swap | Partly manual | Model mark | Book the bond and the swap as two legs of one package. |
-| Equity swap | Swap | Full lifecycle | Model mark | Return leg against a financing leg; needs the underlying fixing at each reset. |
-| Equity-index swap | Swap | Full lifecycle | Model mark |  |
-| Equity-basket swap | Swap | Partly manual | Model mark | The basket level is supplied as a single fixing. |
-| Equity total-return swap | Swap | Full lifecycle | Model mark | Dividend pass-through is recorded from corporate actions on the underlying or by hand. |
-| Bond total-return swap | Swap | Full lifecycle | Model mark | Coupon pass-through is recorded by hand. |
+| Amortizing swap | Swap | Full lifecycle | Model mark | Notional schedule on the contract form: a factor for the first day of every period of each scheduled leg (a missing or misplaced step is refused). Amounts and a percentage independent amount follow the notional of each period. |
+| Accreting swap | Swap | Full lifecycle | Model mark | Notional schedule on the contract form: a factor for the first day of every period of each scheduled leg (a missing or misplaced step is refused). Amounts and a percentage independent amount follow the notional of each period. |
+| Callable swap | Swap | Partly manual | Model mark | The call is exercised by hand on one of its dates by the side holding it: accrued amounts are settled and the swap ends at no cost. |
+| Puttable swap | Swap | Partly manual | Model mark | The put is exercised by hand on one of its dates by the side holding it: accrued amounts are settled and the swap ends at no cost. |
+| Quanto swap | Swap | Partly manual | Model mark | A quanto leg is worked out in its quanto currency and converted at the fixed rate of the contract; spot FX plays no part. No quanto convexity adjustment. |
+| Asset swap | Swap | Partly manual | Model mark | Book the bond and the swap as two legs of one package; the swap upfront (100 less the dirty price for a par asset swap) is stated by hand. |
+| Equity swap | Swap | Full lifecycle | Model mark | Return leg against a financing leg; the reference close of each reset date (supplied or entered by hand; a missing one blocks the payment). Optional notional reset, the financing then on the reset notional; optional payment lag. |
+| Equity-index swap | Swap | Full lifecycle | Model mark | As the equity swap, on an index level carried by a reference instrument (the catalog has no index product). |
+| Equity-basket swap | Swap | Partly manual | Model mark | The basket (names and weights) is recorded on the leg; its level at each reset is entered by hand on the payment item. |
+| Equity total-return swap | Swap | Full lifecycle | Model mark | A cash dividend recorded on the reference passes through on its ex-date, from the start fixing of its period (a missing fixing holds it visibly). The form has no separate dividend pay date. |
+| Bond total-return swap | Swap | Full lifecycle | Model mark | Return on the bond closes (clean prices); the coupon pass-through is recorded by hand on the position (manual coupon cash flow): a swap does not follow the bond's coupons. |
 | Loan total-return swap | Swap | Partly manual | Model mark | Interest pass-through and paydowns are recorded by hand. |
-| Index total-return swap | Swap | Full lifecycle | Model mark |  |
-| Commodity swap | Swap | Full lifecycle | Model mark | Fixed price against a floating price fixing per period (single fixing; averaging is entered as the fixing). |
-| Commodity basis swap | Swap | Full lifecycle | Model mark |  |
-| Commodity-index swap | Swap | Full lifecycle | Model mark |  |
-| Energy swap | Swap | Full lifecycle | Model mark | Averaged prices are entered as the period fixing. |
-| Electricity swap | Swap | Full lifecycle | Model mark | Averaged prices are entered as the period fixing. |
-| Freight swap | Swap | Full lifecycle | Model mark | Averaged route assessments are entered as the period fixing. |
-| Dividend swap | Swap | Partly manual | Model mark | Realised dividends are entered as the period fixing. |
-| Variance swap | Manually valued holding | Manual inputs | Valued by hand | Realised variance and the settlement amount are entered by hand. |
-| Volatility swap | Manually valued holding | Manual inputs | Valued by hand | Realised volatility and the settlement amount are entered by hand. |
-| Correlation swap | Manually valued holding | Manual inputs | Valued by hand | Settlement amount and valuation are entered by hand. |
-| Dispersion swap | Manually valued holding | Manual inputs | Valued by hand | Settlement amount and valuation are entered by hand. |
+| Index total-return swap | Swap | Full lifecycle | Model mark | Return on an index level carried by a reference instrument; index dividends recorded by hand on it pass through. |
+| Commodity swap | Swap | Full lifecycle | Model mark | Fixed price against the period-end fixing or the average of the daily fixings on a pricing calendar (a missing day blocks the payment, named); optional net settlement and payment lag. |
+| Commodity basis swap | Swap | Full lifecycle | Model mark | Averaged price legs on two references and a fixed differential, net settled. |
+| Commodity-index swap | Swap | Full lifecycle | Model mark | Return on a commodity index level carried by a reference instrument, against a fee or financing leg; notional reset at each reset. |
+| Energy swap | Swap | Full lifecycle | Model mark | Quantity per period or per calendar day (gas); averaged daily fixings on a pricing calendar; net settlement. |
+| Electricity swap | Swap | Full lifecycle | Model mark | MWh from delivery hours (base, peak, off-peak; peak hours a day, peak-day calendar); averaged daily fixings; net settlement. Clock changes are not counted (a 23- or 25-hour day is taken as 24). |
+| Freight swap | Swap | Full lifecycle | Model mark | Route average of the daily assessments on a pricing calendar (the route carried by a reference instrument), net settled. |
+| Dividend swap | Swap | Partly manual | Model mark | The dividend leg pays the cash dividends going ex in each period, as recorded by hand on the stock. |
+| Variance swap | Manually valued holding | Manual inputs | Valued by hand | Entered by hand: marks with date and source, and the realised value at expiry; the settlement is worked out with the contract's stated formula. A collateral basis is required. |
+| Volatility swap | Manually valued holding | Manual inputs | Valued by hand | Entered by hand: marks with date and source, and the realised value at expiry; the settlement is worked out with the contract's stated formula. A collateral basis is required. |
+| Correlation swap | Manually valued holding | Manual inputs | Valued by hand | Entered by hand: marks with date and source, and the realised value at expiry; the settlement is worked out with the contract's stated formula. A collateral basis is required. |
+| Dispersion swap | Manually valued holding | Manual inputs | Valued by hand | Entered by hand: marks with date and source, and the realised value at expiry; the settlement is worked out with the contract's stated formula. A collateral basis is required. |
 
 ## Settlement calendars
 

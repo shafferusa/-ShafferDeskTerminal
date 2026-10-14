@@ -106,7 +106,7 @@ export function PointsChart({ points, fmt = (v) => fmtNum(v, 2), height = 150 })
   const y = (v) => top + (1 - (v - lo) / span) * (H - top - bottom);
   return html`<svg class="p1-points" viewBox=${`0 0 ${W} ${H}`} style=${`max-width:${W}px`} role="img" aria-label="Supplied points, not joined">
     <line x1=${padX - 20} x2=${W - padX + 20} y1=${H - bottom + 6} y2=${H - bottom + 6} class="axis" />
-    ${pts.map((p, i) => html`<g>
+    ${pts.map((p, i) => html`<g><title>${p.label}: ${fmt(p.value)}${p.mine ? ' (this contract)' : ''}</title>
       <circle cx=${x(i)} cy=${y(p.value)} r=${p.mine ? 6 : 4} class=${p.mine ? 'mine' : ''} />
       <text x=${x(i)} y=${y(p.value) - 10} text-anchor="middle" class="v">${fmt(p.value)}</text>
       <text x=${x(i)} y=${H - 8} text-anchor="middle" class="l">${p.label}</text></g>`)}

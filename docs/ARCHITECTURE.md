@@ -92,8 +92,11 @@ feed the paper engine's price cache and stay as they are):
   error), `source`, `asOf`, `receivedAt`, `freshness`, `version`, `schema`, `coverage`, `items`/`data`,
   `missingFields`, `error {code, message, retryable}`, `requestId`, `selection`, `pagination`, `pointInTime`.
   Missing values are `null` with a reason (`nulls`), never 0. See docs/SERVER-CLIENT.md.
-- Retries: bounded (settings `server.retry`, default 2 retries, 250 ms doubling); 401 blocks the interface, 403
-  the dataset for that subject, neither is retried until the connection is tested or changed.
+- Retries: bounded (settings `server.retry`, default 2 retries, 250 ms doubling, at most 4 s, a gateway
+  `Retry-After` honoured within that); 401 blocks the interface, 403 the dataset for that subject, neither is
+  retried until the connection is tested or changed.
+- A record delivered twice in one list answer (same server ID) is listed once and reported in `duplicates`; a
+  required field missing from list records makes the answer `incomplete` and is named with a count.
 - Selection tokens: a newer `selection` on a `channel` aborts the older gateway request; a late answer for the
   older one is returned as `error.code: 'superseded'` and never cached.
 - The client passes analytics through (a grep test guards it): no fair value, gap, score or signal is computed.
@@ -580,7 +583,11 @@ Demo mode only (403 otherwise):
 `POST /api/server/test`; `GET /api/server/reference/search`, `/reference/:id`, `/quotes`, `/history/:id`, `/fx`, `/rates`,
 `/profile/:id`, `/statements/:id`, `/earnings/:id`, `/earnings-window/:id`, `/filings/:id`, `/documents/:docId` (streamed
 proxy, sandboxed), `/corporate-actions/:id`, `POST /api/server/corporate-actions/record`, `/news/:id`, `/analytics/:id`,
-`/analytics/:id/runs`, `/ledger/:id`; demo only: `GET|POST /api/demo/fixtures/server`. Details in docs/SERVER-CLIENT.md;
+`/analytics/:id/runs`, `/ledger/:id`; product datasets (p1): `/ratings/:id`, `/yield-spread/:id`, `/option-greeks/:id`,
+`/futures-curve/:id`, `/margin/:id`, `/fund-holdings/:id`, `/fund-facts/:id`, `/marks/:id`, `/fx-curve/:id`; the Terminal's
+own `GET /api/instruments/:id/contract-facts` (`server/product-facts.js`); demo only: `GET|POST /api/demo/fixtures/server`
+(modes available, stale, unavailable, empty, error, slow, partial, forbidden, throttled, offline, revised, duplicate,
+currency-mismatch, unit-mismatch). 25 remote datasets plus the ledger interface. Details in docs/SERVER-CLIENT.md;
 what the backend must supply in docs/DATA-CONTRACT-REQUIREMENTS.md; the phase-6 steps in docs/INTEGRATION-CHECKLIST.md.
 
 ## Routes added since the first edition
@@ -649,6 +656,35 @@ observation it is waiting for.
 The server pushes a change event over `/api/stream` when the engine does something, and screens
 reload their data; a slow poll covers a dropped stream.
 
+### Instrument-detail workspace (`views/workspace-model.js`, `workspace.js`, `instrument-page.js`, `instrument.js`, `views/tabs/`)
+
+```
+ any screen ── openInstrument(id) ──> drawer (instrument.js): header + Trade / Overview / Positions / History tabs
+                                         └── Open full page ──> #/instrument/<id>/<tab>[/asof/<date>] (instrument-page.js)
+ header (workspace.js)  ── /api/instruments/:id/detail (execution quote, holdings; never "as of")
+                        ── /api/server/analytics/:id?strategyId=  (Fair price, Gap % for the chosen Strategy)
+                        ── /api/server/reference/:id              (stable server ID)
+ tab contents (tabs/*.js, tabs/product/*.js, registered with registerTabContent) ── /api/server/<dataset>/:id
+```
+
+- `workspace-model.js` (pure, tested in `test/core/workspace-model.test.js`): the dataset routes, the tabs per
+  family and the "not covered for this product" list, `gapOf()` (a supplied gap passed through only when the fair
+  value is in the quote's currency and units; a gap worked out only for matching currency, units and a positive
+  price), and `createSelection()`: one selection per instrument and screen area (`drawer` or `page`), every request
+  carrying `requestId` and `selection`, superseded requests aborted, a late or foreign answer discarded
+  (`window.__sdtWs.discards` for the tests).
+- `workspace.js`: `useDataset()` turns each answer into one of the seven states and keeps an earlier selection's
+  data from being drawn under a newer header; a panel in a retryable error (or holding a cached copy after a failed
+  refresh) asks again with `fresh=1` every `RECOVER_MS` (5 s), so panels recover by themselves after a
+  disconnection. `DatasetPanel` draws the state, source, timestamps, version, refresh interval, the request ID, the
+  as-of line and a Refresh button.
+- Per-browser-tab choices (sessionStorage): the investment Strategy chosen in the header (`sdt.ws.strategy`), the
+  statement view and period counts (`sdt.ws.statements`), the page's origin for Back. The tab and research date are
+  in the address. Nothing of the server's answers is stored in the database; the server keeps refresh settings,
+  fixture modes (demo) and the links of recorded corporate actions.
+- Trade from the page opens the ticket in the drawer with the instrument, Book, owner and Strategy; the package
+  records `origin: 'instrument-detail'` and the Hedge workflow opens after the fill, as for a Marketplace trade.
+
 ## Tests
 
 `npm test` runs the engine against the demo feed with a controllable clock: Books and transfers,
@@ -686,6 +722,17 @@ browser `--workers=1 --headed --slow=150`. After every step the whole expected s
 the integrity report must be clean; the browser level also reads the Accounting screens. `npm run
 matrix` writes `docs/TEST-MATRIX.md` from the catalog, the specs and `test/matrix/results/*.json`.
 Details in `test/matrix/README.md`.
+
+### Instrument-detail workspace tests
+
+`npm run test:workspace` (`test/workspace/run-browser.mjs`) starts a sandboxed demo server and drives Chromium
+through navigation, request discipline, the as-of view and trading from the page, then every file in
+`test/workspace/checks/` (e1, e2, e3 and p1 tabs; `i1-failure-modes.mjs` for the owner's failure-mode list:
+empty and partial answers, stale data, revisions, pagination, errors and throttling, disconnection and recovery,
+rapid switching in the drawer and on the page, duplicates, currency and unit mismatches, persistence across a reload
+and a server restart; `i1-open-items.mjs`). Each check file also runs alone (`node test/workspace/checks/<file>`).
+`test/core/server-integration.test.js` covers the same list at route level and hashes the paper ledger before and
+after every route, fixture mode, reconnection, Strategy and research date.
 
 ### Failure and recovery suite (`test/system/`)
 

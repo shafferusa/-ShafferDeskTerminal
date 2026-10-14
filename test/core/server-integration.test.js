@@ -532,3 +532,26 @@ test('regression: with a populated Book, every server route, fixture flip, recon
   const integ = await route(api, 'GET', `/api/books/${book.id}/integrity`);
   assert.equal(integ.ok, true, JSON.stringify(integ.checks?.filter((c) => !c.ok)));
 });
+
+// ---- trading from the detail page -------------------------------------------------------------------------------
+
+test('a trade placed from the instrument-detail page records that origin and, like a Marketplace trade, opens the hedge workflow after the fill', async () => {
+  const { app, clock, inst } = makeApp();
+  const { book, acct } = makeBook(app);
+  const CTX = { investmentStrategy: { id: 'fixture-strat-sp3e', name: 'SP3E (demo fixture)' }, holdingPeriod: { days: 60 }, hedgeObjective: { type: 'downside_protection' } };
+  // A stated quote with depth, so the fill is complete and does not depend on the demo feed's moment (as hedge.test.js)
+  for (const i of [inst.ALFA, inst.BRVO]) app.data.market.set(i.id, { bid: 100, ask: 100, value: 100, bidSize: 1e6, askSize: 1e6 });
+  const s = await trade(app, { bookId: book.id, unitId: acct.id, template: 'long', underlyingId: inst.ALFA.id, quantity: 300, origin: 'instrument-detail', ...CTX });
+  assert.equal(s.status, 'open', 'filled');
+  assert.equal(app.packages.getStrategyRow(s.id).params.origin, 'instrument-detail');
+  await advance(app, clock, 1000);
+  await app.hedge.processQueue();
+  const prompts = app.hedge.prompts(book.id).filter((p) => p.strategyId === s.id || p.strategy_id === s.id || JSON.stringify(p).includes(s.id));
+  assert.equal(prompts.length, 1, 'one hedge prompt after the fill');
+  // A Strategy-page package (origin 'strategy') does not ask by itself
+  const t = await trade(app, { bookId: book.id, unitId: acct.id, template: 'long', underlyingId: inst.BRVO.id, quantity: 100, origin: 'strategy', ...CTX });
+  assert.equal(t.status, 'open');
+  await advance(app, clock, 1000);
+  await app.hedge.processQueue();
+  assert.equal(app.hedge.prompts(book.id).filter((p) => JSON.stringify(p).includes(t.id)).length, 0);
+});

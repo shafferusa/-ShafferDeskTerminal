@@ -4,533 +4,533 @@
   "SA:hedge:reconnection": {
    "status": "passed",
    "message": "",
-   "ms": 3154,
+   "ms": 3206,
    "checks": 47,
    "area": "hedge",
    "case": "reconnection",
    "title": "Hedge requests that waited while positions changed are refreshed against current exposure on reconnection",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:04:28.967Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:50:28.981Z"
   },
   "SA:history:data-refresh": {
    "status": "passed",
    "message": "",
-   "ms": 565,
+   "ms": 654,
    "checks": 20,
    "area": "history",
    "case": "data-refresh",
    "title": "History survives data refreshes and fixture changes",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:04:29.543Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:50:29.644Z"
   },
   "SA:history:service-reconnection": {
    "status": "passed",
    "message": "",
-   "ms": 992,
+   "ms": 1096,
    "checks": 17,
    "area": "history",
    "case": "service-reconnection",
    "title": "History survives a service going away and coming back, and a restart",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:04:30.545Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:50:30.751Z"
   },
   "SA:history:reference-edits": {
    "status": "passed",
    "message": "(a) changing the terms of a traded contract: \"This instrument has been traded, so its contract terms are locked. Descriptive fields can still be edited; for different terms create a new instrument.\"",
-   "ms": 639,
+   "ms": 665,
    "checks": 60,
    "area": "history",
    "case": "reference-edits",
    "title": "History survives instrument edits, calendar edits and settings changes",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:04:31.195Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:50:31.426Z"
   },
   "SA:isolation:book-routes": {
    "status": "passed",
    "message": "90 routes: 18 scanned, 39 global, 19 cross, 14 id-only\n61 reads of Iso B searched for 24 ids and 2 names of Iso A\n61 reads of Iso A searched for 29 ids and 2 names of Iso B\n/api/strategies without a Book: \"bookId is required.\"\n/api/hedge/queue without a Book: \"bookId is required.\"\nGET accounting/pnl of B with A's Account as scope: \"Unknown accounting scope: it must name Treasury or Accounts of this Book.\"\nGET accounting/positions of B with A's Account as scope: \"Unknown accounting scope: it must name Treasury or Accounts of this Book.\"\nGET accounting/balance of B with A's Account as scope: \"Unknown accounting scope: it must name Treasury or Accounts of this Book.\"\nGET accounting/borrowings of B with A's Account as scope: \"Unknown accounting scope: it must name Treasury or Accounts of this Book.\"\nGET accounting/pending of B with A's Account as scope: \"Unknown accounting scope: it must name Treasury or Accounts of this Book.\"\nGET accounting/failed of B with A's Account as scope: \"Unknown accounting scope: it must name Treasury or Accounts of this Book.\"\nGET accounting/history of B with A's Account as scope: \"Unknown accounting scope: it must name Treasury or Accounts of this Book.\"\nGET accounting of B with an Account of each Book as scope: \"Unknown accounting scope: it must name Treasury or Accounts of this Book.\"\nGET nav-history of B with A's Account: \"Unknown accounting scope: it must name Treasury or Accounts of this Book.\"\nGET collateral of B with A's Account: \"Unknown accounting scope: it must name Treasury or Accounts of this Book.\"\nGET strategies of B with A's Account: \"Unknown accounting scope: it must name Treasury or Accounts of this Book.\"\ntransfer from A's Account into B: \"That Treasury or Account belongs to a different Book.\"\ntransfer from B into A's Account: \"That Treasury or Account belongs to a different Book.\"\ntransfer between A's units through B: \"That Treasury or Account belongs to a different Book.\"\nadjustment in B on A's Account: \"That Treasury or Account belongs to a different Book.\"\nadjustment in B correcting an event of A: \"The event being corrected was not found in this Book.\"\npackage in B for A's Account: \"That Treasury or Account belongs to a different Book.\"\npackage in B attached to A's strategy instance: \"Legs can only be added to a strategy in the same Treasury/Account.\"\npackage in B using A's position: \"Leg 1: the existing position to use was not found in this Treasury/Account.\"\npackage in B repaying A's loan: \"Leg 1: the arrangement to close was not found in this Treasury/Account.\"\nrepo in B pledging A's position: \"Leg 1: Choose a position in this Treasury/Account that holds the collateral security.\"\npackage in B funded from A's Treasury: \"Leg 1: the funding source is not in this Book.\"\nswap in B under A's agreement: \"Leg 1: Cross IRS names the agreement \"CSA Dealer I\", which belongs to a different Book. Collateral never crosses Books: choose an agreement of this Book.\"\nconfirming B's preview for A's Account: \"That Treasury or Account belongs to a different Book.\"\nconfirming B's preview attached to A's strategy instance: \"Legs can only be added to a strategy in the same Treasury/Account.\"\ncollateral basis of A's position through B: \"Position not found in this Book.\"\nreading A's agreement through B: \"That agreement belongs to a different Book.\"\nediting A's agreement through B: \"That agreement belongs to a different Book.\"\nclosing A's agreement through B: \"That agreement belongs to a different Book.\"\nreading A's swap contract on behalf of B: \"This contract belongs to another Book.\"\nopening A's loan contract on behalf of B: \"This contract belongs to another Book.\"\nan agreement of B covering A's Account: \"Aardvark belongs to a different Book. An agreement covers the Treasury and Accounts of its own Book only.\"\nan agreement of B posted by A's Treasury: \"The unit that posts and receives collateral must be the Treasury or an Account of this Book.\"\nhedge request in B for A's strategy instance: \"That strategy instance belongs to a different Book.\"\nhedge request in B for A's Account: \"That Treasury or Account belongs to a different Book.\"\nrenaming B to the name of A: \"A Book named \"Iso A\" already exists.\"\na second Account \"Bison\" in B (the name is free in A, and stays free): \"This Book already has an Account named \"Bison\".\"\ncancel working legs of A's (already cancelled) order: \"There are no working legs to cancel.\"",
-   "ms": 953,
+   "ms": 1019,
    "checks": 192,
    "area": "isolation",
    "case": "book-routes",
    "title": "Book isolation through every API route",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:04:32.159Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:50:32.456Z"
   },
   "SA:isolation:no-netting": {
    "status": "passed",
    "message": "",
-   "ms": 603,
+   "ms": 669,
    "checks": 17,
    "area": "isolation",
    "case": "no-netting",
    "title": "Nothing nets or consolidates across Books",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:04:32.772Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:50:33.135Z"
   },
   "SA:isolation:normal-mode-refusals": {
    "status": "passed",
    "message": "POST /api/demo/advance: \"The clock can only be moved in demo mode.\"\nPOST /api/demo/advance (to an instant): \"The clock can only be moved in demo mode.\"\nPOST /api/demo/fixtures/quote: \"Test fixtures exist only in demo mode.\"\nPOST /api/demo/fixtures/close: \"Test fixtures exist only in demo mode.\"\nPOST /api/demo/fixtures/fx: \"Test fixtures exist only in demo mode.\"\nPOST /api/demo/fixtures/rate: \"Test fixtures exist only in demo mode.\"\nPOST /api/demo/fixtures/borrow: \"Test fixtures exist only in demo mode.\"\nGET /api/demo/fixtures: \"Test fixtures exist only in demo mode.\"\nPOST /api/demo/hedge-fixture: \"Demo only.\"\nGET /api/demo/hedge-script: \"Demo only.\"\nPOST /api/demo/hedge-script: \"Demo only.\"\nPOST /api/demo/hedge-script: \"Demo only.\"",
-   "ms": 350,
+   "ms": 353,
    "checks": 23,
    "area": "isolation",
    "case": "normal-mode-refusals",
    "title": "Fixtures and the clock are refused in normal mode",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:04:33.133Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:50:33.499Z"
   },
   "SA:isolation:demo-normal-databases": {
    "status": "passed",
    "message": "",
-   "ms": 1189,
+   "ms": 1133,
    "checks": 20,
    "area": "isolation",
    "case": "demo-normal-databases",
    "title": "Demo and normal paper databases are separate files",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:04:34.334Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:50:34.643Z"
   },
   "SA:nodup:day-by-day": {
    "status": "passed",
    "message": "",
-   "ms": 999,
+   "ms": 1063,
    "checks": 43,
    "area": "nodup",
    "case": "day-by-day",
    "title": "Fifteen days lived one day at a time: every recurring item exactly once",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:04:35.344Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:50:35.716Z"
   },
   "SA:nodup:catch-up": {
    "status": "passed",
    "message": "",
-   "ms": 1132,
+   "ms": 1183,
    "checks": 54,
    "area": "nodup",
    "case": "catch-up",
    "title": "Catch-up over fifteen missed days in one engine cycle",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:04:36.488Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:50:36.910Z"
   },
   "SA:nodup:catch-up-restarts": {
    "status": "passed",
    "message": "",
-   "ms": 2178,
+   "ms": 2435,
    "checks": 42,
    "area": "nodup",
    "case": "catch-up-restarts",
    "title": "Catch-up in three stages with a restart between each",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:04:38.680Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:50:39.356Z"
   },
   "SA:nodup:overlapping-cycles": {
    "status": "passed",
    "message": "132 cycles ran, 0 overlapping requests were skipped",
-   "ms": 1472,
+   "ms": 1334,
    "checks": 42,
    "area": "nodup",
    "case": "overlapping-cycles",
    "title": "Overlapping engine cycles and requests",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:04:40.162Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:50:40.699Z"
   },
   "SA:nodup:concurrent-confirmations": {
    "status": "passed",
    "message": "",
-   "ms": 484,
+   "ms": 498,
    "checks": 13,
    "area": "nodup",
    "case": "concurrent-confirmations",
    "title": "The same confirmation sent three times at once, six of them, with engine cycles in between",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:04:40.656Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:50:41.208Z"
   },
   "SA:nodup:timer-on": {
    "status": "passed",
    "message": "",
-   "ms": 16136,
+   "ms": 16194,
    "checks": 59,
    "area": "nodup",
    "case": "timer-on",
    "title": "The engine timer running, with manual cycles on top and a restart on the way",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:04:56.804Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:50:57.416Z"
   },
   "SA:refusals:cash-trade": {
    "status": "passed",
    "message": "buy 20,000: \"Alpha is short 500,500.00 USD: the package needs 1,000,500.00 USD (purchases 1,000,400.00 USD, fees 100.00 USD, margin and collateral 0.00 USD, reserved 0.00 USD) and 500,000.00 USD is available. Add Treasury funding or a borrowing leg, convert currency, or reduce the size.\"\nbuy 20,000: confirming the blocked preview anyway: \"Alpha is short 500,500.00 USD: the package needs 1,000,500.00 USD (purchases 1,000,400.00 USD, fees 100.00 USD, margin and collateral 0.00 USD, reserved 0.00 USD) and 500,000.00 USD is available. Add Treasury funding or ...\"",
-   "ms": 343,
+   "ms": 400,
    "checks": 12,
    "area": "refusals",
    "case": "cash-trade",
    "title": "Insufficient cash: a purchase larger than the cash available",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:04:57.159Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:50:57.829Z"
   },
   "SA:refusals:cash-transfer": {
    "status": "passed",
    "message": "transfer 600,000: \"Alpha has 500,000.00 USD of settled USD available; 600,000.00 USD requested.\"\ntransfer 1,000 EUR with no EUR held: \"Alpha has 0.00 EUR of settled EUR available; 1,000.00 EUR requested.\"\ntransfer of zero: \"Enter a positive amount.\"\ntransfer of a negative amount: \"Enter a positive amount.\"\ntransfer to itself: \"Source and destination must be different.\"\ntransfer of cash committed to an unsettled purchase: \"Alpha has 489,995.00 USD of settled USD available; 495,000.00 USD requested.\"",
-   "ms": 389,
+   "ms": 479,
    "checks": 17,
    "area": "refusals",
    "case": "cash-transfer",
    "title": "Insufficient cash: a transfer larger than the settled cash that is free",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:04:57.559Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:50:58.321Z"
   },
   "SA:refusals:cash-withdrawal": {
    "status": "passed",
    "message": "withdraw 600,000: \"Treasury has 500,000.00 USD available to withdraw; 600,000.00 USD requested.\"\nwithdraw zero: \"Enter a positive amount.\"\nwithdraw a negative amount: \"Enter a positive amount.\"\nan unknown capital movement: \"Capital movement must be a deposit or a withdrawal.\"\nwithdraw 0.01 from an empty Treasury: \"Treasury has 0.00 USD available to withdraw; 0.01 USD requested.\"",
-   "ms": 317,
+   "ms": 398,
    "checks": 14,
    "area": "refusals",
    "case": "cash-withdrawal",
    "title": "Insufficient cash: a capital withdrawal larger than Treasury holds",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:04:57.887Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:50:58.731Z"
   },
   "SA:refusals:cash-repayment": {
    "status": "passed",
    "message": "early repayment: \"Alpha is short 90,000.00 USD: the package needs 100,000.00 USD (purchases 0.00 USD, fees 0.00 USD, margin and collateral 0.00 USD, reserved 0.00 USD) and 10,000.00 USD is available. Add Treasury funding or a borrowing leg, convert currency, or reduce the size.\"\nearly repayment: confirming the blocked preview anyway: \"Alpha is short 90,000.00 USD: the package needs 100,000.00 USD (purchases 0.00 USD, fees 0.00 USD, margin and collateral 0.00 USD, reserved 0.00 USD) and 10,000.00 USD is available. Add Treasury funding or a borrowing le...\"\nFailed tab: \"Alpha has 10,000.00 USD of settled USD available; 100,416.67 USD is needed (principal plus accrued interest).\"",
-   "ms": 400,
+   "ms": 431,
    "checks": 24,
    "area": "refusals",
    "case": "cash-repayment",
    "title": "Insufficient cash: repaying a loan early, and at maturity",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:04:58.297Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:50:59.174Z"
   },
   "SA:refusals:cash-settlement-day": {
    "status": "passed",
    "message": "",
-   "ms": 406,
+   "ms": 463,
    "checks": 22,
    "area": "refusals",
    "case": "cash-settlement-day",
    "title": "Insufficient cash on settlement day",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:04:58.714Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:50:59.649Z"
   },
   "SA:refusals:borrow-unavailable": {
    "status": "passed",
    "message": "short with no borrow data: \"Leg 1: no borrow availability data for RFBU. None is supplied for this instrument. State a borrow assumption (availability and fee) to proceed.\"\nshort with the borrow unavailable: \"Leg 1: RFBU is not available to borrow (Test fixture). The dependent short sale cannot execute.\"\nshort with the borrow unavailable: confirming the blocked preview anyway: \"Leg 1: RFBU is not available to borrow (Test fixture). The dependent short sale cannot execute.\"",
-   "ms": 377,
+   "ms": 458,
    "checks": 26,
    "area": "refusals",
    "case": "borrow-unavailable",
    "title": "Securities borrow unavailable: the short sale is blocked",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:04:59.101Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:51:00.117Z"
   },
   "SA:refusals:borrow-exhausted": {
    "status": "passed",
    "message": "short 500 with 300 available: \"Leg 1: only 300 RFBE is available to borrow (Test fixture); 500 is needed.\"\nshort 500 with 300 available: confirming the blocked preview anyway: \"Leg 1: only 300 RFBE is available to borrow (Test fixture); 500 is needed.\"",
-   "ms": 362,
+   "ms": 463,
    "checks": 15,
    "area": "refusals",
    "case": "borrow-exhausted",
    "title": "Securities borrow exhausted: more than is available to borrow",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:04:59.474Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:51:00.591Z"
   },
   "SA:refusals:borrow-recalled": {
    "status": "passed",
    "message": "second recall: accepted",
-   "ms": 448,
+   "ms": 504,
    "checks": 18,
    "area": "refusals",
    "case": "borrow-recalled",
    "title": "Securities borrow recalled by the lender",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:04:59.931Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:51:01.106Z"
   },
   "SA:refusals:collateral-repo": {
    "status": "passed",
    "message": "(a) pledging more than is held: \"Leg 1: Only 1,000,000 of the collateral is unencumbered; 2,000,000 is needed.\"\n(a): confirming the blocked preview anyway: \"Leg 1: Only 1,000,000 of the collateral is unencumbered; 2,000,000 is needed.\"\n(b) more cash than the collateral supports: \"Leg 1: The collateral supports at most 998,300.55 USD: 1,000,000 TTSY31 is worth 1,018,674.03 USD (1,000,000.00 USD clean plus 18,674.03 USD accrued interest) and the haircut is 2.00%; 2,000,000.00 USD requested.\"\n(b): confirming the blocked preview anyway: \"Leg 1: The collateral supports at most 998,300.55 USD: 1,000,000 TTSY31 is worth 1,018,674.03 USD (1,000,000.00 USD clean plus 18,674.03 USD accrued interest) and the haircut is 2.00%; 2,000,000.00 USD requested.\"\n(d) pledging the same holding again: \"Leg 1: Only 0 of the collateral is unencumbered; 100,000 is needed.\"",
-   "ms": 421,
+   "ms": 470,
    "checks": 16,
    "area": "refusals",
    "case": "collateral-repo",
    "title": "Insufficient collateral: repo",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:05:00.362Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:51:01.588Z"
   },
   "SA:refusals:collateral-pledged-position": {
    "status": "passed",
    "message": "selling the pledged note: \"Leg 1: only 0 of the 1,000,000 TTSY31 held is unencumbered; the rest is pledged or out on loan and cannot be sold until it is released.\"\nselling the pledged note: confirming the blocked preview anyway: \"Leg 1: only 0 of the 1,000,000 TTSY31 held is unencumbered; the rest is pledged or out on loan and cannot be sold until it is released.\"",
-   "ms": 404,
+   "ms": 483,
    "checks": 11,
    "area": "refusals",
    "case": "collateral-pledged-position",
    "title": "Insufficient collateral: selling a pledged position",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:05:00.775Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:51:02.082Z"
   },
   "SA:refusals:collateral-independent-amount": {
    "status": "passed",
    "message": "1,000,000 notional: \"Leg 1: The independent amount of 50,000.00 USD on CDS Acme 1000000 cannot be posted: Alpha has 30,000.00 USD of settled USD cash free. Fund it first, or reduce the size. | Alpha is short 20,000.00 USD: the package needs 50,000.00 USD (purchases 0.00 USD, fees 0.00 USD, margin and collateral 50,000.00 USD, reserved 0.00 USD) and 30,000.00 USD is available. Add Treasury funding ...\n1,000,000 notional: confirming the blocked preview anyway: \"Leg 1: The independent amount of 50,000.00 USD on CDS Acme 1000000 cannot be posted: Alpha has 30,000.00 USD of settled USD cash free. Fund it first, or reduce the size.\"\na contract with no collateral basis: \"Leg 1: CDS Acme 1000000 states no collateral terms. Choose a collateral agreement, enter position-level terms, or choose \"Uncollateralized (paper assumption)\": one of the three is needed, and nothing is assumed for you. Choose it in this preview, or under Edit contract terms on the leg, then re-check.\"",
-   "ms": 328,
+   "ms": 471,
    "checks": 15,
    "area": "refusals",
    "case": "collateral-independent-amount",
    "title": "Insufficient collateral: an OTC independent amount that cannot be posted",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:05:01.113Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:51:02.568Z"
   },
   "SA:refusals:collateral-margin-call": {
    "status": "passed",
    "message": "",
-   "ms": 376,
+   "ms": 490,
    "checks": 17,
    "area": "refusals",
    "case": "collateral-margin-call",
    "title": "Insufficient collateral: a variation-margin call that cannot be met",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:05:01.499Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:51:03.071Z"
   },
   "SA:refusals:quote-missing": {
    "status": "passed",
    "message": "",
-   "ms": 397,
+   "ms": 492,
    "checks": 24,
    "area": "refusals",
    "case": "quote-missing",
    "title": "Missing quote: trade preview, order and valuation",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:05:01.906Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:51:03.574Z"
   },
   "SA:refusals:quote-stale": {
    "status": "passed",
    "message": "",
-   "ms": 352,
+   "ms": 451,
    "checks": 14,
    "area": "refusals",
    "case": "quote-stale",
    "title": "Stale quote: trade preview, order and valuation",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:05:02.268Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:51:04.037Z"
   },
   "SA:refusals:fx-missing": {
    "status": "passed",
    "message": "",
-   "ms": 334,
+   "ms": 418,
    "checks": 14,
    "area": "refusals",
    "case": "fx-missing",
    "title": "Missing FX rate: trade preview and valuation",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:05:02.611Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:51:04.467Z"
   },
   "SA:refusals:fx-stale": {
    "status": "passed",
    "message": "",
-   "ms": 294,
+   "ms": 413,
    "checks": 10,
    "area": "refusals",
    "case": "fx-stale",
    "title": "Stale FX rate: trade preview and valuation",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:05:02.915Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:51:04.892Z"
   },
   "SA:refusals:incomplete-terms": {
    "status": "passed",
    "message": "a loan with no rate: \"Enter the interest rate as a decimal (0.05 = 5%). The Terminal does not assume a rate.\"\nan option with no strike: \"Strike must be a positive number.\"\na swap with no legs: \"A swap needs at least one leg, each with its side, type, currency and terms.\"\na future with no multiplier: \"Contract multiplier (point value) is required.\"\na bond with no maturity: \"Maturity date is required (or mark the bond as perpetual).\"\na repo with no collateral security: \"Choose the collateral security.\"\nan instrument with no product: \"Choose a product type from the catalog.\"\na currency pair with no quote currency: \"A currency pair needs a base and a quote currency code.\"\na package leg whose inline loan has no rate: \"Enter the interest rate as a decimal (0.05 = 5%). The Terminal does not assume a rate.\"\ntrading it: \"Leg 1: CDS Acme no basis states no collateral terms. Choose a collateral agreement, enter position-level terms, or choose \"Uncollateralized (paper assumption)\": one of the three is needed, and nothing is assumed for you. The contract is registered and not yet traded: record the basis on the contract (in this preview, or on the instrument), then re-check.\"\ntrading it: confirming the blocked preview anyway: \"Leg 1: CDS Acme no basis states no collateral terms. Choose a collateral agreement, enter position-level terms, or choose \"Uncollateralized (paper assumption)\": one of the three is needed, and nothing is assumed for you....\"",
-   "ms": 331,
+   "ms": 391,
    "checks": 20,
    "area": "refusals",
    "case": "incomplete-terms",
    "title": "Incomplete contract terms",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:05:03.256Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:51:05.296Z"
   },
   "SA:refusals:invalid-quantity": {
    "status": "passed",
    "message": "buy 0 shares: \"Leg 1: quantity must be positive.\"\nbuy -5 shares: \"Leg 1: quantity must be positive.\"\nbuy \"abc\" shares: \"Leg 1: quantity must be positive.\"\nbuy null shares: \"Leg 1: quantity must be positive.\"\nbuy 10.5 shares: \"Leg 1: quantity must be a multiple of 1.\"\nbuy 10.5 shares: confirming the blocked preview anyway: \"Leg 1: quantity must be a multiple of 1.\"\nbuy 1.5 option contracts: \"Leg 1: quantity must be a multiple of 1.\"\nsell 300 of the 200 held: \"That position is 200; 300 is more than it holds.\"\ncover 150 of the 100 short: \"That position is 100; 150 is more than it holds.\"\nexercise 5 contracts of the 2 held: \"You hold 2; cannot exercise 5.\"\nexercise 0 contracts: \"Enter the number of contracts as a positive number.\"\nexercise 1.5 contracts: \"The number of contracts must be a multiple of 1.\"\na transfer of \"lots\": \"Enter a positive amount.\"\na deposit of \"lots\": \"Enter a positive amount.\"\na deposit in \"dollars\": \"Enter a three-letter currency code.\"",
-   "ms": 430,
+   "ms": 489,
    "checks": 23,
    "area": "refusals",
    "case": "invalid-quantity",
    "title": "Invalid quantities",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:05:03.696Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:51:05.800Z"
   },
   "SA:refusals:expired-contract": {
    "status": "passed",
    "message": "a new order in the expired contract: \"Leg 1: RFEX 260306C100 expired on 2026-03-06.\"\na new order in the expired contract: confirming the blocked preview anyway: \"Leg 1: RFEX 260306C100 expired on 2026-03-06.\"",
-   "ms": 708,
+   "ms": 925,
    "checks": 20,
    "area": "refusals",
    "case": "expired-contract",
    "title": "Expired contracts",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:05:04.415Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:51:06.739Z"
   },
   "SA:refusals:calendar-settlement": {
    "status": "passed",
    "message": "settling on Saturday 7 March: \"Leg 1: Calendar conflict: the stated settlement date 2026-03-07 (Saturday) is a Saturday, not a business day on the settlement calendar of RFCS (US: US equity markets (NYSE rules)). The nearest business days are 2026-03-06 and 2026-03-09.\"\nsettling on Saturday 7 March: confirming the blocked preview anyway: \"Leg 1: Calendar conflict: the stated settlement date 2026-03-07 (Saturday) is a Saturday, not a business day on the settlement calendar of RFCS (US: US equity markets (NYSE rules)). The nearest business days are 2026-03-...\"\nsettling on Good Friday: \"Leg 1: Calendar conflict: the stated settlement date 2026-04-03 (Friday) is a holiday on US, not a business day on the settlement calendar of RFCS (US: US equity markets (NYSE rules)). The nearest business days are 2026-04-02 and 2026-04-06.\"\nsettling on Good Friday: confirming the blocked preview anyway: \"Leg 1: Calendar conflict: the stated settlement date 2026-04-03 (Friday) is a holiday on US, not a business day on the settlement calendar of RFCS (US: US equity markets (NYSE rules)). The nearest business days are 2026-...\"\nsettling before the trade date: \"Leg 1: Calendar conflict: the stated settlement date 2026-02-27 is before the trade date 2026-03-02. A trade cannot settle before it is done.\"\nsettling before the trade date: confirming the blocked preview anyway: \"Leg 1: Calendar conflict: the stated settlement date 2026-02-27 is before the trade date 2026-03-02. A trade cannot settle before it is done.\"\na date that does not exist: \"Leg 1: The stated settlement date \"2026-02-31\" is not a calendar date in the form YYYY-MM-DD.\"\na date that does not exist: confirming the blocked preview anyway: \"Leg 1: The stated settlement date \"2026-02-31\" is not a calendar date in the form YYYY-MM-DD.\"\na lag of 1.5 days: \"Leg 1: The stated settlement lag must be a whole number of business days from 0 (same day) to 30.\"\na lag of 1.5 days: confirming the blocked preview anyway: \"Leg 1: The stated settlement lag must be a whole number of business days from 0 (same day) to 30.\"\na lag of -1 days: \"Leg 1: The stated settlement lag must be a whole number of business days from 0 (same day) to 30.\"\na lag of -1 days: confirming the blocked preview anyway: \"Leg 1: The stated settlement lag must be a whole number of business days from 0 (same day) to 30.\"\nsettling on the hand-entered holiday: \"Leg 1: Calendar conflict: the stated settlement date 2026-03-04 (Wednesday) is a holiday on US, not a business day on the settlement calendar of RFCS (US: US equity markets (NYSE rules)). The nearest business days are 2026-03-03 and 2026-03-05.\"",
-   "ms": 396,
+   "ms": 468,
    "checks": 29,
    "area": "refusals",
    "case": "calendar-settlement",
    "title": "Calendar conflicts: a stated settlement date that cannot be honoured",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:05:04.820Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:51:07.217Z"
   },
   "SA:refusals:calendar-closed-day": {
    "status": "passed",
    "message": "",
-   "ms": 359,
+   "ms": 448,
    "checks": 19,
    "area": "refusals",
    "case": "calendar-closed-day",
    "title": "Calendar: an order on a day its market is closed waits, visibly, and fills once",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:05:05.189Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:51:07.677Z"
   },
   "SA:stress:partial-fills": {
    "status": "passed",
    "message": "",
-   "ms": 433,
+   "ms": 488,
    "checks": 21,
    "area": "stress",
    "case": "partial-fills",
    "title": "Partial fills: the remainder keeps working, a dependent leg follows, fees total once",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:05:05.633Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:51:08.176Z"
   },
   "SA:stress:failed-leg-cancel": {
    "status": "passed",
    "message": "cancel working legs again: \"There are no working legs to cancel.\"\ncancel the same order again: \"This leg is already cancelled and cannot be cancelled.\"",
-   "ms": 353,
+   "ms": 407,
    "checks": 15,
    "area": "stress",
    "case": "failed-leg-cancel",
    "title": "A failed dependent leg: cancelling the working leg",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:05:05.996Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:51:08.596Z"
   },
   "SA:stress:failed-leg-retry": {
    "status": "passed",
    "message": "",
-   "ms": 379,
+   "ms": 479,
    "checks": 17,
    "area": "stress",
    "case": "failed-leg-retry",
    "title": "A failed dependent leg: retry",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:05:06.385Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:51:09.089Z"
   },
   "SA:stress:failed-leg-unwind": {
    "status": "passed",
    "message": "",
-   "ms": 367,
+   "ms": 482,
    "checks": 12,
    "area": "stress",
    "case": "failed-leg-unwind",
    "title": "A failed dependent leg: unwind",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:05:06.764Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:51:09.583Z"
   },
   "SA:stress:failed-leg-accept": {
    "status": "passed",
    "message": "accept again: \"Only a package with failed legs can be accepted as it stands.\"",
-   "ms": 351,
+   "ms": 400,
    "checks": 13,
    "area": "stress",
    "case": "failed-leg-accept",
    "title": "A failed dependent leg: accept as it stands",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:05:07.125Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:51:09.994Z"
   },
   "SA:stress:cancellations": {
    "status": "passed",
    "message": "(c) cancel it again: \"This leg is already cancelled and cannot be cancelled.\"\n(c) cancel the partly filled order again: \"This leg is already cancelled and cannot be cancelled.\"\n(d) cancel a filled order: \"This leg is already filled and cannot be cancelled.\"\n(e) cancel an order that does not exist: \"Order not found.\"",
-   "ms": 412,
+   "ms": 479,
    "checks": 19,
    "area": "stress",
    "case": "cancellations",
    "title": "Cancellations: a working order, a partly filled order, cancelling twice",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:05:07.547Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:51:10.486Z"
   },
   "SA:stress:restart-stages": {
    "status": "passed",
    "message": "",
-   "ms": 2191,
+   "ms": 2379,
    "checks": 42,
    "area": "stress",
    "case": "restart-stages",
    "title": "Application restart at each stage of a trade's life",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:05:09.750Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:51:12.876Z"
   },
   "SA:stress:repeated-requests": {
    "status": "passed",
    "message": "POST /api/books: the repeat: \"A Book named \"Repeat second Book\" already exists.\"\nPOST /api/books (with a token): the same token with another body: \"This request token was already used for a different request. Nothing was done.\"\nPUT /api/books/:id (settings, with a token): the same token with another body: \"This request token was already used for a different request. Nothing was done.\"\nPOST /api/books/:id/accounts: the repeat: \"This Book already has an Account named \"Beta\".\"\nPOST /api/books/:id/capital: the same token with another body: \"This request token was already used for a different request. Nothing was done.\"\nPOST /api/books/:id/transfers: the same token with another body: \"This request token was already used for a different request. Nothing was done.\"\nPOST /api/books/:id/adjustments: the same token with another body: \"This request token was already used for a different request. Nothing was done.\"\nPOST /api/events/:id/reverse: the repeat: \"This event has already been corrected.\"\nPOST /api/orders/:id/cancel: the repeat: \"This leg is already cancelled and cannot be cancelled.\"\nPOST /api/strategies/:id/action: the repeat: \"There are no working legs to cancel.\"\nPOST /api/positions/:id/lifecycle: the same token with another body: \"This request token was already used for a different request. Nothing was done.\"\nPOST /api/instruments/:id/lifecycle: the same token with another body: \"This request token was already used for a different request. Nothing was done.\"\nPOST /api/instruments: the same token with another body: \"This request token was already used for a different request. Nothing was done.\"\nPOST /api/observations: the same token with another body: \"This request token was already used for a different request. Nothing was done.\"\nPOST /api/watchlists: the same token with another body: \"This request token was already used for a different request. Nothing was done.\"\nPOST /api/books/:id/agreements: the repeat: \"This Book already has an agreement named \"CSA repeat two\".\"\nPUT /api/books/:id/agreements/:agreementId: the same token with another body: \"This request token was already used for a different request. Nothing was done.\"\nPUT collateral-basis on a position that has one (first attempt): \"This position already has its collateral basis on record. It stays as recorded for the life of the position.\"\nPUT collateral-basis on a position that has one (second attempt): \"This position already has its collateral basis on record. It stays as recorded for the life of the position.\"\nPOST /api/books/:id/agreements/:agreementId/close: the repeat: \"This agreement is already closed.\"\n47 mutating routes, all repeated",
-   "ms": 3486,
+   "ms": 3731,
    "checks": 213,
    "area": "stress",
    "case": "repeated-requests",
    "title": "Repeated identical requests to every mutating route",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:05:13.245Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:51:16.618Z"
   },
   "SA:stress:retries": {
    "status": "passed",
    "message": "(a) confirming figures that have moved: \"Terms changed on leg 1 and on the package totals since this package was displayed. leg 1 Buy 100 SRT: estimated fill is now 51.00, was 50.02 (+1.96%, tolerance 0.5%); Package, USD: cash required is now 5,101.00 USD, was ...\"",
-   "ms": 427,
+   "ms": 550,
    "checks": 17,
    "area": "stress",
    "case": "retries",
    "title": "Retries: a refused confirmation, an item waiting for a fixing",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:05:13.683Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:51:17.178Z"
   },
   "SA:stress:kill-mid-confirmation": {
    "status": "passed",
-   "message": "an undisturbed confirmation takes 34 ms\nstate found after the kill, over 12 trials: nothing stored 4, some legs filled 8, all legs filled 0",
-   "ms": 5658,
-   "checks": 150,
+   "message": "an undisturbed confirmation takes 38 ms\nstate found after the kill, over 12 trials: nothing stored 2, some legs filled 9, all legs filled 1",
+   "ms": 5907,
+   "checks": 156,
    "area": "stress",
    "case": "kill-mid-confirmation",
    "title": "The server is killed while a twelve-leg package is being confirmed",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:05:19.350Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:51:23.098Z"
   },
   "SA:stress:kill-mid-cycle": {
    "status": "passed",
-   "message": "an undisturbed catch-up cycle takes 31 ms\nevents booked before each kill: 3, 4, 8, 11, 11, 11, 11, 11",
-   "ms": 7007,
+   "message": "an undisturbed catch-up cycle takes 30 ms\nevents booked before each kill: 0, 3, 5, 10, 11, 11, 11, 11",
+   "ms": 7746,
    "checks": 323,
    "area": "stress",
    "case": "kill-mid-cycle",
    "title": "The server is killed during an engine cycle that catches up fifteen days",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:05:26.368Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:51:30.856Z"
   },
   "SA:stress:service-stops-answering": {
    "status": "passed",
    "message": "",
-   "ms": 2154,
+   "ms": 2168,
    "checks": 29,
    "area": "stress",
    "case": "service-stops-answering",
    "title": "A Shaffer service address that stops answering",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:05:28.534Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:51:33.035Z"
   },
   "SA:accounting:verification-book": {
    "status": "passed",
    "message": "transfer that would use restricted proceeds and reserved cash: \"South has 515,216.70 USD of settled USD available; 520,000.00 USD requested.\"\ntransfer that would use posted margin and cash collateral received: \"North has 1,007,657.50 USD of settled USD available; 1,050,000.00 USD requested.\"",
-   "ms": 1353,
+   "ms": 1461,
    "checks": 1154,
    "area": "accounting",
    "case": "verification-book",
    "title": "Accounting verified against hand-worked figures: one Book, Treasury and two Accounts, every situation of section 7",
-   "commit": "97957d2",
-   "at": "2026-10-14T05:04:25.803Z"
+   "commit": "596d048+changes",
+   "at": "2026-10-14T14:50:25.762Z"
   }
  },
- "updatedAt": "2026-10-14T05:05:28.534Z",
+ "updatedAt": "2026-10-14T14:51:33.035Z",
  "environment": {
   "node": "v22.22.0",
   "platform": "linux",

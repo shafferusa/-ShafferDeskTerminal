@@ -25,7 +25,7 @@ const OBJECTIVES = [
 export function openInstrument(id, opts = {}) {
   // Opened from a dialog (a hedge popup's leg, a preview): the drawer is raised above it.
   const over = typeof document !== 'undefined' && Boolean(document.querySelector('.modal'));
-  openOverlay((close) => html`<div class=${over ? 'ws-over' : ''}><${InstrumentDrawer} id=${id} initialTab=${opts.tab} onClose=${close} /></div>`);
+  openOverlay((close) => html`<div class=${over ? 'ws-over' : ''}><${InstrumentDrawer} id=${id} initialTab=${opts.tab} origin=${opts.origin} onClose=${close} /></div>`);
 }
 
 /**
@@ -138,7 +138,7 @@ function SettlementField({ inst, detail, book, value, onChange }) {
 /** The `settle` field of a leg for what the ticket states, or undefined for the convention. */
 const statedSettle = (v) => (v.mode === 'date' && v.date ? { date: v.date } : v.mode === 'lag' && isNum(v.lag) ? { lag: v.lag } : undefined);
 
-export function Ticket({ inst, detail, book, onDone, presetStrategy, quote = true }) {
+export function Ticket({ inst, detail, book, onDone, presetStrategy, quote = true, origin = 'marketplace' }) {
   const [unitId, setUnitId] = useState(defaultUnit(book));
   const [action, setAction] = useState(inst.actions[0]);
   const [fromId, setFromId] = useState('');
@@ -183,7 +183,7 @@ export function Ticket({ inst, detail, book, onDone, presetStrategy, quote = tru
     } else legs.push({ kind: 'trade', action, instrumentId: inst.id, qty, role: 'underlying', ...order });
     const simpleLong = action === 'buy' && ['equity', 'fund', 'spot', 'crypto', 'bond', 'manual'].includes(inst.family);
     const input = {
-      bookId: book.id, unitId, template: simpleLong ? 'long' : action === 'sell_short' ? 'short' : 'custom', underlyingId: inst.id, legs, origin: 'marketplace',
+      bookId: book.id, unitId, template: simpleLong ? 'long' : action === 'sell_short' ? 'short' : 'custom', underlyingId: inst.id, legs, origin,
       name: simpleLong || action === 'sell_short' ? undefined : `${labelOf(action)} ${inst.symbol || inst.name}`,
       financing: fin === 'none' ? null : fin === 'treasury' ? { mode: 'treasury' } : { mode: 'loan', rateType: 'fixed', rate: loanRate },
       ...hedgeContextInput(ctx),
@@ -519,7 +519,7 @@ function Positions({ detail, reload, book }) {
     ${detail.positions.length && !FINANCEABLE.has(inst.family) ? html`<p class="note">${notFinanceable(inst)}</p>` : null}`;
 }
 
-function InstrumentDrawer({ id, initialTab, onClose }) {
+function InstrumentDrawer({ id, initialTab, origin, onClose }) {
   const book = currentBook();
   const [tab, setTab] = useState(initialTab || 'trade');
   const res = useLive(() => get(`/api/instruments/${id}/detail`, { bookId: book?.id }), [id, book?.id]);
@@ -549,7 +549,7 @@ function InstrumentDrawer({ id, initialTab, onClose }) {
       onTrade=${trade} onBuild=${() => { onClose(); buildStrategy(inst, strategy); }} onHedge=${() => hedgeFromWorkspace({ inst, detail: d, book, strategy })}
       onOpenPage=${() => { onClose(); openFullPage(inst.id, tab === 'history' ? 'history' : tab === 'positions' ? 'positions' : ''); }} />
     <${Tabs} tabs=${tabs} value=${tab} onChange=${setTab} /></div>
-    ${tab === 'trade' ? html`<${Ticket} inst=${inst} detail=${d} book=${book} onDone=${res.reload} presetStrategy=${strategy} quote=${false} />` : null}
+    ${tab === 'trade' ? html`<${Ticket} inst=${inst} detail=${d} book=${book} onDone=${res.reload} presetStrategy=${strategy} quote=${false} origin=${origin || 'marketplace'} />` : null}
     ${tab === 'overview' ? html`<${Overview} inst=${inst} detail=${d} reload=${res.reload} onClose=${onClose} />` : null}
     ${tab === 'chain' ? html`<${Chain} inst=${inst} />` : null}
     ${tab === 'positions' ? html`<${Positions} detail=${d} reload=${res.reload} book=${book} />` : null}
