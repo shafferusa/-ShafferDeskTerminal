@@ -16,3 +16,4 @@
 - 2026-10-14T13:47Z | e3 | +0.5 | e3: my positions and trades tab moved to tabs/positions.js on the ledger interface (packages, hedges, financing, fills, history), matches Accounting; npm test 864/864, workspace 176/176, browser 2 products no failures
 - 2026-10-14T13:48Z | e1 | +1 | Price history tab (tabs/price-history.js): chart+table, OHLC/volume, annotations, adj/unadj switch only when both exist, gaps/coverage/intervals, as-of; checks in test/workspace/checks/e1-tabs.mjs
 - 2026-10-14T13:48Z | e1 | +1 | Overview tab (tabs/overview.js): issuer vs listing, units/as-of/source per figure, missing fields named, as-of without substitution
+- 2026-10-14T13:48Z | e1 | +1 | Earnings tab (tabs/earnings.js): calendar facts, metrics vs consensus/prior/surprise, EPS sentence, document proxy, separate eligibility panel; npm test 864/864, workspace 176/176
