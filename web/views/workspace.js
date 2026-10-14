@@ -452,7 +452,7 @@ function HistoryBody({ env, inst, q }) {
 }
 
 // ---- My positions and trades (local paper records) ---------------------------------------------------------------------
-export function MyPositions({ inst, detail, book, sel, intervalFor, onTrade }) {
+export function MyPositions({ inst, detail, book, sel, asOf, intervalFor, onTrade }) {
   const positions = detail?.positions || [];
   const ids = [...new Set(positions.map((p) => p.strategy?.id).filter(Boolean))].slice(0, 12);
   const strats = useLive(async () => Promise.all(ids.map((sid) => get(`/api/strategies/${sid}`, { bookId: book.id }).catch(() => null))), [ids.join(), book.id]);
@@ -462,7 +462,7 @@ export function MyPositions({ inst, detail, book, sel, intervalFor, onTrade }) {
   const orders = list.flatMap((s) => (s.orders || []).filter((o) => o.instrument?.id === inst.id).map((o) => ({ ...o, strategy: s })));
   const fills = orders.flatMap((o) => (o.fills || []).map((f) => ({ ...f, order: o })));
   return html`<div class="stack" data-ws-inst=${inst.id}>
-    <p class="note" style="margin:0">Local paper records of ${book.name}: kept apart from the server's market history, and never changed by it.</p>
+    <p class="note" style="margin:0">Local paper records of ${book.name}: kept apart from the server's market history, and never changed by it.${asOf ? ` They are current: the research date ${asOf} does not apply to them.` : ''}</p>
     <section class="panel"><header><h3>Holdings by Account</h3><span class="note">Long and short shown apart</span></header><div class="body flush">
       <${Table} rows=${positions} rowKey=${(p) => p.positionId} empty=${{ title: `${book.name} holds no position in ${inst.symbol || inst.name}`, children: html`Use Trade to open one. <button class="btn link small" onClick=${onTrade}>Trade</button>` }} columns=${[
         { label: 'Held in', render: (p) => p.owner }, { label: 'Strategy instance', render: (p) => (p.strategy ? html`<a href="javascript:void 0" onClick=${() => openStrategy(p.strategy.id)}>${p.strategy.name}</a>` : '') },
@@ -483,7 +483,7 @@ export function MyPositions({ inst, detail, book, sel, intervalFor, onTrade }) {
         { label: 'Average price', align: 'r', render: (o) => (isNum(o.avgPrice) ? fmtPriceUnits(o.avgPrice, inst.priceUnits) : html`<${Missing} reason="No fill yet" />`) }]} />
       ${fills.length ? html`<${Table} rows=${fills} rowKey=${(f) => f.id} columns=${[{ label: 'Fill', render: (f) => fmtTime(f.ts) }, { label: 'Quantity', align: 'r', render: (f) => fmtQty(f.qty) },
         { label: 'Price', align: 'r', render: (f) => fmtPriceUnits(f.price, inst.priceUnits) }, { label: 'Gross', align: 'r', render: (f) => html`<${Money} value=${f.gross} ccy=${f.ccy} />` }, { label: 'How filled', render: (f) => html`<span class="small">${f.model}</span>` }]} />` : null}</div></section>
-    <${DatasetPanel} ds=${ledger} title="Accounting history and open orders (server ledger interface)" what="The paper ledger's own record of this instrument through the server client"><${PlainListing} env=${ledger.env} /><//>
+    <${DatasetPanel} ds=${ledger} asOf=${asOf} title="Accounting history and open orders (server ledger interface)" what="The paper ledger's own record of this instrument through the server client"><${PlainListing} env=${ledger.env} /><//>
     <p class="note">The full accounting history is under <a href="#/accounting/history">Accounting, History</a>.</p>
   </div>`;
 }

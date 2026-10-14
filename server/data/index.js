@@ -23,6 +23,7 @@ import { AWAITING_MESSAGE, makeObservation, midOf, withFreshness } from './obser
 import { createAwaitingAnalyticsPort } from './ports.js';
 import { createShafferAnalyticsPort, createShafferMarketPort } from './shaffer.js';
 import { createServerClient } from './server-client.js';
+import { SP3E_FIXTURE_STRATEGY } from './server-fixtures.js';
 
 const MANUAL_SOURCE = 'Manual entry';
 const MANUAL_KINDS = new Set(['price', 'fx', 'rate', 'borrow']);
@@ -111,7 +112,8 @@ export function createDataAdapter({ db, config, clock }) {
     port.strategies = async () => {
       const script = getSetting('demo.hedgeScript', null);
       if (script) return script.available !== false && Array.isArray(script.strategies) ? { available: true, items: script.strategies, fixture: 'test-fixture' } : awaitingStrategies();
-      if (getSetting('demo.hedgeFixture', true)) return { available: true, items: DEMO_INVESTMENT_STRATEGIES, fixture: 'demo-fixture' };
+      // d1: the SP3E demo-fixture Strategy is listed last, so the instrument workspace can ask the analytics fixtures for it.
+      if (getSetting('demo.hedgeFixture', true)) return { available: true, items: [...DEMO_INVESTMENT_STRATEGIES, SP3E_FIXTURE_STRATEGY], fixture: 'demo-fixture' };
       return awaitingStrategies();
     };
     return port;

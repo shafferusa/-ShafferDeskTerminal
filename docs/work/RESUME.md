@@ -14,4 +14,4 @@ everywhere, product-specific tab framework, trading and hedge integration, as-of
 analytics & risk + positions), P1 product-specific pages. Wave 3: integration tests of the listed failure modes,
 docs (data-contract requirements, integration checklist), final run and report.
 
-**Completeness: about 8.5% of the pass** (last milestone 2026-10-14T12:48Z, w1: w1: capability-driven tab registry by family (tabs, not-covered list, per-dataset state rendering for all 7 states, Price history, My positions and trades, terms/related for other families); workspace-model tests 8; npm test 836/836)
+**Completeness: about 9.5% of the pass** (last milestone 2026-10-14T12:56Z, w1: w1: request discipline (selection token, requestId, abort, discard late/foreign answers) and as-of research date on the page; test/workspace/run-browser.mjs 32/32; npm test 836/836; browser matrix 5/5)

@@ -113,7 +113,7 @@ function TabBody({ tab, inst, detail, sel, headSel, asOf, book, strategy, interv
   const common = { inst, detail, sel, asOf, book, strategy, intervalFor };
   if (tab.id === 'history' || tab.id === 'marks') return html`<div class="stack"><${PriceHistory} inst=${inst} sel=${sel} asOf=${asOf} intervalFor=${intervalFor} title=${tab.label} />
     ${tab.id === 'marks' ? html`<p class="note">Marks are shown with their kind (dealer, model or manual) in the header's price chip. A model mark from Analytics Lab is a valuation, never an executable quote.</p>` : null}</div>`;
-  if (tab.id === 'positions') return html`<${MyPositions} inst=${inst} detail=${detail} book=${book} sel=${headSel} intervalFor=${intervalFor} onTrade=${trade} />`;
+  if (tab.id === 'positions') return html`<${MyPositions} inst=${inst} detail=${detail} book=${book} sel=${headSel} asOf=${asOf} intervalFor=${intervalFor} onTrade=${trade} />`;
   if (tab.id === 'chain') return html`<${ChainTab} inst=${inst} />`;
   if (own) return html`<${own} ...${common} />`;
   if (tab.id === 'overview' || tab.id === 'terms') return html`<${OverviewTab} ...${common} tab=${tab} reference=${reference} related=${related} />`;

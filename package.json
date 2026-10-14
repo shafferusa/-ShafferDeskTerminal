@@ -15,6 +15,7 @@
     "test:api": "node --disable-warning=ExperimentalWarning test/matrix/run-api.mjs",
     "test:browser": "node --disable-warning=ExperimentalWarning test/matrix/run-browser.mjs",
     "test:system:api": "node --disable-warning=ExperimentalWarning test/system/run-api.mjs",
+    "test:workspace": "node --disable-warning=ExperimentalWarning test/workspace/run-browser.mjs",
     "test:system:browser": "node --disable-warning=ExperimentalWarning test/system/run-browser.mjs",
     "matrix": "node --disable-warning=ExperimentalWarning scripts/test-matrix.js",
     "coverage": "node scripts/coverage-report.js"
