@@ -213,6 +213,7 @@ export function createServerClient({ clock, demo = false, getConnection, credent
   let fixtures = null; // demo fixture provider set (attached by app.js in demo mode)
   let ledgerProvider = null; // local ledger interface (attached by app.js)
   const watched = new Map(); // key -> { dataset, params, lastMs }
+  const inflight = new Map(); // cache key -> promise of the envelope
   let seq = 0;
 
   // ---- settings: refresh per dataset and retry ----
@@ -243,6 +244,7 @@ export function createServerClient({ clock, demo = false, getConnection, credent
       saved[k] = cur;
     }
     setSetting('server.refresh', saved);
+    for (const k of Object.keys(patch)) invalidate({ dataset: k }); // a changed TTL applies from now
     return refreshSettings();
   }
   const retrySettings = () => ({ ...DEFAULT_RETRY, ...(getSetting('server.retry', {}) || {}) });
@@ -427,52 +429,78 @@ export function createServerClient({ clock, demo = false, getConnection, credent
       return done(env);
     }
 
-    const sel = opts.selection ? tracker.begin(opts.channel, opts.selection) : null;
-    const signals = [sel?.signal, opts.signal].filter(Boolean);
-    const signal = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
-    const env = base(ds, o);
-    const retry = retrySettings();
-    let attempts = 0;
-    try {
-      let result;
-      for (;;) {
-        attempts++;
-        try {
-          result = await provider.run({ signal, cursor: opts.cursor || null, page: opts.page || null, pageSize: opts.pageSize || null, asOf: opts.asOf || null }, params);
-          break;
-        } catch (err) {
-          const cls = classify(signal?.aborted ? (signal.reason || err) : err);
-          if (cls.code === 'unauthorized' || cls.code === 'forbidden') block(ds, subject, cls);
-          if (!cls.retryable || attempts > retry.maxRetries || signal?.aborted) throw signal?.aborted ? (signal.reason || err) : err;
-          st.retries++;
-          await sleep(Math.min(retry.maxDelayMs, retry.baseDelayMs * 2 ** (attempts - 1)), signal);
-        }
-      }
-      // A late answer for a selection that is no longer current is discarded, whatever the provider did with the signal.
-      if (sel && !sel.current()) return done(errorEnvelope(env, ds, abortError('superseded'), attempts));
-      finish(env, ds, result, provider.source, clock.ms());
-      env.attempts = attempts;
-      if (ttlSec > 0 && def.shape !== 'stream') cache.set(key, { env: structuredClone(env), storedMs: clock.ms(), ttlMs: ttlSec * 1000, dataset: ds, instrumentId: opts.instrumentId || params.instrument?.id || null });
-      return done(env);
-    } catch (err) {
-      if (sel && !sel.current()) return done(errorEnvelope(env, ds, abortError('superseded'), attempts));
-      const cls = classify(err);
-      // A cached copy outlives a failed refresh: shown as stale, with the error, never as current.
-      if (hit && cls.code !== 'cancelled' && cls.code !== 'unauthorized' && cls.code !== 'forbidden') {
-        const old = structuredClone(hit.env);
-        old.requestId = requestId;
-        old.selection = opts.selection ?? null;
-        old.cached = true;
-        applyFreshness(old, clock.ms());
-        old.state = 'stale';
-        old.error = { code: cls.code, status: cls.status, message: errorMessage(cls, err), retryable: cls.retryable, attempts };
-        old.message = `Showing the last copy received; the refresh failed: ${old.error.message}`;
-        return done(old);
-      }
-      return done(errorEnvelope(env, ds, err, attempts));
-    } finally {
-      sel?.done();
+    // Concurrent identical requests (no selection) share one gateway call.
+    const shareable = !opts.selection && !opts.signal;
+    if (shareable && inflight.has(key)) {
+      const env = structuredClone(await inflight.get(key));
+      env.requestId = requestId;
+      return env;
     }
+    const exec = async () => {
+      const sel = opts.selection ? tracker.begin(opts.channel, opts.selection) : null;
+      const signals = [sel?.signal, opts.signal].filter(Boolean);
+      const signal = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
+      const env = base(ds, o);
+      const retry = retrySettings();
+      let attempts = 0;
+      try {
+        let result;
+        for (;;) {
+          attempts++;
+          try {
+            result = await provider.run({ signal, cursor: opts.cursor || null, page: opts.page || null, pageSize: opts.pageSize || null, asOf: opts.asOf || null }, params);
+            break;
+          } catch (err) {
+            const cls = classify(signal?.aborted ? (signal.reason || err) : err);
+            if (cls.code === 'unauthorized' || cls.code === 'forbidden') block(ds, subject, cls);
+            if (!cls.retryable || attempts > retry.maxRetries || signal?.aborted) throw signal?.aborted ? (signal.reason || err) : err;
+            st.retries++;
+            await sleep(Math.min(retry.maxDelayMs, retry.baseDelayMs * 2 ** (attempts - 1)), signal);
+          }
+        }
+        // A late answer for a selection that is no longer current is discarded, whatever the provider did with the signal.
+        if (sel && !sel.current()) return done(errorEnvelope(env, ds, abortError('superseded'), attempts));
+        finish(env, ds, result, provider.source, clock.ms());
+        env.attempts = attempts;
+        if (ttlSec > 0 && def.shape !== 'stream') cache.set(key, { env: structuredClone(env), storedMs: clock.ms(), ttlMs: ttlSec * 1000, dataset: ds, instrumentId: opts.instrumentId || params.instrument?.id || null });
+        return done(env);
+      } catch (err) {
+        if (sel && !sel.current()) return done(errorEnvelope(env, ds, abortError('superseded'), attempts));
+        const cls = classify(err);
+        // A cached copy outlives a failed refresh: shown as stale, with the error, never as current.
+        if (hit && cls.code !== 'cancelled' && cls.code !== 'unauthorized' && cls.code !== 'forbidden') {
+          const old = structuredClone(hit.env);
+          old.requestId = requestId;
+          old.selection = opts.selection ?? null;
+          old.cached = true;
+          applyFreshness(old, clock.ms());
+          old.state = 'stale';
+          old.error = { code: cls.code, status: cls.status, message: errorMessage(cls, err), retryable: cls.retryable, attempts };
+          old.message = `Showing the last copy received; the refresh failed: ${old.error.message}`;
+          return done(old);
+        }
+        return done(errorEnvelope(env, ds, err, attempts));
+      } finally {
+        sel?.done();
+      }
+    };
+    const pending = exec();
+    if (shareable) { inflight.set(key, pending); pending.finally(() => inflight.delete(key)); }
+    if (opts.waitMs > 0) {
+      // Answer "loading" when the server has not answered within waitMs; the request carries on and its answer is
+      // cached (or joined) for the next identical request.
+      const LOADING = Symbol('loading');
+      const first = await Promise.race([pending, realSleep(opts.waitMs).then(() => LOADING)]);
+      if (first === LOADING) {
+        const env = base(ds, o);
+        env.state = 'loading';
+        env.source = provider.source;
+        env.message = 'Loading: the server has not answered yet. Ask again with the same parameters for the answer.';
+        return env;
+      }
+      return first;
+    }
+    return pending;
   }
 
   /** Every page of a paginated dataset, as one envelope (bounded by maxPages; a truncated result says so). */

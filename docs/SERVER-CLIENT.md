@@ -50,8 +50,9 @@ URL, path, auth scheme or payload schema is invented anywhere.
 Rules:
 - `awaiting`: the contract operation is not mapped yet, or no gateway address is configured. `message` names the
   operation, e.g. `Awaiting Shaffer data connection (market.statements not yet mapped)`.
-- `loading` is a client-side state (w1 shows it while a request is in flight); the server returns it only for a
-  dataset whose fixture is set to `slow` and was asked with `?wait=0`.
+- `loading`: w1 shows it while its own request is in flight. The server also returns it when the request carried
+  `?waitMs=N` and the gateway had not answered within N ms; the request carries on, and the next identical request
+  receives the answer (joined or from the cache).
 - `available`: complete and within `freshness.staleAfterSec`.
 - `stale`: data present but `ageSec > staleAfterSec` (or a cached copy served after a failed refresh; then `error`
   is also set).
@@ -71,6 +72,7 @@ Rules:
 | `channel` | the screen area issuing requests (default `default`), scope of `selection`. |
 | `asOf` | point-in-time request (ISO date or instant). If the contract does not support it for this dataset: `state:'unavailable'`, `pointInTime.supported:false`, `pointInTime.note:'Not supported by the contract'`. Never silently answered with current data. |
 | `fresh=1` | bypass the cache for this request (on-demand refresh). |
+| `waitMs` | answer `state:'loading'` if the gateway has not answered within this many ms (max 30000); see above. |
 | `cursor` / `page` / `pageSize` | pagination (whichever the contract uses; both accepted). `all=1` collects every page (bounded). |
 
 ## 3. Routes

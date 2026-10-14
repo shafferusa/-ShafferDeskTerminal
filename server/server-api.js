@@ -34,7 +34,8 @@ export function registerServerRoutes(r, app, { requireVisible }) {
   const opts = (q, extra = {}) => ({
     requestId: q.requestId || undefined, selection: q.selection || undefined, channel: q.channel || undefined,
     asOf: q.asOf || undefined, fresh: q.fresh === '1' || q.fresh === 'true', cursor: q.cursor || undefined,
-    page: q.page ? Number(q.page) : undefined, pageSize: q.pageSize ? Number(q.pageSize) : undefined, ...extra,
+    page: q.page ? Number(q.page) : undefined, pageSize: q.pageSize ? Number(q.pageSize) : undefined,
+    waitMs: q.waitMs ? Math.min(Math.max(Number(q.waitMs) || 0, 0), 30000) : undefined, ...extra,
   });
   const all = (q) => q.all === '1' || q.all === 'true';
   const run = (ds, params, q, extra) => (all(q) ? S.collect(ds, params, opts(q, extra)) : S.call(ds, params, opts(q, extra)));

@@ -337,7 +337,8 @@ export function createServerFixtures(app) {
         items: bars.map((b) => ({ t: b.t, date: b.date, open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume })),
         data: { adjusted: false, adjustmentBasis: 'Unadjusted (as traded). Dividends and splits are annotated, not applied.', currency: h.currency, units: quoteConvention(inst), interval: '1d', annotations },
         coverage: { from: bars[0]?.date ?? null, to: bars[bars.length - 1]?.date ?? null, missing },
-        asOf: bars[bars.length - 1]?.t ?? null, source: FEED,
+        // A range that ends before today is complete as delivered; a range to today is as fresh as its last bar.
+        asOf: p.to && p.to < today() ? nowIso() : bars[bars.length - 1]?.t ?? null, source: FEED,
       };
     },
     async fx(c, p) {

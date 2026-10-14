@@ -14,4 +14,4 @@ everywhere, product-specific tab framework, trading and hedge integration, as-of
 analytics & risk + positions), P1 product-specific pages. Wave 3: integration tests of the listed failure modes,
 docs (data-contract requirements, integration checklist), final run and report.
 
-**Completeness: about 3.5% of the pass** (last milestone 2026-10-14T12:35Z, d1: d1: response envelope on every /api/server/* route (reference, quotes, history, fx, rates, profile, statements, earnings, filings, documents proxy, corporate actions, news, SP3E analytics, ledger, state); smoke-tested demo+normal)
+**Completeness: about 5.5% of the pass** (last milestone 2026-10-14T12:38Z, w1: w1: instrument workspace: drawer + full page  /instrument/<id>, sticky header (IDs, quote, Fair/Gap by Strategy, holdings), Trade/Build strategy/Hedge, navigation from every source; browser matrix 5/5, npm test 811/811)
