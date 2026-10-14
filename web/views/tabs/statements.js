@@ -86,7 +86,7 @@ function StatementBody({ env, p, set, count, asOf, inst }) {
   return html`<div>
     <div class="st-pad stack">
       <div class="small st-facts">
-        <span><b>${data.currency || html`<${Missing} reason="The server does not state the statement currency" />`}</b>, ${data.units || html`<${Missing} reason="The server does not state the units" />`}${lines.some((l) => l.units && l.units !== data.units) ? ' (lines in other units say so beside their label)' : ''}.</span>
+        <span>Statement currency <b>${data.currency || html`<${Missing} reason="The server does not state the statement currency" />`}</b>, units <b>${data.units || html`<${Missing} reason="The server does not state the units" />`}</b>${lines.some((l) => l.units && l.units !== data.units) ? '; lines in other units say so beside their label' : ''}.${!data.currency || !data.units ? ' Without them nothing is derived or compared here.' : ''}</span>
         <span>${data.statement === 'balance' ? 'Balance sheet: each column is a value at the date shown.' : 'Each column covers the period shown; standalone quarters and year-to-date figures are named apart.'}</span>
         ${asOf ? html`<span>As filed on or before ${asOf}${env.pointInTime?.note ? `: ${env.pointInTime.note.replace(/^As filed on the date:\s*/i, '')}` : '; restatements made later are not applied.'}</span>` : null}
       </div>

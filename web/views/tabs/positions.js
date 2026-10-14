@@ -4,7 +4,7 @@
 // linked strategy packages with their hedge and financing legs, hedge requests and allocations, open orders, fills,
 // recorded corporate actions and the accounting history. They are labelled as local paper records and kept apart from
 // the server's market history: refreshing market data never changes them, and a research date does not apply.
-import { html } from '../../vendor/preact-htm.js';
+import { html, useEffect, useRef } from '../../vendor/preact-htm.js';
 import { fmtPriceUnits, fmtQty, fmtTime, isNum } from '../../lib/core.js';
 import { Empty, Missing, Money, Pill, PURPOSE_LABEL } from '../../lib/ui.js';
 import { DatasetPanel, registerTabContent, useDataset } from '../workspace.js';
@@ -35,7 +35,15 @@ function Records({ d, inst, book }) {
   const openOrders = orders.filter((o) => OPEN.has(o.status));
   const byId = new Map(orders.map((o) => [o.id, o]));
   const units = inst.priceUnits || '';
-  return html`<div class="stack">
+  // Each cell carries its column's heading, so on a phone a row reads as a card of labelled values (app.css, e3).
+  const root = useRef(null);
+  useEffect(() => {
+    for (const t of root.current?.querySelectorAll('table.ledger') || []) {
+      const heads = [...t.querySelectorAll('thead th')].map((th) => th.textContent.trim());
+      for (const tr of t.querySelectorAll('tbody tr')) [...tr.children].forEach((td, i) => { if (heads[i]) td.setAttribute('data-label', heads[i]); });
+    }
+  });
+  return html`<div class="stack e3-cards" ref=${root}>
     <section class="e3-sec" data-testid="pos-holdings"><h4>Holdings by Account</h4>
       ${holdings.length ? html`<div class="tablewrap"><table class="ledger"><thead><tr><th>Held in</th><th class="r">Long</th><th class="r">Short</th><th class="r">Net</th><th></th></tr></thead><tbody>
         ${holdings.map((h) => html`<tr data-unit=${h.unitId}><td>${h.owner || h.unitId}</td><td class="r">${h.long ? fmtQty(h.long) : ''}</td><td class="r">${h.short ? fmtQty(h.short) : ''}</td><td class="r">${fmtQty(h.net)}</td>

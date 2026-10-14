@@ -79,7 +79,7 @@ function FilingsBody({ env, q, setQ, kind, setKind, searching, pages, setPages, 
             <td data-label="Title" class="fl-tcell"><span class="fl-title">${f.title || html`<${Missing} reason="No title supplied" />`}</span></td>
             <td data-label="Period">${f.period || html`<${Missing} reason="No period supplied" />`}</td>
             <td data-label="Source">${f.source || html`<${Missing} reason="No source supplied" />`}</td>
-            <td data-label="Documents" class="fl-dcell">${f.documents?.length ? html`<div class="fl-docs">${f.documents.map((d) => html`<${Button} small onClick=${() => openDocument(d, f, inst)} title=${`${d.title || 'Document'}${d.mediaType ? `, ${d.mediaType}` : ''}${d.pages ? `, ${d.pages} page${d.pages > 1 ? 's' : ''}` : ''}`}>View ${docName(d)}<//>`)}</div>` : html`<span class="muted small">No document supplied</span>`}</td>
+            <td data-label="Documents" class="fl-dcell">${f.documents?.length ? html`<div class="fl-docs">${f.documents.map((d) => html`<${Button} small onClick=${() => openDocument(d, f, inst)} title=${`${d.title || 'Document'}${d.mediaType ? `, ${d.mediaType}` : ''}${d.pages ? `, ${d.pages} page${d.pages > 1 ? 's' : ''}` : ''}`}>${f.documents.length > 1 ? `View ${docName(d)}` : 'View'}<//>`)}</div>` : html`<span class="muted small">No document supplied</span>`}</td>
           </tr>`)}</tbody></table></div>`}
     <p class="note fl-note">Documents are streamed through the Terminal's server from the Shaffer gateway and shown in a sandboxed frame (no scripts, forms or links that leave it). The Terminal does not fetch documents from their original source.</p>
   </div>`;
