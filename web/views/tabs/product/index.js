@@ -2,3 +2,6 @@
 // registerTabContent (workspace.js). The tab lists per family are in workspace-model.js (FAMILY_TABS).
 import './bond.js';
 import './option.js';
+import './future.js';
+import './fund.js';
+import './fx.js';

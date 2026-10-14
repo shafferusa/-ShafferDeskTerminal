@@ -564,7 +564,7 @@ export function createServerFixtures(app) {
       const holdingsDate = addDays(`${today().slice(0, 7)}-01`, -1); // last day of the previous month
       const cut = c.asOf ? String(c.asOf).slice(0, 10) : null;
       if (cut && cut < holdingsDate) return { items: [], message: `The demo fixtures hold no holdings report dated on or before ${cut}.`, pointInTime: { supported: true, note: 'Holdings as reported on or before the date' } };
-      return { items: FUND_HOLDINGS.map((h) => ({ ...h, holdingsDate, currency: inst.trading_ccy })), data: { holdingsDate, holdingsCount: 214, coveragePct: 46.3, currency: inst.trading_ccy, note: 'Top 10 holdings of 214; the rest are not listed in the demo fixture.' }, asOf: iso(holdingsDate), source: SRC, pointInTime: cut ? { supported: true, note: 'Holdings as reported on or before the date' } : undefined };
+      return { items: FUND_HOLDINGS.map((h) => ({ ...h, holdingsDate, currency: inst.trading_ccy })), data: { holdingsDate, holdingsCount: 214, coveragePct: 46.3, currency: inst.trading_ccy }, asOf: iso(holdingsDate), source: SRC, pointInTime: cut ? { supported: true, note: 'Holdings as reported on or before the date' } : undefined };
     },
     async fundFacts(c, p) {
       const inst = p.instrument;

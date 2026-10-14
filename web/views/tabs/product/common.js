@@ -10,7 +10,7 @@
 // behave as on every other tab.
 import { html } from '../../../vendor/preact-htm.js';
 import { fmtNum, fmtTime, isNum } from '../../../lib/core.js';
-import { Empty, KV, Missing, Pill, Table } from '../../../lib/ui.js';
+import { Empty, KV, Missing, Pill, Price, Table } from '../../../lib/ui.js';
 import { DatasetPanel, pageHref, Related, useDataset } from '../../workspace.js';
 import { FAMILY_TABS } from '../../workspace-model.js';
 
@@ -90,3 +90,45 @@ export const ThisOne = () => html`<${Pill} tone="pen" title="The contract this p
 
 /** Empty list with what belongs there. */
 export const none = (title, children) => html`<${Empty} title=${title}>${children}<//>`;
+
+/**
+ * Supplied points (a futures curve, forward points) as dots at their own positions, labelled, with no line between
+ * them: the Terminal interpolates nothing. points: [{ label, value, mine }]
+ */
+export function PointsChart({ points, fmt = (v) => fmtNum(v, 2), height = 150 }) {
+  const pts = points.filter((p) => isNum(p.value));
+  if (pts.length < 2) return null;
+  const W = 640, H = height, padX = 48, top = 26, bottom = 30;
+  const lo = Math.min(...pts.map((p) => p.value)), hi = Math.max(...pts.map((p) => p.value));
+  const span = hi - lo || Math.abs(hi) || 1;
+  const x = (i) => padX + (i * (W - 2 * padX)) / (pts.length - 1);
+  const y = (v) => top + (1 - (v - lo) / span) * (H - top - bottom);
+  return html`<svg class="p1-points" viewBox=${`0 0 ${W} ${H}`} role="img" aria-label="Supplied points, not joined">
+    <line x1=${padX - 20} x2=${W - padX + 20} y1=${H - bottom + 6} y2=${H - bottom + 6} class="axis" />
+    ${pts.map((p, i) => html`<g>
+      <circle cx=${x(i)} cy=${y(p.value)} r=${p.mine ? 6 : 4} class=${p.mine ? 'mine' : ''} />
+      <text x=${x(i)} y=${y(p.value) - 10} text-anchor="middle" class="v">${fmt(p.value)}</text>
+      <text x=${x(i)} y=${H - 8} text-anchor="middle" class="l">${p.label}</text></g>`)}
+  </svg>`;
+}
+
+/** The mark or price in use for this instrument (the header's observation), with its provenance chip. */
+export function MarkInUse({ inst, detail }) {
+  const obs = detail?.observation;
+  return html`<section class="panel" data-testid="mark-in-use"><header><h3>Mark in use</h3><span class="note">What values the Book's positions now</span></header><div class="body">
+    ${obs ? html`<div class="stats"><div class="stat"><span class="k">${inst.priceUnits}</span><span class="v"><${Price} obs=${obs} units=${inst.priceUnits} /></span><span class="s">${obs.source}, ${fmtTime(obs.asOf, { seconds: true })}</span></div></div>`
+      : html`<p class="small" style="margin:0"><${Missing} reason="No mark recorded" /> No mark yet: positions in it are unpriced and every total that rests on them is provisional.</p>`}
+    <p class="note" style="margin:6px 0 0">The chip says what kind of value it is (dealer, model, manual or simulated). A model value from Analytics Lab is a valuation, never an executable quote.</p></div></section>`;
+}
+
+/** Marks or prices entered by hand in the Terminal (the Terminal's own records), newest first. */
+export function ManualMarks({ inst, detail, title = 'Marks entered by hand' }) {
+  const rows = detail?.manualEntries || [];
+  const enter = async () => { const m = await import('../../instrument.js'); m.openInstrument(inst.id, { tab: 'overview' }); };
+  return html`<section class="panel" data-testid="manual-marks"><header><h3>${title}</h3><span class="note">The Terminal's own records, with who supersedes whom</span><span class="grow"></span>
+      <button class="btn small" onClick=${enter} title="Open the quick overview, where a value is entered by hand">Enter a value by hand</button></header>
+    <div class="body"><${Table} cls="tight" rows=${rows} rowKey=${(m) => m.id} empty=${{ title: 'None entered', children: 'A value entered by hand is kept here with its date and note, and labelled as manual wherever it is used.' }} columns=${[
+      { label: 'Entered', render: (m) => fmtTime(m.as_of) }, { label: 'Value', align: 'r', render: (m) => (isNum(m.value) ? fmtNum(m.value, 4) : html`<${Missing} />`) },
+      { label: 'For', render: (m) => (m.for_date ? m.for_date : 'current') }, { label: 'Status', render: (m) => (m.superseded_by ? html`<span class="muted">superseded</span>` : 'in use') },
+      { label: 'Note', render: (m) => html`<span class="small">${m.note || ''}</span>` }]} /></div></section>`;
+}
