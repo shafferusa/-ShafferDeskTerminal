@@ -413,7 +413,8 @@ const historyFallback = (sel, q) => get(`/api/instruments/${sel.id}/history`, { 
 export function PriceHistory({ inst, sel, asOf, intervalFor, title = 'Price history' }) {
   const [range, setRange] = useState('6m');
   const [interval, setInterval] = useState('1d');
-  const [adjusted, setAdjusted] = useState('1');
+  // Prices as traded by default; the adjusted series is asked for when chosen (and never manufactured when absent).
+  const [adjusted, setAdjusted] = useState('0');
   const status = useStore((s) => s.status);
   const end = asOf ? new Date(`${asOf}T23:59:59Z`) : new Date(status?.now || Date.now());
   const days = RANGES.find((r) => r[0] === range)?.[2];

@@ -5,7 +5,7 @@
 // research date, and each says which point in time it shows. The Book and trading owner are the ones in use.
 import { html, useEffect, useMemo, useState } from '../vendor/preact-htm.js';
 import { currentUnit, fmtTime, get, isNum, unitLabel, useLive, VIEW_LABEL } from '../lib/core.js';
-import { Empty, Missing, Notice, Text } from '../lib/ui.js';
+import { Empty, Missing, Notice, Price, Text } from '../lib/ui.js';
 import { Chain, openInstrument } from './instrument.js';
 import { TABS, workspaceTabs } from './workspace-model.js';
 import {
@@ -49,7 +49,7 @@ function Workspace({ id, tabArg, asOf, book, status }) {
   const trade = () => openInstrument(id, { tab: 'trade' });
   return html`<div class="ws-page" data-ws-inst=${id}>
     <${BackLine} book=${book} find=${html`<${FindInstrument} tab=${tab.id} compact />`} />
-    <div class="ws-mini" aria-hidden="true"><span class="sym">${inst.symbol || inst.name}</span> ${inst.tradingCcy}</div>
+    <div class="ws-mini" aria-hidden="true"><span class="sym">${inst.symbol || inst.name}</span> <${Price} obs=${d.observation} units=${inst.priceUnits} reason="No price available" /> <span class="muted">${inst.tradingCcy}</span></div>
     <div class="ws-sticky page">
       <${WorkspaceHeader} page inst=${inst} detail=${d} analytics=${head.analytics} reference=${head.reference} strategy=${strategy} setStrategy=${setStrategy} book=${book}
         onTrade=${trade} onBuild=${() => buildStrategy(inst, strategy)} onHedge=${() => hedgeFromWorkspace({ inst, detail: d, book, strategy })} />
@@ -102,7 +102,7 @@ function AsOfBar({ asOf, status, serverState, onChange }) {
     <input id="ws-research-date" type="date" value=${asOf} max=${today || undefined} disabled=${none} onChange=${(e) => { const v = e.target.value; if (!v || DAY.test(v)) onChange(v); }} />
     ${asOf ? html`<button class="btn small" onClick=${() => onChange('')}>Back to current</button>` : null}
     <span class="ws-clock small">Paper-trading clock: <b>${fmtTime(status.now)}</b></span>
-    <div class="note ws-asofnote">${none ? 'The server contract does not support research dates for these datasets, so the panels show current information only.'
+    <div class="note ws-asofnote">${none ? (serverState.gateway && serverState.gateway.configured === false && serverState.mode !== 'demo' ? 'Research dates need the Shaffer server connection, which is awaiting: the panels show current information only.' : 'The server contract does not support research dates for these datasets, so the panels show current information only.')
       : asOf ? html`Research panels show what was known on <b>${asOf}</b>, as it was known then, where the server contract supports it. The header's quote, holdings and every trade stay on the paper-trading clock.`
         : html`Current revised information. Choose a research date to see what was known at that time${serverState ? (supported.length ? ` (supported for ${supported.length} dataset${supported.length > 1 ? 's' : ''})` : '') : '; whether the server supports it is said on each panel'}.`}</div>
   </div>`;

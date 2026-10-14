@@ -128,7 +128,8 @@ export function serverBadge(s) {
   if (!s) return null;
   if (s.mapped === false) return 'awaiting';
   if (s.authBlocked) return 'error';
-  return ['awaiting', 'error', 'stale', 'unavailable'].includes(s.state) ? s.state : null;
+  // The server's last state for a dataset may be about another instrument: only connection-wide states are shown.
+  return s.state === 'awaiting' ? 'awaiting' : null;
 }
 export const familyGroup = (family) => (FAMILY_TABS[family] || FALLBACK).group;
 

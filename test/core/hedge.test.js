@@ -484,7 +484,7 @@ test('investment Strategies use the service\'s IDs; a typed name stays unresolve
   let list = await app.hedge.strategiesView(book.id);
   assert.equal(list.available, true);
   assert.deepEqual(list.source, { kind: 'demo-fixture', label: 'Demo fixture, not Analytics Lab' });
-  assert.deepEqual(list.items.map((x) => [x.id, x.name]), [['DEMO-IS-001', 'Quality Compounders'], ['DEMO-IS-002', 'Core Equity'], ['DEMO-IS-003', 'Global Macro Carry']]);
+  assert.deepEqual(list.items.map((x) => [x.id, x.name]), [['DEMO-IS-001', 'Quality Compounders'], ['DEMO-IS-002', 'Core Equity'], ['DEMO-IS-003', 'Global Macro Carry'], ['fixture-strat-sp3e', 'SP3E (demo fixture)']]); // d1: SP3E demo-fixture Strategy (server-fixtures.js) listed last
   assert.equal(list.state.connection, 'awaiting');
   // One position chosen by ID, one with a typed name that happens to equal a listed name.
   const byId = await buy(app, book, acct, inst.ALFA, 100, { investmentStrategy: { id: 'DEMO-IS-001' } });
