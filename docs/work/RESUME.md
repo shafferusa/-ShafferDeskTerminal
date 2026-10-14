@@ -14,4 +14,4 @@ everywhere, product-specific tab framework, trading and hedge integration, as-of
 analytics & risk + positions), P1 product-specific pages. Wave 3: integration tests of the listed failure modes,
 docs (data-contract requirements, integration checklist), final run and report.
 
-**Completeness: about 1.5% of the pass** (last milestone 2026-10-14T12:35Z, d1: d1: server client interfaces + plumbing (timeouts, abort, retries w/o 401/403, TTL cache, pagination, refresh, selection tokens); npm test 811/811)
+**Completeness: about 3.5% of the pass** (last milestone 2026-10-14T12:35Z, d1: d1: response envelope on every /api/server/* route (reference, quotes, history, fx, rates, profile, statements, earnings, filings, documents proxy, corporate actions, news, SP3E analytics, ledger, state); smoke-tested demo+normal)
