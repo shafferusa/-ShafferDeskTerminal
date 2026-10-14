@@ -5,7 +5,7 @@ It is removed when the pass is finished and replaced by the evidence report. If 
 
 In these files `$SP` is a scratch directory that may no longer exist; the copies in this folder are what remains.
 
-**Completeness: about 99.0% of the pass** (last milestone 2026-10-14T04:13Z, popup: popup: hedge prompt check no longer drops refreshes during an in-flight check; checks on stream reconnect and every 10 s; new SB:hedge:prompt-race)
+**Completeness: about 99.0% of the pass** (last milestone 2026-10-14T04:57Z, popup: popup: hedge popup race fixed and verified (system browser 3x 39/39, templates 30/30, npm test 811/811))
 
 `LOG.md` beside this file lists every milestone since, newest last; `progress/` holds each worker's own notes.
 
