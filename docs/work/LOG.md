@@ -309,3 +309,4 @@
 - 2026-10-13T22:56Z | t1b | +0.5 | templates family complete: 28 templates + 2 paths pass at engine, API and browser from clean; npm test 808/808
 - 2026-10-13T23:09Z | fin | +0.5 | hedge requests for option-only templates: primary is the option position (contracts); long_call hedge step passes at engine, API, browser
 - 2026-10-13T23:15Z | fin | +0.5 | failed settlements retried only on new cash or a new business day; attempts and last attempt time on the Failed tab; npm test 811/811
+- 2026-10-14T01:11Z | hist | +0 | hist: SB:history:reference-edits fixed (test waited too little for the locked contract-terms fieldset, which renders after the catalog loads); system browser 38/38, npm test 811/811

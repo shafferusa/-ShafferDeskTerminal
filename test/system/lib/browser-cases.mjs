@@ -1719,7 +1719,17 @@ export async function historyEdits(b, c) {
     dlg = ui.dialog(/^Edit LFA 260306C100$/);
     await dlg.waitFor();
     c.match(flat(await dlg.innerText()), /Contract terms are locked\. This instrument has been traded/, '(a) the traded option\'s form says its contract terms are locked');
+    // The notice comes with the instrument record; the contract fields appear only once the product catalog has
+    // loaded (a separate request), so wait for them before counting.
+    const terms = dlg.locator('div', { has: page.locator(':scope > h4', { hasText: /^Contract terms \(locked\)$/ }) }).locator('fieldset');
+    await terms.first().waitFor();
     c.eq(await dlg.locator('fieldset[disabled]').count(), 1, '(a) and its contract terms cannot be typed into');
+    const termFields = terms.locator('input, select, textarea');
+    const nFields = await termFields.count();
+    let editable = 0;
+    for (let i = 0; i < nFields; i++) if (await termFields.nth(i).isEditable()) editable++;
+    c.ok(nFields > 0 && editable === 0, '(a) none of its contract fields accepts input', `${editable} of ${nFields} editable`);
+    c.ok(await ui.input(dlg, 'Name').isEditable(), '(a) while its name can still be edited');
     await ui.button(dlg, 'Cancel').click();
     await dlg.waitFor({ state: 'hidden' });
     await b.tick();
