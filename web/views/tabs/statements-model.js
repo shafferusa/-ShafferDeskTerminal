@@ -265,6 +265,8 @@ export function annualVsTtm(annualData, ttmData) {
   let note = null;
   if (ttm && sameEnd) note = `The TTM ends on ${ttm.end}, the same day as ${periodName(sameEnd)}: it is the server's trailing figure, shown apart from the annual report.`;
   if (ttm && annualData && ttmData && (annualData.currency || null) !== (ttmData.currency || null)) note = `The TTM is in ${ttmData.currency || 'an unstated currency'} and the annual figures in ${annualData.currency || 'an unstated currency'}.`;
+  // A TTM on another scale than the annual figures (thousands beside millions) is said so; nothing is rescaled (i1).
+  if (ttm && annualData && ttmData && (annualData.units || null) !== (ttmData.units || null)) note = `${note ? `${note} ` : ''}The TTM is in ${ttmData.units || 'unstated units'} and the annual figures in ${annualData.units || 'unstated units'}: different scales, shown as supplied and not compared.`;
   return { annual, ttm, ttmIsFiscalYear: Boolean(sameEnd), note };
 }
 

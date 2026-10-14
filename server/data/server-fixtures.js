@@ -32,7 +32,12 @@ import { AppError } from '../core/util.js';
 import { GatewayError, SOURCES } from './server-client.js';
 import { SERVER_DATASETS } from './ports.js';
 
-export const FIXTURE_MODES = ['available', 'stale', 'unavailable', 'empty', 'error', 'slow', 'partial', 'forbidden'];
+export const FIXTURE_MODES = ['available', 'stale', 'unavailable', 'empty', 'error', 'slow', 'partial', 'forbidden',
+  // Acceptance modes (i1): throttled = HTTP 429 with Retry-After (retried, bounded); offline = the gateway cannot be
+  // reached (network error: disconnection); revised = a later delivery restates / revises what was shown first;
+  // duplicate = the same record delivered twice in one answer; currency-mismatch / unit-mismatch = values in another
+  // currency or scale than the instrument's quote (analytics) or than the other statements (statements).
+  'throttled', 'offline', 'revised', 'duplicate', 'currency-mismatch', 'unit-mismatch'];
 export const SP3E_FIXTURE_STRATEGY = { id: 'fixture-strat-sp3e', name: 'SP3E (demo fixture)', version: 'fixture-1' };
 const NOTE = 'Demo fixture: fictional data for the demo instruments. Not Shaffer data and not market data.';
 const SRC = SOURCES.demoFixture;
@@ -716,6 +721,79 @@ export function createServerFixtures(app) {
     return { ...res, data, nulls, missingFields: missing };
   }
 
+  // ---- acceptance modes (i1) ----
+  // revised: what a later delivery looks like after the first display. Statements: the latest period restated
+  // (revenue and cost up 2 %), the originally reported values kept. Earnings: the upcoming release date moved a week
+  // later and now confirmed, marked revised. Corporate actions: the dividend amount revised under the same event ID.
+  // Analytics: a newer run of the same Strategy. Other datasets: unchanged.
+  function applyRevised(ds, res) {
+    const at = nowIso();
+    if (ds === 'statements' && res.data?.periods?.length) {
+      const data = structuredClone(res.data);
+      const p0 = data.periods.find((p) => p.basis === 'reported' && p.periodType !== 'ttm');
+      if (!p0) return res;
+      const orig = {};
+      for (const l of data.lines) {
+        if (!['revenue', 'costOfRevenue', 'cogs'].includes(l.key) || typeof l.values[p0.key] !== 'number') continue;
+        orig[l.key] = l.values[p0.key];
+        l.original = { ...(l.original || {}), [p0.key]: l.values[p0.key] };
+        l.values[p0.key] = r1(l.values[p0.key] * 1.02);
+      }
+      const gp = data.lines.find((l) => l.key === 'grossProfit'), rv = data.lines.find((l) => l.key === 'revenue'), cr = data.lines.find((l) => l.key === 'costOfRevenue');
+      if (gp && rv && cr && typeof gp.values[p0.key] === 'number') { orig.grossProfit = gp.values[p0.key]; gp.original = { ...(gp.original || {}), [p0.key]: gp.values[p0.key] }; gp.values[p0.key] = r1(rv.values[p0.key] - cr.values[p0.key]); }
+      Object.assign(p0, { basis: 'restated', restatedAt: at, original: { filingDate: p0.filingDate, values: orig } });
+      return { ...res, data, asOf: at, message: 'Demo fixture: a restatement delivered after the first display.' };
+    }
+    if (ds === 'earnings' && res.items?.length) {
+      const items = structuredClone(res.items);
+      const up = items.find((e) => e.reportedAt === null);
+      if (up) Object.assign(up, { releaseAt: new Date(new Date(up.releaseAt).getTime() + 7 * 86400e3).toISOString(), dateStatus: 'confirmed', revision: 'revised', revisedAt: at, revisionNote: 'Release date moved one week later and confirmed (demo fixture revision)' });
+      return { ...res, items, asOf: at };
+    }
+    if (ds === 'corporateActions' && res.items?.length) {
+      const items = res.items;
+      const target = [...new Set(items.filter((x) => x.type === 'cash_dividend' && x.status === 'completed').map((x) => x.eventId))].slice(-1)[0];
+      return { ...res, asOf: at, items: items.map((x) => (x.eventId === target ? { ...x, previous: { amount: x.amount, currency: x.currency, exDate: x.exDate, payDate: x.payDate }, amount: r2(x.amount + 0.05), revision: 'revised', revisedAt: at, revisionNote: 'Amount revised by the issuer (demo fixture revision)' } : x)) };
+    }
+    if (ds === 'analytics' && res.data) {
+      const d = { ...res.data, runId: `${res.data.runId}-r2`, calculatedAt: at, fundamentalFairValue: typeof res.data.fundamentalFairValue === 'number' ? r1(res.data.fundamentalFairValue + 3) : res.data.fundamentalFairValue };
+      return { ...res, data: d, asOf: at };
+    }
+    return res;
+  }
+  // duplicate: the first record of a list delivered twice in the same answer (same ID). Single-object datasets
+  // are unchanged (delivering them twice is a second request, which the cache and the screens must absorb).
+  function applyDuplicate(ds, res) {
+    if (!Array.isArray(res.items) || !res.items.length) return res;
+    return { ...res, items: [res.items[0], structuredClone(res.items[0]), ...res.items.slice(1)], message: 'Demo fixture: one record delivered twice.' };
+  }
+  // currency-mismatch / unit-mismatch: analytics with the fair value in another currency (EUR, or USD for a non-USD
+  // listing) or per 100 shares; statements in another currency or in thousands where the others are in millions.
+  // Statements: only the trailing-twelve-month answer is changed, so it is drawn beside quarterly / annual figures
+  // that keep the statement's own currency and scale.
+  function applyMismatch(ds, res, mode, params = {}) {
+    if (ds === 'analytics' && res.data) {
+      const d = { ...res.data };
+      if (mode === 'currency-mismatch') d.fairValueCurrency = d.fairValueCurrency === 'EUR' ? 'USD' : 'EUR';
+      else { d.fairValueUnits = 'per 100 shares'; for (const k of ['fundamentalFairValue', 'realisticFairValue']) if (typeof d[k] === 'number') d[k] = r1(d[k] * 100); }
+      return { ...res, data: d };
+    }
+    if (ds === 'statements' && res.data?.lines && params.period === 'ttm') {
+      const data = structuredClone(res.data);
+      if (mode === 'currency-mismatch') data.currency = data.currency === 'EUR' ? 'USD' : 'EUR';
+      else {
+        data.units = 'thousands';
+        for (const l of data.lines) {
+          if (/per share|eps|shares/i.test(`${l.key} ${l.label} ${l.units || ''}`)) continue;
+          l.units = 'thousands';
+          for (const k of Object.keys(l.values)) if (typeof l.values[k] === 'number') l.values[k] = Math.round(l.values[k] * 1000);
+        }
+      }
+      return { ...res, data };
+    }
+    return res;
+  }
+
   function provider(ds) {
     const base = P[methodOf(ds)];
     if (!base) return null;
@@ -728,6 +806,8 @@ export function createServerFixtures(app) {
           case 'slow': await sleepFor(m.delayMs ?? 2500, c.signal); break;
           case 'error': throw new GatewayError('Demo fixture: server error (HTTP 500).', { status: 500 });
           case 'forbidden': throw new GatewayError('Demo fixture: access refused (HTTP 403).', { status: 403 });
+          case 'throttled': throw Object.assign(new GatewayError('Demo fixture: too many requests (HTTP 429).', { status: 429 }), { retryAfterMs: 1000 });
+          case 'offline': throw new GatewayError('Demo fixture: the Shaffer gateway cannot be reached (connection refused).', { code: 'network', retryable: true });
           case 'unavailable': return { items: [], data: null, source: SRC, message: 'Demo fixture: this dataset is unavailable from the server.' };
           case 'empty': return { items: [], data: null, source: SRC, asOf: nowIso(), message: 'Demo fixture: the server returned an empty response.' };
           default: break;
@@ -739,6 +819,9 @@ export function createServerFixtures(app) {
           res = { ...res, asOf: new Date(app.clock.ms() - stale * 1000).toISOString(), message: 'Demo fixture: stale response.' };
         }
         if (m.mode === 'partial') res = applyPartial(ds, res);
+        if (m.mode === 'revised' && !(c.asOf && String(c.asOf).slice(0, 10) < today())) res = applyRevised(ds, res); // an as-of view before today does not see today's revision
+        if (m.mode === 'duplicate') res = applyDuplicate(ds, res);
+        if (m.mode === 'currency-mismatch' || m.mode === 'unit-mismatch') res = applyMismatch(ds, res, m.mode, params);
         return res;
       },
     };

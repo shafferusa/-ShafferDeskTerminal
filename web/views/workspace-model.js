@@ -190,12 +190,19 @@ const MARK_FAMILIES = new Set(['swap', 'cds', 'forward']);
  * Gap % for one fair value beside the current market price.
  *   { price, priceCcy, priceUnits, family, fair, fairCcy, fairUnits, supplied }
  * Returns { value, basis: 'supplied'|'computed' } or { value: null, why }.
- * A supplied gap (Analytics Lab's own figure) is passed through as stated. A gap is worked out here only when both
+ * A supplied gap (Analytics Lab's own figure) is passed through as stated, unless its fair value is in another currency
+ * or other quotation units than the market price (then it is withheld with the reason). A gap is worked out here only when both
  * numbers are present and in the same currency, the same quotation units and on a positive denominator; the formula is
  * (fair price - current market price) / current market price x 100.
  */
 export function gapOf({ price, priceCcy, priceUnits, family, fair, fairCcy, fairUnits, supplied }) {
-  if (isNum(supplied)) return { value: supplied, basis: 'supplied' };
+  // A supplied gap is shown beside the market price only when the fair value it belongs to is stated in the market
+  // price's currency and quotation units; otherwise it is withheld with the reason (i1: unit and currency mismatches).
+  if (isNum(supplied)) {
+    if (fairCcy && priceCcy && fairCcy !== priceCcy) return { value: null, why: `Gap % withheld: the fair price is in ${fairCcy} and the market price in ${priceCcy}, so the supplied gap is not shown beside it.` };
+    if (fairUnits && priceUnits && normUnits(fairUnits) !== normUnits(priceUnits)) return { value: null, why: `Gap % withheld: the fair price is quoted ${fairUnits} and the market price ${priceUnits}, so the supplied gap is not shown beside it.` };
+    return { value: supplied, basis: 'supplied' };
+  }
   if (!isNum(fair)) return { value: null, why: 'No fair price supplied for this Strategy, so there is no gap.' };
   if (!isNum(price)) return { value: null, why: 'No current market price, so the gap is not shown.' };
   if (!fairCcy) return { value: null, why: 'The fair price does not state its currency, so it is not compared with the market price.' };

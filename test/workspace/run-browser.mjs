@@ -14,7 +14,9 @@ const results = [];
 const check = (name, ok, detail = '') => { results.push({ name, ok: Boolean(ok), detail }); console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${ok ? '' : `  ${detail}`}`); };
 
 const sandbox = createSandbox('workspace');
-const server = await startServer(sandbox, { demo: true, engine: 'on' });
+let server = await startServer(sandbox, { demo: true, engine: 'on' });
+// A check may restart the server on the same database and port (persistence checks, i1); the browser keeps its origin.
+const restartServer = async () => { await server.stop(); server = await startServer(sandbox, { demo: true, engine: 'on', port: server.port }); return server; };
 const browser = await launchBrowser({ headed: Boolean(process.env.SDT_HEADED) });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const errors = [];
@@ -187,7 +189,7 @@ try {
   let tabChecks = [];
   try { tabChecks = readdirSync(new URL('./checks/', import.meta.url)).filter((n) => n.endsWith('.mjs')).sort(); } catch { /* no per-tab checks */ }
   for (const f of tabChecks) {
-    try { await (await import(`./checks/${f}`)).default({ page, api, goto, check, base, alfa, brvo, gov, strategies, closeAll }); } catch (err) { check(`${f} completed`, false, err.stack || String(err)); }
+    try { await (await import(`./checks/${f}`)).default({ page, api, goto, check, base, alfa, brvo, gov, strategies, closeAll, restartServer }); } catch (err) { check(`${f} completed`, false, err.stack || String(err)); }
     await api('/api/demo/fixtures/server', { reset: true }).catch(() => {});
   }
 

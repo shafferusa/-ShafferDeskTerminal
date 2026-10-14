@@ -109,7 +109,11 @@ export function createGatewayHttp({ getAddress, credentials, timeoutMs, fetchImp
     }
     if (!res.ok) {
       health.lastError = `HTTP ${res.status}`;
-      throw new GatewayError(`HTTP ${res.status} from the gateway`, { status: res.status });
+      const err = new GatewayError(`HTTP ${res.status} from the gateway`, { status: res.status });
+      // Retry-After (seconds or an HTTP date) is honoured by the retry loop, within its bound (i1).
+      const ra = res.headers?.get?.('retry-after');
+      if (ra) { const sec = Number(ra); const ms = Number.isFinite(sec) ? sec * 1000 : Date.parse(ra) - Date.now(); if (ms > 0) err.retryAfterMs = ms; }
+      throw err;
     }
     health.lastSuccess = health.lastChecked;
     health.lastError = null;
@@ -177,6 +181,17 @@ export async function* paginate(fetchPage, { maxPages = 50, pageSize } = {}) {
 const get = (obj, path) => path.split('.').reduce((o, k) => (o === null || o === undefined ? undefined : o[k]), obj);
 
 /** Required top-level fields (no `[]` paths) absent from a single-object payload. */
+/** Required fields absent from records of a list answer (and not stated once for the list in `data`), named with a count (i1). */
+function missingRequiredItems(def, items, data) {
+  if (def.shape !== 'items' || !items?.length) return [];
+  const out = [];
+  for (const p of def.requires.filter((x) => !x.includes('[]'))) {
+    if (data && get(data, p) !== null && get(data, p) !== undefined) continue;
+    const n = items.filter((x) => { const v = x && typeof x === 'object' ? get(x, p) : undefined; return v === null || v === undefined; }).length;
+    if (n) out.push(`${p} (missing in ${n} of ${items.length} record${items.length === 1 ? '' : 's'})`);
+  }
+  return out;
+}
 function missingRequired(def, data) {
   if (!data || def.shape !== 'data') return [];
   return def.requires.filter((p) => !p.includes('[]')).filter((p) => { const v = get(data, p); return v === null || v === undefined; });
@@ -311,6 +326,12 @@ export function createServerClient({ clock, demo = false, getConnection, credent
     return env;
   }
 
+  // Record identity per list dataset, for dropping repeated deliveries (see finish()).
+  const ITEM_IDS = {
+    news: (x) => x?.id, filings: (x) => x?.id, analyticsRuns: (x) => x?.runId, search: (x) => x?.ids?.server ?? x?.ids?.terminal,
+    earnings: (x) => x?.id ?? x?.fiscalPeriod, quotes: (x) => x?.instrumentId ?? x?.ids?.server, history: (x) => x?.t ?? x?.date,
+    futuresCurve: (x) => x?.contractMonth, otcMarks: (x) => (x?.date && x?.kind ? `${x.date}|${x.kind}|${x.provider || ''}` : null), fxCurve: (x) => x?.tenor,
+  };
   function finish(env, ds, result, source, receivedMs) {
     const def = SERVER_DATASETS[ds];
     env.source = result?.source || source || null;
@@ -323,6 +344,14 @@ export function createServerClient({ clock, demo = false, getConnection, credent
     if (result?.related) env.related = result.related;
     if (result?.pointInTime) env.pointInTime = { ...env.pointInTime, ...result.pointInTime };
     if (def.shape === 'items') env.items = Array.isArray(result?.items) ? result.items : [];
+    // The same record delivered twice in one answer (same server ID) is listed once; the repeat is reported in
+    // `duplicates`, never shown twice (i1). Corporate actions keep every delivery: their route counts deliveries.
+    const idOf = ITEM_IDS[ds];
+    if (idOf && env.items?.length) {
+      const seen = new Set(), dropped = [];
+      env.items = env.items.filter((x) => { const k = idOf(x); if (k === null || k === undefined) return true; if (seen.has(k)) { dropped.push(k); return false; } seen.add(k); return true; });
+      if (dropped.length) env.duplicates = { dropped, note: `${dropped.length} record${dropped.length === 1 ? '' : 's'} delivered more than once in this answer; listed once.` };
+    }
     if (result?.data !== undefined || def.shape === 'data') env.data = result?.data ?? null;
     if (result && ['nextCursor', 'cursor', 'page', 'totalPages'].some((k) => result[k] !== undefined)) {
       env.pagination = {
@@ -332,7 +361,7 @@ export function createServerClient({ clock, demo = false, getConnection, credent
       };
     }
     const empty = def.shape === 'items' ? env.items.length === 0 : env.data === null || env.data === undefined;
-    const missing = [...new Set([...(result?.missingFields || []), ...missingRequired(def, env.data)])];
+    const missing = [...new Set([...(result?.missingFields || []), ...missingRequired(def, env.data), ...missingRequiredItems(def, env.items, env.data)])];
     env.missingFields = missing;
     for (const m of missing) if (!env.coverage.missing.includes(m)) env.coverage.missing.push(m);
     applyFreshness(env, receivedMs);
@@ -348,7 +377,7 @@ export function createServerClient({ clock, demo = false, getConnection, credent
       env.message = `Incomplete: missing ${missing.join(', ')}.`;
     } else {
       env.state = 'available';
-      env.message = result?.message || null;
+      env.message = result?.message || env.duplicates?.note || null;
     }
     return env;
   }
@@ -455,7 +484,7 @@ export function createServerClient({ clock, demo = false, getConnection, credent
             if (cls.code === 'unauthorized' || cls.code === 'forbidden') block(ds, subject, cls);
             if (!cls.retryable || attempts > retry.maxRetries || signal?.aborted) throw signal?.aborted ? (signal.reason || err) : err;
             st.retries++;
-            await sleep(Math.min(retry.maxDelayMs, retry.baseDelayMs * 2 ** (attempts - 1)), signal);
+            await sleep(Math.min(retry.maxDelayMs, Math.max(retry.baseDelayMs * 2 ** (attempts - 1), Number(err?.retryAfterMs) || 0)), signal);
           }
         }
         // A late answer for a selection that is no longer current is discarded, whatever the provider did with the signal.

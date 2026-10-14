@@ -14,4 +14,4 @@ everywhere, product-specific tab framework, trading and hedge integration, as-of
 analytics & risk + positions), P1 product-specific pages. Wave 3: integration tests of the listed failure modes,
 docs (data-contract requirements, integration checklist), final run and report.
 
-**Completeness: about 24.0% of the pass** (last milestone 2026-10-14T14:15Z, p1: p1: tests and docs (product-datasets engine tests 5, workspace browser checks 60 for one instrument per family, every tab and state; SERVER-CLIENT, DATA-CONTRACT-REQUIREMENTS, INTEGRATION-CHECKLIST); responsive fix; npm test 864/864, workspace 235/235, matrix 6/6)
+**Completeness: about 26.0% of the pass** (last milestone 2026-10-14T14:44Z, i1: i1: failure-mode acceptance (fixture modes throttled/offline/revised/duplicate/mismatch; engine tests 15 in server-integration.test.js; browser checks 31 in i1-failure-modes.mjs, 3 runs each green; panel auto-recovery, supplied-gap mismatch guard, duplicate drop); npm test 879/879)

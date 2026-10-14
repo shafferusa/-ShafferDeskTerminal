@@ -42,6 +42,9 @@ const discards = [];
 if (typeof window !== 'undefined') window.__sdtWs = { discards };
 const onDiscard = (d) => { discards.push({ ...d, at: Date.now() }); if (discards.length > 200) discards.shift(); };
 
+/** How often a panel in a retryable error asks again on its own (ms). */
+export const RECOVER_MS = 5000;
+
 /** One selection per instrument shown in a screen area; closed (in-flight requests aborted) when the instrument changes. */
 export function useSelection(id, channel, asOf = '') {
   const sel = useMemo(() => createSelection({ id, channel, asOf: asOf || null, fetchImpl: wsFetch, onDiscard }), [id, channel, asOf]);
@@ -89,6 +92,16 @@ export function useDataset(sel, key, { path, query = {}, enabled = true, fallbac
   const env = mine ? box.env : null;
   const error = mine ? box.error : null;
   const state = !enabled ? 'unavailable' : error ? 'error' : env ? stateOf(env) : 'loading';
+  // Recovery without a reload (i1): while a panel shows a retryable error, or a cached copy kept after a failed
+  // refresh, it asks the server again quietly (bypassing the cache) every RECOVER_MS, so a reconnected gateway brings
+  // every panel back on its own. A refused credential or permission (401/403) is never asked again from here.
+  const recovering = enabled && mine && !box.busy && ((error && error.status !== 401 && error.status !== 403)
+    || (env?.state === 'error' && env.error?.retryable !== false) || (env?.state === 'stale' && Boolean(env.error)));
+  useEffect(() => {
+    if (!recovering) return undefined;
+    const t = setInterval(() => { if (!document.hidden) run(true, true); }, RECOVER_MS);
+    return () => clearInterval(t);
+  }, [recovering, sel, qKey]);
   return { key, label: def?.label || key, state, env, error, busy: mine && box.busy, at: mine ? box.at : null, interval, refresh: () => run(true, false), sel };
 }
 

@@ -56,7 +56,7 @@ function EarningsBody({ env, inst }) {
       ${upcoming.length ? html`<div class="tablewrap"><table class="ledger tight">
         <thead><tr><th>Fiscal period</th><th>Period end</th><th>Release</th><th>Date</th><th>Consensus</th></tr></thead>
         <tbody>${upcoming.map((e) => html`<tr data-period=${e.fiscalPeriod}><td><b>${e.fiscalPeriod || miss('Not supplied')}</b></td><td>${e.periodEnd || miss('Not supplied')}</td>
-          <td>${e.releaseAt ? fmtTime(e.releaseAt) : miss('No release date supplied')}</td><td><${DateStatus} s=${e.dateStatus} /></td>
+          <td>${e.releaseAt ? fmtTime(e.releaseAt) : miss('No release date supplied')}</td><td data-testid="earnings-upcoming-status"><${DateStatus} s=${e.dateStatus} />${e.revision === 'revised' ? html` <${Revision} e=${e} />` : ''}</td>
           <td class="wrap">${(e.metrics || []).map((m, i) => html`${i ? html`<br />` : ''}${m.label}: ${isNum(m.consensus) ? html`${val(m, m.consensus)} <span class="muted small">${unitsOf(m)}</span>` : html`${miss(nulls(e, 'consensus') || 'Not supplied')} <span class="muted small">${nulls(e, 'consensus') || 'not supplied'}</span>`}`)}</td></tr>`)}</tbody>
       </table></div>` : html`<p class="note" style="margin:0">No upcoming release supplied by the server.</p>`}</div>
     <div data-testid="earnings-past"><h4 class="e1-h4">Reported</h4>
