@@ -5,3 +5,5 @@ import './option.js';
 import './future.js';
 import './fund.js';
 import './fx.js';
+import './swap-credit.js';
+import './other.js';
