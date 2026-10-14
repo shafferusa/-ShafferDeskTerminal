@@ -14,4 +14,4 @@ everywhere, product-specific tab framework, trading and hedge integration, as-of
 analytics & risk + positions), P1 product-specific pages. Wave 3: integration tests of the listed failure modes,
 docs (data-contract requirements, integration checklist), final run and report.
 
-**Completeness: about 29.0% of the pass** (last milestone 2026-10-14T15:50Z, i1: i1: docs: DATA-CONTRACT-REQUIREMENTS answer sheet (G1-G14, D1-D26, L1) and 14 backend dependencies; INTEGRATION-CHECKLIST section E phase-6 procedure per dataset (F1-F27); SERVER-CLIENT, README, ARCHITECTURE for the workspace and client layer; COVERAGE regenerated)
+**Completeness: about 29.5% of the pass** (last milestone 2026-10-14T15:52Z, coord: owner's acceptance points recorded: envelope is a proposed adapter contract, compatibility unverified; ledger stays local (test))

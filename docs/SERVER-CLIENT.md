@@ -22,6 +22,17 @@ Both remote interfaces share one configured gateway address (`SHAFFER_GATEWAY_UR
 credential never reaches the browser. The real endpoint mapping goes in `server/data/shaffer-contract.js` only; no
 URL, path, auth scheme or payload schema is invented anywhere.
 
+
+> **Status of this contract (owner's acceptance points, 2026-10-14).** The response envelope and the dataset shapes
+> below are the Terminal's **proposed adapter contract**: what the screens consume. They are not the backend's
+> schema. When the backend builder supplies the actual API contract, `server/data/shaffer-contract.js` maps each
+> operation's real request and response to these shapes; until that mapping exists and is run against a test
+> environment, **compatibility with the real server has not been verified**, and "no schema invented" means only
+> that the Terminal has not guessed at the backend's paths, auth or payloads. Second, **the local ledger stays
+> local**: the `ledger` interface shares the client's envelope and state handling but reads the Terminal's own
+> database only; paper balances, positions, fills and accounting are never routed through the remote data gateway
+> (`test/core/ledger-stays-local.test.js` asserts it).
+
 ## 1. The response envelope (every `/api/server/*` data route)
 
 ```js
