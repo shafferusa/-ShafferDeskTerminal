@@ -132,7 +132,7 @@ export const actions = {
     const p = await secLoanOf(t, ctx, step.lot);
     const drawer = await ui.openStrategy(ctx, ctx.lot(step.lot).strategyId);
     const row = ui.section(drawer, 'Positions').locator('tbody tr').filter({ has: page.locator('.sym', { hasText: exactly(p.instrument.symbol || p.instrument.name) }) }).first();
-    const menu = row.locator('select').first();
+    const menu = await ui.lifecycleMenu(row);
     const offered = (await menu.locator('option').allInnerTexts()).map((x) => x.trim()).filter((x) => x && x !== 'Lifecycle');
     if (!offered.includes('Lender recall')) return { refusal: { message: `The Lifecycle menu of this position offers only: ${offered.join(', ') || 'nothing'}. "Lender recall" is not offered.`, where: 'strategy instance, position Lifecycle menu' } };
     await menu.selectOption({ label: 'Lender recall' });

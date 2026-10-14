@@ -127,7 +127,7 @@ export const actions = {
       const listed = (await panel.locator('tbody tr .sym').allInnerTexts()).map((x) => x.trim()).filter(Boolean);
       return { refusal: { message: `The strategy instance lists no open ${sym} position (positions listed: ${listed.join(', ') || 'none'}), so no delivery notice can be given on it.`, where: 'strategy instance, Positions' } };
     }
-    const menu = row.locator('select').first();
+    const menu = await ui.lifecycleMenu(row);
     // The contract terms load after the row: the menu item appears once they have.
     try { await menu.locator('option', { hasText: /^Delivery notice$/ }).waitFor({ state: 'attached', timeout: 8000 }); } catch {
       const offered = (await menu.locator('option').allInnerTexts()).map((x) => x.trim()).filter((x) => x && x !== 'Lifecycle');

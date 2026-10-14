@@ -217,7 +217,7 @@ export const actions = {
     const lot = ctx.lot(step.lot);
     const drawer = await openStrategy(ui, t, ctx, lot.strategyId);
     const row = tools.positionRow(drawer, ctx.inst(step.instrument || lot.instrument));
-    const menu = row.locator('select').first();
+    const menu = await ui.lifecycleMenu(row);
     const offered = (await menu.locator('option').allInnerTexts()).map((x) => x.trim()).filter((x) => x && x !== 'Lifecycle');
     if (!offered.includes(L.menu)) return { refusal: { message: `The Lifecycle menu of this position offers only: ${offered.join(', ') || 'nothing'}. "${L.menu}" is not offered.`, where: 'strategy instance, position Lifecycle menu' } };
     await menu.selectOption({ label: L.menu });

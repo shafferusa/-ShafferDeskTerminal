@@ -247,6 +247,9 @@ function valueCell(p) {
 function Positions({ s, rc, after }) {
   const optionIds = s.positions.filter((p) => ['option', 'otcoption', 'future', 'bond', 'forward', 'swap'].includes(p.family)).map((p) => p.instrument.id);
   const terms = useLive(async () => Object.fromEntries(await Promise.all(optionIds.map(async (id) => [id, (await get(`/api/instruments/${id}`)).terms]))), [optionIds.join(',')], { interval: false });
+  // The Lifecycle menu of a position whose events depend on its contract terms is not offered until those terms have loaded:
+  // a menu built without them would briefly lack Credit event knock-out, Barrier event, Delivery and the like.
+  const termsReady = (p) => !optionIds.includes(p.instrument.id) || Boolean(terms.data && p.instrument.id in terms.data);
   const [pick, setPick] = useState(0); // remounts the action menus so they return to their placeholder
   const act = (p, action) => { setPick((n) => n + 1); openOverlay((close) => (p.family === 'manual' && !LIFECYCLE[action] ? html`<${ManualEventDialog} p=${p} action=${action} onClose=${close} onDone=${after} />` : html`<${LifecycleDialog} p=${p} action=${action} terms=${terms.data?.[p.instrument.id]} onClose=${close} onDone=${after} />`)); };
   const closeable = s.actions.includes('close');
@@ -267,7 +270,8 @@ function Positions({ s, rc, after }) {
       { label: 'Unrealized', align: 'r', render: (p) => (p.ledgerCarried ? '' : html`<${Money} value=${p.unrealized} ccy=${p.ccy} signed bare reason=${p.missingReason} />
         ${p.ccy !== rc && !p.missing ? html`<div class="sub"><${Money} value=${p.unrealizedRc} ccy=${rc} signed reason=${`No FX rate from ${p.ccy} to ${rc}`} /></div>` : null}`) },
       { label: '', align: 'r', render: (p) => { const acts = lifecycleFor(p, terms.data?.[p.instrument.id]); return html`<div class="row" style="flex-wrap:nowrap;justify-content:flex-end;gap:6px">
-        ${acts.length ? html`<div key=${pick} style="width:104px" title="Record a lifecycle event on this position"><${Select} value="" placeholder="Lifecycle" onChange=${(v) => v && act(p, v)} options=${acts.map((a) => ({ value: a, label: LIFECYCLE[a]?.title || manualEventLabel(p.instrument.productId, a) }))} /></div>` : null}
+        ${!termsReady(p) ? html`<div style="width:104px" title=${terms.error ? `The contract terms could not be loaded, so the lifecycle events this position allows are not known: ${terms.error.message || terms.error}` : 'Loading the contract terms, which decide the lifecycle events this position allows'}><${Select} disabled value="" placeholder=${terms.error ? 'Terms unavailable' : 'Loading…'} options=${[]} onChange=${() => {}} /></div>`
+          : acts.length ? html`<div key=${pick} style="width:104px" title="Record a lifecycle event on this position"><${Select} value="" placeholder="Lifecycle" onChange=${(v) => v && act(p, v)} options=${acts.map((a) => ({ value: a, label: LIFECYCLE[a]?.title || manualEventLabel(p.instrument.productId, a) }))} /></div>` : null}
         ${closeable ? html`<${Button} small onClick=${() => openPreviewAction(s.id, 'close', { positionIds: [p.positionId] }, { onDone: after })}>Close<//>` : null}</div>`; } },
     ]} empty=${{ title: 'No open positions', children: s.status === 'closed' ? 'This strategy instance is closed. Its legs and history remain below.' : s.status === 'failed' ? 'No leg executed, so nothing is held.' : 'Positions appear once a leg fills.' }} />
   <//>`;

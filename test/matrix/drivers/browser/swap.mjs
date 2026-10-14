@@ -518,7 +518,7 @@ async function partialLifecycle(ui, t, ctx, step, tools) {
   const drawer = await openStrategy(ui, ctx, lot, step.owner);
   const row = tools.positionRow(drawer, ctx.inst(step.instrument || lot.instrument));
   if (!await row.count()) return { refusal: { message: 'The strategy instance lists no open position to record it on.', where: 'strategy instance, Positions' } };
-  const menu = row.locator('select').first();
+  const menu = await ui.lifecycleMenu(row);
   try { await menu.locator('option', { hasText: f.menu }).first().waitFor({ state: 'attached', timeout: 8000 }); } catch { /* reported below */ }
   const offered = (await menu.locator('option').allInnerTexts()).map((x) => x.trim()).filter((x) => x && x !== 'Lifecycle');
   if (!offered.includes(f.menu)) return { refusal: { message: `The Lifecycle menu of this position offers only: ${offered.join(', ') || 'nothing'}. "${f.menu}" is not offered.`, where: 'strategy instance, position Lifecycle menu' } };

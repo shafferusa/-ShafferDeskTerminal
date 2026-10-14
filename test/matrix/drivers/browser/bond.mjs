@@ -268,7 +268,7 @@ async function positionForm(ui, ctx, step, { positionRow }) {
   const lot = ctx.lot(step.lot);
   const drawer = await ui.openStrategy(ctx, lot.strategyId);
   const row = positionRow(drawer, ctx.inst(step.instrument || lot.instrument));
-  const menu = row.locator('select').first();
+  const menu = await ui.lifecycleMenu(row);
   // The menu lists what the position's terms allow once they have loaded.
   await menu.locator('option', { hasText: f.menu }).first().waitFor({ state: 'attached', timeout: 8000 }).catch(() => {});
   const offered = (await menu.locator('option').allInnerTexts()).map((x) => x.trim()).filter((x) => x && x !== 'Lifecycle');
@@ -304,7 +304,7 @@ export const actions = {
     const lot = ctx.lot(step.lot);
     const drawer = await ui.openStrategy(ctx, lot.strategyId);
     const row = positionRow(drawer, ctx.inst(step.instrument || lot.instrument));
-    const menu = row.locator('select').first();
+    const menu = await ui.lifecycleMenu(row);
     await menu.locator('option', { hasText: 'Manual cash flow' }).first().waitFor({ state: 'attached', timeout: 8000 }).catch(() => {});
     const offered = (await menu.locator('option').allTextContents()).map((x) => x.trim()).filter((x) => x && x !== 'Lifecycle');
     if (!offered.includes('Manual cash flow')) return { refusal: { message: `The Lifecycle menu of this position offers only: ${offered.join(', ') || 'nothing'}. "Manual cash flow" is not offered.`, where: 'strategy instance, position Lifecycle menu' } };
@@ -329,7 +329,7 @@ export const actions = {
     const lot = ctx.lot(step.lot);
     const drawer = await ui.openStrategy(ctx, lot.strategyId);
     const row = positionRow(drawer, ctx.inst(step.instrument || lot.instrument));
-    const menu = row.locator('select').first();
+    const menu = await ui.lifecycleMenu(row);
     const offered = (await menu.locator('option').allInnerTexts()).map((x) => x.trim()).filter((x) => x && x !== 'Lifecycle');
     if (!offered.includes('Early redemption')) return { refusal: { message: `The Lifecycle menu of this position offers only: ${offered.join(', ') || 'nothing'}. "Early redemption" is not offered.`, where: 'strategy instance, position Lifecycle menu' } };
     await menu.selectOption({ label: 'Early redemption' });

@@ -163,6 +163,15 @@ export function createUi(page, baseUrl) {
       await drawer.waitFor();
       return drawer;
     },
+    /**
+     * A position row's Lifecycle menu, once it is complete. Until the position's contract terms have loaded the interface
+     * shows a disabled "Loading…" menu in its place (web/views/strategy-detail.js): wait for the row, then for that to go.
+     */
+    async lifecycleMenu(row) {
+      await row.waitFor({ timeout: 8000 }).catch(() => {}); // a row that never appears is reported by the caller (nothing offered)
+      if (await row.count()) await row.locator('select[disabled]').waitFor({ state: 'detached' });
+      return row.locator('select').first();
+    },
   };
   return ui;
 }
@@ -779,7 +788,7 @@ async function sharedAction(ui, t, ctx, step, family) {
       const lot = ctx.lot(step.lot);
       const drawer = await ui.openStrategy(ctx, lot.strategyId);
       const row = positionRow(drawer, ctx.inst(step.instrument || lot.instrument));
-      const menu = row.locator('select').first();
+      const menu = await ui.lifecycleMenu(row);
       const offered = (await menu.locator('option').allInnerTexts()).map((x) => x.trim()).filter((x) => x && x !== 'Lifecycle');
       const kind = step.action === 'cashflow' ? 'cashflow' : step.body.action;
       const label = LIFECYCLE_LABEL[kind] || kind;

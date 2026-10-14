@@ -215,7 +215,7 @@ export const actions = {
       const listed = (await panel.locator('tbody tr .sym').allInnerTexts()).map((x) => x.trim()).filter(Boolean);
       return { refusal: { message: `The strategy instance lists no open ${sym} position (positions listed: ${listed.join(', ') || 'none'}), so it cannot be terminated.`, where: 'strategy instance, Positions' } };
     }
-    const menu = row.locator('select').first();
+    const menu = await ui.lifecycleMenu(row);
     // The menu's items depend on the contract's terms, which load after the row.
     try { await menu.locator('option', { hasText: new RegExp(`^${kind.menu}$`) }).waitFor({ state: 'attached', timeout: 8000 }); } catch { /* reported below */ }
     const offered = (await menu.locator('option').allInnerTexts()).map((x) => x.trim()).filter((x) => x && x !== 'Lifecycle');

@@ -162,7 +162,7 @@ export const actions = {
     const kind = kindOf(inst.productId);
     const drawer = await ui.openStrategy(ctx, lot.strategyId);
     const row = positionRow(drawer, inst);
-    const menu = row.locator('select').first();
+    const menu = await ui.lifecycleMenu(row);
     const offered = (await menu.locator('option').allInnerTexts()).map((x) => x.trim()).filter((x) => x && x !== 'Lifecycle');
     const label = eventLabel(fakeInst(inst.productId), b.action);
     if (!offered.includes(label)) return { refusal: { message: `The Lifecycle menu of this position offers only: ${offered.join(', ') || 'nothing'}. "${label}" is not offered.`, where: 'strategy instance, position Lifecycle menu' } };

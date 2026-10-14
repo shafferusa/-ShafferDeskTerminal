@@ -1724,11 +1724,17 @@ export async function historyEdits(b, c) {
     const terms = dlg.locator('div', { has: page.locator(':scope > h4', { hasText: /^Contract terms \(locked\)$/ }) }).locator('fieldset');
     await terms.first().waitFor();
     c.eq(await dlg.locator('fieldset[disabled]').count(), 1, '(a) and its contract terms cannot be typed into');
-    const termFields = terms.locator('input, select, textarea');
-    const nFields = await termFields.count();
-    let editable = 0;
-    for (let i = 0; i < nFields; i++) if (await termFields.nth(i).isEditable()) editable++;
-    c.ok(nFields > 0 && editable === 0, '(a) none of its contract fields accepts input', `${editable} of ${nFields} editable`);
+    // Read every control of the fieldset in one snapshot, with no waiting. (Counting first and then calling isEditable on
+    // each nth() raced the form: the Underlying instrument picker draws a text input until its instrument has loaded, then
+    // replaces it with the picked name and a Change button, so the last nth() could vanish and isEditable wait for it.)
+    // `:disabled` is used because a control inside fieldset[disabled] is disabled while its own `disabled` property stays false.
+    const locked = await terms.first().evaluate((fs) => ({
+      fieldsetDisabled: fs.hasAttribute('disabled'),
+      fields: [...fs.querySelectorAll('input, select, textarea, button')].map((el) => ({ tag: el.tagName.toLowerCase(), disabled: el.matches(':disabled') })),
+    }));
+    c.ok(locked.fieldsetDisabled, '(a) its contract-terms fieldset is disabled');
+    const editable = locked.fields.filter((f) => !f.disabled);
+    c.ok(locked.fields.length > 0 && editable.length === 0, '(a) none of its contract fields accepts input', `${editable.length} of ${locked.fields.length} enabled: ${editable.map((f) => f.tag).join(', ')}`);
     c.ok(await ui.input(dlg, 'Name').isEditable(), '(a) while its name can still be edited');
     await ui.button(dlg, 'Cancel').click();
     await dlg.waitFor({ state: 'hidden' });
