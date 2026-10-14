@@ -36,7 +36,8 @@ function OtherTerms({ inst, detail, sel, asOf, book }) {
     ['Settlement convention', inst.settlement?.label || html`<${Missing} />`],
     ...detailRows(inst, []),
   ];
-  const priced = !ARRANGEMENT.has(inst.family);
+  // A forward's mark and the values entered by hand are on its Marks and history tab.
+  const priced = !ARRANGEMENT.has(inst.family) && inst.family !== 'forward';
   return html`<div class="stack" data-testid="other-terms">
     <div class="ws-cols"><${TermsBlock} title="Terms" rows=${rows} intro=${INTRO[inst.family] || null} testid="other-contract" />
       <div class="stack">${priced ? html`<${MarkInUse} inst=${inst} detail=${detail} />` : null}

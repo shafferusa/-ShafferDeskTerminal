@@ -42,7 +42,7 @@ function SwapTerms({ inst, sel }) {
     ['Notional', `${inst.qtyLabel} (the quantity of a trade); marked ${inst.priceUnits}`],
     ['Financing', hasExposure ? html`The ${legs.filter((l) => !EXPOSURE.has(l.type)).map((l) => `leg ${l.id}`).join(' and ') || 'other leg'} funds the reference exposure; the Book's own financing of a position is under My positions and trades.` : 'No funding leg: a rate swap exchanges interest only. Margin and collateral are funded from cash (My positions and trades shows the Book\'s financing).'],
     ['Collateral terms', html`${detailRow(inst, 'Collateral terms') || html`<${Missing} reason="No collateral basis recorded" />`}${basis?.type === 'agreement' ? html`<div class="sub"><a href="#/treasury/collateral">Open the agreement under Treasury, Collateral</a></div>` : ''}`],
-    ...detailRows(inst, ['Collateral terms', ...legs.map((l) => `Leg ${l.id}`)]),
+    ...detailRows(inst, ['Collateral terms', 'Effective', 'Maturity', 'Counterparty', ...legs.map((l) => `Leg ${l.id}`)]),
   ];
   return html`<div class="stack" data-testid="swap-terms">
     <section class="panel"><header><h3>Legs as written</h3><span class="note">Entering the opposite side reverses every leg</span></header>
@@ -63,13 +63,11 @@ function CdsTerms({ inst, sel }) {
   const t = inst.terms || {};
   const rows = [
     ['Reference entity', val(t.referenceEntity, 'Not recorded')], ['Seniority', val(t.seniority, 'Not recorded')],
-    ['Running coupon', html`${pct(t.coupon, 2)} a year on the notional, paid quarterly by the buyer of protection`],
-    ['Recovery (contract assumption)', html`${isNum(t.recovery) ? `${fmtNum(t.recovery * 100, 0)}%` : html`<${Missing} />`} <span class="muted small">as registered; an auction result is recorded by hand at a credit event</span>`],
-    ['Effective', val(t.effective)], ['Maturity', val(t.maturity)], ['Convention', val(t.convention)], ['Credit events', val(t.creditEventSet, 'Not recorded')],
-    ['Settlement', val(t.settlement)], ['Counterparty', val(t.counterparty, 'Not recorded')],
+    ['Effective', val(t.effective)], ['Maturity', val(t.maturity)],
+    ['Counterparty', val(t.counterparty, 'Not recorded')],
     ['Notional', `${inst.qtyLabel}; marked ${inst.priceUnits}`],
     t.creditEvent ? ['Credit event', html`<${Pill} tone="warn">recorded ${t.creditEvent.date}<//>`] : null,
-    ...detailRows(inst, ['Reference entity', 'Seniority', 'Effective', 'Maturity', 'Counterparty']),
+    ...detailRows(inst, ['Reference entity', 'Reference', 'Seniority', 'Effective', 'Maturity', 'Counterparty']),
   ];
   return html`<div class="stack" data-testid="cds-terms"><div class="ws-cols"><${TermsBlock} title="Protection terms" rows=${rows} testid="cds-contract" />
     <div class="stack"><${RelatedPanel} inst=${inst} sel=${sel} />
@@ -96,7 +94,7 @@ function Schedules({ inst, sel, asOf, book }) {
 function OtcMarks({ inst, detail, sel, asOf, intervalFor }) {
   const mk = useDataset(sel, 'otcMarks');
   return html`<div class="stack" data-testid="otc-marks">
-    <div class="ws-cols"><${MarkInUse} inst=${inst} detail=${detail} /><${ManualMarks} inst=${inst} detail=${detail} title="Marks entered by hand" /></div>
+    <div class="ws-cols"><${MarkInUse} inst=${inst} detail=${detail} /><${ManualMarks} inst=${inst} detail=${detail} title="Entered by hand" /></div>
     <${DatasetPanel} ds=${mk} title="Supplied marks" note="Dealer, clearing and model marks, each with its provider" asOf=${asOf} what="Marks for this contract supplied by the server">
       ${(env) => { const items = env.items || []; const byDate = items.filter((x) => isNum(x.value)).slice().reverse();
         return html`<div class="stack">

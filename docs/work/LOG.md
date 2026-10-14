@@ -17,3 +17,4 @@
 - 2026-10-14T13:48Z | e1 | +1 | Price history tab (tabs/price-history.js): chart+table, OHLC/volume, annotations, adj/unadj switch only when both exist, gaps/coverage/intervals, as-of; checks in test/workspace/checks/e1-tabs.mjs
 - 2026-10-14T13:48Z | e1 | +1 | Overview tab (tabs/overview.js): issuer vs listing, units/as-of/source per figure, missing fields named, as-of without substitution
 - 2026-10-14T13:48Z | e1 | +1 | Earnings tab (tabs/earnings.js): calendar facts, metrics vs consensus/prior/surprise, EPS sentence, document proxy, separate eligibility panel; npm test 864/864, workspace 176/176
+- 2026-10-14T14:04Z | p1 | +1 | p1: futures (terms, Book clearing terms vs supplied exchange margin, supplied curve with contract marked), funds (NAV/fees, holdings and weights, NAV history), FX (pair, both calendars, value date, supplied rate and forward points); npm test 864/864, workspace 235/235, matrix 6/6
