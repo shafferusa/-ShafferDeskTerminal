@@ -4,434 +4,434 @@
   "SB:hedge:reconnection": {
    "status": "passed",
    "message": "Execute now double-clicked: 1 request left the page",
-   "ms": 15162,
+   "ms": 14714,
    "checks": 47,
    "area": "hedge",
    "case": "reconnection",
    "title": "Hedge requests that waited while positions changed are refreshed against current exposure on reconnection",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:44:40.329Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:39:38.585Z"
   },
   "SB:history:reference-edits": {
    "status": "passed",
    "message": "the Full history shows 26 event rows before the edits",
-   "ms": 11740,
+   "ms": 11421,
    "checks": 80,
    "area": "history",
    "case": "reference-edits",
    "title": "History survives instrument edits, calendar edits and settings changes",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:45:19.221Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:40:17.204Z"
   },
   "SB:isolation:book-routes": {
    "status": "passed",
-   "message": "28 screens of Iso B scanned for 28 ids and names of Iso A; screens showing none of Iso B's own ids or names either: #/markets/US_DERIV\nAccounting scoped to Aardvark: \"Accounting Iso B, consolidated: Treasury and 1 Account together. Funding between them is internal and is eliminated; external borrowing, interest and fees count\"\nAccounting scoped to Aardvark and Bison: \"Accounting The Account Bison in Iso B, alone. Reporting currency USD. Scope Whole Book Treasury Bison Net asset value, USD 499,999.00 provisional Provisional: I\"\nthe Account page of Aardvark: \"Account Iso B Not an Account of this Book \"AC-57C31C70E4\" is not an Account of Iso B. Choose an Account in the sidebar, or go to Treasury, which lists every Acc\"\nthe Strategy page attaching to Iso A's strategy instance: \"Add legs to a strategy New legs join the existing strategy instance and are linked to its positions. Nothing is submitted until you confirm the preview. Legs to\"",
-   "ms": 28250,
+   "message": "28 screens of Iso B scanned for 28 ids and names of Iso A; screens showing none of Iso B's own ids or names either: #/markets/US_DERIV\nAccounting scoped to Aardvark: \"Accounting Iso B, consolidated: Treasury and 1 Account together. Funding between them is internal and is eliminated; external borrowing, interest and fees count\"\nAccounting scoped to Aardvark and Bison: \"Accounting The Account Bison in Iso B, alone. Reporting currency USD. Scope Whole Book Treasury Bison Net asset value, USD 499,999.00 provisional Provisional: I\"\nthe Account page of Aardvark: \"Account Iso B Not an Account of this Book \"AC-711B4D903C\" is not an Account of Iso B. Choose an Account in the sidebar, or go to Treasury, which lists every Acc\"\nthe Strategy page attaching to Iso A's strategy instance: \"Add legs to a strategy New legs join the existing strategy instance and are linked to its positions. Nothing is submitted until you confirm the preview. Legs to\"",
+   "ms": 26973,
    "checks": 66,
    "area": "isolation",
    "case": "book-routes",
    "title": "Book isolation through every API route",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:45:47.482Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:40:44.188Z"
   },
   "SB:isolation:no-netting": {
    "status": "passed",
    "message": "",
-   "ms": 11289,
+   "ms": 11005,
    "checks": 37,
    "area": "isolation",
    "case": "no-netting",
    "title": "Nothing nets or consolidates across Books",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:45:58.783Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:40:55.205Z"
   },
   "SB:isolation:normal-mode-refusals": {
    "status": "passed",
    "message": "moving the clock (behind the screen): \"The clock can only be moved in demo mode.\"\na quote fixture (behind the screen): \"Test fixtures exist only in demo mode.\"",
-   "ms": 5084,
+   "ms": 5411,
    "checks": 23,
    "area": "isolation",
    "case": "normal-mode-refusals",
    "title": "Fixtures and the clock are refused in normal mode",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:46:03.879Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:41:00.630Z"
   },
   "SB:isolation:demo-normal-databases": {
    "status": "passed",
    "message": "",
-   "ms": 20438,
+   "ms": 20336,
    "checks": 19,
    "area": "isolation",
    "case": "demo-normal-databases",
    "title": "Demo and normal paper databases are separate files",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:46:24.330Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:41:20.980Z"
   },
   "SB:nodup:catch-up": {
    "status": "passed",
    "message": "event types on the Full history filter: Account created 1, Accrual fee 3, Accrual interest 2, Book created 1, Book settings 1, Capital deposit 1, Collateral agreement 1, Collateral mark 1, Collateral variation 1, Dividend 1, Interest payment 1, Loan drawdown 1, Loan repayment 1, Option expired 1, Secloan borrow 1, Settlement pay 2, Settlement receive 1, Strategy submitted 5, Trade fill 4, Transfer...",
-   "ms": 26614,
+   "ms": 16753,
    "checks": 64,
    "area": "nodup",
    "case": "catch-up",
    "title": "Catch-up over fifteen missed days in one engine cycle",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:46:50.957Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:41:37.748Z"
   },
   "SB:refusals:cash-transfer": {
    "status": "passed",
    "message": "",
-   "ms": 1234,
+   "ms": 1195,
    "checks": 11,
    "area": "refusals",
    "case": "cash-transfer",
    "title": "Insufficient cash: a transfer larger than the settled cash that is free",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:46:52.206Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:41:38.955Z"
   },
   "SB:refusals:cash-withdrawal": {
    "status": "passed",
    "message": "",
-   "ms": 1117,
+   "ms": 1074,
    "checks": 8,
    "area": "refusals",
    "case": "cash-withdrawal",
    "title": "Insufficient cash: a capital withdrawal larger than Treasury holds",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:46:53.334Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:41:40.043Z"
   },
   "SB:refusals:cash-repayment": {
    "status": "passed",
    "message": "Failed tab: \"Alpha Loan maturity System test loan Custom System test loan 2026-04-01 Alpha has 10,000.00 USD of settled USD available; 100,416.67 USD is needed (principal plus accrued interest).\"",
-   "ms": 2120,
+   "ms": 1942,
    "checks": 19,
    "area": "refusals",
    "case": "cash-repayment",
    "title": "Insufficient cash: repaying a loan early, and at maturity",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:46:55.467Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:41:41.996Z"
   },
   "SB:refusals:collateral-repo": {
    "status": "passed",
    "message": "(a) pledging 2,000,000 face of the 1,000,000 held: \"Blocks submission. Leg 1: Only 1,000,000 of the collateral is unencumbered; 2,000,000 is needed.\"\n(b) 2,000,000.00 of cash against 1,000,000 face: \"Blocks submission. Leg 1: The collateral supports at most 998,300.55 USD: 1,000,000 TTSY31 is worth 1,018,674.03 USD (1,000,000.00 USD clean plus 18,674.03 USD accrued interest) and the haircut is 2.0\"\nrepo ticket guide: \"Collateral: 1,000,000 TTSY31 at 100.00 Simulated is worth 1,000,000.00 USD clean, or 980,000.00 USD after the haircut. The accrued interest is added to the value of a bond (its dirty value). The principal cannot exceed the value after the haircut: the preview \"\n(d) pledging the same holding again: \"Blocks submission. Leg 1: Only 0 of the collateral is unencumbered; 100,000 is needed.\"",
-   "ms": 3022,
+   "ms": 3140,
    "checks": 15,
    "area": "refusals",
    "case": "collateral-repo",
    "title": "Insufficient collateral: repo",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:46:58.504Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:41:45.149Z"
   },
   "SB:refusals:collateral-pledged-position": {
    "status": "passed",
    "message": "pledged sale: \"Blocks submission. Leg 1: only 0 of the 1,000,000 TTSY31 held is unencumbered; the rest is pledged or out on loan and cannot be sold until it is released.\"",
-   "ms": 2396,
+   "ms": 2549,
    "checks": 12,
    "area": "refusals",
    "case": "collateral-pledged-position",
    "title": "Insufficient collateral: selling a pledged position",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:47:00.914Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:41:47.709Z"
   },
   "SB:refusals:collateral-independent-amount": {
    "status": "passed",
    "message": "",
-   "ms": 2086,
+   "ms": 1992,
    "checks": 12,
    "area": "refusals",
    "case": "collateral-independent-amount",
    "title": "Insufficient collateral: an OTC independent amount that cannot be posted",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:47:03.014Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:41:49.715Z"
   },
   "SB:refusals:quote-missing": {
    "status": "passed",
    "message": "Pending tab row: \"Alpha Buy 100 BQM Leg 1 of Long BQM, primary Market, until cancelled working 100 none set when it fills No dependency No price is available for this instrument. Enter a manual price or state a fill pr\"",
-   "ms": 2925,
+   "ms": 3179,
    "checks": 17,
    "area": "refusals",
    "case": "quote-missing",
    "title": "Missing quote: trade preview, order and valuation",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:47:05.952Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:41:52.907Z"
   },
   "SB:refusals:quote-stale": {
    "status": "passed",
    "message": "Pending tab row: \"Alpha Buy 100 BQS Leg 1 of Long BQS, primary Market, until cancelled working 100 none set when it fills No dependency The last quote is 3601 seconds old. Waiting for a fresh quote. Cancel order\"",
-   "ms": 2990,
+   "ms": 2912,
    "checks": 18,
    "area": "refusals",
    "case": "quote-stale",
    "title": "Stale quote: trade preview, order and valuation",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:47:08.957Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:41:55.832Z"
   },
   "SB:refusals:fx-missing": {
    "status": "passed",
    "message": "",
-   "ms": 2681,
+   "ms": 2457,
    "checks": 13,
    "area": "refusals",
    "case": "fx-missing",
    "title": "Missing FX rate: trade preview and valuation",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:47:11.650Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:41:58.300Z"
   },
   "SB:refusals:fx-stale": {
    "status": "passed",
    "message": "",
-   "ms": 2601,
+   "ms": 2503,
    "checks": 12,
    "area": "refusals",
    "case": "fx-stale",
    "title": "Stale FX rate: trade preview and valuation",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:47:14.263Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:42:00.816Z"
   },
   "SB:refusals:incomplete-terms": {
    "status": "passed",
    "message": "an option with no strike: \"The instrument was not saved. Correct these and save again: Option type must be call or put. Strike must be a positive number. Expiration date is required (YYYY-MM-DD). Contract multiplier is required for a listed option (premium multiplier\"\na bond with no maturity: \"The instrument was not saved. Maturity date is required (or mark the bond as perpetual).\"\na future with no expiration: \"The instrument was not saved. Correct these and save again: Contract multiplier (point value) is required. Expiration (last trading day) is required, or mark the contract as perpetual.\"",
-   "ms": 2061,
+   "ms": 2221,
    "checks": 18,
    "area": "refusals",
    "case": "incomplete-terms",
    "title": "Incomplete contract terms",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:47:16.337Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:42:03.049Z"
   },
   "SB:refusals:calendar-closed-day": {
    "status": "passed",
    "message": "",
-   "ms": 1862,
+   "ms": 1954,
    "checks": 17,
    "area": "refusals",
    "case": "calendar-closed-day",
    "title": "Calendar: an order on a day its market is closed waits, visibly, and fills once",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:47:18.212Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:42:05.016Z"
   },
   "SB:refusals:failed-tab": {
    "status": "passed",
    "message": "",
-   "ms": 1911,
+   "ms": 1829,
    "checks": 19,
    "area": "refusals",
    "case": "failed-tab",
    "title": "What time refused is on the Failed tab and under \"to review\"",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:47:20.134Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:42:06.862Z"
   },
   "SB:refusals:ticket-blocks": {
    "status": "passed",
    "message": "(a) buy 20,000: on the preview: \"Blocks submission. Alpha is short 510,505.00 USD: the package needs 1,000,500.00 USD (purchases 1,000,400.00 USD, fees 100.00 USD, margin and collateral 0.00 US\"\n(b) sell short 500 with 300 to borrow: on the preview: \"Blocks submission. Leg 1: only 300 TKB is available to borrow (Test fixture); 500 is needed.\"\n(c) a quantity of 0: on the ticket: \"Preview is disabled\"\n(d) 10.5 shares: on the preview: \"Blocks submission. Leg 1: quantity must be a multiple of 1.\"\n(e) sell 300 of the 200 held: on the ticket: \"Sells from Long TKB in this Account, which is long 200 at an average 50.02. 300 is more than it holds.\"\n(f) settlement on Saturday 7 March: on the preview: \"Calendar conflict: the stated settlement date 2026-03-07 (Saturday) is a Saturday, not a business day on the settlement calendar of TKB (US: US equity markets (\"\n(g) sell short with the borrow unavailable: on the preview: \"Blocks submission. Leg 1: TKN is not available to borrow (Test fixture). The dependent short sale cannot execute.\"\n(h) an expired option: on the preview: \"Blocks submission. Leg 1: TKB 260220C50 expired on 2026-02-20.\"",
-   "ms": 5335,
+   "ms": 5118,
    "checks": 34,
    "area": "refusals",
    "case": "ticket-blocks",
    "title": "Refusals read from the trade ticket and the preview dialog",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:47:25.480Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:42:11.991Z"
   },
   "SB:stress:failed-leg-cancel": {
    "status": "passed",
    "message": "",
-   "ms": 1233,
+   "ms": 1182,
    "checks": 13,
    "area": "stress",
    "case": "failed-leg-cancel",
    "title": "A failed dependent leg: cancelling the working leg",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:47:26.723Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:42:13.184Z"
   },
   "SB:stress:failed-leg-retry": {
    "status": "passed",
    "message": "",
-   "ms": 1357,
+   "ms": 1362,
    "checks": 9,
    "area": "stress",
    "case": "failed-leg-retry",
    "title": "A failed dependent leg: retry",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:47:28.093Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:42:14.564Z"
   },
   "SB:stress:failed-leg-unwind": {
    "status": "passed",
    "message": "",
-   "ms": 1305,
+   "ms": 1412,
    "checks": 8,
    "area": "stress",
    "case": "failed-leg-unwind",
    "title": "A failed dependent leg: unwind",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:47:29.409Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:42:15.987Z"
   },
   "SB:stress:failed-leg-accept": {
    "status": "passed",
    "message": "",
-   "ms": 1265,
+   "ms": 1368,
    "checks": 10,
    "area": "stress",
    "case": "failed-leg-accept",
    "title": "A failed dependent leg: accept as it stands",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:47:30.687Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:42:17.368Z"
   },
   "SB:stress:cancellations": {
    "status": "passed",
    "message": "",
-   "ms": 1220,
+   "ms": 1211,
    "checks": 12,
    "area": "stress",
    "case": "cancellations",
    "title": "Cancellations: a working order, a partly filled order, cancelling twice",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:47:31.918Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:42:18.595Z"
   },
   "SB:stress:restart-stages": {
    "status": "passed",
    "message": "",
-   "ms": 51380,
+   "ms": 51868,
    "checks": 42,
    "area": "stress",
    "case": "restart-stages",
    "title": "Application restart at each stage of a trade's life",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:48:23.312Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:43:10.479Z"
   },
   "SB:stress:kill-mid-confirmation": {
    "status": "passed",
    "message": "",
-   "ms": 2779,
+   "ms": 2752,
    "checks": 25,
    "area": "stress",
    "case": "kill-mid-confirmation",
    "title": "The server is killed while a twelve-leg package is being confirmed",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:48:26.104Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:43:13.243Z"
   },
   "SB:stress:service-stops-answering": {
    "status": "passed",
    "message": "",
-   "ms": 11691,
+   "ms": 11309,
    "checks": 28,
    "area": "stress",
    "case": "service-stops-answering",
    "title": "A Shaffer service address that stops answering",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:48:37.807Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:43:24.569Z"
   },
   "SB:stress:double-click-confirm": {
    "status": "passed",
    "message": "Confirm double-clicked: 1 request left the page",
-   "ms": 1477,
+   "ms": 1524,
    "checks": 9,
    "area": "stress",
    "case": "double-click-confirm",
    "title": "Double click on \"Confirm paper trade\"",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:48:39.294Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:43:26.106Z"
   },
   "SB:stress:double-click-transfer": {
    "status": "passed",
    "message": "",
-   "ms": 1500,
+   "ms": 1360,
    "checks": 10,
    "area": "stress",
    "case": "double-click-transfer",
    "title": "Double click on \"Record transfer\" and \"Record deposit\"",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:48:40.805Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:43:27.478Z"
   },
   "SB:stress:double-click-records": {
    "status": "passed",
    "message": "Confirm repayment double-clicked: 1 request left the page\nRecord (corporate action) double-clicked: 1 request left the page",
-   "ms": 3387,
+   "ms": 3219,
    "checks": 14,
    "area": "stress",
    "case": "double-click-records",
    "title": "Double click on the other recording buttons: repayment, manual cash flow, lender recall, corporate action",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:48:44.204Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:43:30.710Z"
   },
   "SB:stress:double-click-treasury": {
    "status": "passed",
    "message": "loan Confirm double-clicked: 1 request left the page\nrepo Confirm double-clicked: 1 request left the page\nsecurities loan Confirm double-clicked: 1 request left the page",
-   "ms": 4492,
+   "ms": 4644,
    "checks": 19,
    "area": "stress",
    "case": "double-click-treasury",
    "title": "Double click on the Treasury confirming buttons: withdrawal, borrowing, repo, securities loan",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:48:48.708Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:43:35.367Z"
   },
   "SB:stress:double-click-reference": {
    "status": "passed",
    "message": "",
-   "ms": 4765,
+   "ms": 5324,
    "checks": 16,
    "area": "stress",
    "case": "double-click-reference",
    "title": "Double click on Register instrument, Save price, Save assumptions and Save request",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:48:53.485Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:43:40.703Z"
   },
   "SB:stress:double-click-agreements": {
    "status": "passed",
    "message": "",
-   "ms": 2927,
+   "ms": 2911,
    "checks": 16,
    "area": "stress",
    "case": "double-click-agreements",
    "title": "Double click on Record agreement, Close agreement and Retry failed calls",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:48:56.424Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:43:43.625Z"
   },
   "SB:stress:confirm-changed": {
    "status": "passed",
    "message": "Confirm the new figures double-clicked: 1 request left the page",
-   "ms": 1619,
+   "ms": 1651,
    "checks": 13,
    "area": "stress",
    "case": "confirm-changed",
    "title": "A confirmation refused because the price moved, then confirmed on the new figures",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:48:58.056Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:43:45.288Z"
   },
   "SB:stress:connection-loss": {
    "status": "passed",
    "message": "with the server gone the Transfer dialog cannot be opened (its data cannot be loaded)",
-   "ms": 10439,
+   "ms": 10323,
    "checks": 17,
    "area": "stress",
    "case": "connection-loss",
    "title": "The browser loses the server mid-session and recovers",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:49:08.508Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:43:55.622Z"
   },
   "SB:accounting:verification-book": {
    "status": "passed",
    "message": "transfer that would use restricted proceeds and reserved cash: \"South has 515,216.70 USD of settled USD available; 520,000.00 USD requested.\"\ntransfer that would use posted margin and cash collateral received: \"North has 1,007,657.50 USD of settled USD available; 1,050,000.00 USD requested.\"",
-   "ms": 6322,
+   "ms": 5582,
    "checks": 1405,
    "area": "accounting",
    "case": "verification-book",
    "title": "Accounting verified against hand-worked figures: one Book, Treasury and two Accounts, every situation of section 7",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:44:25.154Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:39:23.858Z"
   },
   "SB:hedge:prompt-race": {
    "status": "passed",
-   "message": "popup opened 54 ms after the held answer was delivered\nstream down: popup opened 9869 ms after the prompt was created\nstream back: popup opened 1798 ms after the stream was restored",
-   "ms": 27121,
+   "message": "popup opened 71 ms after the held answer was delivered\nstream down: popup opened 9862 ms after the prompt was created\nstream back: popup opened 1801 ms after the stream was restored",
+   "ms": 27173,
    "checks": 18,
    "area": "hedge",
    "case": "prompt-race",
    "title": "The post-trade hedge popup is never missed, whatever the timing of the page and the event stream",
-   "commit": "36d76d9",
-   "at": "2026-10-14T15:45:07.469Z"
+   "commit": "0731c13",
+   "at": "2026-10-14T17:40:05.771Z"
   }
  },
- "updatedAt": "2026-10-14T15:49:08.508Z",
+ "updatedAt": "2026-10-14T17:43:55.622Z",
  "environment": {
   "node": "v22.22.0",
   "platform": "linux",
