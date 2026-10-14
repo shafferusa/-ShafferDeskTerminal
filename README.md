@@ -98,6 +98,16 @@ not invent endpoints or assume a database table is an API. When the services exi
 
 Nothing in the screens, the ledger or the stored history needs to be redesigned for this.
 
+The instrument-detail workspace uses the **server client** (`app.data.server`, routes under `/api/server/*`): one
+integration layer with three interfaces (market/reference/historical data; analytics, valuations, Strategies and
+Hedge; the Terminal's own paper ledger, which is never remote) behind one gateway. Every dataset answers one response
+envelope with an explicit state (awaiting, loading, available, stale, unavailable, incomplete, error). Its mappings
+are the `serverOperations` entries of the same contract file. In demo mode every dataset is answered by labelled
+demo fixtures whose failure modes can be switched (`POST /api/demo/fixtures/server`). See
+[docs/SERVER-CLIENT.md](docs/SERVER-CLIENT.md) (routes, envelope, fixtures),
+[docs/DATA-CONTRACT-REQUIREMENTS.md](docs/DATA-CONTRACT-REQUIREMENTS.md) (what the backend builder must supply) and
+[docs/INTEGRATION-CHECKLIST.md](docs/INTEGRATION-CHECKLIST.md) (phase 6: from server response to confirmed paper execution).
+
 ## Layout
 
 ```
@@ -106,7 +116,8 @@ server/
   core/        ledger, Books, positions, orders, packages (strategy instances), templates,
                payoff, valuation, accounting, hedge requests, lifecycle tasks, engine
   products/    one plugin per product family: economics, settlement, valuation, lifecycle
-  data/        the data adapter: ports, Shaffer skeleton + contract file, manual entries, demo feed
+  data/        the data adapter: ports, Shaffer skeleton + contract file, manual entries, demo feed,
+               server client (server-client.js) and its demo fixtures; server-api.js holds its routes
   quant/       calendars, day counts, schedules, bond maths, option payoff helpers
   db/          SQLite schema and migrations
 web/           the front end: no build step, native ES modules (Preact + htm, vendored)

@@ -14,4 +14,4 @@ everywhere, product-specific tab framework, trading and hedge integration, as-of
 analytics & risk + positions), P1 product-specific pages. Wave 3: integration tests of the listed failure modes,
 docs (data-contract requirements, integration checklist), final run and report.
 
-**Completeness: about 7.0% of the pass** (last milestone 2026-10-14T12:41Z, d1: d1: demo fixtures for every server dataset (statements w/ restatement + YTD, earnings, filings+docs, CA duplicate delivery, news, SP3E two runs) + POST /api/demo/fixtures/server modes; tests 828/828)
+**Completeness: about 8.5% of the pass** (last milestone 2026-10-14T12:48Z, w1: w1: capability-driven tab registry by family (tabs, not-covered list, per-dataset state rendering for all 7 states, Price history, My positions and trades, terms/related for other families); workspace-model tests 8; npm test 836/836)

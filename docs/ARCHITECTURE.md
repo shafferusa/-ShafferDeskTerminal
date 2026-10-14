@@ -43,6 +43,9 @@ market facts and analytics only through the data adapter (`server/data/index.js`
 | `observation.js` | The one observation shape used for every market fact. |
 | `index.js` | The adapter the rest of the server uses: refresh, synchronous reads (`price`, `fx`, `rate`, `borrowInfo`, `session`, `closeFor`), manual entries, connection and refresh settings, and the store of observations that were used. |
 | `demo.js`, `demo-seed.js`, `demo-hedge.js` | The isolated demo environment: simulated feed, fictional instruments, a seeded Book, and a canned hedge fixture labelled as such. Only reachable with `--demo`. |
+| `server-client.js` | The server client (round of 2026-10-14): one integration layer, three interfaces (`market`, `analytics`, `ledger`), one gateway. Request plumbing (timeout and AbortSignal to fetch, bounded retries that never retry 401/403, TTL cache with invalidation, cursor/page pagination, refresh settings, subscription hook, selection tokens) and the response envelope. `app.data.server`. |
+| `server-fixtures.js` | Demo fixtures for every server-client dataset, labelled "Demo fixture", with per-dataset failure modes. Demo mode only. |
+| `server-integration.js` | The ledger interface (local only) and the idempotent recording of a server corporate action; attached from `app.js`. |
 
 ### Observations
 
@@ -68,6 +71,35 @@ later data refresh can never change what a trade was booked against.
 Until a port is connected, its methods return "not available" and the API passes that through with
 the message **Awaiting Shaffer data connection**. Market readiness and analytics readiness are
 tracked per dataset and shown separately on the Data connection page.
+
+### Server client: three interfaces, one gateway (`server-client.js`, `server/server-api.js`)
+
+The instrument-detail workspace reads Shaffer data through `app.data.server`, separate from the ports above (which
+feed the paper engine's price cache and stay as they are):
+
+```
+ screens ── /api/server/* (server-api.js) ── app.data.server ──┬── market    ─┐
+                                                               ├── analytics ─┴─ one gateway (SHAFFER_GATEWAY_URL,
+                                                               │                 SHAFFER_API_TOKEN, server side only)
+                                                               └── ledger    ── this Terminal's database (never remote)
+```
+
+- Every dataset is declared in `ports.js` `SERVER_DATASETS` (inputs, required fields, units, timestamps, freshness,
+  pagination, point-in-time, errors). Its real mapping is one entry of `serverOperations` in `shaffer-contract.js`;
+  `null` answers `state: 'awaiting'` with the operation name. Legacy port mappings (search, reference, quotes,
+  history, fx, rates, corporate actions) are adapted when only they are filled in, so nothing is mapped twice.
+- Every route answers one envelope: `state` (awaiting | loading | available | stale | unavailable | incomplete |
+  error), `source`, `asOf`, `receivedAt`, `freshness`, `version`, `schema`, `coverage`, `items`/`data`,
+  `missingFields`, `error {code, message, retryable}`, `requestId`, `selection`, `pagination`, `pointInTime`.
+  Missing values are `null` with a reason (`nulls`), never 0. See docs/SERVER-CLIENT.md.
+- Retries: bounded (settings `server.retry`, default 2 retries, 250 ms doubling); 401 blocks the interface, 403
+  the dataset for that subject, neither is retried until the connection is tested or changed.
+- Selection tokens: a newer `selection` on a `channel` aborts the older gateway request; a late answer for the
+  older one is returned as `error.code: 'superseded'` and never cached.
+- The client passes analytics through (a grep test guards it): no fair value, gap, score or signal is computed.
+  Refreshing server data never writes to the ledger (a table-hash test guards it). Recording a server corporate
+  action is an explicit user action, keyed `srv:<eventId>` (settings `server.ca:<key>` -> corporate action id), so
+  a second delivery or a second click posts nothing.
 
 ## Instruments (`server/core/instruments.js`, `catalog.js`, `server/products/`)
 
@@ -541,6 +573,15 @@ Demo mode only (403 otherwise):
 | `GET /api/demo/fixtures`, `POST /api/demo/fixtures/:kind` | controlled values for `quote`, `close`, `fx`, `rate`, `borrow`, each labelled "Test fixture" wherever it appears; a null value removes one |
 | `POST /api/demo/hedge-fixture` | switches the labelled demo hedge fixture on or off (on plays the service reconnecting) |
 | `GET`/`POST /api/demo/hedge-script` | a scripted hedge "service" for tests: responses in order, an optional Strategy list, stamped test-fixture |
+
+## Server client routes (d1, 2026-10-14)
+
+`GET /api/server/state`, `/api/server/datasets`, `/api/server/refresh` (`PUT` to change), `POST /api/server/cache/invalidate`,
+`POST /api/server/test`; `GET /api/server/reference/search`, `/reference/:id`, `/quotes`, `/history/:id`, `/fx`, `/rates`,
+`/profile/:id`, `/statements/:id`, `/earnings/:id`, `/earnings-window/:id`, `/filings/:id`, `/documents/:docId` (streamed
+proxy, sandboxed), `/corporate-actions/:id`, `POST /api/server/corporate-actions/record`, `/news/:id`, `/analytics/:id`,
+`/analytics/:id/runs`, `/ledger/:id`; demo only: `GET|POST /api/demo/fixtures/server`. Details in docs/SERVER-CLIENT.md;
+what the backend must supply in docs/DATA-CONTRACT-REQUIREMENTS.md; the phase-6 steps in docs/INTEGRATION-CHECKLIST.md.
 
 ## Routes added since the first edition
 

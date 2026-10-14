@@ -37,7 +37,9 @@ URL, path, auth scheme or payload schema is invented anywhere.
   items: [...] | undefined,           // list datasets
   data: {...} | undefined,            // single-object datasets
   missingFields: [string],            // state 'incomplete' names them here (and in coverage.missing)
-  error: { code, message, retryable, status?, attempts? } | null,
+  nulls: { field: reason },           // why a value is null, where the server (or fixture) says
+  related: { underlying: { terminalId, symbol, ids, note } } | undefined,  // e.g. an option's issuer data lives on its underlying
+  error: { code, message, retryable, status?, attempts? } | null,   // code: unauthorized | forbidden | not-found | server-error | throttled | timeout | network | cancelled | superseded | bad-request
   requestId: string,                  // echo of ?requestId= (or a generated id)
   selection: string | null,           // echo of ?selection= (instrument selection token)
   pagination: { mode: 'cursor' | 'page' | null, cursor, nextCursor, page, pageSize, totalPages, totalItems } | null,
@@ -82,7 +84,9 @@ maps one to the other.
 
 | Route | Dataset | Interface.method | Returns (`data` or `items`) |
 |---|---|---|---|
-| `GET /api/server/state` | (all) | | per-dataset connection state: `{ mode, gateway, credentialsConfigured, datasets: { key: { interface, operation, mapped, state, lastSuccess, lastError, authBlocked, refresh, pointInTime, fixture } } }` |
+| `GET /api/server/state` | (all) | | per-dataset connection state: `{ mode: 'demo'|'shaffer', gateway: { configured, shared, timeoutMs }, credentialsConfigured, retry, versions, datasets: { key: { label, interface, operation, mapped, addressConfigured, state, source, lastSuccess, lastError, requests, retries, authBlocked: { code, status, scope, retrying: false, note } | null, refresh, pointInTime: { supported }, pagination, fixture, message } } }`. Dataset `state` is the last envelope state, `awaiting` when unmapped, or `not-requested` before the first request. |
+| `GET /api/server/datasets` | (all) | | the data-requirements catalogue (`SERVER_DATASETS` of ports.js) |
+| `POST /api/server/test` | (all) | | tests both services and clears 401/403 blocks |
 | `GET /api/server/reference/search?q=` | reference | market.search | `items: [{ ids: { terminal, server, issuer, contract }, symbol, name, productType, venue, currency, issuerName, registered }]`, paginated |
 | `GET /api/server/reference/:id` | reference | market.reference | `data: { ids: {terminal, server, issuer, contract, strategyIds?}, symbol, name, productType, family, venue, currency, quoteConvention, units, multiplier, underlying: {ids, symbol}, listing: {...}, issuer: {id, name} }` |
 | `GET /api/server/quotes?ids=a,b` | quotes | market.quotes | `items: [{ instrumentId, ids, quoteType: 'last'|'mid'|'bid-ask'|'settlement'|'nav'|'yield'|'indicative', bid, ask, last, mid, change, changePct, prevClose, currency, units, quoteConvention, timestamp, status: 'live'|'delayed'|'indicative'|'manual'|'simulated', delayMinutes, source, freshness }]` |
@@ -113,17 +117,66 @@ The Gap % is passed through as the server states it. The Terminal never computes
   - `stale`: `asOf` pushed back past `staleAfterSec`; state `stale`.
   - `unavailable` / `empty`: state `unavailable`, no items.
   - `error`: a server error (HTTP 500 equivalent), retried with backoff, then `error.retryable: true`.
-  - `forbidden`: a 403; not retried; `error.retryable: false`; the dataset is blocked until the fixture is reset.
+  - `forbidden`: a 403; not retried; `error.retryable: false`; the dataset is blocked for that instrument until the
+    fixture is reset or the connection is tested (`POST /api/server/test`). A 401 blocks every dataset of the interface.
   - `slow`: answered after `delayMs` (default 2500 ms), so loading states and superseded selections can be seen.
   - `partial`: some fields or periods missing; state `incomplete` with `missingFields`.
-- Built-in fixture cases that need no control: a pagination case (news and filings for ALFA span several pages), a
-  restatement and a YTD cash-flow case (ALFA statements), an upcoming estimated earnings date, a duplicate delivery
-  of one corporate action (ALFA dividend), two SP3E runs for ALFA (one historical), a partial analytics record
-  (BRVO), an empty profile (SIMGOV31 has issuer data only).
+- Built-in fixture cases that need no control: pagination (ALFA filings: cursor, 23 items in pages of 10; ALFA news:
+  page shape, 25 items; search: page shape, 8 per page), a restatement with the original kept and a YTD cash-flow
+  case (ALFA statements; `asOf` before the restatement date returns the as-filed value), annual-only statements
+  (BRVO), an upcoming estimated earnings date (ALFA) and a confirmed one (BRVO), one revised earnings quarter, a
+  duplicate delivery of one corporate action (ALFA dividend), two SP3E runs for ALFA (one historical), a partial
+  analytics record (BRVO), JPY analytics (KAIJ), a coverage gap in KAIJ history, issuer-only profile (SIMGOV31,
+  state `incomplete`), a 403 (KAIJ filings), a server error (KAIJ corporate actions, retried then error), a slow
+  response (BRVO news, 1.5 s), an empty list (KAIJ news), and options/futures answering issuer datasets with
+  `unavailable` plus `related.underlying`.
+- Point-in-time in the fixtures: supported for statements, earnings, filings, news, analytics and runs; quotes,
+  profile and the rest answer "Not supported by the contract" for an `asOf` request.
+- Quotes, history, FX and rates in demo come from the simulated demo feed (`source.label: 'Simulated demo feed'`),
+  so the header and the ticket see the same price. History is unadjusted; `adjusted=1` is `unavailable` (no
+  adjusted series is manufactured); intervals other than `1d` are `unavailable`.
+- The fixture Strategy is `fixture-strat-sp3e` ("SP3E (demo fixture)"); another `strategyId` gives `unavailable`.
 
 Every fixture value carries `source.label: 'Demo fixture'` (or `'Test fixture'` when set by a test) and `fixture: true`.
 
 ## 5. Client methods and data requirements
 
-See section 3 for routes; the method list with inputs, required fields, units, timestamps, freshness, pagination and
-errors per dataset is in `server/data/ports.js` (SERVER CLIENT section) and in `docs/DATA-CONTRACT-REQUIREMENTS.md`.
+Server side, every route calls `app.data.server.<interface>.<method>(params, opts)` (or `app.data.server.call(dataset,
+params, opts)`), which resolves to the envelope. `opts`: `{ requestId, selection, channel, asOf, fresh, signal, cursor,
+page, pageSize, waitMs }`. Other members: `collect()` (all pages), `invalidate({ dataset, instrumentId })`,
+`subscribe()` (no-op until the contract supports push), `watch()` / `tick()` (interval refresh), `state()`,
+`refreshSettings()` / `saveRefresh()`, `clearAuthBlocks()`, `document(docId)`.
+
+| Interface | Method | Dataset | Default TTL / stale after (s) | Pagination | Point-in-time |
+|---|---|---|---|---|---|
+| market | search | search | 300 / 86400 | cursor or page | no |
+| market | reference | reference | 3600 / 604800 | none | optional |
+| market | quotes | quotes | 5 / 60 (interval 5 s) | none | no |
+| market | history | history | 900 / 172800 | cursor or page | dated |
+| market | fx | fx | 15 / 120 (interval 15 s) | none | optional |
+| market | rates | rates | 900 / 172800 | none | dated |
+| market | profile | profile | 3600 / 604800 | none | needed |
+| market | statements | statements | 3600 / 2592000 | page by periods | needed |
+| market | earnings | earnings | 1800 / 86400 | cursor or page | optional |
+| market | filings | filings | 1800 / 604800 | cursor or page | by filedAt |
+| market | document | documents | none (streamed) | none | n/a |
+| market | corporateActions | corporateActions | 3600 / 172800 | cursor or page | optional |
+| market | news | news | 120 / 3600 (interval 120 s) | cursor or page | by publishedAt |
+| analytics | instrumentAnalytics | analytics | 300 / 259200 | none | historical runs |
+| analytics | runs | analyticsRuns | 300 / 259200 | cursor or page | runs at or before asOf |
+| analytics | earningsWindow | earningsWindow | 900 / 259200 | none | optional |
+| ledger | instrument | ledger | none (always fresh) | none | n/a |
+
+Inputs, the fields the Terminal needs back (`requires`), optional fields, units, timestamps and errors per dataset
+are in `server/data/ports.js` (`SERVER_DATASETS`) and in prose in `docs/DATA-CONTRACT-REQUIREMENTS.md`. All settings
+above are changeable with `PUT /api/server/refresh`.
+
+## 6. Ledger and corporate actions
+
+- `GET /api/server/ledger/:id?bookId=` reads the Book's own records (holdings by Account with long and short apart,
+  orders, fills, recorded corporate actions). Source `Terminal paper ledger`. Never remote.
+- `GET /api/server/corporate-actions/:id` lists each server event once (`deliveries` counts repeats), with
+  `idempotencyKey` (`srv:<eventId>`, or a hash of the terms when the server gives no event ID), `recordable` (cash
+  dividends and splits only) and `recorded` (`{ caId, status, at }` once the user has recorded it).
+- `POST /api/server/corporate-actions/record { instrumentId, eventId }` records it in the paper ledger once; a
+  second call answers `{ duplicate: true, caId }` and posts nothing. Receiving or refreshing events never posts.

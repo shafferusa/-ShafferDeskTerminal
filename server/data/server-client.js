@@ -620,6 +620,7 @@ export function createServerClient({ clock, demo = false, getConnection, credent
     return {
       mode: demo ? 'demo' : 'shaffer',
       gateway: { configured: Boolean(c.gatewayUrl || c.marketDataUrl || c.analyticsUrl), shared: Boolean(c.gatewayUrl), timeoutMs: c.requestTimeoutMs },
+      credentialsConfigured: Boolean(credentials?.token), // whether one is set; the credential itself is never returned
       health,
       retry: retrySettings(),
       versions: capabilities.versions,

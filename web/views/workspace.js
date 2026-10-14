@@ -165,7 +165,7 @@ function AsOfLine({ ds, asOf }) {
 export function DatasetBody({ ds, asOf, children, what }) {
   const e = ds.env;
   // The server's sentence, without a leading state word the pill and the bold label already say.
-  const msg = e?.message ? String(e.message).replace(/^(stale|incomplete|unavailable|error)\s*[:.]\s*/i, '') : null;
+  const msg = e?.message ? String(e.message).replace(/^(stale|incomplete|unavailable|error)\s*[:.]\s*/i, '').replace(/^./, (c) => c.toUpperCase()) : null;
   const body = () => (typeof children === 'function' ? children(e) : children);
   switch (ds.state) {
     case 'loading': return html`<div class="ws-loading" aria-busy="true">Loading ${ds.label.toLowerCase()}…</div>`;
@@ -174,7 +174,7 @@ export function DatasetBody({ ds, asOf, children, what }) {
     case 'error': {
       const er = e?.error || { message: ds.error?.message, retryable: true };
       const blocked = er.retryable === false || er.status === 401 || er.status === 403;
-      return html`<${Notice} tone="err"><b>${ds.label} could not be loaded.</b> ${er.message || msg || ''}${er.attempts ? ` (${er.attempts} attempts)` : ''} ${blocked ? 'The server refused access, so it is not asked again until the connection settings change.' : 'Choose Refresh to ask again.'}<//>`;
+      return html`<${Notice} tone="err"><b>${ds.label} could not be loaded.</b> ${er.message || msg || ''}${er.attempts > 1 ? ` (${er.attempts} attempts)` : ''} ${blocked ? 'The server refused access, so it is not asked again until the connection settings change.' : 'Choose Refresh to ask again.'}<//>`;
     }
     case 'stale': return html`<div class="stack"><${Notice} tone="warn"><b>Stale.</b> ${msg || `This data is older than its freshness limit${isNum(e?.freshness?.staleAfterSec) ? ` (${fmtAge(e.freshness.staleAfterSec).replace(' ago', '')})` : ''}.`}${e?.error ? ` The last refresh failed: ${e.error.message}` : ''}<//>${body()}</div>`;
     case 'incomplete': return html`<div class="stack"><${Notice} tone="warn"><b>Incomplete.</b> ${msg || `Some fields are missing from the server's answer${e?.missingFields?.length ? `: ${e.missingFields.join(', ')}` : ''}.`} Missing values are shown as missing.<//>${body()}</div>`;
@@ -328,7 +328,15 @@ function PlainObject({ o, nulls = {} }) {
   const nested = Object.entries(o).filter(([, v]) => v && typeof v === 'object');
   const val = (v) => (Array.isArray(v) ? (v.every((x) => x === null || typeof x !== 'object') ? v.join(', ') : v.map((x) => Object.values(x).filter((y) => y !== null && typeof y !== 'object').join(', ')).join('; ')) : v && typeof v === 'object' ? Object.entries(v).filter(([, y]) => y === null || typeof y !== 'object').map(([k, y]) => `${words(k)} ${y ?? '—'}`).join(', ') : scalar(v));
   return html`<div class="ws-plain">${flat.length ? html`<${KV} rows=${flat.map(([k, v]) => [words(k), scalar(v, nulls[k])])} />` : null}
-    ${nested.map(([k, v]) => html`<h4>${words(k)}</h4>${Array.isArray(v) ? html`<div class="small">${val(v) || html`<span class="muted">None listed</span>`}</div>` : html`<${KV} rows=${Object.entries(v).map(([k2, v2]) => [words(k2), v2 && typeof v2 === 'object' ? val(v2) : scalar(v2)])} />`}`)}</div>`;
+    ${nested.map(([k, v]) => html`<h4>${words(k)}</h4>${Array.isArray(v) && v.length && v.every((x) => x && typeof x === 'object' && !Array.isArray(x)) ? html`<${RecordTable} rows=${v} />` : Array.isArray(v) ? html`<div class="small">${val(v) || html`<span class="muted">None listed</span>`}</div>` : html`<${KV} rows=${Object.entries(v).map(([k2, v2]) => [words(k2), v2 && typeof v2 === 'object' ? val(v2) : scalar(v2)])} />`}`)}</div>`;
+}
+
+/** Records as a small table: their plain fields as columns, a nested object as "key value" text. */
+function RecordTable({ rows }) {
+  const keys = [...new Set(rows.slice(0, 20).flatMap((r) => Object.keys(r)))].slice(0, 9);
+  const cell = (v) => (v === null || v === undefined ? html`<${Missing} reason="Not supplied" />` : typeof v === 'object' ? html`<span class="small">${Object.entries(v).slice(0, 6).map(([a, b]) => `${a} ${b === null ? '—' : typeof b === 'object' ? '…' : b}`).join(', ')}</span>` : scalar(v));
+  return html`<div class="tablewrap"><table class="ledger tight"><thead><tr>${keys.map((k) => html`<th>${words(k)}</th>`)}</tr></thead>
+    <tbody>${rows.slice(0, 40).map((r) => html`<tr>${keys.map((k) => html`<td class=${typeof r[k] === 'number' ? 'r' : ''}>${cell(r[k])}</td>`)}</tr>`)}</tbody></table></div>${rows.length > 40 ? html`<p class="note">${rows.length - 40} more not listed.</p>` : null}`;
 }
 
 // ---- related issuer / underlying ----------------------------------------------------------------------------------------
