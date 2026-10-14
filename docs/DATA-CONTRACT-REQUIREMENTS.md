@@ -220,16 +220,21 @@ Local only. Nothing is required from the backend.
 3. For each of the 25 remote datasets above (16 of the first wave, documents included, and the 9 product-specific
    datasets), and for the Strategy list and Hedge slots: request, response schema, example payloads, error codes
    (answer sheet lines D1 to D26).
-4. Pagination style and limits per paginated dataset (search, history if long, earnings, filings, corporate actions,
-   news, runs).
+4. Pagination style and limits per paginated dataset (search, history, statements by periods, earnings, filings,
+   corporate actions, news, fund holdings, OTC marks, analytics runs).
 5. Quote types, units and timestamp semantics per product type; staleness limits per dataset.
 6. History coverage and adjustment conventions.
 7. Point-in-time support per dataset (statements, profile, earnings consensus, filings, news, analytics).
 8. Refresh limits and any push mechanism.
 9. API, schema and model version identifiers; coverage limitations.
-10. Corporate-action event IDs and revision semantics.
+10. Corporate-action event IDs and revision semantics; for every list dataset, the record ID that identifies a
+    repeat delivery, and how a revision is signalled (same ID with revision fields, or a new ID that supersedes).
 11. A test environment (address and credential) with known data, for the integration checklist.
 12. For the product pages: which provider supplies ratings, yields and spreads, Greeks, futures curves and margins,
     fund holdings and facts, OTC marks and FX forward points (MarketData or Analytics Lab), the conventions each
     states (yield type and compounding, Greek units, mark units), and point-in-time support for ratings, fund
     holdings and marks.
+13. Error semantics: the error body, which statuses are retryable, rate limits, and whether `Retry-After` is sent.
+14. Documents: the media types served (PDF, HTML, plain text), maximum size, and whether an HTML or text rendition of
+    a PDF is available (the Terminal shows documents in a sandboxed frame; whether a desk browser draws a PDF there is
+    checked in phase 6, INTEGRATION-CHECKLIST.md section E).

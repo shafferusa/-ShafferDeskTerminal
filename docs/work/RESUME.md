@@ -14,4 +14,4 @@ everywhere, product-specific tab framework, trading and hedge integration, as-of
 analytics & risk + positions), P1 product-specific pages. Wave 3: integration tests of the listed failure modes,
 docs (data-contract requirements, integration checklist), final run and report.
 
-**Completeness: about 27.5% of the pass** (last milestone 2026-10-14T15:40Z, i1: i1: ledger regression (populated Book hashed across every route, fixture mode, reconnection, Strategy and research date; only the deliberate CA record changes; integrity clean) and full suites: npm test 880/880, test:api 235 ok, system:api 48 ok, browser equity/option/bond 68 ok, system:browser 38/39 (1 intermittent, passes on rerun))
+**Completeness: about 28.5% of the pass** (last milestone 2026-10-14T15:50Z, i1: i1: workers' open items closed: slow state per equity tab, drawer from Strategies-page and hedge-package legs, trade-from-page origin instrument-detail (hedge after fill), fixture PDF in the sandboxed viewer, chart hover titles, 1024 header 208->184 px; i1-open-items.mjs 17 checks x3; workspace 281/281, system:browser 39/39)
