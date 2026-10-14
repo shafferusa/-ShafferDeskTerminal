@@ -56299,250 +56299,6 @@
     "restart"
    ]
   },
-  "B:common_stock:setup": {
-   "status": "passed",
-   "message": "",
-   "ms": 3757,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T12:59:37.578Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "setup",
-   "covers": []
-  },
-  "B:common_stock:open": {
-   "status": "passed",
-   "message": "",
-   "ms": 2082,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T12:59:37.578Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "open",
-   "covers": [
-    "open"
-   ]
-  },
-  "B:common_stock:settle-open": {
-   "status": "passed",
-   "message": "",
-   "ms": 918,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T12:59:37.578Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "settle-open",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "B:common_stock:quote-up": {
-   "status": "passed",
-   "message": "",
-   "ms": 804,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T12:59:37.578Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "quote-up",
-   "covers": []
-  },
-  "B:common_stock:increase": {
-   "status": "passed",
-   "message": "",
-   "ms": 1894,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T12:59:37.578Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "increase",
-   "covers": [
-    "increase"
-   ]
-  },
-  "B:common_stock:settle-increase": {
-   "status": "passed",
-   "message": "",
-   "ms": 984,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T12:59:37.578Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "settle-increase",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "B:common_stock:oversell": {
-   "status": "blocked",
-   "message": "The Account holds 300 and cannot sell 500; going short needs a securities borrow. Terminal: \"Sells from Long NFTW in this Account, which is long 300 at an average 50.357. 500 is more than it holds.\"",
-   "ms": 1437,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T12:59:37.578Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "oversell",
-   "covers": [
-    "reduce"
-   ]
-  },
-  "B:common_stock:dividend-recorded": {
-   "status": "passed",
-   "message": "",
-   "ms": 1648,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T12:59:37.578Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "dividend-recorded",
-   "covers": [
-    "dividend"
-   ]
-  },
-  "B:common_stock:dividend-paid": {
-   "status": "passed",
-   "message": "",
-   "ms": 970,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T12:59:37.578Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "dividend-paid",
-   "covers": [
-    "dividend"
-   ]
-  },
-  "B:common_stock:quote-up-2": {
-   "status": "passed",
-   "message": "",
-   "ms": 928,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T12:59:37.578Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "quote-up-2",
-   "covers": []
-  },
-  "B:common_stock:reduce": {
-   "status": "passed",
-   "message": "",
-   "ms": 1453,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T12:59:37.578Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "reduce",
-   "covers": [
-    "reduce"
-   ]
-  },
-  "B:common_stock:settle-reduce": {
-   "status": "passed",
-   "message": "",
-   "ms": 996,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T12:59:37.578Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "settle-reduce",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "B:common_stock:split-recorded": {
-   "status": "passed",
-   "message": "",
-   "ms": 1668,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T12:59:37.578Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "split-recorded",
-   "covers": [
-    "split"
-   ]
-  },
-  "B:common_stock:split-applied": {
-   "status": "passed",
-   "message": "",
-   "ms": 933,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T12:59:37.578Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "split-applied",
-   "covers": [
-    "split"
-   ]
-  },
-  "B:common_stock:quote-post-split": {
-   "status": "passed",
-   "message": "",
-   "ms": 929,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T12:59:37.578Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "quote-post-split",
-   "covers": []
-  },
-  "B:common_stock:close": {
-   "status": "passed",
-   "message": "",
-   "ms": 1737,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T12:59:37.578Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "close",
-   "covers": [
-    "close"
-   ]
-  },
-  "B:common_stock:settle-close": {
-   "status": "passed",
-   "message": "",
-   "ms": 957,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T12:59:37.578Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "settle-close",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "B:common_stock:restart": {
-   "status": "passed",
-   "message": "",
-   "ms": 4328,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T12:59:37.578Z",
-   "product": "common_stock",
-   "template": null,
-   "family": "equity",
-   "step": "restart",
-   "covers": [
-    "restart"
-   ]
-  },
   "B:unsecured_loan:setup": {
    "status": "passed",
    "message": "",
@@ -56800,398 +56556,6 @@
    "product": "unsecured_loan",
    "template": null,
    "family": "loan",
-   "step": "restart",
-   "covers": [
-    "restart"
-   ]
-  },
-  "B:equity_option:setup": {
-   "status": "passed",
-   "message": "",
-   "ms": 3599,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T13:00:54.901Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "setup",
-   "covers": []
-  },
-  "B:equity_option:buy-to-open": {
-   "status": "passed",
-   "message": "",
-   "ms": 1847,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T13:00:54.901Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "buy-to-open",
-   "covers": [
-    "open"
-   ]
-  },
-  "B:equity_option:settle-open": {
-   "status": "passed",
-   "message": "",
-   "ms": 684,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T13:00:54.901Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "settle-open",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "B:equity_option:stock-up": {
-   "status": "passed",
-   "message": "",
-   "ms": 599,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T13:00:54.901Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "stock-up",
-   "covers": []
-  },
-  "B:equity_option:premium-up": {
-   "status": "passed",
-   "message": "",
-   "ms": 600,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T13:00:54.901Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "premium-up",
-   "covers": []
-  },
-  "B:equity_option:increase": {
-   "status": "passed",
-   "message": "",
-   "ms": 1333,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T13:00:54.901Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "increase",
-   "covers": [
-    "increase"
-   ]
-  },
-  "B:equity_option:settle-increase": {
-   "status": "passed",
-   "message": "",
-   "ms": 650,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T13:00:54.901Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "settle-increase",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "B:equity_option:premium-up-2": {
-   "status": "passed",
-   "message": "",
-   "ms": 600,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T13:00:54.901Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "premium-up-2",
-   "covers": []
-  },
-  "B:equity_option:sell-to-close-part": {
-   "status": "passed",
-   "message": "",
-   "ms": 1234,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T13:00:54.901Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "sell-to-close-part",
-   "covers": [
-    "reduce"
-   ]
-  },
-  "B:equity_option:settle-reduce": {
-   "status": "passed",
-   "message": "",
-   "ms": 633,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T13:00:54.901Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "settle-reduce",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "B:equity_option:exercise-early": {
-   "status": "passed",
-   "message": "",
-   "ms": 1216,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T13:00:54.901Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "exercise-early",
-   "covers": [
-    "exercise"
-   ]
-  },
-  "B:equity_option:settle-exercise": {
-   "status": "passed",
-   "message": "",
-   "ms": 734,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T13:00:54.901Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "settle-exercise",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "B:equity_option:write-uncovered": {
-   "status": "passed",
-   "message": "",
-   "ms": 1700,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T13:00:54.901Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "write-uncovered",
-   "covers": [
-    "write",
-    "gross long and short"
-   ]
-  },
-  "B:equity_option:stock-up-2": {
-   "status": "passed",
-   "message": "",
-   "ms": 750,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T13:00:54.901Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "stock-up-2",
-   "covers": []
-  },
-  "B:equity_option:settle-write": {
-   "status": "passed",
-   "message": "",
-   "ms": 683,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T13:00:54.901Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "settle-write",
-   "covers": [
-    "settlement",
-    "reserve mark"
-   ]
-  },
-  "B:equity_option:premium-up-3": {
-   "status": "passed",
-   "message": "",
-   "ms": 767,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T13:00:54.901Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "premium-up-3",
-   "covers": []
-  },
-  "B:equity_option:withdraw-reserved-cash": {
-   "status": "blocked",
-   "message": "Cash reserved against the written calls cannot leave the Account: 488,952.20 is settled but only 486,791.40 is free. Terminal: \"Alpha has 486,791.40 USD of settled USD available; 487,000.00 USD requested.\"",
-   "ms": 1184,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T13:00:54.901Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "withdraw-reserved-cash",
-   "covers": [
-    "reserve"
-   ]
-  },
-  "B:equity_option:buy-to-close": {
-   "status": "passed",
-   "message": "",
-   "ms": 1282,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T13:00:54.901Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "buy-to-close",
-   "covers": [
-    "close",
-    "reserve release"
-   ]
-  },
-  "B:equity_option:settle-close-written": {
-   "status": "passed",
-   "message": "",
-   "ms": 666,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T13:00:54.901Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "settle-close-written",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "B:equity_option:expiry-close-known-later": {
-   "status": "passed",
-   "message": "",
-   "ms": 618,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T13:00:54.901Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "expiry-close-known-later",
-   "covers": []
-  },
-  "B:equity_option:expiry-morning-stock": {
-   "status": "passed",
-   "message": "",
-   "ms": 650,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T13:00:54.901Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "expiry-morning-stock",
-   "covers": []
-  },
-  "B:equity_option:expiry-morning-premium": {
-   "status": "passed",
-   "message": "",
-   "ms": 633,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T13:00:54.901Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "expiry-morning-premium",
-   "covers": []
-  },
-  "B:equity_option:expiry-day-before-the-close": {
-   "status": "passed",
-   "message": "",
-   "ms": 600,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T13:00:54.901Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "expiry-day-before-the-close",
-   "covers": [
-    "expiry"
-   ]
-  },
-  "B:equity_option:expiry-in-the-money": {
-   "status": "passed",
-   "message": "",
-   "ms": 716,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T13:00:54.901Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "expiry-in-the-money",
-   "covers": [
-    "expiry",
-    "exercise"
-   ]
-  },
-  "B:equity_option:settle-delivery": {
-   "status": "passed",
-   "message": "",
-   "ms": 634,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T13:00:54.901Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "settle-delivery",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "B:equity_option:trade-after-expiry": {
-   "status": "blocked",
-   "message": "The contract expired on 20 March 2026; nothing can be traded in it. Terminal: \"Leg 1: HRSI260320C50 expired on 2026-03-20.\"",
-   "ms": 1566,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T13:00:54.901Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "trade-after-expiry",
-   "covers": [
-    "expired contract"
-   ]
-  },
-  "B:equity_option:sell-shares": {
-   "status": "passed",
-   "message": "",
-   "ms": 1451,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T13:00:54.901Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "sell-shares",
-   "covers": [
-    "close"
-   ]
-  },
-  "B:equity_option:settle-shares": {
-   "status": "passed",
-   "message": "",
-   "ms": 632,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T13:00:54.901Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
-   "step": "settle-shares",
-   "covers": [
-    "settlement"
-   ]
-  },
-  "B:equity_option:restart": {
-   "status": "passed",
-   "message": "",
-   "ms": 3235,
-   "commit": "d913d4f+changes",
-   "at": "2026-10-14T13:00:54.901Z",
-   "product": "equity_option",
-   "template": null,
-   "family": "option",
    "step": "restart",
    "covers": [
     "restart"
@@ -57660,13 +57024,649 @@
    "covers": [
     "restart"
    ]
+  },
+  "B:equity_option:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 3231,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:30:32.563Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "setup",
+   "covers": []
+  },
+  "B:equity_option:buy-to-open": {
+   "status": "passed",
+   "message": "",
+   "ms": 1768,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:30:32.563Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "buy-to-open",
+   "covers": [
+    "open"
+   ]
+  },
+  "B:equity_option:settle-open": {
+   "status": "passed",
+   "message": "",
+   "ms": 683,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:30:32.563Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "settle-open",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:equity_option:stock-up": {
+   "status": "passed",
+   "message": "",
+   "ms": 700,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:30:32.563Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "stock-up",
+   "covers": []
+  },
+  "B:equity_option:premium-up": {
+   "status": "passed",
+   "message": "",
+   "ms": 700,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:30:32.563Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "premium-up",
+   "covers": []
+  },
+  "B:equity_option:increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 1316,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:30:32.563Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "increase",
+   "covers": [
+    "increase"
+   ]
+  },
+  "B:equity_option:settle-increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 683,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:30:32.563Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "settle-increase",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:equity_option:premium-up-2": {
+   "status": "passed",
+   "message": "",
+   "ms": 803,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:30:32.563Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "premium-up-2",
+   "covers": []
+  },
+  "B:equity_option:sell-to-close-part": {
+   "status": "passed",
+   "message": "",
+   "ms": 1480,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:30:32.563Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "sell-to-close-part",
+   "covers": [
+    "reduce"
+   ]
+  },
+  "B:equity_option:settle-reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 717,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:30:32.563Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "settle-reduce",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:equity_option:exercise-early": {
+   "status": "passed",
+   "message": "",
+   "ms": 1355,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:30:32.563Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "exercise-early",
+   "covers": [
+    "exercise"
+   ]
+  },
+  "B:equity_option:settle-exercise": {
+   "status": "passed",
+   "message": "",
+   "ms": 628,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:30:32.563Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "settle-exercise",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:equity_option:write-uncovered": {
+   "status": "passed",
+   "message": "",
+   "ms": 2059,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:30:32.563Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "write-uncovered",
+   "covers": [
+    "write",
+    "gross long and short"
+   ]
+  },
+  "B:equity_option:stock-up-2": {
+   "status": "passed",
+   "message": "",
+   "ms": 691,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:30:32.563Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "stock-up-2",
+   "covers": []
+  },
+  "B:equity_option:settle-write": {
+   "status": "passed",
+   "message": "",
+   "ms": 684,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:30:32.563Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "settle-write",
+   "covers": [
+    "settlement",
+    "reserve mark"
+   ]
+  },
+  "B:equity_option:premium-up-3": {
+   "status": "passed",
+   "message": "",
+   "ms": 816,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:30:32.563Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "premium-up-3",
+   "covers": []
+  },
+  "B:equity_option:withdraw-reserved-cash": {
+   "status": "blocked",
+   "message": "Cash reserved against the written calls cannot leave the Account: 488,952.20 is settled but only 486,791.40 is free. Terminal: \"Alpha has 486,791.40 USD of settled USD available; 487,000.00 USD requested.\"",
+   "ms": 1317,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:30:32.563Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "withdraw-reserved-cash",
+   "covers": [
+    "reserve"
+   ]
+  },
+  "B:equity_option:buy-to-close": {
+   "status": "passed",
+   "message": "",
+   "ms": 1416,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:30:32.563Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "buy-to-close",
+   "covers": [
+    "close",
+    "reserve release"
+   ]
+  },
+  "B:equity_option:settle-close-written": {
+   "status": "passed",
+   "message": "",
+   "ms": 716,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:30:32.563Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "settle-close-written",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:equity_option:expiry-close-known-later": {
+   "status": "passed",
+   "message": "",
+   "ms": 767,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:30:32.563Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "expiry-close-known-later",
+   "covers": []
+  },
+  "B:equity_option:expiry-morning-stock": {
+   "status": "passed",
+   "message": "",
+   "ms": 801,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:30:32.563Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "expiry-morning-stock",
+   "covers": []
+  },
+  "B:equity_option:expiry-morning-premium": {
+   "status": "passed",
+   "message": "",
+   "ms": 816,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:30:32.563Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "expiry-morning-premium",
+   "covers": []
+  },
+  "B:equity_option:expiry-day-before-the-close": {
+   "status": "passed",
+   "message": "",
+   "ms": 766,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:30:32.563Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "expiry-day-before-the-close",
+   "covers": [
+    "expiry"
+   ]
+  },
+  "B:equity_option:expiry-in-the-money": {
+   "status": "passed",
+   "message": "",
+   "ms": 1467,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:30:32.563Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "expiry-in-the-money",
+   "covers": [
+    "expiry",
+    "exercise"
+   ]
+  },
+  "B:equity_option:settle-delivery": {
+   "status": "passed",
+   "message": "",
+   "ms": 800,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:30:32.563Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "settle-delivery",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:equity_option:trade-after-expiry": {
+   "status": "blocked",
+   "message": "The contract expired on 20 March 2026; nothing can be traded in it. Terminal: \"Leg 1: HRSI260320C50 expired on 2026-03-20.\"",
+   "ms": 1885,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:30:32.563Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "trade-after-expiry",
+   "covers": [
+    "expired contract"
+   ]
+  },
+  "B:equity_option:sell-shares": {
+   "status": "passed",
+   "message": "",
+   "ms": 1565,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:30:32.563Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "sell-shares",
+   "covers": [
+    "close"
+   ]
+  },
+  "B:equity_option:settle-shares": {
+   "status": "passed",
+   "message": "",
+   "ms": 800,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:30:32.563Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "settle-shares",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:equity_option:restart": {
+   "status": "passed",
+   "message": "",
+   "ms": 3600,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:30:32.563Z",
+   "product": "equity_option",
+   "template": null,
+   "family": "option",
+   "step": "restart",
+   "covers": [
+    "restart"
+   ]
+  },
+  "B:common_stock:setup": {
+   "status": "passed",
+   "message": "",
+   "ms": 7139,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:38:01.817Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "setup",
+   "covers": []
+  },
+  "B:common_stock:open": {
+   "status": "passed",
+   "message": "",
+   "ms": 3066,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:38:01.817Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "open",
+   "covers": [
+    "open"
+   ]
+  },
+  "B:common_stock:settle-open": {
+   "status": "passed",
+   "message": "",
+   "ms": 1309,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:38:01.817Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "settle-open",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:common_stock:quote-up": {
+   "status": "passed",
+   "message": "",
+   "ms": 1485,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:38:01.817Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "quote-up",
+   "covers": []
+  },
+  "B:common_stock:increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 1780,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:38:01.817Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "increase",
+   "covers": [
+    "increase"
+   ]
+  },
+  "B:common_stock:settle-increase": {
+   "status": "passed",
+   "message": "",
+   "ms": 850,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:38:01.817Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "settle-increase",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:common_stock:oversell": {
+   "status": "blocked",
+   "message": "The Account holds 300 and cannot sell 500; going short needs a securities borrow. Terminal: \"Sells from Long NFTW in this Account, which is long 300 at an average 50.357. 500 is more than it holds.\"",
+   "ms": 1300,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:38:01.817Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "oversell",
+   "covers": [
+    "reduce"
+   ]
+  },
+  "B:common_stock:dividend-recorded": {
+   "status": "passed",
+   "message": "",
+   "ms": 1960,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:38:01.817Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "dividend-recorded",
+   "covers": [
+    "dividend"
+   ]
+  },
+  "B:common_stock:dividend-paid": {
+   "status": "passed",
+   "message": "",
+   "ms": 1371,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:38:01.817Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "dividend-paid",
+   "covers": [
+    "dividend"
+   ]
+  },
+  "B:common_stock:quote-up-2": {
+   "status": "passed",
+   "message": "",
+   "ms": 767,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:38:01.817Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "quote-up-2",
+   "covers": []
+  },
+  "B:common_stock:reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 1733,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:38:01.817Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "reduce",
+   "covers": [
+    "reduce"
+   ]
+  },
+  "B:common_stock:settle-reduce": {
+   "status": "passed",
+   "message": "",
+   "ms": 984,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:38:01.817Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "settle-reduce",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:common_stock:split-recorded": {
+   "status": "passed",
+   "message": "",
+   "ms": 2401,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:38:01.817Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "split-recorded",
+   "covers": [
+    "split"
+   ]
+  },
+  "B:common_stock:split-applied": {
+   "status": "passed",
+   "message": "",
+   "ms": 1401,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:38:01.817Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "split-applied",
+   "covers": [
+    "split"
+   ]
+  },
+  "B:common_stock:quote-post-split": {
+   "status": "passed",
+   "message": "",
+   "ms": 887,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:38:01.817Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "quote-post-split",
+   "covers": []
+  },
+  "B:common_stock:close": {
+   "status": "passed",
+   "message": "",
+   "ms": 1762,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:38:01.817Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "close",
+   "covers": [
+    "close"
+   ]
+  },
+  "B:common_stock:settle-close": {
+   "status": "passed",
+   "message": "",
+   "ms": 1261,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:38:01.817Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "settle-close",
+   "covers": [
+    "settlement"
+   ]
+  },
+  "B:common_stock:restart": {
+   "status": "passed",
+   "message": "",
+   "ms": 4238,
+   "commit": "94b0045+changes",
+   "at": "2026-10-14T13:38:01.817Z",
+   "product": "common_stock",
+   "template": null,
+   "family": "equity",
+   "step": "restart",
+   "covers": [
+    "restart"
+   ]
   }
  },
  "runs": {
   "common_stock": {
-   "at": "2026-10-14T12:59:37.578Z",
-   "commit": "d913d4f+changes",
-   "ms": 28424,
+   "at": "2026-10-14T13:38:01.817Z",
+   "commit": "94b0045+changes",
+   "ms": 35696,
    "family": "equity",
    "steps": 18,
    "ran": 18,
@@ -58443,9 +58443,9 @@
    }
   },
   "equity_option": {
-   "at": "2026-10-14T13:00:54.901Z",
-   "commit": "d913d4f+changes",
-   "ms": 31497,
+   "at": "2026-10-14T13:30:32.563Z",
+   "commit": "94b0045+changes",
+   "ms": 35032,
    "family": "option",
    "steps": 29,
    "ran": 29,
@@ -62129,5 +62129,5 @@
    }
   }
  },
- "updatedAt": "2026-10-14T13:01:33.516Z"
+ "updatedAt": "2026-10-14T13:38:01.817Z"
 }

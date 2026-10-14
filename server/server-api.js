@@ -100,6 +100,16 @@ export function registerServerRoutes(r, app, { requireVisible }) {
   perInstrument('/api/server/earnings/:id', 'earnings', (q) => ({ from: q.from || undefined, to: q.to || undefined }));
   perInstrument('/api/server/filings/:id', 'filings', (q) => ({ kind: q.kind || undefined }));
   perInstrument('/api/server/news/:id', 'news', (q) => ({ from: q.from || undefined }));
+  // p1: product-specific detail pages (docs/SERVER-CLIENT.md, section 3); supplied values passed through as received.
+  perInstrument('/api/server/ratings/:id', 'ratingsCovenants');
+  perInstrument('/api/server/yield-spread/:id', 'yieldSpread');
+  perInstrument('/api/server/option-greeks/:id', 'optionGreeks');
+  perInstrument('/api/server/futures-curve/:id', 'futuresCurve');
+  perInstrument('/api/server/margin/:id', 'exchangeMargin');
+  perInstrument('/api/server/fund-holdings/:id', 'fundHoldings');
+  perInstrument('/api/server/fund-facts/:id', 'fundFacts');
+  perInstrument('/api/server/marks/:id', 'otcMarks', (q) => ({ from: q.from || undefined, to: q.to || undefined }));
+  perInstrument('/api/server/fx-curve/:id', 'fxCurve');
 
   r.get('/api/server/corporate-actions/:id', async ({ params, query }) => {
     const inst = requireInst(params.id, query.bookId);

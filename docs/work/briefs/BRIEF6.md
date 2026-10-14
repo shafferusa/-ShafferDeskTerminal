@@ -37,3 +37,15 @@ changes it re-runs `npm run test:browser -- --product=common_stock,treasury_note
 before saving. Keep `PROGRESS.md` in your workspace current. Final report under 60 lines: what you built (files,
 routes, client methods, fixture controls), tests added and counts, what you looked at in the browser, the data-
 contract requirements you documented, what is not done or not verified, and the exact backend dependencies.
+
+## Update after wave 1 (2026-10-14 13:10 UTC)
+- The server client exists: `server/data/server-client.js`, routes `/api/server/*`, envelope and dataset list in
+  `docs/SERVER-CLIENT.md` (read it first), fixtures in `server/data/server-fixtures.js` with controls at
+  `POST /api/demo/fixtures/server` (available / stale / unavailable / empty / error / slow / partial / forbidden per dataset).
+- The workspace framework exists: `web/views/workspace-model.js` (datasets, tabs per family, gap rules, selection
+  tokens), `web/views/workspace.js` (`registerTabContent(tabId, Comp)`, the panel states, the header),
+  `web/views/instrument-page.js` (`#/instrument/<id>/<tab>[/asof/<date>]`), the drawer in `web/views/instrument.js`.
+  A tab whose content is not registered lists the server's answer plainly. Register your tab's content; do not
+  change the framework's state handling (ask the coordinator through your report if it lacks something).
+- `npm test` 836/836; `npm run test:workspace` (32 browser checks) must stay green; the browser matrix for a few
+  products too.

@@ -104,6 +104,15 @@ maps one to the other.
 | `GET /api/server/news/:id` | news | market.news | `items: [{ id, publishedAt, source, headline, summary, scope: 'company'|'sector'|'economy', facts, classification: { by, labels[] }, interpretation: { by, text } | null }]`, paginated |
 | `GET /api/server/analytics/:id?strategyId=SP3E&runId=&asOf=` | analytics | analytics.instrumentAnalytics | `data: { strategyId, runId, version, calculatedAt, inputCutoff, horizon, historical: bool, efs, sectorScore, equityScore, fundamentalFairValue, realisticFairValue, fairValueCurrency, fairValueUnits, fundamentalGapPct, realisticGapPct, uncertainty, timingEligibility, outlierFlags[], sizing, hedge }`; fields the server does not supply are null and listed in `missingFields` |
 | `GET /api/server/analytics/:id/runs?strategyId=` | analyticsRuns | analytics.runs | `items: [{ runId, version, calculatedAt, inputCutoff, horizon, historical, current }]` |
+| `GET /api/server/ratings/:id` | ratingsCovenants | market.ratingsCovenants | `data: { scope: 'issue'|'issuer', ratedEntity: { id, name }, ratings: [{ agency, scale, rating, outlook, watch, action, ratedAt }], covenants: [{ key, label, text, threshold, status, asOf }], covenantsNote }` (p1, bond pages) |
+| `GET /api/server/yield-spread/:id` | yieldSpread | market.yieldSpread | `data: { yield: { value, type, convention, units }, spread: { valueBps, type, benchmark: { name, symbol } } | null, priceUsed: { value, units, side, timestamp }, calculatedAt, provider }` (p1; supplied only, never computed) |
+| `GET /api/server/option-greeks/:id` | optionGreeks | market.optionGreeks | `data: { impliedVol, delta, gamma, theta, vega, rho, units: { measure: text }, model, underlyingPrice, optionPrice, calculatedAt, provider }` (p1; supplied only) |
+| `GET /api/server/futures-curve/:id` | futuresCurve | market.futuresCurve | `items: [{ contractMonth, expiration, symbol, ids, price, priceType, units, currency, timestamp, openInterest, volume }]` (p1; the points supplied, nothing interpolated) |
+| `GET /api/server/margin/:id` | exchangeMargin | market.exchangeMargin | `data: { initial, maintenance, currency, perContract, clearingHouse, effectiveDate, notes }` (p1; shown beside the Book's clearing terms) |
+| `GET /api/server/fund-holdings/:id` | fundHoldings | market.fundHoldings | `items: [{ name, ids, symbol, assetClass, weightPct, quantity, marketValue, currency, holdingsDate }]`, `data: { holdingsDate, holdingsCount, coveragePct, currency, note }` (p1) |
+| `GET /api/server/fund-facts/:id` | fundFacts | market.fundFacts | `data: { nav, navCurrency, navDate, shareClass, fees: { ongoingChargePct, managementFeePct, entryChargePct, exitChargePct, performanceFee, asOf }, distributionPolicy, netAssets }` (p1) |
+| `GET /api/server/marks/:id?from&to` | otcMarks | market.otcMarks | `items: [{ date, value, units, kind: 'dealer'|'clearing'|'model', provider, method, timestamp }]` (p1; swaps, CDS, forwards, OTC options) |
+| `GET /api/server/fx-curve/:id` | fxCurve | market.fxCurve | `items: [{ tenor, valueDate, forwardPoints, pointsUnits, outright, timestamp }]`, `data: { pair, spotReference, note }` (p1) |
 | `GET /api/server/ledger/:id?bookId=` | ledger | ledger.instrument | `data: { holdings: [{ unitId, owner, long, short, net }], orders, fills, recordedCorporateActions }` (local paper records, source "Terminal paper ledger") |
 | `POST /api/server/cache/invalidate` body `{ dataset?, instrumentId? }` | | | `{ invalidated: n }` |
 | `GET /api/server/refresh`, `PUT /api/server/refresh` body `{ dataset: { intervalSec, ttlSec, staleAfterSec, mode: 'interval'|'on-demand' } }` | | | refresh settings per dataset; `subscription` reported as `{ supported: false, note: 'Not supported by the contract' }` until the contract says otherwise |
@@ -130,7 +139,14 @@ The Gap % is passed through as the server states it. The Terminal never computes
   state `incomplete`), a 403 (KAIJ filings), a server error (KAIJ corporate actions, retried then error), a slow
   response (BRVO news, 1.5 s), an empty list (KAIJ news), and options/futures answering issuer datasets with
   `unavailable` plus `related.underlying`.
-- Point-in-time in the fixtures: supported for statements, earnings, filings, news, analytics and runs; quotes,
+- Product-page fixtures (p1, built in): ratings with one agency on review and three covenants (SIMCORP29), issuer
+  ratings and no covenants (SIMGOV31); yield and spread (SIMCORP29; SIMGOV31 has a yield and a null spread with its
+  reason); illustrative Greeks for any demo option (the same values for every call or put, said so; rho not
+  supplied); the futures curve of the registered months from the demo feed and exchange margin for the S5 and SKJ
+  roots; top-10 holdings and fees for any fund (NAV from the demo feed); dealer, clearing and model marks for any
+  swap, CDS, forward or OTC option; forward points for EUR/USD and USD/JPY. Every mode control applies to them.
+- Point-in-time in the fixtures: supported for statements, earnings, filings, news, analytics, runs, ratings, fund
+  holdings and OTC marks; quotes,
   profile and the rest answer "Not supported by the contract" for an `asOf` request.
 - Quotes, history, FX and rates in demo come from the simulated demo feed (`source.label: 'Simulated demo feed'`),
   so the header and the ticket see the same price. History is unadjusted; `adjusted=1` is `unavailable` (no
@@ -162,6 +178,15 @@ page, pageSize, waitMs }`. Other members: `collect()` (all pages), `invalidate({
 | market | document | documents | none (streamed) | none | n/a |
 | market | corporateActions | corporateActions | 3600 / 172800 | cursor or page | optional |
 | market | news | news | 120 / 3600 (interval 120 s) | cursor or page | by publishedAt |
+| market | ratingsCovenants | ratingsCovenants | 3600 / 604800 | none | optional |
+| market | yieldSpread | yieldSpread | 300 / 86400 | none | optional |
+| market | optionGreeks | optionGreeks | 60 / 3600 | none | optional |
+| market | futuresCurve | futuresCurve | 60 / 86400 | none | optional |
+| market | exchangeMargin | exchangeMargin | 3600 / 604800 | none | optional |
+| market | fundHoldings | fundHoldings | 3600 / 10368000 | page when long | optional |
+| market | fundFacts | fundFacts | 900 / 345600 | none | optional |
+| market | otcMarks | otcMarks | 900 / 259200 | cursor or page | marks up to asOf |
+| market | fxCurve | fxCurve | 60 / 86400 | none | optional |
 | analytics | instrumentAnalytics | analytics | 300 / 259200 | none | historical runs |
 | analytics | runs | analyticsRuns | 300 / 259200 | cursor or page | runs at or before asOf |
 | analytics | earningsWindow | earningsWindow | 900 / 259200 | none | optional |
@@ -171,7 +196,17 @@ Inputs, the fields the Terminal needs back (`requires`), optional fields, units,
 are in `server/data/ports.js` (`SERVER_DATASETS`) and in prose in `docs/DATA-CONTRACT-REQUIREMENTS.md`. All settings
 above are changeable with `PUT /api/server/refresh`.
 
-## 6. Ledger and corporate actions
+## 6. Contract facts of the product pages (the Terminal's own, not a server dataset)
+
+`GET /api/instruments/:id/contract-facts?bookId=` (p1, `server/product-facts.js`) returns what the Terminal knows from
+the contract terms and its paper engine: `accrued` (bond: accrued interest per 100 face to today, the paper engine's
+figure, null with a reason when a floating coupon has no fixing), `coupons` (the coupon dates still to come with
+payment dates on the payment calendar, the amount per 100 face only where the contract fixes it, redemption, call
+and put schedules as registered), `legs` (swap: each leg's periods still to come and its next payment), `premium`
+(credit default swap: premium periods), and `scheduled` (the lifecycle work the paper engine has scheduled on this
+instrument in this Book, with its status). Contract arithmetic only; no yield, spread, Greek, curve or mark.
+
+## 7. Ledger and corporate actions
 
 - `GET /api/server/ledger/:id?bookId=` reads the Book's own records (holdings by Account with long and short apart,
   orders, fills, recorded corporate actions). Source `Terminal paper ledger`. Never remote.

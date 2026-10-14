@@ -1052,3 +1052,6 @@ export const cds = {
 function premiumFor(inst, pos, from, to) {
   return Math.abs(pos.qty) * (inst.terms.indexFactor ?? 1) * inst.terms.coupon * yearFraction(from, to, 'ACT/360');
 }
+
+// p1: the leg schedule, read by the contract-facts route of the product detail pages (server/product-facts.js).
+export { legSchedule };

@@ -19,6 +19,10 @@
 //   - KAIJ filings: 403 (no permission for that issuer's documents); KAIJ corporate actions: server error (500)
 //   - BRVO news: slow (1.5 s); KAIJ news: empty
 //   - Options and futures: no issuer financials of their own; the envelope links to the underlying (`related`)
+//   - p1 product pages: ratings and covenants (SIMCORP29, SIMGOV31), yield and spread (same), option Greeks (any demo
+//     option: illustrative values, not calculated), futures curve (demo-feed prices of the registered months) and
+//     exchange margin (S5, SKJ), fund holdings and fees (any fund), OTC marks (any swap, CDS, forward or OTC option),
+//     FX forward points (EUR/USD, USD/JPY)
 //
 // Controls (POST /api/demo/fixtures/server): per dataset, mode available | stale | unavailable | empty | error |
 // slow | partial | forbidden, optional delayMs; `reset` restores the built-in behaviour.
@@ -85,6 +89,68 @@ const ANALYTICS = {
   KAIJ: [
     { runId: 'fixture-run-kaij-0001', version: 'sp3e-fixture-2.4', ageDays: 1, cutoffDays: 2, horizon: '12M', efs: 0.58, sectorScore: 59, equityScore: 63, fundamentalFairValue: 3120, realisticFairValue: 2990, fairValueCurrency: 'JPY', fairValueUnits: 'per share', fundamentalGapPct: 9.5, realisticGapPct: 4.9, gapReference: { price: 2850, units: 'per share', currency: 'JPY', note: 'Gap % as supplied by Analytics Lab' }, uncertainty: { fundamental: { low: 2800, high: 3400 }, realistic: { low: 2700, high: 3250 }, confidence: 0.7 }, timingEligibility: { eligible: false, reason: 'Inside the earnings window' }, outlierFlags: [], sizing: { suggestedWeightPct: 1.5, maxWeightPct: 3.0, basis: 'Book NAV' }, hedge: { recommended: true, objective: 'fx', note: 'JPY exposure' } },
   ],
+};
+
+// ---- p1: product-specific fixture records (fictional; literal values as a server would send them) --------------
+const RATINGS = {
+  SIMGOV31: {
+    scope: 'issuer', ratedEntity: { id: 'fixture-iss-simgov', name: 'Sim Government (demo)' },
+    ratings: [
+      { agency: 'Demo Ratings A', scale: 'long-term issuer, foreign currency', rating: 'AA+', outlook: 'stable', watch: null, action: 'affirmed', daysAgo: 64 },
+      { agency: 'Demo Ratings B', scale: 'long-term issuer', rating: 'Aa1', outlook: 'negative', watch: null, action: 'outlook changed', daysAgo: 410 },
+    ],
+    covenants: [], covenantsNote: 'Sovereign notes carry no financial covenants in their offering terms (demo fixture).',
+  },
+  SIMCORP29: {
+    scope: 'issue', ratedEntity: { id: 'fixture-iss-simcorp', name: 'Sim Corp (demo)' },
+    ratings: [
+      { agency: 'Demo Ratings A', scale: 'long-term issue', rating: 'BBB+', outlook: 'stable', watch: null, action: 'affirmed', daysAgo: 30 },
+      { agency: 'Demo Ratings B', scale: 'long-term issue', rating: 'Baa1', outlook: null, watch: 'review for downgrade', action: 'placed on review', daysAgo: 9 },
+      { agency: 'Demo Ratings C', scale: 'long-term issue', rating: 'BBB', outlook: 'positive', watch: null, action: 'upgraded from BBB-', daysAgo: 300 },
+    ],
+    covenants: [
+      { key: 'negative-pledge', label: 'Negative pledge', text: 'No security over assets for other bonds unless these notes share it equally (demo fixture).', threshold: null, status: 'in force' },
+      { key: 'change-of-control', label: 'Change of control put', text: 'Holders may require repurchase at 101% of par on a change of control with a downgrade below investment grade.', threshold: '101% of par', status: 'in force' },
+      { key: 'max-leverage', label: 'Maximum net leverage', text: 'Net debt to EBITDA tested semi-annually.', threshold: '3.50x', status: 'in compliance (last test 2.8x, as reported by the issuer)' },
+    ],
+  },
+};
+const YIELDS = {
+  SIMGOV31: { yield: { value: 4.118, type: 'yield to maturity', convention: 'semi-annual bond basis', units: 'percent' }, spread: null, priceUsed: { value: 100.52, units: '% of par (clean)', side: 'mid' }, nulls: { spread: 'A government note is the benchmark: no spread is supplied' } },
+  SIMCORP29: { yield: { value: 5.274, type: 'yield to worst', convention: 'semi-annual bond basis', units: 'percent' }, spread: { valueBps: 131, type: 'G-spread', benchmark: { name: 'SIMGOV31 (demo)', symbol: 'SIMGOV31' } }, priceUsed: { value: 98.75, units: '% of par (clean)', side: 'mid' } },
+};
+const GREEKS = {
+  C: { impliedVol: 0.274, delta: 0.54, gamma: 0.031, theta: -0.046, vega: 0.212, rho: null, model: 'Provider model (demo fixture)', underlyingPrice: null, optionPrice: null, units: { delta: 'per unit of underlying', gamma: 'per unit of underlying', theta: 'premium per calendar day', vega: 'premium per 1 volatility point', rho: 'premium per 1 percentage point' } },
+  P: { impliedVol: 0.291, delta: -0.47, gamma: 0.029, theta: -0.039, vega: 0.208, rho: null, model: 'Provider model (demo fixture)', underlyingPrice: null, optionPrice: null, units: { delta: 'per unit of underlying', gamma: 'per unit of underlying', theta: 'premium per calendar day', vega: 'premium per 1 volatility point', rho: 'premium per 1 percentage point' } },
+};
+const MARGINS = {
+  S5: { initial: 12650, maintenance: 11500, clearingHouse: 'SIM Clearing (demo fixture)', notes: 'Outright, speculator rate' },
+  SKJ: { initial: 980000, maintenance: 890000, clearingHouse: 'SIM Clearing Japan (demo fixture)', notes: 'Outright' },
+};
+const FUND_HOLDINGS = [
+  { name: 'Alfa Industries (demo)', ids: { server: 'fixture-ins-alfa' }, symbol: 'ALFA', assetClass: 'Equity', weightPct: 6.8, quantity: 412000, marketValue: null },
+  { name: 'Sim Government 4.25% 2031 (demo)', ids: { server: 'fixture-ins-simgov31' }, symbol: 'SIMGOV31', assetClass: 'Government bond', weightPct: 6.1, quantity: 7200000, marketValue: null },
+  { name: 'Charlie Logistics (demo)', ids: { server: 'fixture-ins-chrl' }, symbol: 'CHRL', assetClass: 'Equity', weightPct: 5.2, quantity: 300500, marketValue: null },
+  { name: 'Delta Software (demo)', ids: { server: 'fixture-ins-dlta' }, symbol: 'DLTA', assetClass: 'Equity', weightPct: 4.9, quantity: 188000, marketValue: null },
+  { name: 'Sim Corp 2029 notes (demo)', ids: { server: 'fixture-ins-simcorp29' }, symbol: 'SIMCORP29', assetClass: 'Corporate bond', weightPct: 4.6, quantity: 5100000, marketValue: null },
+  { name: 'Bravo Biotech (demo)', ids: { server: 'fixture-ins-brvo' }, symbol: 'BRVO', assetClass: 'Equity', weightPct: 4.1, quantity: 101000, marketValue: null },
+  { name: 'Echo Holdings ADR (demo)', ids: { server: 'fixture-ins-echo' }, symbol: 'ECHO', assetClass: 'Equity', weightPct: 3.9, quantity: 220000, marketValue: null },
+  { name: 'Cash and equivalents', ids: null, symbol: null, assetClass: 'Cash', weightPct: 3.7, quantity: null, marketValue: null },
+  { name: 'Kaiju Motors (demo)', ids: { server: 'fixture-ins-kaij' }, symbol: 'KAIJ', assetClass: 'Equity', weightPct: 3.6, quantity: 2600000, marketValue: null },
+  { name: 'Rose Retail (demo)', ids: { server: 'fixture-ins-rose' }, symbol: 'ROSE', assetClass: 'Equity', weightPct: 3.4, quantity: 1500000, marketValue: null },
+];
+const FUND_FEES = { ongoingChargePct: 0.62, managementFeePct: 0.5, entryChargePct: 0, exitChargePct: 0, performanceFee: null };
+const OTC_MARKS = [
+  { daysAgo: 1, value: -0.44, kind: 'dealer', provider: 'Dealer A (demo fixture)', method: 'Dealer valuation statement' },
+  { daysAgo: 1, value: -0.47, kind: 'clearing', provider: 'SIM Clearing (demo fixture)', method: 'Clearing-house settlement curve' },
+  { daysAgo: 2, value: -0.51, kind: 'dealer', provider: 'Dealer A (demo fixture)', method: 'Dealer valuation statement' },
+  { daysAgo: 3, value: -0.38, kind: 'dealer', provider: 'Dealer A (demo fixture)', method: 'Dealer valuation statement' },
+  { daysAgo: 4, value: -0.42, kind: 'model', provider: 'Shaffer Analytics Lab (demo fixture)', method: 'Model valuation (not a quote)' },
+  { daysAgo: 6, value: -0.35, kind: 'dealer', provider: 'Dealer A (demo fixture)', method: 'Dealer valuation statement' },
+];
+const FX_CURVES = {
+  'EUR/USD': { pointsUnits: 'pips (0.0001 USD)', spotReference: { rate: null, note: 'Spot at the time the curve was struck is not supplied by the demo fixture' }, note: 'Demo fixture forward points.', points: [['1W', 7, 2.1, null], ['1M', 30, 9.2, null], ['3M', 92, 27.6, null], ['6M', 183, 55.4, null], ['1Y', 365, 108.9, null]], nulls: { outright: 'Not supplied by the demo fixture' } },
+  'USD/JPY': { pointsUnits: 'pips (0.01 JPY)', spotReference: { rate: null, note: 'Not supplied by the demo fixture' }, note: 'Demo fixture forward points.', points: [['1W', 7, -8.4, null], ['1M', 30, -36.0, null], ['3M', 92, -104.5, null], ['6M', 183, -203.1, null], ['1Y', 365, -398.0, null]], nulls: { outright: 'Not supplied by the demo fixture' } },
 };
 
 // ---- statement generation (deterministic fixture series) ---------------------------------------------------
@@ -330,7 +396,9 @@ export function createServerFixtures(app) {
         const drop = new Set(gap.map((b) => b.date));
         bars = bars.filter((b) => !drop.has(b.date));
       }
-      const ca = (await P.corporateActions(c, { instrument: inst })).items || [];
+      // A failing corporate-actions source (KAIJ's built-in server error) leaves the bars served, without annotations, and says so.
+      let ca = [];
+      try { ca = (await P.corporateActions(c, { instrument: inst })).items || []; } catch { missing.push('corporate-action annotations (the corporate-actions source answered with an error)'); }
       const seenEv = new Set();
       const annotations = ca.filter((x) => !seenEv.has(x.eventId) && seenEv.add(x.eventId)).filter((x) => bars.length && x.exDate >= bars[0].date && x.exDate <= bars[bars.length - 1].date).map((x) => ({ date: x.exDate, type: x.type, label: x.type === 'cash_dividend' ? `Dividend ${x.amount} ${x.currency}` : x.type === 'split' ? `Split ${x.ratio.num}:${x.ratio.den}` : x.type, amount: x.amount ?? null, ratio: x.ratio ?? null }));
       return {
@@ -450,6 +518,80 @@ export function createServerFixtures(app) {
       const run = runsOf(sym, null)[0];
       return { data: { eligible: sym === 'KAIJ' ? false : !inside, window: { from, to }, reason: sym === 'KAIJ' ? 'Inside the earnings window (Analytics Lab rule, demo fixture)' : inside ? 'Inside the earnings window' : 'Outside the earnings window', basis: `Next earnings ${d} (${next.dateStatus})`, runId: run.runId, calculatedAt: run.calculatedAt }, asOf: run.calculatedAt, source: SRC };
     },
+    // ---- p1: product-specific datasets (literal fictional values; nothing here is computed from a price) ----
+    async ratingsCovenants(c, p) {
+      const inst = p.instrument;
+      const rec = RATINGS[inst.symbol];
+      if (!rec) return { data: null, message: inst.family === 'bond' ? 'No ratings or covenants for this issue in the demo fixtures.' : 'Ratings and covenants apply to debt instruments and their issuers.' };
+      const cut = c.asOf ? String(c.asOf).slice(0, 10) : null;
+      const ratings = rec.ratings.map((r) => ({ ...r, ratedAt: daysAgo(r.daysAgo) })).filter((r) => !cut || r.ratedAt <= cut).map(({ daysAgo: _d, ...r }) => r);
+      if (!ratings.length) return { data: null, message: `No rating was in force on ${cut} in the demo fixtures.` };
+      return { data: { scope: rec.scope, ratedEntity: rec.ratedEntity, ratings, covenants: rec.covenants.map((x) => ({ ...x, asOf: daysAgo(40) })), covenantsNote: rec.covenantsNote || null }, asOf: iso(daysAgo(1)), source: SRC, pointInTime: cut ? { supported: true, note: 'Ratings in force on the date' } : undefined };
+    },
+    async yieldSpread(c, p) {
+      const rec = YIELDS[p.instrument.symbol];
+      if (!rec) return { data: null, message: 'No yield or spread for this instrument in the demo fixtures.' };
+      const stamp = iso(daysAgo(1), '20:00:00');
+      return { data: { ...structuredClone(rec), priceUsed: { ...rec.priceUsed, timestamp: stamp }, calculatedAt: stamp, provider: 'Shaffer MarketData (demo fixture)' }, nulls: rec.nulls || {}, asOf: stamp, source: SRC };
+    },
+    async optionGreeks(c, p) {
+      const inst = p.instrument;
+      if (!['option', 'otcoption'].includes(inst.family)) return { data: null, message: 'Greeks apply to option contracts.' };
+      const g = GREEKS[inst.terms?.right === 'P' ? 'P' : 'C'];
+      const stamp = new Date(app.clock.ms() - 15 * 60e3).toISOString();
+      return { data: { ...structuredClone(g), calculatedAt: stamp, provider: 'Shaffer MarketData (demo fixture)', note: 'Illustrative fixture values, the same for every demo call (or put): not calculated for this contract.' }, nulls: { rho: 'Not supplied by the demo fixture' }, asOf: stamp, source: SRC };
+    },
+    async futuresCurve(c, p) {
+      const inst = p.instrument;
+      if (inst.family !== 'future' || !inst.underlying_id) return { items: [], message: 'No futures curve for this instrument in the demo fixtures.' };
+      const months = app.instruments.list({ underlyingId: inst.underlying_id, family: 'future', limit: 200 }).filter((f) => !f.terms?.perpetual && f.terms?.expiration).sort((a, b) => (a.terms.expiration < b.terms.expiration ? -1 : 1));
+      await app.data.refresh({ instruments: months });
+      const items = months.map((f) => {
+        const o = app.data.price(f.id);
+        return { contractMonth: f.terms.expiration.slice(0, 7), expiration: f.terms.expiration, symbol: f.symbol, ids: idsOf(f), price: o?.value ?? null, priceType: 'last', units: f.terms.priceUnits || 'index points', currency: f.trading_ccy, timestamp: o?.asOf ?? null, openInterest: null, volume: null };
+      });
+      return { items, nulls: { openInterest: 'Not supplied by the demo feed', volume: 'Not supplied by the demo feed' }, asOf: items.map((x) => x.timestamp).filter(Boolean).sort()[0] || null, source: FEED };
+    },
+    async exchangeMargin(c, p) {
+      const inst = p.instrument;
+      const m = MARGINS[inst.terms?.root];
+      if (inst.family !== 'future' || !m) return { data: null, message: 'No exchange margin for this contract in the demo fixtures.' };
+      return { data: { ...m, currency: inst.trading_ccy, effectiveDate: daysAgo(6), perContract: true }, asOf: iso(daysAgo(6), '22:00:00'), source: SRC };
+    },
+    async fundHoldings(c, p) {
+      const inst = p.instrument;
+      if (inst.family !== 'fund') return { items: [], message: 'Holdings apply to funds.' };
+      const holdingsDate = addDays(`${today().slice(0, 7)}-01`, -1); // last day of the previous month
+      const cut = c.asOf ? String(c.asOf).slice(0, 10) : null;
+      if (cut && cut < holdingsDate) return { items: [], message: `The demo fixtures hold no holdings report dated on or before ${cut}.`, pointInTime: { supported: true, note: 'Holdings as reported on or before the date' } };
+      return { items: FUND_HOLDINGS.map((h) => ({ ...h, holdingsDate, currency: inst.trading_ccy })), data: { holdingsDate, holdingsCount: 214, coveragePct: 46.3, currency: inst.trading_ccy, note: 'Top 10 holdings of 214; the rest are not listed in the demo fixture.' }, asOf: iso(holdingsDate), source: SRC, pointInTime: cut ? { supported: true, note: 'Holdings as reported on or before the date' } : undefined };
+    },
+    async fundFacts(c, p) {
+      const inst = p.instrument;
+      if (inst.family !== 'fund') return { data: null, message: 'Fund facts apply to funds.' };
+      await app.data.refresh({ instruments: [inst] });
+      const o = app.data.price(inst.id);
+      return {
+        data: { nav: o?.value ?? null, navCurrency: inst.trading_ccy, navDate: o?.forDate || (o?.asOf ? String(o.asOf).slice(0, 10) : null), shareClass: 'Investor class (demo fixture)', fees: { ...FUND_FEES, asOf: daysAgo(120) }, distributionPolicy: 'Income distributed quarterly (demo fixture)', netAssets: null },
+        nulls: { netAssets: 'Not supplied by the demo fixture', ...(o ? {} : { nav: 'No NAV from the demo feed for this fund', navDate: 'No NAV from the demo feed for this fund' }) },
+        missingFields: o ? [] : ['nav', 'navDate'], asOf: o?.asOf ?? iso(daysAgo(1)), source: SRC,
+      };
+    },
+    async otcMarks(c, p) {
+      const inst = p.instrument;
+      if (!['swap', 'cds', 'forward', 'otcoption'].includes(inst.family)) return { items: [], message: 'Supplied marks apply to OTC contracts.' };
+      const cut = c.asOf ? String(c.asOf).slice(0, 10) : null;
+      const items = OTC_MARKS.map((m) => ({ ...m, date: daysAgo(m.daysAgo), timestamp: iso(daysAgo(m.daysAgo), m.kind === 'clearing' ? '22:30:00' : '21:15:00'), units: inst.family === 'otcoption' || inst.family === 'forward' ? 'per unit (as quoted for the contract)' : 'NPV per 100 notional' }))
+        .filter((m) => !cut || m.date <= cut).map(({ daysAgo: _d, ...m }) => m);
+      return { items, asOf: items[0]?.timestamp ?? null, source: SRC, message: items.length ? null : 'No supplied marks on or before that date.', pointInTime: cut ? { supported: true, note: 'Marks struck on or before the date' } : undefined };
+    },
+    async fxCurve(c, p) {
+      const inst = p.instrument;
+      const rec = inst.family === 'fx' ? FX_CURVES[`${inst.terms?.base}/${inst.terms?.quote}`] : null;
+      if (!rec) return { items: [], message: 'No forward curve for this instrument in the demo fixtures.' };
+      const stamp = iso(today(), '12:00:00');
+      return { items: rec.points.map(([tenor, days, pts, outright]) => ({ tenor, valueDate: addDays(today(), days), forwardPoints: pts, pointsUnits: rec.pointsUnits, outright: outright ?? null, timestamp: stamp })), data: { pair: `${inst.terms.base}/${inst.terms.quote}`, spotReference: rec.spotReference, note: rec.note }, nulls: rec.nulls || {}, asOf: stamp, source: SRC };
+    },
   };
 
   // ---- fixture records relative to the clock ----
@@ -544,7 +686,7 @@ export function createServerFixtures(app) {
   }
 
   // ---- modes ----
-  const pointInTimeSets = new Set(['statements', 'earnings', 'filings', 'news', 'analytics', 'analyticsRuns']);
+  const pointInTimeSets = new Set(['statements', 'earnings', 'filings', 'news', 'analytics', 'analyticsRuns', 'ratingsCovenants', 'fundHoldings', 'otcMarks']);
   const methodOf = (ds) => SERVER_DATASETS[ds].method;
 
   function applyPartial(ds, res) {
@@ -639,6 +781,7 @@ export function createServerFixtures(app) {
         'BRVO statements: annual only; SIMGOV31: issuer only',
         'KAIJ filings: 403; KAIJ corporate actions: server error; BRVO news: slow (1.5 s); KAIJ news: empty',
         'Options and futures: no issuer data of their own; `related.underlying` links to the underlying',
+        'p1: SIMCORP29 / SIMGOV31 ratings (one on review) and covenants (none for the sovereign), yield and spread (SIMGOV31 has no spread: benchmark); options: illustrative Greeks (rho not supplied, shown as missing); futures: curve from the demo feed across registered months, exchange margin for S5 and SKJ; funds: top-10 holdings and fees; OTC contracts: dealer, clearing and model marks; EUR/USD and USD/JPY forward points',
       ],
     }),
     _days: (a, b) => diffDays(a, b),

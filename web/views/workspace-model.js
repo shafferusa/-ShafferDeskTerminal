@@ -29,6 +29,18 @@ export const DATASETS = {
   analytics: { label: 'Analytics for the selected Strategy', iface: 'analytics', path: (id) => `/api/server/analytics/${enc(id)}`, asOf: true },
   analyticsRuns: { label: 'Analytics runs', iface: 'analytics', path: (id) => `/api/server/analytics/${enc(id)}/runs`, asOf: false },
   ledger: { label: 'Paper ledger', iface: 'ledger', path: (id) => `/api/server/ledger/${enc(id)}`, asOf: false },
+  // p1: product-specific detail pages. Supplied values only (the Terminal computes no yield, spread, Greek, curve or mark).
+  ratingsCovenants: { label: 'Ratings and covenants', iface: 'market', path: (id) => `/api/server/ratings/${enc(id)}`, asOf: true },
+  yieldSpread: { label: 'Yield and spread', iface: 'market', path: (id) => `/api/server/yield-spread/${enc(id)}`, asOf: true },
+  optionGreeks: { label: 'Greeks and implied volatility', iface: 'market', path: (id) => `/api/server/option-greeks/${enc(id)}`, asOf: true },
+  futuresCurve: { label: 'Futures curve', iface: 'market', path: (id) => `/api/server/futures-curve/${enc(id)}`, asOf: true },
+  exchangeMargin: { label: 'Exchange margin', iface: 'market', path: (id) => `/api/server/margin/${enc(id)}`, asOf: true },
+  fundHoldings: { label: 'Holdings and weights', iface: 'market', path: (id) => `/api/server/fund-holdings/${enc(id)}`, asOf: true },
+  fundFacts: { label: 'NAV, fees and fund facts', iface: 'market', path: (id) => `/api/server/fund-facts/${enc(id)}`, asOf: true },
+  otcMarks: { label: 'Supplied marks', iface: 'market', path: (id) => `/api/server/marks/${enc(id)}`, asOf: true },
+  fxCurve: { label: 'Forward curve', iface: 'market', path: (id) => `/api/server/fx-curve/${enc(id)}`, asOf: true },
+  // The Terminal's own contract facts (terms, schedules, the paper engine's accrued interest, scheduled lifecycle work).
+  contractFacts: { label: 'Contract schedule', iface: 'terminal', path: (id) => `/api/instruments/${enc(id)}/contract-facts`, asOf: false },
 };
 const enc = (s) => encodeURIComponent(s);
 
@@ -51,6 +63,26 @@ export const TABS = {
   chain: { label: 'Chain and contract months', datasets: [], own: true },
   analytics: { label: 'Analytics and risk', datasets: ['analytics', 'analyticsRuns'] },
   positions: { label: 'My positions and trades', datasets: ['ledger'], own: true },
+  // p1: product-specific tabs (contents in web/views/tabs/product/*.js). `own: true` where the tab's first content is
+  // the contract itself, so a server "not covered" never hides it.
+  'bond-terms': { label: 'Overview and terms', datasets: ['contractFacts', 'yieldSpread'], own: true },
+  'bond-schedule': { label: 'Schedules', datasets: ['contractFacts'], own: true },
+  'bond-credit': { label: 'Ratings and covenants', datasets: ['ratingsCovenants'] },
+  'opt-terms': { label: 'Contract terms', datasets: [], own: true },
+  'opt-chain': { label: 'Chain', datasets: [], own: true },
+  'opt-greeks': { label: 'Greeks and volatility', datasets: ['optionGreeks'] },
+  'fut-terms': { label: 'Contract terms and margin', datasets: ['exchangeMargin'], own: true },
+  'fut-curve': { label: 'Curve and contract months', datasets: ['futuresCurve'], own: true },
+  'fund-overview': { label: 'Overview, NAV and fees', datasets: ['fundFacts'], own: true },
+  'fund-holdings': { label: 'Holdings', datasets: ['fundHoldings'] },
+  'fund-nav': { label: 'NAV history', datasets: ['history'], own: true },
+  'fx-overview': { label: 'Overview and conventions', datasets: [], own: true },
+  'fx-rates': { label: 'Rates and curves', datasets: ['fx', 'fxCurve'] },
+  'swap-terms': { label: 'Legs and terms', datasets: [], own: true },
+  'cds-terms': { label: 'Protection terms', datasets: [], own: true },
+  'swap-schedule': { label: 'Schedules', datasets: ['contractFacts'], own: true },
+  'otc-marks': { label: 'Marks and history', datasets: ['otcMarks'], own: true },
+  'other-terms': { label: 'Terms and records', datasets: ['contractFacts'], own: true },
 };
 
 const ISSUER_ELSEWHERE = 'They belong to the issuer, not to this contract: open the issuer\'s workspace.';
@@ -62,45 +94,50 @@ const NO_ROUTE = 'The Shaffer server contract has no route for it yet (docs/SERV
  */
 export const FAMILY_TABS = {
   equity: { group: 'Equities and issuer-linked securities', tabs: ['overview', 'history', 'earnings', 'statements', 'filings', 'actions', 'news', 'analytics', 'positions'], notCovered: [] },
+  // p1: the product-specific tabs of every non-equity family (web/views/tabs/product/*.js). What the server contract does
+  // not cover for a product is listed under "Not covered for this product", never drawn as an empty tab.
   fund: {
-    group: 'Funds', tabs: ['overview', 'history', 'distributions', 'filings', 'news', 'analytics', 'positions'],
-    notCovered: [['Holdings, weights, NAV history and fees', NO_ROUTE], ['Earnings and financial statements', 'A fund reports its NAV, holdings and distributions, not company earnings or statements.']],
+    group: 'Funds', tabs: ['fund-overview', 'fund-holdings', 'fund-nav', 'distributions', 'filings', 'news', 'analytics', 'positions'],
+    notCovered: [['Earnings and financial statements', 'A fund reports its NAV, holdings and distributions, not company earnings or statements. The holdings link to their own workspaces where they are registered.']],
   },
   bond: {
-    group: 'Bonds and debt securities', related: 'issuer', tabs: ['terms', 'history', 'filings', 'news', 'analytics', 'positions'],
-    notCovered: [['Earnings and financial statements', ISSUER_ELSEWHERE], ['Corporate actions', 'Coupons, calls and redemptions follow the contract schedule (Overview and terms), not corporate actions.'], ['Ratings and covenants', NO_ROUTE]],
+    group: 'Bonds and debt securities', related: 'issuer', tabs: ['bond-terms', 'bond-schedule', 'bond-credit', 'history', 'filings', 'news', 'analytics', 'positions'],
+    notCovered: [['Earnings and financial statements', ISSUER_ELSEWHERE], ['Corporate actions', 'Coupons, calls and redemptions follow the contract schedule (Schedules), not corporate actions.']],
   },
   option: {
-    group: 'Options', related: 'underlying', tabs: ['terms', 'chain', 'marks', 'analytics', 'positions'],
-    notCovered: [['Earnings, financial statements, filings, corporate actions and news', UNDERLYING_ELSEWHERE], ['Greeks and implied volatility per contract', `${NO_ROUTE} The chain shows implied volatility where the feed supplies it.`]],
+    group: 'Options', related: 'underlying', tabs: ['opt-terms', 'opt-chain', 'opt-greeks', 'history', 'analytics', 'positions'],
+    notCovered: [['Earnings, financial statements, filings, corporate actions and news', UNDERLYING_ELSEWHERE]],
   },
   otcoption: {
-    group: 'OTC options', related: 'underlying', tabs: ['terms', 'marks', 'analytics', 'positions'],
-    notCovered: [['Earnings, financial statements, filings, corporate actions and news', UNDERLYING_ELSEWHERE], ['Greeks and volatility', NO_ROUTE]],
+    group: 'OTC options', related: 'underlying', tabs: ['opt-terms', 'opt-greeks', 'otc-marks', 'analytics', 'positions'],
+    notCovered: [['Earnings, financial statements, filings, corporate actions and news', UNDERLYING_ELSEWHERE], ['Option chain', 'An OTC option is a bilateral contract: it is not part of a listed chain.']],
   },
   future: {
-    group: 'Futures', related: 'underlying', tabs: ['terms', 'chain', 'marks', 'analytics', 'positions'],
-    notCovered: [['Forward curve', NO_ROUTE], ['Earnings, financial statements, filings, corporate actions and news', UNDERLYING_ELSEWHERE]],
+    group: 'Futures', related: 'underlying', tabs: ['fut-terms', 'fut-curve', 'history', 'analytics', 'positions'],
+    notCovered: [['Earnings, financial statements, filings, corporate actions and news', UNDERLYING_ELSEWHERE]],
   },
-  forward: { group: 'Forwards', related: 'underlying', tabs: ['terms', 'marks', 'analytics', 'positions'], notCovered: [['Earnings, financial statements, filings and news', 'A forward is a bilateral contract with no issuer of its own.']] },
+  forward: {
+    group: 'Forwards', related: 'underlying', tabs: ['other-terms', 'otc-marks', 'analytics', 'positions'],
+    notCovered: [['Earnings, financial statements, filings and news', 'A forward is a bilateral contract with no issuer of its own.'], ['Price history of a listed market', 'A forward is not listed: its history is the history of its marks (Marks and history).']],
+  },
   swap: {
-    group: 'Swaps', related: 'underlying', tabs: ['terms', 'marks', 'analytics', 'positions'],
-    notCovered: [['Earnings, financial statements, filings and news', 'A swap is a bilateral contract with no issuer of its own.'], ['Dealer marks history and collateral calls from the server', NO_ROUTE]],
+    group: 'Swaps', related: 'underlying', tabs: ['swap-terms', 'swap-schedule', 'otc-marks', 'analytics', 'positions'],
+    notCovered: [['Earnings, financial statements, filings and news', 'A swap is a bilateral contract with no issuer of its own. A reference asset of a return or price leg is linked under Related.'], ['Collateral calls from the server', NO_ROUTE]],
   },
   cds: {
-    group: 'Credit derivatives', related: 'underlying', tabs: ['terms', 'marks', 'analytics', 'positions'],
-    notCovered: [['Financial statements of the reference entity', `${ISSUER_ELSEWHERE} The reference entity is linked under Related.`], ['Spread curve', NO_ROUTE]],
+    group: 'Credit derivatives', related: 'underlying', tabs: ['cds-terms', 'swap-schedule', 'otc-marks', 'analytics', 'positions'],
+    notCovered: [['Financial statements of the reference entity', `${ISSUER_ELSEWHERE} The reference entity is linked under Related when it is registered.`], ['Spread curve', NO_ROUTE]],
   },
-  fx: { group: 'FX', tabs: ['overview', 'rates', 'history', 'news', 'analytics', 'positions'], notCovered: [['Earnings, financial statements, filings and corporate actions', 'A currency pair has no issuer.'], ['Rate curves and forward points', NO_ROUTE]] },
-  spot: { group: 'Spot assets and commodities', tabs: ['overview', 'history', 'news', 'analytics', 'positions'], notCovered: [['Earnings, financial statements, filings and corporate actions', 'A spot asset has no issuer.']] },
-  crypto: { group: 'Digital assets', tabs: ['overview', 'history', 'news', 'analytics', 'positions'], notCovered: [['Earnings, financial statements, filings and corporate actions', 'A digital asset has no issuer reporting to the server.']] },
-  manual: { group: 'Manually valued holdings', related: 'issuer', tabs: ['terms', 'history', 'positions'], notCovered: [['Server research datasets', 'Valued by hand: the Shaffer server supplies no data for this product.']] },
-  loan: { group: 'Financing arrangements', tabs: ['terms', 'positions'], notCovered: [['Market and research data', 'A financing arrangement of this Book: it has no market price or issuer data.']] },
-  repo: { group: 'Financing arrangements', tabs: ['terms', 'positions'], notCovered: [['Market and research data', 'A financing arrangement of this Book: it has no market price or issuer data.']] },
-  secloan: { group: 'Financing arrangements', tabs: ['terms', 'positions'], notCovered: [['Market and research data', 'A financing arrangement of this Book: it has no market price or issuer data.']] },
-  cash: { group: 'Currency balances', tabs: ['terms', 'positions'], notCovered: [['Market and research data', 'A currency balance is ledger cash.']] },
+  fx: { group: 'FX', tabs: ['fx-overview', 'fx-rates', 'history', 'news', 'analytics', 'positions'], notCovered: [['Earnings, financial statements, filings and corporate actions', 'A currency pair has no issuer.']] },
+  spot: { group: 'Spot assets and commodities', tabs: ['other-terms', 'history', 'news', 'analytics', 'positions'], notCovered: [['Earnings, financial statements, filings and corporate actions', 'A spot asset has no issuer.']] },
+  crypto: { group: 'Digital assets', tabs: ['other-terms', 'history', 'news', 'analytics', 'positions'], notCovered: [['Earnings, financial statements, filings and corporate actions', 'A digital asset has no issuer reporting to the server.']] },
+  manual: { group: 'Manually valued holdings', related: 'issuer', tabs: ['other-terms', 'history', 'positions'], notCovered: [['Server research datasets', 'Valued by hand: the Shaffer server supplies no data for this product. Its valuation history is the manual marks under Terms and records.']] },
+  loan: { group: 'Financing arrangements', tabs: ['other-terms', 'positions'], notCovered: [['Market and research data', 'A financing arrangement of this Book: it has no market price or issuer data.']] },
+  repo: { group: 'Financing arrangements', tabs: ['other-terms', 'positions'], notCovered: [['Market and research data', 'A financing arrangement of this Book: it has no market price or issuer data.']] },
+  secloan: { group: 'Financing arrangements', tabs: ['other-terms', 'positions'], notCovered: [['Market and research data', 'A financing arrangement of this Book: it has no market price or issuer data.']] },
+  cash: { group: 'Currency balances', tabs: ['other-terms', 'positions'], notCovered: [['Market and research data', 'A currency balance is ledger cash.']] },
 };
-const FALLBACK = { group: 'Other products', tabs: ['terms', 'history', 'positions'], notCovered: [] };
+const FALLBACK = { group: 'Other products', tabs: ['other-terms', 'history', 'positions'], notCovered: [] };
 
 /**
  * The tab list of one instrument: its family's tabs, each with the state the server reports for its first dataset

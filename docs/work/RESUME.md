@@ -14,4 +14,4 @@ everywhere, product-specific tab framework, trading and hedge integration, as-of
 analytics & risk + positions), P1 product-specific pages. Wave 3: integration tests of the listed failure modes,
 docs (data-contract requirements, integration checklist), final run and report.
 
-**Completeness: about 11.0% of the pass** (last milestone 2026-10-14T13:04Z, w1: w1: trading/hedge integration from the detail page verified (fill -> hedge prompt), light/dark demo/normal 1440/1024/390 reviewed; workspace 32/32, matrix 5/5, npm test 836/836)
+**Completeness: about 13.0% of the pass** (last milestone 2026-10-14T13:38Z, e2: e2: Financial statements tab (income/balance/cash flow, quarterly/annual, restated beside original, YTD guard and labelled derivation, supplied TTM apart, labelled Terminal comparison, as-of); statements-model tests 9; workspace 176/176; npm test 859/859)

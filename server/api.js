@@ -16,6 +16,7 @@ import { STATUS_LABEL } from './data/observation.js';
 import { guardRepeats } from './http/once.js';
 import { createRouter } from './http/router.js';
 import { registerServerRoutes } from './server-api.js'; // d1: server client routes (docs/SERVER-CLIENT.md)
+import { registerProductFactsRoutes } from './product-facts.js'; // p1: contract facts of the product detail pages
 import { CALENDARS, COUNTRY_CALENDAR, CURRENCY_CALENDAR, getExtraHolidays, holidaysOf, setExtraHolidays } from './quant/calendar.js';
 import { setBasketLevel } from './products/swap-partial.js'; // s3: basket level entered on a swap payment item
 
@@ -644,6 +645,7 @@ export function createApi(app) {
 
   // ---- server client (d1): /api/server/* and POST /api/demo/fixtures/server; registered before /api/demo/fixtures/:kind --------
   registerServerRoutes(r, app, { requireVisible });
+  registerProductFactsRoutes(r, app, { requireVisible }); // p1: GET /api/instruments/:id/contract-facts
 
   // ---- test matrix: controlled fixtures (demo only) and the read-only integrity check ---------------------------------------
   // Fixtures stand in for the Shaffer services with values a test states. Demo mode only (403 otherwise);

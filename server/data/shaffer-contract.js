@@ -98,6 +98,16 @@ export const serverOperations = {
     document: null,         // ({...}, { docId }) => { mediaType, filename?, body: ReadableStream | Buffer | string }
     corporateActions: null, // ({...}, { instrument, from, to }) => { items: [CorporateActionEvent] }
     news: null,             // ({...}, { instrument, from, asOf }) => { items: [NewsItem], nextCursor? | page? }
+    // p1: product-specific detail pages (supplied values only; the Terminal computes none of them)
+    ratingsCovenants: null, // ({...}, { instrument, asOf }) => { data: { scope, ratedEntity, ratings: [...], covenants: [...] } }
+    yieldSpread: null,      // ({...}, { instrument }) => { data: { yield, spread, priceUsed, calculatedAt, provider } }
+    optionGreeks: null,     // ({...}, { instrument }) => { data: { impliedVol, delta, gamma, theta, vega, rho, units, model, calculatedAt, provider } }
+    futuresCurve: null,     // ({...}, { instrument }) => { items: [{ contractMonth, expiration, price, priceType, timestamp, openInterest?, volume? }] }
+    exchangeMargin: null,   // ({...}, { instrument }) => { data: { initial, maintenance, currency, effectiveDate, clearingHouse } }
+    fundHoldings: null,     // ({...}, { instrument, asOf }) => { items: [{ name, weightPct, ... }], data: { holdingsDate, coveragePct } }
+    fundFacts: null,        // ({...}, { instrument }) => { data: { nav, navDate, navCurrency, shareClass, fees, distributionPolicy } }
+    otcMarks: null,         // ({...}, { instrument, from, to, asOf }) => { items: [{ date, value, units, kind, provider, timestamp }] }
+    fxCurve: null,          // ({...}, { instrument }) => { items: [{ tenor, valueDate, forwardPoints, pointsUnits, outright?, timestamp }] }
   },
   analytics: {
     instrumentAnalytics: null, // ({...}, { instrument, strategyId, runId, asOf }) => { data: AnalyticsRecord }

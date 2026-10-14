@@ -5,7 +5,7 @@
 //   - useSelection / useDataset: one in-flight request set per selected instrument (workspace-model.js), with the
 //     per-dataset state of docs/SERVER-CLIENT.md (awaiting, loading, available, stale, unavailable, incomplete, error)
 //   - DatasetPanel: every panel draws its dataset's state, source, timestamps, refresh interval and a Refresh button
-//   - the tab contents this framework owns (Overview / terms, Price history, Chain, My positions and trades) and
+//   - the tab contents this framework owns (Overview / terms, Price history, Chain) and
 //     registerTabContent() for the contents colleagues fill in (Earnings, Financial statements, Filings, ...)
 // Data comes from the Shaffer server routes; a route the server does not have yet is drawn as awaiting. Nothing here
 // values an instrument or fabricates a missing figure.
@@ -400,94 +400,9 @@ export function TermsPanel({ inst, detail }) {
     <div class="body">${FIELDS_NOTE[inst.family] ? html`<p class="note" style="margin-top:0">${FIELDS_NOTE[inst.family]}</p>` : null}<${KV} rows=${shown} /></div></section>`;
 }
 
-// ---- Price history ---------------------------------------------------------------------------------------------------------
-const RANGES = [['1m', '1 month', 31], ['3m', '3 months', 92], ['6m', '6 months', 183], ['1y', '1 year', 366], ['5y', '5 years', 1827], ['max', 'All', null]];
-const INTERVALS = [['1d', 'Daily'], ['1wk', 'Weekly'], ['1mo', 'Monthly']];
-const isoDay = (d) => d.toISOString().slice(0, 10);
-/** The existing price-history route, wrapped as an envelope, while /api/server/history is not served. */
-const historyFallback = (sel, q) => get(`/api/instruments/${sel.id}/history`, { from: q.from, to: q.to, interval: q.interval }).then((h) => ({
-  state: h.available ? (h.bars?.length ? 'available' : 'unavailable') : 'awaiting', items: h.available ? h.bars : undefined,
-  data: { adjusted: null, adjustmentBasis: null, currency: h.currency || null, interval: q.interval, annotations: [] },
-  source: h.source ? { label: h.source, fixture: false } : null, message: h.available ? null : 'Historical prices come from Shaffer MarketData.', olderRoute: true,
-}));
-export function PriceHistory({ inst, sel, asOf, intervalFor, title = 'Price history' }) {
-  const [range, setRange] = useState('6m');
-  const [interval, setInterval] = useState('1d');
-  // Prices as traded by default; the adjusted series is asked for when chosen (and never manufactured when absent).
-  const [adjusted, setAdjusted] = useState('0');
-  const status = useStore((s) => s.status);
-  const end = asOf ? new Date(`${asOf}T23:59:59Z`) : new Date(status?.now || Date.now());
-  const days = RANGES.find((r) => r[0] === range)?.[2];
-  const q = { from: days ? isoDay(new Date(end.getTime() - days * 86400e3)) : undefined, to: isoDay(end), interval, adjusted };
-  const ds = useDataset(sel, 'history', { query: q, fallback: historyFallback, interval: intervalFor?.('history') });
-  return html`<${DatasetPanel} ds=${ds} title=${title} asOf=${asOf}
-    actions=${html`<span class="ws-hctl"><${Select} value=${range} onChange=${setRange} options=${RANGES.map(([v, l]) => ({ value: v, label: l }))} />
-      <${Select} value=${interval} onChange=${setInterval} options=${INTERVALS.map(([v, l]) => ({ value: v, label: l }))} />
-      <${Seg} value=${adjusted} onChange=${setAdjusted} options=${[{ value: '1', label: 'Adjusted' }, { value: '0', label: 'Unadjusted' }]} /></span>`}>
-    ${(env) => html`<${HistoryBody} env=${env} inst=${inst} q=${q} />`}<//>`;
-}
-function HistoryBody({ env, inst, q }) {
-  const bars = (env.items || []).filter((b) => isNum(b.close));
-  const meta = env.data || {};
-  if (!bars.length) return html`<${Empty} title="No prices in this range">The server has no ${q.interval} prices for ${q.from ? `${q.from} to ${q.to}` : `up to ${q.to}`}. Choose a longer range or another interval.<//>`;
-  const first = bars[0], last = bars[bars.length - 1];
-  const adjText = meta.adjusted === true ? `Adjusted series${meta.adjustmentBasis ? ` (${meta.adjustmentBasis})` : ''}` : meta.adjusted === false ? 'Unadjusted series: prices as traded, not adjusted for splits or dividends' : 'Adjustment basis not stated by the source: treat the series as of unknown adjustment';
-  const wanted = q.adjusted === '1' ? 'adjusted' : 'unadjusted';
-  const mismatch = (meta.adjusted === true && wanted === 'unadjusted') || (meta.adjusted === false && wanted === 'adjusted');
-  const startGap = q.from && first.date > q.from;
-  const perf = isNum(first.close) && first.close > 0 ? (last.close / first.close - 1) * 100 : null;
-  const recent = bars.slice(-12).reverse();
-  return html`<div class="stack">
-    <${LineChart} bars=${bars} height=${170} />
-    <div class="small">${adjText}.${mismatch ? html` <b>The server returned an ${meta.adjusted ? 'adjusted' : 'unadjusted'} series although ${wanted} was asked for.</b>` : ''}${env.olderRoute ? ' Served by the Terminal\'s existing history route until the server client route is available.' : ''}</div>
-    ${startGap ? html`<${Notice}>No prices before ${first.date} in this range: the history starts there. Nothing is filled in before it.<//>` : null}
-    ${env.coverage?.missing?.length ? html`<${Notice} tone="warn"><b>Gaps in the history:</b> ${env.coverage.missing.join(', ')}. They are left empty, not interpolated.<//>` : null}
-    <div class="small">Change over the range shown: ${perf === null ? html`<${Missing} reason="Needs a positive first close" />` : html`<${Signed} value=${perf} suffix="%" />`} <span class="muted">(first close ${first.date} to last close ${last.date}, on this ${meta.adjusted === true ? 'adjusted' : meta.adjusted === false ? 'unadjusted' : 'series'}; worked out here from the closes shown${meta.adjusted === false ? ', so splits and dividends are not accounted for' : ''})</span></div>
-    ${meta.annotations?.length ? html`<div><h4 style="margin:4px 0">Corporate actions on the chart</h4><ul class="ws-ann">${meta.annotations.map((x) => html`<li>${x.date}: ${x.label || x.type}${x.ratio ? ` (${x.ratio})` : ''}${isNum(x.amount) ? ` ${fmtNum(x.amount, 4)}` : ''}</li>`)}</ul></div>` : null}
-    <details><summary class="note">Latest ${recent.length} ${q.interval === '1d' ? 'days' : 'periods'}: open, high, low, close and volume</summary>
-      <${Table} cls="tight" rows=${recent} rowKey=${(b) => b.date} columns=${[{ label: 'Date', key: 'date' },
-        ...['open', 'high', 'low', 'close'].map((k) => ({ label: k[0].toUpperCase() + k.slice(1), align: 'r', render: (b) => (isNum(b[k]) ? fmtPriceUnits(b[k], inst.priceUnits) : html`<${Missing} reason="Not supplied" />`) })),
-        { label: 'Volume', align: 'r', render: (b) => (isNum(b.volume) ? fmtQty(b.volume) : html`<${Missing} reason="Not supplied" />`) }]} /></details>
-    <p class="note" style="margin:0">${meta.currency || inst.tradingCcy}, ${inst.priceUnits}. Server market history, kept apart from the paper ledger: refreshing it never changes a fill or booked accounting.</p>
-  </div>`;
-}
+// ---- Price history: web/views/tabs/price-history.js (registered with registerTabContent for history and marks) ----
 
-// ---- My positions and trades (local paper records) ---------------------------------------------------------------------
-export function MyPositions({ inst, detail, book, sel, asOf, intervalFor, onTrade }) {
-  const positions = detail?.positions || [];
-  const ids = [...new Set(positions.map((p) => p.strategy?.id).filter(Boolean))].slice(0, 12);
-  const strats = useLive(async () => Promise.all(ids.map((sid) => get(`/api/strategies/${sid}`, { bookId: book.id }).catch(() => null))), [ids.join(), book.id]);
-  const ledger = useDataset(sel, 'ledger', { query: { bookId: book.id }, live: true, interval: intervalFor?.('ledger') });
-  const openStrategy = async (sid) => { const m = await import('./strategy-detail.js'); m.openStrategy(sid); };
-  const list = (strats.data || []).filter(Boolean);
-  const orders = list.flatMap((s) => (s.orders || []).filter((o) => o.instrument?.id === inst.id).map((o) => ({ ...o, strategy: s })));
-  const fills = orders.flatMap((o) => (o.fills || []).map((f) => ({ ...f, order: o })));
-  return html`<div class="stack" data-ws-inst=${inst.id}>
-    <p class="note" style="margin:0">Local paper records of ${book.name}: kept apart from the server's market history, and never changed by it.${asOf ? ` They are current: the research date ${asOf} does not apply to them.` : ''}</p>
-    <section class="panel"><header><h3>Holdings by Account</h3><span class="note">Long and short shown apart</span></header><div class="body flush">
-      <${Table} rows=${positions} rowKey=${(p) => p.positionId} empty=${{ title: `${book.name} holds no position in ${inst.symbol || inst.name}`, children: html`Use Trade to open one. <button class="btn link small" onClick=${onTrade}>Trade</button>` }} columns=${[
-        { label: 'Held in', render: (p) => p.owner }, { label: 'Strategy instance', render: (p) => (p.strategy ? html`<a href="javascript:void 0" onClick=${() => openStrategy(p.strategy.id)}>${p.strategy.name}</a>` : '') },
-        { label: 'Long', align: 'r', render: (p) => (p.qty > 0 ? fmtQty(p.qty) : '') }, { label: 'Short', align: 'r', render: (p) => (p.qty < 0 ? fmtQty(-p.qty) : '') },
-        { label: 'Average cost', align: 'r', render: (p) => fmtPriceUnits(p.avgCost, inst.priceUnits) },
-        { label: 'Market value', align: 'r', render: (p) => html`<${Money} value=${p.mv} ccy=${p.ccy} reason=${p.missingReason} />` },
-        { label: 'Unrealized', align: 'r', render: (p) => html`<${Money} value=${p.unrealized} ccy=${p.ccy} signed reason=${p.missingReason} />` }]} /></div></section>
-    <section class="panel"><header><h3>Strategy packages, hedges and financing</h3></header><div class="body flush">
-      ${strats.loading && !strats.data && ids.length ? html`<div class="ws-loading">Loading…</div>` : html`<${Table} rows=${list} rowKey=${(s) => s.id} empty=${{ title: 'No strategy package holds this instrument', children: 'A package bought from the Strategies page or a ticket is listed here with its hedges and financing.' }} columns=${[
-        { label: 'Package', render: (s) => html`<a href="javascript:void 0" onClick=${() => openStrategy(s.id)}>${s.name}</a><div class="sub">${s.unit?.name}</div>` },
-        { label: 'Status', render: (s) => s.status },
-        { label: 'Hedges', render: (s) => { const n = s.hedge?.requests?.length || 0; return n ? `${n} hedge request${n > 1 ? 's' : ''}${s.hedge?.links?.length ? `, ${s.hedge.links.length} linked hedge${s.hedge.links.length > 1 ? 's' : ''}` : ''}` : html`<span class="muted">none requested</span>`; } },
-        { label: 'Financing legs', render: (s) => { const f = (s.positions || []).filter((p) => p.purpose === 'financing'); return f.length ? f.map((p) => p.instrument?.symbol || p.instrument?.name || p.kind).join(', ') : html`<span class="muted">none</span>`; } }]} />`}</div></section>
-    <section class="panel"><header><h3>Orders and fills</h3><span class="note">Paper orders on this instrument in those packages</span></header><div class="body flush">
-      <${Table} rows=${orders} rowKey=${(o) => o.id} empty=${{ title: 'No orders on this instrument', children: 'Working and filled paper orders appear here.' }} columns=${[
-        { label: 'Order', render: (o) => html`${o.label || o.kindLabel}<div class="sub">${o.strategy.name}</div>` }, { label: 'Status', render: (o) => o.status },
-        { label: 'Quantity', align: 'r', render: (o) => fmtQty(o.qty) }, { label: 'Filled', align: 'r', render: (o) => fmtQty(o.filledQty) },
-        { label: 'Average price', align: 'r', render: (o) => (isNum(o.avgPrice) ? fmtPriceUnits(o.avgPrice, inst.priceUnits) : html`<${Missing} reason="No fill yet" />`) }]} />
-      ${fills.length ? html`<${Table} rows=${fills} rowKey=${(f) => f.id} columns=${[{ label: 'Fill', render: (f) => fmtTime(f.ts) }, { label: 'Quantity', align: 'r', render: (f) => fmtQty(f.qty) },
-        { label: 'Price', align: 'r', render: (f) => fmtPriceUnits(f.price, inst.priceUnits) }, { label: 'Gross', align: 'r', render: (f) => html`<${Money} value=${f.gross} ccy=${f.ccy} />` }, { label: 'How filled', render: (f) => html`<span class="small">${f.model}</span>` }]} />` : null}</div></section>
-    <${DatasetPanel} ds=${ledger} asOf=${asOf} title="Accounting history and open orders (server ledger interface)" what="The paper ledger's own record of this instrument through the server client"><${PlainListing} env=${ledger.env} /><//>
-    <p class="note">The full accounting history is under <a href="#/accounting/history">Accounting, History</a>.</p>
-  </div>`;
-}
+// ---- My positions and trades: web/views/tabs/positions.js (registered with registerTabContent) ----------------------
 /** The analytics of the existing quotes route, wrapped as an envelope, while /api/server/analytics is not served. */
 export const analyticsFallback = (sel, q) => get('/api/quotes', { ids: sel.id, strategyId: q.strategyId }).then((r) => {
   const a = r.quotes?.[sel.id]?.analytics || null;
@@ -506,4 +421,4 @@ export function openFullPage(id, tab) {
   location.hash = pageHref(id, tab);
 }
 export function pageOrigin() { try { return JSON.parse(sessionStorage.getItem(ORIGIN_KEY) || 'null'); } catch { return null; } }
-export { historyFallback, Prov };
+export { Prov };

@@ -7,3 +7,4 @@
 - 2026-10-14T12:56Z | w1 | +1 | w1: request discipline (selection token, requestId, abort, discard late/foreign answers) and as-of research date on the page; test/workspace/run-browser.mjs 32/32; npm test 836/836; browser matrix 5/5
 - 2026-10-14T13:03Z | d1 | +1 | d1: tests (server-client 15 + awaiting 2) and docs (SERVER-CLIENT, DATA-CONTRACT-REQUIREMENTS, INTEGRATION-CHECKLIST, ARCHITECTURE, README); npm test 836/836, test:api 235 no failures, browser 4 products no failures
 - 2026-10-14T13:04Z | w1 | +0.5 | w1: trading/hedge integration from the detail page verified (fill -> hedge prompt), light/dark demo/normal 1440/1024/390 reviewed; workspace 32/32, matrix 5/5, npm test 836/836
+- 2026-10-14T13:38Z | e2 | +2 | e2: Financial statements tab (income/balance/cash flow, quarterly/annual, restated beside original, YTD guard and labelled derivation, supplied TTM apart, labelled Terminal comparison, as-of); statements-model tests 9; workspace 176/176; npm test 859/859

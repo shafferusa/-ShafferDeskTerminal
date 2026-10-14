@@ -48,7 +48,8 @@ business date, close, adjusted flag of the series, currency, interval; optional 
 corporate-action annotations (date, type, amount or ratio), the adjustment basis. Gaps reported in coverage.
 
 **FX** (`market.fx`). Input: pairs. Needs: rate as quote currency per 1 base, direction, timestamp, status;
-optional bid/ask. Calendars and forward curves when FX detail pages need them (to be stated).
+optional bid/ask. Forward curves: `market.fxCurve` below. Calendars are the Terminal's own (holiday calendars per
+currency, Settings).
 
 **Rates** (`market.rates`). Input: codes, from, to. Needs: code, fixing date, value in percent per annum; optional
 tenor and curve membership.
@@ -90,6 +91,54 @@ Needs: item ID, publication time, source, headline, scope (company, sector, econ
 classification (who classified, labels), interpretation (who interpreted, text), link. Facts, classifications and
 interpretations must be separable. Paginated.
 
+### Product-specific datasets (Shaffer MarketData; detail pages of non-equity products)
+
+These are shown only when supplied. The Terminal computes none of them: no yield, spread, Greek, implied volatility,
+curve or mark is worked out in the Terminal. Contract terms, coupon and payment schedules and the paper engine's
+accrued interest are the Terminal's own (`GET /api/instruments/:id/contract-facts`) and need nothing from the backend.
+The contract may map any of these to MarketData or to Analytics Lab; each record names its `provider`.
+
+**Ratings and covenants** (`market.ratingsCovenants`). Input: debt instrument (or its issuer), optional as-of.
+Needs: `scope` (`issue` or `issuer`: the screen says which), `ratings` (list: agency, scale named, rating, date of
+the last action; optional outlook, watch, action) and `covenants` (list, empty when none: label, text; optional
+threshold, status as reported, as-of). Point-in-time: ratings in force on a date, if supported.
+
+**Yield and spread** (`market.yieldSpread`). Input: debt instrument. Needs: `yield` (value in percent, type: to
+maturity or to worst, compounding convention), `priceUsed` (the price it was struck on, units, side, timestamp),
+`calculatedAt`, `provider`; optional `spread` (basis points, type such as G-spread, Z-spread or OAS, the benchmark
+named with its ID). A spread that does not apply (a benchmark issue) is null with a reason.
+
+**Option Greeks and implied volatility** (`market.optionGreeks`). Input: option contract. Needs: `impliedVol`
+(decimal per annum), `delta`, `calculatedAt`, `provider`; optional gamma, theta, vega, rho, `model`, the underlying
+and option prices used, and `units` per measure (theta per calendar day or per trading day, vega per volatility
+point, and so on: the screen prints what the provider states).
+
+**Futures curve** (`market.futuresCurve`). Input: futures contract (its root or underlying selects the curve).
+Needs per month: contract month, expiration, price, price type (settlement or last), timestamp; optional contract
+IDs, symbol, open interest, volume, units, currency. The Terminal draws the points supplied and interpolates nothing.
+
+**Exchange margin** (`market.exchangeMargin`). Input: futures contract. Needs: initial margin per contract,
+currency, effective date, clearing house; optional maintenance margin and notes (rate class). Shown beside, never in
+place of, the margin the paper engine posts (the Book's clearing terms registered on the contract).
+
+**Fund holdings and weights** (`market.fundHoldings`). Input: fund share class, optional as-of. Needs per holding:
+name and weight in percent of net assets, and the holdings report date; optional holding IDs (so a holding can be
+linked to its own workspace), asset class, quantity, market value, currency, and for the list the number of holdings
+and the share of net assets listed. Paginated when long.
+
+**Fund NAV, fees and facts** (`market.fundFacts`). Input: fund share class. Needs: NAV, NAV currency, NAV date;
+optional share class, fees (ongoing charge, management fee, entry and exit charges, performance fee, the date of the
+fee document), distribution policy, net assets. Distributions themselves are corporate actions; fund reports are
+filings and documents.
+
+**Supplied marks for OTC contracts** (`market.otcMarks`). Input: OTC contract (swap, credit default swap, forward,
+OTC option), date range, optional as-of. Needs per mark: mark date, value, units (net present value per 100
+notional unless stated), kind (dealer, clearing or model), provider, timestamp; optional method and note. A model
+mark from Analytics Lab is a valuation and is never shown as a quote. Manual marks are the Terminal's own records.
+
+**FX forward curve** (`market.fxCurve`). Input: currency pair. Needs per tenor: tenor, forward points, points units,
+timestamp; optional value date, outright rate, the spot reference the curve was struck on.
+
 ### Analytics interface (Shaffer Analytics Lab)
 
 **Instrument analytics** (`analytics.instrumentAnalytics`), SP3E first. Input: instrument, Strategy ID, optional run ID,
@@ -117,7 +166,8 @@ Local only. Nothing is required from the backend.
 
 1. Gateway address(es) and the credential scheme; whether MarketData and Analytics Lab share them.
 2. The instrument, issuer, contract and Strategy ID schemes, and a symbol/venue to ID lookup.
-3. For each of the 16 remote datasets above: request, response schema, example payloads, error codes.
+3. For each of the 25 remote datasets above (16 of the first wave and the 9 product-specific datasets): request,
+   response schema, example payloads, error codes.
 4. Pagination style and limits per paginated dataset (search, history if long, earnings, filings, corporate actions,
    news, runs).
 5. Quote types, units and timestamp semantics per product type; staleness limits per dataset.
@@ -127,3 +177,7 @@ Local only. Nothing is required from the backend.
 9. API, schema and model version identifiers; coverage limitations.
 10. Corporate-action event IDs and revision semantics.
 11. A test environment (address and credential) with known data, for the integration checklist.
+12. For the product pages: which provider supplies ratings, yields and spreads, Greeks, futures curves and margins,
+    fund holdings and facts, OTC marks and FX forward points (MarketData or Analytics Lab), the conventions each
+    states (yield type and compounding, Greek units, mark units), and point-in-time support for ratings, fund
+    holdings and marks.

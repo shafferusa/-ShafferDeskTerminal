@@ -9,9 +9,20 @@ import { Empty, Missing, Notice, Price, Text } from '../lib/ui.js';
 import { Chain, openInstrument } from './instrument.js';
 import { TABS, workspaceTabs } from './workspace-model.js';
 import {
-  buildStrategy, DatasetPanel, hedgeFromWorkspace, MyPositions, pageHref, pageOrigin, PlainListing, PriceHistory, Related, StatePill, tabContent, TermsPanel,
+  buildStrategy, DatasetPanel, hedgeFromWorkspace, pageHref, pageOrigin, PlainListing, Related, StatePill, tabContent, TermsPanel,
   useDataset, useHeaderData, useRefreshSettings, useSelection, useServerState, useWorkspaceStrategy, WorkspaceHeader,
 } from './workspace.js';
+// Tab contents that register themselves with registerTabContent (web/views/tabs/).
+import './tabs/price-history.js';
+import './tabs/overview.js';
+import './tabs/earnings.js';
+import './tabs/corporate-actions.js';
+import './tabs/news.js';
+import './tabs/analytics.js';
+import './tabs/positions.js';
+import './tabs/statements.js';
+import './tabs/product/index.js'; // p1: bond, option, future, fund, FX, swap and credit, other products
+import './tabs/filings.js';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const PAGE_LABEL = { accounting: 'Accounting', treasury: 'Treasury', account: 'the Account', strategy: 'Strategies', instruments: 'Instruments', data: 'Data connection', settings: 'Settings' };
@@ -111,11 +122,8 @@ function AsOfBar({ asOf, status, serverState, onChange }) {
 function TabBody({ tab, inst, detail, sel, headSel, asOf, book, strategy, intervalFor, reference, related, trade }) {
   const own = tabContent(tab.id);
   const common = { inst, detail, sel, asOf, book, strategy, intervalFor };
-  if (tab.id === 'history' || tab.id === 'marks') return html`<div class="stack"><${PriceHistory} inst=${inst} sel=${sel} asOf=${asOf} intervalFor=${intervalFor} title=${tab.label} />
-    ${tab.id === 'marks' ? html`<p class="note">Marks are shown with their kind (dealer, model or manual) in the header's price chip. A model mark from Analytics Lab is a valuation, never an executable quote.</p>` : null}</div>`;
-  if (tab.id === 'positions') return html`<${MyPositions} inst=${inst} detail=${detail} book=${book} sel=${headSel} asOf=${asOf} intervalFor=${intervalFor} onTrade=${trade} />`;
   if (tab.id === 'chain') return html`<${ChainTab} inst=${inst} />`;
-  if (own) return html`<${own} ...${common} />`;
+  if (own) return html`<${own} ...${common} tab=${tab} reference=${reference} related=${related} />`;
   if (tab.id === 'overview' || tab.id === 'terms') return html`<${OverviewTab} ...${common} tab=${tab} reference=${reference} related=${related} />`;
   return html`<${GenericTab} ...${common} tab=${tab} />`;
 }

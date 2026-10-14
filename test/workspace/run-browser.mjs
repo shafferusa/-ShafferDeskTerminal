@@ -182,6 +182,15 @@ try {
   check('a bond lists earnings and statements under Not covered for this product', /Earnings and financial statements/.test(await page.locator('[data-testid=not-covered]').innerText()));
   check('a bond has no Financial statements tab', await page.getByRole('tab', { name: /^Financial statements/ }).count() === 0);
 
+  // ---- per-tab checks (test/workspace/checks/*.mjs: default export async (ctx), each run in turn) --------------------
+  const { readdirSync } = await import('node:fs');
+  let tabChecks = [];
+  try { tabChecks = readdirSync(new URL('./checks/', import.meta.url)).filter((n) => n.endsWith('.mjs')).sort(); } catch { /* no per-tab checks */ }
+  for (const f of tabChecks) {
+    try { await (await import(`./checks/${f}`)).default({ page, api, goto, check, base, alfa, brvo, gov, strategies, closeAll }); } catch (err) { check(`${f} completed`, false, err.stack || String(err)); }
+    await api('/api/demo/fixtures/server', { reset: true }).catch(() => {});
+  }
+
   check('no console errors', errors.length === 0, errors.slice(0, 5).join(' | '));
 } catch (err) {
   check('the run completed', false, err.stack || String(err));
