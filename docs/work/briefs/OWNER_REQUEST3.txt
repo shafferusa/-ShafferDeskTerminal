@@ -1,0 +1,217 @@
+Build the Shaffer Desk Terminal’s server integration layer and a comprehensive instrument-detail workspace.
+
+All market data, historical data, reference data, company financials, investment valuations, Strategy outputs, and hedge recommendations will come through the Shaffer server. Your job is to build the Terminal’s retrieval, display, interaction, and paper-trading integration—not collect external data or recreate the investment algorithms.
+
+Prepare and test the interface now with labelled fixtures. Connect it to the actual server once its API contract is supplied.
+
+1. Responsibilities and boundaries
+
+The Shaffer server supplies data originating from MarketData and analytical outputs originating from Analytics Lab.
+
+The Terminal:
+
+* Requests and displays those data and outputs.
+* Provides search, filters, charts, tables, and instrument navigation.
+* Assembles confirmed paper-trade instructions.
+* Maintains its own persistent Books, Treasury, Accounts, trades, positions, and accounting.
+
+Do not connect directly to Yahoo, FRED, SEC, exchanges, or other external providers. Do not ingest external datasets inside the Terminal.
+
+Do not implement investment valuation, signal generation, hedge selection, or calibration inside the Terminal. Keep existing contract arithmetic and paper-accounting responsibilities.
+
+Server connection alone must never overwrite paper trades or execute a recommendation.
+
+2. Build the internal server client
+
+Use one configurable internal integration layer, with separate interfaces for:
+
+* Market/reference/historical data.
+* Analytics, valuations, Strategies, and Hedge.
+* The Terminal’s own paper ledger.
+
+These interfaces may share one approved server gateway. Do not assume separate public services are required.
+
+Define documented client methods and data requirements now, but do not invent production URLs, endpoint paths, authentication details, or payload schemas. Obtain those from the backend builder.
+
+The supplied contract must define:
+
+* Authentication and server addresses.
+* Stable instrument, issuer, contract, and Strategy IDs.
+* Request parameters, response schemas, pagination, and error states.
+* Quote types, quotation units, currencies, timestamps, and freshness.
+* Historical date ranges, availability, and adjustment conventions.
+* Refresh or subscription mechanisms actually supported.
+* API/schema versions and coverage limitations.
+
+Keep credentials server-side. Support timeouts, cancellation, bounded retries, caching, pagination, and configurable refresh behavior. Do not repeatedly retry permission or authentication failures.
+
+Cancel or disregard obsolete requests when the selected instrument changes. A late response for one security must never appear on another.
+
+Show distinct states for awaiting connection, loading, available, stale, unavailable, incomplete, and error. Missing values stay missing—not zero.
+
+3. Instrument-detail workspace
+
+Selecting an instrument anywhere—Marketplaces, search, watchlists, positions, Accounting, or Strategies—must open the same instrument-detail workspace.
+
+Use a quick overview drawer with an option to open a full detail page. Preserve the originating Book and trading owner.
+
+Keep the header visible with:
+
+* Instrument name, symbol, stable ID, product type, venue, and currency.
+* Current Market Price, Fair Price, and Gap %.
+* Bid/ask and price-change information where available.
+* Quote source, timestamp, and live/delayed/indicative/manual/simulated status.
+* Selected investment Strategy, valuation horizon, and analytical timestamp.
+* Book holdings, long and short separately, with Account ownership.
+* Trade, Build Strategy, and Hedge actions.
+
+Price and fair-value units must match. Do not calculate misleading Gap % values when the quotation convention, denominator, or missing inputs make the percentage inappropriate.
+
+When supplied, retain Fundamental and Realistic values and their respective Gap percentages. Let the user select the relevant Strategy rather than silently blending outputs.
+
+4. Equity detail tabs
+
+Build the following tabs for equities and applicable issuer-linked securities.
+
+Overview
+
+Display available company information, business description, sector classifications, listing details, market capitalization, shares outstanding, financial highlights, next earnings, and relevant server-supplied analytics.
+
+Separate company/issuer information from listing-specific information.
+
+Price History
+
+Display server-supplied historical prices with selectable ranges and intervals.
+
+Support available OHLC, volume, and corporate-action annotations. Clearly identify adjusted versus unadjusted series and the basis of any performance comparison.
+
+Do not manufacture missing history. Handle gaps, insufficient coverage, and unavailable intervals explicitly.
+
+Earnings
+
+Show past and upcoming earnings:
+
+* Fiscal period and release date/time.
+* Confirmed versus estimated dates.
+* Available reported results, consensus, prior values, and surprises.
+* Revenue, earnings, and other supplied metrics.
+* Links or server-supplied documents for releases and presentations.
+* Actual reporting timestamps and revision status.
+
+Include EPS when supplied as company information; do not imply that displaying it changes SP3E’s model inputs.
+
+Show earnings-window eligibility supplied by Analytics Lab separately from the earnings calendar facts.
+
+Financial Statements
+
+Provide separate views for:
+
+* Income Statement.
+* Balance Sheet.
+* Cash Flow Statement.
+
+Support quarterly and annual periods, multiple periods side by side, and all available line items—not only summary ratios.
+
+Show fiscal period, statement currency, units, filing/publication date, source, and whether values are reported, normalized, restated, or derived.
+
+Distinguish:
+
+* Balance-sheet values measured at a date.
+* Income/cash-flow values covering a period.
+* Standalone quarters from year-to-date figures.
+* Annual figures from supplied trailing-twelve-month figures.
+
+Do not silently treat year-to-date cash flows as standalone quarters or overwrite originally reported values with restatements.
+
+Prefer server-supplied growth, margins, ratios, and normalized metrics. Any permitted UI comparison arithmetic must be clearly labelled, use compatible periods/units, and remain separate from investment-model calculations.
+
+Filings & Reports
+
+Display available filings, earnings releases, annual/interim reports, presentations, and supporting documents supplied or authorized by the server.
+
+Support document viewing and navigation to the source material. Do not independently scrape external documents.
+
+Corporate Actions
+
+Display available dividends, splits, buybacks, rights, mergers, spin-offs, and other corporate actions, including applicable dates and terms.
+
+Keep informational events separate from events already processed by the paper ledger. Receiving the same event twice must not duplicate accounting effects.
+
+News & Events
+
+Display available timestamped company, sector, and economically relevant news/events from the server.
+
+Preserve source and publication timestamps. Distinguish facts, supplied classifications, and analytical interpretations.
+
+Analytics & Risk
+
+Display completed server outputs relevant to the selected instrument and Strategy.
+
+For SP3E, support supplied EFS, Sector Score, Equity Score, Fundamental/Realistic Fair Value, corresponding Gaps, uncertainty, timing eligibility, outlier flags, sizing, and Hedge outputs.
+
+Show run ID/version, calculation time, input-data cutoff, horizon, and availability. Historical analytical outputs must not be presented as current recommendations.
+
+My Positions & Trades
+
+Show the selected Book’s holdings by Account, linked strategy packages, hedges, financing, open orders, fills, and accounting history.
+
+Keep these local paper records separate from server market history.
+
+5. Product-specific detail pages
+
+Use a shared detail framework, but adapt tabs and fields to the instrument.
+
+Examples:
+
+* Bonds: issuer, coupon, maturity, quote convention, accrued interest, yield/spread, schedules, ratings, covenants, and available issuer financials.
+* Options: underlying, strike, expiry, exercise/settlement terms, multiplier, chain, available Greeks, volatility, and contract history.
+* Futures: contract month, multiplier, tick, settlement/delivery terms, margin information, and available curve/history.
+* Funds: holdings, weights, NAV, fees, distributions, and available fund reports.
+* FX: base/quote currencies, quotation direction, calendars, available rates, curves, and history.
+* Swaps/credit contracts: reference exposure, pay/receive terms, schedules, financing, collateral terms, and available marks.
+* Other products: relevant reference data, reports, terms, and history.
+
+Related issuer/underlying information must link correctly—for example, an option links to its underlying equity’s financial statements without pretending those statements belong to the option contract.
+
+Display available data, not fabricated completeness. Explain missing coverage.
+
+6. Historical and point-in-time behavior
+
+Provide a historical “as of” view where the server supports it.
+
+Distinguish current revised information from what was available at the selected historical time. Do not substitute current fundamentals, constituents, or revisions into a historical view without disclosure.
+
+Historical browsing must never change the execution quote context. Clearly separate research date from the current paper-trading clock.
+
+7. Trading and Hedge integration
+
+From instrument details, populate the existing ticket or Strategy page with the exact instrument, Book, owner, and selected Strategy.
+
+Preserve confirmation, borrow, funding, collateral, and individual-leg checks.
+
+Strategy-page trading retrieves applicable Hedge instructions and includes them in the package preview.
+
+Direct Marketplace or instrument-detail trading opens the Hedge workflow after the actual fill. Size requests against actual exposure and existing/proposed protection.
+
+Analytics Lab chooses and sizes hedges. The Terminal retrieves relevant quotes, displays the package, and executes only after explicit confirmation.
+
+8. Phased connection and acceptance
+
+Implement and test in this order:
+
+1. Client interfaces, fixture mode, and connection states.
+2. Stable instrument/issuer identifiers and reference search.
+3. Current prices, history, FX, and supporting reference data.
+4. Earnings, statements, documents, corporate actions, and news.
+5. SP3E valuations, signals, risk, and Hedge.
+6. Real-server integration acceptance once credentials and contracts exist.
+
+SP3E is the first investment Strategy to integrate. Do not build additional investment algorithms as part of this task.
+
+Use capability-driven displays so incomplete backend coverage does not break otherwise available screens.
+
+Test empty/partial responses, missing fields, stale data, revisions, pagination, server errors, disconnection/reconnection, rapid instrument switching, duplicate events, unit/currency mismatches, and persistence.
+
+Run regression tests against the existing paper engine and ledger. Verify that refreshing quotes, statements, or analytics does not change historical fills or booked accounting.
+
+Deliver the implemented UI, documented data-contract requirements, fixture tests, integration checklist, and exact remaining backend dependencies. Once the real server is available, verify the complete paths from server response to screen display and confirmed paper execution.
